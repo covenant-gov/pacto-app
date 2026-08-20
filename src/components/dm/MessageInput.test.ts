@@ -96,6 +96,19 @@ describe('MessageInput', () => {
     expect(input.value).toBe('');
   });
 
+  it('does not call onSend when Shift+Enter is pressed, so the default newline insertion proceeds', async () => {
+    const onSend = vi.fn();
+    render(MessageInput, { props: { channelName: 'general', onSend } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'hello world' } });
+    const event = await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', shiftKey: true });
+    // Handler must not preventDefault a Shift+Enter — the browser's own default
+    // newline insertion is what actually adds the line break.
+    expect(event).toBe(true);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(input.value).toBe('hello world');
+  });
+
   it('forwards repliedTo to onSend when replying to a message', async () => {
     const onSend = vi.fn();
     render(MessageInput, { props: { channelName: 'general', onSend, repliedTo: 'msg-123' } });

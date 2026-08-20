@@ -10,9 +10,9 @@
 
   const tFn = get(t);
 
-  let npub = '';
-  let messageText = '';
-  let sending = false;
+  let npub = $state('');
+  let messageText = $state('');
+  let sending = $state(false);
 
   // Consume any prefill (e.g. a "Request DM" from a Commons user card), then clear it.
   onMount(() => {
@@ -85,7 +85,7 @@
     $dmSendError = null;
   }
 
-  $: canSend = isValidNpub(npub.trim()) && messageText.trim().length > 0 && !sending;
+  let canSend = $derived(isValidNpub(npub.trim()) && messageText.trim().length > 0 && !sending);
 </script>
 
 <div class="messenger-chat-view">

@@ -3,34 +3,53 @@
   import SquadAvatar from '../squad/SquadAvatar.svelte';
 
   /** Invite card for squad, squad-pair, or channel-in-squad DMs. */
-  export let variant: 'squad' | 'squad-pair' | 'channel-in-squad';
-  export let squadName = '';
-  export let channelName = '';
-  export let memberSquads: { id: string; name: string }[] = [];
-  export let isMine: boolean;
-  export let inviterName: string;
-  export let inviterAvatarSrc: string | null = null;
-  export let squadIconUrl: string | null | undefined = undefined;
-  export let squadId = '';
-  export let status: 'pending' | 'joining' | 'accepted' | 'declined';
-  export let accepting: boolean;
-  export let onAccept: () => void;
-  export let onDecline: () => void;
-  /** Opens a DM with the actual inviter, when they differ from the thread's peer. */
-  export let onMessageInviter: (() => void) | undefined = undefined;
+  interface Props {
+    variant: 'squad' | 'squad-pair' | 'channel-in-squad';
+    squadName?: string;
+    channelName?: string;
+    memberSquads?: { id: string; name: string }[];
+    isMine: boolean;
+    inviterName: string;
+    inviterAvatarSrc?: string | null;
+    squadIconUrl?: string | null;
+    squadId?: string;
+    status: 'pending' | 'joining' | 'accepted' | 'declined';
+    accepting: boolean;
+    onAccept: () => void;
+    onDecline: () => void;
+    /** Opens a DM with the actual inviter, when they differ from the thread's peer. */
+    onMessageInviter?: () => void;
+  }
 
-  $: title = (() => {
-    if (variant === 'squad' || variant === 'squad-pair') return squadName;
-    return `${squadName} · #${channelName}`;
-  })();
+  let {
+    variant,
+    squadName = '',
+    channelName = '',
+    memberSquads = [],
+    isMine,
+    inviterName,
+    inviterAvatarSrc = null,
+    squadIconUrl,
+    squadId = '',
+    status,
+    accepting,
+    onAccept,
+    onDecline,
+    onMessageInviter,
+  }: Props = $props();
 
-  $: memberSquadsLabel =
+  let title = $derived(
+    variant === 'squad' || variant === 'squad-pair' ? squadName : `${squadName} · #${channelName}`
+  );
+
+  let memberSquadsLabel = $derived(
     memberSquads?.length > 0
       ? $t('messaging.inviteCard.partnerSquadsLabel', { values: { squads: memberSquads.map((s) => s.name).join(', ') } })
-      : '';
-  $: subtitle = variant === 'squad-pair' && memberSquadsLabel ? memberSquadsLabel : '';
+      : ''
+  );
+  let subtitle = $derived(variant === 'squad-pair' && memberSquadsLabel ? memberSquadsLabel : '');
 
-  $: bodyText = (() => {
+  let bodyText = $derived.by(() => {
     if (variant === 'squad') {
       return isMine
         ? $t('messaging.inviteCard.squadInviteYou', { values: { inviterName } })
@@ -44,18 +63,19 @@
     return isMine
       ? $t('messaging.inviteCard.channelInviteYou', { values: { inviterName, channelName } })
       : $t('messaging.inviteCard.channelInviteThem', { values: { inviterName, channelName } });
-  })();
+  });
 
-  $: iconPlaceholder =
+  let iconPlaceholder = $derived(
     variant === 'squad' || variant === 'squad-pair'
       ? squadName
         ? squadName.charAt(0).toUpperCase()
         : $t('messaging.inviteCard.squadInitial')
-      : $t('messaging.inviteCard.channelInitial');
+      : $t('messaging.inviteCard.channelInitial')
+  );
 
-  $: showBadge = variant === 'squad-pair';
-  $: badgeLabel = $t('messaging.inviteCard.partnerSquad');
-  $: collapsed = status === 'accepted' || status === 'declined';
+  let showBadge = $derived(variant === 'squad-pair');
+  let badgeLabel = $derived($t('messaging.inviteCard.partnerSquad'));
+  let collapsed = $derived(status === 'accepted' || status === 'declined');
 </script>
 
 <div class="invite-card" class:collapsed role="article">

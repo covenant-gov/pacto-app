@@ -49,69 +49,85 @@
     type KlipyGif,
   } from '../../lib/api/klipy';
 
-  export let channelName: string = "";
-  /** When set, replaces the default `Message #{channelName}` placeholder (e.g. blocked peer). */
-  export let placeholderOverride: string | undefined = undefined;
-  export let onSend: (content: string, repliedTo?: string) => void = () => {};
-  /** Optional: called for squad channels with a body + mention list so the caller can build the envelope. */
-  export let onSendMentions: ((body: string, mentions: Mention[], repliedTo?: string) => void) | undefined = undefined;
-  /** Optional: called with the bytes of a pending file attachment when the user sends it. */
-  export let onSendFile:
-    | ((bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>)
-    | undefined = undefined;
-  /** Optional: called with a picked GIF's URL + slug when the user sends it.
-   * Never uploads bytes — Klipy's terms forbid re-hosting its media. */
-  export let onSendGif:
-    | ((url: string, slug: string, repliedTo: string) => Promise<void>)
-    | undefined = undefined;
-  /** Optional squad context; when provided, typing `@` opens the member mention picker. */
-  export let squadMlsGroupId: string | undefined = undefined;
-  export let squadRosterNpubs: string[] | undefined = undefined;
-  export let squadProfiles: Record<string, NostrProfile | undefined> | undefined = undefined;
-  /** Optional: current user's npub; excluded from mention candidates so you cannot @ yourself. */
-  export let currentUserNpub: string | undefined = undefined;
-  /** Optional: called when user types (e.g. to send typing indicator). */
-  export let onTyping: (() => void) | undefined = undefined;
-  /** When true, input and send are disabled (e.g. channel still being created). */
-  export let disabled: boolean = false;
-  /** Optional id of the message this reply is attached to. */
-  export let repliedTo: string | undefined = undefined;
-  /** Optional preview text of the replied-to message (shown instead of the generic label). */
-  export let repliedToPreview: string | undefined = undefined;
-  /** Optional: called when the user cancels the reply state. */
-  export let onCancelReply: (() => void) | undefined = undefined;
+  interface Props {
+    channelName?: string;
+    /** When set, replaces the default `Message #{channelName}` placeholder (e.g. blocked peer). */
+    placeholderOverride?: string;
+    onSend?: (content: string, repliedTo?: string) => void;
+    /** Optional: called for squad channels with a body + mention list so the caller can build the envelope. */
+    onSendMentions?: (body: string, mentions: Mention[], repliedTo?: string) => void;
+    /** Optional: called with the bytes of a pending file attachment when the user sends it. */
+    onSendFile?: (bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>;
+    /** Optional: called with a picked GIF's URL + slug when the user sends it.
+     * Never uploads bytes — Klipy's terms forbid re-hosting its media. */
+    onSendGif?: (url: string, slug: string, repliedTo: string) => Promise<void>;
+    /** Optional squad context; when provided, typing `@` opens the member mention picker. */
+    squadMlsGroupId?: string;
+    squadRosterNpubs?: string[];
+    squadProfiles?: Record<string, NostrProfile | undefined>;
+    /** Optional: current user's npub; excluded from mention candidates so you cannot @ yourself. */
+    currentUserNpub?: string;
+    /** Optional: called when user types (e.g. to send typing indicator). */
+    onTyping?: () => void;
+    /** When true, input and send are disabled (e.g. channel still being created). */
+    disabled?: boolean;
+    /** Optional id of the message this reply is attached to. */
+    repliedTo?: string;
+    /** Optional preview text of the replied-to message (shown instead of the generic label). */
+    repliedToPreview?: string;
+    /** Optional: called when the user cancels the reply state. */
+    onCancelReply?: () => void;
+  }
 
-  $: inputPlaceholder = placeholderOverride ?? $t('messaging.messageInput.placeholder', { values: { channelName } });
+  let {
+    channelName = "",
+    placeholderOverride,
+    onSend = () => {},
+    onSendMentions,
+    onSendFile,
+    onSendGif,
+    squadMlsGroupId,
+    squadRosterNpubs,
+    squadProfiles,
+    currentUserNpub,
+    onTyping,
+    disabled = false,
+    repliedTo,
+    repliedToPreview,
+    onCancelReply,
+  }: Props = $props();
+
+  let inputPlaceholder = $derived(placeholderOverride ?? $t('messaging.messageInput.placeholder', { values: { channelName } }));
   const fullEmojiList = getEmojiList();
 
-  let messageText = "";
-  let textareaEl: HTMLTextAreaElement | undefined;
-  let inputWrapperEl: HTMLDivElement | undefined;
+  let messageText = $state("");
+  let textareaEl: HTMLTextAreaElement | undefined = $state();
+  let inputWrapperEl: HTMLDivElement | undefined = $state();
 
   // Media panel (emoji + GIFs)
-  let emojiPanelOpen = false;
-  let emojiPanelTab: 'emoji' | 'gifs' | 'stickers' = 'emoji';
-  let emojiPanelBodyEl: HTMLDivElement | undefined;
-  let emojiSearchQuery = "";
+  let emojiPanelOpen = $state(false);
+  let emojiPanelTab: 'emoji' | 'gifs' | 'stickers' = $state('emoji');
+  let emojiPanelBodyEl: HTMLDivElement | undefined = $state();
+  let emojiSearchQuery = $state("");
 
   // Attachment type menu
-  let attachmentMenuOpen = false;
+  let attachmentMenuOpen = $state(false);
 
   // Mention picker state
-  let mentionPickerOpen = false;
-  let mentionQuery = "";
-  let mentionSelectedIndex = 0;
-  let mentionStartIndex = 0;
+  let mentionPickerOpen = $state(false);
+  let mentionQuery = $state("");
+  let mentionSelectedIndex = $state(0);
+  let mentionStartIndex = $state(0);
   let mentionEndIndex = 0;
-  let mentions: Mention[] = [];
-  let mentionPickerEl: HTMLDivElement | undefined;
-  let mentionSnappedHeight: number | null = null;
+  let mentions: Mention[] = $state([]);
+  let mentionPickerEl: HTMLDivElement | undefined = $state();
+  let mentionSnappedHeight: number | null = $state(null);
 
   // Attachment + reply state
-  let fileInput: HTMLInputElement | undefined;
-  let pendingInputAccept = '';
-  let pendingInputCapture: 'environment' | undefined = undefined;
-  let isSendingAttachment = false;
+  let fileInput: HTMLInputElement | undefined = $state();
+  let pendingInputAccept = $state('');
+  let pendingInputCapture: 'environment' | undefined = $state(undefined);
+  let isSendingAttachment = $state(false);
   let dropUnregister: (() => void) | undefined;
   let composerDestroyed = false;
   const desktopPickerAvailable = isDesktopFilePickerAvailable();
@@ -155,23 +171,27 @@
     revokeGifThumbCache();
   });
 
-  $: excludedNpubs = (() => {
+  let excludedNpubs = $derived.by(() => {
     const set = new Set<string>();
     if (currentUserNpub) set.add(currentUserNpub);
     for (const m of mentions) set.add(m.npub);
     return set;
-  })();
-  $: mentionCandidates = squadMlsGroupId
-    ? buildMentionCandidates(squadRosterNpubs ?? [], squadProfiles ?? {}, excludedNpubs)
-    : [];
-  $: filteredMentions = filterMentionCandidates(mentionCandidates, mentionQuery);
+  });
+  let mentionCandidates = $derived(
+    squadMlsGroupId
+      ? buildMentionCandidates(squadRosterNpubs ?? [], squadProfiles ?? {}, excludedNpubs)
+      : []
+  );
+  let filteredMentions = $derived(filterMentionCandidates(mentionCandidates, mentionQuery));
 
-  $: if (disabled) {
-    emojiPanelOpen = false;
-    emojiSearchQuery = '';
-    attachmentMenuOpen = false;
-    closeMentionPicker();
-  }
+  $effect(() => {
+    if (disabled) {
+      emojiPanelOpen = false;
+      emojiSearchQuery = '';
+      attachmentMenuOpen = false;
+      closeMentionPicker();
+    }
+  });
 
   function closeMentionPicker() {
     mentionPickerOpen = false;
@@ -575,17 +595,25 @@
     });
   }
 
-  $: mentionPickerPlacement = mentionPickerOpen
-    ? computeMentionPickerPlacement(messageText, mentionStartIndex, textareaEl, inputWrapperEl)
-    : null;
+  let mentionPickerPlacement = $derived(
+    mentionPickerOpen
+      ? computeMentionPickerPlacement(messageText, mentionStartIndex, textareaEl, inputWrapperEl)
+      : null
+  );
 
-  $: void snapMentionPickerToWholeRows(filteredMentions, mentionPickerPlacement);
+  $effect(() => {
+    void snapMentionPickerToWholeRows(filteredMentions, mentionPickerPlacement);
+  });
 
-  $: mentionPickerStyle = mentionPickerPlacement
-    ? `left: ${mentionPickerPlacement.left}px; ${mentionPickerPlacement.edge}: ${mentionPickerPlacement.offset}px; max-height: ${Math.min(mentionPickerPlacement.maxHeight, mentionSnappedHeight ?? mentionPickerPlacement.maxHeight)}px;`
-    : '';
+  let mentionPickerStyle = $derived(
+    mentionPickerPlacement
+      ? `left: ${mentionPickerPlacement.left}px; ${mentionPickerPlacement.edge}: ${mentionPickerPlacement.offset}px; max-height: ${Math.min(mentionPickerPlacement.maxHeight, mentionSnappedHeight ?? mentionPickerPlacement.maxHeight)}px;`
+      : ''
+  );
 
-  $: if (mentionPickerOpen) void scrollMentionSelectionIntoView(mentionSelectedIndex);
+  $effect(() => {
+    if (mentionPickerOpen) void scrollMentionSelectionIntoView(mentionSelectedIndex);
+  });
 
   /** Cap browse/search so opening the panel does not mount ~1k+ buttons and freeze the UI. */
   const EMOJI_BROWSE_LIMIT = 100;
@@ -601,8 +629,8 @@
     }
     return out;
   })();
-  $: recentEmojis = $recentEmojisStore;
-  $: searchResults = (() => {
+  let recentEmojis = $derived($recentEmojisStore);
+  let searchResults = $derived.by(() => {
     const q = emojiSearchQuery.trim();
     if (!q) return [];
     const seen = new Set<string>();
@@ -614,7 +642,7 @@
       if (out.length >= EMOJI_SEARCH_LIMIT) break;
     }
     return out;
-  })();
+  });
 
   async function insertEmoji(emoji: string) {
     if (disabled) return;
@@ -670,7 +698,7 @@
 
   type StickerGroup = { pack: StickerPack; entries: StickerEntry[] };
 
-  $: stickerGroups = ((): StickerGroup[] => {
+  let stickerGroups = $derived.by((): StickerGroup[] => {
     const q = emojiSearchQuery.trim().toLowerCase();
     const groups: StickerGroup[] = [];
     for (const pack of $stickerPacks) {
@@ -681,7 +709,7 @@
       if (entries.length > 0) groups.push({ pack, entries });
     }
     return groups;
-  })();
+  });
 
   const STICKER_MIME_EXTENSIONS: Record<string, string> = {
     'image/png': 'png',
@@ -690,7 +718,7 @@
     'image/webp': 'webp',
   };
 
-  let stickerImageCache: Record<string, string> = {};
+  let stickerImageCache: Record<string, string> = $state({});
 
   async function ensureStickerImageCached(entry: StickerEntry) {
     if (stickerImageCache[entry.url]) return;
@@ -748,16 +776,16 @@
   }
 
   // GIFs tab (Klipy). Debounced search/trending, gated on the opt-in disclosure.
-  let gifsDisclosureAccepted = false;
-  let gifsResults: KlipyGif[] = [];
+  let gifsDisclosureAccepted = $state(false);
+  let gifsResults: KlipyGif[] = $state([]);
   let gifsPage = 1;
   let gifsHasMore = false;
-  let gifsLoading = false;
-  let gifsFetchFailed = false;
-  let gifsConfigured: boolean | null = null;
+  let gifsLoading = $state(false);
+  let gifsFetchFailed = $state(false);
+  let gifsConfigured: boolean | null = $state(null);
   let gifsRequestToken = 0;
 
-  let gifThumbCache: Record<string, string> = {};
+  let gifThumbCache: Record<string, string> = $state({});
 
   /** Revokes every cached GIF thumbnail blob URL and clears the cache. Called from every
    * teardown point (destroy, panel close, tab switch away from GIFs, and before a fresh
@@ -841,15 +869,19 @@
     }
   }
 
-  $: if (emojiPanelOpen && emojiPanelTab === 'gifs' && gifsDisclosureAccepted) {
-    gifsSearchScheduler.scheduleSearch(emojiSearchQuery);
-  }
-
-  $: if (emojiPanelTab === 'gifs') {
-    for (const gif of gifsResults) {
-      void ensureGifThumbCached(gif);
+  $effect(() => {
+    if (emojiPanelOpen && emojiPanelTab === 'gifs' && gifsDisclosureAccepted) {
+      gifsSearchScheduler.scheduleSearch(emojiSearchQuery);
     }
-  }
+  });
+
+  $effect(() => {
+    if (emojiPanelTab === 'gifs') {
+      for (const gif of gifsResults) {
+        void ensureGifThumbCached(gif);
+      }
+    }
+  });
 
   function handleGifsDisclosureAccept() {
     acceptGifsDisclosure();
