@@ -40,20 +40,20 @@
 {#each tokens as token, i (i)}
 	{#if token.kind === 'mention'}
 		<span
-			class="inline-flex items-center rounded-sm bg-primary/22 px-1.5 py-px font-medium whitespace-nowrap text-mention-accent"
+			class="inline-flex items-center rounded-sm bg-primary/22 px-1.5 py-0.5 align-baseline text-[0.92em] leading-none font-medium whitespace-nowrap text-mention-accent"
 		>
 			{token.value}
 		</span>
 	{:else if token.kind === 'channel'}
 		<span
-			class="inline-flex items-center rounded-sm bg-accent/90 px-1.5 py-px font-medium whitespace-nowrap text-foreground"
+			class="inline-flex items-center rounded-sm bg-accent/90 px-1.5 py-0.5 align-baseline text-[0.92em] leading-none font-medium whitespace-nowrap text-foreground"
 		>
 			{token.value}
 		</span>
 	{:else if token.kind === 'proposal'}
 		{@const title = proposalTitleFor?.(token.value) ?? $t('design.chat.proposalFallback')}
 		<span
-			class="inline-flex max-w-[min(100%,20rem)] items-center gap-1 rounded-sm bg-warning/14 px-1.5 py-px font-medium text-warning shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--warning)_28%,transparent)]"
+			class="inline-flex max-w-[min(100%,20rem)] items-center gap-1 rounded-sm bg-warning/14 px-1.5 py-0.5 align-baseline text-[0.92em] leading-none font-medium text-warning shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--warning)_28%,transparent)]"
 		>
 			<span class="shrink-0 font-semibold tabular-nums opacity-80">{token.value}</span>
 			<span class="min-w-0 truncate">{title}</span>

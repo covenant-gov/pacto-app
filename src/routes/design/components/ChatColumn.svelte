@@ -35,9 +35,6 @@
 		onToggleMembers?: () => void;
 	} = $props();
 
-	const pollsChannel = '#polls';
-	const governanceChannel = '#governance';
-
 	function authorClass(role?: Message['role']): string {
 		if (role === 'admin') return 'text-warning';
 		if (role === 'qm') return 'text-role-quartermaster';
@@ -48,21 +45,28 @@
 
 <div class="flex h-full min-w-0 flex-1 flex-col bg-muted">
 	<div class="flex h-12 shrink-0 items-center gap-2 bg-muted px-4">
+		<div class="flex min-w-0 flex-1 items-center gap-2">
+			<span class="grid size-5 shrink-0 place-items-center text-muted-foreground" aria-hidden="true">
+				{#if announcementOnly}
+					<Megaphone class="size-4" />
+				{:else if channelCategory === 'squad'}
+					<Pin class="size-4" />
+				{:else}
+					<Hash class="size-4" />
+				{/if}
+			</span>
+			<h1 class="m-0 truncate text-[15px] leading-5 font-semibold tracking-[0.01em] text-foreground">
+				{channelName}
+			</h1>
+			{#if announcementOnly}
+				<span class="shrink-0 text-xs leading-5 text-muted-foreground">{$t('design.chat.broadcastOnly')}</span>
+			{/if}
+		</div>
 		{#if announcementOnly}
-			<Megaphone class="size-[18px] shrink-0 text-muted-foreground" aria-hidden="true" />
-		{:else if channelCategory === 'squad'}
-			<Pin class="size-[18px] shrink-0 text-muted-foreground" aria-hidden="true" />
-		{:else}
-			<Hash class="size-[18px] shrink-0 text-muted-foreground" aria-hidden="true" />
-		{/if}
-		<span class="text-[15px] leading-none font-semibold tracking-[0.01em] text-foreground">{channelName}</span>
-		{#if announcementOnly}
-			<span class="text-xs leading-none text-muted-foreground">{$t('design.chat.broadcastOnly')}</span>
-			<Button variant="outline" size="sm" class="ml-auto h-7 px-2.5 text-xs">{$t('design.chat.follow')}</Button>
+			<Button variant="outline" size="sm" class="h-7 px-2.5 text-xs">{$t('design.chat.follow')}</Button>
 		{/if}
 		{#if onToggleMembers}
 			<AsideToggleButton
-				class={announcementOnly ? '' : 'ml-auto'}
 				collapsed={membersCollapsed}
 				openLabel={$t('design.shell.openMembers')}
 				closeLabel={$t('design.shell.closeMembers')}
@@ -71,27 +75,11 @@
 		{/if}
 	</div>
 
-	{#if announcementOnly}
-		<div class="flex shrink-0 items-center gap-2.5 bg-muted px-4 py-2.5 text-xs leading-[1.4] text-muted-foreground">
-			<Megaphone class="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-			<p class="m-0 min-w-0 text-pretty">
-				{$t('design.chat.announceLead')}
-				<span class="inline-flex items-center rounded-sm bg-accent/90 px-1.5 py-px font-medium text-foreground">
-					{pollsChannel}
-				</span>
-				{$t('design.chat.announceMid')}
-				<span class="inline-flex items-center rounded-sm bg-accent/90 px-1.5 py-px font-medium text-foreground">
-					{governanceChannel}
-				</span>
-			</p>
-		</div>
-	{/if}
-
 	<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-tl-lg bg-background">
 		<ScrollArea.Root class="min-h-0 flex-1">
-			<div class="flex flex-col gap-4 px-4 py-4">
+			<div class="flex flex-col gap-5 px-5 py-5">
 				{#each messages as message (message.id)}
-					<div class="flex items-start gap-3">
+					<div class="flex items-start gap-3.5">
 						<MessageAuthorAvatar
 							kind={message.kind}
 							role={message.role}
@@ -99,41 +87,43 @@
 							initials={message.initials}
 							color={message.color}
 						/>
-						<div class="flex min-w-0 flex-1 flex-col gap-1">
-							<div class="flex min-h-5 flex-wrap items-center gap-2">
-								<span class={cn('text-sm leading-none font-medium tracking-[0.01em]', authorClass(message.role))}>
-									{message.author}
-								</span>
-								{#if message.role === 'cm'}
-									<Badge variant="bot">{$t('design.chat.bot')}</Badge>
-								{/if}
-								<span class="text-[11px] leading-none text-muted-foreground tabular-nums">
-									{message.time}
-								</span>
-								{#if message.network}
-									<span class="text-[11px] leading-none text-muted-foreground" aria-hidden="true">·</span>
-									<span class="text-[11px] leading-none text-muted-foreground tabular-nums">
-										{message.network}
+						<div class="flex min-w-0 flex-1 flex-col gap-2.5">
+							<div class="flex flex-col gap-1">
+								<div class="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
+									<span class={cn('text-sm leading-none font-semibold tracking-[0.01em]', authorClass(message.role))}>
+										{message.author}
 									</span>
-								{/if}
-								{#if announcementOnly}
-									<span class="text-[11px] leading-none text-muted-foreground opacity-70">
-										{$t('design.chat.published')}
+									{#if message.role === 'cm'}
+										<Badge variant="bot">{$t('design.chat.bot')}</Badge>
+									{/if}
+									<span class="text-xs leading-none text-muted-foreground tabular-nums">
+										{message.time}
 									</span>
+									{#if message.network}
+										<span class="text-xs leading-none text-muted-foreground" aria-hidden="true">·</span>
+										<span class="text-xs leading-none text-muted-foreground tabular-nums">
+											{message.network}
+										</span>
+									{/if}
+									{#if announcementOnly}
+										<span class="text-xs leading-none text-muted-foreground">
+											{$t('design.chat.published')}
+										</span>
+									{/if}
+								</div>
+								{#if message.kind === 'gov'}
+									<div class="flex flex-wrap items-baseline gap-1.5 text-[15px] leading-relaxed font-medium text-gov-success">
+										<Landmark class="relative top-px size-3.5 shrink-0" />
+										<span class="min-w-0 text-pretty">
+											<ChatRichText text={message.text} proposalTitleFor={proposalTitle} />
+										</span>
+									</div>
+								{:else}
+									<p class="m-0 text-[15px] leading-relaxed text-pretty text-secondary-foreground">
+										<ChatRichText text={message.text} proposalTitleFor={proposalTitle} />
+									</p>
 								{/if}
 							</div>
-							{#if message.kind === 'gov'}
-								<div class="flex flex-wrap items-baseline gap-1.5 text-sm leading-[1.45] font-medium text-gov-success">
-									<Landmark class="relative top-px size-3.5 shrink-0" />
-									<span class="min-w-0 text-pretty">
-										<ChatRichText text={message.text} proposalTitleFor={proposalTitle} />
-									</span>
-								</div>
-							{:else}
-								<p class="m-0 text-sm leading-[1.45] text-pretty text-secondary-foreground">
-									<ChatRichText text={message.text} proposalTitleFor={proposalTitle} />
-								</p>
-							{/if}
 
 							{#if message.embed?.kind === 'poll'}
 								<PollEmbedCard
@@ -155,6 +145,7 @@
 									closes={message.embed.closes}
 									forPct={message.embed.forPct}
 									againstPct={message.embed.againstPct}
+									quorumNeeded={message.embed.quorumNeeded}
 									{announcementOnly}
 								/>
 							{/if}

@@ -159,6 +159,7 @@ export type MessageEmbed =
 			closes?: string;
 			forPct?: number;
 			againstPct?: number;
+			quorumNeeded?: number;
 	  };
 
 export interface Message {
@@ -298,7 +299,8 @@ export const messagesByChannel: Record<string, Message[]> = {
 				proposalId: 14,
 				closes: '8h left',
 				forPct: 61,
-				againstPct: 39
+				againstPct: 39,
+				quorumNeeded: 75
 			}
 		}
 	],
@@ -383,7 +385,8 @@ export const messagesByChannel: Record<string, Message[]> = {
 				proposalId: 14,
 				closes: '8h left',
 				forPct: 61,
-				againstPct: 39
+				againstPct: 39,
+				quorumNeeded: 75
 			}
 		}
 	]
