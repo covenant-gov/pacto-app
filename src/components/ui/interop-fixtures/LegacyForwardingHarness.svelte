@@ -1,5 +1,7 @@
+<svelte:options runes={false} />
+
 <script lang="ts">
-  /** R27 fixture: legacy-mode parent listening on a runes-mode child's forwarded on:click. */
+  /** Legacy-mode parent listening on a runes-mode child's forwarded on:click. */
   import ForwardingChild from './ForwardingChild.svelte';
 
   export let onForwardedClick: () => void;

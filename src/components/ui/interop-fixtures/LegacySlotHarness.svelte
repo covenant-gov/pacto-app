@@ -1,5 +1,7 @@
+<svelte:options runes={false} />
+
 <script lang="ts">
-  /** R27 fixture: legacy-mode parent passing default slot content into a still-<slot /> runes child. */
+  /** Legacy-mode parent passing default slot content into a still-<slot /> runes child. */
   import SlotChild from './SlotChild.svelte';
 
   export let message: string;

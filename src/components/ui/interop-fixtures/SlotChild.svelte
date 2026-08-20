@@ -1,7 +1,7 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  /** R27 fixture: runes-mode child still using the deprecated <slot /> element. */
+  /** Runes-mode child still using the deprecated <slot /> element. */
 </script>
 
 <!-- svelte-ignore slot_element_deprecated -->
