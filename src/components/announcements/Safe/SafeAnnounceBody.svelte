@@ -1,3 +1,5 @@
+<svelte:options runes={true} />
+
 <script lang="ts">
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -14,11 +16,17 @@
   import { formatMessageTimestamp } from '../../../lib/utils/message-formatting';
 
   /** Safe-related announcement (address updated or proposal). */
-  export let announce:
-    | { type: typeof ANNOUNCE_TYPE_SAFE_UPDATED; payload: SafeUpdatedPayload }
-    | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload };
-  export let authorName: string = '';
-  export let timestamp: string = '';
+  let {
+    announce,
+    authorName = '',
+    timestamp = '',
+  }: {
+    announce:
+      | { type: typeof ANNOUNCE_TYPE_SAFE_UPDATED; payload: SafeUpdatedPayload }
+      | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload };
+    authorName?: string;
+    timestamp?: string;
+  } = $props();
 
   const tFn = get(t);
 
@@ -27,17 +35,18 @@
     return addr.slice(0, 6) + '…' + addr.slice(-4);
   }
 
-  $: safePayload = announce.type === ANNOUNCE_TYPE_SAFE_UPDATED ? announce.payload : null;
-  $: chainId = safePayload ? parseSupportedChainId(safePayload.chain) : parseSupportedChainId('sepolia');
-  $: txHash =
-    safePayload?.tx_hash?.trim() && safePayload.tx_hash.trim().length > 0
-      ? safePayload.tx_hash.trim()
-      : '';
-  $: explorerTx =
-    safePayload?.explorer_tx_url?.trim() ||
-    (txHash ? getExplorerTxUrl(chainId, txHash) : null);
-  $: safeExplorerUrl = safePayload ? explorerAddressUrl(chainId, safePayload.safe_address) : '';
-  $: safeAppUrl = safePayload ? safeAppHomeUrl(chainId, safePayload.safe_address) : '';
+  const safePayload = $derived(announce.type === ANNOUNCE_TYPE_SAFE_UPDATED ? announce.payload : null);
+  const chainId = $derived(
+    safePayload ? parseSupportedChainId(safePayload.chain) : parseSupportedChainId('sepolia')
+  );
+  const txHash = $derived(
+    safePayload?.tx_hash?.trim() && safePayload.tx_hash.trim().length > 0 ? safePayload.tx_hash.trim() : ''
+  );
+  const explorerTx = $derived(
+    safePayload?.explorer_tx_url?.trim() || (txHash ? getExplorerTxUrl(chainId, txHash) : null)
+  );
+  const safeExplorerUrl = $derived(safePayload ? explorerAddressUrl(chainId, safePayload.safe_address) : '');
+  const safeAppUrl = $derived(safePayload ? safeAppHomeUrl(chainId, safePayload.safe_address) : '');
 
   async function copySafeAddress(addr: string) {
     const ok = await copyTextToClipboard(addr);

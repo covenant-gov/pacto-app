@@ -1,3 +1,5 @@
+<svelte:options runes={true} />
+
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import {
@@ -16,12 +18,20 @@
   import { isPactoGovGovernanceProvider } from '../../lib/announcements';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
-  export let id: string = '';
-  export let announce: AnnounceMessage;
-  export let authorName: string = '';
-  /** Sender npub (MLS group messages); used for first-person vs third-person copy on signer-share cards. */
-  export let authorNpub: string | undefined = undefined;
-  export let timestamp: string = '';
+  let {
+    id = '',
+    announce,
+    authorName = '',
+    authorNpub = undefined,
+    timestamp = '',
+  }: {
+    id?: string;
+    announce: AnnounceMessage;
+    authorName?: string;
+    /** Sender npub (MLS group messages); used for first-person vs third-person copy on signer-share cards. */
+    authorNpub?: string;
+    timestamp?: string;
+  } = $props();
 
   type SafeAnnounceOnly = Extract<
     AnnounceMessage,
@@ -29,19 +39,23 @@
     | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL }
   >;
 
-  $: safeAnnounceOnly =
+  const safeAnnounceOnly = $derived(
     announce.type === ANNOUNCE_TYPE_SAFE_UPDATED || announce.type === ANNOUNCE_TYPE_SAFE_PROPOSAL
       ? (announce as SafeAnnounceOnly)
-      : null;
+      : null
+  );
 
-  $: signerSharePayload =
-    announce.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE ? announce.payload : null;
+  const signerSharePayload = $derived(
+    announce.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE ? announce.payload : null
+  );
 
-  $: dashboardPollPayload =
-    announce.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ? announce.payload : null;
+  const dashboardPollPayload = $derived(
+    announce.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ? announce.payload : null
+  );
 
-  $: governanceUpdatedPayload =
-    announce.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED ? announce.payload : null;
+  const governanceUpdatedPayload = $derived(
+    announce.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED ? announce.payload : null
+  );
 </script>
 
 <div class="announce-card" id={id ? `msg-${id}` : undefined} data-announce-type={announce.type}>
