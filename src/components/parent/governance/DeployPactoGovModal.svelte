@@ -34,6 +34,7 @@
   let customizeParams = false;
   let crewChangeDelaySecs = PRODUCTION_SQUAD_PARAMS.crewChangeDelaySecs;
   let proposalExpirySecs = PRODUCTION_SQUAD_PARAMS.proposalExpirySecs;
+  let crewVoteMode = PRODUCTION_SQUAD_PARAMS.crewVoteMode;
   let quorumBps = PRODUCTION_SQUAD_PARAMS.quorumBps;
 
   $: customizeInvalid =
@@ -41,7 +42,7 @@
     !!validateSquadParams({
       crewChangeDelaySecs,
       proposalExpirySecs,
-      crewVoteMode: 'majority',
+      crewVoteMode,
       quorumBps,
     });
 
@@ -82,7 +83,7 @@
     const squadParams = squadParamsIfCustomized(customizeParams, {
       crewChangeDelaySecs,
       proposalExpirySecs,
-      crewVoteMode: 'majority',
+      crewVoteMode,
       quorumBps,
     });
     if (squadParams && validateSquadParams(squadParams)) {
@@ -151,6 +152,7 @@
     bind:customizing={customizeParams}
     bind:crewChangeDelaySecs
     bind:proposalExpirySecs
+    bind:crewVoteMode
     bind:quorumBps
   />
 

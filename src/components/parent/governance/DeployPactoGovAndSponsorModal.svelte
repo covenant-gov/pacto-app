@@ -74,6 +74,7 @@
   let customizeParams = false;
   let crewChangeDelaySecs = PRODUCTION_SQUAD_PARAMS.crewChangeDelaySecs;
   let proposalExpirySecs = PRODUCTION_SQUAD_PARAMS.proposalExpirySecs;
+  let crewVoteMode = PRODUCTION_SQUAD_PARAMS.crewVoteMode;
   let quorumBps = PRODUCTION_SQUAD_PARAMS.quorumBps;
 
   $: sponsorOnly = !!existingTopHatId.trim();
@@ -258,7 +259,7 @@
       : squadParamsIfCustomized(customizeParams, {
           crewChangeDelaySecs,
           proposalExpirySecs,
-          crewVoteMode: 'majority',
+          crewVoteMode,
           quorumBps,
         });
     if (squadParams && validateSquadParams(squadParams)) {
@@ -407,7 +408,7 @@
     !!validateSquadParams({
       crewChangeDelaySecs,
       proposalExpirySecs,
-      crewVoteMode: 'majority',
+      crewVoteMode,
       quorumBps,
     });
 
@@ -599,6 +600,7 @@
       bind:customizing={customizeParams}
       bind:crewChangeDelaySecs
       bind:proposalExpirySecs
+      bind:crewVoteMode
       bind:quorumBps
       disabled={deploying}
     />

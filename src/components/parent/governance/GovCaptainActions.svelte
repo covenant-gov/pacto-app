@@ -1,6 +1,7 @@
 <script lang="ts">
   import GovCtaButton from './GovCtaButton.svelte';
   import GovProposeForm from './GovProposeForm.svelte';
+  import CrewVoteModeSettings from './CrewVoteModeSettings.svelte';
   import GovBootstrapCrewModal from './GovBootstrapCrewModal.svelte';
   import {
     getQuartermasterPending,
@@ -144,6 +145,15 @@
       <h5 id="captain-ta-heading" class="contract-title">{$t('governance.title.treasuryAuthority')}</h5>
 
       <GovProposeForm
+        {network}
+        {parentId}
+        {treasuryAuthority}
+        {privilege}
+        {fundingHint}
+        onSubmitted={onRefreshProposals}
+      />
+
+      <CrewVoteModeSettings
         {network}
         {parentId}
         {treasuryAuthority}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type Abi, encodeFunctionData, parseEther } from 'viem';
 import erc20Write from '../evm/abis/erc20-write.json';
+import { encodeSetCrewVoteMode, encodeSetQuorumBps } from './crew-vote-mode';
 import {
   formatNativeEthAmount,
   isDelegateCallOperation,
@@ -129,6 +130,40 @@ describe('summarizeTreasuryProposalAction', () => {
     });
     expect(summary.kind).toBe('native_transfer');
     expect(summary.isDelegateCall).toBe(true);
+  });
+
+  it('decodes setCrewVoteMode', () => {
+    const dataHex = encodeSetCrewVoteMode('quorum');
+    const summary = summarizeTreasuryProposalAction({
+      to: RECIPIENT,
+      valueWei: '0',
+      dataHex,
+      operation: 'call',
+    });
+    expect(summary).toEqual({
+      kind: 'set_crew_vote_mode',
+      mode: 'quorum',
+      to: RECIPIENT,
+      valueWei: '0',
+      isDelegateCall: false,
+    });
+  });
+
+  it('decodes setQuorumBps', () => {
+    const dataHex = encodeSetQuorumBps(2500);
+    const summary = summarizeTreasuryProposalAction({
+      to: RECIPIENT,
+      valueWei: '0',
+      dataHex,
+      operation: 'call',
+    });
+    expect(summary).toEqual({
+      kind: 'set_quorum_bps',
+      quorumBps: 2500,
+      to: RECIPIENT,
+      valueWei: '0',
+      isDelegateCall: false,
+    });
   });
 });
 

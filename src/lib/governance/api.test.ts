@@ -24,6 +24,7 @@ import {
   listSquadInfra,
   listQuartermasterPending,
   listTreasuryProposals,
+  getTreasuryVoteConfig,
   pactoGovInfraId,
   pactoGovInfraRow,
   pactoGovTreasuryEntryId,
@@ -469,6 +470,16 @@ describe('api command wrappers', () => {
       network: NETWORK,
       treasuryAuthority: '0xabc',
       maxScan: 50,
+      rpcUrls: null,
+    });
+  });
+
+  it('getTreasuryVoteConfig sends get_treasury_vote_config', async () => {
+    mockedInvoke.mockResolvedValueOnce({ crewVoteMode: 'majority', quorumBps: 3000 });
+    await getTreasuryVoteConfig({ network: NETWORK, treasuryAuthority: '0xabc' });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_treasury_vote_config', {
+      network: NETWORK,
+      treasuryAuthority: '0xabc',
       rpcUrls: null,
     });
   });

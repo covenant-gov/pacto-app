@@ -10652,6 +10652,7 @@ pub fn run() {
             evm::treasury_authority_write::treasury_authority_captain_vote,
             evm::treasury_authority_write::treasury_authority_execute,
             evm::treasury_proposals_read::list_treasury_proposals,
+            evm::treasury_proposals_read::get_treasury_vote_config,
             evm::treasury_proposals_read::treasury_proposal_has_voted,
             evm::mutiny_ops::get_mutiny_status,
             evm::mutiny_ops::mutiny_has_voted,

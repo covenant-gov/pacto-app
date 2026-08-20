@@ -6,6 +6,8 @@
 import { type Abi, type Address, decodeFunctionData, type Hex } from 'viem';
 import erc20Write from '../evm/abis/erc20-write.json';
 import { normalizeCalldataHex, weiStringToEthDisplay } from '../evm/calldata-builder';
+import { decodeTreasuryVoteCall } from './crew-vote-mode';
+import type { CrewVoteMode } from './squad-params';
 
 const ERC20_WRITE_ABI = erc20Write as Abi;
 
@@ -36,6 +38,20 @@ export type ProposalActionSummary =
       token: string;
       spender: string;
       amountRaw: string;
+      valueWei: string;
+      isDelegateCall: boolean;
+    }
+  | {
+      kind: 'set_crew_vote_mode';
+      mode: CrewVoteMode;
+      to: string;
+      valueWei: string;
+      isDelegateCall: boolean;
+    }
+  | {
+      kind: 'set_quorum_bps';
+      quorumBps: number;
+      to: string;
       valueWei: string;
       isDelegateCall: boolean;
     }
@@ -91,6 +107,26 @@ export function summarizeTreasuryProposalAction(input: ProposalActionInput): Pro
 
   if (data === '0x') {
     return { kind: 'native_transfer', to, valueWei, isDelegateCall };
+  }
+
+  const voteCall = decodeTreasuryVoteCall(data);
+  if (voteCall?.kind === 'set_crew_vote_mode') {
+    return {
+      kind: 'set_crew_vote_mode',
+      mode: voteCall.mode,
+      to,
+      valueWei,
+      isDelegateCall,
+    };
+  }
+  if (voteCall?.kind === 'set_quorum_bps') {
+    return {
+      kind: 'set_quorum_bps',
+      quorumBps: voteCall.quorumBps,
+      to,
+      valueWei,
+      isDelegateCall,
+    };
   }
 
   try {

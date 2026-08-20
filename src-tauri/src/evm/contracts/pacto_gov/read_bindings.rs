@@ -74,6 +74,14 @@ sol! {
         function captainVote(uint256 _proposalId, bool _support) external;
 
         function execute(uint256 _proposalId) external;
+
+        function crewVoteMode() external view returns (CrewVoteMode _mode);
+
+        function quorumBps() external view returns (uint256 _quorumBps);
+
+        function setCrewVoteMode(CrewVoteMode _mode) external;
+
+        function setQuorumBps(uint256 _quorumBps) external;
     }
 
     interface IMutinyModule {

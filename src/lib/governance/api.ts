@@ -561,6 +561,24 @@ export async function listTreasuryProposals(params: {
   })) as TreasuryProposalDto[];
 }
 
+export interface TreasuryVoteConfigDto {
+  crewVoteMode: string;
+  quorumBps: number;
+}
+
+/** Backend: `get_treasury_vote_config`. */
+export async function getTreasuryVoteConfig(params: {
+  network: string;
+  treasuryAuthority: string;
+  parentId?: string | null;
+}): Promise<TreasuryVoteConfigDto> {
+  return (await invoke('get_treasury_vote_config', {
+    network: params.network,
+    treasuryAuthority: params.treasuryAuthority.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as TreasuryVoteConfigDto;
+}
+
 export async function treasuryProposalHasVoted(params: {
   network: string;
   treasuryAuthority: string;
