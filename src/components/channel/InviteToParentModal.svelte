@@ -1,35 +1,57 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
 
-  export let open = false;
-  export let parentName = '';
-  export let title = '';
-  export let subtitle = '';
-  export let candidates: string[] = [];
-  export let selectedNpubs: string[] = [];
-  export let inviteByNpub = '';
-  export let loading = false;
-  export let emptyMessage = '';
-  export let error = '';
-  export let inviting = false;
+  interface Props {
+    open?: boolean;
+    parentName?: string;
+    title?: string;
+    subtitle?: string;
+    candidates?: string[];
+    selectedNpubs?: string[];
+    inviteByNpub?: string;
+    loading?: boolean;
+    emptyMessage?: string;
+    error?: string;
+    inviting?: boolean;
+    onClose?: () => void;
+    onInvite?: () => void;
+    onToggleCandidate?: (npub: string) => void;
+    /** Used to display each candidate's name in the list. */
+    getCandidateDisplayName?: (npub: string) => string;
+  }
 
-  export let onClose: () => void = () => {};
-  export let onInvite: () => void = () => {};
-  export let onToggleCandidate: (npub: string) => void = () => {};
-  /** Used to display each candidate's name in the list. */
-  export let getCandidateDisplayName: (npub: string) => string = (npub) => npub;
-
-  $: canInvite =
-    (selectedNpubs.length > 0 || inviteByNpub.trim().length > 0) && !inviting;
+  let {
+    open = false,
+    parentName = '',
+    title = '',
+    subtitle = '',
+    candidates = [],
+    selectedNpubs = $bindable([]),
+    inviteByNpub = $bindable(''),
+    loading = false,
+    emptyMessage = '',
+    error = '',
+    inviting = false,
+    onClose = () => {},
+    onInvite = () => {},
+    onToggleCandidate = () => {},
+    getCandidateDisplayName = (npub) => npub,
+  }: Props = $props();
 
   const titleId = 'invite-to-parent-modal-title';
-  $: resolvedTitle = title || $t('messaging.inviteParent.title');
-  $: ariaLabel = $t('messaging.inviteParent.forAria', {
-    values: {
-      title: resolvedTitle,
-      parentName: parentName || $t('messaging.inviteParent.defaultParent'),
-    },
-  });
+
+  let canInvite = $derived(
+    (selectedNpubs.length > 0 || inviteByNpub.trim().length > 0) && !inviting
+  );
+  let resolvedTitle = $derived(title || $t('messaging.inviteParent.title'));
+  let ariaLabel = $derived(
+    $t('messaging.inviteParent.forAria', {
+      values: {
+        title: resolvedTitle,
+        parentName: parentName || $t('messaging.inviteParent.defaultParent'),
+      },
+    })
+  );
 </script>
 
 {#if open}
