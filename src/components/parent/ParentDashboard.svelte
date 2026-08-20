@@ -744,7 +744,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {squadMemberEvmByNpub}
               {squadNetwork}
               hasGovernance={hasPactoGov}
-              {hasSquadAdmin}
               {captainWearers}
               {crewWearers}
               onOpenDeploy={openLaunchpad}

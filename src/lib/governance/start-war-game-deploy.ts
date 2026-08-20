@@ -1,6 +1,14 @@
-import { deployWarGameForParent, type SquadSponsorDeploySignerWallet, type WarGameDeployResultDto } from './api';
+import {
+  deployWarGameForParent,
+  quartermasterBootstrapCrew,
+  type SquadSponsorDeploySignerWallet,
+  type WarGameDeployResultDto,
+} from './api';
 import { announceWarGameUpdated } from './war-game-announce';
+import { bootstrapCrewCandidates } from './start-pacto-gov-and-sponsor-deploy';
 import { runOnChainInBackground } from '../evm/on-chain-background';
+import { resolveSquadRosterEvmAddress } from '../squad/squad-roster-binding';
+import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import { getAddress, isAddress } from 'viem';
 import { showToast } from '../../stores/toast';
 import type { SquadParamsInput } from './squad-params';
@@ -18,6 +26,34 @@ function normalizeCaptainAddress(raw: string): string | null {
   }
 }
 
+/** Mint crew hats after deploy when the starter is this round's captain. Soft-fails. */
+export async function maybeBootstrapWarGameCrew(params: {
+  parentId: string;
+  captain: string;
+  quartermaster: string;
+  memberOptions: { address: string; label?: string }[];
+}): Promise<'bootstrapped' | 'skipped' | 'failed'> {
+  const qm = params.quartermaster.trim();
+  if (!qm) return 'skipped';
+  const candidates = bootstrapCrewCandidates(params.memberOptions, params.captain);
+  if (candidates.length === 0) return 'skipped';
+  const myRoster = normalizeCaptainAddress((await resolveSquadRosterEvmAddress(params.parentId)) ?? '');
+  const captain = normalizeCaptainAddress(params.captain);
+  if (!myRoster || !captain || myRoster.toLowerCase() !== captain.toLowerCase()) return 'skipped';
+  try {
+    await quartermasterBootstrapCrew({
+      network: 'sepolia',
+      parentId: params.parentId,
+      quartermaster: qm,
+      candidates,
+    });
+    return 'bootstrapped';
+  } catch (e) {
+    showToast(getInvokeErrorMessage(e, 'Crew bootstrap failed.'));
+    return 'failed';
+  }
+}
+
 /** Submit Sepolia war-game deploy. Returns false when validation fails. */
 export function startWarGameDeploy(params: {
   parentId: string;
@@ -26,6 +62,8 @@ export function startWarGameDeploy(params: {
   initialDepositWei: string;
   signerWallet?: SquadSponsorDeploySignerWallet;
   squadParams?: SquadParamsInput | null;
+  memberOptions?: { address: string; label?: string }[];
+  bootstrapCrew?: boolean;
   onComplete: (out: WarGameDeployComplete) => void | Promise<void>;
   onReject?: (message: string) => void;
   onError?: (message: string) => void;
@@ -35,7 +73,7 @@ export function startWarGameDeploy(params: {
 
   const captain = normalizeCaptainAddress(params.captain);
   if (!captain) {
-    const message = 'Your squad-assigned EVM is required as captain.';
+    const message = 'A roster EVM is required as captain.';
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -60,6 +98,8 @@ export function startWarGameDeploy(params: {
 
   const announcements = params.announcementsGroupId?.trim() || '';
   const altParentId = announcements && announcements !== parentId ? announcements : null;
+  const memberOptions = params.memberOptions ?? [];
+  const bootstrapCrew = params.bootstrapCrew !== false;
 
   runOnChainInBackground({
     startedToast: 'War-game deploy submitted. Confirmation continues in the background.',
@@ -80,6 +120,14 @@ export function startWarGameDeploy(params: {
         announcementsGroupId: announcements || null,
         result,
       });
+      if (bootstrapCrew) {
+        await maybeBootstrapWarGameCrew({
+          parentId,
+          captain,
+          quartermaster: result.quartermaster,
+          memberOptions,
+        });
+      }
       await params.onComplete(result);
     },
     onError: params.onError,

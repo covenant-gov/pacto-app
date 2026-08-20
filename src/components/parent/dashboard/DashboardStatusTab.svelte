@@ -19,8 +19,12 @@
     type ChecklistItemState,
   } from '../../../lib/governance/squad-sponsor-crew';
   import { squadInfraByParentId } from '../../../stores/squads';
-  import { pactoGovWargameInfraRow } from '../../../lib/governance/api';
+  import { pactoGovInfraRow, pactoGovWargameInfraRow } from '../../../lib/governance/api';
+  import { hasSquadAdminInfra } from '../../../lib/governance/squad-admin-payload';
   import { syncSquadInfraForParent } from '../../../lib/dashboard/dashboard-data-sync';
+  import { openSquadWargame } from '../../../lib/navigation/open-squad-dashboard';
+  import { WAR_GAME_PUBLIC_RULES_URL } from '../../../lib/governance/war-game-links';
+  import { openExternalUrl } from '../../../lib/utils/open-external';
   import DeployWarGameModal from '../governance/DeployWarGameModal.svelte';
   import { showToast } from '../../../stores/toast';
   import type { WarGameDeployComplete } from '../../../lib/governance/start-war-game-deploy';
@@ -33,7 +37,6 @@
     squadMemberEvmByNpub = {},
     squadNetwork = null,
     hasGovernance = false,
-    hasSquadAdmin = false,
     captainWearers = [],
     crewWearers = [],
     onOpenDeploy = () => {},
@@ -47,7 +50,6 @@
     squadMemberEvmByNpub?: Record<string, string>;
     squadNetwork?: SupportedChainId | null;
     hasGovernance?: boolean;
-    hasSquadAdmin?: boolean;
     captainWearers?: string[];
     crewWearers?: string[];
     onOpenDeploy?: () => void;
@@ -61,10 +63,22 @@
   const myNpub = $derived($currentUser?.npub ?? '');
   const displayEvmByNpub = $derived(squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded));
   const shareEvmState = $derived(allMembersShareEvmState(channelMembers, displayEvmByNpub));
-  const govState = $derived(binaryInfraState(hasGovernance));
-  const adminState = $derived(binaryInfraState(hasSquadAdmin));
-  const warGameRow = $derived(pactoGovWargameInfraRow($squadInfraByParentId[parentId]));
+  const infraRows = $derived($squadInfraByParentId[parentId]);
+  const productionGov = $derived(pactoGovInfraRow(infraRows) != null);
+  const productionAdmin = $derived(hasSquadAdminInfra(infraRows));
+  const govState = $derived(binaryInfraState(productionGov));
+  const adminState = $derived(binaryInfraState(productionAdmin));
+  const warGameRow = $derived(pactoGovWargameInfraRow(infraRows));
   const hasWarGame = $derived(warGameRow != null);
+  const rosterMemberOptions = $derived(
+    channelMembers
+      .map((npub) => {
+        const address = displayEvmByNpub[npub]?.trim();
+        if (!address) return null;
+        return { address };
+      })
+      .filter((row): row is { address: string } => row != null),
+  );
   const crewMintState = $derived(
     mintCrewHatsState({
       hasGovernance,
@@ -90,6 +104,7 @@
     if (out.retiredSponsor) {
       showToast(get(t)('governance.deployWarGame.retiredToast'));
     }
+    openSquadWargame(parentId);
   }
 
   function glyphClass(state: ChecklistItemState): string {
@@ -103,6 +118,16 @@
 
 <section class="status-checklist" aria-label={$t('governance.status.checklistAria')}>
   <span class="meta-label">{$t('governance.status.checklistTitle')}</span>
+  <p class="wargame-nudge">
+    {$t('governance.status.wargameNudge')}
+    <button
+      type="button"
+      class="checklist-action"
+      onclick={() => void openExternalUrl(WAR_GAME_PUBLIC_RULES_URL)}
+    >
+      {$t('governance.status.wargameRulesLink')}
+    </button>
+  </p>
   <ul class="checklist" role="list">
     <li class="checklist-item" class:done={!!squadNetwork}>
       <span class={glyphClass(squadNetwork ? 'done' : 'not_started')} aria-hidden="true"
@@ -124,13 +149,23 @@
       <span class={glyphClass(hasWarGame ? 'done' : 'not_started')} aria-hidden="true"
         >{checklistGlyph(hasWarGame ? 'done' : 'not_started')}</span
       >
-      <button type="button" class="checklist-action" onclick={() => (showWarGameDeploy = true)}>
-        {hasWarGame ? $t('governance.status.redeployWargame') : $t('governance.status.deployWargame')}
-      </button>
+      {#if hasWarGame}
+        <span>{$t('governance.status.wargameDeployed')}</span>
+        <button type="button" class="checklist-action" onclick={() => openSquadWargame(parentId)}>
+          {$t('governance.status.openWargame')}
+        </button>
+        <button type="button" class="checklist-action" onclick={() => (showWarGameDeploy = true)}>
+          {$t('governance.status.redeployWargame')}
+        </button>
+      {:else}
+        <button type="button" class="checklist-action" onclick={() => (showWarGameDeploy = true)}>
+          {$t('governance.status.deployWargame')}
+        </button>
+      {/if}
     </li>
     <li class="checklist-item" class:done={govState === 'done'}>
       <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
-      {#if hasGovernance}
+      {#if productionGov}
         <span>{$t('governance.status.squadGovernance')}</span>
       {:else}
         <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
@@ -138,7 +173,7 @@
     </li>
     <li class="checklist-item" class:done={adminState === 'done'}>
       <span class={glyphClass(adminState)} aria-hidden="true">{checklistGlyph(adminState)}</span>
-      {#if hasSquadAdmin}
+      {#if productionAdmin}
         <span>{$t('governance.status.squadAdmin')}</span>
       {:else}
         <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
@@ -166,6 +201,7 @@
     {parentId}
     {announcementsGroupId}
     redeploy={hasWarGame}
+    memberOptions={rosterMemberOptions}
     onClose={() => (showWarGameDeploy = false)}
     onComplete={handleWarGameComplete}
   />
@@ -191,6 +227,13 @@
     min-width: 5.5rem;
   }
 
+  .wargame-nudge {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+
   .checklist {
     list-style: none;
     margin: 0;
@@ -203,6 +246,7 @@
   .checklist-item {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
   }
 
