@@ -90,8 +90,7 @@
   let replyPreview: string | undefined = undefined;
   $: chatDeleting = $deletingDmNpubs.has(npub);
 
-  function onReply(event: CustomEvent<{ messageId: string }>) {
-    const messageId = event.detail.messageId;
+  function onReply(messageId: string) {
     const msg = messages.find((m) => m.id === messageId);
     if (!msg) return;
     replyToMessageId = messageId;
@@ -577,7 +576,7 @@
           {onDeclineWalletPeerInfoRequest}
           {onOpenInviterChat}
           compact={shouldStackWithPrevious(messages[i - 1], msg)}
-          on:reply={onReply}
+          {onReply}
         />
       {/each}
     {:else}
