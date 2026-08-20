@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { onDestroy, createEventDispatcher } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { revealInFolder, canRevealInFolder } from '../../lib/utils/reveal-in-folder';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { saveAttachmentAs } from '../../lib/api/nostr';
@@ -21,8 +21,7 @@
   export let chatId: string | undefined = undefined;
   export let messageId: string | undefined = undefined;
   export let attachmentId: string | undefined = undefined;
-
-  const dispatch = createEventDispatcher<{ showMessage: { messageId: string } }>();
+  export let onShowMessage: (messageId: string) => void = () => {};
 
   let scale = 1;
   let translateX = 0;
@@ -152,7 +151,7 @@
   /** Closes the viewer and asks the caller to scroll to/highlight this image's source message. */
   function handleShowMessage() {
     closeMenu();
-    if (messageId) dispatch('showMessage', { messageId });
+    if (messageId) onShowMessage(messageId);
     close();
   }
 

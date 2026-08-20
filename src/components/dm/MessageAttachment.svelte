@@ -3,7 +3,7 @@
   import { downloadAttachment, decodeBlurhash, saveAttachmentAs } from '../../lib/api/nostr';
   import { showToast } from '../../stores/toast';
   import { t } from 'svelte-i18n';
-  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import type { Attachment } from '../../stores/dm';
   import { attachmentKind, attachmentDisplayName, type AttachmentKind } from '../../lib/messaging/attachment-display';
   import ImageViewer from './ImageViewer.svelte';
@@ -20,8 +20,7 @@
   export let authorName: string = '';
   export let avatarSrc: string = '';
   export let timestamp: string = '';
-
-  const dispatch = createEventDispatcher<{ showMessage: { messageId: string } }>();
+  export let onShowMessage: (messageId: string) => void = () => {};
 
   const KIND_LABEL_KEY: Record<AttachmentKind, string> = {
     image: 'messaging.attachment.image',
@@ -213,10 +212,6 @@
       savingAs = false;
     }
   }
-
-  function forwardShowMessage(event: CustomEvent<{ messageId: string }>) {
-    dispatch('showMessage', event.detail);
-  }
 </script>
 
 <div class="attachment" class:tile-layout={isTile}>
@@ -372,7 +367,7 @@
   {chatId}
   {messageId}
   attachmentId={attachment.id}
-  on:showMessage={forwardShowMessage}
+  {onShowMessage}
 />
 
 <style>

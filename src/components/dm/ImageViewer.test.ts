@@ -178,23 +178,23 @@ describe('ImageViewer', () => {
     expect(document.querySelector('.viewer-menu')).toBeNull();
   });
 
-  it('dispatches showMessage with the message id and closes the viewer when "Show message" is selected', async () => {
-    const showMessageHandler = vi.fn();
+  it('calls onShowMessage with the message id and closes the viewer when "Show message" is selected', async () => {
+    const onShowMessage = vi.fn();
     render(ImageViewer, {
       props: {
         open: true,
         src: 'https://example.com/img.png',
         alt: 'test',
         messageId: 'm42',
+        onShowMessage,
       },
-      events: { showMessage: showMessageHandler },
     });
 
     await fireEvent.click(screen.getByLabelText('More options'));
     await fireEvent.click(screen.getByLabelText('Show message'));
 
-    expect(showMessageHandler).toHaveBeenCalledTimes(1);
-    expect(showMessageHandler.mock.calls[0][0].detail).toEqual({ messageId: 'm42' });
+    expect(onShowMessage).toHaveBeenCalledTimes(1);
+    expect(onShowMessage).toHaveBeenCalledWith('m42');
     expect(screen.queryByRole('dialog', { name: 'Image viewer' })).toBeNull();
   });
 

@@ -174,7 +174,7 @@ describe('MessageAttachment', () => {
     expect(screen.queryByText('Alice')).not.toBeNull();
   });
 
-  it('forwards the image viewer showMessage event as its own', async () => {
+  it('forwards the image viewer showMessage callback as its own', async () => {
     const attachment: Attachment = {
       ...baseAttachment,
       path: '/cache/abc123.png',
@@ -182,8 +182,7 @@ describe('MessageAttachment', () => {
     };
     const onShowMessage = vi.fn();
     render(MessageAttachment, {
-      props: { attachment, chatId: 'npub1abc', messageId: 'm1' },
-      events: { showMessage: onShowMessage },
+      props: { attachment, chatId: 'npub1abc', messageId: 'm1', onShowMessage },
     });
 
     await waitFor(() => {
@@ -195,7 +194,7 @@ describe('MessageAttachment', () => {
     await fireEvent.click(screen.getByLabelText('Show message'));
 
     expect(onShowMessage).toHaveBeenCalledTimes(1);
-    expect(onShowMessage.mock.calls[0][0].detail).toEqual({ messageId: 'm1' });
+    expect(onShowMessage).toHaveBeenCalledWith('m1');
   });
 
   it('downloads a non-image attachment when the file card is clicked', async () => {

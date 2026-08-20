@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import Message from './Message.svelte';
   import InviteCard from './InviteCard.svelte';
   import WalletTxRequestCard from '../wallet/WalletTxRequestCard.svelte';
@@ -62,6 +61,7 @@
     payload: WalletPeerInfoRequestPayload
   ) => void | Promise<void> = () => {};
   export let onOpenInviterChat: ((inviterNpub: string) => void) | undefined = undefined;
+  export let onReply: (messageId: string) => void = () => {};
   /** Nest under previous same-author plain message (hide avatar/header). */
   export let compact: boolean = false;
 
@@ -74,8 +74,6 @@
     !msg.mine && inviterNpubForCard && inviterNpubForCard !== npub && onOpenInviterChat
       ? () => onOpenInviterChat!(inviterNpubForCard!)
       : undefined;
-
-  const dispatch = createEventDispatcher<{ reply: { messageId: string } }>();
 
   async function onReact(messageId: string, emoji: string) {
     try {
@@ -92,10 +90,6 @@
       return;
     }
     navigator.clipboard.writeText(text).catch(() => showToast('Could not copy message'));
-  }
-
-  function onReply(messageId: string) {
-    dispatch('reply', { messageId });
   }
 </script>
 

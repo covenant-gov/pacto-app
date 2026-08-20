@@ -71,10 +71,6 @@
     jumpToMessage(replyToId);
   }
 
-  function handleAttachmentShowMessage(event: CustomEvent<{ messageId: string }>) {
-    jumpToMessage(event.detail.messageId);
-  }
-
   let menuOpen = false;
   let menuX = 0;
   let menuY = 0;
@@ -240,14 +236,14 @@
     reactAndClose(rawEmoji);
   }
 
-  function handleMenuCopy() {
+  function handleMenuCopy(messageId: string, text: string) {
     closeMenu();
-    onCopy(id, displayContent);
+    onCopy(messageId, text);
   }
 
-  function handleMenuReply() {
+  function handleMenuReply(messageId: string) {
     closeMenu();
-    onReply(id);
+    onReply(messageId);
   }
 
   function handleChipClick(emoji: string, includesMe: boolean) {
@@ -404,7 +400,7 @@
               {authorName}
               avatarSrc={avatar}
               {timestamp}
-              on:showMessage={handleAttachmentShowMessage}
+              onShowMessage={jumpToMessage}
             />
           {/each}
         </div>
@@ -525,8 +521,8 @@
         <MessageActionsMenu
           messageId={id}
           text={displayContent}
-          on:copy={handleMenuCopy}
-          on:reply={handleMenuReply}
+          onCopy={handleMenuCopy}
+          onReply={handleMenuReply}
         />
       {:else}
         <div class="reaction-picker-expanded" role="dialog" aria-label={$t('messaging.message.chooseReactionAria')}>
