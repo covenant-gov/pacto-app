@@ -39,40 +39,44 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let parentId: string;
-  export let sponsorRow: SquadInfraDto | null = null;
-  export let onOpenDeploy: (() => void) | undefined = undefined;
+  interface Props {
+    parentId: string;
+    sponsorRow?: SquadInfraDto | null;
+    onOpenDeploy?: () => void;
+  }
+
+  let { parentId, sponsorRow = null, onOpenDeploy = undefined }: Props = $props();
 
   const tFn = get(t);
 
-  let summary: SquadSponsorSummaryDto | null = null;
-  let loading = false;
-  let loadError = '';
-  let depositEth = '0.01';
-  let depositing = false;
-  let depositError = '';
-  let showDepositForm = false;
-  let showWithdrawModal = false;
+  let summary = $state<SquadSponsorSummaryDto | null>(null);
+  let loading = $state(false);
+  let loadError = $state('');
+  let depositEth = $state('0.01');
+  let depositing = $state(false);
+  let depositError = $state('');
+  let showDepositForm = $state(false);
+  let showWithdrawModal = $state(false);
   let periodicRefreshTimer: ReturnType<typeof setInterval> | null = null;
-  let hydratedSponsorKey = '';
-  let signerWallet: SquadSponsorDeploySignerWallet = 'default';
-  let addressesLoading = false;
+  let hydratedSponsorKey = $state('');
+  let signerWallet = $state<SquadSponsorDeploySignerWallet>('default');
+  let addressesLoading = $state(false);
   let refreshSeq = 0;
-  let defaultSignerAddress: string | null = null;
-  let squadSignerAddress: string | null = null;
+  let defaultSignerAddress = $state<string | null>(null);
+  let squadSignerAddress = $state<string | null>(null);
 
-  let defaultBalance: SignerBalance = emptyBalance();
-  let squadBalance: SignerBalance = emptyBalance();
-  let feeUsageRefreshToken = 0;
+  let defaultBalance = $state<SignerBalance>(emptyBalance());
+  let squadBalance = $state<SignerBalance>(emptyBalance());
+  let feeUsageRefreshToken = $state(0);
 
-  $: network = parseSupportedChainId(sponsorRow?.chain);
-  $: poolBalanceWei = summary ? BigInt(summary.poolBalanceWei) : null;
-  $: lowBalance =
-    poolBalanceWei != null && poolBalanceWei < SPONSOR_LOW_BALANCE_WEI;
-  $: explorerUrl =
+  const network = $derived(parseSupportedChainId(sponsorRow?.chain));
+  const poolBalanceWei = $derived(summary ? BigInt(summary.poolBalanceWei) : null);
+  const lowBalance = $derived(poolBalanceWei != null && poolBalanceWei < SPONSOR_LOW_BALANCE_WEI);
+  const explorerUrl = $derived(
     summary?.sponsorAddress &&
-    explorerAddressUrl(parseSupportedChainId(summary.chain), summary.sponsorAddress);
-  $: sponsorKey = sponsorRow?.id ?? '';
+      explorerAddressUrl(parseSupportedChainId(summary.chain), summary.sponsorAddress),
+  );
+  const sponsorKey = $derived(sponsorRow?.id ?? '');
 
   function currentCacheKey(): string | null {
     if (!parentId?.trim() || !sponsorRow) return null;
@@ -130,13 +134,15 @@
     void refreshSummary(false);
   }
 
-  $: if (sponsorKey && parentId?.trim()) {
-    const nextKey = `${parentId}:${sponsorKey}:${network}`;
-    if (nextKey !== hydratedSponsorKey) {
-      hydratedSponsorKey = nextKey;
-      hydrateFromSessionCache();
+  $effect(() => {
+    if (sponsorKey && parentId?.trim()) {
+      const nextKey = `${parentId}:${sponsorKey}:${network}`;
+      if (nextKey !== hydratedSponsorKey) {
+        hydratedSponsorKey = nextKey;
+        hydrateFromSessionCache();
+      }
     }
-  }
+  });
 
   onMount(() => {
     periodicRefreshTimer = setInterval(() => {
@@ -178,54 +184,63 @@
     squadBalance = squadBal;
   }
 
-  $: defaultCanonical = canonicalAddress(defaultSignerAddress);
-  $: squadCanonical = canonicalAddress(squadSignerAddress);
-  $: signersAreSame =
-    defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical;
+  const defaultCanonical = $derived(canonicalAddress(defaultSignerAddress));
+  const squadCanonical = $derived(canonicalAddress(squadSignerAddress));
+  const signersAreSame = $derived(
+    defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical,
+  );
 
-  $: selectedAddress = signersAreSame
-    ? squadCanonical
-    : signerWallet === 'default'
-      ? defaultSignerAddress
-      : squadSignerAddress;
-  $: selectedBalance = signersAreSame
-    ? squadBalance
-    : signerWallet === 'default'
-      ? defaultBalance
-      : squadBalance;
-  $: selectedSymbol = selectedBalance.symbol || 'ETH';
+  const selectedAddress = $derived(
+    signersAreSame
+      ? squadCanonical
+      : signerWallet === 'default'
+        ? defaultSignerAddress
+        : squadSignerAddress,
+  );
+  const selectedBalance = $derived(
+    signersAreSame
+      ? squadBalance
+      : signerWallet === 'default'
+        ? defaultBalance
+        : squadBalance,
+  );
+  const selectedSymbol = $derived(selectedBalance.symbol || 'ETH');
 
-  $: signerUnavailable = signersAreSame
-    ? !squadCanonical
-    : signerWallet === 'default'
-      ? !defaultCanonical
-      : !squadCanonical;
+  const signerUnavailable = $derived(
+    signersAreSame
+      ? !squadCanonical
+      : signerWallet === 'default'
+        ? !defaultCanonical
+        : !squadCanonical,
+  );
 
-  $: depositTrimmed = depositEth.trim();
-  $: depositWeiPreview = (() => {
+  const depositTrimmed = $derived(depositEth.trim());
+  const depositWeiPreview = $derived.by(() => {
     try {
       const wei = parseEther(depositTrimmed.replace(/,/g, ''));
       return wei > 0n ? wei : null;
     } catch {
       return null;
     }
-  })();
+  });
 
-  $: depositExceedsBalance =
+  const depositExceedsBalance = $derived(
     depositWeiPreview != null &&
-    selectedAddress != null &&
-    !addressesLoading &&
-    !selectedBalance.loading &&
-    !selectedBalance.error &&
-    amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
+      selectedAddress != null &&
+      !addressesLoading &&
+      !selectedBalance.loading &&
+      !selectedBalance.error &&
+      amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw),
+  );
 
-  $: canConfirmDeposit =
+  const canConfirmDeposit = $derived(
     !depositing &&
-    !addressesLoading &&
-    !signerUnavailable &&
-    depositWeiPreview != null &&
-    !depositExceedsBalance &&
-    !selectedBalance.loading;
+      !addressesLoading &&
+      !signerUnavailable &&
+      depositWeiPreview != null &&
+      !depositExceedsBalance &&
+      !selectedBalance.loading,
+  );
 
   async function openDepositForm() {
     showDepositForm = true;

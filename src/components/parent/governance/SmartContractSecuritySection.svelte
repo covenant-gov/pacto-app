@@ -35,40 +35,44 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let parentId = '';
-  export let announcementsGroupId = '';
-  /** Interim v1: Pacto Gov deployed (captain-gated mutation ships with on-chain role check). */
-  export let canManage = false;
-  /** Slimmer chrome for Status (collapsed add form by default). */
-  export let compact = false;
+  interface Props {
+    parentId?: string;
+    announcementsGroupId?: string;
+    /** Interim v1: Pacto Gov deployed (captain-gated mutation ships with on-chain role check). */
+    canManage?: boolean;
+    /** Slimmer chrome for Status (collapsed add form by default). */
+    compact?: boolean;
+  }
+
+  let { parentId = '', announcementsGroupId = '', canManage = false, compact = false }: Props = $props();
 
   const tFn = get(t);
 
-  let rows: SquadContractAllowlistRow[] = [];
-  let loading = true;
-  let loadError = '';
+  let rows = $state<SquadContractAllowlistRow[]>([]);
+  let loading = $state(true);
+  let loadError = $state('');
 
-  let addChain: SupportedChainId = DEFAULT_CHAIN_ID;
-  let addAddress = '';
-  let addLabel = '';
-  let addAbiRef = '';
-  let addBusy = false;
-  let addSectionOpen = false;
+  let addChain = $state<SupportedChainId>(DEFAULT_CHAIN_ID);
+  let addAddress = $state('');
+  let addLabel = $state('');
+  let addAbiRef = $state('');
+  let addBusy = $state(false);
+  let addSectionOpen = $state(false);
 
-  let callChain: SupportedChainId = DEFAULT_CHAIN_ID;
-  let callTo = '';
-  let callValueEth = '0';
-  let callDataHex = '0x';
-  let callAbiRef = 'erc20-minimal';
-  let callFunctionName = '';
-  let callArgsJson = '[]';
-  let callMode: 'raw' | 'abi' = 'raw';
-  let callSimOk: boolean | null = null;
-  let callSimMessage = '';
-  let callSimulating = false;
-  let callSending = false;
-  let squadSigner: string | null = null;
-  let callSectionOpen = false;
+  let callChain = $state<SupportedChainId>(DEFAULT_CHAIN_ID);
+  let callTo = $state('');
+  let callValueEth = $state('0');
+  let callDataHex = $state('0x');
+  let callAbiRef = $state('erc20-minimal');
+  let callFunctionName = $state('');
+  let callArgsJson = $state('[]');
+  let callMode = $state<'raw' | 'abi'>('raw');
+  let callSimOk = $state<boolean | null>(null);
+  let callSimMessage = $state('');
+  let callSimulating = $state(false);
+  let callSending = $state(false);
+  let squadSigner = $state<string | null>(null);
+  let callSectionOpen = $state(false);
 
   const shippedAbis = listShippedAbiRefs();
 
@@ -98,8 +102,12 @@
     });
   });
 
-  $: allowlistNonce = $squadAllowlistNonceByParentId[parentId.trim()] ?? 0;
-  $: parentId, allowlistNonce, void refreshRows();
+  const allowlistNonce = $derived($squadAllowlistNonceByParentId[parentId.trim()] ?? 0);
+  $effect(() => {
+    parentId;
+    allowlistNonce;
+    void refreshRows();
+  });
 
   function shortAddr(a: string): string {
     const t = a.trim();
@@ -247,8 +255,8 @@
     });
   }
 
-  $: callTargetLabel = findAllowlistLabel(rows, callChain, callTo);
-  $: canSendCall = callSimOk === true && !!squadSigner && isAddress(callTo.trim());
+  const callTargetLabel = $derived(findAllowlistLabel(rows, callChain, callTo));
+  const canSendCall = $derived(callSimOk === true && !!squadSigner && isAddress(callTo.trim()));
 </script>
 
 <section

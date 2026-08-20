@@ -31,11 +31,15 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let network: string;
-  export let parentId: string;
-  export let safeAddress: string;
-  export let announcementsGroupId = '';
-  export let privilege: GovernancePrivilege;
+  interface Props {
+    network: string;
+    parentId: string;
+    safeAddress: string;
+    announcementsGroupId?: string;
+    privilege: GovernancePrivilege;
+  }
+
+  let { network, parentId, safeAddress, announcementsGroupId = '', privilege }: Props = $props();
 
   type SafeBalancesSnapshot = {
     nativeDecimal: string;
@@ -47,20 +51,22 @@
 
   const tFn = get(t);
 
-  let rows: SquadTrackedTokenRow[] = [];
-  let nativeDecimal = '';
-  let nativeSymbol = '';
-  let tokenBalances: Record<string, string> = {};
-  let loading = false;
-  let refreshing = false;
-  let loadError = '';
-  let addAddress = '';
-  let addBusy = false;
-  let lastLoadKey = '';
+  let rows = $state<SquadTrackedTokenRow[]>([]);
+  let nativeDecimal = $state('');
+  let nativeSymbol = $state('');
+  let tokenBalances = $state<Record<string, string>>({});
+  let loading = $state(false);
+  let refreshing = $state(false);
+  let loadError = $state('');
+  let addAddress = $state('');
+  let addBusy = $state(false);
+  let lastLoadKey = $state('');
 
-  $: manageGate = gateRequiresCaptainOrCrew(privilege);
-  $: chainKey = (parseSupportedChainId(network) ?? network.trim().toLowerCase()) as SupportedChainId;
-  $: safe = safeAddress.trim();
+  const manageGate = $derived(gateRequiresCaptainOrCrew(privilege));
+  const chainKey = $derived(
+    (parseSupportedChainId(network) ?? network.trim().toLowerCase()) as SupportedChainId,
+  );
+  const safe = $derived(safeAddress.trim());
 
   function applySnapshot(snap: SafeBalancesSnapshot) {
     nativeDecimal = snap.nativeDecimal;
@@ -152,15 +158,15 @@
     }
   }
 
-  $: trackedTokensNonce = $squadTrackedTokensNonceByParentId[parentId.trim()] ?? 0;
+  const trackedTokensNonce = $derived($squadTrackedTokensNonceByParentId[parentId.trim()] ?? 0);
 
-  $: {
+  $effect(() => {
     const key = `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}|${trackedTokensNonce}`;
     if (key !== lastLoadKey && parentId.trim() && safeAddress.trim()) {
       lastLoadKey = key;
       void refreshAll(trackedTokensNonce > 0);
     }
-  }
+  });
 
   async function addToken() {
     if (!manageGate.enabled || addBusy) return;
