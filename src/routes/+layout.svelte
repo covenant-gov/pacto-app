@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import '../app.css';
   import Login from '../components/auth/Login.svelte';
   import UpdateGate from '../components/updater/UpdateGate.svelte';
@@ -12,15 +12,19 @@
   import { loadAppConfig } from '../stores/app-config';
   import { runDevAutologin } from '../lib/dev/autologin';
 
+  let { children }: { children: Snippet } = $props();
+
   // Before first paint: clear any leftover auth state. The backend session check on mount
   // is the authoritative source of truth, so never assume the session is still valid.
   isAuthenticated.set(false);
   currentUser.set(null);
 
-  $: if ($locale) {
-    document.documentElement.lang = $locale;
-    document.documentElement.dir = 'ltr';
-  }
+  $effect(() => {
+    if ($locale) {
+      document.documentElement.lang = $locale;
+      document.documentElement.dir = 'ltr';
+    }
+  });
 
   onMount(() => {
     // The storage-format probe must precede any account enumeration -
@@ -46,7 +50,7 @@
   <UpdateGate>
     {#if $isAuthenticated && $currentUser}
       <div class="layout-root">
-        <slot />
+        {@render children()}
       </div>
     {:else}
       <Login />
