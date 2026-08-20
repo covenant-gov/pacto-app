@@ -5,21 +5,26 @@
    * Thread card for private wallet-address exchange (request / grant / decline).
    * Structured content is still parsed for persistence; this is the human-visible summary.
    */
-  export let variant:
-    | 'request-in'
-    | 'request-out'
-    | 'grant-in'
-    | 'grant-out'
-    | 'decline-in'
-    | 'decline-out';
-  export let peerName: string;
-  /** For request-in only. */
-  export let status: 'pending' | 'accepted' | 'declined' = 'pending';
-  export let accepting = false;
-  export let onAccept: (() => void) | undefined = undefined;
-  export let onDecline: (() => void) | undefined = undefined;
+  interface Props {
+    variant: 'request-in' | 'request-out' | 'grant-in' | 'grant-out' | 'decline-in' | 'decline-out';
+    peerName: string;
+    /** For request-in only. */
+    status?: 'pending' | 'accepted' | 'declined';
+    accepting?: boolean;
+    onAccept?: (() => void) | undefined;
+    onDecline?: (() => void) | undefined;
+  }
 
-  $: title = (() => {
+  let {
+    variant,
+    peerName,
+    status = 'pending',
+    accepting = false,
+    onAccept = undefined,
+    onDecline = undefined,
+  }: Props = $props();
+
+  const title = $derived.by(() => {
     switch (variant) {
       case 'request-in':
         return $t('wallet.peerRequestInTitle');
@@ -36,9 +41,9 @@
       default:
         return $t('wallet.walletTitle');
     }
-  })();
+  });
 
-  $: body = (() => {
+  const body = $derived.by(() => {
     switch (variant) {
       case 'request-in':
         return $t('wallet.peerRequestInBody', { values: { peerName } });
@@ -55,9 +60,9 @@
       default:
         return '';
     }
-  })();
+  });
 
-  $: collapsed = variant === 'request-in' && (status === 'accepted' || status === 'declined');
+  const collapsed = $derived(variant === 'request-in' && (status === 'accepted' || status === 'declined'));
 </script>
 
 <div class="wpeer-card" class:collapsed role="article">

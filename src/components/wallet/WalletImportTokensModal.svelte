@@ -14,39 +14,58 @@
   } from '../../lib/wallet/watched-tokens';
   import { appConfig } from '../../stores/app-config';
 
-  export let open = false;
-  export let onClose: () => void;
-  /** Mirrors WalletBar network filter: limits Search results and Custom default chain. */
-  export let networkScope: 'all' | SupportedChainId = 'all';
-  export let accountNpub: string | null = null;
-  export let onSaved: () => void;
+  interface Props {
+    open?: boolean;
+    onClose: () => void;
+    /** Mirrors WalletBar network filter: limits Search results and Custom default chain. */
+    networkScope?: 'all' | SupportedChainId;
+    accountNpub?: string | null;
+    onSaved: () => void;
+  }
+
+  let {
+    open = false,
+    onClose,
+    networkScope = 'all',
+    accountNpub = null,
+    onSaved,
+  }: Props = $props();
 
   const titleId = 'wallet-import-tokens-title';
   const descId = 'wallet-import-tokens-desc';
 
-  let tab: 'search' | 'custom' = 'search';
-  let searchQuery = '';
-  let selectedCatalogIds = new Set<string>();
+  let tab: 'search' | 'custom' = $state('search');
+  let searchQuery = $state('');
+  let selectedCatalogIds = $state(new Set<string>());
 
-  let customNetwork: SupportedChainId = 'mainnet';
-  let customAddress = '';
-  let customSymbol = '';
-  let customDecimalsStr = '18';
+  let customNetwork: SupportedChainId = $state('mainnet');
+  let customAddress = $state('');
+  let customSymbol = $state('');
+  let customDecimalsStr = $state('18');
 
-  let lastOpened = false;
+  let lastOpened = $state(false);
 
-  $: customTokenSymbolMaxLength = $appConfig.customTokenSymbolMaxLength;
+  const customTokenSymbolMaxLength = $derived($appConfig.customTokenSymbolMaxLength);
 
-  $: catalog = buildCatalogSearchEntries();
+  const catalog = buildCatalogSearchEntries();
 
-  $: filteredCatalog = catalog.filter((e) => {
-    if (networkScope !== 'all' && e.network !== networkScope) return false;
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return true;
-    return e.searchText.includes(q) || e.symbol.toLowerCase().includes(q);
-  }) as CatalogSearchEntry[];
+  const filteredCatalog = $derived(
+    catalog.filter((e) => {
+      if (networkScope !== 'all' && e.network !== networkScope) return false;
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return e.searchText.includes(q) || e.symbol.toLowerCase().includes(q);
+    }) as CatalogSearchEntry[]
+  );
 
-  $: if (open && !lastOpened) {
+  /** Resets the form to a clean state exactly once per open, and re-arms on close so the
+   * next open starts fresh too. */
+  $effect(() => {
+    if (!open) {
+      lastOpened = false;
+      return;
+    }
+    if (lastOpened) return;
     lastOpened = true;
     if (accountNpub) {
       const rows = loadWatchedErc20Rows(accountNpub);
@@ -55,8 +74,7 @@
     tab = 'search';
     searchQuery = '';
     if (networkScope !== 'all') customNetwork = networkScope;
-  }
-  $: if (!open) lastOpened = false;
+  });
 
   function isHexAddress(s: string): boolean {
     const t = s.trim();
@@ -109,18 +127,20 @@
     onClose();
   }
 
-  $: customDecimalsValid = (() => {
+  const customDecimalsValid = $derived.by(() => {
     const d = Number.parseInt(customDecimalsStr, 10);
     return Number.isInteger(d) && d >= 0 && d <= 36;
-  })();
+  });
 
-  $: customSymbolValid = customSymbol.trim().length > 0 && customSymbol.trim().length <= customTokenSymbolMaxLength && /^[A-Z0-9]+$/.test(customSymbol.trim().toUpperCase());
+  const customSymbolValid = $derived(
+    customSymbol.trim().length > 0 &&
+      customSymbol.trim().length <= customTokenSymbolMaxLength &&
+      /^[A-Z0-9]+$/.test(customSymbol.trim().toUpperCase())
+  );
 
-  $: canSaveCustom =
-    accountNpub != null &&
-    isHexAddress(customAddress) &&
-    customSymbolValid &&
-    customDecimalsValid;
+  const canSaveCustom = $derived(
+    accountNpub != null && isHexAddress(customAddress) && customSymbolValid && customDecimalsValid
+  );
 </script>
 
 {#if open}

@@ -2,14 +2,18 @@
   import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
 
-  export let open: boolean;
-  export let address: string;
-  export let onClose: () => void;
+  interface Props {
+    open: boolean;
+    address: string;
+    onClose: () => void;
+  }
+
+  let { open, address, onClose }: Props = $props();
 
   const titleId = 'wallet-receive-title';
   const descId = 'wallet-receive-desc';
 
-  let copied = false;
+  let copied = $state(false);
   async function copyAddress() {
     try {
       await navigator.clipboard.writeText(address.trim());

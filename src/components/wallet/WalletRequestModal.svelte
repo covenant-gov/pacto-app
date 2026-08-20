@@ -2,11 +2,21 @@
   import WalletTransferStubModal from './WalletTransferStubModal.svelte';
   import type { WatchedErc20Row } from '../../lib/wallet/watched-tokens';
 
-  export let npub: string;
-  export let peerDisplayName: string;
-  export let onClose: () => void;
-  export let postDmPlaintext: ((content: string) => Promise<boolean>) | undefined = undefined;
-  export let watchedAssetRows: WatchedErc20Row[] = [];
+  interface Props {
+    npub: string;
+    peerDisplayName: string;
+    onClose: () => void;
+    postDmPlaintext?: ((content: string) => Promise<boolean>) | undefined;
+    watchedAssetRows?: WatchedErc20Row[];
+  }
+
+  let {
+    npub,
+    peerDisplayName,
+    onClose,
+    postDmPlaintext = undefined,
+    watchedAssetRows = [],
+  }: Props = $props();
 </script>
 
 <WalletTransferStubModal

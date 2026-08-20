@@ -37,108 +37,121 @@
 
   const tFn = get(t);
 
-  export let open: boolean;
-  export let onClose: () => void;
-  export let watchedAssetRows: WatchedErc20Row[] = [];
-  /** Chains enabled in Wallet settings (catalog order subset). */
-  export let enabledChainIds: SupportedChainId[] = [...WALLET_ASSETS_CHAIN_IDS];
+  interface Props {
+    open: boolean;
+    onClose: () => void;
+    watchedAssetRows?: WatchedErc20Row[];
+    /** Chains enabled in Wallet settings (catalog order subset). */
+    enabledChainIds?: SupportedChainId[];
+  }
+
+  let {
+    open,
+    onClose,
+    watchedAssetRows = [],
+    enabledChainIds = [...WALLET_ASSETS_CHAIN_IDS],
+  }: Props = $props();
 
   const titleId = 'wallet-home-send-title';
   const descId = 'wallet-home-send-desc';
 
-  let toAddress = '';
-  let chainId: SupportedChainId = DEFAULT_CHAIN_ID;
-  let assetCode = 'ETH';
-  let amountStr = '';
+  let toAddress = $state('');
+  let chainId: SupportedChainId = $state(DEFAULT_CHAIN_ID);
+  let assetCode = $state('ETH');
+  let amountStr = $state('');
 
-  $: chainsForUi =
-    enabledChainIds.length > 0 ? enabledChainIds : [...WALLET_ASSETS_CHAIN_IDS];
+  const chainsForUi = $derived(
+    enabledChainIds.length > 0 ? enabledChainIds : [...WALLET_ASSETS_CHAIN_IDS]
+  );
 
-  $: if (!chainsForUi.includes(chainId)) {
+  $effect(() => {
+    if (chainsForUi.includes(chainId)) return;
     chainId = chainsForUi[0] ?? DEFAULT_CHAIN_ID;
-  }
+  });
 
-  $: recipientValid = (() => {
-    const t = toAddress.trim();
-    if (!t) return false;
+  const recipientValid = $derived.by(() => {
+    const trimmed = toAddress.trim();
+    if (!trimmed) return false;
     try {
-      return isAddress(getAddress(t as `0x${string}`));
+      return isAddress(getAddress(trimmed as `0x${string}`));
     } catch {
       return false;
     }
-  })();
+  });
 
-  let pricesResult:
-    | { ok: true; prices: WalletUsdSpotPrices }
-    | { ok: false; message: string }
-    | null = null;
-  let pricesFetchKey = '';
-  let pricesFetchGen = 0;
+  let pricesResult = $state<
+    { ok: true; prices: WalletUsdSpotPrices } | { ok: false; message: string } | null
+  >(null);
+  let pricesFetchKey = $state('');
+  let pricesFetchGen = $state(0);
 
-  $: if (!open) {
-    pricesFetchKey = '';
-    pricesResult = null;
-  } else {
-    const key = chainId;
-    if (key !== pricesFetchKey) {
-      pricesFetchKey = key;
-      pricesFetchGen += 1;
-      const gen = pricesFetchGen;
+  /** Refetches USD prices once per chain while the modal is open; clears on close so a
+   * stale quote never carries into the next open. */
+  $effect(() => {
+    if (!open) {
+      pricesFetchKey = '';
       pricesResult = null;
-      getWalletUsdSpotPrices(chainId).then((r) => {
-        if (gen !== pricesFetchGen) return;
-        pricesResult = r;
-      });
+      return;
     }
-  }
+    const key = chainId;
+    if (key === pricesFetchKey) return;
+    pricesFetchKey = key;
+    pricesFetchGen += 1;
+    const gen = pricesFetchGen;
+    pricesResult = null;
+    getWalletUsdSpotPrices(chainId).then((r) => {
+      if (gen !== pricesFetchGen) return;
+      pricesResult = r;
+    });
+  });
 
-  $: assetOptions = listWalletAssetOptionsForChainWithWatched(
-    chainId,
-    watchedAssetRows
-  ) as WalletAssetOptionRow[];
+  const assetOptions = $derived(
+    listWalletAssetOptionsForChainWithWatched(chainId, watchedAssetRows) as WalletAssetOptionRow[]
+  );
 
-  $: {
+  $effect(() => {
     const codes = assetOptions.map((o) => o.code);
     if (codes.length > 0 && !codes.includes(assetCode)) {
       assetCode = codes[0] ?? 'ETH';
     }
-  }
+  });
 
-  $: selectedOpt = assetOptions.find((o) => o.code === assetCode);
+  const selectedOpt = $derived(assetOptions.find((o) => o.code === assetCode));
 
-  let sendBalanceSummary: WalletSummary | null = null;
-  let sendBalanceError: string | null = null;
-  let sendBalanceLoading = false;
-  let sendBalanceFetchKey = '';
-  let sendBalanceFetchGen = 0;
+  let sendBalanceSummary: WalletSummary | null = $state(null);
+  let sendBalanceError: string | null = $state(null);
+  let sendBalanceLoading = $state(false);
+  let sendBalanceFetchKey = $state('');
+  let sendBalanceFetchGen = $state(0);
 
-  $: watchedWireForBalances = watchedRowsToWire(watchedAssetRows);
+  const watchedWireForBalances = $derived(watchedRowsToWire(watchedAssetRows));
 
-  $: if (!open) {
-    sendBalanceFetchKey = '';
-    sendBalanceSummary = null;
-    sendBalanceError = null;
-    sendBalanceLoading = false;
-  } else {
-    const key = `${chainId}|${watchedWireFingerprint(watchedWireForBalances)}`;
-    if (key !== sendBalanceFetchKey) {
-      sendBalanceFetchKey = key;
-      sendBalanceFetchGen += 1;
-      const gen = sendBalanceFetchGen;
-      sendBalanceLoading = true;
+  $effect(() => {
+    if (!open) {
+      sendBalanceFetchKey = '';
+      sendBalanceSummary = null;
       sendBalanceError = null;
-      getWalletSummary(watchedWireForBalances, [chainId]).then((r) => {
-        if (gen !== sendBalanceFetchGen) return;
-        sendBalanceLoading = false;
-        if (r.ok) {
-          sendBalanceSummary = r.summary;
-        } else {
-          sendBalanceSummary = null;
-          sendBalanceError = r.message;
-        }
-      });
+      sendBalanceLoading = false;
+      return;
     }
-  }
+    const key = `${chainId}|${watchedWireFingerprint(watchedWireForBalances)}`;
+    if (key === sendBalanceFetchKey) return;
+    sendBalanceFetchKey = key;
+    sendBalanceFetchGen += 1;
+    const gen = sendBalanceFetchGen;
+    sendBalanceLoading = true;
+    sendBalanceError = null;
+    getWalletSummary(watchedWireForBalances, [chainId]).then((r) => {
+      if (gen !== sendBalanceFetchGen) return;
+      sendBalanceLoading = false;
+      if (r.ok) {
+        sendBalanceSummary = r.summary;
+      } else {
+        sendBalanceSummary = null;
+        sendBalanceError = r.message;
+      }
+    });
+  });
 
   function findBalanceForAsset(
     summary: WalletSummary | null,
@@ -153,7 +166,7 @@
     return { balanceRaw: asset.balanceRaw, balanceDecimal: asset.balanceDecimal };
   }
 
-  $: selectedBalanceRow = findBalanceForAsset(sendBalanceSummary, chainId, assetCode);
+  const selectedBalanceRow = $derived(findBalanceForAsset(sendBalanceSummary, chainId, assetCode));
 
   function amountExceedsBalance(amountTrimmed: string, balanceRaw: string, decimals: number): boolean {
     try {
@@ -173,24 +186,27 @@
     return n;
   }
 
-  $: amountValid = parsePositiveAmount(amountStr) !== null;
-  let sending = false;
-  let sendError: { message: string; txHash?: string; code?: string } | null = null;
+  const amountValid = $derived(parsePositiveAmount(amountStr) !== null);
+  let sending = $state(false);
+  let sendError = $state<{ message: string; txHash?: string; code?: string } | null>(null);
 
-  $: insufficientFunds =
+  const insufficientFunds = $derived(
     amountValid &&
-    selectedOpt != null &&
-    selectedBalanceRow != null &&
-    amountExceedsBalance(amountStr.trim(), selectedBalanceRow.balanceRaw, selectedOpt.decimals);
+      selectedOpt != null &&
+      selectedBalanceRow != null &&
+      amountExceedsBalance(amountStr.trim(), selectedBalanceRow.balanceRaw, selectedOpt.decimals)
+  );
 
-  $: canConfirm =
-    recipientValid && amountValid && !sending && selectedOpt != null && !insufficientFunds;
+  const canConfirm = $derived(
+    recipientValid && amountValid && !sending && selectedOpt != null && !insufficientFunds
+  );
 
-  $: explorerLinkForError =
+  const explorerLinkForError = $derived(
     sendError?.txHash != null && sendError.txHash.length > 0
       ? getExplorerTxUrl(chainId, sendError.txHash)
-      : null;
-  $: explorerLinkLabel = explorerTxLinkLabel(chainId);
+      : null
+  );
+  const explorerLinkLabel = $derived(explorerTxLinkLabel(chainId));
 
   async function copyErrorTxHash() {
     const h = sendError?.txHash;
@@ -199,15 +215,17 @@
     showToast(ok ? tFn('wallet.txHashCopied') : tFn('wallet.couldNotCopyHash'));
   }
 
-  $: canRetryAfterError =
-    sendError != null && !sending && sendError.code !== 'RECEIPT_TIMEOUT';
+  const canRetryAfterError = $derived(
+    sendError != null && !sending && sendError.code !== 'RECEIPT_TIMEOUT'
+  );
 
-  $: approxUsd =
+  const approxUsd = $derived(
     pricesResult?.ok === true && amountValid
       ? amountToApproxUsd(amountStr, assetCode, pricesResult.prices)
-      : null;
+      : null
+  );
 
-  $: usdLine =
+  const usdLine = $derived(
     pricesResult === null
       ? tFn('wallet.loadingUsdRates')
       : !pricesResult.ok
@@ -218,7 +236,8 @@
             ? tFn('wallet.enterAmountForUsd')
             : amountValid
               ? tFn('wallet.usdUnavailable')
-              : tFn('wallet.enterAmountForUsd');
+              : tFn('wallet.enterAmountForUsd')
+  );
 
   function onAmountInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;
@@ -282,11 +301,14 @@
     }
   }
 
-  $: if (!open) {
+  /** Clears the form once the modal is closed, so the next open starts blank instead of
+   * carrying over a stale address/amount/error; never fires while the user is still editing. */
+  $effect(() => {
+    if (open) return;
     toAddress = '';
     amountStr = '';
     sendError = null;
-  }
+  });
 </script>
 
 {#if open}
