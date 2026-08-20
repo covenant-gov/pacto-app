@@ -52,6 +52,12 @@ export const authFixtures: Record<string, MockCommandHandler> = {
   },
   sign_evm_hash: () => '0x' + '00'.repeat(64) + '1c',
   export_evm_account_key_plaintext: () => '0xmockedprivatekey',
+  export_sensitive_to_clipboard: (args) => ({
+    exportType: String(args.exportType ?? 'evm_account'),
+    accountId: String(args.accountId ?? ''),
+    clearedAt: Math.floor(Date.now() / 1000) + 90,
+  }),
+  clear_clipboard: () => undefined,
 };
 
 export const profileFixtures: Record<string, MockCommandHandler> = {
