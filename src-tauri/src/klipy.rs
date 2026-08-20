@@ -210,8 +210,8 @@ fn map_item(item: RawItem) -> Option<KlipyGifDto> {
 /// envelope into the DTO the frontend consumes. Pure and network-free so a
 /// captured fixture can exercise it directly.
 fn parse_klipy_page(raw_json: &str) -> Result<KlipyPageDto, String> {
-    let envelope: RawEnvelope = serde_json::from_str(raw_json)
-        .map_err(|e| format!("Klipy response parse failed: {e}"))?;
+    let envelope: RawEnvelope =
+        serde_json::from_str(raw_json).map_err(|e| format!("Klipy response parse failed: {e}"))?;
     let page_data = envelope
         .data
         .ok_or_else(|| "Klipy response carried no data".to_string())?;
@@ -437,7 +437,10 @@ pub async fn klipy_fetch_media(url: String) -> Result<tauri::ipc::Response, Stri
     if !is_image_content_type(content_type) {
         return Err("Refusing to fetch: Klipy media response was not an image".to_string());
     }
-    if resp.content_length().is_some_and(|len| len > MAX_MEDIA_BYTES) {
+    if resp
+        .content_length()
+        .is_some_and(|len| len > MAX_MEDIA_BYTES)
+    {
         return Err("Refusing to fetch: Klipy media response exceeded the size cap".to_string());
     }
     let mut bytes = Vec::new();
@@ -448,7 +451,9 @@ pub async fn klipy_fetch_media(url: String) -> Result<tauri::ipc::Response, Stri
     {
         bytes.extend_from_slice(&chunk);
         if bytes.len() as u64 > MAX_MEDIA_BYTES {
-            return Err("Refusing to fetch: Klipy media response exceeded the size cap".to_string());
+            return Err(
+                "Refusing to fetch: Klipy media response exceeded the size cap".to_string(),
+            );
         }
     }
     Ok(tauri::ipc::Response::new(bytes))
@@ -541,7 +546,10 @@ mod tests {
             .await
             .expect_err("no key must never reach the network");
         assert_eq!(err, ERR_NOT_CONFIGURED);
-        assert_eq!(klipy_report_share("slug".to_string(), None).await, Ok(false));
+        assert_eq!(
+            klipy_report_share("slug".to_string(), None).await,
+            Ok(false)
+        );
     }
 
     // ---- error text never contains the key -----------------------------------
@@ -710,24 +718,30 @@ mod tests {
     fn accepts_each_documented_media_host() {
         assert!(is_klipy_media_url("https://static.klipy.com/hd.gif"));
         assert!(is_klipy_media_url("https://static1.klipy.com/hd.gif"));
-        assert!(is_klipy_media_url("https://static2.klipy.com/hd.gif?ext=gif&itemid=1"));
+        assert!(is_klipy_media_url(
+            "https://static2.klipy.com/hd.gif?ext=gif&itemid=1"
+        ));
     }
 
     #[test]
     fn rejects_an_obvious_ssrf_attempt() {
         assert!(!is_klipy_media_url("http://127.0.0.1:8080/x"));
-        assert!(!is_klipy_media_url("http://169.254.169.254/latest/meta-data/"));
+        assert!(!is_klipy_media_url(
+            "http://169.254.169.254/latest/meta-data/"
+        ));
         assert!(!is_klipy_media_url("file:///etc/passwd"));
     }
 
     #[test]
     fn rejects_a_lookalike_host() {
         // Neither a subdomain trick nor a path/query trick should pass.
-        assert!(!is_klipy_media_url("https://evil.com/static.klipy.com/hd.gif"));
-        assert!(!is_klipy_media_url("https://static.klipy.com.evil.com/hd.gif"));
         assert!(!is_klipy_media_url(
-            "https://evil.com/?u=static.klipy.com"
+            "https://evil.com/static.klipy.com/hd.gif"
         ));
+        assert!(!is_klipy_media_url(
+            "https://static.klipy.com.evil.com/hd.gif"
+        ));
+        assert!(!is_klipy_media_url("https://evil.com/?u=static.klipy.com"));
     }
 
     #[test]

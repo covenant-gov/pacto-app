@@ -1333,7 +1333,11 @@ pub async fn klipy_gif_message(
         attachments: vec![attachment],
         pending: true,
         mine: true,
-        npub: if is_group_chat { my_npub_for_msg.clone() } else { None },
+        npub: if is_group_chat {
+            my_npub_for_msg.clone()
+        } else {
+            None
+        },
         ..Message::default()
     };
 

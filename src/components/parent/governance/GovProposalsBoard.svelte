@@ -5,10 +5,13 @@
   import GovProcessCardView from './GovProcessCard.svelte';
   import {
     quartermasterExecuteAddCrew,
+    quartermasterExecuteOffboard,
     quartermasterExecuteRemoveCrew,
+    quartermasterExpireOffboard,
     treasuryAuthorityExecute,
     type MutinyStatusDto,
     type QuartermasterPendingActionDto,
+    type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
   import {
@@ -23,6 +26,7 @@
     type GovProcessCard,
   } from '../../../lib/governance/gov-process';
   import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
+  import { parseQuorumBps } from '../../../lib/governance/crew-offboard';
   import {
     fundedByFromWriteResult,
     govWriteSubmittedToast,
@@ -42,12 +46,15 @@
   export let proposalsError = '';
   export let mutinyStatus: MutinyStatusDto | null = null;
   export let mutinyLoading = false;
+  export let qmStatus: QuartermasterStatusDto | null = null;
   export let qmPending: QuartermasterPendingActionDto[] = [];
   export let qmPendingLoading = false;
   export let qmPendingError = '';
   export let mutinyMode = false;
+  export let rosterFreezeReason = 'governance.gate.quartermasterLocked';
   export let onRefreshProposals: () => void = () => {};
   export let onExecuteMutiny: () => void | Promise<void> = () => {};
+  export let onExpireMutiny: () => void | Promise<void> = () => {};
   export let fundingHint = '';
 
   const tFn = get(t);
@@ -55,11 +62,13 @@
   let acting = false;
 
   $: execGate = gatePermissionlessSigner(privilege);
-  $: qmExecGate = gateQuartermasterExecute(privilege, mutinyMode);
+  $: qmExecGate = gateQuartermasterExecute(privilege, mutinyMode, rosterFreezeReason);
   $: processCards = buildGovProcessCards({
     treasuryProposals: proposals,
     mutinyStatus,
     qmPending,
+    crewOffboard: qmStatus?.offboard ?? null,
+    crewOffboardQuorumBps: parseQuorumBps(qmStatus?.crewOffboardQuorumBps),
   });
   $: openCount = countOpenGovProcesses(processCards);
   $: boardLoading =
@@ -132,13 +141,75 @@
     }
   }
 
+  async function runMutinyExpire() {
+    if (acting) return;
+    acting = true;
+    try {
+      await onExpireMutiny();
+    } finally {
+      acting = false;
+    }
+  }
+
+  async function runOffboardExecute(offboardId: string) {
+    if (acting || !execGate.enabled || !quartermaster.trim()) return;
+    acting = true;
+    try {
+      const result = await quartermasterExecuteOffboard({
+        network,
+        parentId,
+        quartermaster,
+        offboardId,
+      });
+      showToast(
+        govWriteSubmittedToast(tFn('governance.action.executeOffboard'), fundedByFromWriteResult(result)),
+      );
+      onRefreshProposals();
+    } catch (e) {
+      showToast(govWriteErrorMessage(e, tFn('governance.action.executeOffboard')));
+    } finally {
+      acting = false;
+    }
+  }
+
+  async function runOffboardExpire(offboardId: string) {
+    if (acting || !execGate.enabled || !quartermaster.trim()) return;
+    acting = true;
+    try {
+      const result = await quartermasterExpireOffboard({
+        network,
+        parentId,
+        quartermaster,
+        offboardId,
+      });
+      showToast(
+        govWriteSubmittedToast(tFn('governance.action.expireOffboard'), fundedByFromWriteResult(result)),
+      );
+      onRefreshProposals();
+    } catch (e) {
+      showToast(govWriteErrorMessage(e, tFn('governance.action.expireOffboard')));
+    } finally {
+      acting = false;
+    }
+  }
+
   function executeForCard(card: GovProcessCard) {
     if (card.kind === 'treasury') {
       void runTreasuryExecute(card.proposal.proposalId);
     } else if (card.kind === 'mutiny') {
       void runMutinyExecute();
+    } else if (card.kind === 'crew_offboard') {
+      void runOffboardExecute(card.status.offboardId);
     } else {
       void runCrewExecute(card);
+    }
+  }
+
+  function expireForCard(card: GovProcessCard) {
+    if (card.kind === 'mutiny') {
+      void runMutinyExpire();
+    } else if (card.kind === 'crew_offboard') {
+      void runOffboardExpire(card.status.offboardId);
     }
   }
 
@@ -194,6 +265,7 @@
           executePending={acting}
           privilegeReasonKey={privilegeReasonKeyFor(card)}
           onExecute={() => executeForCard(card)}
+          onExpire={() => expireForCard(card)}
         />
       {/each}
     </ul>

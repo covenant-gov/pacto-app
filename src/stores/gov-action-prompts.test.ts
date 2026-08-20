@@ -11,6 +11,8 @@ const mockFetchQmPending = vi.hoisted(() => vi.fn());
 const mockFetchVoteMap = vi.hoisted(() => vi.fn());
 const mockGetMutinyStatus = vi.hoisted(() => vi.fn());
 const mockMutinyHasVoted = vi.hoisted(() => vi.fn());
+const mockGetQuartermasterStatus = vi.hoisted(() => vi.fn());
+const mockCrewOffboardHasVoted = vi.hoisted(() => vi.fn());
 const mockShowToast = vi.hoisted(() => vi.fn());
 
 vi.mock('../lib/api/catch-up', () => ({
@@ -34,6 +36,8 @@ vi.mock('../lib/governance/api', async () => {
     getSquadCapabilities: (...args: unknown[]) => mockGetSquadCapabilities(...args),
     getMutinyStatus: (...args: unknown[]) => mockGetMutinyStatus(...args),
     mutinyHasVoted: (...args: unknown[]) => mockMutinyHasVoted(...args),
+    getQuartermasterStatus: (...args: unknown[]) => mockGetQuartermasterStatus(...args),
+    crewOffboardHasVoted: (...args: unknown[]) => mockCrewOffboardHasVoted(...args),
   };
 });
 
@@ -109,6 +113,15 @@ describe('gov-action-prompts store', () => {
     mockFetchVoteMap.mockReset().mockResolvedValue({});
     mockGetMutinyStatus.mockReset().mockResolvedValue(null);
     mockMutinyHasVoted.mockReset().mockResolvedValue(false);
+    mockGetQuartermasterStatus.mockReset().mockResolvedValue({
+      crewChangeDelaySecs: '60',
+      mutinyActive: false,
+      activeCrewOffboardId: '0',
+      crewOffboardExpirySecs: '300',
+      crewOffboardQuorumBps: '3000',
+      offboard: null,
+    });
+    mockCrewOffboardHasVoted.mockReset().mockResolvedValue(false);
     mockShowToast.mockReset();
   });
 

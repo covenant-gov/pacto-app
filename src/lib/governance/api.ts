@@ -756,7 +756,9 @@ export async function treasuryAuthorityExecute(params: {
 export interface MutinyStatusDto {
   activeMutinyId: string;
   proposedNewCaptain: string;
+  fromCaptain?: string;
   startedAt: number;
+  deadline: number;
   snapshot: number;
   yeas: number;
   executed: boolean;
@@ -915,6 +917,24 @@ export async function mutinyExecute(params: {
   );
 }
 
+export async function mutinyExpire(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+  mutinyId: string;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('mutiny_expire', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      mutinyModule: params.mutinyModule.trim(),
+      mutinyId: params.mutinyId.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'mutiny' },
+  );
+}
+
 export async function mutinyCaptainResign(params: {
   network: string;
   parentId: string;
@@ -933,11 +953,26 @@ export async function mutinyCaptainResign(params: {
   );
 }
 
+export interface CrewOffboardDto {
+  offboardId: string;
+  target: string;
+  proposer: string;
+  deadline: number;
+  snapshot: number;
+  yeas: number;
+  nays: number;
+  executed: boolean;
+}
+
 export interface QuartermasterStatusDto {
   crewChangeDelaySecs: string;
   mutinyActive: boolean;
   crewHatSupply?: number;
   bootstrapAvailable?: boolean;
+  activeCrewOffboardId: string;
+  crewOffboardExpirySecs: string;
+  crewOffboardQuorumBps: string;
+  offboard?: CrewOffboardDto | null;
 }
 
 export interface QuartermasterPendingDto {
@@ -1112,6 +1147,96 @@ export async function quartermasterExecuteRemoveCrew(params: {
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
     { parentId: params.parentId, kind: 'qm_pending', address: params.crew },
+  );
+}
+
+export async function crewOffboardHasVoted(params: {
+  network: string;
+  quartermaster: string;
+  offboardId: string;
+  voter: string;
+  parentId?: string | null;
+}): Promise<boolean> {
+  return (await invoke('crew_offboard_has_voted', {
+    network: params.network,
+    quartermaster: params.quartermaster.trim(),
+    offboardId: params.offboardId.trim(),
+    voter: params.voter.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as boolean;
+}
+
+export async function quartermasterProposeOffboard(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  target: string;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('quartermaster_propose_offboard', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      target: params.target.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'crew_offboard', address: params.target },
+  );
+}
+
+export async function quartermasterCrewOffboardVote(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  offboardId: string;
+  support: boolean;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('quartermaster_crew_offboard_vote', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      offboardId: params.offboardId.trim(),
+      support: params.support,
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'crew_offboard' },
+  );
+}
+
+export async function quartermasterExecuteOffboard(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  offboardId: string;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('quartermaster_execute_offboard', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      offboardId: params.offboardId.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'crew_offboard' },
+  );
+}
+
+export async function quartermasterExpireOffboard(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  offboardId: string;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('quartermaster_expire_offboard', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      offboardId: params.offboardId.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'crew_offboard' },
   );
 }
 

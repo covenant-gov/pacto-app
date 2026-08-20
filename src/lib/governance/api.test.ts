@@ -32,6 +32,12 @@ import {
   pactoGovWargameInfraId,
   pactoGovWargameInfraRow,
   primaryGovernanceView,
+  mutinyExpire,
+  quartermasterProposeOffboard,
+  quartermasterCrewOffboardVote,
+  quartermasterExecuteOffboard,
+  quartermasterExpireOffboard,
+  crewOffboardHasVoted,
   squadAdminCreateRole,
   squadSponsorSetPermittedAddress,
   squadAdminEnableExecutor,
@@ -48,6 +54,9 @@ import {
 import type { SquadInfraDto } from './api';
 
 vi.mock('@tauri-apps/api/core');
+vi.mock('../api/nostr', () => ({
+  sendDmMessage: vi.fn().mockResolvedValue(true),
+}));
 
 const mockedInvoke = vi.mocked(invoke);
 const PARENT = 'test-parent';
@@ -533,6 +542,93 @@ describe('api command wrappers', () => {
       quartermaster: '0xqm',
       rpcUrls: expect.any(Array),
     });
+  });
+
+  it('mutinyExpire and offboard writes send trimmed ids', async () => {
+    mockedInvoke.mockResolvedValue({ txHash: '0x1', chain: 'sepolia', chainId: 11155111 });
+    await mutinyExpire({
+      network: NETWORK,
+      parentId: ' parent1 ',
+      mutinyModule: ' 0xmu ',
+      mutinyId: ' 9 ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'mutiny_expire',
+      expect.objectContaining({
+        parentId: 'parent1',
+        mutinyModule: '0xmu',
+        mutinyId: '9',
+      }),
+    );
+
+    mockedInvoke.mockResolvedValue({ txHash: '0x2', chain: 'sepolia', chainId: 11155111 });
+    await quartermasterProposeOffboard({
+      network: NETWORK,
+      parentId: ' parent1 ',
+      quartermaster: ' 0xqm ',
+      target: ' 0xabc ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'quartermaster_propose_offboard',
+      expect.objectContaining({
+        parentId: 'parent1',
+        quartermaster: '0xqm',
+        target: '0xabc',
+      }),
+    );
+
+    mockedInvoke.mockResolvedValue({ txHash: '0x3', chain: 'sepolia', chainId: 11155111 });
+    await quartermasterCrewOffboardVote({
+      network: NETWORK,
+      parentId: 'parent1',
+      quartermaster: '0xqm',
+      offboardId: ' 2 ',
+      support: true,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'quartermaster_crew_offboard_vote',
+      expect.objectContaining({ offboardId: '2', support: true }),
+    );
+
+    mockedInvoke.mockResolvedValue({ txHash: '0x4', chain: 'sepolia', chainId: 11155111 });
+    await quartermasterExecuteOffboard({
+      network: NETWORK,
+      parentId: 'parent1',
+      quartermaster: '0xqm',
+      offboardId: '2',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'quartermaster_execute_offboard',
+      expect.objectContaining({ offboardId: '2' }),
+    );
+
+    mockedInvoke.mockResolvedValue({ txHash: '0x5', chain: 'sepolia', chainId: 11155111 });
+    await quartermasterExpireOffboard({
+      network: NETWORK,
+      parentId: 'parent1',
+      quartermaster: '0xqm',
+      offboardId: '2',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'quartermaster_expire_offboard',
+      expect.objectContaining({ offboardId: '2' }),
+    );
+
+    mockedInvoke.mockResolvedValueOnce(true);
+    await crewOffboardHasVoted({
+      network: NETWORK,
+      quartermaster: ' 0xqm ',
+      offboardId: ' 2 ',
+      voter: ' 0xabc ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'crew_offboard_has_voted',
+      expect.objectContaining({
+        quartermaster: '0xqm',
+        offboardId: '2',
+        voter: '0xabc',
+      }),
+    );
   });
 
   it('treasuryProposalHasVoted sends treasury_proposal_has_voted with trimmed inputs', async () => {

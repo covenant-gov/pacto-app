@@ -109,6 +109,7 @@ vi.mock('../announcements', () => ({
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED: 'governance_updated',
   ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED: 'governance_process_updated',
   ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE: 'squad_member_evm_share',
+  ANNOUNCE_TYPE_WAR_GAME_UPDATED: 'war_game_updated',
 }));
 
 vi.mock('../wallet/dm-messages', () => ({

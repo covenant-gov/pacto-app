@@ -18,6 +18,9 @@ export type GovCapabilityKey =
   | 'captainResign'
   | 'quartermasterMutateCrew'
   | 'quartermasterExecute'
+  | 'proposeCrewOffboard'
+  | 'castCrewOffboardVote'
+  | 'executeCrewOffboard'
   | 'mutateTrackedTokens'
   | 'squadAdminCreateRole'
   | 'squadAdminEnableExecutor'
@@ -183,9 +186,13 @@ export function gatePermissionlessSigner(p: GovernancePrivilege): CtaGate {
 }
 
 /** Timelocked crew execute — ACL `quartermasterExecute` or any linked squad EVM. */
-export function gateQuartermasterExecute(p: GovernancePrivilege, mutinyMode: boolean): CtaGate {
-  if (mutinyMode) {
-    return { enabled: false, reason: 'governance.gate.quartermasterLocked' };
+export function gateQuartermasterExecute(
+  p: GovernancePrivilege,
+  rosterFrozen: boolean,
+  freezeReasonKey = 'governance.gate.quartermasterLocked',
+): CtaGate {
+  if (rosterFrozen) {
+    return { enabled: false, reason: freezeReasonKey };
   }
   return (
     gateFromCapability(p, 'quartermasterExecute') ??
@@ -196,9 +203,13 @@ export function gateQuartermasterExecute(p: GovernancePrivilege, mutinyMode: boo
   );
 }
 
-export function gateBlockedByMutinyMode(p: GovernancePrivilege, mutinyMode: boolean): CtaGate {
-  if (mutinyMode) {
-    return { enabled: false, reason: 'governance.gate.quartermasterLocked' };
+export function gateBlockedByMutinyMode(
+  p: GovernancePrivilege,
+  rosterFrozen: boolean,
+  freezeReasonKey = 'governance.gate.quartermasterLocked',
+): CtaGate {
+  if (rosterFrozen) {
+    return { enabled: false, reason: freezeReasonKey };
   }
   return (
     gateFromCapability(p, 'quartermasterMutateCrew') ?? gateRequiresCaptain(p)

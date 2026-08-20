@@ -20,11 +20,11 @@ export function mutinyReadCacheKey(
   mutinyModule: string,
   voterAddress = '',
 ): string {
-  return `mutiny:${network.trim().toLowerCase()}:${mutinyModule.trim().toLowerCase()}:${voterAddress.trim().toLowerCase()}`;
+  return `mutiny:v2:${network.trim().toLowerCase()}:${mutinyModule.trim().toLowerCase()}:${voterAddress.trim().toLowerCase()}`;
 }
 
 export function quartermasterReadCacheKey(network: string, quartermaster: string): string {
-  return `qm:v2:${network.trim().toLowerCase()}:${quartermaster.trim().toLowerCase()}`;
+  return `qm:v3:${network.trim().toLowerCase()}:${quartermaster.trim().toLowerCase()}`;
 }
 
 export function safeBalancesCacheKey(

@@ -8,8 +8,9 @@ use tauri::{AppHandle, Runtime};
 use super::access_control::GovCapability;
 use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
     activeMutinyIdCall, captainCall, captainResignCall, castVoteCall, executeMutinyCall,
-    hasVotedCall, mutinyCall, startMutinyToArbitraryContractCall, startMutinyToArbitraryEoaCall,
-    startMutinyToCommitteeCall, startMutinyToCrewMemberCall, startMutinyToPauseCaptainCall,
+    expireMutinyCall, hasVotedCall, mutinyCall, startMutinyToArbitraryContractCall,
+    startMutinyToArbitraryEoaCall, startMutinyToCommitteeCall, startMutinyToCrewMemberCall,
+    startMutinyToPauseCaptainCall,
 };
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
 use super::gov_read::connect_gov_read_provider;
@@ -47,6 +48,11 @@ fn encode_execute_mutiny(mutiny_id: &str) -> Result<Vec<u8>, String> {
     Ok(executeMutinyCall { _mutinyId: mid }.abi_encode())
 }
 
+fn encode_expire_mutiny(mutiny_id: &str) -> Result<Vec<u8>, String> {
+    let mid = parse_mutiny_id(mutiny_id)?;
+    Ok(expireMutinyCall { _mutinyId: mid }.abi_encode())
+}
+
 fn encode_captain_resign(new_captain: &str) -> Result<Vec<u8>, String> {
     let addr = parse_address(new_captain.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
@@ -58,7 +64,9 @@ fn encode_captain_resign(new_captain: &str) -> Result<Vec<u8>, String> {
 pub struct MutinyStatusDto {
     pub active_mutiny_id: String,
     pub proposed_new_captain: String,
+    pub from_captain: String,
     pub started_at: u64,
+    pub deadline: u64,
     pub snapshot: u64,
     pub yeas: u64,
     pub executed: bool,
@@ -97,7 +105,9 @@ pub async fn get_mutiny_status<R: Runtime>(
         return Ok(MutinyStatusDto {
             active_mutiny_id: "0".into(),
             proposed_new_captain: String::new(),
+            from_captain: String::new(),
             started_at: 0,
+            deadline: 0,
             snapshot: 0,
             yeas: 0,
             executed: false,
@@ -112,7 +122,9 @@ pub async fn get_mutiny_status<R: Runtime>(
     Ok(MutinyStatusDto {
         active_mutiny_id: active_id.to_string(),
         proposed_new_captain: format!("{:#x}", m._proposedNewCaptain),
+        from_captain: format!("{:#x}", m._fromCaptain),
         started_at: m._startedAt,
+        deadline: m._deadline,
         snapshot: m._snapshot,
         yeas: m._yeas,
         executed: m._executed,
@@ -340,6 +352,28 @@ pub async fn mutiny_execute<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn mutiny_expire<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    parent_id: String,
+    mutiny_module: String,
+    mutiny_id: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<MutinyWriteResult, String> {
+    let calldata = encode_expire_mutiny(&mutiny_id)?;
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::ExecuteMutiny,
+        rpc_urls,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn mutiny_captain_resign<R: Runtime>(
     app: AppHandle<R>,
     network: String,
@@ -364,11 +398,12 @@ pub async fn mutiny_captain_resign<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        encode_captain_resign, encode_cast_vote, encode_execute_mutiny,
+        encode_captain_resign, encode_cast_vote, encode_execute_mutiny, encode_expire_mutiny,
         encode_start_to_crew_member, parse_mutiny_id,
     };
     use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::{
-        captainResignCall, castVoteCall, executeMutinyCall, startMutinyToCrewMemberCall,
+        captainResignCall, castVoteCall, executeMutinyCall, expireMutinyCall,
+        startMutinyToCrewMemberCall,
     };
     use crate::evm::rpc::parse_address;
     use alloy::primitives::U256;
@@ -414,6 +449,17 @@ mod tests {
             }
             .abi_encode()
         );
+
+        let expire = encode_expire_mutiny("9").expect("expire");
+        assert_eq!(
+            expire,
+            expireMutinyCall {
+                _mutinyId: U256::from(9u64),
+            }
+            .abi_encode()
+        );
+        assert_ne!(expire, exec);
+        assert!(encode_expire_mutiny("nope").is_err());
     }
 
     #[test]

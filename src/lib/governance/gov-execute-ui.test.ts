@@ -28,6 +28,7 @@ function mutiny(overrides: Partial<MutinyStatusDto> = {}): MutinyStatusDto {
     activeMutinyId: '2',
     proposedNewCaptain: '0xabc',
     startedAt: 1,
+    deadline: 0,
     snapshot: 3,
     yeas: 1,
     executed: false,
@@ -151,26 +152,65 @@ describe('govExecuteUiState', () => {
     });
   });
 
-  it('mutiny: hidden below threshold; shown at threshold', () => {
+  it('mutiny: hidden below threshold; shown at 51%; expire after deadline', () => {
     const below: GovProcessCard = {
       kind: 'mutiny',
-      status: mutiny({ yeas: 1, snapshot: 3 }),
+      status: mutiny({ yeas: 1, snapshot: 3, deadline: 500 }),
       sortKey: 2,
     };
-    expect(govExecuteUiState({ card: below })).toMatchObject({
+    expect(govExecuteUiState({ card: below, nowSec: 100 })).toMatchObject({
       showExecute: false,
       executeEnabled: false,
+      showExpire: false,
     });
 
     const ready: GovProcessCard = {
       kind: 'mutiny',
-      status: mutiny({ yeas: 3, snapshot: 3 }),
+      status: mutiny({ yeas: 2, snapshot: 3, deadline: 500 }),
       sortKey: 2,
     };
-    expect(govExecuteUiState({ card: ready })).toMatchObject({
+    expect(govExecuteUiState({ card: ready, nowSec: 100 })).toMatchObject({
       showExecute: true,
       executeEnabled: true,
       disabledReasonKey: '',
+      showExpire: false,
+    });
+
+    const expired: GovProcessCard = {
+      kind: 'mutiny',
+      status: mutiny({ yeas: 3, snapshot: 3, deadline: 500 }),
+      sortKey: 2,
+    };
+    expect(govExecuteUiState({ card: expired, nowSec: 500 })).toMatchObject({
+      showExecute: false,
+      executeEnabled: false,
+      showExpire: true,
+      expireEnabled: true,
+    });
+  });
+
+  it('crew offboard: execute on quorum-of-cast; expire after deadline', () => {
+    const status = {
+      offboardId: '4',
+      target: '0xabc',
+      proposer: '0xdef',
+      deadline: 500,
+      snapshot: 10,
+      yeas: 3,
+      nays: 0,
+      executed: false,
+    };
+    const card: GovProcessCard = { kind: 'crew_offboard', status, quorumBps: 3000, sortKey: 4 };
+    expect(govExecuteUiState({ card, nowSec: 100 })).toMatchObject({
+      showExecute: true,
+      executeEnabled: true,
+      showExpire: false,
+    });
+    expect(govExecuteUiState({ card, nowSec: 500 })).toMatchObject({
+      showExecute: false,
+      executeEnabled: false,
+      showExpire: true,
+      expireEnabled: true,
     });
   });
 });

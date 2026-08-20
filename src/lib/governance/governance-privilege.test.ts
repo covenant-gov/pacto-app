@@ -167,6 +167,9 @@ describe('governance gates', () => {
   it('blocks mutiny-locked quartermaster writes', () => {
     expect(gateBlockedByMutinyMode(base, true).enabled).toBe(false);
     expect(gateBlockedByMutinyMode(base, false).enabled).toBe(true);
+    expect(gateBlockedByMutinyMode(base, true, 'governance.gate.rosterFrozenOffboard').reason).toBe(
+      'governance.gate.rosterFrozenOffboard',
+    );
     expect(gateSquadAdminWrite(base).enabled).toBe(true);
   });
 });

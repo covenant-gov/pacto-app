@@ -240,7 +240,9 @@ pub async fn fetch_sticker_image<R: Runtime>(
 /// Loads every non-deleted sticker pack visible to the current account. `db::load_sticker_packs`
 /// already scopes to this account's local database, which only ever holds packs
 /// for squads the account has received MLS announces from.
-fn list_sticker_pack_dtos<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<StickerPackDto>, String> {
+fn list_sticker_pack_dtos<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<Vec<StickerPackDto>, String> {
     db::load_sticker_packs(handle)?
         .into_iter()
         .map(StickerPackDto::from_row)
@@ -391,8 +393,7 @@ mod tests {
         let app = tauri::test::mock_app();
         let handle = app.handle();
 
-        let profile_dir =
-            crate::account_manager::get_profile_directory(handle, test_npub).unwrap();
+        let profile_dir = crate::account_manager::get_profile_directory(handle, test_npub).unwrap();
         let _ = std::fs::remove_dir_all(&profile_dir);
 
         let db_path = crate::account_manager::get_database_path(handle, test_npub).unwrap();

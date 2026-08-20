@@ -7,6 +7,7 @@
     getQuartermasterPending,
     mutinyCaptainResign,
     mutinyExecute,
+    mutinyExpire,
     quartermasterCancelAddCrew,
     quartermasterCancelRemoveCrew,
     quartermasterExecuteAddCrew,
@@ -24,8 +25,10 @@
     captainVotableProposals,
     executableTreasuryProposals,
     isMutinyActive,
+    isMutinyExpirable,
     proposalSelectLabel,
   } from '../../../lib/governance/gov-proposal-lists';
+  import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import {
     gateBlockedByMutinyMode,
     gatePermissionlessSigner,
@@ -84,11 +87,17 @@
   }
 
   $: captainGate = gateRequiresCaptain(privilege);
-  $: qmGate = gateBlockedByMutinyMode(privilege, !!qmStatus?.mutinyActive);
+  $: offboardActive = isCrewOffboardActive(qmStatus);
+  $: rosterFrozen = !!qmStatus?.mutinyActive || offboardActive;
+  $: rosterFreezeReason = qmStatus?.mutinyActive
+    ? 'governance.gate.quartermasterLocked'
+    : 'governance.gate.rosterFrozenOffboard';
+  $: qmGate = gateBlockedByMutinyMode(privilege, rosterFrozen, rosterFreezeReason);
   $: execGate = gatePermissionlessSigner(privilege);
   $: votable = captainVotableProposals(proposals);
   $: executable = executableTreasuryProposals(proposals);
   $: mutinyActive = isMutinyActive(mutinyStatus);
+  $: mutinyExpired = isMutinyExpirable(mutinyStatus);
   $: bootstrapAvailable = qmStatus?.bootstrapAvailable === true;
   $: bootstrapGate = ((): CtaGate => {
     if (!bootstrapAvailable) {
@@ -96,7 +105,9 @@
         enabled: false,
         reason: qmStatus?.mutinyActive
           ? 'governance.gate.cannotBootstrapMutiny'
-          : 'governance.gate.bootstrapOnlyEmptyRoster',
+          : offboardActive
+            ? 'governance.gate.rosterFrozenOffboard'
+            : 'governance.gate.bootstrapOnlyEmptyRoster',
       };
     }
     return captainGate;
@@ -253,6 +264,8 @@
         <h6 class="section-label">{$t('governance.section.roster')}</h6>
         {#if qmStatus?.mutinyActive}
           <p class="muted"><strong>{$t('governance.info.mutinyModeOn')}</strong> — {$t('governance.info.mutinyModeBlocked')}</p>
+        {:else if offboardActive}
+          <p class="muted">{$t('governance.gate.rosterFrozenOffboard')}</p>
         {:else if qmStatus}
           <p class="muted">{$t('governance.info.crewChangeDelay', { values: { delay: qmStatus.crewChangeDelaySecs } })}</p>
         {/if}
@@ -417,10 +430,23 @@
           <p class="muted">
             {$t('governance.mutiny.activeToward', { values: { id: mutinyStatus.activeMutinyId, address: mutinyStatus.proposedNewCaptain, yeas: mutinyStatus.yeas, snapshot: mutinyStatus.snapshot } })}
           </p>
+          {#if mutinyStatus.fromCaptain}
+            <p class="muted">
+              {$t('governance.mutiny.fromCaptain', { values: { address: mutinyStatus.fromCaptain } })}
+            </p>
+          {/if}
+          {#if mutinyStatus.deadline > 0}
+            <p class="muted">
+              {$t('governance.mutiny.deadline', { values: { when: new Date(mutinyStatus.deadline * 1000).toLocaleString() } })}
+            </p>
+          {/if}
+          {#if mutinyExpired}
+            <p class="muted">{$t('governance.mutiny.expired')}</p>
+          {/if}
           <GovCtaButton
             label={tFn('governance.action.executeMutiny')}
             variant="execute"
-            gate={execGate}
+            gate={mutinyExpired ? { enabled: false, reason: 'governance.gate.mutinyExpired' } : execGate}
             {acting}
             onClick={() =>
               void run(tFn('governance.action.executeMutiny'), () =>
@@ -432,6 +458,22 @@
                 }),
               onRefreshMutiny)}
           />
+          {#if mutinyExpired}
+            <GovCtaButton
+              label={tFn('governance.action.expireMutiny')}
+              gate={execGate}
+              {acting}
+              onClick={() =>
+                void run(tFn('governance.action.expireMutiny'), () =>
+                  mutinyExpire({
+                    network,
+                    parentId,
+                    mutinyModule,
+                    mutinyId: mutinyStatus.activeMutinyId,
+                  }),
+                onRefreshMutiny)}
+            />
+          {/if}
         {:else}
           <p class="muted">{$t('governance.empty.noActiveMutiny')}</p>
         {/if}

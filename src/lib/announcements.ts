@@ -31,7 +31,7 @@ export const ANNOUNCE_TYPE_STICKER_PACK_UPDATED = 'sticker_pack_updated';
 /** Notify-only: QM / TA / mutiny process changed. Revalidate from chain. */
 export const ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED = 'governance_process_updated';
 
-export type GovernanceProcessKind = 'qm_pending' | 'ta_proposal' | 'mutiny';
+export type GovernanceProcessKind = 'qm_pending' | 'ta_proposal' | 'mutiny' | 'crew_offboard';
 
 export interface GovernanceProcessUpdatedPayload {
   parent_id: string;
@@ -259,7 +259,7 @@ function isDashboardPollCreatedPayload(p: unknown): p is DashboardPollCreatedPay
 }
 
 function isGovernanceProcessKind(v: unknown): v is GovernanceProcessKind {
-  return v === 'qm_pending' || v === 'ta_proposal' || v === 'mutiny';
+  return v === 'qm_pending' || v === 'ta_proposal' || v === 'mutiny' || v === 'crew_offboard';
 }
 
 function isGovernanceProcessUpdatedPayload(p: unknown): p is GovernanceProcessUpdatedPayload {

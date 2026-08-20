@@ -10,7 +10,8 @@
     isTreasuryProposalPast,
     treasuryProposalOutcomeLabel,
   } from '../../../lib/governance/treasury-proposal-ui';
-  import { executableTreasuryProposals, isMutinyExecutable } from '../../../lib/governance/gov-proposal-lists';
+  import { executableTreasuryProposals, isMutinyExecutable, isMutinyExpirable } from '../../../lib/governance/gov-proposal-lists';
+  import { isCrewOffboardExecutable, isCrewOffboardExpirable } from '../../../lib/governance/crew-offboard';
   import ProposalActionSummary from './ProposalActionSummary.svelte';
 
   export let card: GovProcessCard;
@@ -19,6 +20,7 @@
   /** Privilege gate i18n key (empty when allowed). Delay lock is derived from the card. */
   export let privilegeReasonKey = '';
   export let onExecute: (() => void) | undefined = undefined;
+  export let onExpire: (() => void) | undefined = undefined;
 
   let delayElapsed = false;
   let unlockTimer: ReturnType<typeof setTimeout> | null = null;
@@ -41,7 +43,11 @@
       ? card.executableAt > 0
         ? card.executableAt
         : null
-      : null;
+      : card.kind === 'mutiny' || card.kind === 'crew_offboard'
+        ? card.status.deadline > 0
+          ? card.status.deadline
+          : null
+        : null;
   $: {
     clearUnlockTimer();
     const alreadyOpen = cardUnlockAtSec == null || cardUnlockAtSec <= Math.floor(Date.now() / 1000);
@@ -61,23 +67,43 @@
     card.kind === 'treasury'
       ? executableTreasuryProposals([card.proposal]).length > 0
       : card.kind === 'mutiny'
-        ? isMutinyExecutable(card.status)
-        : card.status === 'executable';
+        ? isMutinyExecutable(card.status, delayElapsed ? Math.floor(Date.now() / 1000) : 0)
+        : card.kind === 'crew_offboard'
+          ? isCrewOffboardExecutable(
+              card.status,
+              card.quorumBps,
+              delayElapsed ? Math.floor(Date.now() / 1000) : 0,
+            )
+          : card.status === 'executable';
   $: title =
     card.kind === 'treasury'
       ? $t('governance.proposal.title', { values: { id: card.proposal.proposalId } })
       : card.kind === 'mutiny'
         ? $t('governance.proposal.mutinyTitle', { values: { id: card.status.activeMutinyId } })
-        : card.kind === 'crew_add'
-          ? $t('governance.proposal.addCrewTitle')
-          : $t('governance.proposal.removeCrewTitle');
+        : card.kind === 'crew_offboard'
+          ? $t('governance.proposal.offboardTitle', { values: { id: card.status.offboardId } })
+          : card.kind === 'crew_add'
+            ? $t('governance.proposal.addCrewTitle')
+            : $t('governance.proposal.removeCrewTitle');
   $: statusLabel =
     card.kind === 'treasury'
       ? treasuryProposalStatusLabel(card.proposal.status)
       : card.kind === 'mutiny'
-        ? isMutinyExecutable(card.status)
-          ? $t('governance.proposal.readyToExecute')
-          : $t('governance.proposal.active')
+        ? isMutinyExpirable(card.status, delayElapsed ? Math.floor(Date.now() / 1000) : 0)
+          ? $t('governance.proposal.expired')
+          : isMutinyExecutable(card.status, delayElapsed ? Math.floor(Date.now() / 1000) : 0)
+            ? $t('governance.proposal.readyToExecute')
+            : $t('governance.proposal.active')
+        : card.kind === 'crew_offboard'
+          ? isCrewOffboardExpirable(card.status, delayElapsed ? Math.floor(Date.now() / 1000) : 0)
+            ? $t('governance.proposal.expired')
+            : isCrewOffboardExecutable(
+                  card.status,
+                  card.quorumBps,
+                  delayElapsed ? Math.floor(Date.now() / 1000) : 0,
+                )
+              ? $t('governance.proposal.readyToExecute')
+              : $t('governance.proposal.active')
         : card.status === 'executable'
           ? $t('governance.proposal.readyToExecute')
           : $t('governance.proposal.timelock');
@@ -98,6 +124,14 @@
     return execUi.disabledReasonKey.startsWith('governance.')
       ? $t(execUi.disabledReasonKey)
       : execUi.disabledReasonKey;
+  })();
+  $: expireTitle = (() => {
+    if (execUi.expireEnabled || !execUi.expireReasonKey) {
+      return $t('governance.common.expire');
+    }
+    return execUi.expireReasonKey.startsWith('governance.')
+      ? $t(execUi.expireReasonKey)
+      : execUi.expireReasonKey;
   })();
 </script>
 
@@ -150,9 +184,33 @@
         },
       })}
     </p>
+    {#if card.status.fromCaptain}
+      <p class="proposal-card-meta muted">
+        {$t('governance.mutiny.fromCaptain', { values: { address: card.status.fromCaptain } })}
+      </p>
+    {/if}
+    {#if card.status.deadline > 0}
+      <p class="proposal-card-meta muted">
+        {$t('governance.mutiny.deadline', {
+          values: { when: new Date(card.status.deadline * 1000).toLocaleString() },
+        })}
+      </p>
+    {/if}
     <p class="proposal-card-meta muted">
       {$t('governance.proposal.captainLine')}
       <code class="proposal-card-ref">{card.status.captain || '—'}</code>
+    </p>
+  {:else if card.kind === 'crew_offboard'}
+    <p class="proposal-card-meta muted">
+      {$t('governance.proposal.offboardMeta', {
+        values: {
+          address: card.status.target || '—',
+          yeas: card.status.yeas,
+          nays: card.status.nays,
+          snapshot: card.status.snapshot,
+          deadline: card.status.deadline > 0 ? new Date(card.status.deadline * 1000).toLocaleString() : '—',
+        },
+      })}
     </p>
   {:else}
     <p class="proposal-card-meta muted">
@@ -179,6 +237,22 @@
       </button>
       {#if !execUi.executeEnabled && execUi.disabledReasonKey}
         <p class="execute-reason muted">{executeTitle}</p>
+      {/if}
+    </div>
+  {/if}
+  {#if showExecute && execUi.showExpire && onExpire}
+    <div class="execute-wrap">
+      <button
+        type="button"
+        class="expire-btn"
+        disabled={executePending || !execUi.expireEnabled}
+        title={expireTitle}
+        onclick={() => onExpire()}
+      >
+        {$t('governance.common.expire')}
+      </button>
+      {#if !execUi.expireEnabled && execUi.expireReasonKey}
+        <p class="execute-reason muted">{expireTitle}</p>
       {/if}
     </div>
   {/if}
@@ -269,6 +343,20 @@
     align-self: flex-start;
   }
   .execute-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .expire-btn {
+    font-size: 0.8125rem;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    cursor: pointer;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    align-self: flex-start;
+  }
+  .expire-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
   }

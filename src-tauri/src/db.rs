@@ -2436,7 +2436,8 @@ pub struct StickerPackRow {
     pub deleted: bool,
 }
 
-const STICKER_PACK_COLUMNS: &str = "squad_id, pack_id, name, entries, updated_at, updated_by, deleted";
+const STICKER_PACK_COLUMNS: &str =
+    "squad_id, pack_id, name, entries, updated_at, updated_by, deleted";
 
 /// Persist a local sticker-pack edit (create, rename, re-order, or `deleted: true` tombstone)
 /// and stamp `updated_at` from the system clock. The caller sends the MLS announce using the
@@ -2502,7 +2503,9 @@ pub fn upsert_sticker_pack_inner<R: Runtime>(
 
 /// Every non-deleted sticker pack in this account's database — i.e. every squad the account
 /// belongs to, since only squads it has synced announcements for have rows here.
-pub fn load_sticker_packs<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<StickerPackRow>, String> {
+pub fn load_sticker_packs<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<Vec<StickerPackRow>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
     let mut stmt = conn
         .prepare(&format!(
@@ -2559,7 +2562,10 @@ mod sticker_pack_local_storage_tests {
             "updated_by",
             "deleted",
         ] {
-            assert!(cols.contains(&expected.to_string()), "missing column {expected}");
+            assert!(
+                cols.contains(&expected.to_string()),
+                "missing column {expected}"
+            );
         }
     }
 }
@@ -3147,7 +3153,10 @@ pub fn emit_sticker_packs_updated<R: Runtime>(handle: &AppHandle<R>) {
             })
         })
         .collect();
-    let _ = handle.emit("sticker_packs_updated", serde_json::json!({ "packs": packs }));
+    let _ = handle.emit(
+        "sticker_packs_updated",
+        serde_json::json!({ "packs": packs }),
+    );
 }
 
 #[cfg(test)]
@@ -3245,7 +3254,12 @@ mod sticker_pack_announce_tests {
             1000,
             false,
         );
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-1", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-1",
+            Some("npub1author"),
+        );
         let row = stored_row(app.handle(), "squad-1", "pack-1").expect("row");
         assert_eq!(row.name, "Pack One");
         assert_eq!(row.updated_at, 1000);
@@ -3258,7 +3272,12 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickernonmember");
         insert_chat_with_participants(app.handle(), "squad-2", &["npub1someoneelse"]);
         let content = announce("squad-2", "pack-1", "Pack One", "[]", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-2", Some("npub1stranger"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-2",
+            Some("npub1stranger"),
+        );
         assert!(stored_row(app.handle(), "squad-2", "pack-1").is_none());
     }
 
@@ -3267,7 +3286,12 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickermismatch");
         insert_chat_with_participants(app.handle(), "squad-3", &["npub1author"]);
         let content = announce("other-squad", "pack-1", "Pack One", "[]", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-3", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-3",
+            Some("npub1author"),
+        );
         assert!(stored_row(app.handle(), "squad-3", "pack-1").is_none());
         assert!(stored_row(app.handle(), "other-squad", "pack-1").is_none());
     }
@@ -3277,11 +3301,26 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickerolderequal");
         insert_chat_with_participants(app.handle(), "squad-4", &["npub1author"]);
         let first = announce("squad-4", "pack-1", "Original", "[]", 2000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &first, "squad-4", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &first,
+            "squad-4",
+            Some("npub1author"),
+        );
         let equal = announce("squad-4", "pack-1", "Equal Attempt", "[]", 2000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &equal, "squad-4", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &equal,
+            "squad-4",
+            Some("npub1author"),
+        );
         let older = announce("squad-4", "pack-1", "Older Attempt", "[]", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &older, "squad-4", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &older,
+            "squad-4",
+            Some("npub1author"),
+        );
         let row = stored_row(app.handle(), "squad-4", "pack-1").unwrap();
         assert_eq!(row.name, "Original");
         assert_eq!(row.updated_at, 2000);
@@ -3299,7 +3338,12 @@ mod sticker_pack_announce_tests {
             1000,
             false,
         );
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &first, "squad-5", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &first,
+            "squad-5",
+            Some("npub1author"),
+        );
         let second = announce(
             "squad-5",
             "pack-1",
@@ -3308,7 +3352,12 @@ mod sticker_pack_announce_tests {
             2000,
             false,
         );
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &second, "squad-5", Some("npub1author2"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &second,
+            "squad-5",
+            Some("npub1author2"),
+        );
         let row = stored_row(app.handle(), "squad-5", "pack-1").unwrap();
         assert_eq!(row.name, "Renamed");
         assert_eq!(row.updated_at, 2000);
@@ -3324,8 +3373,18 @@ mod sticker_pack_announce_tests {
         // Newer arrives first; a stale older one arrives late and must not win.
         let newer = announce("squad-6", "pack-1", "Newer", "[]", 5000, false);
         let older = announce("squad-6", "pack-1", "Older", "[]", 3000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &newer, "squad-6", Some("npub1author"));
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &older, "squad-6", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &newer,
+            "squad-6",
+            Some("npub1author"),
+        );
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &older,
+            "squad-6",
+            Some("npub1author"),
+        );
         let row = stored_row(app.handle(), "squad-6", "pack-1").unwrap();
         assert_eq!(row.name, "Newer");
         assert_eq!(row.updated_at, 5000);
@@ -3333,8 +3392,18 @@ mod sticker_pack_announce_tests {
         // Reverse order on a fresh pack in the same squad: older first, then a genuinely newer one.
         let older2 = announce("squad-6", "pack-2", "Older2", "[]", 3000, false);
         let newer2 = announce("squad-6", "pack-2", "Newer2", "[]", 5000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &older2, "squad-6", Some("npub1author"));
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &newer2, "squad-6", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &older2,
+            "squad-6",
+            Some("npub1author"),
+        );
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &newer2,
+            "squad-6",
+            Some("npub1author"),
+        );
         let row2 = stored_row(app.handle(), "squad-6", "pack-2").unwrap();
         assert_eq!(row2.name, "Newer2");
         assert_eq!(row2.updated_at, 5000);
@@ -3345,17 +3414,35 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickertombstone");
         insert_chat_with_participants(app.handle(), "squad-7", &["npub1author"]);
         let live = announce("squad-7", "pack-1", "Alive", "[]", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &live, "squad-7", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &live,
+            "squad-7",
+            Some("npub1author"),
+        );
         let tombstone = announce("squad-7", "pack-1", "Alive", "[]", 2000, true);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &tombstone, "squad-7", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &tombstone,
+            "squad-7",
+            Some("npub1author"),
+        );
         let row = stored_row(app.handle(), "squad-7", "pack-1").unwrap();
         assert!(row.deleted, "row should be tombstoned");
 
         // A late-arriving, older, non-deleted announce must not resurrect it.
         let resurrect_attempt = announce("squad-7", "pack-1", "Resurrected", "[]", 1500, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &resurrect_attempt, "squad-7", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &resurrect_attempt,
+            "squad-7",
+            Some("npub1author"),
+        );
         let row2 = stored_row(app.handle(), "squad-7", "pack-1").unwrap();
-        assert!(row2.deleted, "tombstone must survive a stale older announce");
+        assert!(
+            row2.deleted,
+            "tombstone must survive a stale older announce"
+        );
         assert_eq!(row2.name, "Alive");
     }
 
@@ -3364,15 +3451,32 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickermalformed");
         insert_chat_with_participants(app.handle(), "squad-8", &["npub1author"]);
 
-        maybe_upsert_sticker_pack_from_announce(app.handle(), "not json", "squad-8", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            "not json",
+            "squad-8",
+            Some("npub1author"),
+        );
         maybe_upsert_sticker_pack_from_announce(
             app.handle(),
             r#"{"type":"sticker_pack_updated"}"#,
             "squad-8",
             Some("npub1author"),
         );
-        let bad_entries = announce("squad-8", "pack-1", "Bad Entries", "\"not-an-array\"", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &bad_entries, "squad-8", Some("npub1author"));
+        let bad_entries = announce(
+            "squad-8",
+            "pack-1",
+            "Bad Entries",
+            "\"not-an-array\"",
+            1000,
+            false,
+        );
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &bad_entries,
+            "squad-8",
+            Some("npub1author"),
+        );
 
         assert!(stored_row(app.handle(), "squad-8", "pack-1").is_none());
     }
@@ -3395,7 +3499,12 @@ mod sticker_pack_announce_tests {
             .collect();
         let entries_json = serde_json::to_string(&entries).unwrap();
         let content = announce("squad-9", "pack-1", "Too Many", &entries_json, 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-9", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-9",
+            Some("npub1author"),
+        );
         assert!(stored_row(app.handle(), "squad-9", "pack-1").is_none());
     }
 
@@ -3414,7 +3523,12 @@ mod sticker_pack_announce_tests {
         }]))
         .unwrap();
         let content = announce("squad-10", "pack-1", "Too Big", &entries_json, 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-10", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-10",
+            Some("npub1author"),
+        );
         assert!(stored_row(app.handle(), "squad-10", "pack-1").is_none());
     }
 }
@@ -5189,59 +5303,7 @@ mod legacy_mls_store_harvest_tests {
     #[test]
     fn v30_migration_creates_mls_legacy_admins_table_on_baselined_db() {
         let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
-        conn.execute_batch(
-            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            CREATE TABLE profiles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                npub TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL DEFAULT '',
-                display_name TEXT NOT NULL DEFAULT '',
-                nickname TEXT NOT NULL DEFAULT '',
-                lud06 TEXT NOT NULL DEFAULT '',
-                lud16 TEXT NOT NULL DEFAULT '',
-                banner TEXT NOT NULL DEFAULT '',
-                avatar TEXT NOT NULL DEFAULT '',
-                about TEXT NOT NULL DEFAULT '',
-                website TEXT NOT NULL DEFAULT '',
-                nip05 TEXT NOT NULL DEFAULT '',
-                status_content TEXT NOT NULL DEFAULT '',
-                status_url TEXT NOT NULL DEFAULT '',
-                muted INTEGER NOT NULL DEFAULT 0,
-                bot INTEGER NOT NULL DEFAULT 0,
-                avatar_cached TEXT NOT NULL DEFAULT '',
-                banner_cached TEXT NOT NULL DEFAULT '',
-                evm_address TEXT NOT NULL DEFAULT '',
-                blocked INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE chats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_identifier TEXT UNIQUE NOT NULL,
-                chat_type INTEGER NOT NULL,
-                participants TEXT NOT NULL,
-                last_read TEXT NOT NULL DEFAULT '',
-                created_at INTEGER NOT NULL,
-                metadata TEXT NOT NULL DEFAULT '{}',
-                muted INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE events (
-                id TEXT PRIMARY KEY,
-                kind INTEGER NOT NULL,
-                chat_id INTEGER NOT NULL,
-                user_id INTEGER,
-                content TEXT NOT NULL,
-                tags TEXT NOT NULL DEFAULT '[]',
-                reference_id TEXT,
-                created_at INTEGER NOT NULL,
-                received_at INTEGER NOT NULL,
-                mine INTEGER NOT NULL DEFAULT 0,
-                pending INTEGER NOT NULL DEFAULT 0,
-                failed INTEGER NOT NULL DEFAULT 0,
-                wrapper_event_id TEXT,
-                npub TEXT,
-                virtual_bucket TEXT
-            );",
-        )
-        .expect("seed pre-V28 schema (mirrors migrations::tests::seed_pre_v28_schema)");
+        crate::migrations::seed_pre_v28_schema(&conn);
 
         crate::migrations::run_migrations(&mut conn).expect("baseline should run");
 

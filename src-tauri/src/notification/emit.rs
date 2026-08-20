@@ -162,7 +162,11 @@ mod tests {
     #[tokio::test]
     async fn own_events_never_interrupt_regardless_of_level() {
         let handle = test_handle();
-        for kind in [EventKind::GroupMessage, EventKind::DirectMessage, EventKind::ActionPrompt] {
+        for kind in [
+            EventKind::GroupMessage,
+            EventKind::DirectMessage,
+            EventKind::ActionPrompt,
+        ] {
             for level in [Nothing, Mentions, All] {
                 emit(
                     &handle,

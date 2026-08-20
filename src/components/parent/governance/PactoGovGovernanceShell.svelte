@@ -7,7 +7,9 @@
     getMutinyStatus,
     getQuartermasterStatus,
     mutinyExecute,
+    mutinyExpire,
     mutinyHasVoted,
+    crewOffboardHasVoted,
     getSquadCapabilities,
     type SquadCapabilitiesDto,
     type MutinyStatusDto,
@@ -34,6 +36,8 @@
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
+  import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
+  import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
   import { showToast } from '../../../stores/toast';
@@ -71,6 +75,7 @@
 
   let qmStatus: QuartermasterStatusDto | null = null;
   let qmHydrateKey = '';
+  let offboardHasVoted = false;
 
   let qmPending: QuartermasterPendingActionDto[] = [];
   let qmPendingLoading = false;
@@ -79,6 +84,14 @@
   let lastSeenProcessNonce = 0;
 
   $: processNonce = $governanceProcessNonceByParentId[parentId.trim()] ?? 0;
+  $: rosterFrozen = isMutinyActive(mutinyStatus) || isCrewOffboardActive(qmStatus);
+  $: rosterFreezeReason = isMutinyActive(mutinyStatus)
+    ? 'governance.gate.quartermasterLocked'
+    : 'governance.gate.rosterFrozenOffboard';
+  $: crewMemberOptions = memberEvmOptions.filter((o) => {
+    const addr = o.address.trim().toLowerCase();
+    return crewWearers.some((c) => c.trim().toLowerCase() === addr);
+  });
   $: if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
     lastSeenProcessNonce = processNonce;
     refreshAllProposals();
@@ -139,7 +152,7 @@
   }
 
   $: {
-    const key = `${parentId}|${network}|${payload.quartermaster ?? ''}`;
+    const key = `${parentId}|${network}|${payload.quartermaster ?? ''}|${privilege.myAddress}`;
     if (key !== qmHydrateKey && parentId.trim() && payload.quartermaster?.trim()) {
       qmHydrateKey = key;
       void reloadQm(false);
@@ -241,13 +254,16 @@
   async function reloadQm(force = false) {
     const quartermaster = payload.quartermaster?.trim();
     if (!quartermaster) return;
-    const hydrateKey = `${parentId}|${network}|${quartermaster}`;
+    const hydrateKey = `${parentId}|${network}|${quartermaster}|${privilege.myAddress}`;
     const key = quartermasterReadCacheKey(network, quartermaster);
     const peeked = peekGovModuleRead<QuartermasterStatusDto>(key);
     if (peeked) qmStatus = peeked;
 
     const needFetch = force || !peeked || isGovModuleReadStale(key);
     if (!needFetch) {
+      if (peeked && isCrewOffboardActive(peeked) && privilege.myAddress) {
+        void loadOffboardVote(quartermaster, peeked, privilege.myAddress);
+      }
       return;
     }
 
@@ -258,11 +274,39 @@
         () => getQuartermasterStatus({ network, quartermaster, parentId }),
         { force: force || !!peeked },
       );
-      if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
+      if (hydrateKey !== `${parentId}|${network}|${quartermaster}|${privilege.myAddress}`) return;
       qmStatus = next;
+      if (isCrewOffboardActive(next) && privilege.myAddress) {
+        await loadOffboardVote(quartermaster, next, privilege.myAddress);
+      } else {
+        offboardHasVoted = false;
+      }
     } catch {
-      if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
+      if (hydrateKey !== `${parentId}|${network}|${quartermaster}|${privilege.myAddress}`) return;
       if (!peeked) qmStatus = null;
+    }
+  }
+
+  async function loadOffboardVote(
+    quartermaster: string,
+    status: QuartermasterStatusDto,
+    voter: string,
+  ) {
+    const id = status.activeCrewOffboardId?.trim();
+    if (!id || id === '0') {
+      offboardHasVoted = false;
+      return;
+    }
+    try {
+      offboardHasVoted = await crewOffboardHasVoted({
+        network,
+        quartermaster,
+        offboardId: id,
+        voter,
+        parentId,
+      });
+    } catch {
+      offboardHasVoted = false;
     }
   }
 
@@ -303,6 +347,23 @@
       await reloadMutiny(true);
     } catch (e) {
       showToast(govWriteErrorMessage(e, tFn('governance.action.executeMutiny')));
+    }
+  }
+
+  async function expireMutinyFromBoard() {
+    const mutinyModule = payload.mutinyModule?.trim();
+    if (!mutinyModule || !mutinyStatus) return;
+    try {
+      const result = await mutinyExpire({
+        network,
+        parentId,
+        mutinyModule,
+        mutinyId: mutinyStatus.activeMutinyId,
+      });
+      showToast(govWriteSubmittedToast(tFn('governance.action.expireMutiny'), fundedByFromWriteResult(result)));
+      await reloadMutiny(true);
+    } catch (e) {
+      showToast(govWriteErrorMessage(e, tFn('governance.action.expireMutiny')));
     }
   }
 
@@ -363,12 +424,15 @@
         proposalsError={treasuryProposalsError}
         {mutinyStatus}
         {mutinyLoading}
+        {qmStatus}
         {qmPending}
         {qmPendingLoading}
         {qmPendingError}
-        mutinyMode={!!qmStatus?.mutinyActive || !!(mutinyStatus && mutinyStatus.activeMutinyId !== '0' && !mutinyStatus.executed)}
+        mutinyMode={rosterFrozen}
+        rosterFreezeReason={rosterFreezeReason}
         onRefreshProposals={refreshAllProposals}
         onExecuteMutiny={executeMutinyFromBoard}
+        onExpireMutiny={expireMutinyFromBoard}
         {fundingHint}
       />
     {:else if govSubMode === 'crew'}
@@ -377,12 +441,20 @@
         {parentId}
         treasuryAuthority={payload.treasuryAuthority ?? ''}
         mutinyModule={payload.mutinyModule ?? ''}
+        quartermaster={payload.quartermaster ?? ''}
         {privilege}
         proposals={treasuryProposals}
         {mutinyStatus}
         mutinyHasVotedFlag={mutinyHasVotedFlag}
+        {qmStatus}
+        memberEvmOptions={crewMemberOptions}
+        {offboardHasVoted}
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
+        onRefreshQm={() => {
+          void reloadQm(true);
+          void reloadQmPending();
+        }}
         {fundingHint}
       />
     {:else}

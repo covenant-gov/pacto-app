@@ -1,8 +1,10 @@
 import type {
+  CrewOffboardDto,
   MutinyStatusDto,
   QuartermasterPendingActionDto,
   TreasuryProposalDto,
 } from './api';
+import { isCrewOffboardActive } from './crew-offboard';
 import { govExecuteUiState } from './gov-execute-ui';
 import { buildGovProcessCards } from './gov-process';
 import {
@@ -10,6 +12,7 @@ import {
   crewVotableProposals,
   isMutinyActive,
   isMutinyExecutable,
+  isMutinyPastDeadline,
 } from './gov-proposal-lists';
 import {
   gatePermissionlessSigner,
@@ -54,6 +57,10 @@ export function deriveGovActionPrompts(params: {
   mutinyHasVoted: boolean;
   /** When false, skip mutiny vote-needed (vote-status read failed). */
   mutinyVoteKnown?: boolean;
+  crewOffboard?: CrewOffboardDto | null;
+  crewOffboardQuorumBps?: number;
+  offboardHasVoted?: boolean;
+  offboardVoteKnown?: boolean;
   nowSec?: number;
   maxPrompts?: number;
 }): GovActionPrompt[] {
@@ -75,6 +82,8 @@ export function deriveGovActionPrompts(params: {
     treasuryProposals: params.proposals,
     mutinyStatus: params.mutinyStatus,
     qmPending: params.qmPending,
+    crewOffboard: params.crewOffboard,
+    crewOffboardQuorumBps: params.crewOffboardQuorumBps,
     nowSec: now,
   });
 
@@ -104,6 +113,17 @@ export function deriveGovActionPrompts(params: {
         parentId,
         titleKey: 'governance.alerts.prompt.executeReadyTitle',
         bodyKey: 'governance.alerts.prompt.executeReadyMutiny',
+        bodyValues: { id },
+        urgency: urgencyFor('execute_ready'),
+      });
+    } else if (card.kind === 'crew_offboard') {
+      const id = card.status.offboardId;
+      out.push({
+        kind: 'execute_ready',
+        sourceEventId: `gov-execute:crew-offboard:${parentId}:${id}`,
+        parentId,
+        titleKey: 'governance.alerts.prompt.executeReadyTitle',
+        bodyKey: 'governance.alerts.prompt.executeReadyOffboard',
         bodyValues: { id },
         urgency: urgencyFor('execute_ready'),
       });
@@ -160,7 +180,8 @@ export function deriveGovActionPrompts(params: {
     isMutinyActive(params.mutinyStatus) &&
     params.mutinyStatus &&
     !params.mutinyHasVoted &&
-    !isMutinyExecutable(params.mutinyStatus)
+    !isMutinyExecutable(params.mutinyStatus, now) &&
+    !isMutinyPastDeadline(params.mutinyStatus, now)
   ) {
     const id = params.mutinyStatus.activeMutinyId;
     out.push({
@@ -172,6 +193,35 @@ export function deriveGovActionPrompts(params: {
       bodyValues: { id },
       urgency: urgencyFor('vote_needed'),
     });
+  }
+
+  if (
+    crewGate.enabled &&
+    params.offboardVoteKnown !== false &&
+    isCrewOffboardActive(params.crewOffboard) &&
+    params.crewOffboard &&
+    !params.offboardHasVoted
+  ) {
+    const offboardCard = cards.find((c) => c.kind === 'crew_offboard');
+    const ui = offboardCard
+      ? govExecuteUiState({
+          card: offboardCard,
+          privilegeReasonKey: execPrivilegeKey,
+          nowSec: now,
+        })
+      : null;
+    if (!ui?.showExecute && !ui?.showExpire) {
+      const id = params.crewOffboard.offboardId;
+      out.push({
+        kind: 'vote_needed',
+        sourceEventId: `gov-vote:crew-offboard:${parentId}:${id}`,
+        parentId,
+        titleKey: 'governance.alerts.prompt.voteNeededTitle',
+        bodyKey: 'governance.alerts.prompt.voteNeededOffboard',
+        bodyValues: { id },
+        urgency: urgencyFor('vote_needed'),
+      });
+    }
   }
 
   // Delay-unlock (crew only)

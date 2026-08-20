@@ -5,10 +5,10 @@ use alloy::providers::Provider;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
+use super::contracts::pacto_gov::read_bindings::CrewVoteMode;
 use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
     crewVoteModeCall, hasVotedCall, nextProposalIdCall, proposalCall, quorumBpsCall, Operation,
 };
-use super::contracts::pacto_gov::read_bindings::CrewVoteMode;
 use super::gov_read::connect_gov_read_provider;
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
 
@@ -193,8 +193,8 @@ pub async fn list_treasury_proposals<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::{crew_vote_mode_wire, proposal_scan_last_id};
     use super::CrewVoteMode;
+    use super::{crew_vote_mode_wire, proposal_scan_last_id};
     use alloy::primitives::U256;
 
     #[test]

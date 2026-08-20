@@ -8,10 +8,12 @@ use tauri::{AppHandle, Runtime};
 use super::access_control::GovCapability;
 use super::contracts::hats::IHats::hatSupplyCall;
 use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
-    bootstrapCrewCall, cancelAddCrewCall, cancelRemoveCrewCall, crewChangeDelayCall, crewHatIdCall,
-    executeAddCrewCall, executeRemoveCrewCall, mutinyActiveCall, pendingAddsCall,
-    pendingCrewAddAtCall, pendingCrewRemoveAtCall, pendingRemovesCall, requestAddCrewCall,
-    requestRemoveCrewCall,
+    activeCrewOffboardIdCall, bootstrapCrewCall, cancelAddCrewCall, cancelRemoveCrewCall,
+    crewChangeDelayCall, crewHatIdCall, crewOffboardCall, crewOffboardExpiryCall,
+    crewOffboardQuorumBpsCall, crewOffboardVoteCall, executeAddCrewCall, executeOffboardCall,
+    executeRemoveCrewCall, expireOffboardCall, hasCrewOffboardVoteCall, mutinyActiveCall,
+    pendingAddsCall, pendingCrewAddAtCall, pendingCrewRemoveAtCall, pendingRemovesCall,
+    proposeOffboardCall, requestAddCrewCall, requestRemoveCrewCall,
 };
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
 use super::gov_read::connect_gov_read_provider;
@@ -54,6 +56,57 @@ fn encode_request_remove_crew(crew: &str) -> Result<Vec<u8>, String> {
     Ok(requestRemoveCrewCall { _crew: addr }.abi_encode())
 }
 
+fn parse_offboard_id(raw: &str) -> Result<U256, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(wallet_err_json(
+            "INVALID_OFFBOARD_ID",
+            "offboard id is required",
+            None,
+        ));
+    }
+    U256::from_str_radix(trimmed, 10)
+        .map_err(|e| wallet_err_json("INVALID_OFFBOARD_ID", e.to_string(), None))
+}
+
+fn encode_propose_offboard(target: &str) -> Result<Vec<u8>, String> {
+    let addr =
+        parse_address(target.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    Ok(proposeOffboardCall { _target: addr }.abi_encode())
+}
+
+fn encode_crew_offboard_vote(offboard_id: &str, support: bool) -> Result<Vec<u8>, String> {
+    let id = parse_offboard_id(offboard_id)?;
+    Ok(crewOffboardVoteCall {
+        _offboardId: id,
+        _support: support,
+    }
+    .abi_encode())
+}
+
+fn encode_execute_offboard(offboard_id: &str) -> Result<Vec<u8>, String> {
+    let id = parse_offboard_id(offboard_id)?;
+    Ok(executeOffboardCall { _offboardId: id }.abi_encode())
+}
+
+fn encode_expire_offboard(offboard_id: &str) -> Result<Vec<u8>, String> {
+    let id = parse_offboard_id(offboard_id)?;
+    Ok(expireOffboardCall { _offboardId: id }.abi_encode())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewOffboardDto {
+    pub offboard_id: String,
+    pub target: String,
+    pub proposer: String,
+    pub deadline: u64,
+    pub snapshot: u64,
+    pub yeas: u64,
+    pub nays: u64,
+    pub executed: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuartermasterStatusDto {
@@ -61,6 +114,10 @@ pub struct QuartermasterStatusDto {
     pub mutiny_active: bool,
     pub crew_hat_supply: Option<u32>,
     pub bootstrap_available: Option<bool>,
+    pub active_crew_offboard_id: String,
+    pub crew_offboard_expiry_secs: String,
+    pub crew_offboard_quorum_bps: String,
+    pub offboard: Option<CrewOffboardDto>,
 }
 
 #[derive(Serialize)]
@@ -124,6 +181,33 @@ pub async fn get_quartermaster_status<R: Runtime>(
     let mutiny_active = eth_call_decode(&provider, qm, &mutinyActiveCall {})
         .await
         .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+    let offboard_id: U256 = eth_call_decode(&provider, qm, &activeCrewOffboardIdCall {})
+        .await
+        .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+    let offboard_expiry = eth_call_decode(&provider, qm, &crewOffboardExpiryCall {})
+        .await
+        .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+    let offboard_quorum = eth_call_decode(&provider, qm, &crewOffboardQuorumBpsCall {})
+        .await
+        .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+
+    let offboard = if offboard_id.is_zero() {
+        None
+    } else {
+        let row = eth_call_decode(&provider, qm, &crewOffboardCall { _id: offboard_id })
+            .await
+            .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+        Some(CrewOffboardDto {
+            offboard_id: offboard_id.to_string(),
+            target: format!("{:#x}", row._target),
+            proposer: format!("{:#x}", row._proposer),
+            deadline: row._deadline,
+            snapshot: row._snapshot,
+            yeas: row._yeas,
+            nays: row._nays,
+            executed: row._executed,
+        })
+    };
 
     let crew_hat_id = eth_call_decode(&provider, qm, &crewHatIdCall {})
         .await
@@ -152,7 +236,11 @@ pub async fn get_quartermaster_status<R: Runtime>(
         crew_change_delay_secs: delay.to_string(),
         mutiny_active,
         crew_hat_supply: Some(supply),
-        bootstrap_available: Some(supply == 0 && !mutiny_active),
+        bootstrap_available: Some(supply == 0 && !mutiny_active && offboard_id.is_zero()),
+        active_crew_offboard_id: offboard_id.to_string(),
+        crew_offboard_expiry_secs: offboard_expiry.to_string(),
+        crew_offboard_quorum_bps: offboard_quorum.to_string(),
+        offboard,
     })
 }
 
@@ -430,15 +518,133 @@ pub async fn quartermaster_execute_remove_crew<R: Runtime>(
     .await
 }
 
+#[tauri::command]
+pub async fn crew_offboard_has_voted<R: Runtime>(
+    _app: AppHandle<R>,
+    network: String,
+    quartermaster: String,
+    offboard_id: String,
+    voter: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<bool, String> {
+    let qm = parse_address(quartermaster.trim())
+        .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
+    let voter_addr =
+        parse_address(voter.trim()).map_err(|e| wallet_err_json("INVALID_VOTER", e, None))?;
+    let id = parse_offboard_id(&offboard_id)?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+    eth_call_decode(
+        &provider,
+        qm,
+        &hasCrewOffboardVoteCall {
+            _offboardId: id,
+            _voter: voter_addr,
+        },
+    )
+    .await
+    .map_err(|e| wallet_err_json("QM_READ", e, None))
+}
+
+#[tauri::command]
+pub async fn quartermaster_propose_offboard<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    parent_id: String,
+    quartermaster: String,
+    target: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<QuartermasterWriteResult, String> {
+    let calldata = encode_propose_offboard(&target)?;
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::ProposeCrewOffboard,
+        rpc_urls,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn quartermaster_crew_offboard_vote<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    parent_id: String,
+    quartermaster: String,
+    offboard_id: String,
+    support: bool,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<QuartermasterWriteResult, String> {
+    let calldata = encode_crew_offboard_vote(&offboard_id, support)?;
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::CastCrewOffboardVote,
+        rpc_urls,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn quartermaster_execute_offboard<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    parent_id: String,
+    quartermaster: String,
+    offboard_id: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<QuartermasterWriteResult, String> {
+    let calldata = encode_execute_offboard(&offboard_id)?;
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::ExecuteCrewOffboard,
+        rpc_urls,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn quartermaster_expire_offboard<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    parent_id: String,
+    quartermaster: String,
+    offboard_id: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<QuartermasterWriteResult, String> {
+    let calldata = encode_expire_offboard(&offboard_id)?;
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::ExecuteCrewOffboard,
+        rpc_urls,
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        addresses_equal_normalized, encode_bootstrap_crew, encode_execute_add_crew,
-        encode_request_add_crew, encode_request_remove_crew, fold_qm_pending_verifies, zip_pending,
-        QmPendingKind,
+        addresses_equal_normalized, encode_bootstrap_crew, encode_crew_offboard_vote,
+        encode_execute_add_crew, encode_execute_offboard, encode_expire_offboard,
+        encode_propose_offboard, encode_request_add_crew, encode_request_remove_crew,
+        fold_qm_pending_verifies, parse_offboard_id, zip_pending, QmPendingKind,
     };
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::{
-        bootstrapCrewCall, executeAddCrewCall, requestAddCrewCall, requestRemoveCrewCall,
+        bootstrapCrewCall, crewOffboardVoteCall, executeAddCrewCall, executeOffboardCall,
+        expireOffboardCall, proposeOffboardCall, requestAddCrewCall, requestRemoveCrewCall,
     };
     use crate::evm::rpc::parse_address;
     use alloy::primitives::U256;
@@ -536,5 +742,52 @@ mod tests {
         assert_eq!(out[0].executable_at, "10");
         assert_eq!(out[1].kind, "remove");
         assert_eq!(out[1].executable_at, "50");
+    }
+
+    #[test]
+    fn offboard_encodes_propose_vote_execute_expire() {
+        assert_eq!(parse_offboard_id("4").unwrap(), U256::from(4u64));
+        assert!(parse_offboard_id("").is_err());
+        assert!(parse_offboard_id("0x1").is_err());
+
+        let propose = encode_propose_offboard(ADDR_A).expect("propose");
+        assert_eq!(
+            propose,
+            proposeOffboardCall {
+                _target: parse_address(ADDR_A).unwrap(),
+            }
+            .abi_encode()
+        );
+        assert!(encode_propose_offboard("bad").is_err());
+
+        let vote = encode_crew_offboard_vote("3", true).expect("vote");
+        assert_eq!(
+            vote,
+            crewOffboardVoteCall {
+                _offboardId: U256::from(3u64),
+                _support: true,
+            }
+            .abi_encode()
+        );
+        let nay = encode_crew_offboard_vote("3", false).expect("nay");
+        assert_ne!(vote, nay);
+
+        let exec = encode_execute_offboard("3").expect("exec");
+        assert_eq!(
+            exec,
+            executeOffboardCall {
+                _offboardId: U256::from(3u64),
+            }
+            .abi_encode()
+        );
+        let expire = encode_expire_offboard("3").expect("expire");
+        assert_eq!(
+            expire,
+            expireOffboardCall {
+                _offboardId: U256::from(3u64),
+            }
+            .abi_encode()
+        );
+        assert_ne!(exec, expire);
     }
 }

@@ -15,6 +15,9 @@ pub enum GovCapability {
     CaptainResign,
     QuartermasterMutateCrew,
     QuartermasterExecute,
+    ProposeCrewOffboard,
+    CastCrewOffboardVote,
+    ExecuteCrewOffboard,
     MutateTrackedTokens,
     SquadAdminCreateRole,
     SquadAdminEnableExecutor,
@@ -32,6 +35,9 @@ pub const CAPABILITY_KEYS: &[GovCapability] = &[
     GovCapability::CaptainResign,
     GovCapability::QuartermasterMutateCrew,
     GovCapability::QuartermasterExecute,
+    GovCapability::ProposeCrewOffboard,
+    GovCapability::CastCrewOffboardVote,
+    GovCapability::ExecuteCrewOffboard,
     GovCapability::MutateTrackedTokens,
     GovCapability::SquadAdminCreateRole,
     GovCapability::SquadAdminEnableExecutor,
@@ -51,6 +57,9 @@ impl GovCapability {
             Self::CaptainResign => "captainResign",
             Self::QuartermasterMutateCrew => "quartermasterMutateCrew",
             Self::QuartermasterExecute => "quartermasterExecute",
+            Self::ProposeCrewOffboard => "proposeCrewOffboard",
+            Self::CastCrewOffboardVote => "castCrewOffboardVote",
+            Self::ExecuteCrewOffboard => "executeCrewOffboard",
             Self::MutateTrackedTokens => "mutateTrackedTokens",
             Self::SquadAdminCreateRole => "squadAdminCreateRole",
             Self::SquadAdminEnableExecutor => "squadAdminEnableExecutor",
@@ -85,7 +94,8 @@ pub fn deny_reason(capability: GovCapability, ctx: &HatContext) -> &'static str 
         return match capability {
             GovCapability::ExecuteTreasury
             | GovCapability::ExecuteMutiny
-            | GovCapability::QuartermasterExecute => "Link a squad EVM address to sign.",
+            | GovCapability::QuartermasterExecute
+            | GovCapability::ExecuteCrewOffboard => "Link a squad EVM address to sign.",
             _ => "Link a squad EVM address to act.",
         };
     }
@@ -93,9 +103,11 @@ pub fn deny_reason(capability: GovCapability, ctx: &HatContext) -> &'static str 
         GovCapability::ProposeTreasury | GovCapability::MutateTrackedTokens => {
             "Requires Captain or Crew hat."
         }
-        GovCapability::CrewVote | GovCapability::StartMutiny | GovCapability::CastMutinyVote => {
-            "Requires Crew hat."
-        }
+        GovCapability::CrewVote
+        | GovCapability::StartMutiny
+        | GovCapability::CastMutinyVote
+        | GovCapability::ProposeCrewOffboard
+        | GovCapability::CastCrewOffboardVote => "Requires Crew hat.",
         GovCapability::CaptainVote => {
             if ctx.captain_is_safe && !ctx.wears_captain {
                 "Captain hat is on the Safe."
@@ -116,7 +128,8 @@ pub fn deny_reason(capability: GovCapability, ctx: &HatContext) -> &'static str 
         }
         GovCapability::ExecuteTreasury
         | GovCapability::ExecuteMutiny
-        | GovCapability::QuartermasterExecute => "Link a squad EVM address to sign.",
+        | GovCapability::QuartermasterExecute
+        | GovCapability::ExecuteCrewOffboard => "Link a squad EVM address to sign.",
     }
 }
 
@@ -136,9 +149,11 @@ pub fn capability_allowed(capability: GovCapability, ctx: &HatContext) -> bool {
         GovCapability::ProposeTreasury | GovCapability::MutateTrackedTokens => {
             ctx.wears_captain || ctx.wears_crew
         }
-        GovCapability::CrewVote | GovCapability::StartMutiny | GovCapability::CastMutinyVote => {
-            ctx.wears_crew
-        }
+        GovCapability::CrewVote
+        | GovCapability::StartMutiny
+        | GovCapability::CastMutinyVote
+        | GovCapability::ProposeCrewOffboard
+        | GovCapability::CastCrewOffboardVote => ctx.wears_crew,
         GovCapability::CaptainVote
         | GovCapability::CaptainResign
         | GovCapability::QuartermasterMutateCrew
@@ -147,7 +162,8 @@ pub fn capability_allowed(capability: GovCapability, ctx: &HatContext) -> bool {
         | GovCapability::SquadAdminEnableFull => ctx.wears_captain,
         GovCapability::ExecuteTreasury
         | GovCapability::ExecuteMutiny
-        | GovCapability::QuartermasterExecute => true,
+        | GovCapability::QuartermasterExecute
+        | GovCapability::ExecuteCrewOffboard => true,
     }
 }
 
@@ -165,6 +181,8 @@ mod tests {
         };
         assert!(capability_allowed(GovCapability::ProposeTreasury, &ctx));
         assert!(capability_allowed(GovCapability::StartMutiny, &ctx));
+        assert!(capability_allowed(GovCapability::ProposeCrewOffboard, &ctx));
+        assert!(capability_allowed(GovCapability::ExecuteCrewOffboard, &ctx));
         assert!(!capability_allowed(GovCapability::CaptainResign, &ctx));
         assert!(capability_allowed(GovCapability::ExecuteTreasury, &ctx));
     }

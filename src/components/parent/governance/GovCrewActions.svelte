@@ -2,9 +2,11 @@
   import GovCtaButton from './GovCtaButton.svelte';
   import GovProposeForm from './GovProposeForm.svelte';
   import CrewVoteModeSettings from './CrewVoteModeSettings.svelte';
+  import GovCrewOffboardPanel from './GovCrewOffboardPanel.svelte';
   import {
     mutinyCastVote,
     mutinyExecute,
+    mutinyExpire,
     mutinyStartToArbitraryContract,
     mutinyStartToArbitraryEoa,
     mutinyStartToCommittee,
@@ -13,17 +15,20 @@
     treasuryAuthorityCrewVote,
     treasuryAuthorityExecute,
     type MutinyStatusDto,
+    type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
   import {
     crewVotableProposals,
     executableTreasuryProposals,
     isMutinyActive,
+    isMutinyExpirable,
     proposalSelectLabel,
   } from '../../../lib/governance/gov-proposal-lists';
   import {
     gatePermissionlessSigner,
     gateRequiresCrew,
+    type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import {
@@ -31,6 +36,7 @@
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import { get } from 'svelte/store';
@@ -40,12 +46,17 @@
   export let parentId: string;
   export let treasuryAuthority: string;
   export let mutinyModule: string;
+  export let quartermaster = '';
   export let privilege: GovernancePrivilege;
   export let proposals: TreasuryProposalDto[] = [];
   export let mutinyStatus: MutinyStatusDto | null = null;
   export let mutinyHasVotedFlag = false;
+  export let qmStatus: QuartermasterStatusDto | null = null;
+  export let memberEvmOptions: { address: string; label: string }[] = [];
+  export let offboardHasVoted = false;
   export let onRefreshProposals: () => void = () => {};
   export let onRefreshMutiny: () => void = () => {};
+  export let onRefreshQm: () => void = () => {};
   export let fundingHint = '';
 
   const tFn = get(t);
@@ -55,12 +66,44 @@
   let execProposalId = '';
   let startKind: 'crew' | 'committee' | 'eoa' | 'contract' | 'pause' = 'crew';
   let proposed = '';
+  let nowSec = Math.floor(Date.now() / 1000);
+  let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
 
   $: crewGate = gateRequiresCrew(privilege);
   $: execGate = gatePermissionlessSigner(privilege);
   $: votable = crewVotableProposals(proposals);
   $: executable = executableTreasuryProposals(proposals);
   $: mutinyActive = isMutinyActive(mutinyStatus);
+  $: offboardActive = isCrewOffboardActive(qmStatus);
+  $: {
+    if (deadlineTimer != null) {
+      clearTimeout(deadlineTimer);
+      deadlineTimer = null;
+    }
+    nowSec = Math.floor(Date.now() / 1000);
+    const deadline = mutinyStatus?.deadline ?? 0;
+    if (deadline > nowSec) {
+      deadlineTimer = setTimeout(() => {
+        nowSec = Math.floor(Date.now() / 1000);
+      }, Math.max(0, deadline * 1000 - Date.now()));
+    }
+  }
+  $: mutinyExpired = isMutinyExpirable(mutinyStatus, nowSec);
+  $: startGate = ((): CtaGate => {
+    if (offboardActive) {
+      return { enabled: false, reason: 'governance.gate.cannotStartMutinyWhileOffboard' };
+    }
+    return crewGate;
+  })();
+  $: mutinyVoteGate = ((): CtaGate => {
+    if (mutinyExpired) return { enabled: false, reason: 'governance.gate.mutinyExpired' };
+    if (mutinyHasVotedFlag) return { enabled: false, reason: 'governance.gate.alreadyVoted' };
+    return crewGate;
+  })();
+  $: mutinyExecGate = ((): CtaGate => {
+    if (mutinyExpired) return { enabled: false, reason: 'governance.gate.mutinyExpired' };
+    return execGate;
+  })();
   $: if (votable.length && !votable.some((p) => p.proposalId === voteProposalId)) {
     voteProposalId = votable[0]?.proposalId ?? '';
   }
@@ -223,11 +266,24 @@
           <p class="muted">
             {$t('governance.mutiny.activeToward', { values: { id: mutinyStatus.activeMutinyId, address: mutinyStatus.proposedNewCaptain, yeas: mutinyStatus.yeas, snapshot: mutinyStatus.snapshot } })}
           </p>
+          {#if mutinyStatus.fromCaptain}
+            <p class="muted">
+              {$t('governance.mutiny.fromCaptain', { values: { address: mutinyStatus.fromCaptain } })}
+            </p>
+          {/if}
+          {#if mutinyStatus.deadline > 0}
+            <p class="muted">
+              {$t('governance.mutiny.deadline', { values: { when: new Date(mutinyStatus.deadline * 1000).toLocaleString() } })}
+            </p>
+          {/if}
+          {#if mutinyExpired}
+            <p class="muted">{$t('governance.mutiny.expired')}</p>
+          {/if}
           <div class="row">
             <GovCtaButton
               label={mutinyHasVotedFlag ? tFn('governance.action.alreadyVoted') : tFn('governance.action.castMutinyVote')}
               variant="primary"
-              gate={mutinyHasVotedFlag ? { enabled: false, reason: 'governance.gate.alreadyVoted' } : crewGate}
+              gate={mutinyVoteGate}
               {acting}
               onClick={() =>
                 void run(tFn('governance.action.mutinyVote'), () =>
@@ -242,7 +298,7 @@
             <GovCtaButton
               label={tFn('governance.action.executeMutiny')}
               variant="execute"
-              gate={execGate}
+              gate={mutinyExecGate}
               {acting}
               onClick={() =>
                 void run(tFn('governance.action.executeMutiny'), () =>
@@ -254,12 +310,28 @@
                   }),
                 onRefreshMutiny)}
             />
+            {#if mutinyExpired}
+              <GovCtaButton
+                label={tFn('governance.action.expireMutiny')}
+                gate={execGate}
+                {acting}
+                onClick={() =>
+                  void run(tFn('governance.action.expireMutiny'), () =>
+                    mutinyExpire({
+                      network,
+                      parentId,
+                      mutinyModule,
+                      mutinyId: mutinyStatus.activeMutinyId,
+                    }),
+                  onRefreshMutiny)}
+              />
+            {/if}
           </div>
         </div>
       {:else}
         <div class="section">
           <h6 class="section-label">{$t('governance.section.startMutiny')}</h6>
-          <select bind:value={startKind} disabled={!crewGate.enabled || acting}>
+          <select bind:value={startKind} disabled={!startGate.enabled || acting}>
             <option value="crew">{$t('governance.mutiny.startOption.crew')}</option>
             <option value="committee">{$t('governance.mutiny.startOption.committee')}</option>
             <option value="eoa">{$t('governance.mutiny.startOption.eoa')}</option>
@@ -270,13 +342,28 @@
             <input
               bind:value={proposed}
               placeholder={$t('governance.field.proposedAddressPlaceholder')}
-              disabled={!crewGate.enabled || acting}
+              disabled={!startGate.enabled || acting}
             />
           {/if}
-          <GovCtaButton label={tFn('governance.action.startMutiny')} variant="primary" gate={crewGate} {acting} onClick={startMutiny} />
+          <GovCtaButton label={tFn('governance.action.startMutiny')} variant="primary" gate={startGate} {acting} onClick={startMutiny} />
         </div>
       {/if}
     </section>
+  {/if}
+
+  {#if quartermaster}
+    <GovCrewOffboardPanel
+      {network}
+      {parentId}
+      {quartermaster}
+      {privilege}
+      {mutinyActive}
+      {qmStatus}
+      {memberEvmOptions}
+      hasVoted={offboardHasVoted}
+      {fundingHint}
+      onRefresh={onRefreshQm}
+    />
   {/if}
 </div>
 
