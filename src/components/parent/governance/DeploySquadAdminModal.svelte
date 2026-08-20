@@ -7,29 +7,39 @@
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import SquadDeployNetworkField from './SquadDeployNetworkField.svelte';
 
-  export let parentId: string;
-  /** When set, deploy uses captain_hat variant with this hat id. */
-  export let captainHatId: string | null = null;
-  /** Established squad network; when set the picker is pinned to it. */
-  export let squadNetwork: SupportedChainId | null = null;
-  export let onClose: () => void;
-  export let onComplete: (result: {
-    txHash: string;
-    chain: string;
-    squadAdminProxy: string;
-    providerPayload: string;
-    infraRowId: string;
-  }) => Promise<void>;
+  let {
+    parentId,
+    captainHatId = null,
+    squadNetwork = null,
+    onClose,
+    onComplete,
+  }: {
+    parentId: string;
+    /** When set, deploy uses captain_hat variant with this hat id. */
+    captainHatId?: string | null;
+    /** Established squad network; when set the picker is pinned to it. */
+    squadNetwork?: SupportedChainId | null;
+    onClose: () => void;
+    onComplete: (result: {
+      txHash: string;
+      chain: string;
+      squadAdminProxy: string;
+      providerPayload: string;
+      infraRowId: string;
+    }) => Promise<void>;
+  } = $props();
 
   const titleId = 'deploy-squad-admin-title';
   const descId = 'deploy-squad-admin-desc';
 
   const tFn = get(t);
 
-  let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
-  let deployError = '';
+  /** Seeds the picker once; user can still change it before squadNetwork pins. */
+  // svelte-ignore state_referenced_locally
+  let deployNetwork: SupportedChainId | '' = $state(squadNetwork ?? '');
+  let deployError = $state('');
 
-  $: variant = captainHatId?.trim() ? ('captain_hat' as const) : ('ext_standalone' as const);
+  const variant = $derived(captainHatId?.trim() ? ('captain_hat' as const) : ('ext_standalone' as const));
 
   async function confirmDeploy() {
     deployError = '';

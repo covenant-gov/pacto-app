@@ -10,21 +10,29 @@
   import type { PactoGovCaptainOption } from '../../../lib/governance/start-pacto-gov-deploy';
   import { getAddress, isAddress } from 'viem';
 
-  export let parentId: string;
-  export let squadNetwork: SupportedChainId | null = null;
-  /** Kept for parent wiring; captain is always the deployer's roster EVM. */
-  export let captainMemberOptions: PactoGovCaptainOption[] = [];
-  export let onClose: () => void;
-  export let onComplete: (out: PactoGovDeployComplete) => void | Promise<void>;
+  let {
+    parentId,
+    squadNetwork = null,
+    captainMemberOptions = [],
+    onClose,
+    onComplete,
+  }: {
+    parentId: string;
+    squadNetwork?: SupportedChainId | null;
+    /** Kept for parent wiring; captain is always the deployer's roster EVM. */
+    captainMemberOptions?: PactoGovCaptainOption[];
+    onClose: () => void;
+    onComplete: (out: PactoGovDeployComplete) => void | Promise<void>;
+  } = $props();
 
   const titleId = 'deploy-pacto-gov-title';
   const descId = 'deploy-pacto-gov-desc';
 
   const tFn = get(t);
 
-  let captainAddress = '';
-  let resolvingDeployer = true;
-  let deployError = '';
+  let captainAddress = $state('');
+  let resolvingDeployer = $state(true);
+  let deployError = $state('');
 
   function shortAddress(addr: string): string {
     if (addr.length < 18) return addr;
