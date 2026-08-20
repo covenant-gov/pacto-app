@@ -2515,7 +2515,6 @@ pub fn load_sticker_packs<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<Stick
 
 #[cfg(test)]
 mod sticker_pack_local_storage_tests {
-    use super::*;
 
     fn test_conn() -> rusqlite::Connection {
         let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
@@ -3964,133 +3963,6 @@ pub fn remove_setting<R: Runtime>(handle: AppHandle<R>, key: String) -> Result<b
 
     crate::account_manager::return_db_connection(conn);
     Ok(rows_affected > 0)
-}
-
-/// Number of days to retain successful export log entries.
-const EXPORT_SUCCESS_RETENTION_DAYS: u64 = 90;
-
-/// Number of days to retain failed export log entries.
-const EXPORT_FAILURE_RETENTION_DAYS: u64 = 30;
-
-/// Row in the sensitive export audit log.
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub struct ExportLogRow {
-    pub id: String,
-    pub account_npub: String,
-    pub export_type: String,
-    pub attempted_at: u64,
-    pub success: bool,
-    pub error_code: Option<String>,
-}
-
-/// Log a sensitive export attempt to the account's database.
-pub fn log_sensitive_export<R: Runtime>(
-    handle: &AppHandle<R>,
-    account_npub: &str,
-    export_type: &str,
-    success: bool,
-    error_code: Option<&str>,
-) -> Result<(), String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-    log_sensitive_export_on_conn(&conn, account_npub, export_type, success, error_code)?;
-    crate::account_manager::return_db_connection(conn);
-    Ok(())
-}
-
-pub(crate) fn log_sensitive_export_on_conn(
-    conn: &rusqlite::Connection,
-    account_npub: &str,
-    export_type: &str,
-    success: bool,
-    error_code: Option<&str>,
-) -> Result<(), String> {
-    let id = format!(
-        "{}-{}-{:x}",
-        export_type,
-        export_epoch_seconds(),
-        rand::random::<u64>()
-    );
-    let attempted_at = export_epoch_seconds();
-    conn.execute(
-        "INSERT INTO sensitive_export_log (id, account_npub, export_type, attempted_at, success, error_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![id, account_npub, export_type, attempted_at, success as i64, error_code],
-    )
-    .map_err(|e| format!("Failed to log sensitive export: {}", e))?;
-    Ok(())
-}
-
-/// List recent export attempts within the rolling `window_seconds` window.
-pub fn list_recent_export_attempts<R: Runtime>(
-    handle: &AppHandle<R>,
-    account_npub: &str,
-    window_seconds: u64,
-) -> Result<Vec<ExportLogRow>, String> {
-    prune_export_log(handle)?;
-    let conn = crate::account_manager::get_db_connection(handle)?;
-    let rows = list_recent_export_attempts_on_conn(&conn, account_npub, window_seconds)?;
-    crate::account_manager::return_db_connection(conn);
-    Ok(rows)
-}
-
-pub(crate) fn list_recent_export_attempts_on_conn(
-    conn: &rusqlite::Connection,
-    account_npub: &str,
-    window_seconds: u64,
-) -> Result<Vec<ExportLogRow>, String> {
-    let since = export_epoch_seconds().saturating_sub(window_seconds);
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, account_npub, export_type, attempted_at, success, error_code
-             FROM sensitive_export_log
-             WHERE account_npub = ?1 AND attempted_at >= ?2
-             ORDER BY attempted_at DESC",
-        )
-        .map_err(|e| format!("Failed to prepare export log query: {}", e))?;
-    let rows = stmt
-        .query_map(rusqlite::params![account_npub, since], |row| {
-            Ok(ExportLogRow {
-                id: row.get(0)?,
-                account_npub: row.get(1)?,
-                export_type: row.get(2)?,
-                attempted_at: row.get(3)?,
-                success: row.get::<_, i64>(4)? != 0,
-                error_code: row.get(5)?,
-            })
-        })
-        .map_err(|e| format!("Failed to query export log: {}", e))?;
-    let mut result = Vec::new();
-    for row in rows {
-        result.push(row.map_err(|e| format!("Failed to read export log row: {}", e))?);
-    }
-    Ok(result)
-}
-
-/// Prune old export log entries: 90 days for successes, 30 days for failures.
-pub fn prune_export_log<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-    prune_export_log_on_conn(&conn)?;
-    crate::account_manager::return_db_connection(conn);
-    Ok(())
-}
-
-pub(crate) fn prune_export_log_on_conn(conn: &rusqlite::Connection) -> Result<(), String> {
-    let now = export_epoch_seconds();
-    let success_cutoff = now.saturating_sub(EXPORT_SUCCESS_RETENTION_DAYS * 24 * 60 * 60);
-    let failure_cutoff = now.saturating_sub(EXPORT_FAILURE_RETENTION_DAYS * 24 * 60 * 60);
-    conn.execute(
-        "DELETE FROM sensitive_export_log WHERE (success = 1 AND attempted_at < ?1) OR (success = 0 AND attempted_at < ?2)",
-        rusqlite::params![success_cutoff, failure_cutoff],
-    )
-    .map_err(|e| format!("Failed to prune export log: {}", e))?;
-    Ok(())
-}
-
-fn export_epoch_seconds() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 /// Slim version of Chat for database storage
@@ -6369,25 +6241,6 @@ pub fn event_exists<R: Runtime>(handle: &AppHandle<R>, event_id: &str) -> Result
     Ok(exists)
 }
 
-/// Check if an event exists by wrapper event ID (for deduplication during sync)
-pub fn event_exists_by_wrapper<R: Runtime>(
-    handle: &AppHandle<R>,
-    wrapper_event_id: &str,
-) -> Result<bool, String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-
-    let exists: bool = conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM events WHERE wrapper_event_id = ?1)",
-            rusqlite::params![wrapper_event_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("Failed to check event by wrapper: {}", e))?;
-
-    crate::account_manager::return_db_connection(conn);
-    Ok(exists)
-}
-
 /// Get events for a chat with pagination
 ///
 /// Returns events ordered by created_at descending (newest first).
@@ -7492,75 +7345,6 @@ pub async fn get_message_views<R: Runtime>(
     }
 
     Ok(messages)
-}
-
-/// Update an event's pending/failed status
-pub fn update_event_status<R: Runtime>(
-    handle: &AppHandle<R>,
-    event_id: &str,
-    pending: bool,
-    failed: bool,
-) -> Result<(), String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-
-    conn.execute(
-        "UPDATE events SET pending = ?1, failed = ?2 WHERE id = ?3",
-        rusqlite::params![pending as i32, failed as i32, event_id],
-    )
-    .map_err(|e| format!("Failed to update event status: {}", e))?;
-
-    crate::account_manager::return_db_connection(conn);
-    Ok(())
-}
-
-/// Delete an event by ID
-pub fn delete_event<R: Runtime>(handle: &AppHandle<R>, event_id: &str) -> Result<(), String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-
-    conn.execute(
-        "DELETE FROM events WHERE id = ?1",
-        rusqlite::params![event_id],
-    )
-    .map_err(|e| format!("Failed to delete event: {}", e))?;
-
-    crate::account_manager::return_db_connection(conn);
-    Ok(())
-}
-
-/// Get the total count of message events in a chat
-pub fn get_message_count<R: Runtime>(handle: &AppHandle<R>, chat_id: i64) -> Result<i64, String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM events WHERE chat_id = ?1 AND kind IN (?2, ?3)",
-            rusqlite::params![
-                chat_id,
-                event_kind::PRIVATE_DIRECT_MESSAGE as i32,
-                event_kind::FILE_ATTACHMENT as i32
-            ],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("Failed to count messages: {}", e))?;
-
-    crate::account_manager::return_db_connection(conn);
-    Ok(count)
-}
-
-/// Get the storage version from settings
-pub fn get_storage_version<R: Runtime>(handle: &AppHandle<R>) -> Result<i32, String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-
-    let version: i32 = conn
-        .query_row(
-            "SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'storage_version'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(1); // Default to version 1 (old format)
-
-    crate::account_manager::return_db_connection(conn);
-    Ok(version)
 }
 #[cfg(test)]
 mod sponsor_preflight_tests {

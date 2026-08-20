@@ -44,7 +44,6 @@ pub(crate) fn embedded_migration_set() -> Vec<refinery::Migration> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     /// The `mdk-sqlite-storage` version `src/mls_migrations/*.sql` was
     /// copied from. Keep in sync with `Cargo.lock`'s pinned version.

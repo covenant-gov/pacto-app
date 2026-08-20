@@ -63,8 +63,6 @@ struct PactoGovBook {
     master_squad_admin_impl: String,
     master_squad_admin_ext_impl: String,
     hats: Option<String>,
-    role_hat_clones_factory: Option<String>,
-    role_hat_upgrader: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,8 +135,6 @@ pub struct PactoGovDeployAddresses {
     pub master_squad_admin_ext_impl: Address,
     pub nave_pirata_registry: Option<Address>,
     pub hats: Option<Address>,
-    pub role_hat_clones_factory: Option<Address>,
-    pub role_hat_upgrader: Option<Address>,
 }
 
 pub fn pacto_gov_deploy_addresses(net_key: &str) -> Result<PactoGovDeployAddresses, String> {
@@ -186,16 +182,6 @@ pub fn pacto_gov_deploy_addresses(net_key: &str) -> Result<PactoGovDeployAddress
             book.and_then(|b| b.nave_pirata_registry.as_deref()),
         ),
         hats: resolve_optional("PACTO_HATS", net_key, book.and_then(|b| b.hats.as_deref())),
-        role_hat_clones_factory: resolve_optional(
-            "PACTO_ROLE_HAT_CLONES_FACTORY",
-            net_key,
-            book.and_then(|b| b.role_hat_clones_factory.as_deref()),
-        ),
-        role_hat_upgrader: resolve_optional(
-            "PACTO_ROLE_HAT_UPGRADER",
-            net_key,
-            book.and_then(|b| b.role_hat_upgrader.as_deref()),
-        ),
     })
 }
 
@@ -509,10 +495,6 @@ mod tests {
         "PACTO_NAVE_PIRATA_REGISTRY_LOCAL",
         "PACTO_HATS",
         "PACTO_HATS_LOCAL",
-        "PACTO_ROLE_HAT_CLONES_FACTORY",
-        "PACTO_ROLE_HAT_CLONES_FACTORY_LOCAL",
-        "PACTO_ROLE_HAT_UPGRADER",
-        "PACTO_ROLE_HAT_UPGRADER_LOCAL",
     ];
 
     /// Sets every required `pactoGov` address override so `pacto_gov_deploy_addresses("local")`

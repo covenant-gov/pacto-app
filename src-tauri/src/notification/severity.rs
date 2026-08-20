@@ -23,9 +23,6 @@ pub enum Tier {
 /// module only resolves the already-classified shape.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventKind {
-    /// Typing indicator, reaction, or message edit — always ambient,
-    /// regardless of authorship or chat level.
-    Ambient,
     /// An ordinary message in a group/MLS chat. `mention_hit` on the caller
     /// distinguishes an ordinary message from one that names the member.
     GroupMessage,
@@ -57,7 +54,6 @@ pub fn resolve_tier(
     }
 
     match kind {
-        Ambient => Passive,
         GroupMessage if mention_hit => match level {
             Nothing => Record,
             Mentions | All => Interrupt,
@@ -89,7 +85,6 @@ pub fn earns_catch_up_entry(kind: EventKind, is_own: bool, mention_hit: bool) ->
         return false;
     }
     match kind {
-        EventKind::Ambient => false,
         EventKind::GroupMessage => mention_hit,
         EventKind::DirectMessage | EventKind::ActionPrompt => true,
     }
@@ -108,7 +103,6 @@ mod tests {
     fn tier_table_is_exhaustive() {
         let levels = [Nothing, Mentions, All];
         let kinds = [
-            EventKind::Ambient,
             EventKind::GroupMessage,
             EventKind::DirectMessage,
             EventKind::ActionPrompt,
@@ -147,7 +141,6 @@ mod tests {
             return Passive;
         }
         match kind {
-            EventKind::Ambient => Passive,
             EventKind::GroupMessage => {
                 if mention_hit {
                     match level {
@@ -172,7 +165,6 @@ mod tests {
     fn own_messages_are_passive_at_every_level() {
         for &level in &[Nothing, Mentions, All] {
             for &kind in &[
-                EventKind::Ambient,
                 EventKind::GroupMessage,
                 EventKind::DirectMessage,
                 EventKind::ActionPrompt,
@@ -250,8 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn catch_up_admission_is_false_for_own_events_and_ambient_events() {
+    fn catch_up_admission_is_false_for_own_events() {
         assert!(!earns_catch_up_entry(EventKind::ActionPrompt, true, false));
-        assert!(!earns_catch_up_entry(EventKind::Ambient, false, false));
     }
 }

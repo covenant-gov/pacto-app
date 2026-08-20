@@ -183,6 +183,7 @@ pub async fn get_quartermaster_pending<R: Runtime>(
 }
 
 /// True when two address strings match after trim + ASCII case fold.
+#[cfg(test)]
 fn addresses_equal_normalized(a: &str, b: &str) -> bool {
     a.trim().eq_ignore_ascii_case(b.trim())
 }
