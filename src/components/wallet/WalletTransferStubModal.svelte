@@ -44,19 +44,31 @@
 
   const tFn = get(t);
 
-  export let mode: 'send' | 'request';
-  export let npub: string;
-  export let peerDisplayName: string;
-  export let onClose: () => void;
-  /** Request mode: post JSON DM (`wallet_tx_request`). Same path as normal DM send. */
-  export let postDmPlaintext: ((content: string) => Promise<boolean>) | undefined = undefined;
-  /** Send mode: from Accept on a `wallet_tx_request` (applied once per open). */
-  export let formPrefill: WalletSendPrefillPayload | null = null;
-  /** Send mode: refresh balances after confirmation (chat note is handled in background). */
-  export let onBalanceRefresh: (() => void | Promise<void>) | undefined = undefined;
+  interface Props {
+    mode: 'send' | 'request';
+    npub: string;
+    peerDisplayName: string;
+    onClose: () => void;
+    /** Request mode: post JSON DM (`wallet_tx_request`). Same path as normal DM send. */
+    postDmPlaintext?: ((content: string) => Promise<boolean>) | undefined;
+    /** Send mode: from Accept on a `wallet_tx_request` (applied once per open). */
+    formPrefill?: WalletSendPrefillPayload | null;
+    /** Send mode: refresh balances after confirmation (chat note is handled in background). */
+    onBalanceRefresh?: (() => void | Promise<void>) | undefined;
+    /** ERC-20 rows the user watches (from Import tokens); native ETH is always offered. */
+    watchedAssetRows?: WatchedErc20Row[];
+  }
 
-  /** ERC-20 rows the user watches (from Import tokens); native ETH is always offered. */
-  export let watchedAssetRows: WatchedErc20Row[] = [];
+  let {
+    mode,
+    npub,
+    peerDisplayName,
+    onClose,
+    postDmPlaintext = undefined,
+    formPrefill = null,
+    onBalanceRefresh = undefined,
+    watchedAssetRows = [],
+  }: Props = $props();
 
   function truncateNpub(n: string): string {
     if (n.length <= 20) return n;
@@ -66,102 +78,107 @@
   const titleId = `wallet-${mode}-title`;
   const descId = `wallet-${mode}-desc`;
 
-  let chainId: SupportedChainId = DEFAULT_CHAIN_ID;
-  let assetCode = 'ETH';
-  let amountStr = '';
+  let chainId: SupportedChainId = $state(DEFAULT_CHAIN_ID);
+  let assetCode = $state('ETH');
+  let amountStr = $state('');
 
-  let appliedPrefillKey = '';
-  let linkedRequestId = '';
+  let appliedPrefillKey = $state('');
+  let linkedRequestId = $state('');
 
-  $: prefillKey =
+  const prefillKey = $derived(
     mode === 'send' && formPrefill
       ? `${formPrefill.requestMessageId}:${formPrefill.requestId}`
-      : '';
+      : ''
+  );
 
-  $: if (mode === 'send' && formPrefill && prefillKey !== appliedPrefillKey) {
+  /** Applies an incoming prefill exactly once per key, and clears the applied key once the
+   * prefill is withdrawn, without re-applying on every render. */
+  $effect(() => {
+    if (mode !== 'send') return;
+    if (!formPrefill) {
+      appliedPrefillKey = '';
+      linkedRequestId = '';
+      return;
+    }
+    if (prefillKey === appliedPrefillKey) return;
     appliedPrefillKey = prefillKey;
     chainId = formPrefill.network;
     assetCode = formPrefill.asset;
     amountStr = normalizeLeadingDotDecimalInput(formPrefill.amount.trim());
     linkedRequestId = formPrefill.requestId;
-  }
+  });
 
-  $: if (mode === 'send' && !formPrefill) {
-    appliedPrefillKey = '';
-    linkedRequestId = '';
-  }
+  let pricesResult = $state<
+    { ok: true; prices: WalletUsdSpotPrices } | { ok: false; message: string } | null
+  >(null);
+  let pricesFetchKey = $state('');
+  let pricesFetchGen = $state(0);
 
-  let pricesResult:
-    | { ok: true; prices: WalletUsdSpotPrices }
-    | { ok: false; message: string }
-    | null = null;
-  let pricesFetchKey = '';
-  let pricesFetchGen = 0;
-
-  $: {
+  $effect(() => {
     const key = `${mode}|${chainId}`;
     if (mode !== 'send') {
       pricesFetchKey = '';
       pricesResult = null;
-    } else if (key !== pricesFetchKey) {
-      pricesFetchKey = key;
-      pricesFetchGen += 1;
-      const gen = pricesFetchGen;
-      pricesResult = null;
-      getWalletUsdSpotPrices(chainId).then((r) => {
-        if (gen !== pricesFetchGen) return;
-        pricesResult = r;
-      });
+      return;
     }
-  }
+    if (key === pricesFetchKey) return;
+    pricesFetchKey = key;
+    pricesFetchGen += 1;
+    const gen = pricesFetchGen;
+    pricesResult = null;
+    getWalletUsdSpotPrices(chainId).then((r) => {
+      if (gen !== pricesFetchGen) return;
+      pricesResult = r;
+    });
+  });
 
-  $: assetOptions = listWalletAssetOptionsForChainWithWatched(
-    chainId,
-    watchedAssetRows
-  ) as WalletAssetOptionRow[];
+  const assetOptions = $derived(
+    listWalletAssetOptionsForChainWithWatched(chainId, watchedAssetRows) as WalletAssetOptionRow[]
+  );
 
-  $: {
+  $effect(() => {
     const codes = assetOptions.map((o) => o.code);
     if (codes.length > 0 && !codes.includes(assetCode)) {
       assetCode = codes[0] ?? 'ETH';
     }
-  }
+  });
 
-  $: selectedOpt = assetOptions.find((o) => o.code === assetCode);
+  const selectedOpt = $derived(assetOptions.find((o) => o.code === assetCode));
 
-  let sendBalanceSummary: WalletSummary | null = null;
-  let sendBalanceError: string | null = null;
-  let sendBalanceLoading = false;
-  let sendBalanceFetchKey = '';
-  let sendBalanceFetchGen = 0;
+  let sendBalanceSummary: WalletSummary | null = $state(null);
+  let sendBalanceError: string | null = $state(null);
+  let sendBalanceLoading = $state(false);
+  let sendBalanceFetchKey = $state('');
+  let sendBalanceFetchGen = $state(0);
 
-  $: watchedWireForBalances = watchedRowsToWire(watchedAssetRows);
+  const watchedWireForBalances = $derived(watchedRowsToWire(watchedAssetRows));
 
-  $: if (mode !== 'send') {
-    sendBalanceFetchKey = '';
-    sendBalanceSummary = null;
-    sendBalanceError = null;
-    sendBalanceLoading = false;
-  } else {
-    const key = `${chainId}|${watchedWireFingerprint(watchedWireForBalances)}`;
-    if (key !== sendBalanceFetchKey) {
-      sendBalanceFetchKey = key;
-      sendBalanceFetchGen += 1;
-      const gen = sendBalanceFetchGen;
-      sendBalanceLoading = true;
+  $effect(() => {
+    if (mode !== 'send') {
+      sendBalanceFetchKey = '';
+      sendBalanceSummary = null;
       sendBalanceError = null;
-      getWalletSummary(watchedWireForBalances, [chainId]).then((r) => {
-        if (gen !== sendBalanceFetchGen) return;
-        sendBalanceLoading = false;
-        if (r.ok) {
-          sendBalanceSummary = r.summary;
-        } else {
-          sendBalanceSummary = null;
-          sendBalanceError = r.message;
-        }
-      });
+      sendBalanceLoading = false;
+      return;
     }
-  }
+    const key = `${chainId}|${watchedWireFingerprint(watchedWireForBalances)}`;
+    if (key === sendBalanceFetchKey) return;
+    sendBalanceFetchKey = key;
+    sendBalanceFetchGen += 1;
+    const gen = sendBalanceFetchGen;
+    sendBalanceLoading = true;
+    sendBalanceError = null;
+    getWalletSummary(watchedWireForBalances, [chainId]).then((r) => {
+      if (gen !== sendBalanceFetchGen) return;
+      sendBalanceLoading = false;
+      if (r.ok) {
+        sendBalanceSummary = r.summary;
+      } else {
+        sendBalanceSummary = null;
+        sendBalanceError = r.message;
+      }
+    });
+  });
 
   function findBalanceForAsset(
     summary: WalletSummary | null,
@@ -176,8 +193,9 @@
     return { balanceRaw: asset.balanceRaw, balanceDecimal: asset.balanceDecimal };
   }
 
-  $: selectedBalanceRow =
-    mode === 'send' ? findBalanceForAsset(sendBalanceSummary, chainId, assetCode) : null;
+  const selectedBalanceRow = $derived(
+    mode === 'send' ? findBalanceForAsset(sendBalanceSummary, chainId, assetCode) : null
+  );
 
   /** Compare human amount to `balance_raw` (integer string) using asset decimals. */
   function amountExceedsBalance(amountTrimmed: string, balanceRaw: string, decimals: number): boolean {
@@ -198,30 +216,33 @@
     return n;
   }
 
-  $: amountValid = parsePositiveAmount(amountStr) !== null;
-  let sending = false;
+  const amountValid = $derived(parsePositiveAmount(amountStr) !== null);
+  let sending = $state(false);
   /** Request mode: brief resolve of signer address before optimistic post. */
-  let requestPosting = false;
-  let sendError: { message: string; txHash?: string; code?: string } | null = null;
+  let requestPosting = $state(false);
+  let sendError = $state<{ message: string; txHash?: string; code?: string } | null>(null);
 
-  $: insufficientFunds =
+  const insufficientFunds = $derived(
     mode === 'send' &&
-    amountValid &&
-    selectedOpt != null &&
-    selectedBalanceRow != null &&
-    amountExceedsBalance(amountStr.trim(), selectedBalanceRow.balanceRaw, selectedOpt.decimals);
+      amountValid &&
+      selectedOpt != null &&
+      selectedBalanceRow != null &&
+      amountExceedsBalance(amountStr.trim(), selectedBalanceRow.balanceRaw, selectedOpt.decimals)
+  );
 
-  $: canConfirm =
+  const canConfirm = $derived(
     amountValid &&
-    !sending &&
-    !requestPosting &&
-    selectedOpt != null &&
-    (mode === 'request' || !insufficientFunds);
-  $: explorerLinkForError =
+      !sending &&
+      !requestPosting &&
+      selectedOpt != null &&
+      (mode === 'request' || !insufficientFunds)
+  );
+  const explorerLinkForError = $derived(
     sendError?.txHash != null && sendError.txHash.length > 0
       ? getExplorerTxUrl(chainId, sendError.txHash)
-      : null;
-  $: explorerLinkLabel = explorerTxLinkLabel(chainId);
+      : null
+  );
+  const explorerLinkLabel = $derived(explorerTxLinkLabel(chainId));
 
   async function copyErrorTxHash() {
     const h = sendError?.txHash;
@@ -231,11 +252,12 @@
   }
 
   /** Receipt timeout: tx was already broadcast; another Confirm would risk a duplicate send. */
-  $: canRetryAfterError =
+  const canRetryAfterError = $derived(
     sendError != null &&
-    !sending &&
-    !requestPosting &&
-    (mode === 'request' || sendError.code !== 'RECEIPT_TIMEOUT');
+      !sending &&
+      !requestPosting &&
+      (mode === 'request' || sendError.code !== 'RECEIPT_TIMEOUT')
+  );
 
   async function retryFailedSend() {
     if (!sendError || sending || !canRetryAfterError) return;
@@ -243,12 +265,13 @@
     await handleConfirm();
   }
 
-  $: approxUsd =
+  const approxUsd = $derived(
     pricesResult?.ok === true && amountValid
       ? amountToApproxUsd(amountStr, assetCode, pricesResult.prices)
-      : null;
+      : null
+  );
 
-  $: usdLine =
+  const usdLine = $derived(
     pricesResult === null
       ? tFn('wallet.loadingUsdRates')
       : !pricesResult.ok
@@ -259,7 +282,8 @@
             ? tFn('wallet.enterAmountForUsd')
             : amountValid
               ? tFn('wallet.usdUnavailable')
-              : tFn('wallet.enterAmountForUsd');
+              : tFn('wallet.enterAmountForUsd')
+  );
 
   function onAmountInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;

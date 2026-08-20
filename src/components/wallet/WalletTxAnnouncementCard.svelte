@@ -9,24 +9,31 @@
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import { showToast } from '../../stores/toast';
 
-  export let payload: WalletTxAnnouncementPayload;
-  /** DM counterparty display name (thread peer). */
-  export let peerDisplayName: string;
-  /** True when the signed-in user posted this announcement (`from_npub`). */
-  export let viewerIsSender: boolean;
-  /** Pending on-chain confirmation (optimistic outbound). */
-  export let pending = false;
-  /** Send or confirmation failed. */
-  export let failed = false;
+  interface Props {
+    payload: WalletTxAnnouncementPayload;
+    /** DM counterparty display name (thread peer). */
+    peerDisplayName: string;
+    /** True when the signed-in user posted this announcement (`from_npub`). */
+    viewerIsSender: boolean;
+    /** Pending on-chain confirmation (optimistic outbound). */
+    pending?: boolean;
+    /** Send or confirmation failed. */
+    failed?: boolean;
+  }
 
-  $: networkLabel = getWalletNetworkDisplayName(payload.network);
-  $: badgeLabel = failed ? $t('wallet.transferFailed') : pending ? $t('wallet.transferPending') : $t('wallet.transferConfirmed');
-  $: iconGlyph = failed ? '!' : pending ? '…' : '✓';
-  $: fromAddr = payload.from_evm_address.trim();
-  $: fromAddrShort =
-    fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr;
-  $: explorerUrl = getExplorerTxUrl(payload.network, payload.tx_hash);
-  $: explorerLabel = explorerTxLinkLabel(payload.network);
+  let { payload, peerDisplayName, viewerIsSender, pending = false, failed = false }: Props = $props();
+
+  const networkLabel = $derived(getWalletNetworkDisplayName(payload.network));
+  const badgeLabel = $derived(
+    failed ? $t('wallet.transferFailed') : pending ? $t('wallet.transferPending') : $t('wallet.transferConfirmed')
+  );
+  const iconGlyph = $derived(failed ? '!' : pending ? '…' : '✓');
+  const fromAddr = $derived(payload.from_evm_address.trim());
+  const fromAddrShort = $derived(
+    fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr
+  );
+  const explorerUrl = $derived(getExplorerTxUrl(payload.network, payload.tx_hash));
+  const explorerLabel = $derived(explorerTxLinkLabel(payload.network));
 
   async function copyHash() {
     const ok = await copyTextToClipboard(payload.tx_hash);

@@ -3,26 +3,33 @@
   import type { WalletTxRequestPayload } from '../../lib/wallet/dm-messages';
   import { getWalletNetworkDisplayName } from '../../lib/wallet/assets';
 
-  export let payload: WalletTxRequestPayload;
-  export let isMine: boolean;
-  /** Display name of the counterparty (the other person in the DM). */
-  export let peerDisplayName: string;
-  export let status: 'pending' | 'declined' | 'fulfilled' | 'sending';
-  export let accepting: boolean;
-  export let onAccept: () => void;
-  export let onDecline: () => void;
+  interface Props {
+    payload: WalletTxRequestPayload;
+    isMine: boolean;
+    /** Display name of the counterparty (the other person in the DM). */
+    peerDisplayName: string;
+    status: 'pending' | 'declined' | 'fulfilled' | 'sending';
+    accepting: boolean;
+    onAccept: () => void;
+    onDecline: () => void;
+  }
 
-  $: networkLabel = getWalletNetworkDisplayName(payload.network);
-  $: title = `${payload.amount} ${payload.asset}`;
-  $: fromAddr = payload.from_evm_address.trim();
-  $: fromAddrShort =
-    fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr;
-  $: subtitle = `${networkLabel} · ${fromAddrShort}`;
-  $: bodyText = isMine
-    ? $t('wallet.requestedPaymentOn', { values: { networkLabel, fromAddrShort } })
-    : $t('wallet.peerRequestedPayment', { values: { peerName: peerDisplayName, fromAddrShort } });
+  let { payload, isMine, peerDisplayName, status, accepting, onAccept, onDecline }: Props = $props();
+
+  const networkLabel = $derived(getWalletNetworkDisplayName(payload.network));
+  const title = $derived(`${payload.amount} ${payload.asset}`);
+  const fromAddr = $derived(payload.from_evm_address.trim());
+  const fromAddrShort = $derived(
+    fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr
+  );
+  const subtitle = $derived(`${networkLabel} · ${fromAddrShort}`);
+  const bodyText = $derived(
+    isMine
+      ? $t('wallet.requestedPaymentOn', { values: { networkLabel, fromAddrShort } })
+      : $t('wallet.peerRequestedPayment', { values: { peerName: peerDisplayName, fromAddrShort } })
+  );
   /** Declined stays expanded; fulfilled compacts to amount + Paid. */
-  $: collapsed = status === 'fulfilled';
+  const collapsed = $derived(status === 'fulfilled');
 </script>
 
 <div

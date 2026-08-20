@@ -36,42 +36,47 @@
 
   const tFn = get(t);
 
-  export let enabledChainIds: SupportedChainId[] = [...WALLET_ASSETS_CHAIN_IDS];
-  /** When true, show Settings cross-links (external wallet disclaimer). */
-  export let embeddedInSettings = false;
+  interface Props {
+    enabledChainIds?: SupportedChainId[];
+    /** When true, show Settings cross-links (external wallet disclaimer). */
+    embeddedInSettings?: boolean;
+  }
 
-  let advancedAccounts: EvmAccountRow[] = [];
-  let activeAdvancedAddress: string | null = null;
-  let squadInfraRefs: string[] = [];
+  let { enabledChainIds = [...WALLET_ASSETS_CHAIN_IDS], embeddedInSettings = false }: Props = $props();
 
-  let network: SupportedChainId = DEFAULT_CHAIN_ID;
-  let toAddress = '';
-  let valueEth = '0';
-  let calldataMode: 'raw' | 'abi' = 'raw';
-  let dataHex = '0x';
-  let abiRef = 'erc20-minimal';
-  let abiJson = '';
-  let functionName = 'balanceOf';
-  let argsJson = '[]';
-  let builtCalldata = '0x';
+  let advancedAccounts: EvmAccountRow[] = $state([]);
+  let activeAdvancedAddress: string | null = $state(null);
+  let squadInfraRefs: string[] = $state([]);
 
-  let simulating = false;
-  let simulateOk: boolean | null = null;
-  let simulateMessage = '';
-  let sending = false;
-  let confirmOpen = false;
-  let infraWarningAck = false;
+  let network: SupportedChainId = $state(DEFAULT_CHAIN_ID);
+  let toAddress = $state('');
+  let valueEth = $state('0');
+  let calldataMode: 'raw' | 'abi' = $state('raw');
+  let dataHex = $state('0x');
+  let abiRef = $state('erc20-minimal');
+  let abiJson = $state('');
+  let functionName = $state('balanceOf');
+  let argsJson = $state('[]');
+  let builtCalldata = $state('0x');
+
+  let simulating = $state(false);
+  let simulateOk: boolean | null = $state(null);
+  let simulateMessage = $state('');
+  let sending = $state(false);
+  let confirmOpen = $state(false);
+  let infraWarningAck = $state(false);
 
   const shippedAbis = listShippedAbiRefs();
 
-  $: accountNpub = $currentUser?.npub ?? null;
-  $: hasAdvancedSigner = !!activeAdvancedAddress && advancedAccounts.length > 0;
-  $: infraTarget = isSquadInfraTargetAddress(toAddress, squadInfraRefs);
-  $: canSend =
+  const accountNpub = $derived($currentUser?.npub ?? null);
+  const hasAdvancedSigner = $derived(!!activeAdvancedAddress && advancedAccounts.length > 0);
+  const infraTarget = $derived(isSquadInfraTargetAddress(toAddress, squadInfraRefs));
+  const canSend = $derived(
     hasAdvancedSigner &&
-    toAddress.trim().length > 0 &&
-    (!infraTarget || infraWarningAck) &&
-    enabledChainIds.includes(network);
+      toAddress.trim().length > 0 &&
+      (!infraTarget || infraWarningAck) &&
+      enabledChainIds.includes(network)
+  );
 
   async function refreshAdvancedState() {
     if (!accountNpub) {
@@ -96,7 +101,10 @@
     });
   });
 
-  $: accountNpub, void refreshAdvancedState();
+  $effect(() => {
+    void accountNpub;
+    void refreshAdvancedState();
+  });
 
   function shortAddr(a: string): string {
     const t = a.trim();
@@ -132,7 +140,15 @@
     }
   }
 
-  $: calldataMode, dataHex, abiRef, abiJson, functionName, argsJson, rebuildCalldataPreview();
+  $effect(() => {
+    void calldataMode;
+    void dataHex;
+    void abiRef;
+    void abiJson;
+    void functionName;
+    void argsJson;
+    rebuildCalldataPreview();
+  });
 
   async function onSimulate() {
     if (!activeAdvancedAddress) return;

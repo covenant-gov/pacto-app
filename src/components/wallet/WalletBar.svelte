@@ -44,39 +44,44 @@
 
   const tFn = get(t);
 
-  /** Active DM counterparty npub */
-  export let npub: string;
+  interface Props {
+    /** Active DM counterparty npub */
+    npub: string;
+    /** Send structured DM text to the active thread (same path as the composer). */
+    postDmPlaintext?: ((content: string) => Promise<boolean>) | undefined;
+  }
 
-  /** Send structured DM text to the active thread (same path as the composer). */
-  export let postDmPlaintext: ((content: string) => Promise<boolean>) | undefined = undefined;
+  let { npub, postDmPlaintext = undefined }: Props = $props();
 
-  let sendModalOpen = false;
-  let requestModalOpen = false;
-  let importTokensModalOpen = false;
+  let sendModalOpen = $state(false);
+  let requestModalOpen = $state(false);
+  let importTokensModalOpen = $state(false);
   /** Form prefill when opening Send from Accept on a payment request card. */
-  let sendModalPrefill: WalletSendPrefillPayload | null = null;
+  let sendModalPrefill: WalletSendPrefillPayload | null = $state(null);
 
   function truncateNpub(n: string): string {
     if (n.length <= 16) return n;
     return n.slice(0, 8) + '…' + n.slice(-4);
   }
 
-  $: contactProfile = npub ? $profiles[npub] : null;
-  $: contactAvatarSrc = getProfileAvatarSrc(contactProfile);
-  $: contactDisplayName = contactProfile
-    ? getProfileDisplayName(contactProfile)
-    : npub
-      ? truncateNpub(npub)
-      : tFn('wallet.anonymous');
+  const contactProfile = $derived(npub ? $profiles[npub] : null);
+  const contactAvatarSrc = $derived(getProfileAvatarSrc(contactProfile));
+  const contactDisplayName = $derived(
+    contactProfile
+      ? getProfileDisplayName(contactProfile)
+      : npub
+        ? truncateNpub(npub)
+        : tFn('wallet.anonymous')
+  );
 
-  let summaryLoading = true;
-  let summaryError: string | null = null;
-  let summary: WalletSummary | null = null;
+  let summaryLoading = $state(true);
+  let summaryError: string | null = $state(null);
+  let summary: WalletSummary | null = $state(null);
 
   const STORAGE_NETWORK = 'pacto_wallet_bar_network_filter';
 
   /** `all` = every chain; otherwise one `SupportedChainId`. */
-  let networkFilter: 'all' | SupportedChainId = 'all';
+  let networkFilter: 'all' | SupportedChainId = $state('all');
 
   function parseNetworkFilter(raw: string | null): 'all' | SupportedChainId {
     if (!raw || raw === 'all') return 'all';
@@ -95,14 +100,16 @@
   }
 
   /** Logged-in account: watched ERC-20 list is keyed by this npub. */
-  $: accountNpub = $currentUser?.npub ?? null;
+  const accountNpub = $derived($currentUser?.npub ?? null);
 
-  let watchedErc20Rows: WatchedErc20Row[] = [];
+  let watchedErc20Rows: WatchedErc20Row[] = $state([]);
 
-  let peerWalletReady = false;
+  let peerWalletReady = $state(false);
 
-  $: void $walletPeerInfoRequestInFlightRevision;
-  $: peerInfoRequestInFlight = npub ? isWalletPeerInfoRequestInFlight(npub) : false;
+  const peerInfoRequestInFlight = $derived.by(() => {
+    void $walletPeerInfoRequestInFlightRevision;
+    return npub ? isWalletPeerInfoRequestInFlight(npub) : false;
+  });
 
   /** Unlock Send/Request only after pairwise `dm_peer_evm` exchange. */
   async function syncPeerWalletReady() {
@@ -121,7 +128,11 @@
     }
   }
 
-  $: npub, $dmWalletPeerExchangeTick, void syncPeerWalletReady();
+  $effect(() => {
+    void npub;
+    void $dmWalletPeerExchangeTick;
+    void syncPeerWalletReady();
+  });
 
   async function sendWalletInfoRequest() {
     const me = get(currentUser)?.npub;
@@ -166,25 +177,24 @@
       : defaultWatchedErc20Rows();
   }
 
-  $: {
-    accountNpub;
-    reloadWatchedRows();
-  }
-
-  let enabledChainSet: Set<SupportedChainId> = new Set(WALLET_ASSETS_CHAIN_IDS as SupportedChainId[]);
-  $: {
+  $effect(() => {
     void accountNpub;
+    reloadWatchedRows();
+  });
+
+  const enabledChainSet = $derived.by(() => {
     void $walletUiEnabledChainsTick;
-    enabledChainSet = new Set(
+    return new Set(
       accountNpub ? loadWalletEnabledChains(accountNpub) : [...WALLET_ASSETS_CHAIN_IDS]
     );
-  }
+  });
 
   /** If the stored filter points at a chain the user disabled in Wallet view, fall back to "all". */
-  $: if (networkFilter !== 'all' && !enabledChainSet.has(networkFilter)) {
+  $effect(() => {
+    if (networkFilter === 'all' || enabledChainSet.has(networkFilter)) return;
     networkFilter = 'all';
     saveNetworkFilter();
-  }
+  });
 
   function networksForBalanceList(
     s: WalletSummary | null,
@@ -196,8 +206,7 @@
     return nets.filter((n) => (filter === 'all' ? true : n.network === filter));
   }
 
-  let networksForBalance: WalletSummaryNetwork[] = [];
-  $: networksForBalance = networksForBalanceList(summary, networkFilter, enabledChainSet);
+  const networksForBalance = $derived(networksForBalanceList(summary, networkFilter, enabledChainSet));
 
   /** Friendly per-network read failure copy (raw RPC text stays off the primary line). */
   function networkErrorMessage(net: WalletSummaryNetwork): string {
@@ -209,26 +218,26 @@
    * Network dropdown matches Wallet settings toggles (enabled chains), not only chains that appear
    * in the latest summary (zero-balance or missing RPC rows would otherwise disappear from the list).
    */
-  let networkDropdownChainIds: SupportedChainId[] = [];
-  $: networkDropdownChainIds = WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledChainSet.has(id));
+  const networkDropdownChainIds = $derived(
+    WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledChainSet.has(id))
+  );
 
   /** Total USD for listed networks only (matches toggles in Wallet view). */
-  let barTotalUsdApprox: number | null = null;
-  let barPricingStatus: 'complete' | 'partial' | 'unavailable' = 'unavailable';
-  $: {
+  const barPricing = $derived.by(() => {
     if (networkFilter === 'all' && summary) {
-      barPricingStatus = summary.usdPricingStatus ?? 'unavailable';
-      barTotalUsdApprox =
-        barPricingStatus === 'unavailable' ? null : summary.totalUsdApprox;
-      if (barTotalUsdApprox == null && barPricingStatus !== 'unavailable') {
-        barTotalUsdApprox = sumPricedUsd(networksForBalance);
+      const status = summary.usdPricingStatus ?? 'unavailable';
+      let total = status === 'unavailable' ? null : summary.totalUsdApprox;
+      if (total == null && status !== 'unavailable') {
+        total = sumPricedUsd(networksForBalance);
       }
-    } else {
-      barPricingStatus = pricingStatusForNetworks(networksForBalance);
-      barTotalUsdApprox =
-        barPricingStatus === 'unavailable' ? null : sumPricedUsd(networksForBalance);
+      return { status, total };
     }
-  }
+    const status = pricingStatusForNetworks(networksForBalance);
+    const total = status === 'unavailable' ? null : sumPricedUsd(networksForBalance);
+    return { status, total };
+  });
+  const barPricingStatus = $derived(barPricing.status);
+  const barTotalUsdApprox = $derived(barPricing.total);
 
   async function refreshSummary() {
     const wire = watchedRowsToWire(watchedErc20Rows);
