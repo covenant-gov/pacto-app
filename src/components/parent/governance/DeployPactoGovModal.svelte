@@ -8,6 +8,12 @@
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { startPactoGovDeploy, type PactoGovDeployComplete } from '../../../lib/governance/start-pacto-gov-deploy';
   import type { PactoGovCaptainOption } from '../../../lib/governance/start-pacto-gov-deploy';
+  import {
+    PRODUCTION_SQUAD_PARAMS,
+    squadParamsIfCustomized,
+    validateSquadParams,
+  } from '../../../lib/governance/squad-params';
+  import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
   import { getAddress, isAddress } from 'viem';
 
   export let parentId: string;
@@ -25,6 +31,19 @@
   let captainAddress = '';
   let resolvingDeployer = true;
   let deployError = '';
+  let customizeParams = false;
+  let crewChangeDelaySecs = PRODUCTION_SQUAD_PARAMS.crewChangeDelaySecs;
+  let proposalExpirySecs = PRODUCTION_SQUAD_PARAMS.proposalExpirySecs;
+  let quorumBps = PRODUCTION_SQUAD_PARAMS.quorumBps;
+
+  $: customizeInvalid =
+    customizeParams &&
+    !!validateSquadParams({
+      crewChangeDelaySecs,
+      proposalExpirySecs,
+      crewVoteMode: 'majority',
+      quorumBps,
+    });
 
   function shortAddress(addr: string): string {
     if (addr.length < 18) return addr;
@@ -60,10 +79,21 @@
       deployError = tFn('governance.deployPactoGov.error.noBoundEvm');
       return;
     }
+    const squadParams = squadParamsIfCustomized(customizeParams, {
+      crewChangeDelaySecs,
+      proposalExpirySecs,
+      crewVoteMode: 'majority',
+      quorumBps,
+    });
+    if (squadParams && validateSquadParams(squadParams)) {
+      deployError = tFn('governance.squadParams.error.invalid');
+      return;
+    }
     startPactoGovDeploy({
       parentId: parentId.trim(),
       squadNetwork,
       captain: captainAddress,
+      squadParams,
       onReject: (message) => {
         deployError = message;
       },
@@ -117,6 +147,13 @@
     {/if}
   </div>
 
+  <SquadParamsCustomizeFields
+    bind:customizing={customizeParams}
+    bind:crewChangeDelaySecs
+    bind:proposalExpirySecs
+    bind:quorumBps
+  />
+
   {#if deployError}
     <p class="input-error" role="alert">{deployError}</p>
   {/if}
@@ -126,7 +163,7 @@
     <button
       type="button"
       class="btn-primary"
-      disabled={!squadNetwork || resolvingDeployer || !captainAddress}
+      disabled={!squadNetwork || resolvingDeployer || !captainAddress || customizeInvalid}
       onclick={executeDeploy}
     >
       {$t('governance.common.execute')}

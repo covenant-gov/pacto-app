@@ -7,7 +7,7 @@ use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use alloy::sol_types::SolCall;
 use rusqlite::OptionalExtension;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Runtime};
 
@@ -35,6 +35,83 @@ use alloy::sol_types::SolEvent;
 const DEFAULT_CREW_CHANGE_DELAY_SEC: u64 = 7 * 24 * 3600;
 const DEFAULT_PROPOSAL_EXPIRY_SEC: u64 = 7 * 24 * 3600;
 const DEFAULT_QUORUM_BPS: u64 = 3000;
+const MIN_GOV_DELAY_SEC: u64 = 60;
+const MAX_GOV_DELAY_SEC: u64 = 60 * 24 * 3600;
+const MIN_QUORUM_BPS: u64 = 500;
+const MAX_QUORUM_BPS: u64 = 10_000;
+
+/// Optional deploy-time SquadParams. Omitted fields use production defaults.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadParamsDto {
+    pub crew_change_delay_secs: Option<u64>,
+    pub proposal_expiry_secs: Option<u64>,
+    pub crew_vote_mode: Option<String>,
+    pub quorum_bps: Option<u64>,
+}
+
+fn parse_crew_vote_mode(raw: Option<&str>) -> Result<CrewVoteMode, String> {
+    match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(CrewVoteMode::MAJORITY_SNAPSHOT),
+        Some(s)
+            if s.eq_ignore_ascii_case("majority") || s.eq_ignore_ascii_case("MAJORITY_SNAPSHOT") =>
+        {
+            Ok(CrewVoteMode::MAJORITY_SNAPSHOT)
+        }
+        Some(s) if s.eq_ignore_ascii_case("quorum") || s.eq_ignore_ascii_case("QUORUM_OF_CAST") => {
+            Ok(CrewVoteMode::QUORUM_OF_CAST)
+        }
+        Some(_) => Err(wallet_err_json(
+            "INVALID_SQUAD_PARAMS",
+            "crewVoteMode must be majority or quorum",
+            None,
+        )),
+    }
+}
+
+fn require_gov_delay(field: &str, secs: u64) -> Result<u64, String> {
+    if secs < MIN_GOV_DELAY_SEC || secs > MAX_GOV_DELAY_SEC {
+        return Err(wallet_err_json(
+            "INVALID_SQUAD_PARAMS",
+            format!("{field} must be between 1 minute and 60 days"),
+            None,
+        ));
+    }
+    Ok(secs)
+}
+
+fn require_quorum_bps(bps: u64) -> Result<u64, String> {
+    if bps < MIN_QUORUM_BPS || bps > MAX_QUORUM_BPS {
+        return Err(wallet_err_json(
+            "INVALID_SQUAD_PARAMS",
+            "quorumBps must be between 500 and 10000",
+            None,
+        ));
+    }
+    Ok(bps)
+}
+
+pub(crate) fn resolve_squad_params(input: Option<&SquadParamsDto>) -> Result<SquadParams, String> {
+    let dto = input.cloned().unwrap_or_default();
+    let delay = require_gov_delay(
+        "crewChangeDelay",
+        dto.crew_change_delay_secs
+            .unwrap_or(DEFAULT_CREW_CHANGE_DELAY_SEC),
+    )?;
+    let expiry = require_gov_delay(
+        "proposalExpiry",
+        dto.proposal_expiry_secs
+            .unwrap_or(DEFAULT_PROPOSAL_EXPIRY_SEC),
+    )?;
+    let quorum = require_quorum_bps(dto.quorum_bps.unwrap_or(DEFAULT_QUORUM_BPS))?;
+    let mode = parse_crew_vote_mode(dto.crew_vote_mode.as_deref())?;
+    Ok(SquadParams {
+        crewChangeDelay: U256::from(delay),
+        proposalExpiry: U256::from(expiry),
+        crewVoteMode: mode,
+        quorumBps: U256::from(quorum),
+    })
+}
 
 fn nave_pirata_deployed_topic0() -> B256 {
     B256::from_slice(
@@ -272,6 +349,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     salt_nonce: Option<String>,
     signer_wallet: Option<String>,
     alt_parent_id: Option<String>,
+    squad_params: Option<SquadParamsDto>,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<NavePirataDeployResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
@@ -322,12 +400,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     let salt =
         parse_salt_nonce(salt_nonce).map_err(|e| wallet_err_json("INVALID_SALT_NONCE", e, None))?;
 
-    let squad_params = SquadParams {
-        crewChangeDelay: U256::from(DEFAULT_CREW_CHANGE_DELAY_SEC),
-        proposalExpiry: U256::from(DEFAULT_PROPOSAL_EXPIRY_SEC),
-        crewVoteMode: CrewVoteMode::MAJORITY_SNAPSHOT,
-        quorumBps: U256::from(DEFAULT_QUORUM_BPS),
-    };
+    let squad_params = resolve_squad_params(squad_params.as_ref())?;
 
     let params = DeployParams {
         captain: captain_addr,
@@ -516,6 +589,51 @@ mod tests {
     fn signer_wallet_parsing_rejects_unknown_modes() {
         for bad in ["hardware", "defaultt", "0xabc"] {
             assert!(parse_signer_wallet(Some(bad), "squad").is_err());
+        }
+    }
+
+    #[test]
+    fn resolve_squad_params_defaults_when_omitted() {
+        let p = resolve_squad_params(None).expect("defaults");
+        assert_eq!(p.crewChangeDelay, U256::from(DEFAULT_CREW_CHANGE_DELAY_SEC));
+        assert_eq!(p.proposalExpiry, U256::from(DEFAULT_PROPOSAL_EXPIRY_SEC));
+        assert_eq!(p.quorumBps, U256::from(DEFAULT_QUORUM_BPS));
+        assert!(matches!(p.crewVoteMode, CrewVoteMode::MAJORITY_SNAPSHOT));
+    }
+
+    #[test]
+    fn resolve_squad_params_accepts_custom_within_bounds() {
+        let dto = SquadParamsDto {
+            crew_change_delay_secs: Some(300),
+            proposal_expiry_secs: Some(300),
+            crew_vote_mode: Some("quorum".into()),
+            quorum_bps: Some(2500),
+        };
+        let p = resolve_squad_params(Some(&dto)).expect("custom");
+        assert_eq!(p.crewChangeDelay, U256::from(300u64));
+        assert_eq!(p.proposalExpiry, U256::from(300u64));
+        assert_eq!(p.quorumBps, U256::from(2500u64));
+        assert!(matches!(p.crewVoteMode, CrewVoteMode::QUORUM_OF_CAST));
+    }
+
+    #[test]
+    fn resolve_squad_params_rejects_out_of_range() {
+        let too_short = SquadParamsDto {
+            crew_change_delay_secs: Some(59),
+            ..Default::default()
+        };
+        match resolve_squad_params(Some(&too_short)) {
+            Err(err) => assert_eq!(wallet_err_code(err), "INVALID_SQUAD_PARAMS"),
+            Ok(_) => panic!("too short"),
+        }
+
+        let too_wide = SquadParamsDto {
+            quorum_bps: Some(10_001),
+            ..Default::default()
+        };
+        match resolve_squad_params(Some(&too_wide)) {
+            Err(err) => assert_eq!(wallet_err_code(err), "INVALID_SQUAD_PARAMS"),
+            Ok(_) => panic!("quorum"),
         }
     }
 }

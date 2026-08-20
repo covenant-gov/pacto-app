@@ -3,6 +3,8 @@ import type { GovernanceProcessKind } from '../announcements';
 import { withPactoGovProviderPayloadTxHash } from './pacto-gov-payload';
 import { announceGovernanceProcessUpdated } from './governance-process-announce';
 import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
+import type { SquadParamsInput } from './squad-params';
+import { squadParamsToInvoke } from './squad-params';
 
 export {
   pactoGovInfraId,
@@ -480,6 +482,7 @@ export async function deployNavePirataForParent(params: {
   signerWallet?: SquadSponsorDeploySignerWallet;
   /** When UI parent id differs from #announcements MLS id, roster rows may live under this key. */
   altParentId?: string | null;
+  squadParams?: SquadParamsInput | null;
 }): Promise<NavePirataDeployResultDto> {
   return (await invoke('deploy_nave_pirata_for_parent', {
     network: params.network,
@@ -489,6 +492,7 @@ export async function deployNavePirataForParent(params: {
     saltNonce: params.saltNonce?.trim() ? params.saltNonce.trim() : null,
     signerWallet: params.signerWallet ?? 'squad',
     altParentId: params.altParentId?.trim() ? params.altParentId.trim() : null,
+    squadParams: params.squadParams ? squadParamsToInvoke(params.squadParams) : null,
     rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as NavePirataDeployResultDto;
 }

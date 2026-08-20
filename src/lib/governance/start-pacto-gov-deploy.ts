@@ -3,6 +3,8 @@ import { runOnChainInBackground } from '../evm/on-chain-background';
 import type { SupportedChainId } from '../wallet/chains';
 import { getAddress, isAddress } from 'viem';
 import { showToast } from '../../stores/toast';
+import type { SquadParamsInput } from './squad-params';
+import { validateSquadParams } from './squad-params';
 
 export type PactoGovDeployComplete = {
   txHash: string;
@@ -59,6 +61,7 @@ export function startPactoGovDeploy(params: {
   announcementsGroupId?: string | null;
   squadNetwork: SupportedChainId | null;
   captain: string;
+  squadParams?: SquadParamsInput | null;
   onComplete: (out: PactoGovDeployComplete) => void | Promise<void>;
   onReject?: (message: string) => void;
   onError?: (message: string) => void;
@@ -88,6 +91,15 @@ export function startPactoGovDeploy(params: {
     return false;
   }
 
+  if (params.squadParams) {
+    const paramsErr = validateSquadParams(params.squadParams);
+    if (paramsErr) {
+      if (params.onReject) params.onReject(paramsErr);
+      else showToast(paramsErr);
+      return false;
+    }
+  }
+
   const announcements = params.announcementsGroupId?.trim() || '';
   const altParentId =
     announcements && announcements !== parentId ? announcements : null;
@@ -103,6 +115,7 @@ export function startPactoGovDeploy(params: {
         // Hats metadata URI; captain modal has no field yet — stable placeholder until product adds one.
         metadataUri: `pacto://squad/${parentId}`,
         altParentId,
+        squadParams: params.squadParams ?? null,
       }),
     onSuccess: async (result) => {
       await params.onComplete({

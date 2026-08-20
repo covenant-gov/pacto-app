@@ -388,6 +388,7 @@ describe('api command wrappers', () => {
       saltNonce: null,
       signerWallet: 'squad',
       altParentId: null,
+      squadParams: null,
       rpcUrls: expect.any(Array),
     });
   });
@@ -409,8 +410,35 @@ describe('api command wrappers', () => {
       saltNonce: null,
       signerWallet: 'default',
       altParentId: null,
+      squadParams: null,
       rpcUrls: expect.any(Array),
     });
+  });
+
+  it('deployNavePirataForParent passes squadParams when provided', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await deployNavePirataForParent({
+      network: NETWORK,
+      parentId: PARENT,
+      captain: '0xabc',
+      squadParams: {
+        crewChangeDelaySecs: 300,
+        proposalExpirySecs: 300,
+        crewVoteMode: 'quorum',
+        quorumBps: 2500,
+      },
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'deploy_nave_pirata_for_parent',
+      expect.objectContaining({
+        squadParams: {
+          crewChangeDelaySecs: 300,
+          proposalExpirySecs: 300,
+          crewVoteMode: 'quorum',
+          quorumBps: 2500,
+        },
+      }),
+    );
   });
 
   it('getNavePirataDeployment sends get_nave_pirata_deployment with trimmed topHatId', async () => {
