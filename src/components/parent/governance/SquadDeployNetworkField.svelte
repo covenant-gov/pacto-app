@@ -4,19 +4,31 @@
   import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
   import { t } from 'svelte-i18n';
 
-  export let id: string;
-  /** When set, the squad network is established: pin the selection and show it read-only. */
-  export let squadNetwork: SupportedChainId | null = null;
-  /** Bound selection; forced to `squadNetwork` when pinned, otherwise the user's pick. */
-  export let value: SupportedChainId | '' = '';
-  export let labelText = '';
-  export let labelClass = '';
-  export let selectClass = '';
+  let {
+    id,
+    squadNetwork = null,
+    value = $bindable(''),
+    labelText = '',
+    labelClass = '',
+    selectClass = '',
+  }: {
+    id: string;
+    /** When set, the squad network is established: pin the selection and show it read-only. */
+    squadNetwork?: SupportedChainId | null;
+    /** Bound selection; forced to `squadNetwork` when pinned, otherwise the user's pick. */
+    value?: SupportedChainId | '';
+    labelText?: string;
+    labelClass?: string;
+    selectClass?: string;
+  } = $props();
 
   const options = listSquadDeployNetworkOptions();
 
-  $: resolvedLabel = labelText || $t('governance.field.network');
-  $: if (squadNetwork && value !== squadNetwork) value = squadNetwork;
+  const resolvedLabel = $derived(labelText || $t('governance.field.network'));
+
+  $effect(() => {
+    if (squadNetwork && value !== squadNetwork) value = squadNetwork;
+  });
 </script>
 
 <label class={labelClass} for={id}>{resolvedLabel}</label>

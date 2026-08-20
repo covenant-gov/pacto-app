@@ -32,41 +32,52 @@
   import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
   import { formatEther, parseEther } from 'viem';
 
-  export let parentId: string;
-  /** Prefer #announcements MLS id for roster resolve when it differs from parentId. */
-  export let announcementsGroupId: string | null = null;
-  export let squadNetwork: SupportedChainId | null = null;
-  export let captainMemberOptions: PactoGovCaptainOption[] = [];
-  /** When set, skips Nave Pirata and deploys hats sponsor for this top hat. */
-  export let existingTopHatId = '';
-  /** Required for bootstrap when finishing sponsor after gov already exists. */
-  export let quartermaster = '';
-  export let onClose: () => void;
-  export let onComplete: (out: CombinedGovSponsorDeployComplete) => void | Promise<void>;
+  let {
+    parentId,
+    announcementsGroupId = null,
+    squadNetwork = null,
+    captainMemberOptions = [],
+    existingTopHatId = '',
+    quartermaster = '',
+    onClose,
+    onComplete,
+  }: {
+    parentId: string;
+    /** Prefer #announcements MLS id for roster resolve when it differs from parentId. */
+    announcementsGroupId?: string | null;
+    squadNetwork?: SupportedChainId | null;
+    captainMemberOptions?: PactoGovCaptainOption[];
+    /** When set, skips Nave Pirata and deploys hats sponsor for this top hat. */
+    existingTopHatId?: string;
+    /** Required for bootstrap when finishing sponsor after gov already exists. */
+    quartermaster?: string;
+    onClose: () => void;
+    onComplete: (out: CombinedGovSponsorDeployComplete) => void | Promise<void>;
+  } = $props();
 
   const titleId = 'deploy-gov-sponsor-title';
   const descId = 'deploy-gov-sponsor-desc';
 
   const tFn = get(t);
 
-  let captainAddress = '';
-  let resolvingAddresses = true;
-  let deployError = '';
-  let fundTransferEth = '';
-  let initialDepositEth = '';
-  let bootstrapCrew = false;
-  let progressStep: '' | 'fund' | 'gov' | 'sponsor' | 'bootstrap' = '';
-  let signerWallet: SquadSponsorDeploySignerWallet = 'squad';
-  let defaultSignerAddress: string | null = null;
-  let squadSignerAddress: string | null = null;
-  let defaultBalance: SignerBalance = emptyBalance();
-  let squadBalance: SignerBalance = emptyBalance();
+  let captainAddress = $state('');
+  let resolvingAddresses = $state(true);
+  let deployError = $state('');
+  let fundTransferEth = $state('');
+  let initialDepositEth = $state('');
+  let bootstrapCrew = $state(false);
+  let progressStep: '' | 'fund' | 'gov' | 'sponsor' | 'bootstrap' = $state('');
+  let signerWallet = $state<SquadSponsorDeploySignerWallet>('squad');
+  let defaultSignerAddress: string | null = $state(null);
+  let squadSignerAddress: string | null = $state(null);
+  let defaultBalance: SignerBalance = $state(emptyBalance());
+  let squadBalance: SignerBalance = $state(emptyBalance());
   let refreshSeq = 0;
   let preferredPayerOnce = false;
-  let deploying = false;
+  let deploying = $state(false);
   let closed = false;
 
-  $: sponsorOnly = !!existingTopHatId.trim();
+  const sponsorOnly = $derived(!!existingTopHatId.trim());
 
   const SIGNER_LOOKUP_TIMEOUT_MS = 15_000;
 
@@ -145,35 +156,39 @@
     refreshSeq += 1;
   });
 
-  $: defaultCanonical = canonicalAddress(defaultSignerAddress);
-  $: squadCanonical = canonicalAddress(squadSignerAddress);
-  $: signersAreSame =
-    defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical;
+  const defaultCanonical = $derived(canonicalAddress(defaultSignerAddress));
+  const squadCanonical = $derived(canonicalAddress(squadSignerAddress));
+  const signersAreSame = $derived(
+    defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical,
+  );
   /** Default only funds the squad key; on-chain deploy always signs as squad/captain. */
-  $: needsFundTransfer = !signersAreSame && signerWallet === 'default';
-  $: payFromEffective = (signersAreSame || needsFundTransfer
-    ? 'squad'
-    : signerWallet) as SquadSponsorDeploySignerWallet;
+  const needsFundTransfer = $derived(!signersAreSame && signerWallet === 'default');
+  const payFromEffective = $derived(
+    (signersAreSame || needsFundTransfer ? 'squad' : signerWallet) as SquadSponsorDeploySignerWallet,
+  );
 
-  $: selectedBalance = signersAreSame
-    ? squadBalance
-    : needsFundTransfer
-      ? defaultBalance
-      : signerWallet === 'default'
+  const selectedBalance = $derived(
+    signersAreSame
+      ? squadBalance
+      : needsFundTransfer
         ? defaultBalance
-        : squadBalance;
+        : signerWallet === 'default'
+          ? defaultBalance
+          : squadBalance,
+  );
 
-  $: transferTrimmed = fundTransferEth.trim();
-  $: depositTrimmed = initialDepositEth.trim();
+  const transferTrimmed = $derived(fundTransferEth.trim());
+  const depositTrimmed = $derived(initialDepositEth.trim());
 
-  $: transferExceedsDefault =
+  const transferExceedsDefault = $derived(
     needsFundTransfer &&
-    transferTrimmed.length > 0 &&
-    !defaultBalance.loading &&
-    !defaultBalance.error &&
-    amountExceedsBalance(transferTrimmed, defaultBalance.balanceRaw);
+      transferTrimmed.length > 0 &&
+      !defaultBalance.loading &&
+      !defaultBalance.error &&
+      amountExceedsBalance(transferTrimmed, defaultBalance.balanceRaw),
+  );
 
-  $: depositExceedsTransfer = (() => {
+  const depositExceedsTransfer = $derived.by(() => {
     if (!needsFundTransfer || !depositTrimmed || !transferTrimmed) return false;
     try {
       const dep = parseEther(depositTrimmed.replace(/,/g, ''));
@@ -182,39 +197,43 @@
     } catch {
       return false;
     }
-  })();
-
-  $: depositExceedsBalance = needsFundTransfer
-    ? depositExceedsTransfer
-    : depositTrimmed.length > 0 &&
-      !selectedBalance.loading &&
-      !selectedBalance.error &&
-      amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
-
-  $: bootstrapAllowed = canBootstrapCrewDuringDeploy({
-    captainAddress,
-    squadRosterAddress: squadSignerAddress,
-    payFrom: payFromEffective,
   });
-  $: if (!bootstrapAllowed && bootstrapCrew) {
-    bootstrapCrew = false;
-  }
+
+  const depositExceedsBalance = $derived(
+    needsFundTransfer
+      ? depositExceedsTransfer
+      : depositTrimmed.length > 0 &&
+          !selectedBalance.loading &&
+          !selectedBalance.error &&
+          amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw),
+  );
+
+  const bootstrapAllowed = $derived(
+    canBootstrapCrewDuringDeploy({
+      captainAddress,
+      squadRosterAddress: squadSignerAddress,
+      payFrom: payFromEffective,
+    }),
+  );
+
+  $effect(() => {
+    if (!bootstrapAllowed && bootstrapCrew) {
+      bootstrapCrew = false;
+    }
+  });
 
   /** Default is payer-only when it differs from the bound squad/captain key. */
-  $: bootstrapExcludeAddresses =
-    defaultCanonical && squadCanonical && defaultCanonical !== squadCanonical
-      ? [defaultCanonical]
-      : [];
+  const bootstrapExcludeAddresses = $derived(
+    defaultCanonical && squadCanonical && defaultCanonical !== squadCanonical ? [defaultCanonical] : [],
+  );
 
-  $: crewPreview = bootstrapCrewCandidates(
-    captainMemberOptions,
-    captainAddress,
-    bootstrapExcludeAddresses,
-  ).map((addr) => {
-    const key = addr.toLowerCase();
-    const opt = captainMemberOptions.find((o) => o.address.toLowerCase() === key);
-    return { address: addr, label: opt?.label?.trim() || '' };
-  });
+  const crewPreview = $derived(
+    bootstrapCrewCandidates(captainMemberOptions, captainAddress, bootstrapExcludeAddresses).map((addr) => {
+      const key = addr.toLowerCase();
+      const opt = captainMemberOptions.find((o) => o.address.toLowerCase() === key);
+      return { address: addr, label: opt?.label?.trim() || '' };
+    }),
+  );
 
   function onTransferInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;
@@ -377,16 +396,17 @@
     }
   }
 
-  $: deployDisabled =
+  const deployDisabled = $derived(
     deploying ||
-    !squadNetwork ||
-    resolvingAddresses ||
-    depositExceedsBalance ||
-    transferExceedsDefault ||
-    !squadCanonical ||
-    !captainAddress ||
-    (needsFundTransfer && (!transferTrimmed || !defaultCanonical)) ||
-    (signersAreSame ? !squadCanonical : signerWallet === 'default' ? !defaultCanonical : !squadCanonical);
+      !squadNetwork ||
+      resolvingAddresses ||
+      depositExceedsBalance ||
+      transferExceedsDefault ||
+      !squadCanonical ||
+      !captainAddress ||
+      (needsFundTransfer && (!transferTrimmed || !defaultCanonical)) ||
+      (signersAreSame ? !squadCanonical : signerWallet === 'default' ? !defaultCanonical : !squadCanonical),
+  );
 </script>
 
 <Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-gov-sponsor-panel">
