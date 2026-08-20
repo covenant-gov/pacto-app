@@ -37,4 +37,6 @@ Local infra type is `pacto_gov_wargame`. Do not dual-read it as `pacto_gov`.
 
 Sequence: create/fund the parent Ext if `factory.squads(parentSquadId)` is empty; `createWarGameSponsorExt`; permit roster EVMs on the round clone; `deployNavePirata` with `stackKind = WarGame` and `squadId = keccak256(parentId)`; `postInitialize` the round Ext onto WarGameRegistry only.
 
+War-game-first is intended. The factory has **one** parent slot (`squads(keccak256(parentId))`); creating that Ext is required so round clones can mint. Live Deploy Governance / Finish sponsor must **not** call `createSquadSponsor` on that same slot. It `postInitialize`s the **parent** Ext onto **NavePirataRegistry** with the live top hat. Round Exts stay on WarGameRegistry. Do not dual-read round clones as live `sponsor`.
+
 The Active row payload includes `status`, `round`, `gameSquadId`, `sponsor`, and optional `retiredSponsor`. Redeploy upserts the same row. War-game UserOps encode `gameSquadId` (factory `warGameSquadId(parent, round)`), not `keccak256(parentId)`. Deploy, redeploy, and retire fan out on `#announcements` as `war_game_updated`.

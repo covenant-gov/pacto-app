@@ -20,6 +20,8 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 
 **Default path:** Launchpad **Deploy Pacto Gov + squad sponsor** — Nave Pirata first, then `createSquadSponsor(squadId, topHatId, registry, [])` so eligibility is captain/crew hat wearers. Optional `bootstrapCrew` in the same wizard. If gov already exists and sponsor is missing, the same wizard finishes hats sponsor only.
 
+**War-game-first Ext → hats:** If `factory.squads(parentId)` already holds an Ext with `hatsWired() == false` (typical after war-game), Finish sponsor does **not** create again. Roster signs `postInitialize(topHatId, NavePirataRegistry, [])` on that parent clone; a wizard deposit uses clone `deposit()` because `postInitialize` is not payable. Already-wired Ext or a hats (`SPONSOR`) clone stays `ALREADY_DEPLOYED`. Round Exts remain on WarGameRegistry and are not live `sponsor`.
+
 **Advanced Ext:** Launchpad / Advanced **Deploy squad sponsor (Ext)** — `createSquadSponsorExt(squadId, addressOwner)` with `addressOwner` = roster EVM; gas/deposit may come from Default.
 
 ## Sponsored UserOps (gov writes)
