@@ -250,4 +250,47 @@ describe('ImageViewer', () => {
     removeSpy.mockRestore();
   });
 
+  it('focuses the first control on open and restores focus to the previously focused element on close', async () => {
+    const trigger = document.createElement('button');
+    trigger.textContent = 'open viewer';
+    document.body.appendChild(trigger);
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    try {
+      const { rerender } = render(ImageViewer, {
+        props: { open: true, src: 'https://example.com/img.png', alt: 'test' },
+      });
+
+      const closeBtn = screen.getByLabelText('Close image viewer');
+      await waitFor(() => {
+        expect(document.activeElement).toBe(closeBtn);
+      });
+
+      await rerender({ open: false, src: 'https://example.com/img.png', alt: 'test' });
+
+      await waitFor(() => {
+        expect(document.activeElement).toBe(trigger);
+      });
+    } finally {
+      trigger.remove();
+    }
+  });
+
+  it('wraps Tab focus at the dialog boundaries instead of escaping to the rest of the page', async () => {
+    render(ImageViewer, { props: { open: true, src: 'https://example.com/img.png', alt: 'test' } });
+
+    const closeBtn = screen.getByLabelText('Close image viewer');
+    const moreOptionsBtn = screen.getByLabelText('More options');
+    await waitFor(() => expect(document.activeElement).toBe(closeBtn));
+
+    moreOptionsBtn.focus();
+    await fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(closeBtn);
+
+    closeBtn.focus();
+    await fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(moreOptionsBtn);
+  });
+
 });
