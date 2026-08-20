@@ -1,24 +1,36 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
   /**
    * Resizable sidebar: owns width state, resize handle, and window listeners.
-   * Parent supplies content via default slot and a class for the wrapper (e.g. squad-navbar, network-navbar).
+   * Parent supplies content via the children snippet and a class for the wrapper (e.g. squad-navbar, network-navbar).
    */
-  export let sidebarClass = '';
-  /** Leading: pixels from left of viewport to the left edge of this sidebar. Trailing: unused. */
-  export let leftOffset = 64;
-  /** Leading: handle on the right. Trailing: handle on the left; drag left widens the panel. */
-  export let edge: 'leading' | 'trailing' = 'leading';
-  /** If set, width is restored and saved across sessions. */
-  export let persistKey: string | undefined = undefined;
-  export let minWidth = 180;
-  export let maxWidth = 400;
-  export let initialWidth = 240;
+  let {
+    sidebarClass = '',
+    leftOffset = 64,
+    edge = 'leading',
+    persistKey = undefined,
+    minWidth = 180,
+    maxWidth = 400,
+    initialWidth = 240,
+    children,
+  }: {
+    sidebarClass?: string;
+    /** Leading: pixels from left of viewport to the left edge of this sidebar. Trailing: unused. */
+    leftOffset?: number;
+    /** Leading: handle on the right. Trailing: handle on the left; drag left widens the panel. */
+    edge?: 'leading' | 'trailing';
+    /** If set, width is restored and saved across sessions. */
+    persistKey?: string;
+    minWidth?: number;
+    maxWidth?: number;
+    initialWidth?: number;
+    children: Snippet;
+  } = $props();
 
-  let width = initialWidth;
+  let width = $state(untrack(() => initialWidth));
   let isResizing = false;
   let resizeStartX = 0;
   let resizeStartWidth = 0;
@@ -69,7 +81,7 @@
   class:resizable-sidebar--leading={edge === 'leading'}
   style="width: {width}px;"
 >
-  <slot />
+  {@render children()}
   <button
     class="resize-handle"
     type="button"
