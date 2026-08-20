@@ -3,19 +3,21 @@
   import UpdateAvailablePanel from './UpdateAvailablePanel.svelte';
   import { updateStatus } from '../../lib/updater/update-check';
 
-  $: open =
+  let open = $derived(
     $updateStatus.status === 'available' ||
-    $updateStatus.status === 'downloading' ||
-    $updateStatus.status === 'installing' ||
-    $updateStatus.status === 'installed' ||
-    $updateStatus.status === 'error';
+      $updateStatus.status === 'downloading' ||
+      $updateStatus.status === 'installing' ||
+      $updateStatus.status === 'installed' ||
+      $updateStatus.status === 'error'
+  );
 
-  $: title =
+  let title = $derived(
     $updateStatus.status === 'error'
       ? 'Update check failed'
       : $updateStatus.status === 'installed'
         ? 'Update installed'
-        : 'Update available';
+        : 'Update available'
+  );
 
   function closeModal(): void {
     const status = $updateStatus.status;

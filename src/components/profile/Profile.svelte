@@ -15,7 +15,7 @@
     $activeView = 'hub';
   }
 
-  $: userNpub = $currentUser?.npub || '';
+  let userNpub = $derived($currentUser?.npub || '');
 </script>
 
 <div class="profile-view">
