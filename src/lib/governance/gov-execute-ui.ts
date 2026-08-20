@@ -34,61 +34,63 @@ export function govExecuteUiState(params: {
   const privilegeKey = params.privilegeReasonKey?.trim() || '';
   const { card } = params;
 
-  if (card.kind === 'crew_add' || card.kind === 'crew_remove') {
-    const unlockAtSec = card.executableAt > 0 ? card.executableAt : null;
-    const delayLocked = crewPendingStatus(card.executableAt, now) === 'pending';
-    if (delayLocked) {
+  switch (card.kind) {
+    case 'crew_add':
+    case 'crew_remove': {
+      const unlockAtSec = card.executableAt > 0 ? card.executableAt : null;
+      const delayLocked = crewPendingStatus(card.executableAt, now) === 'pending';
+      if (delayLocked) {
+        return {
+          showExecute: true,
+          executeEnabled: false,
+          disabledReasonKey: 'governance.proposal.executeLockedUntil',
+          unlockAtSec,
+          ...NO_EXPIRE,
+        };
+      }
       return {
         showExecute: true,
-        executeEnabled: false,
-        disabledReasonKey: 'governance.proposal.executeLockedUntil',
+        executeEnabled: !privilegeKey,
+        disabledReasonKey: privilegeKey,
         unlockAtSec,
         ...NO_EXPIRE,
       };
     }
-    return {
-      showExecute: true,
-      executeEnabled: !privilegeKey,
-      disabledReasonKey: privilegeKey,
-      unlockAtSec,
-      ...NO_EXPIRE,
-    };
+    case 'treasury': {
+      const show = executableTreasuryProposals([card.proposal]).length > 0;
+      return {
+        showExecute: show,
+        executeEnabled: show && !privilegeKey,
+        disabledReasonKey: show ? privilegeKey : '',
+        unlockAtSec: null,
+        ...NO_EXPIRE,
+      };
+    }
+    case 'crew_offboard': {
+      const expired = isCrewOffboardExpirable(card.status, now);
+      const show = isCrewOffboardExecutable(card.status, card.quorumBps, now);
+      return {
+        showExecute: show,
+        executeEnabled: show && !privilegeKey,
+        disabledReasonKey: show ? privilegeKey : '',
+        unlockAtSec: card.status.deadline > 0 ? card.status.deadline : null,
+        showExpire: expired,
+        expireEnabled: expired && !privilegeKey,
+        expireReasonKey: expired ? privilegeKey : '',
+      };
+    }
+    case 'mutiny': {
+      const expired = isMutinyExpirable(card.status, now);
+      const show = isMutinyExecutable(card.status, now);
+      return {
+        showExecute: show,
+        executeEnabled: show && !privilegeKey,
+        disabledReasonKey: show ? privilegeKey : '',
+        unlockAtSec: card.status.deadline > 0 ? card.status.deadline : null,
+        showExpire: expired,
+        expireEnabled: expired && !privilegeKey,
+        expireReasonKey: expired ? privilegeKey : '',
+      };
+    }
   }
-
-  if (card.kind === 'treasury') {
-    const show = executableTreasuryProposals([card.proposal]).length > 0;
-    return {
-      showExecute: show,
-      executeEnabled: show && !privilegeKey,
-      disabledReasonKey: show ? privilegeKey : '',
-      unlockAtSec: null,
-      ...NO_EXPIRE,
-    };
-  }
-
-  if (card.kind === 'crew_offboard') {
-    const expired = isCrewOffboardExpirable(card.status, now);
-    const show = isCrewOffboardExecutable(card.status, card.quorumBps, now);
-    return {
-      showExecute: show,
-      executeEnabled: show && !privilegeKey,
-      disabledReasonKey: show ? privilegeKey : '',
-      unlockAtSec: card.status.deadline > 0 ? card.status.deadline : null,
-      showExpire: expired,
-      expireEnabled: expired && !privilegeKey,
-      expireReasonKey: expired ? privilegeKey : '',
-    };
-  }
-
-  const expired = isMutinyExpirable(card.status, now);
-  const show = isMutinyExecutable(card.status, now);
-  return {
-    showExecute: show,
-    executeEnabled: show && !privilegeKey,
-    disabledReasonKey: show ? privilegeKey : '',
-    unlockAtSec: card.status.deadline > 0 ? card.status.deadline : null,
-    showExpire: expired,
-    expireEnabled: expired && !privilegeKey,
-    expireReasonKey: expired ? privilegeKey : '',
-  };
 }

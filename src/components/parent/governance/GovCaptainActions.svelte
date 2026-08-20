@@ -105,9 +105,11 @@
   $: mutinyExpired = isMutinyExpirable(mutinyStatus);
   $: randomizeExclude = [privilege.myAddress, ...captainWearers];
   $: randomizeCandidates = randomizeCaptainCandidates(memberEvmOptions, randomizeExclude);
-  $: resignGate = mutinyActive
-    ? { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' }
-    : captainGate;
+  $: resignGate = ((): CtaGate =>
+    mutinyActive
+      ? { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' }
+      : captainGate
+  )();
   $: randomizeGate = ((): CtaGate => {
     if (mutinyActive) {
       return { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' };
