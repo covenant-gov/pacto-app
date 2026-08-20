@@ -35,6 +35,37 @@ sol! {
         );
     }
 
+    interface IWarGameRegistry {
+        struct Deployment {
+            address safe;
+            address quartermaster;
+            address mutinyModule;
+            address treasuryAuthority;
+            address squadAdminProxy;
+            uint256 topHatId;
+            uint256 captainHatId;
+            uint256 crewHatId;
+            uint256 squadAdminHatId;
+            uint256 mutinyRoleHatId;
+            uint256 quartermasterRoleHatId;
+            uint256 treasuryAuthorityRoleHatId;
+            uint64 deployedAt;
+            address deployer;
+        }
+
+        function deployment(uint256 _topHatId) external view returns (Deployment memory _deployment);
+
+        function active(bytes32 squadId) external view returns (Deployment memory _deployment);
+
+        event WarGameRegistered(
+            bytes32 indexed _squadId,
+            uint256 indexed _topHatId,
+            Deployment _deployment
+        );
+
+        event WarGameRetired(bytes32 indexed _squadId, uint256 indexed _topHatId);
+    }
+
     interface ITreasuryAuthority {
         enum Operation {
             CALL,

@@ -75,4 +75,40 @@ mod tests {
         assert_eq!(format!("{encoded:#x}"), expected);
         assert_eq!(encoded.len(), 180);
     }
+
+    #[test]
+    fn encode_paymaster_and_data_war_game_squad_id_is_not_parent_keccak() {
+        let paymaster = address!("0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A");
+        let parent_squad_id =
+            b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
+        let game_squad_id =
+            b256!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let sponsor = address!("0x2222222222222222222222222222222222222222");
+        let member = address!("0x3333333333333333333333333333333333333333");
+        let parent_encoded = encode_paymaster_and_data(
+            paymaster,
+            parent_squad_id,
+            sponsor,
+            member,
+            DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+            DEFAULT_POST_OP_GAS_LIMIT,
+        );
+        let game_encoded = encode_paymaster_and_data(
+            paymaster,
+            game_squad_id,
+            sponsor,
+            member,
+            DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+            DEFAULT_POST_OP_GAS_LIMIT,
+        );
+        assert_ne!(parent_encoded, game_encoded);
+        assert_eq!(
+            &game_encoded[PAYMASTER_DATA_OFFSET + 32..PAYMASTER_DATA_OFFSET + 64],
+            game_squad_id.as_slice()
+        );
+        assert_eq!(
+            format!("{parent_encoded:#x}"),
+            "0x78197483ac3180361cdb1f59dd702ea8ca34ac3a0000000000000000000000000007a1200000000000000000000000000000c3500000000000000000000000000000000000000000000000000000000000000001111111111111111111111111111111111111111111111111111111111111111100000000000000000000000022222222222222222222222222222222222222220000000000000000000000003333333333333333333333333333333333333333"
+        );
+    }
 }

@@ -134,13 +134,24 @@ pub async fn read_squad_record<P: Provider>(
     factory: Address,
     squad_id: B256,
 ) -> Result<(Address, SquadVariant, U256), String> {
+    match read_squad_record_opt(provider, factory, squad_id).await? {
+        Some(record) => Ok(record),
+        None => Err("no sponsor clone registered for this squad id".to_string()),
+    }
+}
+
+/// Factory `squads` row, or `None` when no clone is registered.
+pub async fn read_squad_record_opt<P: Provider>(
+    provider: &P,
+    factory: Address,
+    squad_id: B256,
+) -> Result<Option<(Address, SquadVariant, U256)>, String> {
     let call = squadsCall { squadId: squad_id };
     let decoded = eth_call_decode(provider, factory, &call).await?;
-    let sponsor = decoded.sponsor;
-    if sponsor.is_zero() {
-        return Err("no sponsor clone registered for this squad id".to_string());
+    if decoded.sponsor.is_zero() {
+        return Ok(None);
     }
-    Ok((sponsor, decoded.variant, decoded.topHatId))
+    Ok(Some((decoded.sponsor, decoded.variant, decoded.topHatId)))
 }
 
 /// Sponsor clone address for a parent: an explicit address is validated against the factory

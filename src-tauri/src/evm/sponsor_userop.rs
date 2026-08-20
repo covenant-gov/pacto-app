@@ -9,6 +9,7 @@ use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::str::FromStr;
 use std::sync::LazyLock;
 use std::time::Duration;
 use tauri::{AppHandle, Runtime};
@@ -19,7 +20,7 @@ use super::contracts::pacto_sponsor::ISquadSponsorBase::{
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::load_squad_roster_embedded_signer;
-use super::rpc::{connect_read_provider, wallet_err_json};
+use super::rpc::{connect_read_provider, parse_address, wallet_err_json};
 use super::sponsor_paymaster::{
     encode_paymaster_and_data, required_pool_balance, DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
     DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
@@ -250,15 +251,76 @@ pub async fn roster_native_balance_wei<P: Provider>(
     })
 }
 
+const WAR_GAME_MODULE_KEYS: [&str; 5] = [
+    "safe",
+    "quartermaster",
+    "mutinyModule",
+    "treasuryAuthority",
+    "squadAdminProxy",
+];
+
+/// Active war-game stack: UserOps must encode `gameSquadId`, not parent keccak.
+#[derive(Clone, Debug)]
+pub struct WarGameUserOpContext {
+    pub game_squad_id: B256,
+    modules: Vec<Address>,
+}
+
+impl WarGameUserOpContext {
+    pub fn targets(&self, to: Address) -> bool {
+        self.modules.iter().any(|a| *a == to)
+    }
+}
+
+pub fn parse_war_game_userop_context(payload: &str) -> Option<WarGameUserOpContext> {
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let status = v
+        .get("status")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim();
+    if !status.eq_ignore_ascii_case("active") {
+        return None;
+    }
+    let id_raw = v.get("gameSquadId").and_then(|x| x.as_str())?;
+    let game_squad_id = B256::from_str(id_raw.trim()).ok()?;
+    let mut modules = Vec::with_capacity(WAR_GAME_MODULE_KEYS.len());
+    for key in WAR_GAME_MODULE_KEYS {
+        let raw = v.get(key).and_then(|x| x.as_str())?;
+        let addr = parse_address(raw).ok()?;
+        if addr.is_zero() {
+            return None;
+        }
+        modules.push(addr);
+    }
+    Some(WarGameUserOpContext {
+        game_squad_id,
+        modules,
+    })
+}
+
+/// Paymaster `squadId`: war-game module writes use the round id; production stays parent keccak.
+pub fn resolve_sponsored_squad_id(
+    parent_id: &str,
+    to: Address,
+    wargame_payload: Option<&str>,
+) -> B256 {
+    if let Some(ctx) = wargame_payload.and_then(parse_war_game_userop_context) {
+        if ctx.targets(to) {
+            return ctx.game_squad_id;
+        }
+    }
+    squad_id_from_parent_id(parent_id)
+}
+
 pub async fn sponsor_eligibility_preflight<P: Provider>(
     provider: &P,
     factory: Address,
     expected_paymaster: Address,
-    parent_id: &str,
+    squad_id: B256,
     member: Address,
     estimated_max_cost_wei: U256,
 ) -> Result<(Address, B256), String> {
-    let squad_id = squad_id_from_parent_id(parent_id);
     let (sponsor, _variant, _hat) = read_squad_record(provider, factory, squad_id)
         .await
         .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
@@ -337,13 +399,21 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
             None,
         ));
     };
-    if !db::parent_has_sponsor_infra(&app, parent_id).unwrap_or(false) {
+    let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, parent_id)
+        .ok()
+        .flatten();
+    let is_wargame_op = wargame_payload
+        .as_deref()
+        .and_then(parse_war_game_userop_context)
+        .is_some_and(|c| c.targets(to));
+    if !db::parent_has_sponsor_infra(&app, parent_id).unwrap_or(false) && !is_wargame_op {
         return Err(wallet_err_json(
             "SPONSOR_REQUIRED",
             "Deploy squad sponsor before sponsored governance writes.",
             None,
         ));
     }
+    let squad_id = resolve_sponsored_squad_id(parent_id, to, wargame_payload.as_deref());
 
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
@@ -384,7 +454,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         &read_provider,
         addrs.squad_sponsor_factory,
         addrs.pacto_sponsor_paymaster,
-        parent_id,
+        squad_id,
         member,
         placeholder_max_cost,
     )
@@ -437,7 +507,6 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         factory: addrs.squad_sponsor_factory,
         sponsor,
         squad_id,
-        parent_id: parent_id.to_string(),
         member,
         nonce,
         execute_calldata,
@@ -470,7 +539,6 @@ struct SponsoredSendParts {
     factory: Address,
     sponsor: Address,
     squad_id: B256,
-    parent_id: String,
     member: Address,
     nonce: U256,
     execute_calldata: Vec<u8>,
@@ -600,7 +668,7 @@ async fn sign_and_send_user_op<P: Provider, S: Signer + Sync>(
         provider,
         ctx.factory,
         ctx.paymaster,
-        &ctx.parent_id,
+        ctx.squad_id,
         ctx.member,
         final_max_cost,
     )
@@ -1410,13 +1478,14 @@ mod tests {
         classify_bundler_userop_reject, dummy_userop_signature, eip7702_auth_json,
         encode_eip7702_authorization, explicit_bundler_rpc_url, host_is_alchemy, pack_u128s,
         parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
-        parse_sponsored_user_op_receipt, paymaster_data, pimlico_bundler_rpc_url,
-        pimlico_chain_id_for_network, receipt_transaction_hash, retriable_bundler_status,
-        user_op_json, userop_max_cost_wei, validate_pimlico_api_key, SponsoredUserOpReceipt,
-        UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
+        parse_sponsored_user_op_receipt, parse_war_game_userop_context, paymaster_data,
+        pimlico_bundler_rpc_url, pimlico_chain_id_for_network, receipt_transaction_hash,
+        resolve_sponsored_squad_id, retriable_bundler_status, user_op_json, userop_max_cost_wei,
+        validate_pimlico_api_key, SponsoredUserOpReceipt, UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
+    use crate::evm::squad_sponsor_common::squad_id_from_parent_id;
     use alloy::primitives::{address, b256, B256, U256};
     use reqwest::StatusCode;
     use serde_json::json;
@@ -1429,6 +1498,82 @@ mod tests {
         expected[..16].copy_from_slice(&100_000u128.to_be_bytes());
         expected[16..].copy_from_slice(&500_000u128.to_be_bytes());
         assert_eq!(packed, B256::from(expected));
+    }
+
+    fn war_game_payload(ta: &str, game_squad_id: B256, status: &str) -> String {
+        json!({
+            "v": 1,
+            "status": status,
+            "gameSquadId": format!("{game_squad_id:#x}"),
+            "safe": "0x1111111111111111111111111111111111111111",
+            "quartermaster": "0x2222222222222222222222222222222222222222",
+            "mutinyModule": "0x3333333333333333333333333333333333333333",
+            "treasuryAuthority": ta,
+            "squadAdminProxy": "0x4444444444444444444444444444444444444444",
+            "sponsor": "0x5555555555555555555555555555555555555555",
+            "round": "1",
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn war_game_userop_encodes_game_squad_id_not_parent_keccak() {
+        let parent = "parent-1";
+        let game_squad_id =
+            b256!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let ta = address!("0x5412b91D05101D3BD802E4E8D4c576f0e525AeDa");
+        let payload = war_game_payload(&format!("{ta:#x}"), game_squad_id, "active");
+        let resolved = resolve_sponsored_squad_id(parent, ta, Some(&payload));
+        assert_eq!(resolved, game_squad_id);
+        assert_ne!(resolved, squad_id_from_parent_id(parent));
+        let encoded = encode_paymaster_and_data(
+            address!("0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A"),
+            resolved,
+            address!("0x2222222222222222222222222222222222222222"),
+            address!("0x3333333333333333333333333333333333333333"),
+            500_000,
+            50_000,
+        );
+        let parent_encoded = encode_paymaster_and_data(
+            address!("0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A"),
+            squad_id_from_parent_id(parent),
+            address!("0x2222222222222222222222222222222222222222"),
+            address!("0x3333333333333333333333333333333333333333"),
+            500_000,
+            50_000,
+        );
+        assert_ne!(encoded, parent_encoded);
+        assert_eq!(
+            &encoded[PAYMASTER_DATA_OFFSET + 32..PAYMASTER_DATA_OFFSET + 64],
+            game_squad_id.as_slice()
+        );
+    }
+
+    #[test]
+    fn production_module_write_keeps_parent_keccak_when_war_game_exists() {
+        let parent = "parent-1";
+        let game_squad_id =
+            b256!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let production_ta = address!("0x9999999999999999999999999999999999999999");
+        let payload = war_game_payload(
+            "0x5412b91D05101D3BD802E4E8D4c576f0e525AeDa",
+            game_squad_id,
+            "active",
+        );
+        let resolved = resolve_sponsored_squad_id(parent, production_ta, Some(&payload));
+        assert_eq!(resolved, squad_id_from_parent_id(parent));
+    }
+
+    #[test]
+    fn retired_war_game_payload_does_not_route_userops() {
+        let parent = "parent-1";
+        let game_squad_id =
+            b256!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let ta = address!("0x5412b91D05101D3BD802E4E8D4c576f0e525AeDa");
+        let payload = war_game_payload(&format!("{ta:#x}"), game_squad_id, "retired");
+        assert!(parse_war_game_userop_context(&payload).is_none());
+        let resolved = resolve_sponsored_squad_id(parent, ta, Some(&payload));
+        assert_eq!(resolved, squad_id_from_parent_id(parent));
     }
 
     #[test]

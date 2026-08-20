@@ -495,6 +495,9 @@ fn normalize_infra_type(raw: &str) -> Result<String, String> {
     match s.as_str() {
         "sponsor" | "squad_sponsor" => Ok("sponsor".to_string()),
         "pacto_gov" | "pacto-gov" => Ok("pacto_gov".to_string()),
+        "pacto_gov_wargame" | "pacto-gov-wargame" | "pacto-gov_wargame" => {
+            Ok("pacto_gov_wargame".to_string())
+        }
         "squad_admin" | "squad-admin" => Ok("squad_admin".to_string()),
         "standalone_safe" | "gnosis_safe" | "gnosis-safe" | "safe" => {
             Ok("standalone_safe".to_string())
@@ -2171,6 +2174,19 @@ mod tracked_token_tests {
     }
 
     #[test]
+    fn wargame_infra_does_not_satisfy_pacto_gov_gate() {
+        let conn = rusqlite::Connection::open_in_memory().expect("db");
+        tracked_schema(&conn);
+        conn.execute(
+            "INSERT INTO squad_infra (id, parent_id, infra_type, chain, canonical_ref, created_at_ms, updated_at_ms)
+             VALUES ('pgw-1', 'parent-1', 'pacto_gov_wargame', 'sepolia', '1', 1, 1)",
+            [],
+        )
+        .expect("insert");
+        assert!(!parent_has_pacto_gov_infra(&conn, "parent-1"));
+    }
+
+    #[test]
     fn upsert_list_remove_tracked_token_round_trip() {
         let conn = rusqlite::Connection::open_in_memory().expect("db");
         tracked_schema(&conn);
@@ -2277,8 +2293,8 @@ mod tracked_token_tests {
 #[cfg(test)]
 mod squad_infra_row_id_tests {
     use super::{
-        pacto_gov_infra_row_id, pacto_gov_treasury_row_id, squad_admin_infra_row_id,
-        squad_sponsor_infra_row_id, SQUAD_INFRA_ID_MAX,
+        pacto_gov_infra_row_id, pacto_gov_treasury_row_id, pacto_gov_wargame_infra_row_id,
+        squad_admin_infra_row_id, squad_sponsor_infra_row_id, SQUAD_INFRA_ID_MAX,
     };
 
     const LONG_PARENT: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
@@ -2299,12 +2315,14 @@ mod squad_infra_row_id_tests {
         let treasury = pacto_gov_treasury_row_id(LONG_PARENT);
         let sponsor = squad_sponsor_infra_row_id(LONG_PARENT);
         let admin = squad_admin_infra_row_id(LONG_PARENT);
+        let wargame = pacto_gov_wargame_infra_row_id(LONG_PARENT);
 
-        for id in [&gov, &treasury, &sponsor, &admin] {
+        for id in [&gov, &treasury, &sponsor, &admin, &wargame] {
             assert!(id.len() <= SQUAD_INFRA_ID_MAX);
         }
         assert!(gov.starts_with("pg-"));
         assert!(treasury.starts_with("pgt-"));
+        assert!(wargame.starts_with("pgw-"));
         assert_eq!(
             gov,
             "pg-68025c1968089de1fee3538c1da6fb961996d68a176ad60013a5d8bba755508f"
@@ -2610,6 +2628,20 @@ pub fn pacto_gov_infra_row_id(parent_id: &str) -> String {
     }
 }
 
+/// Stable SQLite row id for the war-game stack entry for this parent.
+pub fn pacto_gov_wargame_infra_row_id(parent_id: &str) -> String {
+    let pid = parent_id.trim();
+    let direct = format!("pacto-gov-wargame-{pid}");
+    if direct.len() <= SQUAD_INFRA_ID_MAX {
+        direct
+    } else {
+        format!(
+            "pgw-{}",
+            hex::encode(alloy::primitives::keccak256(pid.as_bytes()).as_slice())
+        )
+    }
+}
+
 /// Stable SQLite row id for the pacto-gov treasury entry for this parent.
 pub fn pacto_gov_treasury_row_id(parent_id: &str) -> String {
     let pid = parent_id.trim();
@@ -2667,6 +2699,54 @@ pub fn persist_pacto_gov_infra<R: Runtime>(
         pacto_gov_infra_row_id(parent_id).as_str(),
         parent_id,
         "pacto_gov",
+        Some(chain),
+        hat,
+        None,
+        Some(provider_payload),
+    )
+}
+
+/// Stored war-game provider payload for this parent, if any.
+pub fn pacto_gov_wargame_payload_for_parent<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<Option<String>, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(None);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT provider_payload FROM squad_infra \
+             WHERE parent_id = ?1 AND infra_type = 'pacto_gov_wargame' \
+             ORDER BY updated_at_ms DESC LIMIT 1",
+            rusqlite::params![pid],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("pacto_gov_wargame payload lookup: {e}"))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(row.filter(|s| !s.trim().is_empty()))
+}
+
+/// Persist or refresh the war-game infra row after deploy. Never writes `pacto_gov`.
+pub fn persist_pacto_gov_wargame_infra<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    top_hat_id: &str,
+    provider_payload: &str,
+) -> Result<(), String> {
+    let hat = top_hat_id.trim();
+    if hat.is_empty() {
+        return Err("top_hat_id must be non-empty".to_string());
+    }
+    upsert_squad_infra_inner(
+        handle,
+        pacto_gov_wargame_infra_row_id(parent_id).as_str(),
+        parent_id,
+        "pacto_gov_wargame",
         Some(chain),
         hat,
         None,
@@ -2829,6 +2909,9 @@ pub fn maybe_upsert_governance_from_announce<R: Runtime>(
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return,
     };
+    if normalize_infra_type(provider).ok().as_deref() == Some("pacto_gov_wargame") {
+        return;
+    }
     let canonical_ref = match p.get("canonical_ref").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return,
@@ -2875,6 +2958,77 @@ pub fn maybe_upsert_governance_from_announce<R: Runtime>(
         pacto_rev,
         provider_payload_str,
     );
+}
+
+fn json_nonempty_str<'a>(p: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    p.get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// If content is a `war_game_updated` announce JSON, upsert `pacto_gov_wargame` (never `pacto_gov`).
+pub fn maybe_upsert_war_game_from_announce<R: Runtime>(
+    handle: &AppHandle<R>,
+    content: &str,
+    chat_id: &str,
+    author_npub: Option<&str>,
+) {
+    let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("war_game_updated") {
+        return;
+    }
+    let p = match parsed.get("payload") {
+        Some(v) => v,
+        None => return,
+    };
+    let parent_id = match json_nonempty_str(p, "parent_id") {
+        Some(s) => s,
+        _ => return,
+    };
+    if !side_effect_parent_matches_chat(chat_id, parent_id) {
+        return;
+    }
+    if !is_author_mls_member_for_chat(handle, chat_id, author) {
+        return;
+    }
+    if !matches!(
+        json_nonempty_str(p, "action"),
+        Some("deploy" | "redeploy" | "retire")
+    ) {
+        return;
+    }
+    let Some(canonical_ref) = json_nonempty_str(p, "canonical_ref") else {
+        return;
+    };
+    if json_nonempty_str(p, "round").is_none()
+        || json_nonempty_str(p, "game_squad_id").is_none()
+        || json_nonempty_str(p, "sponsor").is_none()
+    {
+        return;
+    }
+    let Some(provider_payload) = json_nonempty_str(p, "provider_payload") else {
+        return;
+    };
+    let payload_ok = serde_json::from_str::<serde_json::Value>(provider_payload)
+        .ok()
+        .is_some_and(|v| {
+            json_nonempty_str(&v, "gameSquadId").is_some()
+                && json_nonempty_str(&v, "round").is_some()
+                && json_nonempty_str(&v, "sponsor").is_some()
+        });
+    if !payload_ok {
+        return;
+    }
+    let chain = json_nonempty_str(p, "chain").unwrap_or("sepolia");
+    let _ =
+        persist_pacto_gov_wargame_infra(handle, parent_id, chain, canonical_ref, provider_payload);
 }
 
 /// Max sticker entries a single pack announce may declare, and the max serialized
@@ -3262,6 +3416,152 @@ mod sticker_pack_announce_tests {
         let content = announce("squad-10", "pack-1", "Too Big", &entries_json, 1000, false);
         maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-10", Some("npub1author"));
         assert!(stored_row(app.handle(), "squad-10", "pack-1").is_none());
+    }
+}
+
+#[cfg(test)]
+mod war_game_announce_tests {
+    use super::*;
+
+    fn setup(test_npub: &str) -> tauri::App<tauri::test::MockRuntime> {
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+        let app = tauri::test::mock_app();
+        let profile_dir =
+            crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+        app
+    }
+
+    fn insert_chat_with_participants<R: Runtime>(
+        handle: &AppHandle<R>,
+        chat_id: &str,
+        participants: &[&str],
+    ) {
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        let json = serde_json::to_string(participants).unwrap();
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata) \
+             VALUES (?1, 0, ?2, '', 1000, '{}')",
+            rusqlite::params![chat_id, json],
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+    }
+
+    fn stored_wargame<R: Runtime>(
+        handle: &AppHandle<R>,
+        parent_id: &str,
+    ) -> Option<(String, String, String)> {
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        let row = conn
+            .query_row(
+                "SELECT id, infra_type, provider_payload FROM squad_infra \
+                 WHERE parent_id = ?1 AND infra_type = 'pacto_gov_wargame'",
+                rusqlite::params![parent_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .unwrap();
+        crate::account_manager::return_db_connection(conn);
+        row
+    }
+
+    fn pacto_gov_count<R: Runtime>(handle: &AppHandle<R>, parent_id: &str) -> i64 {
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM squad_infra WHERE parent_id = ?1 AND infra_type = 'pacto_gov'",
+                rusqlite::params![parent_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        crate::account_manager::return_db_connection(conn);
+        n
+    }
+
+    fn announce(parent_id: &str, action: &str) -> String {
+        let payload = serde_json::json!({
+            "v": 1,
+            "status": "active",
+            "round": "1",
+            "gameSquadId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sponsor": "0x5555555555555555555555555555555555555555",
+        })
+        .to_string();
+        serde_json::json!({
+            "pacto_virtual_bucket": "announcements",
+            "type": "war_game_updated",
+            "payload": {
+                "parent_id": parent_id,
+                "action": action,
+                "canonical_ref": "42",
+                "chain": "sepolia",
+                "entry_id": pacto_gov_wargame_infra_row_id(parent_id),
+                "round": "1",
+                "game_squad_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sponsor": "0x5555555555555555555555555555555555555555",
+                "provider_payload": payload,
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn member_announce_upserts_wargame_not_pacto_gov() {
+        let app = setup("npub1wargameannounceupsert");
+        insert_chat_with_participants(app.handle(), "squad-wg", &["npub1author"]);
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce("squad-wg", "deploy"),
+            "squad-wg",
+            Some("npub1author"),
+        );
+        let row = stored_wargame(app.handle(), "squad-wg").expect("wargame row");
+        assert_eq!(row.0, pacto_gov_wargame_infra_row_id("squad-wg"));
+        assert_eq!(row.1, "pacto_gov_wargame");
+        assert!(row.2.contains("gameSquadId"));
+        assert_eq!(pacto_gov_count(app.handle(), "squad-wg"), 0);
+    }
+
+    #[test]
+    fn governance_updated_wargame_provider_does_not_upsert() {
+        let app = setup("npub1wargamegovskip");
+        insert_chat_with_participants(app.handle(), "squad-wg", &["npub1author"]);
+        let content = serde_json::json!({
+            "type": "governance_updated",
+            "payload": {
+                "parent_id": "squad-wg",
+                "provider": "pacto_gov_wargame",
+                "canonical_ref": "42",
+            }
+        })
+        .to_string();
+        maybe_upsert_governance_from_announce(
+            app.handle(),
+            &content,
+            "squad-wg",
+            Some("npub1author"),
+        );
+        assert!(stored_wargame(app.handle(), "squad-wg").is_none());
+        assert_eq!(pacto_gov_count(app.handle(), "squad-wg"), 0);
+    }
+
+    #[test]
+    fn non_member_announce_is_noop() {
+        let app = setup("npub1wargamenonmember");
+        insert_chat_with_participants(app.handle(), "squad-wg", &["npub1author"]);
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce("squad-wg", "deploy"),
+            "squad-wg",
+            Some("npub1stranger"),
+        );
+        assert!(stored_wargame(app.handle(), "squad-wg").is_none());
     }
 }
 
@@ -3711,6 +4011,7 @@ pub fn apply_mls_virtual_bucket_side_effects<R: Runtime>(
     if is_announcements_governance_announce_content(content) {
         maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
     }
+    maybe_upsert_war_game_from_announce(handle, content, chat_id, author_npub);
 
     // Sticker pack announces are always announcements-bucket traffic; ingest unconditionally,
     // same as governance above, so sync works even if bucket derivation was skipped upstream.

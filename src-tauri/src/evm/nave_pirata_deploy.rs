@@ -15,7 +15,7 @@ use crate::db;
 
 use super::contracts::pacto_gov::read_bindings::INavePirataRegistry::NavePirataRegistered;
 use super::contracts::pacto_gov::INavePirataFactory::{
-    deployNavePirataCall, CrewVoteMode, DeployParams, SquadParams,
+    deployNavePirataCall, CrewVoteMode, DeployParams, SquadParams, StackKind,
 };
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
@@ -34,6 +34,7 @@ use alloy::sol_types::SolEvent;
 /// Matches `script/Constants.sol` production-style defaults (`CREW_CHANGE_DELAY`, `PROPOSAL_EXPIRY`, etc.).
 const DEFAULT_CREW_CHANGE_DELAY_SEC: u64 = 7 * 24 * 3600;
 const DEFAULT_PROPOSAL_EXPIRY_SEC: u64 = 7 * 24 * 3600;
+pub(crate) const WAR_GAME_DEFAULT_DELAY_SEC: u64 = 5 * 60;
 const DEFAULT_QUORUM_BPS: u64 = 3000;
 const MIN_GOV_DELAY_SEC: u64 = 60;
 const MAX_GOV_DELAY_SEC: u64 = 60 * 24 * 3600;
@@ -54,7 +55,8 @@ fn parse_crew_vote_mode(raw: Option<&str>) -> Result<CrewVoteMode, String> {
     match raw.map(str::trim).filter(|s| !s.is_empty()) {
         None => Ok(CrewVoteMode::MAJORITY_SNAPSHOT),
         Some(s)
-            if s.eq_ignore_ascii_case("majority") || s.eq_ignore_ascii_case("MAJORITY_SNAPSHOT") =>
+            if s.eq_ignore_ascii_case("majority")
+                || s.eq_ignore_ascii_case("MAJORITY_SNAPSHOT") =>
         {
             Ok(CrewVoteMode::MAJORITY_SNAPSHOT)
         }
@@ -91,17 +93,19 @@ fn require_quorum_bps(bps: u64) -> Result<u64, String> {
     Ok(bps)
 }
 
-pub(crate) fn resolve_squad_params(input: Option<&SquadParamsDto>) -> Result<SquadParams, String> {
+fn resolve_squad_params_with_defaults(
+    input: Option<&SquadParamsDto>,
+    default_delay: u64,
+    default_expiry: u64,
+) -> Result<SquadParams, String> {
     let dto = input.cloned().unwrap_or_default();
     let delay = require_gov_delay(
         "crewChangeDelay",
-        dto.crew_change_delay_secs
-            .unwrap_or(DEFAULT_CREW_CHANGE_DELAY_SEC),
+        dto.crew_change_delay_secs.unwrap_or(default_delay),
     )?;
     let expiry = require_gov_delay(
         "proposalExpiry",
-        dto.proposal_expiry_secs
-            .unwrap_or(DEFAULT_PROPOSAL_EXPIRY_SEC),
+        dto.proposal_expiry_secs.unwrap_or(default_expiry),
     )?;
     let quorum = require_quorum_bps(dto.quorum_bps.unwrap_or(DEFAULT_QUORUM_BPS))?;
     let mode = parse_crew_vote_mode(dto.crew_vote_mode.as_deref())?;
@@ -111,6 +115,47 @@ pub(crate) fn resolve_squad_params(input: Option<&SquadParamsDto>) -> Result<Squ
         crewVoteMode: mode,
         quorumBps: U256::from(quorum),
     })
+}
+
+pub(crate) fn resolve_squad_params(input: Option<&SquadParamsDto>) -> Result<SquadParams, String> {
+    resolve_squad_params_with_defaults(
+        input,
+        DEFAULT_CREW_CHANGE_DELAY_SEC,
+        DEFAULT_PROPOSAL_EXPIRY_SEC,
+    )
+}
+
+pub(crate) fn resolve_war_game_squad_params(
+    input: Option<&SquadParamsDto>,
+) -> Result<SquadParams, String> {
+    resolve_squad_params_with_defaults(
+        input,
+        WAR_GAME_DEFAULT_DELAY_SEC,
+        WAR_GAME_DEFAULT_DELAY_SEC,
+    )
+}
+
+pub(crate) fn nave_pirata_deploy_params(
+    captain: Address,
+    metadata_uri: String,
+    squad_params: SquadParams,
+    addrs: &super::pacto_chain_config::PactoGovDeployAddresses,
+    salt: U256,
+    stack_kind: StackKind,
+    squad_id: B256,
+) -> DeployParams {
+    DeployParams {
+        captain,
+        metadataURI: metadata_uri,
+        squadParams: squad_params,
+        quartermasterMasterCopy: addrs.master_quartermaster,
+        mutinyMasterCopy: addrs.master_mutiny,
+        treasuryAuthorityMasterCopy: addrs.master_treasury_authority,
+        squadAdminImplementation: addrs.master_squad_admin_impl,
+        saltNonce: salt,
+        stackKind: stack_kind,
+        squadId: squad_id,
+    }
 }
 
 fn nave_pirata_deployed_topic0() -> B256 {
@@ -187,7 +232,7 @@ fn addresses_from_nave_pirata_registered_log(
     ))
 }
 
-fn nave_pirata_addresses_from_receipt(
+pub(crate) fn nave_pirata_addresses_from_receipt(
     receipt: &TransactionReceipt,
     factory: Address,
     registry: Option<Address>,
@@ -207,7 +252,7 @@ fn nave_pirata_addresses_from_receipt(
     Err("no NavePirataDeployed or NavePirataRegistered log in receipt".into())
 }
 
-fn validate_metadata_uri(metadata_uri: &str) -> Result<String, String> {
+pub(crate) fn validate_metadata_uri(metadata_uri: &str) -> Result<String, String> {
     let meta = metadata_uri.trim();
     if meta.is_empty() {
         return Err(wallet_err_json(
@@ -262,7 +307,7 @@ fn bound_squad_address_for_parent<R: Runtime>(
 
 /// Captain must appear on the shared roster (primary + optional alt parent id).
 /// If it only exists as this user's local squad binding, heal `squad_member_evm` and allow.
-fn ensure_captain_for_parent_deploy<R: Runtime>(
+pub(crate) fn ensure_captain_for_parent_deploy<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
     alt_parent_id: Option<&str>,
@@ -303,7 +348,7 @@ fn ensure_captain_for_parent_deploy<R: Runtime>(
 }
 
 /// Prefer the parent id that has a local squad binding when primary and alt differ.
-fn roster_signing_parent_id<R: Runtime>(
+pub(crate) fn roster_signing_parent_id<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
     alt_parent_id: Option<&str>,
@@ -402,16 +447,15 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 
     let squad_params = resolve_squad_params(squad_params.as_ref())?;
 
-    let params = DeployParams {
-        captain: captain_addr,
-        metadataURI: meta.clone(),
-        squadParams: squad_params,
-        quartermasterMasterCopy: addrs.master_quartermaster,
-        mutinyMasterCopy: addrs.master_mutiny,
-        treasuryAuthorityMasterCopy: addrs.master_treasury_authority,
-        squadAdminImplementation: addrs.master_squad_admin_impl,
-        saltNonce: salt,
-    };
+    let params = nave_pirata_deploy_params(
+        captain_addr,
+        meta.clone(),
+        squad_params,
+        &addrs,
+        salt,
+        StackKind::Production,
+        B256::ZERO,
+    );
 
     let calldata = deployNavePirataCall { _params: params }.abi_encode();
     let factory = addrs.nave_pirata_factory;
@@ -510,6 +554,8 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::primitives::{Address, B256};
+    use alloy::sol_types::SolCall;
 
     fn wallet_err_code(err: String) -> String {
         serde_json::from_str::<serde_json::Value>(&err)
@@ -614,6 +660,44 @@ mod tests {
         assert_eq!(p.proposalExpiry, U256::from(300u64));
         assert_eq!(p.quorumBps, U256::from(2500u64));
         assert!(matches!(p.crewVoteMode, CrewVoteMode::QUORUM_OF_CAST));
+    }
+
+    #[test]
+    fn resolve_war_game_squad_params_defaults_to_five_minutes() {
+        let p = resolve_war_game_squad_params(None).expect("defaults");
+        assert_eq!(p.crewChangeDelay, U256::from(WAR_GAME_DEFAULT_DELAY_SEC));
+        assert_eq!(p.proposalExpiry, U256::from(WAR_GAME_DEFAULT_DELAY_SEC));
+        assert_eq!(p.quorumBps, U256::from(DEFAULT_QUORUM_BPS));
+        assert!(matches!(p.crewVoteMode, CrewVoteMode::MAJORITY_SNAPSHOT));
+    }
+
+    #[test]
+    fn production_deploy_params_use_production_kind_and_zero_squad_id() {
+        let p = nave_pirata_deploy_params(
+            Address::repeat_byte(0x11),
+            "pacto://squad/test".into(),
+            resolve_squad_params(None).unwrap(),
+            &super::super::pacto_chain_config::PactoGovDeployAddresses {
+                nave_pirata_factory: Address::repeat_byte(0x01),
+                master_quartermaster: Address::repeat_byte(0x02),
+                master_mutiny: Address::repeat_byte(0x03),
+                master_treasury_authority: Address::repeat_byte(0x04),
+                master_squad_admin_impl: Address::repeat_byte(0x05),
+                master_squad_admin_ext_impl: Address::repeat_byte(0x06),
+                nave_pirata_registry: None,
+                war_game_registry: None,
+                hats: None,
+            },
+            U256::from(7u64),
+            StackKind::Production,
+            B256::ZERO,
+        );
+        assert!(matches!(p.stackKind, StackKind::Production));
+        assert_eq!(p.squadId, B256::ZERO);
+        let encoded = deployNavePirataCall { _params: p }.abi_encode();
+        let decoded = deployNavePirataCall::abi_decode(&encoded).expect("decode");
+        assert!(matches!(decoded._params.stackKind, StackKind::Production));
+        assert_eq!(decoded._params.squadId, B256::ZERO);
     }
 
     #[test]

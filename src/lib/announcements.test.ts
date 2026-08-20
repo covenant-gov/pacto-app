@@ -3,6 +3,7 @@ import {
   ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
   ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+  ANNOUNCE_TYPE_WAR_GAME_UPDATED,
   ANNOUNCE_TYPE_SAFE_PROPOSAL,
   ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
   ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED,
@@ -56,6 +57,24 @@ describe('buildAnnounceContent', () => {
     const s = buildAnnounceContent({
       type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
       payload: { parent_id: 'p', kind: 'ta_proposal', proposal_id: '1' },
+    });
+    expect(JSON.parse(s).pacto_virtual_bucket).toBe('announcements');
+  });
+
+  it('sets pacto_virtual_bucket announcements for war_game_updated', () => {
+    const s = buildAnnounceContent({
+      type: ANNOUNCE_TYPE_WAR_GAME_UPDATED,
+      payload: {
+        parent_id: 'p',
+        action: 'deploy',
+        canonical_ref: '1',
+        chain: 'sepolia',
+        entry_id: 'pacto-gov-wargame-p',
+        round: '1',
+        game_squad_id: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        sponsor: '0x5555555555555555555555555555555555555555',
+        provider_payload: '{"status":"active","round":"1","gameSquadId":"0xaa","sponsor":"0x55"}',
+      },
     });
     expect(JSON.parse(s).pacto_virtual_bucket).toBe('announcements');
   });
@@ -130,6 +149,25 @@ describe('parseAnnouncement', () => {
         }),
       ),
     ).toMatchObject({ type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED });
+
+    expect(
+      parseAnnouncement(
+        JSON.stringify({
+          type: ANNOUNCE_TYPE_WAR_GAME_UPDATED,
+          payload: {
+            parent_id: 'p',
+            action: 'deploy',
+            canonical_ref: '1',
+            chain: 'sepolia',
+            entry_id: 'pacto-gov-wargame-p',
+            round: '1',
+            game_squad_id: '0xaa',
+            sponsor: '0x55',
+            provider_payload: '{"status":"active"}',
+          },
+        }),
+      ),
+    ).toMatchObject({ type: ANNOUNCE_TYPE_WAR_GAME_UPDATED });
 
     expect(
       parseAnnouncement(

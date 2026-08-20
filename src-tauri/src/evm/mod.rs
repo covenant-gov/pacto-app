@@ -36,6 +36,7 @@ pub mod wallet_ops;
 pub mod wallet_prices;
 pub mod wallet_rpc_providers;
 pub mod wallet_security;
+pub mod war_game_deploy;
 
 pub use evm_keys::{
     address_from_evm_secret_32, derive_eth_bip44_v1_from_mnemonic_phrase,

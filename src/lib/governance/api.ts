@@ -9,6 +9,7 @@ import { squadParamsToInvoke } from './squad-params';
 export {
   pactoGovInfraId,
   pactoGovTreasuryEntryId,
+  pactoGovWargameInfraId,
   squadAdminInfraId,
   squadSponsorInfraId,
 } from './squad-infra-row-id';
@@ -47,8 +48,8 @@ export function primaryGovernanceView(
   const row =
     rows.find((r) => r.infraType === 'pacto_gov') ??
     rows.find((r) => r.infraType === 'standalone_safe') ??
-    rows[0];
-  return withLegacyProvider(row);
+    rows.find((r) => r.infraType !== 'pacto_gov_wargame');
+  return row ? withLegacyProvider(row) : null;
 }
 
 /** Backend: `list_squad_infra`. */
@@ -472,6 +473,25 @@ export interface NavePirataDeployResultDto {
   infraRowId: string;
 }
 
+/** Mirrors `WarGameDeployResult` from Tauri (`serde(rename_all = "camelCase")`). */
+export interface WarGameDeployResultDto {
+  txHash: string;
+  chain: string;
+  chainId: number;
+  topHatId: string;
+  safeAddress: string;
+  quartermaster: string;
+  mutinyModule: string;
+  treasuryAuthority: string;
+  squadAdminProxy: string;
+  round: string;
+  gameSquadId: string;
+  sponsorAddress: string;
+  retiredSponsor: string | null;
+  providerPayload: string;
+  infraRowId: string;
+}
+
 /** Backend: `deploy_nave_pirata_for_parent`. */
 export async function deployNavePirataForParent(params: {
   network: string;
@@ -495,6 +515,31 @@ export async function deployNavePirataForParent(params: {
     squadParams: params.squadParams ? squadParamsToInvoke(params.squadParams) : null,
     rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as NavePirataDeployResultDto;
+}
+
+/** Backend: `deploy_war_game_for_parent`. Always Sepolia. */
+export async function deployWarGameForParent(params: {
+  parentId: string;
+  captain: string;
+  metadataUri?: string | null;
+  saltNonce?: string | null;
+  signerWallet?: SquadSponsorDeploySignerWallet;
+  altParentId?: string | null;
+  squadParams?: SquadParamsInput | null;
+  initialDepositWei?: string | null;
+}): Promise<WarGameDeployResultDto> {
+  return (await invoke('deploy_war_game_for_parent', {
+    network: 'sepolia',
+    parentId: params.parentId,
+    captain: params.captain,
+    metadataUri: params.metadataUri?.trim() ?? '',
+    saltNonce: params.saltNonce?.trim() ? params.saltNonce.trim() : null,
+    signerWallet: params.signerWallet ?? 'default',
+    altParentId: params.altParentId?.trim() ? params.altParentId.trim() : null,
+    squadParams: params.squadParams ? squadParamsToInvoke(params.squadParams) : null,
+    initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, 'sepolia'),
+  })) as WarGameDeployResultDto;
 }
 
 /** Mirrors `NavePirataDeploymentDto` from Tauri (`serde(rename_all = "camelCase")`). */
@@ -1285,9 +1330,14 @@ export async function getSquadCapabilities(
   })) as SquadCapabilitiesDto;
 }
 
-/** Pacto-gov infra row for a parent, if any. */
+/** Pacto-gov infra row for a parent, if any. Never matches `pacto_gov_wargame`. */
 export function pactoGovInfraRow(rows: SquadInfraDto[] | undefined): SquadInfraDto | null {
   return rows?.find((r) => r.infraType === 'pacto_gov') ?? null;
+}
+
+/** War-game stack row for a parent, if any. */
+export function pactoGovWargameInfraRow(rows: SquadInfraDto[] | undefined): SquadInfraDto | null {
+  return rows?.find((r) => r.infraType === 'pacto_gov_wargame') ?? null;
 }
 
 /** Squad-admin infra row for a parent (standalone deploy), if any. */

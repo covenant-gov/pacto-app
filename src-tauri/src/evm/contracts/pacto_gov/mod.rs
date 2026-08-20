@@ -12,6 +12,11 @@ sol! {
             QUORUM_OF_CAST
         }
 
+        enum StackKind {
+            Production,
+            WarGame
+        }
+
         struct SquadParams {
             uint256 crewChangeDelay;
             uint256 proposalExpiry;
@@ -28,6 +33,8 @@ sol! {
             address treasuryAuthorityMasterCopy;
             address squadAdminImplementation;
             uint256 saltNonce;
+            StackKind stackKind;
+            bytes32 squadId;
         }
 
         function deployNavePirata(DeployParams calldata _params) external returns (

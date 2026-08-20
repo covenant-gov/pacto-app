@@ -6,6 +6,7 @@ import {
   buildSponsorGovernanceAnnouncePayload,
   buildStandaloneSafeGovernanceAnnouncePayload,
   deployNavePirataForParent,
+  deployWarGameForParent,
   deploySquadAdminForParent,
   deploySquadSponsorForParent,
   deploySquadSponsorHatsForParent,
@@ -28,6 +29,8 @@ import {
   pactoGovInfraId,
   pactoGovInfraRow,
   pactoGovTreasuryEntryId,
+  pactoGovWargameInfraId,
+  pactoGovWargameInfraRow,
   primaryGovernanceView,
   squadAdminCreateRole,
   squadSponsorSetPermittedAddress,
@@ -100,6 +103,13 @@ describe('squad infra helpers', () => {
     expect(primaryGovernanceView([sponsor])?.infraType).toBe('sponsor');
   });
 
+  it('primaryGovernanceView ignores pacto_gov_wargame', () => {
+    const wargame = makeSquadInfra({ infraType: 'pacto_gov_wargame' });
+    const sponsor = makeSquadInfra({ infraType: 'sponsor' });
+    expect(primaryGovernanceView([wargame])).toBeNull();
+    expect(primaryGovernanceView([wargame, sponsor])?.infraType).toBe('sponsor');
+  });
+
   it('infraTypeFromLegacyProvider normalizes aliases', () => {
     expect(infraTypeFromLegacyProvider('gnosis_safe')).toBe('standalone_safe');
     expect(infraTypeFromLegacyProvider('gnosis-safe')).toBe('standalone_safe');
@@ -114,6 +124,7 @@ describe('squad infra helpers', () => {
   it('id builders return stable parent-scoped ids', () => {
     expect(pactoGovInfraId(PARENT)).toBe(`pacto-gov-${PARENT}`);
     expect(pactoGovTreasuryEntryId(PARENT)).toBe(`pacto-gov-treasury-${PARENT}`);
+    expect(pactoGovWargameInfraId(PARENT)).toBe(`pacto-gov-wargame-${PARENT}`);
     expect(squadSponsorInfraId(PARENT)).toBe(`sponsor-${PARENT}`);
     expect(squadAdminInfraId(PARENT)).toBe(`squad-admin-${PARENT}`);
   });
@@ -122,7 +133,10 @@ describe('squad infra helpers', () => {
     const pacto = makeSquadInfra({ infraType: 'pacto_gov' });
     const sponsor = makeSquadInfra({ infraType: 'sponsor' });
     const admin = makeSquadInfra({ infraType: 'squad_admin' });
-    expect(pactoGovInfraRow([pacto, sponsor, admin])).toEqual(pacto);
+    const wargame = makeSquadInfra({ infraType: 'pacto_gov_wargame' });
+    expect(pactoGovInfraRow([pacto, sponsor, admin, wargame])).toEqual(pacto);
+    expect(pactoGovWargameInfraRow([pacto, sponsor, admin, wargame])).toEqual(wargame);
+    expect(pactoGovInfraRow([wargame])).toBeNull();
     expect(sponsorInfraRow([pacto, sponsor, admin])).toEqual(sponsor);
     expect(squadAdminInfraRow([pacto, sponsor, admin])).toEqual(admin);
     expect(hasSponsorInfra([pacto, sponsor])).toBe(true);
@@ -440,6 +454,28 @@ describe('api command wrappers', () => {
         },
       }),
     );
+  });
+
+  it('deployWarGameForParent sends deploy_war_game_for_parent on sepolia', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await deployWarGameForParent({
+      parentId: PARENT,
+      captain: ' 0xabc ',
+      metadataUri: ' pacto://squad/x/wargame ',
+      initialDepositWei: ' 1000 ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('deploy_war_game_for_parent', {
+      network: 'sepolia',
+      parentId: PARENT,
+      captain: ' 0xabc ',
+      metadataUri: 'pacto://squad/x/wargame',
+      saltNonce: null,
+      signerWallet: 'default',
+      altParentId: null,
+      squadParams: null,
+      initialDepositWei: '1000',
+      rpcUrls: expect.any(Array),
+    });
   });
 
   it('getNavePirataDeployment sends get_nave_pirata_deployment with trimmed topHatId', async () => {

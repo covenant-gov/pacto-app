@@ -13,6 +13,7 @@ import {
 } from '../api/nostr';
 import {
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+  ANNOUNCE_TYPE_WAR_GAME_UPDATED,
   buildAnnounceContent,
   isAnnouncementsGovernanceProvider,
 } from '../announcements';
@@ -20,6 +21,10 @@ import {
   listSquadInfra,
   squadInfraLegacyProvider,
 } from '../governance/api';
+import {
+  buildWarGameUpdatedPayload,
+  warGameActionFromProviderPayload,
+} from '../governance/war-game-announce';
 import { currentUser } from '../../stores/auth';
 import { publishSquadMemberEvmShare, getBoundSquadEvmAddressForParent } from './squad-member-evm-share';
 import { publishSquadNetworkUpdated } from './squad-network-share';
@@ -285,10 +290,49 @@ export async function respondToSquadStateSyncRequest(
     try {
       const rows = await listSquadInfra(parentId);
       for (const row of rows) {
-        const provider = squadInfraLegacyProvider(row.infraType);
-        if (!isAnnouncementsGovernanceProvider(provider)) continue;
         const canonical = row.canonicalRef?.trim();
         if (!canonical) continue;
+        if (row.infraType === 'pacto_gov_wargame') {
+          const rawPayload = row.providerPayload?.trim();
+          if (!rawPayload) continue;
+          let parsed: Record<string, unknown> = {};
+          try {
+            parsed = JSON.parse(rawPayload) as Record<string, unknown>;
+          } catch {
+            continue;
+          }
+          const round = typeof parsed.round === 'string' ? parsed.round.trim() : '';
+          const gameSquadId =
+            typeof parsed.gameSquadId === 'string' ? parsed.gameSquadId.trim() : '';
+          const sponsor = typeof parsed.sponsor === 'string' ? parsed.sponsor.trim() : '';
+          if (!round || !gameSquadId || !sponsor) continue;
+          const retired =
+            typeof parsed.retiredSponsor === 'string' ? parsed.retiredSponsor.trim() : '';
+          await sendDmMessage(
+            gid,
+            buildAnnounceContent({
+              type: ANNOUNCE_TYPE_WAR_GAME_UPDATED,
+              payload: buildWarGameUpdatedPayload({
+                parentId,
+                action: warGameActionFromProviderPayload(rawPayload),
+                topHatId: canonical,
+                chain: row.chain || 'sepolia',
+                providerPayload: rawPayload,
+                round,
+                gameSquadId,
+                sponsor,
+                retiredSponsor: retired || null,
+                entryId: row.id,
+              }),
+            }),
+            '',
+            { virtualBucket: 'announcements' },
+          );
+          anyOk = true;
+          continue;
+        }
+        const provider = squadInfraLegacyProvider(row.infraType);
+        if (!isAnnouncementsGovernanceProvider(provider)) continue;
         const payload = {
           parent_id: parentId,
           provider,

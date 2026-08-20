@@ -16,6 +16,11 @@ export function pactoGovInfraId(parentId: string): string {
   return squadScopedInfraRowId('pacto-gov-', 'pg', parentId);
 }
 
+/** Stable id for the war-game stack row per parent. Never collides with pacto-gov. */
+export function pactoGovWargameInfraId(parentId: string): string {
+  return squadScopedInfraRowId('pacto-gov-wargame-', 'pgw', parentId);
+}
+
 /** Stable treasury row id for the Safe deployed with Nave Pirata. */
 export function pactoGovTreasuryEntryId(parentId: string): string {
   return squadScopedInfraRowId('pacto-gov-treasury-', 'pgt', parentId);

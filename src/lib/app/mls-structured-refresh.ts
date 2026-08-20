@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED, ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE } from '../announcements';
+import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED, ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE, ANNOUNCE_TYPE_WAR_GAME_UPDATED } from '../announcements';
 import { SQUAD_CONTRACT_ALLOWLIST_ANNOUNCE_TYPE } from '../governance/squad-allowlist';
 import { SQUAD_TRACKED_TOKENS_ANNOUNCE_TYPE } from '../governance/squad-tracked-tokens';
 import {
@@ -81,6 +81,9 @@ export function onMlsStructuredMessage(
     handlers.mergeTreasurySafesForParent(announce.payload.squad_id);
   }
   if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
+    handlers.mergeSquadInfraForParent(announce.payload.parent_id);
+  }
+  if (announce?.type === ANNOUNCE_TYPE_WAR_GAME_UPDATED) {
     handlers.mergeSquadInfraForParent(announce.payload.parent_id);
   }
   if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED) {

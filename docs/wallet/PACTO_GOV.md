@@ -12,7 +12,7 @@ Governance contract sources for **Nave Pirata** live in the upstream repository 
 | Deployed factory / master copies | [`src/lib/evm/pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) (compile-time in Rust); optional `PACTO_*` env override — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md) |
 | Audit trail on deploy | Optional `pacto_gov_revision` on governance rows / announces — **upstream git commit SHA**, not a local submodule pin |
 
-When upstream interfaces change, update bindings in `evm/contracts/pacto_gov/` against the reviewed commit on GitHub (Foundry `out/` JSON generation is optional follow-on).
+When upstream interfaces change, update bindings in `evm/contracts/pacto_gov/` against the reviewed commit on GitHub (Foundry `out/` JSON generation is optional follow-on). `deployNavePirata` `DeployParams` includes `stackKind` + `squadId`: production uses `Production` and `bytes32(0)`; war-game uses `WarGame` and `keccak256(parentId)`.
 
 ## Manual smoke (Sepolia)
 

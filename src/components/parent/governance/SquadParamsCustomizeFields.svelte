@@ -18,6 +18,7 @@
     crewVoteMode = $bindable(PRODUCTION_SQUAD_PARAMS.crewVoteMode),
     quorumBps = $bindable(PRODUCTION_SQUAD_PARAMS.quorumBps),
     disabled = false,
+    customizeHintKey = 'governance.squadParams.customizeHint',
   }: {
     customizing?: boolean;
     crewChangeDelaySecs?: number;
@@ -25,6 +26,7 @@
     crewVoteMode?: CrewVoteMode;
     quorumBps?: number;
     disabled?: boolean;
+    customizeHintKey?: string;
   } = $props();
 
   const paramsError = $derived(
@@ -41,7 +43,7 @@
 
 <details class="squad-params-customize" bind:open={customizing}>
   <summary>{$t('governance.squadParams.customize')}</summary>
-  <p class="hint">{$t('governance.squadParams.customizeHint')}</p>
+  <p class="hint">{$t(customizeHintKey)}</p>
 
   <div class="field">
     <label class="label" for="squad-params-crew-delay">

@@ -30,3 +30,11 @@ These close the research questions in GitHub #138. Do not re-open them as “fir
 | Launchpad | Unchanged production singleton |
 
 Local infra type is `pacto_gov_wargame`. Do not dual-read it as `pacto_gov`.
+
+## Deploy (Sepolia)
+
+`deploy_war_game_for_parent` is member-gated, not captain-gated. It always uses Sepolia, even when the Status tab network is something else.
+
+Sequence: create/fund the parent Ext if `factory.squads(parentSquadId)` is empty; `createWarGameSponsorExt`; permit roster EVMs on the round clone; `deployNavePirata` with `stackKind = WarGame` and `squadId = keccak256(parentId)`; `postInitialize` the round Ext onto WarGameRegistry only.
+
+The Active row payload includes `status`, `round`, `gameSquadId`, `sponsor`, and optional `retiredSponsor`. Redeploy upserts the same row. War-game UserOps encode `gameSquadId` (factory `warGameSquadId(parent, round)`), not `keccak256(parentId)`. Deploy, redeploy, and retire fan out on `#announcements` as `war_game_updated`.

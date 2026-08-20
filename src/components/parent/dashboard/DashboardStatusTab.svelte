@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadIdentitySection from './SquadIdentitySection.svelte';
   import type { Squad } from '../../../stores/squads';
@@ -17,6 +18,12 @@
     mintCrewHatsState,
     type ChecklistItemState,
   } from '../../../lib/governance/squad-sponsor-crew';
+  import { squadInfraByParentId } from '../../../stores/squads';
+  import { pactoGovWargameInfraRow } from '../../../lib/governance/api';
+  import { syncSquadInfraForParent } from '../../../lib/dashboard/dashboard-data-sync';
+  import DeployWarGameModal from '../governance/DeployWarGameModal.svelte';
+  import { showToast } from '../../../stores/toast';
+  import type { WarGameDeployComplete } from '../../../lib/governance/start-war-game-deploy';
 
   let {
     squad,
@@ -49,12 +56,15 @@
   } = $props();
 
   let rosterKeyNeeded = $state(false);
+  let showWarGameDeploy = $state(false);
 
   const myNpub = $derived($currentUser?.npub ?? '');
   const displayEvmByNpub = $derived(squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded));
   const shareEvmState = $derived(allMembersShareEvmState(channelMembers, displayEvmByNpub));
   const govState = $derived(binaryInfraState(hasGovernance));
   const adminState = $derived(binaryInfraState(hasSquadAdmin));
+  const warGameRow = $derived(pactoGovWargameInfraRow($squadInfraByParentId[parentId]));
+  const hasWarGame = $derived(warGameRow != null);
   const crewMintState = $derived(
     mintCrewHatsState({
       hasGovernance,
@@ -74,6 +84,13 @@
       rosterKeyNeeded = needed;
     });
   });
+
+  async function handleWarGameComplete(out: WarGameDeployComplete): Promise<void> {
+    await syncSquadInfraForParent(parentId.trim());
+    if (out.retiredSponsor) {
+      showToast(get(t)('governance.deployWarGame.retiredToast'));
+    }
+  }
 
   function glyphClass(state: ChecklistItemState): string {
     if (state === 'done') return 'check-mark';
@@ -102,6 +119,14 @@
     <li class="checklist-item" class:done={shareEvmState === 'done'}>
       <span class={glyphClass(shareEvmState)} aria-hidden="true">{checklistGlyph(shareEvmState)}</span>
       <span>{$t('governance.status.allMembersShareEvm')}</span>
+    </li>
+    <li class="checklist-item" class:done={hasWarGame}>
+      <span class={glyphClass(hasWarGame ? 'done' : 'not_started')} aria-hidden="true"
+        >{checklistGlyph(hasWarGame ? 'done' : 'not_started')}</span
+      >
+      <button type="button" class="checklist-action" onclick={() => (showWarGameDeploy = true)}>
+        {hasWarGame ? $t('governance.status.redeployWargame') : $t('governance.status.deployWargame')}
+      </button>
     </li>
     <li class="checklist-item" class:done={govState === 'done'}>
       <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
@@ -135,6 +160,16 @@
 </section>
 
 <SquadBroadcastSettingsSection {squad} />
+
+{#if showWarGameDeploy}
+  <DeployWarGameModal
+    {parentId}
+    {announcementsGroupId}
+    redeploy={hasWarGame}
+    onClose={() => (showWarGameDeploy = false)}
+    onComplete={handleWarGameComplete}
+  />
+{/if}
 
 <style>
   .status-checklist {

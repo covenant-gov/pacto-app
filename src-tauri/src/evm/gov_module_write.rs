@@ -29,8 +29,9 @@ use super::rpc::{
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::sponsor_userop::{
-    call_gas_with_margin, estimate_call_gas, roster_native_balance_wei, send_sponsored_gov_userop,
-    wait_for_user_operation_receipt, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
+    call_gas_with_margin, estimate_call_gas, parse_war_game_userop_context,
+    roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
+    FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -76,7 +77,15 @@ pub async fn send_gov_module_call<R: Runtime>(
 
     // Route the write: EOA when the roster key can afford the gas, sponsored when it can't.
     let read_provider = connect_read_provider(&urls).await?;
-    let has_sponsor_infra = db::parent_has_sponsor_infra(&app, pid).unwrap_or(false);
+    let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
+        .ok()
+        .flatten();
+    let wargame_write = wargame_payload
+        .as_deref()
+        .and_then(parse_war_game_userop_context)
+        .is_some_and(|c| c.targets(to));
+    let has_sponsor_infra =
+        db::parent_has_sponsor_infra(&app, pid).unwrap_or(false) || wargame_write;
     // A failed balance lookup must not block writes: the sponsored path needs no roster
     // balance, but without sponsor infra there is no route for the write at all.
     let balance = match roster_native_balance_wei(&read_provider, signer.address()).await {

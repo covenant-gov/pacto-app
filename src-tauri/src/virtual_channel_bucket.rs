@@ -80,6 +80,9 @@ pub fn normalize_virtual_bucket_for_message(
                     "inbox".to_string()
                 });
             }
+            if ty == Some("war_game_updated") {
+                return Some("announcements".to_string());
+            }
             if ty == Some("sticker_pack_updated") {
                 return Some("announcements".to_string());
             }
@@ -94,7 +97,12 @@ pub fn normalize_virtual_bucket_for_message(
             }
             if matches!(
                 ty,
-                Some("squad_outbound_invite" | "squad_admit_needed" | "squad_channels_catalog" | "squad_identity_updated")
+                Some(
+                    "squad_outbound_invite"
+                        | "squad_admit_needed"
+                        | "squad_channels_catalog"
+                        | "squad_identity_updated"
+                )
             ) {
                 return Some("announcements".to_string());
             }
@@ -147,6 +155,14 @@ mod tests {
     #[test]
     fn sponsor_governance_announce_derives_announcements_bucket() {
         let content = r#"{"type":"governance_updated","payload":{"parent_id":"p","provider":"sponsor","canonical_ref":"0x1"}}"#;
+        let bucket =
+            normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn war_game_updated_announce_derives_announcements_bucket() {
+        let content = r#"{"type":"war_game_updated","payload":{"parent_id":"p","action":"deploy","canonical_ref":"1"}}"#;
         let bucket =
             normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
         assert_eq!(bucket.as_deref(), Some("announcements"));

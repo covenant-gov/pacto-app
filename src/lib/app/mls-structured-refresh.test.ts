@@ -117,6 +117,33 @@ describe('onMlsStructuredMessage', () => {
     expect(handlers.mergeSquadInfraForParent).toHaveBeenCalledWith('g1');
   });
 
+  it('refreshes infra from war_game_updated', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'war_game_updated',
+        payload: {
+          parent_id: 'g1',
+          action: 'deploy',
+          canonical_ref: '1',
+          chain: 'sepolia',
+          entry_id: 'pacto-gov-wargame-g1',
+          round: '1',
+          game_squad_id: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sponsor: '0x5555555555555555555555555555555555555555',
+          provider_payload: '{"status":"active"}',
+        },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(handlers.mergeSquadInfraForParent).toHaveBeenCalledWith('g1');
+  });
+
   it('triggers peer respond on squad_state_sync_request', () => {
     const handlers = {
       mergeTreasurySafesForParent: vi.fn(),

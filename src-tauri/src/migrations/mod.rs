@@ -677,7 +677,9 @@ mod tests {
             let legacy_checksum = crate::storage_format::legacy_i32_checksum(
                 migration.name(),
                 migration.version(),
-                migration.sql().expect("sample only has migrations with sql"),
+                migration
+                    .sql()
+                    .expect("sample only has migrations with sql"),
             )
             .to_string();
             conn.execute(
