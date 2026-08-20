@@ -13,9 +13,10 @@ import {
   lastHubChannelNameBySquadId,
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_WARGAME_CHANNEL_ID,
   type Squad,
 } from '../../stores/app';
-import { openSquadDashboard, navigateToTarget, resolveCatchUpTarget } from './open-squad-dashboard';
+import { openSquadDashboard, openSquadWargame, navigateToTarget, resolveCatchUpTarget } from './open-squad-dashboard';
 
 function squad(id: string, channels: { name: string; groupId: string }[]): Squad {
   return {
@@ -64,6 +65,36 @@ describe('openSquadDashboard', () => {
 
   it('does nothing when id is whitespace-only', () => {
     openSquadDashboard('   ');
+    expect(get(activeTopNavTab)).toBe('commons');
+    expect(get(activeSquadId)).toBeNull();
+  });
+});
+
+describe('openSquadWargame', () => {
+  beforeEach(() => {
+    activeTopNavTab.set('commons');
+    activeSquadId.set(null);
+    activeChannelId.set(null);
+    activeHubChannelName.set(null);
+    activeView.set('hub');
+    lastOpenedSquadId.set(null);
+    lastOpenedChannelId.set(null);
+    lastChannelBySquadId.set({});
+    lastHubChannelNameBySquadId.set({});
+    squads.set([]);
+  });
+
+  it('sets active tab, squad, and squad-wargame channel', () => {
+    openSquadWargame('squad-123');
+    expect(get(activeTopNavTab)).toBe('squads');
+    expect(get(activeSquadId)).toBe('squad-123');
+    expect(get(activeChannelId)).toBe(SQUAD_WARGAME_CHANNEL_ID);
+    expect(get(activeHubChannelName)).toBeNull();
+    expect(get(activeView)).toBe('hub');
+  });
+
+  it('does nothing when id is empty', () => {
+    openSquadWargame('   ');
     expect(get(activeTopNavTab)).toBe('commons');
     expect(get(activeSquadId)).toBeNull();
   });

@@ -47,8 +47,7 @@
     parentCreateErrorById,
     ANNOUNCEMENTS_CHANNEL_NAME,
     POLLS_CHANNEL_NAME,
-    SQUAD_DASHBOARD_CHANNEL_ID,
-    MY_DASHBOARD_CHANNEL_ID,
+    isVirtualHubChannelId,
     membershipVersionByGroupId,
     mlsHistoryWelcomeGroupIds,
     type DmMessage,
@@ -112,10 +111,7 @@
     null;
   $: effectiveMembersGroupId = (() => {
     if (!$activeChannelId) return null;
-    if (
-      $activeChannelId === SQUAD_DASHBOARD_CHANNEL_ID ||
-      $activeChannelId === MY_DASHBOARD_CHANNEL_ID
-    ) {
+    if (isVirtualHubChannelId($activeChannelId)) {
       return announcementsGroupIdForMembers;
     }
     return $activeChannelId;
@@ -240,8 +236,7 @@
   $: virtualBucketSingleGroup =
     !!activeParent &&
     !!$activeChannelId &&
-    $activeChannelId !== SQUAD_DASHBOARD_CHANNEL_ID &&
-    $activeChannelId !== MY_DASHBOARD_CHANNEL_ID &&
+    !isVirtualHubChannelId($activeChannelId) &&
     defaultTrioSharesSingleMlsGroup(activeParent.channels);
 
   $: selectedVirtualBucket = activeChannel ? channelNameToVirtualBucket(activeChannel.name) : null;

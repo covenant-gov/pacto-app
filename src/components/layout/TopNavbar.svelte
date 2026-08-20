@@ -12,15 +12,12 @@
     lastOpenedChannelId,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
-    MY_DASHBOARD_CHANNEL_ID,
-    SQUAD_DASHBOARD_CHANNEL_ID,
+    isVirtualHubChannelId,
     catchUpCount,
     type TopNavTab,
   } from '../../stores/app';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
   import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
-
-  const VIRTUAL_HUB_IDS = new Set([SQUAD_DASHBOARD_CHANNEL_ID, MY_DASHBOARD_CHANNEL_ID]);
 
   const tabs: TopNavTab[] = ['commons', 'dms', 'squads', 'catchup'];
 
@@ -39,7 +36,7 @@
           return next;
         });
         const squad = get(squads).find((s) => s.id === sid);
-        if (VIRTUAL_HUB_IDS.has(cid)) {
+        if (isVirtualHubChannelId(cid)) {
           lastHubChannelNameBySquadId.update((m) => {
             const next = { ...m };
             delete next[sid];

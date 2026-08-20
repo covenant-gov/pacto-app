@@ -44,14 +44,14 @@ export interface DashboardStructureSummary {
 }
 
 /**
- * Maps governance SQLite row into Structure-tab summary.
- * `undefined`: row still hydrating; `null`: no Pacto Gov hat tree to show.
+ * Maps a hat-tree infra row into Structure-tab summary.
+ * `undefined`: row still hydrating; `null`: no Pacto Gov or war-game hat tree to show.
  */
 export function resolveDashboardStructureSummary(
   governanceConfig: SquadInfraDto | null | undefined,
 ): DashboardStructureSummary | null | undefined {
   if (governanceConfig === undefined) return undefined;
-  if (!governanceConfig || governanceConfig.infraType !== 'pacto_gov') return null;
+  if (!governanceConfig || (governanceConfig.infraType !== 'pacto_gov' && governanceConfig.infraType !== 'pacto_gov_wargame')) return null;
   const treeIdRaw = governanceConfig.canonicalRef?.trim();
   if (!treeIdRaw) return null;
   const chainKey = parseSupportedChainId(governanceConfig.chain);

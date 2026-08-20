@@ -96,6 +96,9 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     dmSendError,
     SQUAD_DASHBOARD_CHANNEL_ID,
     MY_DASHBOARD_CHANNEL_ID,
+    SQUAD_WARGAME_CHANNEL_ID,
+    isVirtualHubChannelId,
+    isSquadDashboardChromeChannelId,
     treasurySafesByParentId,
     squadInfraByParentId,
     type DmMessage,
@@ -166,25 +169,29 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   let chatViewLoadToken = 0;
 
   $: openHubParent = resolveOpenHubParent($squads, $activeSquadId);
-  $: effectiveHubChannel = resolveEffectiveHubChannel(
-    openHubParent,
-    $activeChannelId,
-    $lastChannelBySquadId,
-    $lastHubChannelNameBySquadId,
-  );
+  $: effectiveHubChannel = (() => {
+    void $squadInfraByParentId;
+    return resolveEffectiveHubChannel(
+      openHubParent,
+      $activeChannelId,
+      $lastChannelBySquadId,
+      $lastHubChannelNameBySquadId,
+    );
+  })();
 
   $: showParentDashboard =
     openHubParent != null &&
-    (!effectiveHubChannel.channelId || effectiveHubChannel.channelId === SQUAD_DASHBOARD_CHANNEL_ID);
+    (!effectiveHubChannel.channelId ||
+      isSquadDashboardChromeChannelId(effectiveHubChannel.channelId));
   $: showMyDashboard =
     openHubParent != null && effectiveHubChannel.channelId === MY_DASHBOARD_CHANNEL_ID;
   $: showMlsChatView =
     openHubParent != null &&
     !!effectiveHubChannel.channelId &&
-    effectiveHubChannel.channelId !== SQUAD_DASHBOARD_CHANNEL_ID &&
-    effectiveHubChannel.channelId !== MY_DASHBOARD_CHANNEL_ID;
+    !isVirtualHubChannelId(effectiveHubChannel.channelId);
 
   $: if ($activeTopNavTab === 'squads' && $squads.length > 0) {
+    void $squadInfraByParentId;
     syncSquadsHubSelection();
   }
 
@@ -445,8 +452,9 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     await mergeSquadInfraForParent(params.parentId);
   }
 
-  $: dashboardParentId =
-    effectiveHubChannel.channelId === SQUAD_DASHBOARD_CHANNEL_ID ? openHubParent?.id ?? null : null;
+  $: dashboardParentId = isSquadDashboardChromeChannelId(effectiveHubChannel.channelId)
+    ? openHubParent?.id ?? null
+    : null;
   $: if ($activeTopNavTab === 'squads' && openHubParent) {
     scheduleHubParentPrefetch(openHubParent);
   }
@@ -536,8 +544,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     if (cid && !cid.startsWith('creating-')) {
       const squad = $squads.find((s: Squad) => s.id === sid);
       const cidBelongsToSquad =
-        cid === SQUAD_DASHBOARD_CHANNEL_ID ||
-        cid === MY_DASHBOARD_CHANNEL_ID ||
+        isVirtualHubChannelId(cid) ||
         (squad?.channels.some((c: Channel) => c.groupId === cid) ?? false);
       if (cidBelongsToSquad && squad) {
         lastOpenedChannelId.set(cid);
@@ -546,10 +553,9 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
           if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page on-squads persist', { sid: sid.slice(0, 12), cid: cid.slice(0, 20) });
           return next;
         });
-        const hub =
-          cid === SQUAD_DASHBOARD_CHANNEL_ID || cid === MY_DASHBOARD_CHANNEL_ID
-            ? ''
-            : resolveHubChannelNameForGroupSelection(squad.channels, cid, $activeHubChannelName) ?? '';
+        const hub = isVirtualHubChannelId(cid)
+          ? ''
+          : resolveHubChannelNameForGroupSelection(squad.channels, cid, $activeHubChannelName) ?? '';
         lastHubChannelNameBySquadId.update((m) => {
           const next = { ...m };
           if (!hub) delete next[sid];
@@ -634,8 +640,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   // Only when Squads is active: `activeChannelId` persists when switching to DMs — do not call DM/group APIs from DMs tab.
   $: if (
     $activeChannelId &&
-    $activeChannelId !== SQUAD_DASHBOARD_CHANNEL_ID &&
-    $activeChannelId !== MY_DASHBOARD_CHANNEL_ID &&
+    !isVirtualHubChannelId($activeChannelId) &&
     !$activeChannelId.startsWith('creating-') &&
     $activeTopNavTab === 'squads'
   ) {
@@ -899,7 +904,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
         lastOpenedChannelId.set(cid);
         lastChannelBySquadId.update((m: Record<string, string>) => ({ ...m, [sid]: cid }));
         const squad = $squads.find((s: Squad) => s.id === sid);
-        if (cid === SQUAD_DASHBOARD_CHANNEL_ID || cid === MY_DASHBOARD_CHANNEL_ID) {
+        if (isVirtualHubChannelId(cid)) {
           lastHubChannelNameBySquadId.update((m) => {
             const next = { ...m };
             delete next[sid];
@@ -1097,6 +1102,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
             {#key `${openHubParent.id}:${effectiveHubChannel.channelId ?? SQUAD_DASHBOARD_CHANNEL_ID}`}
               <ParentDashboard
               parent={openHubParent}
+              warGameStack={effectiveHubChannel.channelId === SQUAD_WARGAME_CHANNEL_ID}
               treasurySafes={$treasurySafesByParentId[openHubParent.id] ?? []}
               governanceConfig={(() => {
                 const id = openHubParent.id;

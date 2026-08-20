@@ -9,6 +9,8 @@ import {
   POLLS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_NAME,
+  SQUAD_WARGAME_CHANNEL_ID,
+  SQUAD_WARGAME_CHANNEL_NAME,
 } from './squad/hub-channel-names';
 import {
   defaultChannelRowsForGroupId,
@@ -35,6 +37,7 @@ const OBSOLETE_HUB_SIDEBAR_NAMES = new Set([
 export function isDefaultHubSidebarChannel(name: string): boolean {
   return (
     name === SQUAD_DASHBOARD_CHANNEL_NAME ||
+    name === SQUAD_WARGAME_CHANNEL_NAME ||
     name === MY_DASHBOARD_CHANNEL_NAME ||
     name === ANNOUNCEMENTS_CHANNEL_NAME ||
     name === POLLS_CHANNEL_NAME
@@ -43,10 +46,11 @@ export function isDefaultHubSidebarChannel(name: string): boolean {
 
 /**
  * Virtual + MLS rows for the squad hub sidebar.
- * Pinned order: squad-dashboard → my-dashboard → announcements → polls → (custom below divider).
+ * Pinned order: squad-dashboard → squad-wargame (when present) → my-dashboard → announcements → polls → (custom below divider).
  */
 export function buildHubSidebarChannels<T extends { name: string; groupId: string; order: number }>(
-  rawChannels: T[]
+  rawChannels: T[],
+  options?: { includeWarGame?: boolean },
 ): Array<T | { name: string; groupId: string; order: number }> {
   const sorted = [...rawChannels]
     .filter((c) => !OBSOLETE_HUB_SIDEBAR_NAMES.has(c.name))
@@ -56,10 +60,22 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
   const rest = sorted.filter(
     (c) => c.name !== ANNOUNCEMENTS_CHANNEL_NAME && c.name !== POLLS_CHANNEL_NAME
   );
+  const includeWarGame = options?.includeWarGame === true;
   const out: Array<T | { name: string; groupId: string; order: number }> = [
-    { name: SQUAD_DASHBOARD_CHANNEL_NAME, groupId: SQUAD_DASHBOARD_CHANNEL_ID, order: -2 },
-    { name: MY_DASHBOARD_CHANNEL_NAME, groupId: MY_DASHBOARD_CHANNEL_ID, order: -1 },
+    {
+      name: SQUAD_DASHBOARD_CHANNEL_NAME,
+      groupId: SQUAD_DASHBOARD_CHANNEL_ID,
+      order: includeWarGame ? -3 : -2,
+    },
   ];
+  if (includeWarGame) {
+    out.push({
+      name: SQUAD_WARGAME_CHANNEL_NAME,
+      groupId: SQUAD_WARGAME_CHANNEL_ID,
+      order: -2,
+    });
+  }
+  out.push({ name: MY_DASHBOARD_CHANNEL_NAME, groupId: MY_DASHBOARD_CHANNEL_ID, order: -1 });
   if (announcements) out.push(announcements);
   if (polls) out.push(polls);
   out.push(...rest);

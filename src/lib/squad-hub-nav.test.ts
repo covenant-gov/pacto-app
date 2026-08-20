@@ -16,7 +16,13 @@ import {
   lastChannelBySquadId,
   lastOpenedSquadId,
 } from '../stores/navigation';
-  import { squads, SQUAD_DASHBOARD_CHANNEL_ID, type Squad } from '../stores/squads';
+  import {
+  squads,
+  squadInfraByParentId,
+  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_WARGAME_CHANNEL_ID,
+  type Squad,
+} from '../stores/squads';
 
 const regular: Squad = {
   id: 'squad-a',
@@ -95,6 +101,9 @@ describe('parentIdForChannelGroup', () => {
 });
 
 describe('resolveHubChannelForSquad', () => {
+  afterEach(() => {
+    squadInfraByParentId.set({});
+  });
   it('defaults to dashboard when no per-squad last channel', () => {
     const squad: Squad = {
       ...regular,
@@ -119,6 +128,50 @@ describe('resolveHubChannelForSquad', () => {
       resolveHubChannelForSquad(squad, { 'squad-a': 'g-ops' }, {}).channelId,
     ).toBe('g-ops');
   });
+
+  it('restores last squad-wargame when war-game infra exists', () => {
+    const squad: Squad = {
+      ...regular,
+      channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
+    };
+    squadInfraByParentId.set({
+      'squad-a': [
+        {
+          id: 'pgw-squad-a',
+          parentId: 'squad-a',
+          infraType: 'pacto_gov_wargame',
+          chain: 'sepolia',
+          canonicalRef: '1',
+          createdAtMs: 1,
+          updatedAtMs: 1,
+        },
+      ],
+    });
+    expect(
+      resolveHubChannelForSquad(squad, { 'squad-a': SQUAD_WARGAME_CHANNEL_ID }, {}).channelId,
+    ).toBe(SQUAD_WARGAME_CHANNEL_ID);
+  });
+
+  it('does not restore squad-wargame after infra hydrates without a war-game row', () => {
+    const squad: Squad = {
+      ...regular,
+      channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
+    };
+    squadInfraByParentId.set({ 'squad-a': [] });
+    expect(
+      resolveHubChannelForSquad(squad, { 'squad-a': SQUAD_WARGAME_CHANNEL_ID }, {}).channelId,
+    ).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+  });
+
+  it('keeps last squad-wargame while infra has not hydrated', () => {
+    const squad: Squad = {
+      ...regular,
+      channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
+    };
+    expect(
+      resolveHubChannelForSquad(squad, { 'squad-a': SQUAD_WARGAME_CHANNEL_ID }, {}).channelId,
+    ).toBe(SQUAD_WARGAME_CHANNEL_ID);
+  });
 });
 
 describe('restoreSquadsHubSelection', () => {
@@ -128,6 +181,7 @@ describe('restoreSquadsHubSelection', () => {
     activeChannelId.set(null);
     lastOpenedSquadId.set(null);
     lastChannelBySquadId.set({});
+    squadInfraByParentId.set({});
     activeTopNavTab.set('squads');
   });
 
@@ -137,6 +191,7 @@ describe('restoreSquadsHubSelection', () => {
     activeChannelId.set(null);
     lastOpenedSquadId.set(null);
     lastChannelBySquadId.set({});
+    squadInfraByParentId.set({});
     activeTopNavTab.set('squads');
   });
 
@@ -189,5 +244,38 @@ describe('restoreSquadsHubSelection', () => {
     const resolved = resolveEffectiveHubChannel(squad, '__my_dashboard__', {}, {});
     expect(resolved.channelId).toBe('__my_dashboard__');
     expect(resolved.hubChannelName).toBeNull();
+  });
+
+  it('resolveEffectiveHubChannel keeps squad-wargame when war-game infra exists', () => {
+    const squad: Squad = {
+      ...regular,
+      channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
+    };
+    squadInfraByParentId.set({
+      'squad-a': [
+        {
+          id: 'pgw-squad-a',
+          parentId: 'squad-a',
+          infraType: 'pacto_gov_wargame',
+          chain: 'sepolia',
+          canonicalRef: '1',
+          createdAtMs: 1,
+          updatedAtMs: 1,
+        },
+      ],
+    });
+    const resolved = resolveEffectiveHubChannel(squad, SQUAD_WARGAME_CHANNEL_ID, {}, {});
+    expect(resolved.channelId).toBe(SQUAD_WARGAME_CHANNEL_ID);
+    expect(resolved.hubChannelName).toBeNull();
+  });
+
+  it('resolveEffectiveHubChannel drops squad-wargame after infra hydrates without a row', () => {
+    const squad: Squad = {
+      ...regular,
+      channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
+    };
+    squadInfraByParentId.set({ 'squad-a': [] });
+    const resolved = resolveEffectiveHubChannel(squad, SQUAD_WARGAME_CHANNEL_ID, {}, {});
+    expect(resolved.channelId).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
   });
 });

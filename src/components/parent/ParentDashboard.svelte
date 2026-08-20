@@ -5,6 +5,7 @@
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
     SQUAD_DASHBOARD_CHANNEL_NAME,
+    SQUAD_WARGAME_CHANNEL_NAME,
     showMembersPanel,
     membershipVersionByGroupId,
     squadDashboardChannelMode,
@@ -20,6 +21,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     hasSponsorInfra,
     pactoGovInfraRow,
     pactoGovTreasuryEntryId,
+    pactoGovWargameInfraRow,
     sponsorInfraRow,
     withLegacyProvider,
   } from '../../lib/governance/api';
@@ -51,6 +53,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import { currentUser } from '../../stores/auth';
   import friendsIcon from '../../icons/friends.svg';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
+  import WarGameHubBanner from './dashboard/WarGameHubBanner.svelte';
   import GovernanceDeployCoordinator from './dashboard/GovernanceDeployCoordinator.svelte';
   import {
     loadDashboardCrewTab,
@@ -108,6 +111,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   export let parent: Squad;
+  export let warGameStack = false;
   export let treasurySafes: TreasurySafeEntry[] = [];
   export let governanceConfig: ParentGovernanceDto | null | undefined = undefined;
   export let squadInfraRows: SquadInfraDto[] | undefined = undefined;
@@ -165,10 +169,12 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     pactoGovTreasuryEntryId,
   ).slice(0, TREASURY_SAFE_UI_CAP);
 
-  $: pactoGovRow = pactoGovInfraRow(squadInfraRows);
+  $: pactoGovRow = warGameStack
+    ? pactoGovWargameInfraRow(squadInfraRows)
+    : pactoGovInfraRow(squadInfraRows);
   $: hasPactoGov = pactoGovRow != null;
   $: squadAdminCtx = resolveSquadAdminContext(squadInfraRows);
-  $: hasSquadAdmin = hasSquadAdminInfra(squadInfraRows);
+  $: hasSquadAdmin = warGameStack && pactoGovRow != null ? true : hasSquadAdminInfra(squadInfraRows);
   $: pactoPayload = parsePactoGovProviderPayload(pactoGovRow?.providerPayload);
   $: knownWearerLabels = protocolWearerLabelByAddress(pactoPayload);
   $: pactoNetwork = parseSupportedChainId(
@@ -184,8 +190,10 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     void $squadNetworkTick;
     squadNetworkOverride = loadSquadNetworkOverride($currentUser?.npub, parentId);
   }
-  /** Established squad network (override → infra chain), or null until the first deploy picks one. */
-  $: squadNetwork = resolveSquadNetwork({ override: squadNetworkOverride, infraChain: infraSquadChain });
+  /** Established squad network (override → infra chain), or null until the first deploy picks one. War-game hub is always Sepolia. */
+  $: squadNetwork = warGameStack
+    ? 'sepolia'
+    : resolveSquadNetwork({ override: squadNetworkOverride, infraChain: infraSquadChain });
   let squadRpcConfig: SquadRpcConfig | null = null;
   $: {
     void $squadRpcTick;
@@ -678,7 +686,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     <div class="dashboard-channel-header">
       <div class="dashboard-channel-info">
         <span class="dashboard-channel-icon">#</span>
-        <h3 class="dashboard-channel-name">{SQUAD_DASHBOARD_CHANNEL_NAME}</h3>
+        <h3 class="dashboard-channel-name">{warGameStack ? SQUAD_WARGAME_CHANNEL_NAME : SQUAD_DASHBOARD_CHANNEL_NAME}</h3>
       </div>
       <div class="dashboard-header-actions">
         <button
@@ -693,6 +701,9 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
         </button>
       </div>
     </div>
+    {#if warGameStack}
+      <WarGameHubBanner providerPayload={pactoGovRow?.providerPayload} />
+    {/if}
     <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.dashboardSection')}>
       <span class="dashboard-view-nav-label" aria-hidden="true">{$t('governance.mode')}</span>
       <div class="dashboard-mode-switcher" role="group">

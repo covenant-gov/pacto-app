@@ -9,8 +9,7 @@
     parentsCreatingAnnouncements,
     parentCreateErrorById,
     parentPendingCreateMembers,
-    MY_DASHBOARD_CHANNEL_ID,
-    SQUAD_DASHBOARD_CHANNEL_ID,
+    squadInfraByParentId,
     type Squad,
   } from '../../stores/squads';
   import {
@@ -53,6 +52,8 @@
   } from '../../lib/parent/invite-members-flow';
   import { runExitParent } from '../../lib/parent/exit-parent-flow';
   import { buildHubSidebarChannels } from '../../lib/parent-navbar';
+  import { pactoGovWargameInfraRow } from '../../lib/governance/api';
+  import { isVirtualHubChannelId } from '../../lib/squad/hub-channel-names';
   import { deferredSquadRosterKeyParentIds } from '../../lib/squad/squad-roster-key-choice';
   import {
     ensureJoinRequestsHydratedForSquads,
@@ -94,7 +95,10 @@
   $: rawChannels = activeParent
     ? [...activeParent.channels].sort((a, b) => a.order - b.order)
     : [];
-  $: channels = activeParent ? buildHubSidebarChannels(rawChannels) : [];
+  $: includeWarGame = activeParent
+    ? pactoGovWargameInfraRow($squadInfraByParentId[activeParent.id]) != null
+    : false;
+  $: channels = activeParent ? buildHubSidebarChannels(rawChannels, { includeWarGame }) : [];
 
   $: creating =
     activeParent &&
@@ -243,8 +247,7 @@
   }
 
   function selectChannel(channel: { groupId: string; name: string }) {
-    const isVirtual =
-      channel.groupId === SQUAD_DASHBOARD_CHANNEL_ID || channel.groupId === MY_DASHBOARD_CHANNEL_ID;
+    const isVirtual = isVirtualHubChannelId(channel.groupId);
     activeChannelId.set(channel.groupId);
     activeHubChannelName.set(isVirtual ? null : channel.name);
     activeView.set('hub');
