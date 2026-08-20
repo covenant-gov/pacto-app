@@ -471,6 +471,7 @@
         {qmStatus}
         {memberEvmOptions}
         {captainWearers}
+        {warGameStack}
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         onRefreshQm={() => {

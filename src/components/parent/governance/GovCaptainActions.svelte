@@ -41,6 +41,10 @@
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import {
+    pickRandomRosterCaptain,
+    randomizeCaptainCandidates,
+  } from '../../../lib/governance/war-game-captain';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -56,6 +60,7 @@
   export let qmStatus: QuartermasterStatusDto | null = null;
   export let memberEvmOptions: { address: string; label: string }[] = [];
   export let captainWearers: string[] = [];
+  export let warGameStack = false;
   export let onRefreshProposals: () => void = () => {};
   export let onRefreshMutiny: () => void = () => {};
   export let onRefreshQm: () => void = () => {};
@@ -98,6 +103,21 @@
   $: executable = executableTreasuryProposals(proposals);
   $: mutinyActive = isMutinyActive(mutinyStatus);
   $: mutinyExpired = isMutinyExpirable(mutinyStatus);
+  $: randomizeExclude = [privilege.myAddress, ...captainWearers];
+  $: randomizeCandidates = randomizeCaptainCandidates(memberEvmOptions, randomizeExclude);
+  $: resignGate = mutinyActive
+    ? { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' }
+    : captainGate;
+  $: randomizeGate = ((): CtaGate => {
+    if (mutinyActive) {
+      return { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' };
+    }
+    if (!captainGate.enabled) return captainGate;
+    if (randomizeCandidates.length === 0) {
+      return { enabled: false, reason: 'governance.gate.noOtherRosterForCaptain' };
+    }
+    return captainGate;
+  })();
   $: bootstrapAvailable = qmStatus?.bootstrapAvailable === true;
   $: bootstrapGate = ((): CtaGate => {
     if (!bootstrapAvailable) {
@@ -131,6 +151,17 @@
     } finally {
       acting = false;
     }
+  }
+
+  function randomizeCaptain() {
+    const picked = pickRandomRosterCaptain(memberEvmOptions, randomizeExclude);
+    if (!picked) return;
+    resignTo = picked;
+    void run(
+      tFn('governance.action.randomizeCaptain'),
+      () => mutinyCaptainResign({ network, parentId, mutinyModule, newCaptain: picked }),
+      onRefreshMutiny,
+    );
   }
 
   async function checkQmPending() {
@@ -411,17 +442,25 @@
           placeholder={$t('governance.field.newCaptainPlaceholder')}
           disabled={!captainGate.enabled || acting || mutinyActive}
         />
-        <GovCtaButton
-          label={tFn('governance.action.resignCaptain')}
-          gate={mutinyActive
-            ? { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' }
-            : captainGate}
-          {acting}
-          onClick={() =>
-            void run(tFn('governance.action.captainResign'), () =>
-              mutinyCaptainResign({ network, parentId, mutinyModule, newCaptain: resignTo }),
-            onRefreshMutiny)}
-        />
+        <div class="row">
+          <GovCtaButton
+            label={tFn('governance.action.resignCaptain')}
+            gate={resignGate}
+            {acting}
+            onClick={() =>
+              void run(tFn('governance.action.captainResign'), () =>
+                mutinyCaptainResign({ network, parentId, mutinyModule, newCaptain: resignTo }),
+              onRefreshMutiny)}
+          />
+          {#if warGameStack}
+            <GovCtaButton
+              label={tFn('governance.action.randomizeCaptain')}
+              gate={randomizeGate}
+              {acting}
+              onClick={randomizeCaptain}
+            />
+          {/if}
+        </div>
       </div>
 
       <div class="section">
