@@ -6,7 +6,7 @@ use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
-use super::access_control::{require_capability, with_gov_write_lock, GovCapability};
+use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     createRoleCall, enableExecutorCall, enableFullPermissionCall,
 };
@@ -77,7 +77,11 @@ async fn squad_admin_write<R: Runtime>(
 
     let parent = resolve_squad_admin_parent(&app, parent_id.as_str(), squad_admin_proxy.trim())?;
 
-    require_capability(&app, parent.as_str(), capability, rpc_urls).await?;
+    let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, parent.as_str())
+        .ok()
+        .flatten();
+    let stack = GovStack::for_wargame_target(wargame_payload.as_deref(), admin);
+    require_capability(&app, parent.as_str(), capability, rpc_urls, stack).await?;
     require_roster_treasury_signing_allowed(app.clone(), parent.as_str()).await?;
 
     let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), parent.as_str()).await?;

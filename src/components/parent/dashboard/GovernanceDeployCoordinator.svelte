@@ -21,6 +21,7 @@
   export let hasSponsor = false;
   export let hasPactoGov = false;
   export let hasSquadAdmin = false;
+  export let warGameStack = false;
   export let squadAdminProxy = '';
   export let squadAdminNetwork: SupportedChainId = DEFAULT_CHAIN_ID;
   /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
@@ -345,6 +346,7 @@
   {hasSponsor}
   {hasPactoGov}
   {hasSquadAdmin}
+  {warGameStack}
   {squadAdminProxy}
   {squadAdminNetwork}
   {squadNetwork}

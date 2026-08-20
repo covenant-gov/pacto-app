@@ -57,6 +57,7 @@
   export let treasuryProposalsError = '';
   export let onRefreshProposals: () => void = () => {};
   export let hasSponsor = false;
+  export let warGameStack = false;
 
   type GovSubMode = 'proposals' | 'crew' | 'captain';
   type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
@@ -136,7 +137,7 @@
 
   $: {
     const pid = parentId.trim();
-    const key = `${pid}|${network}`;
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
     if (pid && key !== capabilitiesLoadKey) {
       capabilitiesLoadKey = key;
       void loadCapabilities(pid);
@@ -168,9 +169,9 @@
   }
 
   async function loadCapabilities(pid: string) {
-    const key = `${pid}|${network}`;
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
     try {
-      const snap = await getSquadCapabilities(pid, network);
+      const snap = await getSquadCapabilities(pid, network, { wargame: warGameStack });
       if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
     } catch {

@@ -34,6 +34,7 @@
   export let onOpenSponsorDeploy: () => void = () => {};
   export let onOpenDeploySafe: () => void = () => {};
   export let onOpenImportSafe: () => void = () => {};
+  export let warGameStack = false;
 
   let capabilitiesLoadKey = '';
   let capabilities: Awaited<ReturnType<typeof getSquadCapabilities>> | null = null;
@@ -48,7 +49,7 @@
 
   $: {
     const pid = parentId.trim();
-    const key = `${pid}|${network}`;
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
     if (pid && key !== capabilitiesLoadKey) {
       capabilitiesLoadKey = key;
       void loadCapabilities(pid);
@@ -56,9 +57,9 @@
   }
 
   async function loadCapabilities(pid: string) {
-    const key = `${pid}|${network}`;
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
     try {
-      const snap = await getSquadCapabilities(pid, network);
+      const snap = await getSquadCapabilities(pid, network, { wargame: warGameStack });
       if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
     } catch {
@@ -70,7 +71,7 @@
   onMount(() => {
     const pid = parentId.trim();
     if (pid) {
-      capabilitiesLoadKey = `${pid}|${network}`;
+      capabilitiesLoadKey = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
       void loadCapabilities(pid);
     }
   });

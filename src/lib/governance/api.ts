@@ -574,6 +574,19 @@ export async function getNavePirataDeployment(params: {
   })) as NavePirataDeploymentDto;
 }
 
+/** Backend: `get_war_game_deployment`. Same DTO as Nave Pirata; WarGameRegistry only. */
+export async function getWarGameDeployment(params: {
+  network: string;
+  topHatId: string;
+  parentId?: string | null;
+}): Promise<NavePirataDeploymentDto> {
+  return (await invoke('get_war_game_deployment', {
+    network: params.network,
+    topHatId: params.topHatId.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as NavePirataDeploymentDto;
+}
+
 /** Mirrors `TreasuryProposalDto` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface TreasuryProposalDto {
   proposalId: string;
@@ -1448,10 +1461,12 @@ export interface SquadCapabilitiesDto {
 export async function getSquadCapabilities(
   parentId: string,
   network?: string | null,
+  opts?: { wargame?: boolean },
 ): Promise<SquadCapabilitiesDto> {
   return (await invoke('get_squad_capabilities', {
     parentId: parentId.trim(),
     rpcUrls: squadRpcUrlsForInvoke(parentId, network),
+    wargame: opts?.wargame === true,
   })) as SquadCapabilitiesDto;
 }
 

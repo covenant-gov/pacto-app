@@ -6,7 +6,7 @@ mod identity;
 mod write_serialize;
 
 pub use capability::{GovCapability, SquadCapabilitiesDto};
-pub use evaluate::{evaluate_squad_capabilities, require_capability};
+pub use evaluate::{evaluate_squad_capabilities, require_capability, GovStack};
 pub use write_serialize::{with_gov_write_lock, with_gov_write_locks};
 
 use tauri::{AppHandle, Runtime};
@@ -16,6 +16,13 @@ pub async fn get_squad_capabilities<R: Runtime>(
     app: AppHandle<R>,
     parent_id: String,
     rpc_urls: Option<Vec<String>>,
+    wargame: Option<bool>,
 ) -> Result<SquadCapabilitiesDto, String> {
-    evaluate_squad_capabilities(&app, parent_id.trim(), rpc_urls).await
+    evaluate_squad_capabilities(
+        &app,
+        parent_id.trim(),
+        rpc_urls,
+        GovStack::from_wargame(wargame),
+    )
+    .await
 }

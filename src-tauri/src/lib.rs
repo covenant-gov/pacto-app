@@ -10648,6 +10648,7 @@ pub fn run() {
             evm::squad_admin_write::squad_admin_enable_executor,
             evm::squad_admin_write::squad_admin_enable_full_permission,
             evm::nave_pirata_read::get_nave_pirata_deployment,
+            evm::nave_pirata_read::get_war_game_deployment,
             evm::treasury_authority_write::treasury_authority_propose,
             evm::treasury_authority_write::treasury_authority_crew_vote,
             evm::treasury_authority_write::treasury_authority_captain_vote,

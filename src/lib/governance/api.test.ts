@@ -16,6 +16,8 @@ import {
   getHatsTree,
   getMemberHatWearers,
   getNavePirataDeployment,
+  getWarGameDeployment,
+  getSquadCapabilities,
   getSquadAdminExecutorRoles,
   getSquadSponsorExtStatus,
   getSquadSponsorSummary,
@@ -495,6 +497,30 @@ describe('api command wrappers', () => {
       topHatId: '42',
       rpcUrls: null,
     });
+  });
+
+  it('getWarGameDeployment sends get_war_game_deployment with trimmed topHatId', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await getWarGameDeployment({ network: NETWORK, topHatId: ' 3655 ' });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_war_game_deployment', {
+      network: NETWORK,
+      topHatId: '3655',
+      rpcUrls: null,
+    });
+  });
+
+  it('getSquadCapabilities sends wargame false by default and true when requested', async () => {
+    mockedInvoke.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+    await getSquadCapabilities(PARENT, NETWORK);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'get_squad_capabilities',
+      expect.objectContaining({ parentId: PARENT, wargame: false }),
+    );
+    await getSquadCapabilities(PARENT, NETWORK, { wargame: true });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'get_squad_capabilities',
+      expect.objectContaining({ parentId: PARENT, wargame: true }),
+    );
   });
 
   it('listTreasuryProposals sends list_treasury_proposals', async () => {

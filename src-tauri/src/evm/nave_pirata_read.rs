@@ -78,6 +78,18 @@ pub async fn read_nave_pirata_deployment<P: Provider>(
     deployment_to_dto(chain, chain_id, top_hat, d)
 }
 
+async fn read_registry_deployment_for_network(
+    network: String,
+    top_hat_id: String,
+    rpc_urls: Option<Vec<String>>,
+    registry: Address,
+) -> Result<NavePirataDeploymentDto, String> {
+    let top_hat = parse_top_hat_id(top_hat_id.as_str())
+        .map_err(|e| wallet_err_json("INVALID_TOP_HAT", e, None))?;
+    let (provider, ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+    read_nave_pirata_deployment(&provider, registry, top_hat, ctx.key.as_str(), ctx.chain_id).await
+}
+
 #[tauri::command]
 pub async fn get_nave_pirata_deployment<R: Runtime>(
     _app: AppHandle<R>,
@@ -85,9 +97,6 @@ pub async fn get_nave_pirata_deployment<R: Runtime>(
     top_hat_id: String,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<NavePirataDeploymentDto, String> {
-    let top_hat = parse_top_hat_id(top_hat_id.as_str())
-        .map_err(|e| wallet_err_json("INVALID_TOP_HAT", e, None))?;
-
     let net_key = network.to_lowercase();
     let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&net_key)
         .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
@@ -98,7 +107,25 @@ pub async fn get_nave_pirata_deployment<R: Runtime>(
             None,
         ));
     };
+    read_registry_deployment_for_network(network, top_hat_id, rpc_urls, registry).await
+}
 
-    let (provider, ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    read_nave_pirata_deployment(&provider, registry, top_hat, ctx.key.as_str(), ctx.chain_id).await
+#[tauri::command]
+pub async fn get_war_game_deployment<R: Runtime>(
+    _app: AppHandle<R>,
+    network: String,
+    top_hat_id: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<NavePirataDeploymentDto, String> {
+    let net_key = network.to_lowercase();
+    let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&net_key)
+        .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
+    let Some(registry) = addrs.war_game_registry else {
+        return Err(wallet_err_json(
+            "REGISTRY_CONFIG",
+            "PACTO_WAR_GAME_REGISTRY is not configured for this network",
+            None,
+        ));
+    };
+    read_registry_deployment_for_network(network, top_hat_id, rpc_urls, registry).await
 }

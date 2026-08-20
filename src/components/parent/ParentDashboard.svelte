@@ -31,7 +31,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     protocolWearerCandidateAddresses,
     protocolWearerLabelByAddress,
   } from '../../lib/governance/hats-tree-annotations';
-  import { hasSquadAdminInfra, resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
+  import { hasSquadAdminInfra, resolveSquadAdminContext, resolveWarGameSquadAdminContext } from '../../lib/governance/squad-admin-payload';
   import { resolveSquadSponsorVariant } from '../../lib/governance/squad-sponsor-variant';
   import { DEFAULT_CHAIN_ID, parseSupportedChainId, type SupportedChainId } from '../../lib/wallet/chains';
   import {
@@ -173,7 +173,9 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     ? pactoGovWargameInfraRow(squadInfraRows)
     : pactoGovInfraRow(squadInfraRows);
   $: hasPactoGov = pactoGovRow != null;
-  $: squadAdminCtx = resolveSquadAdminContext(squadInfraRows);
+  $: squadAdminCtx = warGameStack
+    ? resolveWarGameSquadAdminContext(pactoGovRow)
+    : resolveSquadAdminContext(squadInfraRows);
   $: hasSquadAdmin = warGameStack && pactoGovRow != null ? true : hasSquadAdminInfra(squadInfraRows);
   $: pactoPayload = parsePactoGovProviderPayload(pactoGovRow?.providerPayload);
   $: knownWearerLabels = protocolWearerLabelByAddress(pactoPayload);
@@ -410,7 +412,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       .map((a) => a.toLowerCase())
       .sort()
       .join(',');
-    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}:${protocolKey}`;
+    const stack = warGameStack ? 'wargame' : 'nave';
+    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}:${protocolKey}:${stack}`;
     if (!topHat || rolesTreeAnnotationsKey === key) return;
     rolesTreeAnnotationsKey = key;
     const hadData = Object.keys(roleLabelByHatId).length > 0;
@@ -430,6 +433,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       squadAdminChain: squadAdminCtx?.chain ?? null,
       parentId,
       protocolWearerCandidates: protocolCandidates,
+      stack,
     });
     if (isSupersededLoaderKey(rolesTreeAnnotationsKey, key)) return;
     rolesTreeAnnotationsLoading = false;
@@ -448,6 +452,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       topHatId: topHat,
       squadAdminProxy: squadAdmin,
       squadMemberEvmByNpub,
+      stack: warGameStack ? 'wargame' : 'nave',
     });
     if ((!topHat && !squadAdmin) || settingsChainKey === cacheKey) return;
     settingsChainKey = cacheKey;
@@ -472,6 +477,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       squadAdminProxy: squadAdmin,
       squadAdminChain: squadAdminCtx?.chain ?? null,
       squadMemberEvmByNpub,
+      parentId,
+      stack: warGameStack ? 'wargame' : 'nave',
     });
     if (isSupersededLoaderKey(settingsChainKey, cacheKey)) return;
     settingsChainLoading = false;
@@ -774,6 +781,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onRefreshProposals={refreshTreasuryProposals}
               onOpenLaunchpad={openLaunchpad}
               {hasSponsor}
+              {warGameStack}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.governance')}</p>
@@ -824,6 +832,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenSponsorDeploy={openLaunchpad}
               onOpenDeploySafe={openDeploySafe}
               onOpenImportSafe={openSetSafe}
+              {warGameStack}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.treasury')}</p>
@@ -906,6 +915,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   {hasSponsor}
   {hasPactoGov}
   {hasSquadAdmin}
+  {warGameStack}
   squadAdminProxy={squadAdminCtx?.proxy ?? ''}
   {squadAdminNetwork}
   {squadNetwork}

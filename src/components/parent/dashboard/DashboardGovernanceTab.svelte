@@ -23,8 +23,13 @@
   export let onRefreshProposals: () => void = () => {};
   export let onOpenLaunchpad: () => void = () => {};
   export let hasSponsor = false;
+  export let warGameStack = false;
 
-  $: provider = resolveGovernanceProvider(squadInfraRows);
+  $: liveProvider = resolveGovernanceProvider(squadInfraRows);
+  $: showPactoGovShell = Boolean(pactoPayload?.treasuryAuthority?.trim()) && (
+    warGameStack || liveProvider === 'pacto_gov'
+  );
+  $: showAbiModules = !warGameStack && liveProvider === 'abi_modules';
   $: network = pactoGovChain ?? 'sepolia';
   $: openCount = treasuryProposals.filter((p) => isTreasuryProposalActive(p.status)).length;
 </script>
@@ -37,15 +42,11 @@
     </button>
   </div>
 
-  {#if provider === 'none'}
-    <p class="dashboard-placeholder-text muted">
-      {$t('governance.governance.placeholder')}
-    </p>
-  {:else if provider === 'abi_modules'}
+  {#if showAbiModules}
     <p class="dashboard-placeholder-text muted">
       {$t('governance.governance.abiModules')}
     </p>
-  {:else if pactoPayload?.treasuryAuthority}
+  {:else if showPactoGovShell && pactoPayload}
     <p class="gov-network muted">
       {$t('governance.governance.pactoGovOn', { values: { network: getWalletNetworkDisplayName(parseSupportedChainId(network)) } })}
       {#if openCount}
@@ -68,6 +69,7 @@
       {treasuryProposalsError}
       {onRefreshProposals}
       {hasSponsor}
+      {warGameStack}
     />
   {:else}
     <p class="dashboard-placeholder-text muted">

@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Runtime};
 
-use super::access_control::{require_capability, GovCapability};
+use super::access_control::{require_capability, GovCapability, GovStack};
 use super::contracts::pacto_sponsor::ISquadSponsorBase::depositCall;
 use super::contracts::pacto_sponsor::ISquadSponsorExt::{
     addressOwnerCall, hatsWiredCall, postInitializeCall,
@@ -420,7 +420,14 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
         ));
     }
     require_parent_member(&app, pid).await?;
-    require_capability(&app, pid, DEPLOY_REQUIRED_CAPABILITY, rpc_urls.clone()).await?;
+    require_capability(
+        &app,
+        pid,
+        DEPLOY_REQUIRED_CAPABILITY,
+        rpc_urls.clone(),
+        GovStack::Live,
+    )
+    .await?;
 
     // Hats inputs validate against the persisted gov infra before any network work.
     let hats_top_hat = match &variant {

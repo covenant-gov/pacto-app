@@ -9,6 +9,7 @@ import {
   getHatsTree,
   getMemberHatWearers,
   getNavePirataDeployment,
+  getWarGameDeployment,
   getSquadAdminExecutorRoles,
   listQuartermasterPending,
   listTreasuryProposals,
@@ -212,6 +213,25 @@ export async function fetchExecutorRolesByAddress(params: {
   return roleMap;
 }
 
+export type GovRegistryStack = 'nave' | 'wargame';
+
+async function getGovStackDeployment(params: {
+  stack?: GovRegistryStack;
+  network: string;
+  topHatId: string;
+  parentId?: string | null;
+}) {
+  const args = {
+    network: params.network,
+    topHatId: params.topHatId,
+    parentId: params.parentId,
+  };
+  if (params.stack === 'wargame') {
+    return getWarGameDeployment(args);
+  }
+  return getNavePirataDeployment(args);
+}
+
 export async function fetchRolesTreeAnnotations(params: {
   network: SupportedChainId;
   topHatId: string;
@@ -221,6 +241,7 @@ export async function fetchRolesTreeAnnotations(params: {
   parentId?: string | null;
   /** Pacto Gov module addresses that may wear role hats. */
   protocolWearerCandidates?: string[];
+  stack?: GovRegistryStack;
 }): Promise<{
   roleLabelByHatId: Record<string, string>;
   wearerAddressesByHatId: Record<string, string[]>;
@@ -243,7 +264,8 @@ export async function fetchRolesTreeAnnotations(params: {
   }
 
   try {
-    const deployment = await getNavePirataDeployment({
+    const deployment = await getGovStackDeployment({
+      stack: params.stack,
       network: params.network,
       topHatId: params.topHatId,
       parentId: params.parentId,
@@ -291,6 +313,8 @@ export async function fetchSettingsChainMemberMaps(params: {
   squadAdminProxy: string | null;
   squadAdminChain: string | null;
   squadMemberEvmByNpub: Record<string, string>;
+  parentId?: string | null;
+  stack?: GovRegistryStack;
 }): Promise<{
   memberHatByAddress: Record<string, string>;
   memberRolesByAddress: Record<string, string>;
@@ -306,9 +330,11 @@ export async function fetchSettingsChainMemberMaps(params: {
     let memberRolesByAddress: Record<string, string> = {};
 
     if (params.topHatId) {
-      const deployment = await getNavePirataDeployment({
+      const deployment = await getGovStackDeployment({
+        stack: params.stack,
         network: params.network,
         topHatId: params.topHatId,
+        parentId: params.parentId,
       });
       const assignments = await getMemberHatWearers({
         network: params.network,

@@ -36,8 +36,10 @@ export function settingsChainCacheKey(params: {
   topHatId: string | null;
   squadAdminProxy: string | null;
   squadMemberEvmByNpub: Record<string, string>;
+  stack?: 'nave' | 'wargame';
 }): string {
-  return `${params.network}:${params.topHatId ?? ''}:${params.squadAdminProxy ?? ''}:${settingsChainMemberFingerprint(params.squadMemberEvmByNpub)}`;
+  const base = `${params.network}:${params.topHatId ?? ''}:${params.squadAdminProxy ?? ''}:${settingsChainMemberFingerprint(params.squadMemberEvmByNpub)}`;
+  return params.stack === 'wargame' ? `${base}:wargame` : base;
 }
 
 function storageKey(npub: string): string {

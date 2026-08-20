@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Runtime};
 
-use super::access_control::{require_capability, GovCapability};
+use super::access_control::{require_capability, GovCapability, GovStack};
 use super::contracts::pacto_gov::INavePirataFactory::{
     deploySquadAdminExtStandaloneCall, deploySquadAdminStandaloneCaptainHatCall,
 };
@@ -137,7 +137,14 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
     }
     require_parent_member(&app, pid).await?;
     if db::parent_has_pacto_gov_infra_row(&app, pid).unwrap_or(false) {
-        require_capability(&app, pid, GovCapability::CaptainResign, rpc_urls.clone()).await?;
+        require_capability(
+            &app,
+            pid,
+            GovCapability::CaptainResign,
+            rpc_urls.clone(),
+            GovStack::Live,
+        )
+        .await?;
     }
 
     let variant_key =

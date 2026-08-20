@@ -1517,6 +1517,7 @@ pub async fn upsert_squad_tracked_token<R: Runtime>(
         pid.as_str(),
         crate::evm::access_control::GovCapability::MutateTrackedTokens,
         rpc_urls,
+        crate::evm::access_control::GovStack::Live,
     )
     .await?;
     let added_by = crate::account_manager::get_current_account()?;
@@ -1582,6 +1583,7 @@ pub async fn remove_squad_tracked_token<R: Runtime>(
         pid,
         crate::evm::access_control::GovCapability::MutateTrackedTokens,
         rpc_urls,
+        crate::evm::access_control::GovStack::Live,
     )
     .await?;
     let conn = crate::account_manager::get_db_connection(&handle)?;

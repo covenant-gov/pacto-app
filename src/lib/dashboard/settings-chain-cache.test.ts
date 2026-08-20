@@ -110,4 +110,30 @@ describe('settings-chain-cache', () => {
     expect(getCachedSettingsChainSnapshot(npub, parentId, cacheKey)).toBeNull();
     expect(get(settingsChainHydrated)?.byParentId[parentId]).toBeUndefined();
   });
+
+  it('appends wargame to the cache key without changing live keys', () => {
+    const evm = { npub1: '0xabc' };
+    const live = settingsChainCacheKey({
+      network: 'sepolia',
+      topHatId: '0x1',
+      squadAdminProxy: '0x2',
+      squadMemberEvmByNpub: evm,
+    });
+    const nave = settingsChainCacheKey({
+      network: 'sepolia',
+      topHatId: '0x1',
+      squadAdminProxy: '0x2',
+      squadMemberEvmByNpub: evm,
+      stack: 'nave',
+    });
+    const wargame = settingsChainCacheKey({
+      network: 'sepolia',
+      topHatId: '0x1',
+      squadAdminProxy: '0x2',
+      squadMemberEvmByNpub: evm,
+      stack: 'wargame',
+    });
+    expect(nave).toBe(live);
+    expect(wargame).toBe(`${live}:wargame`);
+  });
 });

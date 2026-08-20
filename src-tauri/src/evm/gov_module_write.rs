@@ -7,7 +7,7 @@ use alloy::sol_types::SolCall;
 use serde_json::Value;
 use tauri::{AppHandle, Runtime};
 
-use super::access_control::{require_capability, with_gov_write_lock, GovCapability};
+use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
 use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
     captainResignCall, castVoteCall, executeMutinyCall, startMutinyToArbitraryContractCall,
     startMutinyToArbitraryEoaCall, startMutinyToCommitteeCall, startMutinyToCrewMemberCall,
@@ -68,7 +68,19 @@ pub async fn send_gov_module_call<R: Runtime>(
         ));
     }
 
-    require_capability(&app, pid, capability, rpc_urls_override).await?;
+    let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
+        .ok()
+        .flatten();
+    let wargame_write = wargame_payload
+        .as_deref()
+        .and_then(parse_war_game_userop_context)
+        .is_some_and(|c| c.targets(to));
+    let stack = if wargame_write {
+        GovStack::WarGame
+    } else {
+        GovStack::Live
+    };
+    require_capability(&app, pid, capability, rpc_urls_override, stack).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
     let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
@@ -77,13 +89,6 @@ pub async fn send_gov_module_call<R: Runtime>(
 
     // Route the write: EOA when the roster key can afford the gas, sponsored when it can't.
     let read_provider = connect_read_provider(&urls).await?;
-    let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
-        .ok()
-        .flatten();
-    let wargame_write = wargame_payload
-        .as_deref()
-        .and_then(parse_war_game_userop_context)
-        .is_some_and(|c| c.targets(to));
     let has_sponsor_infra =
         db::parent_has_sponsor_infra(&app, pid).unwrap_or(false) || wargame_write;
     // A failed balance lookup must not block writes: the sponsored path needs no roster
