@@ -13,13 +13,17 @@
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
 
-  export let broadcast: CommonsBroadcastDto;
-  export let onClose: () => void;
+  interface Props {
+    broadcast: CommonsBroadcastDto;
+    onClose: () => void;
+  }
+
+  let { broadcast, onClose }: Props = $props();
 
   const tFn = get(t);
 
-  let messageBusy = false;
-  let actionError = '';
+  let messageBusy = $state(false);
+  let actionError = $state('');
 
   function formatExpiry(expiresAt: number): string {
     const ms = expiresAt * 1000 - Date.now();
@@ -32,24 +36,23 @@
     return tFn('commons.duration.daysLeft', { values: { days: d } });
   }
 
-  $: ({
-    isSquad,
-    title,
-    subtitle,
-    coverImage,
-    coverSeed,
-    squadLabel,
-    joinBlockReason,
-    joinInFlight,
-    canMessage,
-    canJoin,
-    greetingName,
-  } = (() => {
+  const presentation = $derived.by(() => {
     $commonsJoinRequestRevision;
     return computeBroadcastPresentation(broadcast, $profiles, $squads, $currentUser?.npub, tFn);
-  })());
-  $: localSquadIds = $squads.map((s) => s.id);
-  $: myNpub = $currentUser?.npub;
+  });
+  const isSquad = $derived(presentation.isSquad);
+  const title = $derived(presentation.title);
+  const subtitle = $derived(presentation.subtitle);
+  const coverImage = $derived(presentation.coverImage);
+  const coverSeed = $derived(presentation.coverSeed);
+  const squadLabel = $derived(presentation.squadLabel);
+  const joinBlockReason = $derived(presentation.joinBlockReason);
+  const joinInFlight = $derived(presentation.joinInFlight);
+  const canMessage = $derived(presentation.canMessage);
+  const canJoin = $derived(presentation.canJoin);
+  const greetingName = $derived(presentation.greetingName);
+  const localSquadIds = $derived($squads.map((s) => s.id));
+  const myNpub = $derived($currentUser?.npub);
 
   function handleRequestDm() {
     if (!canMessage || messageBusy) return;

@@ -9,13 +9,22 @@
     type CommonsTagCategory,
   } from '../../lib/commons/tag-catalog';
 
-  export let categories: CommonsTagCategory[] = COMMONS_TAG_TREE;
-  export let activeCategoryId: string | null = null;
-  /** Active broadcast count per leaf tag. */
-  export let countsByTag: Record<string, number> = {};
-  export let onSelectCategory: (categoryId: string) => void = () => {};
+  interface Props {
+    categories?: CommonsTagCategory[];
+    activeCategoryId?: string | null;
+    /** Active broadcast count per leaf tag. */
+    countsByTag?: Record<string, number>;
+    onSelectCategory?: (categoryId: string) => void;
+  }
 
-  $: localizedCategories = categories.map((c) => localizeCommonsTagCategory($t, c));
+  let {
+    categories = COMMONS_TAG_TREE,
+    activeCategoryId = null,
+    countsByTag = {},
+    onSelectCategory = () => {},
+  }: Props = $props();
+
+  const localizedCategories = $derived(categories.map((c) => localizeCommonsTagCategory($t, c)));
 </script>
 
 <div class="commons-browser">

@@ -2,21 +2,32 @@
   import { t } from 'svelte-i18n';
   import { COMMONS_TAG_TREE, localizeCommonsTagCategory, type CommonsTagCategory } from '../../lib/commons/tag-catalog';
 
-  export let categories: CommonsTagCategory[] = COMMONS_TAG_TREE;
-  export let activeTags: string[] = [];
-  /** Active broadcast count per leaf tag. */
-  export let countsByTag: Record<string, number> = {};
-  export let onToggleTag: (tag: string) => void = () => {};
-  /** Force every category open (e.g. while a text query is filtering). */
-  export let expandAll = false;
-  /** Denser typography for modal / inline pickers. */
-  export let compact = false;
+  interface Props {
+    categories?: CommonsTagCategory[];
+    activeTags?: string[];
+    /** Active broadcast count per leaf tag. */
+    countsByTag?: Record<string, number>;
+    onToggleTag?: (tag: string) => void;
+    /** Force every category open (e.g. while a text query is filtering). */
+    expandAll?: boolean;
+    /** Denser typography for modal / inline pickers. */
+    compact?: boolean;
+  }
 
-  $: localizedCategories = categories.map((c) => localizeCommonsTagCategory($t, c));
+  let {
+    categories = COMMONS_TAG_TREE,
+    activeTags = [],
+    countsByTag = {},
+    onToggleTag = () => {},
+    expandAll = false,
+    compact = false,
+  }: Props = $props();
 
-  let openIds = new Set<string>();
+  const localizedCategories = $derived(categories.map((c) => localizeCommonsTagCategory($t, c)));
 
-  $: activeSet = new Set(activeTags);
+  let openIds = $state(new Set<string>());
+
+  const activeSet = $derived(new Set(activeTags));
 
   function toggle(id: string) {
     const next = new Set(openIds);
