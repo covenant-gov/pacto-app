@@ -401,7 +401,7 @@
 </script>
 
 <svelte:window
-  on:click={(e) => {
+  onclick={(e) => {
     const t = e.target as HTMLElement | null;
     if (menuOpen && t && !t.closest('.dm-thread-header-actions')) menuOpen = false;
   }}
@@ -424,12 +424,12 @@
             class="dm-thread-nickname-input"
             placeholder={$t('messaging.dm.thread.nicknamePlaceholder')}
             bind:value={nicknameEditValue}
-            on:keydown={(e) => e.key === 'Escape' && cancelNicknameEdit()}
+            onkeydown={(e) => e.key === 'Escape' && cancelNicknameEdit()}
           />
-          <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-save" on:click={saveNickname} disabled={nicknameSaving}>
+          <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-save" onclick={saveNickname} disabled={nicknameSaving}>
             {nicknameSaving ? $t('messaging.dm.thread.savingNickname') : $t('messaging.dm.thread.saveNickname')}
           </button>
-          <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-cancel" on:click={cancelNicknameEdit} disabled={nicknameSaving}>
+          <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-cancel" onclick={cancelNicknameEdit} disabled={nicknameSaving}>
             {$t('messaging.dm.thread.cancel')}
           </button>
         </div>
@@ -448,7 +448,7 @@
                   type="button"
                   class="dm-thread-dropdown-trigger"
                   title={$t('messaging.dm.thread.optionsTitle')}
-                  on:click={() => (menuOpen = !menuOpen)}
+                  onclick={() => (menuOpen = !menuOpen)}
                   aria-haspopup="true"
                   aria-expanded={menuOpen}
                 >
@@ -460,19 +460,19 @@
                 </button>
                 {#if menuOpen}
                   <div class="dm-thread-dropdown" role="menu">
-                    <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={openNicknameEdit}>
+                    <button type="button" class="dm-thread-dropdown-item" role="menuitem" onclick={openNicknameEdit}>
                       {$t('messaging.dm.thread.setNickname')}
                     </button>
-                    <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={toggleBlockUser}>
+                    <button type="button" class="dm-thread-dropdown-item" role="menuitem" onclick={toggleBlockUser}>
                       {$profiles[npub]?.blocked ? $t('messaging.dm.thread.unblockUser') : $t('messaging.dm.thread.blockUser')}
                     </button>
                     {#if showPinOption}
                       {#if $pinnedDmNpubs.has(npub)}
-                        <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={unpinDm}>
+                        <button type="button" class="dm-thread-dropdown-item" role="menuitem" onclick={unpinDm}>
                           {$t('messaging.dm.thread.unpinDm')}
                         </button>
                       {:else}
-                        <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={pinDm}>
+                        <button type="button" class="dm-thread-dropdown-item" role="menuitem" onclick={pinDm}>
                           {$t('messaging.dm.thread.pinDm')}
                         </button>
                       {/if}
@@ -484,7 +484,7 @@
                         class="dm-thread-dropdown-item dm-thread-dropdown-item-danger"
                         role="menuitem"
                         disabled={chatDeleting}
-                        on:click={() => {
+                        onclick={() => {
                           if (chatDeleting) return;
                           menuOpen = false;
                           deleteConfirmOpen = true;
@@ -506,7 +506,7 @@
               aria-label={$dmWalletSidebarVisible ? $t('messaging.dm.thread.closeWalletSidebar') : $t('messaging.dm.thread.openWalletSidebar')}
               aria-expanded={$dmWalletSidebarVisible}
               aria-controls="wallet-bar"
-              on:click={() => toggleWalletSidebar()}
+              onclick={() => toggleWalletSidebar()}
             >
               <span class="dm-thread-wallet-icon" aria-hidden="true">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -532,7 +532,7 @@
             type="button"
             class="dm-thread-copy-btn"
             title={$t('messaging.dm.thread.copyNpub')}
-            on:click={() => navigator.clipboard?.writeText(npub)}
+            onclick={() => navigator.clipboard?.writeText(npub)}
           >
             <span class="dm-thread-copy-icon" aria-hidden="true">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" focusable="false">
@@ -545,7 +545,7 @@
       {/if}
     </div>
   </div>
-  <div class="dm-thread-messages" bind:this={dmMessagesContainer} on:scroll={handleMessagesScroll}>
+  <div class="dm-thread-messages" bind:this={dmMessagesContainer} onscroll={handleMessagesScroll}>
     {#if chatDeleting}
       <div class="dm-thread-deleting" role="status" aria-live="polite" aria-busy="true">
         <span class="dm-thread-deleting-spinner" aria-hidden="true"></span>
@@ -554,7 +554,7 @@
     {/if}
     {#if canLoadOlder}
       <div class="dm-thread-load-older">
-        <button type="button" class="load-older-btn" on:click={onLoadOlder} disabled={loadingOlder}>
+        <button type="button" class="load-older-btn" onclick={onLoadOlder} disabled={loadingOlder}>
           {loadingOlder ? $t('messaging.dm.thread.loading') : $t('messaging.dm.thread.loadOlder')}
         </button>
       </div>
@@ -618,14 +618,14 @@
       <button
         type="button"
         class="dm-delete-confirm-cancel"
-        on:click={() => (deleteConfirmOpen = false)}
+        onclick={() => (deleteConfirmOpen = false)}
       >
         {$t('messaging.dm.thread.cancel')}
       </button>
       <button
         type="button"
         class="dm-delete-confirm-delete"
-        on:click={() => {
+        onclick={() => {
           deleteConfirmOpen = false;
           onDeleteChat?.();
         }}

@@ -325,7 +325,7 @@
         disabled={summaryLoading}
         spinning={summaryLoading}
         ariaLabel={summaryLoading ? $t('wallet.refreshingBalances') : $t('wallet.refreshBalances')}
-        on:click={refreshSummary}
+        onclick={refreshSummary}
       />
     </div>
     {#if summaryLoading && !summary}
@@ -343,7 +343,7 @@
           id="wallet-bar-network-select"
           class="wallet-bar-select"
           bind:value={networkFilter}
-          on:change={saveNetworkFilter}
+          onchange={saveNetworkFilter}
         >
           <option value="all">{$t('wallet.allEnabledNetworks')}</option>
           {#each networkDropdownChainIds as chainId (chainId)}
@@ -353,7 +353,7 @@
         <button
           type="button"
           class="wallet-bar-btn wallet-bar-btn-import"
-          on:click={() => (importTokensModalOpen = true)}
+          onclick={() => (importTokensModalOpen = true)}
         >
           {$t('wallet.importTokens')}
         </button>
@@ -422,7 +422,7 @@
         type="button"
         class="wallet-bar-btn wallet-bar-btn-primary wallet-bar-btn-full"
         disabled={peerInfoRequestInFlight || !$currentUser}
-        on:click={sendWalletInfoRequest}
+        onclick={sendWalletInfoRequest}
       >
         {peerInfoRequestInFlight ? $t('wallet.sending') : $t('wallet.sendExchangeRequest')}
       </button>
@@ -432,14 +432,14 @@
       <button
         type="button"
         class="wallet-bar-btn wallet-bar-btn-primary"
-        on:click={() => {
+        onclick={() => {
           sendModalPrefill = null;
           sendModalOpen = true;
         }}
       >
         {$t('wallet.send')}
       </button>
-      <button type="button" class="wallet-bar-btn wallet-bar-btn-secondary" on:click={() => (requestModalOpen = true)}>
+      <button type="button" class="wallet-bar-btn wallet-bar-btn-secondary" onclick={() => (requestModalOpen = true)}>
         {$t('wallet.request')}
       </button>
     </div>

@@ -252,7 +252,7 @@
       spinning={refreshing}
       disabled={loading || refreshing}
       ariaLabel={refreshing ? $t('governance.aria.refreshingSafeBalances') : $t('governance.aria.refreshSafeBalances')}
-      on:click={() => void refreshAll(true)}
+      onclick={() => void refreshAll(true)}
     />
   </div>
 
@@ -272,7 +272,7 @@
           <span class="bal-amt">{tokenBalances[row.id] ?? '…'}</span>
           <code class="bal-addr">{shortAddr(row.tokenAddress)}</code>
           {#if manageGate.enabled}
-            <button type="button" class="btn-link" on:click={() => void removeToken(row)}>{tFn('governance.action.remove')}</button>
+            <button type="button" class="btn-link" onclick={() => void removeToken(row)}>{tFn('governance.action.remove')}</button>
           {/if}
         </li>
       {/each}
@@ -295,7 +295,7 @@
         class="btn-primary"
         disabled={!manageGate.enabled || addBusy || !addAddress.trim()}
         title={manageGate.enabled ? undefined : $t(manageGate.reason)}
-        on:click={() => void addToken()}
+        onclick={() => void addToken()}
       >
         {addBusy ? tFn('governance.trackedToken.adding') : tFn('governance.action.add')}
       </button>

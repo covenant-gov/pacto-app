@@ -42,7 +42,7 @@
   <button
     type="button"
     class="btn-logout"
-    on:click={openLogoutConfirm}
+    onclick={openLogoutConfirm}
     disabled={isLoggingOut}
   >
     {isLoggingOut ? $t('settings.loggingOut') : $t('settings.logout')}
@@ -53,8 +53,8 @@
   <div use:portal>
     <div
       class="modal-overlay"
-      on:click={closeLogoutConfirm}
-      on:keydown={(e) => e.key === 'Escape' && closeLogoutConfirm()}
+      onclick={closeLogoutConfirm}
+      onkeydown={(e) => e.key === 'Escape' && closeLogoutConfirm()}
       role="presentation"
     >
       <div
@@ -63,18 +63,18 @@
         aria-modal="true"
         aria-labelledby="logout-modal-title"
         tabindex="-1"
-        on:click|stopPropagation
-        on:keydown={(e) => e.key === 'Escape' && closeLogoutConfirm()}
+        onclick={(e) => e.stopPropagation()}
+        onkeydown={(e) => e.key === 'Escape' && closeLogoutConfirm()}
       >
         <h2 id="logout-modal-title">{$t('settings.logoutModalTitle')}</h2>
         <p class="modal-subtitle">
           {$t('settings.logoutModalSubtitle')}
         </p>
         <div class="modal-actions">
-          <button type="button" class="btn-cancel" on:click={closeLogoutConfirm} disabled={isLoggingOut}>
+          <button type="button" class="btn-cancel" onclick={closeLogoutConfirm} disabled={isLoggingOut}>
             {$t('settings.cancel')}
           </button>
-          <button type="button" class="btn-confirm btn-logout-confirm" on:click={handleLogout} disabled={isLoggingOut}>
+          <button type="button" class="btn-confirm btn-logout-confirm" onclick={handleLogout} disabled={isLoggingOut}>
             {isLoggingOut ? $t('settings.loggingOut') : $t('settings.logout')}
           </button>
         </div>

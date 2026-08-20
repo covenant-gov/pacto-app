@@ -329,10 +329,10 @@
     {/if}
 
     <div class="wallet-advanced-actions">
-      <button type="button" class="wallet-advanced-btn wallet-advanced-btn-secondary" disabled={simulating || !canSend} on:click={onSimulate}>
+      <button type="button" class="wallet-advanced-btn wallet-advanced-btn-secondary" disabled={simulating || !canSend} onclick={onSimulate}>
         {simulating ? $t('wallet.simulating') : $t('wallet.simulate')}
       </button>
-      <button type="button" class="wallet-advanced-btn" disabled={!canSend || sending} on:click={openConfirm}>
+      <button type="button" class="wallet-advanced-btn" disabled={!canSend || sending} onclick={openConfirm}>
         {$t('wallet.reviewAndSend')}
       </button>
     </div>
@@ -340,7 +340,7 @@
 </section>
 
 {#if confirmOpen}
-  <div class="wallet-advanced-modal-backdrop" role="presentation" on:click={() => !sending && (confirmOpen = false)}></div>
+  <div class="wallet-advanced-modal-backdrop" role="presentation" onclick={() => !sending && (confirmOpen = false)}></div>
   <div class="wallet-advanced-modal" role="dialog" aria-labelledby="adv-confirm-title" aria-modal="true">
     <h3 id="adv-confirm-title" class="wallet-advanced-h2">{$t('wallet.confirmAdvancedCall')}</h3>
     <p class="wallet-advanced-hint">{$t('wallet.advancedVerifyEveryField')}</p>
@@ -357,10 +357,10 @@
       <dd><code class="wallet-advanced-code-break">{calldataMode === 'raw' ? normalizeCalldataHex(dataHex) : builtCalldata}</code></dd>
     </dl>
     <div class="wallet-advanced-actions">
-      <button type="button" class="wallet-advanced-btn wallet-advanced-btn-secondary" disabled={sending} on:click={() => (confirmOpen = false)}>
+      <button type="button" class="wallet-advanced-btn wallet-advanced-btn-secondary" disabled={sending} onclick={() => (confirmOpen = false)}>
         {$t('wallet.cancel')}
       </button>
-      <button type="button" class="wallet-advanced-btn" disabled={sending} on:click={onSendConfirmed}>
+      <button type="button" class="wallet-advanced-btn" disabled={sending} onclick={onSendConfirmed}>
         {sending ? $t('wallet.sending') : $t('wallet.sendTransaction')}
       </button>
     </div>

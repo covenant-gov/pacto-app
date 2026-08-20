@@ -29,7 +29,7 @@
         class="commons-category-focus-tile"
         style={art ? '' : `background-image: ${commonsTagGradient(localizedCategory.id)}`}
         aria-label={$t('commons.categoryFocus.closeAria', { values: { title: localizedCategory.title } })}
-        on:click={onClearFocus}
+        onclick={onClearFocus}
       >
         {#if art}
           <img class="commons-category-focus-art" src={art} alt="" loading="eager" decoding="async" />
@@ -50,7 +50,7 @@
             class="commons-category-focus-tag"
             class:is-active={isActive}
             aria-pressed={isActive}
-            on:click={() => onToggleTag(child.tag)}
+            onclick={() => onToggleTag(child.tag)}
           >
             {child.title}{#if count > 0}<span class="commons-category-focus-tag-count">{count}</span>{/if}
           </button>

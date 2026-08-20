@@ -320,7 +320,7 @@
       class:input-invalid={depositInvalidFormat || depositExceedsBalance}
       placeholder={$t('governance.deploySquadSponsorExt.deposit.placeholder')}
       value={initialDepositEth}
-      on:input={onDepositInput}
+      oninput={onDepositInput}
       disabled={ownerUnavailable || payerUnavailable || deploying}
       autocomplete="off"
       required
@@ -344,8 +344,8 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
-    <button type="button" class="btn-primary" on:click={confirmDeploy} disabled={!canDeploy}>
+    <button type="button" class="btn-secondary" onclick={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
+    <button type="button" class="btn-primary" onclick={confirmDeploy} disabled={!canDeploy}>
       {deploying ? $t('governance.common.deploying') : $t('governance.common.deployOnChain')}
     </button>
   </div>

@@ -109,8 +109,8 @@
   role="button"
   tabindex="0"
   aria-label={$t('commons.card.ariaLabel', { values: { title } })}
-  on:click={handleCardClick}
-  on:keydown={handleCardKeydown}
+  onclick={handleCardClick}
+  onkeydown={handleCardKeydown}
 >
   <div class="commons-tile-cover" style={isSquad || coverImage ? '' : `background-image: ${commonsTagGradient(coverSeed)}`}>
     {#if isSquad}
@@ -149,7 +149,7 @@
             type="button"
             class="commons-tile-btn"
             disabled={messageBusy}
-            on:click|stopPropagation={handleRequestDm}
+            onclick={(e) => { e.stopPropagation(); handleRequestDm(); }}
           >
             {messageBusy ? $t('commons.card.opening') : $t('commons.card.requestDm')}
           </button>
@@ -159,7 +159,7 @@
             type="button"
             class="commons-tile-btn commons-tile-btn-primary"
             disabled={joinInFlight}
-            on:click|stopPropagation={handleJoinRequest}
+            onclick={(e) => { e.stopPropagation(); handleJoinRequest(); }}
           >
             {joinInFlight ? $t('commons.card.sending') : $t('commons.card.requestJoin')}
           </button>

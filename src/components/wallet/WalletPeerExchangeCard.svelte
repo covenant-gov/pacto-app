@@ -78,7 +78,7 @@
             type="button"
             class="wpeer-btn wpeer-accept"
             disabled={accepting}
-            on:click={() => onAccept?.()}
+            onclick={() => onAccept?.()}
           >
             {accepting ? $t('wallet.accepting') : $t('wallet.accept')}
           </button>
@@ -86,7 +86,7 @@
             type="button"
             class="wpeer-btn wpeer-decline"
             disabled={accepting}
-            on:click={() => onDecline?.()}
+            onclick={() => onDecline?.()}
           >
             {$t('wallet.decline')}
           </button>

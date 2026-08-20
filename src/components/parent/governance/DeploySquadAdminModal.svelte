@@ -87,8 +87,8 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.common.cancel')}</button>
-    <button type="button" class="btn-primary" on:click={confirmDeploy}>
+    <button type="button" class="btn-secondary" onclick={onClose}>{$t('governance.common.cancel')}</button>
+    <button type="button" class="btn-primary" onclick={confirmDeploy}>
       {$t('governance.common.deployOnChain')}
     </button>
   </div>

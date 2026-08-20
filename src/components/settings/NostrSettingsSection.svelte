@@ -285,7 +285,7 @@
           class="nostr-npub-copy-btn"
           aria-label={copiedNpub ? $t('settings.copied') : $t('settings.copyNpub')}
           title={copiedNpub ? $t('settings.copied') : $t('settings.copy')}
-          on:click={copyNpub}
+          onclick={copyNpub}
         >
           <svg
             class="nostr-npub-copy-icon"
@@ -304,7 +304,7 @@
           </svg>
         </button>
       </div>
-      <button type="button" class="nostr-export-key-btn" on:click={() => (exportModalOpen = true)}>
+      <button type="button" class="nostr-export-key-btn" onclick={() => (exportModalOpen = true)}>
         {$t('settings.exportKey')}
       </button>
     {:else}
@@ -329,7 +329,7 @@
           disabled={adding}
           autocomplete="off"
           spellcheck="false"
-          on:keydown={(e) => e.key === 'Enter' && handleAddRelay()}
+          onkeydown={(e) => e.key === 'Enter' && handleAddRelay()}
         />
       </label>
       <label class="nostr-add-relay-field">
@@ -340,14 +340,14 @@
           {/each}
         </select>
       </label>
-      <button type="button" class="nostr-add-relay-btn" disabled={adding} on:click={handleAddRelay}>
+      <button type="button" class="nostr-add-relay-btn" disabled={adding} onclick={handleAddRelay}>
         {adding ? $t('settings.adding') : $t('settings.add')}
       </button>
       <button
         type="button"
         class="nostr-probe-btn"
         disabled={probing || !!validateRelayUrlInput(newRelayUrl)}
-        on:click={handleProbe}
+        onclick={handleProbe}
       >
         {probing ? $t('settings.relayProbing') : $t('settings.relayProbeButton')}
       </button>
@@ -376,7 +376,7 @@
         disabled={loading}
         spinning={loading}
         ariaLabel={loading ? $t('settings.refreshingRelays') : $t('settings.refreshRelays')}
-        on:click={refreshRelays}
+        onclick={refreshRelays}
       />
     </div>
 
@@ -398,7 +398,7 @@
                 aria-expanded={openUrls.has(relay.url)}
                 aria-controls={relayDetailId}
                 aria-label={$t('settings.relayDetailToggle')}
-                on:click={() => toggleDetail(relay.url)}
+                onclick={() => toggleDetail(relay.url)}
               >
                 <span class="nostr-relay-chevron" aria-hidden="true">{openUrls.has(relay.url) ? '−' : '+'}</span>
               </button>
@@ -428,7 +428,7 @@
                     type="checkbox"
                     checked={relay.enabled}
                     disabled={busyUrl === relay.url}
-                    on:change={(e) => handleToggleEnabled(relay, e.currentTarget.checked)}
+                    onchange={(e) => handleToggleEnabled(relay, e.currentTarget.checked)}
                   />
                   <span>{$t('settings.relayEnabledLabel')}</span>
                 </label>
@@ -437,7 +437,7 @@
                     type="button"
                     class="nostr-relay-remove-btn"
                     disabled={busyUrl === relay.url}
-                    on:click={() => handleRemove(relay)}
+                    onclick={() => handleRemove(relay)}
                   >
                     {$t('settings.remove')}
                   </button>
@@ -455,7 +455,7 @@
                       spinning={detail?.loading ?? false}
                       disabled={detail?.loading ?? false}
                       ariaLabel={detail?.loading ? $t('settings.refreshingRelayDetail') : $t('settings.refreshRelayDetail')}
-                      on:click={() => loadDetail(relay.url)}
+                      onclick={() => loadDetail(relay.url)}
                     />
                   </div>
                   {#if detail?.error}

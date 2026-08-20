@@ -29,7 +29,7 @@
       </button>
     </div>
     <div class="rotate-modal-actions">
-      <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.common.cancel')}</button>
+      <button type="button" class="btn-secondary" onclick={onClose}>{$t('governance.common.cancel')}</button>
     </div>
   </Modal>
 {/if}

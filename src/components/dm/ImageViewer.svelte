@@ -175,7 +175,7 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKey} on:pointerdown={handleWindowPointerDown} />
+<svelte:window onkeydown={handleKey} onpointerdown={handleWindowPointerDown} />
 
 {#if open}
   <div
@@ -185,13 +185,13 @@
     aria-label="Image viewer"
     tabindex="-1"
     bind:this={backdropEl}
-    on:click={handleBackdropClick}
-    on:keydown={handleBackdropKey}
+    onclick={handleBackdropClick}
+    onkeydown={handleBackdropKey}
   >
     <button
       type="button"
       class="viewer-close"
-      on:click|stopPropagation={close}
+      onclick={(e) => { e.stopPropagation(); close(); }}
       aria-label="Close image viewer"
       title={$t('messaging.imageViewer.close')}
     >
@@ -200,7 +200,7 @@
 
     <div
       class="viewer-stage"
-      on:wheel|preventDefault={handleWheel}
+      onwheel={(e) => { e.preventDefault(); handleWheel(e); }}
       role="presentation"
     >
       {#if src}
@@ -210,7 +210,7 @@
           class="viewer-image"
           class:dragging
           style="transform: translate({translateX}px, {translateY}px) scale({scale}) rotate({rotation}deg);"
-          on:pointerdown|preventDefault={handlePointerDown}
+          onpointerdown={(e) => { e.preventDefault(); handlePointerDown(e); }}
           draggable="false"
         />
       {:else}
@@ -241,7 +241,7 @@
         <button
           type="button"
           class="viewer-btn"
-          on:click|stopPropagation={zoomOut}
+          onclick={(e) => { e.stopPropagation(); zoomOut(); }}
           aria-label="Zoom out"
         >
           −
@@ -250,7 +250,7 @@
         <button
           type="button"
           class="viewer-btn"
-          on:click|stopPropagation={zoomIn}
+          onclick={(e) => { e.stopPropagation(); zoomIn(); }}
           aria-label="Zoom in"
         >
           +
@@ -258,7 +258,7 @@
         <button
           type="button"
           class="viewer-btn viewer-icon-btn"
-          on:click|stopPropagation={rotateImage}
+          onclick={(e) => { e.stopPropagation(); rotateImage(); }}
           aria-label={$t('messaging.imageViewer.rotate')}
           title={$t('messaging.imageViewer.rotate')}
         >
@@ -267,7 +267,7 @@
         <button
           type="button"
           class="viewer-btn viewer-icon-btn"
-          on:click|stopPropagation={handleDownload}
+          onclick={(e) => { e.stopPropagation(); handleDownload(); }}
           disabled={savingAs}
           aria-label={$t('messaging.imageViewer.download')}
           title={$t('messaging.imageViewer.download')}
@@ -278,7 +278,7 @@
           <button
             type="button"
             class="viewer-btn viewer-icon-btn"
-            on:click|stopPropagation={toggleMenu}
+            onclick={(e) => { e.stopPropagation(); toggleMenu(); }}
             aria-label={$t('messaging.imageViewer.moreOptions')}
             title={$t('messaging.imageViewer.moreOptions')}
             aria-haspopup="true"
@@ -294,7 +294,7 @@
                 role="menuitem"
                 aria-label={$t('messaging.imageViewer.showMessage')}
                 title={$t('messaging.imageViewer.showMessage')}
-                on:click|stopPropagation={handleShowMessage}
+                onclick={(e) => { e.stopPropagation(); handleShowMessage(); }}
               >
                 <span class="menu-icon" aria-hidden="true">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -311,7 +311,7 @@
                   role="menuitem"
                   aria-label={$t('messaging.imageViewer.showInFolder')}
                   title={$t('messaging.imageViewer.showInFolder')}
-                  on:click|stopPropagation={handleRevealFromMenu}
+                  onclick={(e) => { e.stopPropagation(); handleRevealFromMenu(); }}
                 >
                   <span class="menu-icon" aria-hidden="true">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

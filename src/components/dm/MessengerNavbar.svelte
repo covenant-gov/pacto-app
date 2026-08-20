@@ -94,8 +94,8 @@
 </script>
 
 <svelte:window
-  on:mousemove={onMouseMove}
-  on:mouseup={stopResize}
+  onmousemove={onMouseMove}
+  onmouseup={stopResize}
 />
 
 <div class="messenger-navbar" style="width: {width}px;">
@@ -138,8 +138,8 @@
               type="button"
               class="dm-row"
               class:active={$activeDmId === row.npub}
-              on:click={() => selectDm(row.npub)}
-              on:keydown={(ev) => ev.key === 'Enter' && selectDm(row.npub)}
+              onclick={() => selectDm(row.npub)}
+              onkeydown={(ev) => ev.key === 'Enter' && selectDm(row.npub)}
             >
               <span class="dm-avatar">
                 {#if avatarSrc}
@@ -184,7 +184,7 @@
 
   <button
     class="resize-handle"
-    on:mousedown={startResize}
+    onmousedown={startResize}
     aria-label={$t('messaging.dm.navbar.resizeSidebar')}
     type="button"
   ></button>

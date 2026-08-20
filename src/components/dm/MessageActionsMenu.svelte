@@ -26,7 +26,7 @@
     role="menuitem"
     aria-label="Copy message"
     title={$t('messaging.message.copy')}
-    on:click={onCopy}
+    onclick={onCopy}
   >
     <span class="menu-icon" aria-hidden="true">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -42,7 +42,7 @@
     role="menuitem"
     aria-label="Reply to message"
     title={$t('messaging.message.reply')}
-    on:click={onReply}
+    onclick={onReply}
   >
     <span class="menu-icon" aria-hidden="true">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

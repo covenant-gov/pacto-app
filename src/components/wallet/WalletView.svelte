@@ -313,7 +313,7 @@
             <button
               type="button"
               class="wallet-view-btn wallet-view-btn-action"
-              on:click={() => (homeSendOpen = true)}
+              onclick={() => (homeSendOpen = true)}
               disabled={!evmAddress}
             >
               {$t('wallet.send')}
@@ -321,7 +321,7 @@
             <button
               type="button"
               class="wallet-view-btn wallet-view-btn-action wallet-view-btn-action-secondary"
-              on:click={() => (receiveOpen = true)}
+              onclick={() => (receiveOpen = true)}
               disabled={!evmAddress}
             >
               {$t('wallet.receive')}
@@ -412,7 +412,7 @@
   <div
     class="wallet-view-modal-backdrop"
     role="presentation"
-    on:click={closeAccountFormModal}
+    onclick={closeAccountFormModal}
   ></div>
   <div class="wallet-view-modal" role="dialog" aria-labelledby="account-form-title" aria-modal="true">
     <h2 id="account-form-title" class="wallet-view-h2">
@@ -471,11 +471,11 @@
         type="button"
         class="wallet-view-btn wallet-view-btn-secondary"
         disabled={accountFormBusy}
-        on:click={closeAccountFormModal}
+        onclick={closeAccountFormModal}
       >
         {$t('wallet.cancel')}
       </button>
-      <button type="button" class="wallet-view-btn" disabled={accountFormBusy} on:click={submitAccountForm}>
+      <button type="button" class="wallet-view-btn" disabled={accountFormBusy} onclick={submitAccountForm}>
         {#if accountFormBusy}
           {accountFormMode === 'add' ? $t('wallet.adding') : $t('wallet.saving')}
         {:else if accountFormMode === 'add'}
@@ -494,7 +494,7 @@
   <div
     class="wallet-view-modal-backdrop"
     role="presentation"
-    on:click={() => {
+    onclick={() => {
       if (!importKeyBusy) importKeyModalOpen = false;
     }}
   ></div>
@@ -518,14 +518,14 @@
         type="button"
         class="wallet-view-btn wallet-view-btn-secondary"
         disabled={importKeyBusy}
-        on:click={() => {
+        onclick={() => {
           importKeyModalOpen = false;
           importKeyInput = '';
         }}
       >
         {$t('wallet.cancel')}
       </button>
-      <button type="button" class="wallet-view-btn" disabled={importKeyBusy} on:click={submitImportKey}>
+      <button type="button" class="wallet-view-btn" disabled={importKeyBusy} onclick={submitImportKey}>
         {importKeyBusy ? $t('wallet.importing') : $t('wallet.import')}
       </button>
     </div>

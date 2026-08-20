@@ -224,14 +224,14 @@
                     <button
                       type="button"
                       class="btn-link dashboard-poll-copy"
-                      on:click={() => copyPollIdToClipboard(poll.id)}
+                      onclick={() => copyPollIdToClipboard(poll.id)}
                     >
                       {$t('governance.polls.copyId')}
                     </button>
                     <button
                       type="button"
                       class="btn-link dashboard-poll-copy"
-                      on:click={() => copyPollChatReference(poll.id)}
+                      onclick={() => copyPollChatReference(poll.id)}
                     >
                       {$t('governance.polls.copyChatRef')}
                     </button>
@@ -254,7 +254,7 @@
                         class:voted={myOpt === opt.id && !sendingThis}
                         aria-busy={sendingThis}
                         disabled={!viewerNpub?.trim() || pollVoteSendingPollId === poll.id}
-                        on:click={() => castPollVote(poll.id, opt.id)}
+                        onclick={() => castPollVote(poll.id, opt.id)}
                       >
                         {#if sendingThis}
                           {$t('governance.polls.voteSending')}
@@ -277,7 +277,7 @@
     </div>
   </div>
   <div class="dashboard-polls-composer">
-    <button type="button" class="btn-primary dashboard-polls-create-btn" on:click={openCreatePollModal}>
+    <button type="button" class="btn-primary dashboard-polls-create-btn" onclick={openCreatePollModal}>
       {$t('governance.polls.create')}
     </button>
   </div>

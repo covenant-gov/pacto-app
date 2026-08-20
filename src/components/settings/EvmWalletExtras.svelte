@@ -155,7 +155,7 @@
                   type="checkbox"
                   checked={enabledSet.has(chain)}
                   disabled={enabledSet.has(chain) && enabledSet.size <= 1}
-                  on:change={() => onToggleChain(chain)}
+                  onchange={() => onToggleChain(chain)}
                 />
                 <span>{getWalletNetworkDisplayName(chain)}</span>
               </label>
@@ -170,7 +170,7 @@
 <section class="evm-extras-section" aria-labelledby="wallet-tokens-heading">
   <div class="evm-extras-section-head">
     <h2 id="wallet-tokens-heading" class="evm-extras-h2">{$t('settings.tokensToTrackTitle')}</h2>
-    <button type="button" class="evm-extras-btn" on:click={onImportTokens}>{$t('settings.importTokensButton')}</button>
+    <button type="button" class="evm-extras-btn" onclick={onImportTokens}>{$t('settings.importTokensButton')}</button>
   </div>
   <p class="evm-extras-hint">{$t('settings.trackedTokensHint')}</p>
   <div class="evm-extras-token-filters">
@@ -200,7 +200,7 @@
             <code class="evm-extras-token-addr">{row.address.slice(0, 10)}…{row.address.slice(-6)}</code>
             <span class="evm-extras-token-src">{tokenSourceLabel(row.source)}</span>
           </div>
-          <button type="button" class="evm-extras-btn-text" on:click={() => onRemoveWatchedRow(row)}>{$t('settings.remove')}</button>
+          <button type="button" class="evm-extras-btn-text" onclick={() => onRemoveWatchedRow(row)}>{$t('settings.remove')}</button>
         </li>
       {/each}
     </ul>
@@ -229,7 +229,7 @@
     {#if personalRpcs.length === 0}
       <p class="evm-extras-empty evm-extras-rpc-empty">
         {$t('settings.noPersonalRpcYet')}
-        <button type="button" class="evm-extras-inline-link" on:click={openAlchemySignup}>
+        <button type="button" class="evm-extras-inline-link" onclick={openAlchemySignup}>
           {$t('settings.getFreeRpcLink')}
         </button>
         {$t('settings.addRpcHint')}
@@ -239,7 +239,7 @@
         {#each personalRpcs as url (url)}
           <li class="evm-extras-rpc-row">
             <code class="evm-extras-rpc-url" title={url}>{formatRpcDisplay(url)}</code>
-            <button type="button" class="evm-extras-btn-text" on:click={() => onRemovePersonalRpc(url)}>
+            <button type="button" class="evm-extras-btn-text" onclick={() => onRemovePersonalRpc(url)}>
               {$t('settings.remove')}
             </button>
           </li>
@@ -259,9 +259,9 @@
         autocomplete="off"
         placeholder="https://…"
         bind:value={newRpcUrl}
-        on:keydown={(e) => e.key === 'Enter' && submitAddRpc()}
+        onkeydown={(e) => e.key === 'Enter' && submitAddRpc()}
       />
-      <button type="button" class="evm-extras-btn" on:click={submitAddRpc}>{$t('settings.addRpcButton')}</button>
+      <button type="button" class="evm-extras-btn" onclick={submitAddRpc}>{$t('settings.addRpcButton')}</button>
     </div>
     {#if addRpcError}
       <p class="evm-extras-field-error" role="alert">{addRpcError}</p>
@@ -274,7 +274,7 @@
       id="evm-default-rpc-select"
       class="evm-extras-select evm-extras-select--wide"
       bind:value={selectedDefaultRpc}
-      on:change={onDefaultRpcChange}
+      onchange={onDefaultRpcChange}
     >
       <option value="">{$t('settings.defaultRpcCuratedDefaults')}</option>
       {#each defaultRpcOptions as opt (opt.value)}
@@ -288,11 +288,11 @@
     <div class="evm-extras-rpc-providers-head">
       <h3 class="evm-extras-h3">{$t('settings.rpcApiProvidersTitle')}</h3>
       <div class="evm-extras-provider-buttons">
-        <button type="button" class="evm-extras-btn evm-extras-btn-secondary" on:click={openAlchemySignup}>
+        <button type="button" class="evm-extras-btn evm-extras-btn-secondary" onclick={openAlchemySignup}>
           {$t('settings.alchemyProvider')}
         </button>
         <span class="evm-extras-provider-sep" aria-hidden="true">|</span>
-        <button type="button" class="evm-extras-btn evm-extras-btn-secondary" on:click={openPocketSignup}>
+        <button type="button" class="evm-extras-btn evm-extras-btn-secondary" onclick={openPocketSignup}>
           {$t('settings.pocketProvider')}
         </button>
       </div>

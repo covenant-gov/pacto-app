@@ -87,7 +87,7 @@
 </script>
 
 <svelte:window
-  on:click={(e) => {
+  onclick={(e) => {
     const t = e.target as HTMLElement | null;
     if (menuOpen && t && !t.closest('.parent-header-actions')) menuOpen = false;
   }}
@@ -105,7 +105,7 @@
             class="parent-menu-btn"
             title={$t('nav.parentSidebar.squadOptionsTitle')}
             aria-label={$t('nav.parentSidebar.squadMenuAria')}
-            on:click={() => (menuOpen = !menuOpen)}
+            onclick={() => (menuOpen = !menuOpen)}
             aria-haspopup="true"
             aria-expanded={menuOpen}
           >
@@ -117,7 +117,7 @@
                 type="button"
                 class="parent-menu-item"
                 role="menuitem"
-                on:click={() => {
+                onclick={() => {
                   menuOpen = false;
                   onInvite();
                 }}
@@ -129,7 +129,7 @@
                   type="button"
                   class="parent-menu-item parent-menu-item-exit"
                   role="menuitem"
-                  on:click={() => {
+                  onclick={() => {
                     menuOpen = false;
                     onExit();
                   }}
@@ -152,7 +152,7 @@
           <button
             type="button"
             class="parent-error-dismiss"
-            on:click={() => onDismissBanner(banner.id)}
+            onclick={() => onDismissBanner(banner.id)}
             aria-label={$t('nav.parentSidebar.dismissAria')}
           >×</button>
         {/if}
@@ -171,8 +171,8 @@
         <div class="parent-channel-list">
           {#each defaultHubChannels as channel (`${channel.groupId}:${channel.name}:${channel.order}`)}
             <div
-              on:click={() => onSelectChannel(channel)}
-              on:keydown={(e) => e.key === 'Enter' && onSelectChannel(channel)}
+              onclick={() => onSelectChannel(channel)}
+              onkeydown={(e) => e.key === 'Enter' && onSelectChannel(channel)}
               role="button"
               tabindex="0"
             >
@@ -193,8 +193,8 @@
           {/if}
           {#each customChannels as channel (`${channel.groupId}:${channel.name}:${channel.order}`)}
             <div
-              on:click={() => onSelectChannel(channel)}
-              on:keydown={(e) => e.key === 'Enter' && onSelectChannel(channel)}
+              onclick={() => onSelectChannel(channel)}
+              onkeydown={(e) => e.key === 'Enter' && onSelectChannel(channel)}
               role="button"
               tabindex="0"
             >
@@ -212,7 +212,7 @@
           {/each}
         </div>
         {#if channels.length > 0}
-          <button type="button" class="parent-create-channel-btn" on:click={onCreateChannel}>
+          <button type="button" class="parent-create-channel-btn" onclick={onCreateChannel}>
             {$t('nav.parentSidebar.createChannel')}
           </button>
         {/if}
@@ -226,7 +226,7 @@
                   type="button"
                   class="partner-squad-item"
                   class:active={activePartnerSquadId === partner.id && activeView === 'hub'}
-                  on:click={() => onSelectPartnerSquad(partner.id)}
+                  onclick={() => onSelectPartnerSquad(partner.id)}
                 >
                   {partner.name}
                 </button>
@@ -236,7 +236,7 @@
           </div>
         {/if}
         {#if showPairWithSquadAction && typeof onPairWithSquad === 'function' && !creating}
-          <button type="button" class="parent-pair-squad-btn" on:click={onPairWithSquad}>
+          <button type="button" class="parent-pair-squad-btn" onclick={onPairWithSquad}>
             {$t('nav.parentSidebar.pairWithSquad')}
           </button>
         {/if}

@@ -224,10 +224,10 @@
     {/if}
 
     <div class="squad-roles-actions">
-      <button type="button" class="btn-secondary" disabled={!saGate.enabled} on:click={createRole}>
+      <button type="button" class="btn-secondary" disabled={!saGate.enabled} onclick={createRole}>
         {$t('governance.squadRoles.action.createRole')}
       </button>
-      <button type="button" class="btn-secondary" disabled={!saGate.enabled} on:click={enableExecutor}>
+      <button type="button" class="btn-secondary" disabled={!saGate.enabled} onclick={enableExecutor}>
         {$t('governance.squadRoles.action.enableExecutor')}
       </button>
     </div>
@@ -237,13 +237,13 @@
         <input type="checkbox" bind:checked={grantFullPermission} disabled={!saGate.enabled} />
         {$t('governance.squadRoles.grantFull')}
       </label>
-      <button type="button" class="btn-secondary" disabled={!saGate.enabled} on:click={enableFull}>
+      <button type="button" class="btn-secondary" disabled={!saGate.enabled} onclick={enableFull}>
         {$t('governance.squadRoles.action.applyFull')}
       </button>
     </div>
 
     <div class="squad-roles-modal-actions">
-      <button type="button" class="btn-primary" on:click={onClose}>{$t('governance.common.close')}</button>
+      <button type="button" class="btn-primary" onclick={onClose}>{$t('governance.common.close')}</button>
     </div>
   </Modal>
 {/if}

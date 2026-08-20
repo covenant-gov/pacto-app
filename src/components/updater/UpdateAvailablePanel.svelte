@@ -95,7 +95,7 @@
     <p class="update-relaunch-prompt">
       {$t('updater.relaunchPrompt')}
     </p>
-    <button type="button" class="btn-primary" on:click={() => void relaunchApp()}>
+    <button type="button" class="btn-primary" onclick={() => void relaunchApp()}>
       {$t('updater.relaunchNow')}
     </button>
   {:else if state.status === 'error'}
@@ -111,7 +111,7 @@
     <button
       type="button"
       class="btn-primary"
-      on:click={handlePrimary}
+      onclick={handlePrimary}
     >
       {primaryLabel(state.status)}
     </button>
@@ -119,7 +119,7 @@
     <button
       type="button"
       class="btn-primary"
-      on:click={handlePrimary}
+      onclick={handlePrimary}
     >
       {primaryLabel(state.status)}
     </button>

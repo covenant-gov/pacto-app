@@ -43,15 +43,15 @@
     target="_blank"
     rel="noopener noreferrer"
     aria-label={$t('messaging.linkPreview.openAria', { values: { domain: displayDomain || linkUrl } })}
-    on:click={handleClick}
+    onclick={handleClick}
   >
     {#if displayImage && !imageError}
-      <img class="link-preview-image" src={displayImage} alt="" loading="lazy" on:error={() => (imageError = true)} />
+      <img class="link-preview-image" src={displayImage} alt="" loading="lazy" onerror={() => (imageError = true)} />
     {/if}
     <div class="link-preview-body">
       <div class="link-preview-domain">
         {#if metadata?.favicon && isHttpUrl(metadata.favicon) && !faviconError}
-          <img class="link-preview-favicon" src={metadata.favicon} alt="" on:error={() => (faviconError = true)} />
+          <img class="link-preview-favicon" src={metadata.favicon} alt="" onerror={() => (faviconError = true)} />
         {/if}
         <span>{displayDomain}</span>
       </div>

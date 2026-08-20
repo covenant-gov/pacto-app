@@ -98,7 +98,7 @@
         ariaLabel={editAriaLabel}
         title={editAriaLabel}
         disabled={disabled}
-        on:click={() => void handleEdit()}
+        onclick={() => void handleEdit()}
       />
       {#if showClear}
         <button

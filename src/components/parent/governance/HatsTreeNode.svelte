@@ -95,7 +95,7 @@
             type="button"
             class="wearer-link"
             title={wearerExplorerTitle(primaryWearer)}
-            on:click={() => openWearerExplorer(primaryWearer)}
+            onclick={() => openWearerExplorer(primaryWearer)}
           >
             {wearerLabel(primaryWearer)}
           </button>
@@ -119,7 +119,7 @@
             type="button"
             class="wearer-link"
             title={wearerExplorerTitle(address)}
-            on:click={() => openWearerExplorer(address)}
+            onclick={() => openWearerExplorer(address)}
           >
             {wearerLabel(address)}
           </button>
