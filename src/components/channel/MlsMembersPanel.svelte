@@ -10,6 +10,7 @@
     groupId,
     members,
     admins,
+    pendingWelcomes = [],
     loading = false,
     currentUserNpub = '',
     profiles = {},
@@ -17,6 +18,7 @@
     groupId: string;
     members: string[];
     admins: string[];
+    pendingWelcomes?: string[];
     loading?: boolean;
     currentUserNpub?: string;
     profiles?: Record<string, NostrProfile | undefined>;
@@ -28,6 +30,7 @@
 
   let confirmNpub = $state<string | null>(null);
   let restoringNpub = $state<string | null>(null);
+  let resendingNpub = $state<string | null>(null);
 
   function displayName(npub: string): string {
     return getProfileDisplayName(profiles[npub]) || `${npub.slice(0, 16)}…`;
@@ -59,6 +62,24 @@
       );
     }
   }
+
+  /** Single-click resend for a never-joined pending-invite member: no confirm modal (low risk, no revocation). */
+  async function resendInvite(npub: string): Promise<void> {
+    if (!groupId || resendingNpub) return;
+    resendingNpub = npub;
+    const result = await restoreMlsMemberAccess(groupId, npub);
+    resendingNpub = null;
+    if (result.ok) {
+      showToast($t('messaging.channel.mlsResendInviteSuccess', { values: { name: displayName(npub) } }));
+    } else {
+      showToast(
+        $t('messaging.channel.mlsResendInviteError', {
+          values: { name: displayName(npub), message: result.error },
+        }),
+      );
+    }
+  }
+
 </script>
 
 <aside class="members-panel" aria-label={$t('messaging.channel.membersTitle')}>
@@ -71,6 +92,7 @@
     {:else}
       {#each members as npub (npub)}
         {@const avatarSrc = getProfileAvatarSrc(profiles[npub])}
+        {@const isPending = pendingWelcomes.includes(npub)}
         <div class="members-panel-member">
           {#if avatarSrc}
             <img src={avatarSrc} alt="" class="members-panel-avatar" />
@@ -78,7 +100,23 @@
             <div class="members-panel-avatar members-panel-avatar-placeholder" aria-hidden="true"></div>
           {/if}
           <span class="members-panel-name">{displayName(npub)}</span>
-          {#if canRestore && npub !== currentUserNpub}
+          {#if isPending}
+            <span class="pending-invite-badge" data-testid="mls-pending-invite-badge">
+              {$t('messaging.channel.mlsPendingInviteBadge')}
+            </span>
+          {/if}
+          {#if isPending && canRestore}
+            <button
+              type="button"
+              class="resend-invite"
+              data-testid="mls-resend-invite"
+              data-member={npub}
+              disabled={resendingNpub === npub}
+              onclick={() => void resendInvite(npub)}
+            >
+              {$t('messaging.channel.mlsResendInviteButton')}
+            </button>
+          {:else if canRestore && npub !== currentUserNpub}
             <button
               type="button"
               class="restore-access"
@@ -212,6 +250,39 @@
   }
 
   .restore-access:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .pending-invite-badge {
+    flex-shrink: 0;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.35rem;
+    background: color-mix(in srgb, var(--text-secondary, #9a9aa5) 16%, transparent);
+    color: var(--text-secondary, #9a9aa5);
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .resend-invite {
+    flex-shrink: 0;
+    padding: 0.2rem 0.45rem;
+    border: 1px solid color-mix(in srgb, var(--brand, #7c6df2) 50%, transparent);
+    border-radius: 0.35rem;
+    background: transparent;
+    color: var(--brand, #7c6df2);
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .resend-invite:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--brand, #7c6df2) 12%, transparent);
+  }
+
+  .resend-invite:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }

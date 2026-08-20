@@ -118,7 +118,7 @@ describe('runCreateChannelInParent', () => {
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
 
-    vi.mocked(createGroupChat).mockReset().mockResolvedValue({ groupId: 'g-new-channel', skippedMembers: [] });
+    vi.mocked(createGroupChat).mockReset().mockResolvedValue({ groupId: 'g-new-channel', skippedMembers: [], pendingInvites: [] });
     vi.mocked(reportSkippedMembers).mockReset();
     vi.mocked(formatChannelInSquadMessage).mockReset().mockReturnValue('channel-in-squad-payload');
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
@@ -237,6 +237,7 @@ describe('runCreateChannelInParent', () => {
     vi.mocked(createGroupChat).mockResolvedValueOnce({
       groupId: 'g-new-channel',
       skippedMembers: [{ npub: 'npub-b', reason: 'Missing required encoding tag' }],
+      pendingInvites: [],
     });
 
     runCreateChannelInParent({

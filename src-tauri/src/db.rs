@@ -4630,9 +4630,11 @@ fn replace_mls_groups_conn(
     }
 
     for group in groups {
+        let pending_welcomes_json = serde_json::to_string(&group.pending_welcomes)
+            .map_err(|e| format!("Failed to serialize pending_welcomes for {}: {}", group.group_id, e))?;
         conn.execute(
-            "INSERT OR REPLACE INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT OR REPLACE INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted, pending_welcomes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 group.group_id,
                 group.engine_group_id,
@@ -4642,6 +4644,7 @@ fn replace_mls_groups_conn(
                 group.created_at as i64,
                 group.updated_at as i64,
                 group.evicted as i32,
+                pending_welcomes_json,
             ],
         ).map_err(|e| format!("Failed to save MLS group {}: {}", group.group_id, e))?;
     }
@@ -4680,9 +4683,11 @@ pub async fn save_mls_group<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     // Insert or replace a single group
+    let pending_welcomes_json = serde_json::to_string(&group.pending_welcomes)
+        .map_err(|e| format!("Failed to serialize pending_welcomes for {}: {}", group.group_id, e))?;
     conn.execute(
-        "INSERT OR REPLACE INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT OR REPLACE INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted, pending_welcomes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         rusqlite::params![
             group.group_id,
             group.engine_group_id,
@@ -4692,6 +4697,7 @@ pub async fn save_mls_group<R: Runtime>(
             group.created_at as i64,
             group.updated_at as i64,
             group.evicted as i32,
+            pending_welcomes_json,
         ],
     ).map_err(|e| format!("Failed to save MLS group {}: {}", group.group_id, e))?;
 
@@ -4736,11 +4742,12 @@ pub async fn load_mls_groups<R: Runtime>(
 
     // Load from mls_groups table
     let mut stmt = conn.prepare(
-        "SELECT group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted FROM mls_groups"
+        "SELECT group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted, pending_welcomes FROM mls_groups"
     ).map_err(|e| format!("Failed to prepare query: {}", e))?;
 
     let rows = stmt
         .query_map([], |row| {
+            let pending_welcomes_json: String = row.get(8)?;
             Ok(crate::mls::MlsGroupMetadata {
                 group_id: row.get(0)?,
                 engine_group_id: row.get(1)?,
@@ -4750,6 +4757,7 @@ pub async fn load_mls_groups<R: Runtime>(
                 created_at: row.get::<_, i64>(5)? as u64,
                 updated_at: row.get::<_, i64>(6)? as u64,
                 evicted: row.get::<_, i32>(7)? != 0,
+                pending_welcomes: serde_json::from_str(&pending_welcomes_json).unwrap_or_default(),
             })
         })
         .map_err(|e| format!("Failed to query mls_groups: {}", e))?;
@@ -4938,7 +4946,17 @@ mod legacy_mls_store_harvest_tests {
                 wrapper_event_id TEXT,
                 npub TEXT,
                 virtual_bucket TEXT
-            );",
+            );
+            CREATE TABLE mls_groups (
+                group_id TEXT PRIMARY KEY,
+                engine_group_id TEXT NOT NULL DEFAULT '',
+                creator_pubkey TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                avatar_ref TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                evicted INTEGER NOT NULL DEFAULT 0
+            );"
         )
         .expect("seed pre-V28 schema (mirrors migrations::tests::seed_pre_v28_schema)");
 
@@ -5100,6 +5118,7 @@ mod legacy_mls_store_harvest_tests {
             created_at: 1000,
             updated_at: 2000,
             evicted: false,
+            pending_welcomes: vec![],
         }];
         replace_mls_groups_conn(&conn, &remaining).expect("replace");
 
@@ -5131,6 +5150,7 @@ mod legacy_mls_store_harvest_tests {
             created_at: 1000,
             updated_at: 9999,
             evicted: false,
+            pending_welcomes: vec![],
         }];
         replace_mls_groups_conn(&conn, &updated).expect("replace");
 

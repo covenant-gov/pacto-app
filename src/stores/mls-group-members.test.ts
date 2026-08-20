@@ -20,6 +20,7 @@ describe('mls group members store', () => {
       group_id: 'group-1',
       members: ['npub-a'],
       admins: ['npub-admin'],
+      pending_welcomes: [],
     });
     await ensureMlsGroupMembers('group-1');
     await ensureMlsGroupMembers('group-1');
@@ -31,11 +32,17 @@ describe('mls group members store', () => {
   it('refreshMlsGroupMembers syncs and replaces cached list', async () => {
     vi.spyOn(nostrApi, 'syncMlsGroupsNow').mockResolvedValue({ synced: 1, total: 1 });
     vi.spyOn(nostrApi, 'getMlsGroupMembers')
-      .mockResolvedValueOnce({ group_id: 'group-1', members: ['npub-a'], admins: ['npub-admin'] })
+      .mockResolvedValueOnce({
+        group_id: 'group-1',
+        members: ['npub-a'],
+        admins: ['npub-admin'],
+        pending_welcomes: [],
+      })
       .mockResolvedValueOnce({
         group_id: 'group-1',
         members: ['npub-a', 'npub-b'],
         admins: ['npub-admin'],
+        pending_welcomes: [],
       });
     await ensureMlsGroupMembers('group-1');
     await refreshMlsGroupMembers('group-1');

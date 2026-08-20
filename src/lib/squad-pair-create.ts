@@ -34,7 +34,7 @@ import { persistCreatedSquad } from './squad/squad-catalog';
 import { appendSquadNavId } from './squad/squad-nav-order';
 import { initSquadBot } from './squad/squad-bot';
 import { applySquadCreateNetwork } from './squad/squad-create-network';
-import { warnSkippedMembers, skippedMembersNotice } from './squad/skipped-members';
+import { warnSkippedMembers, skippedMembersNotice, warnPendingInvites, pendingInvitesNotice } from './squad/skipped-members';
 import type { PairedSquads } from './squad-pair';
 
 function resolvePublicSquadBroadcastTarget(squadId: string) {
@@ -185,7 +185,7 @@ export function runSquadPairCreateFlow(
 
   void (async () => {
     try {
-      const { parentId, channels, skippedMembers } = await createDefaultParentChannels(memberNpubs);
+      const { parentId, channels, skippedMembers, pendingInvites } = await createDefaultParentChannels(memberNpubs);
       const groupId = parentId;
       const paired = buildPairedSquads(anchor, partner);
       const finalized: Squad = {
@@ -215,9 +215,12 @@ export function runSquadPairCreateFlow(
       });
       activateSquadHub(groupId);
       const skippedNotice = skippedMembersNotice(skippedMembers);
+      const pendingNotice = pendingInvitesNotice(pendingInvites);
       if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
+      if (pendingInvites.length > 0) warnPendingInvites(pendingInvites);
+      const readyNotice = [skippedNotice, pendingNotice].filter(Boolean).join(' ');
       pendingReadyToast.set({
-        text: skippedNotice || get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
+        text: readyNotice || get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
         goTo: {
           type: 'squad',
           name,
@@ -274,7 +277,7 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
 }
 
 async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: string[]): Promise<void> {
-  const { parentId: gid, channels, skippedMembers } = await createDefaultParentChannels(memberIds);
+  const { parentId: gid, channels, skippedMembers, pendingInvites } = await createDefaultParentChannels(memberIds);
 
   // Discard while this create was in flight: the placeholder and its pending members are gone,
   // so persisting now would resurrect the squad the user just threw away.
@@ -313,10 +316,13 @@ async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: strin
     return hubName ? { ...next, [gid]: hubName } : next;
   });
   const skippedNotice = skippedMembersNotice(skippedMembers);
+  const pendingNotice = pendingInvitesNotice(pendingInvites);
   if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
+  if (pendingInvites.length > 0) warnPendingInvites(pendingInvites);
+  const readyNotice = [skippedNotice, pendingNotice].filter(Boolean).join(' ');
   pendingReadyToast.set({
     text:
-      skippedNotice ||
+      readyNotice ||
       get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: parent.name } }),
     goTo: {
       type: 'squad',

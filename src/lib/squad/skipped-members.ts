@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
-import type { SkippedMember } from '../api/nostr';
+import type { SkippedMember, PendingInvite } from '../api/nostr';
 import { showToast } from '../../stores/toast';
 import { profiles } from '../../stores/profiles';
 import { shortNpub } from './squad-bot-announce';
@@ -38,4 +38,21 @@ export function reportSkippedMembers(skipped: SkippedMember[]): void {
   if (!skipped.length) return;
   warnSkippedMembers(skipped);
   showToast(skippedMembersNotice(skipped));
+}
+
+/**
+ * Warn about members the engine already added to the group but whose welcome delivery failed.
+ * They keep an engine leaf; a resend (Restore path) is the recovery action, not a fresh invite.
+ */
+export function warnPendingInvites(pending: PendingInvite[]): void {
+  for (const { npub, reason } of pending) {
+    console.warn('[squad-create] member pending invite', shortNpub(npub), reason);
+  }
+}
+
+/** Localized notice text for pending-invite members, or '' when none are pending. */
+export function pendingInvitesNotice(pending: PendingInvite[]): string {
+  if (!pending.length) return '';
+  const names = pending.map((p) => skippedMemberName(p.npub)).join(', ');
+  return get(t)('nav.navbar.organizeSquad.membersPendingInvite', { values: { names } });
 }

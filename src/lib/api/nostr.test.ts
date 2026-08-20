@@ -329,19 +329,19 @@ describe('sendDmMessage', () => {
 
 describe('createGroupChat', () => {
   it('invokes create_group_chat with name and members', async () => {
-    mockedInvoke.mockResolvedValueOnce({ groupId: 'group-id', skippedMembers: [] });
+    mockedInvoke.mockResolvedValueOnce({ groupId: 'group-id', skippedMembers: [], pendingInvites: [] });
     const result = await createGroupChat('Squad', ['npub1', 'npub2']);
     expect(mockedInvoke).toHaveBeenCalledWith('create_group_chat', {
       groupName: 'Squad',
       memberIds: ['npub1', 'npub2'],
     });
-    expect(result).toEqual({ groupId: 'group-id', skippedMembers: [] });
+    expect(result).toEqual({ groupId: 'group-id', skippedMembers: [], pendingInvites: [] });
   });
 
-  it('normalizes a missing skippedMembers to an empty array', async () => {
+  it('normalizes a missing skippedMembers/pendingInvites to empty arrays', async () => {
     mockedInvoke.mockResolvedValueOnce({ groupId: 'group-id' });
     const result = await createGroupChat('Squad', ['npub1']);
-    expect(result).toEqual({ groupId: 'group-id', skippedMembers: [] });
+    expect(result).toEqual({ groupId: 'group-id', skippedMembers: [], pendingInvites: [] });
   });
 
   it('passes through skipped members', async () => {
@@ -351,6 +351,15 @@ describe('createGroupChat', () => {
     });
     const result = await createGroupChat('Squad', ['npub1', 'npub2']);
     expect(result.skippedMembers).toEqual([{ npub: 'npub1', reason: 'Missing required encoding tag' }]);
+  });
+
+  it('passes through pending invites', async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      groupId: 'group-id',
+      pendingInvites: [{ npub: 'npub1', reason: 'Welcome delivery failed' }],
+    });
+    const result = await createGroupChat('Squad', ['npub1', 'npub2']);
+    expect(result.pendingInvites).toEqual([{ npub: 'npub1', reason: 'Welcome delivery failed' }]);
   });
 });
 
@@ -557,10 +566,33 @@ describe('inviteMemberToGroup', () => {
 
 describe('getMlsGroupMembers', () => {
   it('invokes get_mls_group_members and returns members', async () => {
-    mockedInvoke.mockResolvedValueOnce({ group_id: 'g1', members: ['npub1'], admins: ['npub1'] });
+    mockedInvoke.mockResolvedValueOnce({
+      group_id: 'g1',
+      members: ['npub1'],
+      admins: ['npub1'],
+      pending_welcomes: [],
+    });
     const result = await getMlsGroupMembers('g1');
     expect(mockedInvoke).toHaveBeenCalledWith('get_mls_group_members', { groupId: 'g1' });
     expect(result.members).toEqual(['npub1']);
+    expect(result.pending_welcomes).toEqual([]);
+  });
+
+  it('normalizes a missing pending_welcomes to an empty array', async () => {
+    mockedInvoke.mockResolvedValueOnce({ group_id: 'g1', members: [], admins: [] });
+    const result = await getMlsGroupMembers('g1');
+    expect(result.pending_welcomes).toEqual([]);
+  });
+
+  it('passes through pending welcomes', async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      group_id: 'g1',
+      members: ['npub1', 'npub2'],
+      admins: ['npub1'],
+      pending_welcomes: ['npub2'],
+    });
+    const result = await getMlsGroupMembers('g1');
+    expect(result.pending_welcomes).toEqual(['npub2']);
   });
 });
 

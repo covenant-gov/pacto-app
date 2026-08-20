@@ -69,7 +69,12 @@
   import { appConfig } from '../../stores/app-config';
   import { squadRecreateRequest } from '../../stores/squad-recreate';
   import { showCreateFailureToast } from '../../lib/squad-pair-create';
-  import { warnSkippedMembers, skippedMembersNotice } from '../../lib/squad/skipped-members';
+  import {
+    warnSkippedMembers,
+    skippedMembersNotice,
+    warnPendingInvites,
+    pendingInvitesNotice,
+  } from '../../lib/squad/skipped-members';
 
   const translate = get(t);
   let orderedSquads = $derived(orderSquads($squads, $squadNavOrder));
@@ -392,7 +397,7 @@
 
     (async () => {
       try {
-        const { parentId, channels, skippedMembers } = await createDefaultParentChannels(memberNpubs);
+        const { parentId, channels, skippedMembers, pendingInvites } = await createDefaultParentChannels(memberNpubs);
         const groupId = parentId;
         const finalized: Squad = {
           id: groupId,
@@ -440,10 +445,13 @@
         if (hubName) lastHubChannelNameBySquadId.update((m) => ({ ...m, [groupId]: hubName }));
 
         const skippedNotice = skippedMembersNotice(skippedMembers);
+        const pendingNotice = pendingInvitesNotice(pendingInvites);
         if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
+        if (pendingInvites.length > 0) warnPendingInvites(pendingInvites);
+        const readyNotice = [skippedNotice, pendingNotice].filter(Boolean).join(' ');
         pendingReadyToast.set({
           text:
-            skippedNotice ||
+            readyNotice ||
             translate('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
           goTo: {
             type: 'squad',

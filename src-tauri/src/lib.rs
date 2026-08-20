@@ -9278,6 +9278,7 @@ fn merge_skipped_members(
 struct GroupChatCreated {
     group_id: String,
     skipped_members: Vec<mls::SkippedMember>,
+    pending_invites: Vec<mls::PendingInvite>,
 }
 
 /// Runs `MlsService::create_group` on a blocking thread (the engine is `!Send`) and returns the
@@ -9423,6 +9424,14 @@ async fn create_group_chat(
         );
     }
 
+    let pending_invites = outcome.pending_invites;
+    for p in &pending_invites {
+        eprintln!(
+            "[MLS][create_group_chat] pending welcome {}: {}",
+            p.npub, p.reason
+        );
+    }
+
     tokio::spawn(async {
         if let Err(err) = regenerate_device_keypackage(false).await {
             eprintln!(
@@ -9435,6 +9444,7 @@ async fn create_group_chat(
     Ok(GroupChatCreated {
         group_id: outcome.group_id,
         skipped_members,
+        pending_invites,
     })
 }
 
@@ -9621,6 +9631,13 @@ async fn sync_mls_groups_now(group_id: Option<String>) -> Result<(u32, u32), Str
                     .await
                     .map_err(|e| e.to_string())
             } else {
+                // Reconcile local engine state on startup / relay reconnection: reap any engine
+                // group left behind by a prior release's create_group failure mode (see
+                // MlsService::reap_orphaned_engine_groups). Non-fatal — log-only.
+                if let Err(e) = mls.reap_orphaned_engine_groups().await {
+                    eprintln!("[MLS] Orphan reap failed: {}", e);
+                }
+
                 // Multi-group sync: load MLS groups from SQL and sync each
                 let group_ids: Vec<String> = match db::load_mls_groups(&handle).await {
                     Ok(groups) => {
@@ -9938,6 +9955,7 @@ async fn do_accept_mls_welcome<R: Runtime>(
             created_at: now_secs,
             updated_at: now_secs,
             evicted: false,
+            pending_welcomes: Vec::new(),
         };
         crate::db::save_mls_group(handle.clone(), &metadata)
             .await
@@ -10054,6 +10072,7 @@ struct GroupMembers {
     group_id: String,
     members: Vec<String>, // npubs
     admins: Vec<String>,  // admin npubs
+    pending_welcomes: Vec<String>,
 }
 
 /// Sync the participants array for an MLS group chat with the actual members from the engine
@@ -10129,7 +10148,7 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
             // Map wire-id/engine-id using encrypted metadata
             let meta_groups = mls.read_groups().await.unwrap_or_default();
-            let (wire_id, engine_id) = if let Some(m) = meta_groups.iter().find(|g| {
+            let (wire_id, engine_id, pending_welcomes) = if let Some(m) = meta_groups.iter().find(|g| {
                 g.group_id == group_id
                     || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id)
             }) {
@@ -10140,9 +10159,10 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
                     } else {
                         m.group_id.clone()
                     },
+                    m.pending_welcomes.clone(),
                 )
             } else {
-                (group_id.clone(), group_id.clone())
+                (group_id.clone(), group_id.clone(), Vec::new())
             };
 
             // Acquire non-Send engine; all calls below must be non-await while engine is in scope
@@ -10211,6 +10231,7 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
                 group_id: wire_id,
                 members,
                 admins,
+                pending_welcomes,
             })
         })
     })
@@ -10312,10 +10333,6 @@ async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, St
 
     Ok(results)
 }
-
-/// Check MLS group health and identify groups that need re-syncing
-
-/// Remove orphaned MLS groups from metadata that are not in engine state
 
 #[tauri::command]
 async fn queue_profile_sync(

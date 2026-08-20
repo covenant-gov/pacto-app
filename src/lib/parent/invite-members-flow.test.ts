@@ -87,6 +87,7 @@ describe('runInviteMembersToParent', () => {
       members: ['npub-me', 'npub-member'],
       admins: [],
       group_id: 'g-announce',
+      pending_welcomes: [],
     });
     vi.mocked(getAnnouncementsChannel).mockReset().mockReturnValue({
       name: 'announcements',

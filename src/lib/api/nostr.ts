@@ -425,6 +425,7 @@ export interface MlsGroupMembers {
   group_id: string;
   members: string[];
   admins: string[];
+  pending_welcomes: string[];
 }
 
 /** Member left out of a create due to no/unfetchable/unusable key package. */
@@ -433,9 +434,16 @@ export interface SkippedMember {
   reason: string;
 }
 
+/** Member added to the engine group whose welcome delivery failed; retry via invite_member_to_group. */
+export interface PendingInvite {
+  npub: string;
+  reason: string;
+}
+
 export interface GroupChatCreated {
   groupId: string;
   skippedMembers: SkippedMember[];
+  pendingInvites: PendingInvite[];
 }
 
 /**
@@ -450,9 +458,13 @@ export async function createGroupChat(
   const result = (await invoke('create_group_chat', {
     groupName,
     memberIds,
-  })) as { groupId: string; skippedMembers?: SkippedMember[] };
+  })) as { groupId: string; skippedMembers?: SkippedMember[]; pendingInvites?: PendingInvite[] };
   dmLog('create_group_chat result', { groupId: result.groupId?.slice(0, 16) + '…' });
-  return { groupId: result.groupId, skippedMembers: result.skippedMembers ?? [] };
+  return {
+    groupId: result.groupId,
+    skippedMembers: result.skippedMembers ?? [],
+    pendingInvites: result.pendingInvites ?? [],
+  };
 }
 
 /**
@@ -510,6 +522,7 @@ export interface MlsGroupMetadataItem {
   created_at?: number;
   updated_at?: number;
   evicted?: boolean;
+  pending_welcomes?: string[];
 }
 
 /**
@@ -677,7 +690,7 @@ export async function getMlsGroupMembers(groupId: string): Promise<MlsGroupMembe
   dmLog('get_mls_group_members', { groupId: groupId.slice(0, 16) + '…' });
   const result = (await invoke('get_mls_group_members', { groupId })) as MlsGroupMembers;
   dmLog('get_mls_group_members result', { members: result.members?.length ?? 0 });
-  return result;
+  return { ...result, pending_welcomes: result.pending_welcomes ?? [] };
 }
 
 /**

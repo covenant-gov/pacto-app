@@ -41,6 +41,7 @@ vi.mock('./squad/skipped-members', async (importOriginal) => {
   return {
     ...actual,
     warnSkippedMembers: vi.fn(actual.warnSkippedMembers),
+    warnPendingInvites: vi.fn(actual.warnPendingInvites),
   };
 });
 
@@ -96,7 +97,12 @@ import type { Squad } from '../stores/squads';
 import { createDefaultParentChannels, type DefaultParentChannelsCreated } from './parent-navbar';
 import { sendSquadInviteDm } from './pacto-app-inbox';
 import { persistCreatedSquad } from './squad/squad-catalog';
-import { warnSkippedMembers, skippedMembersNotice } from './squad/skipped-members';
+import {
+  warnSkippedMembers,
+  skippedMembersNotice,
+  warnPendingInvites,
+  pendingInvitesNotice,
+} from './squad/skipped-members';
 import { shortNpub } from './squad/squad-bot-announce';
 import {
   squads,
@@ -227,6 +233,7 @@ describe('runSquadPairCreateFlow', () => {
       .mockReset()
       .mockImplementation(async (_tempId, squad) => squad as Squad);
     vi.mocked(warnSkippedMembers).mockClear();
+    vi.mocked(warnPendingInvites).mockClear();
   });
 
   afterEach(() => {
@@ -241,6 +248,7 @@ describe('runSquadPairCreateFlow', () => {
       parentId: 'group-1',
       channels: [{ name: 'announcements', groupId: 'group-1', order: 0 }],
       skippedMembers: [{ npub: 'npub-stale', reason: 'Missing required encoding tag' }],
+      pendingInvites: [],
     });
 
     runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-stale'], anchor, partner);
@@ -264,6 +272,7 @@ describe('runSquadPairCreateFlow', () => {
       parentId: 'group-2',
       channels: [{ name: 'announcements', groupId: 'group-2', order: 0 }],
       skippedMembers: [],
+      pendingInvites: [],
     });
 
     runSquadPairCreateFlow('Pair Name', ['npub-a'], anchor, partner);
@@ -274,6 +283,53 @@ describe('runSquadPairCreateFlow', () => {
 
     expect(get(pendingReadyToast)?.text).toBe('Pair Name is ready!');
     expect(warnSkippedMembers).not.toHaveBeenCalled();
+  });
+
+  it('folds the pending-invite notice into the ready toast when nobody is skipped', async () => {
+    vi.mocked(createDefaultParentChannels).mockResolvedValue({
+      parentId: 'group-3',
+      channels: [{ name: 'announcements', groupId: 'group-3', order: 0 }],
+      skippedMembers: [],
+      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
+    });
+
+    runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-pending'], anchor, partner);
+
+    await vi.waitFor(() => {
+      expect(get(pendingReadyToast)?.goTo?.id).toBe('group-3');
+    });
+
+    const toast = get(pendingReadyToast);
+    expect(toast?.text).not.toBe('Pair Name is ready!');
+    expect(toast?.text).toContain('npub-pending');
+    expect(warnPendingInvites).toHaveBeenCalledWith([
+      { npub: 'npub-pending', reason: 'Welcome delivery failed' },
+    ]);
+  });
+
+  it('keeps both notices when members are skipped and pending, dropping neither', async () => {
+    vi.mocked(createDefaultParentChannels).mockResolvedValue({
+      parentId: 'group-4',
+      channels: [{ name: 'announcements', groupId: 'group-4', order: 0 }],
+      skippedMembers: [{ npub: 'npub-stale', reason: 'Missing required encoding tag' }],
+      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
+    });
+
+    runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-stale', 'npub-pending'], anchor, partner);
+
+    await vi.waitFor(() => {
+      expect(get(pendingReadyToast)?.goTo?.id).toBe('group-4');
+    });
+
+    const toast = get(pendingReadyToast);
+    expect(toast?.text).toContain('npub-stale');
+    expect(toast?.text).toContain('npub-pending');
+    expect(warnSkippedMembers).toHaveBeenCalledWith([
+      { npub: 'npub-stale', reason: 'Missing required encoding tag' },
+    ]);
+    expect(warnPendingInvites).toHaveBeenCalledWith([
+      { npub: 'npub-pending', reason: 'Welcome delivery failed' },
+    ]);
   });
 });
 
@@ -342,6 +398,7 @@ describe('retryParentAnnouncementsCreate', () => {
       .mockReset()
       .mockImplementation(async (_tempId, squad) => squad as Squad);
     vi.mocked(warnSkippedMembers).mockClear();
+    vi.mocked(warnPendingInvites).mockClear();
   });
 
   afterEach(() => {
@@ -358,6 +415,7 @@ describe('retryParentAnnouncementsCreate', () => {
       parentId: 'group-3',
       channels: retriedChannels,
       skippedMembers: [{ npub: 'npub-stale', reason: 'Missing required encoding tag' }],
+      pendingInvites: [],
     });
 
     await retryParentAnnouncementsCreate(retryParent);
@@ -367,6 +425,24 @@ describe('retryParentAnnouncementsCreate', () => {
     expect(toast?.text).toContain('npub-stale');
     expect(warnSkippedMembers).toHaveBeenCalledWith([
       { npub: 'npub-stale', reason: 'Missing required encoding tag' },
+    ]);
+  });
+
+  it('folds the pending-invite notice into the retry ready toast', async () => {
+    vi.mocked(createDefaultParentChannels).mockResolvedValue({
+      parentId: 'group-3',
+      channels: retriedChannels,
+      skippedMembers: [],
+      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
+    });
+
+    await retryParentAnnouncementsCreate(retryParent);
+
+    const toast = get(pendingReadyToast);
+    expect(toast?.text).not.toBe('Alpha is ready!');
+    expect(toast?.text).toContain('npub-pending');
+    expect(warnPendingInvites).toHaveBeenCalledWith([
+      { npub: 'npub-pending', reason: 'Welcome delivery failed' },
     ]);
   });
 
@@ -384,7 +460,7 @@ describe('retryParentAnnouncementsCreate', () => {
     await retryParentAnnouncementsCreate(retryParent);
     expect(createDefaultParentChannels).toHaveBeenCalledTimes(1);
 
-    gate.resolve({ parentId: 'group-3', channels: retriedChannels, skippedMembers: [] });
+    gate.resolve({ parentId: 'group-3', channels: retriedChannels, skippedMembers: [], pendingInvites: [] });
     await first;
     expect(persistCreatedSquad).toHaveBeenCalledTimes(1);
   });
@@ -396,7 +472,7 @@ describe('retryParentAnnouncementsCreate', () => {
     const pending = retryParentAnnouncementsCreate(retryParent);
     parentPendingCreateMembers.set({});
     squads.set([]);
-    gate.resolve({ parentId: 'group-3', channels: retriedChannels, skippedMembers: [] });
+    gate.resolve({ parentId: 'group-3', channels: retriedChannels, skippedMembers: [], pendingInvites: [] });
     await pending;
 
     expect(persistCreatedSquad).not.toHaveBeenCalled();
@@ -410,6 +486,7 @@ describe('retryParentAnnouncementsCreate', () => {
       parentId: 'group-3',
       channels: retriedChannels,
       skippedMembers: [],
+      pendingInvites: [],
     });
 
     await retryParentAnnouncementsCreate(retryParent);
@@ -433,6 +510,7 @@ describe('retryParentAnnouncementsCreate', () => {
       parentId: 'group-3',
       channels: retriedChannels,
       skippedMembers: [],
+      pendingInvites: [],
     });
 
     await retryParentAnnouncementsCreate(pairParent);
@@ -469,5 +547,28 @@ describe('skippedMembersNotice', () => {
   it('uses the cached profile name when one is known', () => {
     profiles.set({ [npub]: { nickname: 'Ada' } as never });
     expect(skippedMembersNotice([{ npub, reason: 'x' }])).toContain('Ada');
+  });
+});
+
+describe('pendingInvitesNotice', () => {
+  const npub = 'npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+
+  afterEach(() => {
+    profiles.set({});
+  });
+
+  it('is empty when nobody is pending', () => {
+    expect(pendingInvitesNotice([])).toBe('');
+  });
+
+  it('falls back to a shortened npub when no profile is cached', () => {
+    const notice = pendingInvitesNotice([{ npub, reason: 'x' }]);
+    expect(notice).toContain(shortNpub(npub));
+    expect(notice).not.toContain('Unknown');
+  });
+
+  it('uses the cached profile name when one is known', () => {
+    profiles.set({ [npub]: { nickname: 'Ada' } as never });
+    expect(pendingInvitesNotice([{ npub, reason: 'x' }])).toContain('Ada');
   });
 });
