@@ -11,7 +11,7 @@
 
   const tFn = get(t);
 
-  $: state = $updateStatus;
+  let state = $derived($updateStatus);
 
   function progressPercent(progress: number): string {
     return `${Math.round(progress * 100)}%`;

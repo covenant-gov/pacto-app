@@ -6,7 +6,7 @@
     backupVerificationModalOpen,
   } from '../../stores/backup-verification';
 
-  let dismissed = false;
+  let dismissed = $state(false);
 </script>
 
 {#if $backupVerified === false && $isAuthenticated && !dismissed}

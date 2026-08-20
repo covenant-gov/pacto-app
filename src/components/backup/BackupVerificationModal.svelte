@@ -11,8 +11,7 @@
   import type { SeedChallenge } from '../../lib/utils/seed-verification';
   import { markBackupVerified, backupVerificationModalOpen } from '../../stores/backup-verification';
 
-  export let open = false;
-  export let onClose: () => void = () => {};
+  let { open = false, onClose = () => {} }: { open?: boolean; onClose?: () => void } = $props();
 
   type Phase = 'show' | 'confirm' | 'quiz' | 'success';
 
@@ -21,19 +20,19 @@
   const MAX_ATTEMPTS = 3;
   const tFn = get(t);
 
-  let phase: Phase = 'show';
-  let seed = '';
-  let seedWords: string[] = [];
-  let revealed = false;
-  let copied = false;
-  let writtenDown = false;
-  let challenge: SeedChallenge = { positions: [], answers: [] };
-  let inputs: string[] = [];
-  let attempts = 0;
-  let quizError = '';
-  let busy = false;
-  let loadError = '';
-  let inputEls: HTMLInputElement[] = [];
+  let phase: Phase = $state('show');
+  let seed = $state('');
+  let seedWords: string[] = $state([]);
+  let revealed = $state(false);
+  let copied = $state(false);
+  let writtenDown = $state(false);
+  let challenge: SeedChallenge = $state({ positions: [], answers: [] });
+  let inputs: string[] = $state([]);
+  let attempts = $state(0);
+  let quizError = $state('');
+  let busy = $state(false);
+  let loadError = $state('');
+  let inputEls: HTMLInputElement[] = $state([]);
 
   function resetState(): void {
     phase = 'show';
@@ -74,13 +73,13 @@
     }
   }
 
-  $: {
+  $effect(() => {
     if (open) {
       void loadSeed();
-    } else if (!open) {
+    } else {
       resetState();
     }
-  }
+  });
 
   function toggleReveal(): void {
     revealed = !revealed;

@@ -1,8 +1,7 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
 
-  export let onCreateAccount: () => void;
-  export let onImportKeys: () => void;
+  let { onCreateAccount, onImportKeys }: { onCreateAccount: () => void; onImportKeys: () => void } = $props();
 </script>
 
 <div class="welcome-container">

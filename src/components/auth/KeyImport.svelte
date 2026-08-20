@@ -2,15 +2,22 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
 
-  export let onImport: (privateKey: string) => void;
-  export let onBack: () => void;
-  export let isValidating: boolean = false;
-  export let error: string | null = null;
+  let {
+    onImport,
+    onBack,
+    isValidating = false,
+    error = null,
+  }: {
+    onImport: (privateKey: string) => void;
+    onBack: () => void;
+    isValidating?: boolean;
+    error?: string | null;
+  } = $props();
 
-  let privateKey = '';
-  let localError: string | null = null;
+  let privateKey = $state('');
+  let localError: string | null = $state(null);
 
-  $: displayError = localError || error;
+  let displayError = $derived(localError || error);
 
   function handleSubmit() {
     const trimmed = privateKey.trim();
@@ -43,7 +50,8 @@
   }
 
   // Clear errors when user starts typing
-  $: if (privateKey) {
+  function clearErrorsOnInput() {
+    if (!privateKey) return;
     localError = null;
     if (error) {
       error = null;
@@ -67,6 +75,7 @@
     <div class="import-form">
       <textarea
         bind:value={privateKey}
+        oninput={clearErrorsOnInput}
         onpaste={handlePaste}
         placeholder={$t('auth.recoveryPhrasePlaceholder')}
         disabled={isValidating}
