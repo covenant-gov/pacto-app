@@ -289,7 +289,7 @@
             checked={selectedMemberNpubs.includes(npub)}
             disabled={!addr}
             aria-label={$t('governance.deploySafe.signerAriaLabel', { values: { name: getProfileDisplayName($profiles[npub]) || npub.slice(0, 12) } })}
-            on:change={() => toggleMember(npub)}
+            onchange={() => toggleMember(npub)}
           />
           {#if getProfileAvatarSrc($profiles[npub])}
             <img src={getProfileAvatarSrc($profiles[npub])} alt="" class="deploy-safe-avatar" />
@@ -317,7 +317,7 @@
       <input
         type="checkbox"
         checked={includeMeAsOwner}
-        on:change={(e) => {
+        onchange={(e) => {
           includeMeAsOwner = (e.currentTarget as HTMLInputElement).checked;
           if (includeMeAsOwner && !myEvm) void loadMyWalletAddress();
         }}
@@ -360,11 +360,11 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.deploySafe.cancel')}</button>
+      <button type="button" class="btn-secondary" onclick={onClose}>{$t('governance.deploySafe.cancel')}</button>
       <button
         type="button"
         class="btn-primary"
-        on:click={confirmDeploy}
+        onclick={confirmDeploy}
         disabled={ownerCount === 0 || !thresholdValid || ownerOverMax || !deployNetwork}
         >{$t('governance.deploySafe.deploy')}</button
       >

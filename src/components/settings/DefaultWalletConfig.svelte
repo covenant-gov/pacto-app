@@ -146,7 +146,7 @@
       ariaLabel={$t('wallet.editDefaultEvmAccount')}
       title={$t('wallet.editDefaultEvmAccount')}
       className="dwc-summary-edit"
-      on:click={openEdit}
+      onclick={openEdit}
     />
   </div>
 
@@ -157,7 +157,7 @@
 
 {#if editOpen}
   <div use:portal>
-  <div class="dwc-modal-backdrop" role="presentation" on:click={closeEdit}></div>
+  <div class="dwc-modal-backdrop" role="presentation" onclick={closeEdit}></div>
   <div class="dwc-modal" role="dialog" aria-labelledby="wallet-default-evm-edit-title" aria-modal="true">
     <h2 id="wallet-default-evm-edit-title" class="dwc-title">{$t('wallet.editDefaultEvmAccountTitle')}</h2>
     <p class="dwc-hint">{$t('wallet.onlyDerivedSquadAccounts')}</p>
@@ -199,10 +199,10 @@
     </select>
 
     <div class="dwc-modal-actions">
-      <button type="button" class="dwc-btn dwc-btn-secondary" disabled={saving} on:click={closeEdit}>
+      <button type="button" class="dwc-btn dwc-btn-secondary" disabled={saving} onclick={closeEdit}>
         {$t('wallet.cancel')}
       </button>
-      <button type="button" class="dwc-btn" disabled={saving} on:click={saveEdit}>
+      <button type="button" class="dwc-btn" disabled={saving} onclick={saveEdit}>
         {saving ? $t('wallet.saving') : $t('wallet.save')}
       </button>
     </div>

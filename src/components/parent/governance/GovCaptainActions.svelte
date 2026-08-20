@@ -35,7 +35,6 @@
   import {
     fundedByFromWriteResult,
     govWriteSubmittedToast,
-    type GovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
@@ -57,7 +56,6 @@
   export let onRefreshMutiny: () => void = () => {};
   export let onRefreshQm: () => void = () => {};
   export let fundingHint = '';
-  export let fundingMode: GovWriteFundingMode | null = null;
 
   const tFn = get(t);
 
@@ -151,7 +149,6 @@
         {treasuryAuthority}
         {privilege}
         {fundingHint}
-        {fundingMode}
         onSubmitted={onRefreshProposals}
       />
 
@@ -265,7 +262,7 @@
           type="button"
           class="linkish"
           disabled={acting || !qmAddress.trim()}
-          on:click={() => void checkQmPending()}
+          onclick={() => void checkQmPending()}
         >
           {$t('governance.quartermaster.checkPending')}
         </button>
@@ -444,7 +441,6 @@
   captainAddresses={captainWearers}
   onSubmitted={onRefreshQm}
   {fundingHint}
-  {fundingMode}
 />
 
 <style>

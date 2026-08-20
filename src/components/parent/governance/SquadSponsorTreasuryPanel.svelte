@@ -308,10 +308,10 @@
         disabled={loading}
         spinning={loading}
         ariaLabel={loading ? $t('governance.aria.refreshingSponsorBalance') : $t('governance.aria.refreshSponsorBalance')}
-        on:click={() => refreshSummary(true)}
+        onclick={() => refreshSummary(true)}
       />
     {:else if onOpenDeploy}
-      <button type="button" class="btn-primary sponsor-deploy-btn" on:click={onOpenDeploy}>{tFn('governance.action.deploySponsor')}</button>
+      <button type="button" class="btn-primary sponsor-deploy-btn" onclick={onOpenDeploy}>{tFn('governance.action.deploySponsor')}</button>
     {/if}
   </div>
 
@@ -321,7 +321,7 @@
     <p class="muted">{$t('governance.status.loadingSponsorBalance')}</p>
   {:else if loadError}
     <p class="sponsor-error" role="alert">{$t(friendlyMessage(loadError, 'generic'))}</p>
-    <button type="button" class="btn-secondary" on:click={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
+    <button type="button" class="btn-secondary" onclick={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
     <p class="sponsor-lead muted">{$t('governance.info.sponsorLead', { values: { chain: summary.chain } })}</p>
     <dl class="sponsor-dl">
@@ -336,7 +336,7 @@
       <dd>
         <code class="sponsor-mono">{summary.sponsorAddress}</code>
         {#if explorerUrl}
-          <button type="button" class="btn-link sponsor-explorer-link" on:click={() => openExternalUrl(explorerUrl)}>
+          <button type="button" class="btn-link sponsor-explorer-link" onclick={() => openExternalUrl(explorerUrl)}>
             {tFn('governance.action.viewOnExplorer')}
           </button>
         {/if}
@@ -438,23 +438,23 @@
           </p>
         {/if}
         <div class="sponsor-deposit-actions">
-          <button type="button" class="btn-secondary" on:click={() => (showDepositForm = false)} disabled={depositing}>
+          <button type="button" class="btn-secondary" onclick={() => (showDepositForm = false)} disabled={depositing}>
             {tFn('governance.action.cancel')}
           </button>
-          <button type="button" class="btn-primary" on:click={submitDeposit} disabled={!canConfirmDeposit}>
+          <button type="button" class="btn-primary" onclick={submitDeposit} disabled={!canConfirmDeposit}>
             {depositing ? tFn('governance.info.sending') : tFn('governance.action.confirmDeposit')}
           </button>
         </div>
       </div>
     {:else}
       <div class="sponsor-pool-actions">
-        <button type="button" class="btn-primary sponsor-deposit-btn" on:click={openDepositForm}>
+        <button type="button" class="btn-primary sponsor-deposit-btn" onclick={openDepositForm}>
           {tFn('governance.action.deposit')}
         </button>
         <button
           type="button"
           class="btn-secondary sponsor-withdraw-btn"
-          on:click={() => {
+          onclick={() => {
             if (!requireBackupVerified()) return;
             showWithdrawModal = true;
           }}

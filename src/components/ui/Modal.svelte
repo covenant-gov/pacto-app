@@ -84,7 +84,7 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-<div class="modal-overlay" on:click={handleOverlayClick}>
+<div class="modal-overlay" onclick={handleOverlayClick}>
   <div
     bind:this={dialogEl}
     class="modal-content {contentClass}"
@@ -94,8 +94,8 @@
     aria-labelledby={titleId}
     aria-describedby={descriptionId ?? undefined}
     tabindex="-1"
-    on:click|stopPropagation
-    on:keydown={handleContentKeydown}
+    onclick={(e) => e.stopPropagation()}
+    onkeydown={handleContentKeydown}
   >
     <slot />
   </div>

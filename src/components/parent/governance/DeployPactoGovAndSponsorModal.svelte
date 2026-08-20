@@ -498,7 +498,7 @@
             inputmode="decimal"
             placeholder={$t('governance.deployGovAndSponsor.transfer.placeholder')}
             value={fundTransferEth}
-            on:input={onTransferInput}
+            oninput={onTransferInput}
             disabled={deploying}
           />
           <p class="hint muted">
@@ -545,7 +545,7 @@
       inputmode="decimal"
       placeholder={$t('governance.deployGovAndSponsor.deposit.placeholder')}
       value={initialDepositEth}
-      on:input={onDepositInput}
+      oninput={onDepositInput}
       disabled={deploying}
     />
     {#if depositExceedsBalance}
@@ -616,8 +616,8 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
-    <button type="button" class="btn-primary" disabled={deployDisabled} on:click={executeDeploy}>
+    <button type="button" class="btn-secondary" onclick={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
+    <button type="button" class="btn-primary" disabled={deployDisabled} onclick={executeDeploy}>
       {deploying ? $t('governance.common.deploying') : $t('governance.common.deploy')}
     </button>
   </div>

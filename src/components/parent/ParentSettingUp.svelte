@@ -16,7 +16,7 @@
         type="button"
         class="setting-up-retry-btn"
         disabled={retrying}
-        on:click={onRetry}
+        onclick={onRetry}
         aria-describedby={errorId || undefined}
       >
         {retrying ? $t('governance.common.retrying') : $t('governance.common.retry')}

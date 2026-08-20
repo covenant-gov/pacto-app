@@ -685,7 +685,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
           type="button"
           class="channel-members-btn"
           title={$t('governance.members.title')}
-          on:click={toggleMembersPanel}
+          onclick={toggleMembersPanel}
           aria-label={$showMembersPanel ? $t('governance.members.close') : $t('governance.members.view')}
           aria-expanded={$showMembersPanel}
         >
@@ -703,9 +703,9 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
             class="dashboard-mode-segment"
             class:active={dashboardView === v}
             aria-selected={dashboardView === v}
-            on:click={() => selectDashboardView(v)}
-            on:mouseenter={() => prefetchDashboardTabIntent(v)}
-            on:focus={() => prefetchDashboardTabIntent(v)}
+            onclick={() => selectDashboardView(v)}
+            onmouseenter={() => prefetchDashboardTabIntent(v)}
+            onfocus={() => prefetchDashboardTabIntent(v)}
           >
             {$t(`governance.dashboardView.${v}`)}
           </button>

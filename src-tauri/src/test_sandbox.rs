@@ -20,9 +20,11 @@ const DEV_WORLD_MARKER: &str = "PACTO_DEV_WORLD";
 /// Filename stamped under `PACTO_TEST_SANDBOX_ROOT` when a recipe-derived /
 /// fixture identity was seeded (KD9 / R25). `dev_login` treats its presence
 /// like `PACTO_DEV_IDENTITY_SANDBOX_ONLY=1`.
+#[cfg(any(debug_assertions, feature = "relay-free-harness"))]
 pub const SANDBOX_ONLY_MARKER_FILE: &str = ".pacto_dev_identity_sandbox_only";
 
 /// True when the configured sandbox root carries the sandbox-only identity stamp.
+#[cfg(debug_assertions)]
 pub fn sandbox_only_identity_stamped() -> bool {
     sandbox_root()
         .map(|root| root.join(SANDBOX_ONLY_MARKER_FILE).is_file())

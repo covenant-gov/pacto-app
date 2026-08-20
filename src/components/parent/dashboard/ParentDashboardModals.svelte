@@ -251,8 +251,8 @@
         <p id="set-safe-error" class="input-error" role="alert">{setSafeError}</p>
       {/if}
       <div class="modal-actions">
-        <button type="button" class="btn-secondary" on:click={onCloseSetSafe} disabled={setSafeSaving}>{$t('governance.common.cancel')}</button>
-        <button type="button" class="btn-primary" on:click={onConfirmSetSafe} disabled={setSafeSaving}
+        <button type="button" class="btn-secondary" onclick={onCloseSetSafe} disabled={setSafeSaving}>{$t('governance.common.cancel')}</button>
+        <button type="button" class="btn-primary" onclick={onConfirmSetSafe} disabled={setSafeSaving}
           >{setSafeSaving ? $t('governance.importSafe.adding') : $t('governance.importSafe.add')}</button
         >
       </div>

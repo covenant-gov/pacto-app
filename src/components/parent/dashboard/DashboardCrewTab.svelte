@@ -209,7 +209,7 @@
                     class="roles-evm-copy-btn"
                     aria-label={$t('governance.crew.copyEvmAddress')}
                     title={$t('governance.crew.copyAddress')}
-                    on:click={() => void copyEvmAddress(rosterEvm)}
+                    onclick={() => void copyEvmAddress(rosterEvm)}
                   >
                     <svg
                       class="roles-evm-copy-icon"
@@ -272,7 +272,7 @@
                           ? $t('governance.crew.titleHatsWired')
                           : $t('governance.crew.titleOnlyOwner')
                         : $t('governance.crew.titlePermit')}
-                      on:click={() => void sponsorMember(rosterEvm)}
+                      onclick={() => void sponsorMember(rosterEvm)}
                     >
                       {sponsoringAddress === rosterKey ? $t('governance.crew.sponsoring') : $t('governance.crew.sponsorBtn')}
                     </button>
@@ -300,7 +300,7 @@
       <code class="rev">{pactoGovRevision}</code>
     {/if}
     {#if showManagePrivileges}
-      <button type="button" class="btn-text" on:click={onOpenSquadRolesModal}>{$t('governance.crew.manage')}</button>
+      <button type="button" class="btn-text" onclick={onOpenSquadRolesModal}>{$t('governance.crew.manage')}</button>
     {/if}
   </div>
 {/if}

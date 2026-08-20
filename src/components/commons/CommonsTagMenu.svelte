@@ -36,7 +36,7 @@
           class="commons-menu-cat"
           class:is-open={open}
           aria-expanded={open}
-          on:click={() => toggle(category.id)}
+          onclick={() => toggle(category.id)}
         >
           <span class="commons-menu-cat-title">{category.title}</span>
           <span class="commons-menu-chevron" aria-hidden="true">{open ? '–' : '+'}</span>
@@ -51,7 +51,7 @@
                   class="commons-menu-child"
                   class:is-active={activeSet.has(child.tag)}
                   aria-pressed={activeSet.has(child.tag)}
-                  on:click={() => onToggleTag(child.tag)}
+                  onclick={() => onToggleTag(child.tag)}
                 >
                   {child.title}{#if count > 0}<span class="commons-menu-child-count">{count}</span>{/if}
                 </button>

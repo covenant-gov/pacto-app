@@ -122,12 +122,12 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.common.cancel')}</button>
+    <button type="button" class="btn-secondary" onclick={onClose}>{$t('governance.common.cancel')}</button>
     <button
       type="button"
       class="btn-primary"
       disabled={!squadNetwork || resolvingDeployer || !captainAddress}
-      on:click={executeDeploy}
+      onclick={executeDeploy}
     >
       {$t('governance.common.execute')}
     </button>

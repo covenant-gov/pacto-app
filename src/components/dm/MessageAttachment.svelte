@@ -227,7 +227,7 @@
           <button
             type="button"
             class="klipy-gif-state klipy-gif-unavailable"
-            on:click={() => loadKlipyMedia(attachment.url)}
+            onclick={() => loadKlipyMedia(attachment.url)}
             aria-label={$t('messaging.attachment.gifUnavailable')}
           >
             <img src={fileIcon} alt="" />
@@ -237,7 +237,7 @@
           <button
             type="button"
             class="klipy-gif-open"
-            on:click={handleImageClick}
+            onclick={handleImageClick}
             aria-label={$t('messaging.attachment.open', { values: { name: displayName } })}
           >
             <img src={klipyBlobSrc} alt={displayName} />
@@ -266,7 +266,7 @@
         <button
           type="button"
           class="tile-surface"
-          on:click={handleTileClick}
+          onclick={handleTileClick}
           aria-label={tileActionLabel}
           disabled={busy}
         >
@@ -293,7 +293,7 @@
           <button
             type="button"
             class="corner-action"
-            on:click={handleSaveAs}
+            onclick={handleSaveAs}
             disabled={savingAs}
             title={$t('messaging.attachment.saveAs')}
             aria-label={$t('messaging.attachment.saveAs')}
@@ -311,7 +311,7 @@
         <button
           type="button"
           class="corner-action inline"
-          on:click={handleSaveAs}
+          onclick={handleSaveAs}
           disabled={savingAs}
           title={$t('messaging.attachment.saveAs')}
           aria-label={$t('messaging.attachment.saveAs')}
@@ -331,7 +331,7 @@
       <button
         type="button"
         class="file-card-surface"
-        on:click={handleDownload}
+        onclick={handleDownload}
         aria-label={$t('messaging.attachment.download', { values: { name: displayName } })}
         disabled={busy}
       >
@@ -349,7 +349,7 @@
         <button
           type="button"
           class="corner-action inline"
-          on:click={handleSaveAs}
+          onclick={handleSaveAs}
           disabled={savingAs}
           title={$t('messaging.attachment.saveAs')}
           aria-label={$t('messaging.attachment.saveAs')}

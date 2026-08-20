@@ -5,15 +5,10 @@
   import { profiles } from '../../stores/profiles';
   import { squads } from '../../stores/squads';
   import { currentUser } from '../../stores/auth';
-  import { getProfileDisplayName, getProfileAvatarSrc } from '../../lib/utils/profile';
   import { showToast } from '../../stores/toast';
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
-  import {
-    commonsJoinRequestBlockReason,
-    commonsJoinRequestRevision,
-    isJoinRequestInFlight,
-    squadIdFromBroadcast,
-  } from '../../lib/commons/commons-join-request';
+  import { computeBroadcastPresentation } from '../../lib/commons/broadcast-presentation';
+  import { commonsJoinRequestRevision } from '../../lib/commons/commons-join-request';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
   import {
@@ -42,42 +37,25 @@
     return tFn('commons.duration.daysLeft', { values: { days: d } });
   }
 
-  $: isSquad = broadcast.subject === 'squad';
-  $: isUser = broadcast.subject === 'user';
-  $: userProfile = isUser ? $profiles[broadcast.authorNpub] : null;
-  $: userLabel =
-    isUser && userProfile
-      ? getProfileDisplayName(userProfile) || broadcast.authorNpub.slice(0, 16) + '…'
-      : isUser
-        ? broadcast.authorNpub.slice(0, 16) + '…'
-        : '';
-  $: squadLabel = broadcast.squadName ?? tFn('commons.card.squadDefault');
-  $: title = isSquad ? squadLabel : userLabel;
-  $: coverImage = getProfileAvatarSrc(userProfile);
-  $: coverSeed = isSquad ? broadcast.squadId ?? squadLabel : broadcast.authorNpub;
-  $: subtitle = (() => {
-    if (isUser && broadcast.audience) {
-      return broadcast.audience === 'new_user' ? tFn('commons.card.newUser') : tFn('commons.card.activeUser');
-    }
-    if (isSquad) {
-      return broadcast.squadKind === 'squad-pair' ? tFn('commons.card.partnerSquad') : tFn('commons.card.squadDefault');
-    }
-    return tFn('commons.card.user');
-  })();
+  $: ({
+    isSquad,
+    isUser,
+    title,
+    subtitle,
+    coverImage,
+    coverSeed,
+    squadLabel,
+    joinBlockReason,
+    joinInFlight,
+    canMessage,
+    canJoin,
+    greetingName,
+  } = (() => {
+    $commonsJoinRequestRevision;
+    return computeBroadcastPresentation(broadcast, $profiles, $squads, $currentUser?.npub, tFn);
+  })());
   $: localSquadIds = $squads.map((s) => s.id);
   $: myNpub = $currentUser?.npub;
-  $: joinBlockReason = (() => {
-    $commonsJoinRequestRevision;
-    return isSquad ? commonsJoinRequestBlockReason(broadcast, myNpub, localSquadIds) : null;
-  })();
-  $: joinInFlight = (() => {
-    $commonsJoinRequestRevision;
-    return isSquad && isJoinRequestInFlight(squadIdFromBroadcast(broadcast));
-  })();
-  $: canMessage = isUser && !!myNpub && broadcast.authorNpub !== myNpub;
-  $: canJoin = isSquad && !joinBlockReason && !!myNpub;
-  $: profileName = userProfile ? getProfileDisplayName(userProfile) : '';
-  $: greetingName = profileName && !profileName.startsWith('npub1') ? profileName : '';
   $: messageTruncated = isCommonsMessageTruncated(broadcast.message, COMMONS_MESSAGE_PREVIEW_MAX);
   $: previewMessage = messageTruncated
     ? truncateCommonsMessage(broadcast.message, COMMONS_MESSAGE_PREVIEW_MAX)
@@ -131,8 +109,8 @@
   role="button"
   tabindex="0"
   aria-label={$t('commons.card.ariaLabel', { values: { title } })}
-  on:click={handleCardClick}
-  on:keydown={handleCardKeydown}
+  onclick={handleCardClick}
+  onkeydown={handleCardKeydown}
 >
   <div class="commons-tile-cover" style={isSquad || coverImage ? '' : `background-image: ${commonsTagGradient(coverSeed)}`}>
     {#if isSquad}
@@ -171,7 +149,7 @@
             type="button"
             class="commons-tile-btn"
             disabled={messageBusy}
-            on:click|stopPropagation={handleRequestDm}
+            onclick={(e) => { e.stopPropagation(); handleRequestDm(); }}
           >
             {messageBusy ? $t('commons.card.opening') : $t('commons.card.requestDm')}
           </button>
@@ -181,7 +159,7 @@
             type="button"
             class="commons-tile-btn commons-tile-btn-primary"
             disabled={joinInFlight}
-            on:click|stopPropagation={handleJoinRequest}
+            onclick={(e) => { e.stopPropagation(); handleJoinRequest(); }}
           >
             {joinInFlight ? $t('commons.card.sending') : $t('commons.card.requestJoin')}
           </button>

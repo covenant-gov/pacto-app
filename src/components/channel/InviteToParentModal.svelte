@@ -37,8 +37,8 @@
     class="parent-modal-overlay"
     role="button"
     tabindex="-1"
-    on:click={onClose}
-    on:keydown={(e) => e.key === 'Escape' && onClose()}
+    onclick={onClose}
+    onkeydown={(e) => e.key === 'Escape' && onClose()}
   >
     <div
       class="parent-modal-content invite-to-parent-content"
@@ -48,8 +48,8 @@
       aria-label={ariaLabel}
       data-parent-type="squad"
       tabindex="0"
-      on:click|stopPropagation
-      on:keydown={(e) => e.key === 'Escape' && onClose()}
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && onClose()}
     >
       <h2 id={titleId}>{resolvedTitle}</h2>
       <p class="invite-to-parent-subtitle">{subtitle}</p>
@@ -67,7 +67,7 @@
               <input
                 type="checkbox"
                 checked={selectedNpubs.includes(npub)}
-                on:change={() => onToggleCandidate(npub)}
+                onchange={() => onToggleCandidate(npub)}
               />
               <span class="invite-to-parent-member-name">{getCandidateDisplayName(npub)}</span>
             </label>
@@ -89,7 +89,7 @@
         <button
           type="button"
           class="invite-to-parent-btn-cancel"
-          on:click={onClose}
+          onclick={onClose}
           disabled={inviting}
         >
           {$t('messaging.inviteParent.cancel')}
@@ -97,7 +97,7 @@
         <button
           type="button"
           class="invite-to-parent-btn-invite"
-          on:click={onInvite}
+          onclick={onInvite}
           disabled={!canInvite}
         >
           {inviting ? $t('messaging.inviteParent.inviting') : $t('messaging.inviteParent.invite')}

@@ -172,14 +172,14 @@
   <div use:portal>
   <div
     class="modal-overlay"
-    on:click={handleClose}
-    on:keydown={(e) => e.key === 'Escape' && handleClose()}
+    onclick={handleClose}
+    onkeydown={(e) => e.key === 'Escape' && handleClose()}
     role="presentation"
   >
     <div
       class="modal-content"
-      on:click|stopPropagation
-      on:keydown={(e) => e.key === 'Escape' && handleClose()}
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && handleClose()}
       role="dialog"
       aria-modal="true"
       aria-labelledby="evm-export-modal-title"
@@ -212,19 +212,19 @@
               value={digit}
               disabled={busy}
               aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
-              on:input={(e) => handlePinInput(i, e)}
-              on:keydown={(e) => handlePinKeydown(i, e)}
-              on:paste={handlePinPaste}
+              oninput={(e) => handlePinInput(i, e)}
+              onkeydown={(e) => handlePinKeydown(i, e)}
+              onpaste={handlePinPaste}
             />
           {/each}
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-cancel" on:click={handleClose} disabled={busy}>{$t('settings.cancel')}</button>
+          <button type="button" class="btn-cancel" onclick={handleClose} disabled={busy}>{$t('settings.cancel')}</button>
           <button
             type="button"
             class="btn-confirm"
-            on:click={handlePinSubmit}
+            onclick={handlePinSubmit}
             disabled={busy || pinDigits.some((d) => d === '')}
           >
             {busy ? $t('commons.verifying') : $t('auth.continue')}
@@ -281,7 +281,7 @@
                     ? $t('export.modal.reveal.seedPhrase')
                     : $t('export.modal.reveal.privateKey')}
               title={revealed ? $t('commons.hide') : $t('commons.reveal')}
-              on:click={() => (revealed = !revealed)}
+              onclick={() => (revealed = !revealed)}
             >
               {#if revealed}
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
@@ -299,7 +299,7 @@
               class="btn-copy"
               aria-label={copied ? $t('settings.copied') : $t('export.modal.aria.copyToClipboard')}
               title={copied ? $t('settings.copied') : $t('settings.copy')}
-              on:click={copyPrivateKey}
+              onclick={copyPrivateKey}
             >
               <svg
                 class="copy-icon"
@@ -321,7 +321,7 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-close" on:click={handleClose}>{$t('commons.close')}</button>
+          <button type="button" class="btn-close" onclick={handleClose}>{$t('commons.close')}</button>
         </div>
       {/if}
     </div>

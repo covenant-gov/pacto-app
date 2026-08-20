@@ -66,13 +66,13 @@
     {$t('messaging.squadRosterKey.description')}
   </p>
   <div class="roster-key-actions">
-    <button type="button" class="btn-primary" disabled={!!busy} on:click={() => void useDefault()}>
+    <button type="button" class="btn-primary" disabled={!!busy} onclick={() => void useDefault()}>
       {busy === 'default' ? $t('messaging.squadRosterKey.useDefaultBusy') : $t('messaging.squadRosterKey.useDefault')}
     </button>
-    <button type="button" class="btn-secondary" disabled={!!busy} on:click={() => void useNewKey()}>
+    <button type="button" class="btn-secondary" disabled={!!busy} onclick={() => void useNewKey()}>
       {busy === 'new' ? $t('messaging.squadRosterKey.useNewBusy') : $t('messaging.squadRosterKey.useNew')}
     </button>
-    <button type="button" class="btn-link" disabled={!!busy} on:click={defer}>{$t('messaging.squadRosterKey.defer')}</button>
+    <button type="button" class="btn-link" disabled={!!busy} onclick={defer}>{$t('messaging.squadRosterKey.defer')}</button>
   </div>
 </div>
 

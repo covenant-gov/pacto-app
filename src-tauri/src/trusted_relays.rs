@@ -55,6 +55,7 @@ pub(crate) fn is_overridden() -> bool {
 
 /// Env-value-in, resolved-set-out. Pure, like [`resolve_from_env_value`], so the
 /// override flag is testable without touching the process environment or the cell.
+#[cfg(debug_assertions)]
 fn resolve_with_origin(raw: Option<String>) -> Result<Resolved, String> {
     // An empty or whitespace-only value is rejected by `resolve_override`, so a
     // successful resolve from a `Some` raw is always a real redirect.
@@ -93,6 +94,7 @@ fn default_relays() -> Vec<RelayUrl> {
 
 /// Env-value-in, relay-list-out. Pure: no env read, no global state, so it is
 /// testable independent of the debug/release [`init_from_env`] split.
+#[cfg(debug_assertions)]
 fn resolve_from_env_value(raw: Option<String>) -> Result<Vec<RelayUrl>, String> {
     match raw {
         Some(raw) => resolve_override(&raw),
@@ -105,6 +107,7 @@ fn resolve_from_env_value(raw: Option<String>) -> Result<Vec<RelayUrl>, String> 
 /// separator and is dropped. Rejects a malformed relay URL by name, and
 /// rejects an override that resolves to zero relays outright (empty string,
 /// only commas, only whitespace) rather than silently disabling all messaging.
+#[cfg(debug_assertions)]
 fn resolve_override(raw: &str) -> Result<Vec<RelayUrl>, String> {
     let entries: Vec<&str> = raw
         .split(',')
@@ -131,11 +134,13 @@ fn resolve_override(raw: &str) -> Result<Vec<RelayUrl>, String> {
 /// True when every resolved relay's host is loopback (`localhost`, `127.0.0.1`,
 /// `::1`/`[::1]`). Backs the sandbox-only identity refusal: a dev identity may
 /// only sign in while the whole relay set stays local.
+#[cfg(debug_assertions)]
 pub(crate) fn all_relays_local() -> bool {
     all_local(trusted_relays())
 }
 
 /// The resolved relays that are not local, formatted for an error message.
+#[cfg(debug_assertions)]
 pub(crate) fn non_local_relays() -> Vec<String> {
     non_local(trusted_relays())
         .into_iter()
@@ -143,14 +148,17 @@ pub(crate) fn non_local_relays() -> Vec<String> {
         .collect()
 }
 
+#[cfg(debug_assertions)]
 fn all_local(urls: &[RelayUrl]) -> bool {
     urls.iter().all(is_local_host)
 }
 
+#[cfg(debug_assertions)]
 fn non_local(urls: &[RelayUrl]) -> Vec<&RelayUrl> {
     urls.iter().filter(|url| !is_local_host(url)).collect()
 }
 
+#[cfg(debug_assertions)]
 fn is_local_host(url: &RelayUrl) -> bool {
     match url.host() {
         // `.localhost` is reserved for loopback by RFC 6761, and loopback is

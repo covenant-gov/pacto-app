@@ -124,7 +124,7 @@
               ariaLabel={$t('profile.editProfile')}
               title={$t('profile.editProfile')}
               className="profile-edit-btn"
-              on:click={startEditing}
+              onclick={startEditing}
             />
           </div>
         {/if}
@@ -135,7 +135,7 @@
               src={bannerSrc}
               alt=""
               class="banner-img"
-              on:error={(e) => {
+              onerror={(e) => {
                 const img = e.currentTarget as HTMLImageElement;
                 img.style.display = 'none';
                 const placeholder = img.nextElementSibling as HTMLElement;
@@ -191,8 +191,8 @@
             ></textarea>
             <p class="avatar-guidance">{$t('profile.crop.guidance')}</p>
             <div class="edit-actions">
-              <button type="button" class="btn-cancel-edit" on:click={cancelEditing} disabled={savingProfile}>{$t('profile.cancel')}</button>
-              <button type="button" class="btn-save-edit" on:click={handleSaveProfile} disabled={savingProfile}>
+              <button type="button" class="btn-cancel-edit" onclick={cancelEditing} disabled={savingProfile}>{$t('profile.cancel')}</button>
+              <button type="button" class="btn-save-edit" onclick={handleSaveProfile} disabled={savingProfile}>
                 {savingProfile ? $t('profile.publishing') : $t('profile.save')}
               </button>
             </div>
@@ -216,7 +216,7 @@
                 target="_blank"
                 rel="external noopener noreferrer"
                 class="website"
-                on:click|preventDefault={() => openExternalUrl(profile.website!)}
+                onclick={(e) => { e.preventDefault(); openExternalUrl(profile.website!); }}
               >
                 🌐 {profile.website}
               </a>
@@ -236,7 +236,7 @@
                   class="btn-copy-account-id"
                   aria-label={copiedNpub ? $t('profile.copied') : $t('profile.copyAccountId')}
                   title={copiedNpub ? $t('profile.copied') : $t('profile.copy')}
-                  on:click={async () => {
+                  onclick={async () => {
                     try {
                       await navigator.clipboard.writeText(profile?.id ?? '');
                       copiedNpub = true;
@@ -271,7 +271,7 @@
                 <button
                   type="button"
                   class="btn-export-seed"
-                  on:click={() => {
+                  onclick={() => {
                     if (requireBackupVerified()) {
                       exportSeedModalOpen = true;
                     }
@@ -282,7 +282,7 @@
                 <button
                   type="button"
                   class="btn-export-all"
-                  on:click={() => (exportAllModalOpen = true)}
+                  onclick={() => (exportAllModalOpen = true)}
                 >
                   {$t('profile.exportAll')}
                 </button>

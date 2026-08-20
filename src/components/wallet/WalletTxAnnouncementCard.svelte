@@ -61,7 +61,7 @@
         type="button"
         class="wallet-tx-announce-copy"
         aria-label={$t('wallet.copyFullTransactionHash')}
-        on:click={copyHash}
+        onclick={copyHash}
       >
         {$t('wallet.copyHash')}
       </button>

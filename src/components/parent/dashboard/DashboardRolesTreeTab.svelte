@@ -41,7 +41,7 @@
 {#if squadInfraRows !== undefined && !structureSummary}
   <div class="sponsor-empty-banner" role="status">
     <p class="sponsor-empty-banner-text">{$t('governance.roles.empty')}</p>
-    <button type="button" class="btn-primary" on:click={onOpenLaunchpad}>{$t('governance.roles.openDeploy')}</button>
+    <button type="button" class="btn-primary" onclick={onOpenLaunchpad}>{$t('governance.roles.openDeploy')}</button>
   </div>
 {/if}
 
@@ -54,7 +54,7 @@
         disabled={rolesTreeLoading || rolesTreeRefreshing}
         spinning={rolesTreeRefreshing}
         ariaLabel={rolesTreeRefreshing ? $t('governance.roles.refreshing') : $t('governance.roles.refresh')}
-        on:click={onRefreshRolesTree}
+        onclick={onRefreshRolesTree}
       />
     {/if}
   </div>
@@ -80,7 +80,7 @@
     {#if structureSummary.hatsExplorerUrl}
       {@const hatsUrl = structureSummary.hatsExplorerUrl}
       <p class="structure-actions">
-        <button type="button" class="btn-link treasury-explorer-link" on:click={() => openExternalUrl(hatsUrl)}>
+        <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(hatsUrl)}>
           {$t('governance.roles.openExplorer')}
         </button>
       </p>

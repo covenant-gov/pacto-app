@@ -116,9 +116,9 @@
         maxlength="1"
         value={digit}
         disabled={isProcessing}
-        on:input={(e) => handleInput(i, e)}
-        on:keydown={(e) => handleKeydown(i, e)}
-        on:paste={handlePaste}
+        oninput={(e) => handleInput(i, e)}
+        onkeydown={(e) => handleKeydown(i, e)}
+        onpaste={handlePaste}
         class="pin-digit"
         aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
       />
@@ -133,7 +133,7 @@
   {/if}
 
   {#if onBack && error}
-    <button type="button" class="btn-back" on:click={onBack} disabled={isProcessing}>
+    <button type="button" class="btn-back" onclick={onBack} disabled={isProcessing}>
       {$t('auth.back')}
     </button>
   {/if}

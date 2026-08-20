@@ -576,40 +576,40 @@
   >
     {#if $activeTopNavTab === 'dms'}
       <div
-        on:click={() => selectDmTab('pinned')}
-        on:keydown={(e) => e.key === 'Enter' && selectDmTab('pinned')}
+        onclick={() => selectDmTab('pinned')}
+        onkeydown={(e) => e.key === 'Enter' && selectDmTab('pinned')}
         role="button"
         tabindex="0"
       >
         <Tab label={pinnedTabLabel} icon={pinIcon} active={$activeView === 'hub' && $activeDmTab === 'pinned'} hasUnreadDot={$dmTabHasUnread.pinned} />
       </div>
       <div
-        on:click={() => selectDmTab('friends')}
-        on:keydown={(e) => e.key === 'Enter' && selectDmTab('friends')}
+        onclick={() => selectDmTab('friends')}
+        onkeydown={(e) => e.key === 'Enter' && selectDmTab('friends')}
         role="button"
         tabindex="0"
       >
         <Tab label={friendsTabLabel} icon={friendsIcon} active={$activeView === 'hub' && $activeDmTab === 'friends'} hasUnreadDot={$dmTabHasUnread.friends} />
       </div>
       <div
-        on:click={() => selectDmTab('requests')}
-        on:keydown={(e) => e.key === 'Enter' && selectDmTab('requests')}
+        onclick={() => selectDmTab('requests')}
+        onkeydown={(e) => e.key === 'Enter' && selectDmTab('requests')}
         role="button"
         tabindex="0"
       >
         <Tab label={requestsTabLabel} icon={requestsIcon} active={$activeView === 'hub' && $activeDmTab === 'requests'} hasUnreadDot={$dmTabHasUnread.requests} />
       </div>
       <div
-        on:click={() => selectDmTab('pending')}
-        on:keydown={(e) => e.key === 'Enter' && selectDmTab('pending')}
+        onclick={() => selectDmTab('pending')}
+        onkeydown={(e) => e.key === 'Enter' && selectDmTab('pending')}
         role="button"
         tabindex="0"
       >
         <Tab label={pendingTabLabel} icon={pendingIcon} active={$activeView === 'hub' && $activeDmTab === 'pending'} hasUnreadDot={$dmTabHasUnread.pending} />
       </div>
       <div
-        on:click={() => selectDmTab('search')}
-        on:keydown={(e) => e.key === 'Enter' && selectDmTab('search')}
+        onclick={() => selectDmTab('search')}
+        onkeydown={(e) => e.key === 'Enter' && selectDmTab('search')}
         role="button"
         tabindex="0"
       >
@@ -627,9 +627,9 @@
             class:is-dragging={squadDragFromId === squad.id}
             class:drop-gap-before={squadDropGapIndex === index && squadDragFromId != null}
             role="button"
-            on:pointerdown={(e) => onSquadPointerDown(e, squad.id)}
-            on:click={() => selectSquad(squad.id)}
-            on:keydown={(e) => e.key === 'Enter' && selectSquad(squad.id)}
+            onpointerdown={(e) => onSquadPointerDown(e, squad.id)}
+            onclick={() => selectSquad(squad.id)}
+            onkeydown={(e) => e.key === 'Enter' && selectSquad(squad.id)}
             tabindex="0"
           >
             <Tab
@@ -654,8 +654,8 @@
       <div
         class="navbar-add-wrap"
         class:is-disabled={commonsStartBroadcastDisabled}
-        on:click={handleBottomAddClick}
-        on:keydown={(e) =>
+        onclick={handleBottomAddClick}
+        onkeydown={(e) =>
           !commonsStartBroadcastDisabled && e.key === 'Enter' && handleBottomAddClick()}
         role="button"
         tabindex={commonsStartBroadcastDisabled ? -1 : 0}
@@ -665,8 +665,8 @@
       </div>
     {/if}
     <div
-      on:click={openProfile}
-      on:keydown={(e) => e.key === 'Enter' && openProfile()}
+      onclick={openProfile}
+      onkeydown={(e) => e.key === 'Enter' && openProfile()}
       role="button"
       tabindex="0"
     >
@@ -696,7 +696,7 @@
     <p id="organize-squad-description" class="organize-modal-subtitle">
       {organizeSquadDescription}
     </p>
-    <form on:submit|preventDefault={handleCreateSquad}>
+    <form onsubmit={(e) => { e.preventDefault(); handleCreateSquad(); }}>
       <label class="organize-label" for="squad-name">{squadNameLabel}</label>
       <input
         id="squad-name"
@@ -736,7 +736,7 @@
             <input
               type="checkbox"
               checked={organizeSquadMembers.includes(entry.npub)}
-              on:change={() => toggleOrganizeMember(entry.npub)}
+              onchange={() => toggleOrganizeMember(entry.npub)}
             />
             <span class="organize-member-name">{organizeMemberDisplayName(entry.npub, entry.name)}</span>
           </label>
@@ -770,7 +770,7 @@
         <p class="organize-error" role="alert">{organizeSquadError}</p>
       {/if}
       <div class="organize-actions">
-        <button type="button" class="organize-btn-cancel" on:click={closeOrganizeSquadModal} aria-label={organizeCancel}>
+        <button type="button" class="organize-btn-cancel" onclick={closeOrganizeSquadModal} aria-label={organizeCancel}>
           {organizeCancel}
         </button>
         <button type="submit" class="organize-btn-create" disabled={!canCreateSquad} aria-label={organizeCreateAria}>

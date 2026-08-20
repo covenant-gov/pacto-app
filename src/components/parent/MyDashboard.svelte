@@ -65,7 +65,7 @@
           class="dashboard-mode-segment"
           class:active={dashboardView === v}
           aria-selected={dashboardView === v}
-          on:click={() => selectView(v)}
+          onclick={() => selectView(v)}
         >
           {$t(`governance.dashboardView.${v}`)}
         </button>

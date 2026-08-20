@@ -18,7 +18,7 @@
       <button
         type="button"
         class="backup-banner-cta"
-        on:click={() => backupVerificationModalOpen.set(true)}
+        onclick={() => backupVerificationModalOpen.set(true)}
       >
         {$t('backup.banner.cta')}
       </button>
@@ -27,7 +27,7 @@
         class="backup-banner-dismiss"
         aria-label={$t('backup.banner.dismissReminder')}
         title={$t('commons.dismiss')}
-        on:click={() => (dismissed = true)}
+        onclick={() => (dismissed = true)}
       >
         ×
       </button>

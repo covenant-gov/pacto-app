@@ -228,7 +228,7 @@
         <EditIconButton
           ariaLabel={$t('squad.rpc.editAria')}
           title={$t('squad.rpc.editTitle')}
-          on:click={() => openRpcEdit('primary')}
+          onclick={() => openRpcEdit('primary')}
         />
       {/if}
     </div>
@@ -305,7 +305,7 @@
         <EditIconButton
           ariaLabel={$t('squad.bundler.editAria')}
           title={$t('squad.bundler.editTitle')}
-          on:click={openBundlerEdit}
+          onclick={openBundlerEdit}
         />
       {/if}
     </div>

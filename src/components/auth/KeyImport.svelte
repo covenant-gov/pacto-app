@@ -67,7 +67,7 @@
     <div class="import-form">
       <textarea
         bind:value={privateKey}
-        on:paste={handlePaste}
+        onpaste={handlePaste}
         placeholder={$t('auth.recoveryPhrasePlaceholder')}
         disabled={isValidating}
         class="key-textarea"
@@ -77,14 +77,14 @@
       <div class="import-actions">
         <button
           class="btn-secondary"
-          on:click={onBack}
+          onclick={onBack}
           disabled={isValidating}
         >
           {$t('auth.back')}
         </button>
         <button
           class="btn-primary"
-          on:click={handleSubmit}
+          onclick={handleSubmit}
           disabled={isValidating || !privateKey.trim()}
         >
           {isValidating ? $t('auth.validating') : $t('auth.continue')}

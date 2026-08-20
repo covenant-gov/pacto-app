@@ -37,8 +37,8 @@
     class="parent-modal-overlay"
     role="button"
     tabindex="-1"
-    on:click={onClose}
-    on:keydown={(e) => e.key === 'Escape' && onClose()}
+    onclick={onClose}
+    onkeydown={(e) => e.key === 'Escape' && onClose()}
   >
     <div
       class="parent-modal-content create-channel-content"
@@ -48,8 +48,8 @@
       aria-label={$t('messaging.channel.createForAria', { values: { parentName: parentName || $t('messaging.channel.createDefaultParent') } })}
       data-parent-type="squad"
       tabindex="0"
-      on:click|stopPropagation
-      on:keydown={(e) => e.key === 'Escape' && onClose()}
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && onClose()}
     >
       <h2 id={titleId}>{$t('messaging.channel.createTitle')}</h2>
       <p class="create-channel-subtitle">{subtitle}</p>
@@ -83,7 +83,7 @@
             type="button"
             class="create-channel-btn-create"
             disabled={!nameReady || creating}
-            on:click={onOpenChannel}
+            onclick={onOpenChannel}
           >
             {creating ? $t('messaging.channel.creating') : $t('messaging.channel.openChannel')}
           </button>
@@ -91,7 +91,7 @@
             type="button"
             class="create-channel-btn-secondary"
             disabled={!nameReady || creating}
-            on:click={onChooseClosed}
+            onclick={onChooseClosed}
           >
             {$t('messaging.channel.closedChannel')}
           </button>
@@ -100,7 +100,7 @@
           <button
             type="button"
             class="create-channel-btn-cancel"
-            on:click={onClose}
+            onclick={onClose}
             disabled={creating}
           >
             {$t('messaging.channel.cancel')}
@@ -117,7 +117,7 @@
                 <input
                   type="checkbox"
                   checked={selectedNpubs.includes(npub)}
-                  on:change={() => onToggleMember(npub)}
+                  onchange={() => onToggleMember(npub)}
                   disabled={creating}
                 />
                 <span class="create-channel-member-name">{getMemberDisplayName(npub)}</span>
@@ -135,7 +135,7 @@
           <button
             type="button"
             class="create-channel-btn-cancel"
-            on:click={onClose}
+            onclick={onClose}
             disabled={creating}
           >
             {$t('messaging.channel.cancel')}
@@ -144,7 +144,7 @@
             type="button"
             class="create-channel-btn-create"
             disabled={!canCreateClosed || creating}
-            on:click={onCreateClosed}
+            onclick={onCreateClosed}
           >
             {creating ? $t('messaging.channel.creating') : $t('messaging.channel.create')}
           </button>

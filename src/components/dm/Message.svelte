@@ -309,7 +309,7 @@
   }
 </script>
 
-<svelte:window on:pointerdown={handleWindowPointerDown} />
+<svelte:window onpointerdown={handleWindowPointerDown} />
 
 <div
   class="message"
@@ -317,11 +317,11 @@
   class:mentioned={isMentioned}
   id={id ? `msg-${id}` : undefined}
   use:observeLinkPreview={linkPreviewParams}
-  on:contextmenu={handleContextMenu}
-  on:pointerdown={handlePointerDown}
-  on:pointermove={handlePointerMove}
-  on:pointerup={handlePointerUp}
-  on:pointercancel={handlePointerUp}
+  oncontextmenu={handleContextMenu}
+  onpointerdown={handlePointerDown}
+  onpointermove={handlePointerMove}
+  onpointerup={handlePointerUp}
+  onpointercancel={handlePointerUp}
   role="listitem"
   aria-label={$t('messaging.message.fromAuthorAria', { values: { authorName } })}
 >
@@ -352,7 +352,8 @@
           class="message-options-btn"
           aria-label={$t('messaging.message.optionsAria')}
           title={$t('messaging.message.optionsAria')}
-          on:click|stopPropagation={(e) => {
+          onclick={(e) => {
+            e.stopPropagation();
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             openMenu(rect.left, rect.bottom + 4);
           }}
@@ -374,7 +375,7 @@
         <button
           type="button"
           class="msg-reply-inner"
-          on:click={jumpToReply}
+          onclick={jumpToReply}
           aria-label={$t('messaging.message.jumpToReply')}
         >
           <span class="msg-reply-author">{replyAuthorName ?? $t('messaging.message.replyUnknown')}</span>
@@ -421,16 +422,16 @@
                 aria-label="{chip.emoji} {chip.count}"
                 aria-haspopup="true"
                 aria-expanded={reactionTooltipEmoji === chip.emoji}
-                on:click={() => handleChipClick(chip.emoji, chip.includesMe)}
-                on:mouseenter={() => openChipTooltip(chip.emoji)}
-                on:mouseleave={() => closeChipTooltip(chip.emoji)}
-                on:focus={() => openChipTooltip(chip.emoji)}
-                on:blur={() => closeChipTooltip(chip.emoji)}
-                on:keydown={(e) => handleChipKeydown(e, chip.emoji)}
-                on:pointerdown|stopPropagation={(e) => handleChipPointerDown(e, chip.emoji)}
-                on:pointermove|stopPropagation={handleChipPointerMove}
-                on:pointerup|stopPropagation={handleChipPointerUp}
-                on:pointercancel|stopPropagation={handleChipPointerUp}
+                onclick={() => handleChipClick(chip.emoji, chip.includesMe)}
+                onmouseenter={() => openChipTooltip(chip.emoji)}
+                onmouseleave={() => closeChipTooltip(chip.emoji)}
+                onfocus={() => openChipTooltip(chip.emoji)}
+                onblur={() => closeChipTooltip(chip.emoji)}
+                onkeydown={(e) => handleChipKeydown(e, chip.emoji)}
+                onpointerdown={(e) => { e.stopPropagation(); handleChipPointerDown(e, chip.emoji); }}
+                onpointermove={(e) => { e.stopPropagation(); handleChipPointerMove(e); }}
+                onpointerup={(e) => { e.stopPropagation(); handleChipPointerUp(); }}
+                onpointercancel={(e) => { e.stopPropagation(); handleChipPointerUp(); }}
               >
                 <span class="reaction-emoji">{chip.emoji}</span>
                 <span class="reaction-count">{chip.count}</span>
@@ -481,8 +482,8 @@
       style="left: {menuX}px; top: {menuY}px;"
       role="menu"
       aria-label={$t('messaging.message.actionsAria')}
-      on:pointerdown|stopPropagation
-      on:keydown={(e) => {
+      onpointerdown={(e) => e.stopPropagation()}
+      onkeydown={(e) => {
         if (e.key === 'Escape') {
           e.preventDefault();
           if (pickerExpanded) {
@@ -504,7 +505,7 @@
               aria-pressed={quickReactedSet.has(emoji)}
               aria-label={$t('messaging.message.reactWithAria', { values: { emoji } })}
               title={$t('messaging.message.reactWithAria', { values: { emoji } })}
-              on:click={() => handleQuickReact(emoji)}
+              onclick={() => handleQuickReact(emoji)}
             >
               {emoji}
             </button>
@@ -514,7 +515,7 @@
             class="quick-reaction-expand"
             aria-label={$t('messaging.message.moreReactionsAria')}
             title={$t('messaging.message.moreReactionsAria')}
-            on:click={expandPicker}
+            onclick={expandPicker}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="6 9 12 15 18 9" />
@@ -535,7 +536,7 @@
               class="reaction-picker-back"
               aria-label={$t('messaging.message.backAria')}
               title={$t('messaging.message.backAria')}
-              on:click={collapsePicker}
+              onclick={collapsePicker}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="15 18 9 12 15 6" />
@@ -560,7 +561,7 @@
                       class="reaction-picker-emoji"
                       aria-label={$t('messaging.message.reactWithAria', { values: { emoji } })}
                       title={$t('messaging.message.reactWithAria', { values: { emoji } })}
-                      on:click={() => handlePickerSelect(emoji)}
+                      onclick={() => handlePickerSelect(emoji)}
                     >
                       {emoji}
                     </button>
@@ -572,7 +573,7 @@
                         class="reaction-picker-emoji"
                         aria-label={$t('messaging.message.reactWithAria', { values: { emoji } })}
                         title={$t('messaging.message.reactWithAria', { values: { emoji } })}
-                        on:click={() => handlePickerSelect(emoji)}
+                        onclick={() => handlePickerSelect(emoji)}
                       >
                         {emoji}
                       </button>
@@ -589,7 +590,7 @@
                       class="reaction-picker-emoji"
                       aria-label={$t('messaging.message.reactWithAria', { values: { emoji } })}
                       title={$t('messaging.message.reactWithAria', { values: { emoji } })}
-                      on:click={() => handlePickerSelect(emoji)}
+                      onclick={() => handlePickerSelect(emoji)}
                     >
                       {emoji}
                     </button>
@@ -605,7 +606,7 @@
                     class="reaction-picker-emoji"
                     aria-label={$t('messaging.message.reactWithNamedAria', { values: { emoji: entry.emoji, name: entry.name } })}
                     title={entry.name}
-                    on:click={() => handlePickerSelect(entry.emoji)}
+                    onclick={() => handlePickerSelect(entry.emoji)}
                   >
                     {entry.emoji}
                   </button>

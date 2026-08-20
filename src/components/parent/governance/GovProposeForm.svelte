@@ -5,7 +5,6 @@
   import {
     fundedByFromWriteResult,
     govWriteSubmittedToast,
-    type GovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
@@ -17,7 +16,6 @@
   export let treasuryAuthority: string;
   export let privilege: GovernancePrivilege;
   export let fundingHint = '';
-  export let fundingMode: GovWriteFundingMode | null = null;
   export let onSubmitted: () => void = () => {};
 
   const tFn = get(t);

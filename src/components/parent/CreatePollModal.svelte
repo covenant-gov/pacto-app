@@ -119,7 +119,7 @@
             type="text"
             class="create-poll-input"
             value={optionRows[i]}
-            on:input={(e) => {
+            oninput={(e) => {
               optionRows[i] = e.currentTarget.value;
               optionRows = optionRows;
             }}
@@ -132,7 +132,7 @@
               type="button"
               class="create-poll-remove"
               disabled={saving}
-              on:click={() => removeOption(i)}
+              onclick={() => removeOption(i)}
               aria-label={$t('governance.createPoll.removeOptionAriaLabel', { values: { n: i + 1 } })}
             >
               {$t('governance.createPoll.removeOption')}
@@ -141,7 +141,7 @@
         </li>
       {/each}
     </ul>
-    <button type="button" class="create-poll-add-opt" disabled={saving} on:click={addOption}>
+    <button type="button" class="create-poll-add-opt" disabled={saving} onclick={addOption}>
       {$t('governance.createPoll.addChoice')}
     </button>
 
@@ -150,8 +150,8 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" disabled={saving} on:click={onClose}>{$t('governance.createPoll.cancel')}</button>
-      <button type="button" class="btn-primary" disabled={saving} on:click={submit}>{$t('governance.createPoll.create')}</button>
+      <button type="button" class="btn-secondary" disabled={saving} onclick={onClose}>{$t('governance.createPoll.cancel')}</button>
+      <button type="button" class="btn-primary" disabled={saving} onclick={submit}>{$t('governance.createPoll.create')}</button>
     </div>
   </Modal>
 {/if}

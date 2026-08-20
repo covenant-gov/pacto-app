@@ -61,7 +61,7 @@
   }
 </script>
 
-<svelte:window on:mousemove={onMouseMove} on:mouseup={stopResize} />
+<svelte:window onmousemove={onMouseMove} onmouseup={stopResize} />
 
 <div
   class="resizable-sidebar {sidebarClass}"
@@ -74,7 +74,7 @@
     class="resize-handle"
     type="button"
     aria-label={get(t)('messaging.dm.navbar.resizeSidebar')}
-    on:mousedown={startResize}
+    onmousedown={startResize}
   ></button>
 </div>
 

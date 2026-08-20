@@ -31,7 +31,7 @@
           class:commons-browser-tile-active={isActive}
           style={art ? '' : `background-image: ${commonsTagGradient(category.id)}`}
           aria-pressed={isActive}
-          on:click={() => onSelectCategory(category.id)}
+          onclick={() => onSelectCategory(category.id)}
         >
           {#if art}
             <img class="commons-browser-art" src={art} alt="" loading="eager" decoding="async" />

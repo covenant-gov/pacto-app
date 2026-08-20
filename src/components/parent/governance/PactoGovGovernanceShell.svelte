@@ -30,7 +30,6 @@
     displayGovWriteFundingHint,
     fundedByFromWriteResult,
     govWriteSubmittedToast,
-    resolveGovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
@@ -116,11 +115,6 @@
     }
   }
 
-  $: fundingMode = resolveGovWriteFundingMode({
-    balanceRaw: rosterBalanceRaw,
-    balanceKnown: rosterBalanceKnown,
-    hasSponsorInfra: hasSponsor,
-  });
   $: fundingHint = displayGovWriteFundingHint({
     balanceRaw: rosterBalanceRaw,
     balanceKnown: rosterBalanceKnown,
@@ -349,7 +343,7 @@
         class="submode-tab"
         class:selected={govSubMode === mode.id}
         aria-selected={govSubMode === mode.id}
-        on:click={() => (govSubMode = mode.id)}
+        onclick={() => (govSubMode = mode.id)}
       >
         {mode.label}
       </button>
@@ -376,7 +370,6 @@
         onRefreshProposals={refreshAllProposals}
         onExecuteMutiny={executeMutinyFromBoard}
         {fundingHint}
-        {fundingMode}
       />
     {:else if govSubMode === 'crew'}
       <GovCrewActions
@@ -391,7 +384,6 @@
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         {fundingHint}
-        {fundingMode}
       />
     {:else}
       <GovCaptainActions
@@ -413,7 +405,6 @@
           void reloadQmPending();
         }}
         {fundingHint}
-        {fundingMode}
       />
     {/if}
   </div>

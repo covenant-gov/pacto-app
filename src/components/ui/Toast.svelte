@@ -28,7 +28,7 @@
         <button
           type="button"
           class="toast-go-btn"
-          on:click={() => goToSpace($toastMessage!.goTo!)}
+          onclick={() => goToSpace($toastMessage!.goTo!)}
           aria-label="{$t('commons.goTo')} {$toastMessage.goTo.name}"
         >
           {$t('commons.goTo')} {$toastMessage.goTo.name}
@@ -38,14 +38,14 @@
         <button
           type="button"
           class="toast-go-btn"
-          on:click={runToastRetryAction}
+          onclick={runToastRetryAction}
           aria-label={$toastMessage.retryLabel}
         >
           {$toastMessage.retryLabel}
         </button>
       {/if}
     </div>
-    <button type="button" class="toast-dismiss" on:click={clearToast} aria-label={$t('commons.dismiss')}>
+    <button type="button" class="toast-dismiss" onclick={clearToast} aria-label={$t('commons.dismiss')}>
       ×
     </button>
   </div>

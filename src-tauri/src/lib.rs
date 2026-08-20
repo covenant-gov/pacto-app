@@ -555,7 +555,10 @@ impl ChatState {
         counts
     }
 
-    /// Total unread count across every chat (feeds the OS dock badge).
+    /// Total unread count across every chat. Kept for test assertions;
+    /// the real dock-badge total is folded independently in
+    /// `update_unread_counter` rather than calling this.
+    #[cfg(test)]
     fn count_unread_messages(&self) -> u32 {
         self.unread_counts_by_chat().values().sum()
     }
@@ -2457,6 +2460,7 @@ impl IntakeOutcome {
     /// Whether the failure repeats on every retry, so the wrapper should be recorded
     /// as discarded rather than re-fetched on each launch. Timeouts need the per-id
     /// counter in `note_giftwrap_timeout` — use that path from `handle_event_guarded`.
+    #[cfg(test)]
     fn is_permanent_failure(self) -> bool {
         matches!(self, IntakeOutcome::Panicked)
     }
@@ -2881,7 +2885,7 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                     if let Ok(Some(deleted_at)) = db::get_dm_deletion_cutoff(handle, &contact).await
                     {
                         if db::dm_created_at_at_or_before_cutoff(
-                            rumor.created_at.as_u64(),
+                            rumor.created_at.as_secs(),
                             deleted_at,
                         ) {
                             let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
@@ -10222,6 +10226,12 @@ async fn sync_all_profiles() -> Result<(), String> {
 pub fn run() {
     operator_env::load_operator_env();
 
+    // stderr is unbuffered even when piped, so this line is visible in the
+    // e2e harness if we get past .so constructors and into Rust `main`.
+    if test_sandbox::sandbox_root().is_some() {
+        eprintln!("[sandbox] boot");
+    }
+
     if let Err(e) = trusted_relays::init_from_env() {
         eprintln!("[trusted_relays] {e}");
         std::process::exit(1);
@@ -10251,7 +10261,12 @@ pub fn run() {
     {
         // WebKitGTK can be quite funky cross-platform: as a result, we'll fallback to a more compatible renderer
         // In theory, this will make Vector run more consistently across a wider range of Linux Desktop distros.
+        // Also set before spawn in scripts/run-e2e-tauri.mjs — constructors can
+        // SIGILL on a headless Xvfb display before this line runs.
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
     }
 
     std::panic::set_hook(Box::new(|info| {

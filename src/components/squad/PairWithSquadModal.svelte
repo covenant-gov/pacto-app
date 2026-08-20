@@ -73,7 +73,7 @@
     <p id="pair-squad-description" class="pair-modal-subtitle">
       {$t('squad.pair.subtitle', { values: { anchorSquadName } })}
     </p>
-    <form on:submit|preventDefault={handleSubmit}>
+    <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       <label class="pair-label" for="squad-pair-name">{$t('squad.pair.nameLabel')}</label>
       <input
         id="squad-pair-name"
@@ -109,7 +109,7 @@
               name="partner-squad"
               value={squad.id}
               checked={selectedPartnerSquadId === squad.id}
-              on:change={() => selectPartner(squad.id)}
+              onchange={() => selectPartner(squad.id)}
             />
             <SquadAvatar src={squad.iconUrl} name={squad.name} seed={squad.id || squad.name} size={28} />
             <span class="pair-candidate-name">{squad.name}</span>
@@ -130,7 +130,7 @@
         <p class="pair-error" role="alert">{error}</p>
       {/if}
       <div class="pair-actions">
-        <button type="button" class="pair-btn-cancel" on:click={onClose} aria-label={$t('squad.pair.cancel')}>
+        <button type="button" class="pair-btn-cancel" onclick={onClose} aria-label={$t('squad.pair.cancel')}>
           {$t('squad.pair.cancel')}
         </button>
         <button type="submit" class="pair-btn-create" disabled={!canCreate} aria-label={$t('squad.pair.createAria')}>

@@ -26,7 +26,6 @@
   import {
     fundedByFromWriteResult,
     govWriteSubmittedToast,
-    type GovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
@@ -50,7 +49,6 @@
   export let onRefreshProposals: () => void = () => {};
   export let onExecuteMutiny: () => void | Promise<void> = () => {};
   export let fundingHint = '';
-  export let fundingMode: GovWriteFundingMode | null = null;
 
   const tFn = get(t);
 
@@ -158,7 +156,7 @@
     <RefreshIconButton
       spinning={refreshSpinning}
       ariaLabel={refreshSpinning ? $t('governance.aria.refreshingProposals') : $t('governance.aria.refreshProposals')}
-      on:click={onRefreshProposals}
+      onclick={onRefreshProposals}
     />
   </div>
   {#if fundingHint}

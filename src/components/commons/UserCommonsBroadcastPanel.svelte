@@ -98,7 +98,7 @@
   }
 </script>
 
-<form class="user-broadcast-panel" on:submit|preventDefault={handleSubmit}>
+<form class="user-broadcast-panel" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
   <span class="broadcast-label">{$t('commons.broadcast.tagsLabelPersonal')}</span>
   <CommonsTagPicker bind:selected={tags} disabled={onCooldown || publishing} />
 

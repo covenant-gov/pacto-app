@@ -148,26 +148,6 @@ pub fn salt_file_path<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Result<P
     Ok(profile_dir.join("salt.bin"))
 }
 
-/// Read the redundant salt file cache, if it exists and is well-formed.
-pub fn read_salt_file<R: Runtime>(
-    handle: &AppHandle<R>,
-    npub: &str,
-) -> Result<Option<[u8; SALT_LENGTH]>, String> {
-    let path = salt_file_path(handle, npub)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let bytes = std::fs::read(&path).map_err(|e| format!("Failed to read salt file: {}", e))?;
-    if bytes.len() != SALT_LENGTH {
-        return Ok(None);
-    }
-
-    let mut salt = [0u8; SALT_LENGTH];
-    salt.copy_from_slice(&bytes);
-    Ok(Some(salt))
-}
-
 /// Write the redundant salt file cache with restricted permissions.
 /// Failures are logged as warnings but are not fatal; the settings table is
 /// the authoritative source of truth.
@@ -516,28 +496,20 @@ mod tests {
     }
 
     #[test]
+    fn write_salt_file_writes_salt_length_bytes() {
+        let app = tauri::test::mock_app();
+        let npub = "npub1saltwrite";
+        let salt = generate_salt();
+        write_salt_file(app.handle(), npub, &salt).unwrap();
+        let path = salt_file_path(app.handle(), npub).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), salt.to_vec());
+    }
+
+    #[test]
     fn chacha_decrypt_rejects_malformed_hex() {
         let key = derive_legacy_key("password");
         let decrypted = decrypt_with_key("not-hex", &key);
         assert!(decrypted.is_err());
-    }
-
-    #[test]
-    fn salt_file_round_trip() {
-        let app = tauri::test::mock_app();
-        let npub = "npub1saltroundtrip";
-        let salt = generate_salt();
-        write_salt_file(app.handle(), npub, &salt).unwrap();
-        let read = read_salt_file(app.handle(), npub).unwrap();
-        assert_eq!(read, Some(salt));
-    }
-
-    #[test]
-    fn salt_file_returns_none_when_missing() {
-        let app = tauri::test::mock_app();
-        let npub = "npub1saltmissing";
-        let read = read_salt_file(app.handle(), npub).unwrap();
-        assert_eq!(read, None);
     }
 
     // Legacy `hash_pass` retained as a private golden vector for the hard-coded

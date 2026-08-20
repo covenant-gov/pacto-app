@@ -77,7 +77,7 @@ That last group is the real cost: `$:` and `$effect` differ in timing, dependenc
 
 - R10. Components convert in domain-directory batches, each landing on `main` independently.
 - R11. Each batch leaves the application working; no batch depends on a later batch.
-- R12. Batches run in this order: `ui/`, `announcements/`, the small-file cluster (`auth/`, `backup/`, `squad/`, `profile/`, `inbox/`, `updater/`), `settings/`, `channel/`, `dm/`, `wallet/`, `commons/`, `parent/`, `parent/dashboard/`, `parent/governance/`, `layout/`, `src/routes/+layout.svelte`. Every directory holding a `.svelte` file appears exactly once.
+- R12. Batches run in this order: `ui/`, `announcements/`, the small-file cluster (`auth/`, `backup/`, `squad/`, `profile/`, `inbox/`, `updater/`), `settings/`, `channel/`, `dm/`, `wallet/`, `commons/`, `parent/`, `parent/dashboard/`, `parent/governance/`, `layout/`, `src/routes/+layout.svelte`. Every directory holding a `.svelte` file appears exactly once. `catch-up/` (added to the tree after this plan was written) requires no scheduled batch: all three of its files — `CatchUpFilters.svelte`, `CatchUpView.svelte`, `CatchUpEntry.svelte` — were authored in runes mode under R1 and need no conversion.
 - R13. A batch is scheduled against a domain that no in-flight feature branch is modifying.
 - R25. No converted file imports from `svelte/legacy`.
 
@@ -391,6 +391,7 @@ Five requirements are cross-cutting and owned by no single unit. R12 fixes the b
 - **Files:**
   - `src/components/ui/Toast.svelte`, `Tab.svelte`, `Modal.svelte`, `ResizableSidebar.svelte`, `RefreshIconButton.svelte`, `EditIconButton.svelte` (781 lines, 26 `export let`, 1 `$:`)
   - `src/components/ui/cross-mode-interop.test.ts` — new
+  - Note: `src/components/ui/NotificationLevelIndicator.svelte` and `NotificationLevelMenu.svelte` landed after this plan was written and are already runes-mode (R1) — not part of this batch's remaining scope, no action needed.
 - **Approach:** The lightest batch and the right place to establish the per-batch loop.
   `Modal.svelte`, `ResizableSidebar.svelte`, and `Tab.svelte` replace `<slot />` with `{@render children()}` here; their 26 combined consumers stay legacy and are not touched.
   `Tab.svelte`'s `<slot>{firstLetter}</slot>` carries fallback content, so it becomes `{#if children}{@render children()}{:else}{firstLetter}{/if}`. Dropping the `{:else}` arm silently blanks every tab label and no gate catches it, so this is the one conversion in the batch with a required test.
@@ -444,7 +445,7 @@ Five requirements are cross-cutting and owned by no single unit. R12 fixes the b
 - **Goal:** Convert the settings surface, including two slot providers.
 - **Requirements:** R10, R11, R14, R18, R19, R20, R21, R22, R25
 - **Dependencies:** U2
-- **Files:** all 11 files under `src/components/settings/` (5229 lines, 34 `export let`, 38 `$:`)
+- **Files:** 12 files under `src/components/settings/` (5910 lines, 38 `export let`, 49 `$:`) — the 11 files from the original plan plus `AvatarCropModal.svelte`, which landed after this plan was written. `NotificationsSection.svelte` also landed after this plan was written and is already runes-mode (R1) — not part of this batch's remaining scope.
 - **Approach:** `SettingsPage.svelte` and `SettingsCollapsibleSection.svelte` replace `<slot />` with `{@render children()}`.
   Their six consumers include `src/components/profile/Profile.svelte`, converted in U6, and four sibling settings sections converted here. Neither ordering matters.
   The 13 side-effect statements cluster in `EvmWalletExtras.svelte`, `DefaultWalletConfig.svelte`, `EvmAccountsSection.svelte`, `EvmAccountKeyExportModal.svelte`, and `ExportAllSecretsModal.svelte` — all wallet-key handling, so triage conservatively.
@@ -478,7 +479,7 @@ Five requirements are cross-cutting and owned by no single unit. R12 fixes the b
 - **Goal:** Convert the message-rendering half of the DM surface.
 - **Requirements:** R10, R11, R18, R19, R20, R21, R22, R25
 - **Dependencies:** U3
-- **Files:** `src/components/dm/Message.svelte`, `MessageAttachment.svelte`, `ImageViewer.svelte`, `FormattedMessageBody.svelte`, `LinkPreview.svelte`, `MessageActionsMenu.svelte`, `SyncStatusIndicator.svelte` (2855 lines, 48 `export let`, 35 `$:`)
+- **Files:** `src/components/dm/Message.svelte`, `MessageAttachment.svelte`, `ImageViewer.svelte`, `FormattedMessageBody.svelte`, `LinkPreview.svelte`, `MessageActionsMenu.svelte` (2855 lines, 48 `export let`, 35 `$:` — aggregate stats include `SyncStatusIndicator.svelte`'s original legacy counts and are stale by that amount). `SyncStatusIndicator.svelte` is already runes-mode (R1, converted ahead of this batch) — not part of this batch's remaining scope; its existing test scenarios below still apply and pass against the converted file.
 - **Approach:** This is the best-defended batch in the plan — every one of these seven files already has a jsdom test file. `MessageAttachment.svelte` (15 `$:`) and `LinkPreview.svelte` (7 `$:`) carry the side-effect concentration; both do asynchronous loading keyed on a prop, which is the canonical `$effect` case and also the canonical infinite-loop case if the effect writes a value it also reads.
 - **Patterns to follow:** the existing tests in `src/components/dm/*.test.ts` for structure; KTD3 for triage.
 - **Execution note:** Run the seven existing test files after each file's conversion rather than at the end of the batch; they are the fastest signal in the plan.

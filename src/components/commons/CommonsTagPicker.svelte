@@ -121,7 +121,7 @@
             type="button"
             class="tag-picker-chip-remove"
             aria-label={$t('commons.tagPicker.removeTagAria', { values: { tag } })}
-            on:click={() => removeTag(tag)}
+            onclick={() => removeTag(tag)}
             {disabled}
           >
             ×
@@ -138,10 +138,10 @@
         class="tag-picker-input"
         {placeholder}
         bind:value={query}
-        on:focus={openFlatList}
-        on:blur={scheduleCloseFlatList}
-        on:input={openFlatList}
-        on:keydown={handleKeydown}
+        onfocus={openFlatList}
+        onblur={scheduleCloseFlatList}
+        oninput={openFlatList}
+        onkeydown={handleKeydown}
         {disabled}
         role="combobox"
         aria-controls="commons-tag-picker-flat-list"
@@ -154,7 +154,7 @@
       class="tag-picker-toggle"
       aria-label={categoryBrowse ? $t('commons.tagPicker.backToSearch') : $t('commons.tagPicker.browseByCategory')}
       aria-expanded={categoryBrowse}
-      on:click={() => (categoryBrowse ? closeCategoryBrowse() : openCategoryBrowse())}
+      onclick={() => (categoryBrowse ? closeCategoryBrowse() : openCategoryBrowse())}
       {disabled}
     >
       {categoryBrowse ? '–' : '+'}
@@ -175,7 +175,7 @@
       id="commons-tag-picker-flat-list"
       role="listbox"
       tabindex="-1"
-      on:mousedown|preventDefault
+      onmousedown={(e) => e.preventDefault()}
     >
       {#if flatMatches.length === 0}
         <p class="tag-picker-empty">{$t('commons.tagPicker.noMatches', { values: { query } })}</p>
@@ -190,7 +190,7 @@
                 role="option"
                 aria-selected={activeSet.has(group.tag)}
                 disabled={atMax && !activeSet.has(group.tag)}
-                on:mousedown|preventDefault={() => selectTag(group.tag)}
+                onmousedown={(e) => { e.preventDefault(); selectTag(group.tag); }}
               >
                 <span class="tag-picker-flat-title">{group.title}</span>
                 <span class="tag-picker-flat-tag">#{group.tag}</span>

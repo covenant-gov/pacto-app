@@ -65,6 +65,7 @@ const PIMLICO_API_KEY_SETTING: &str = "pimlico_api_key";
 
 /// EntryPoint v0.7 bundler URL: optional `BUNDLER_RPC_URL` override, else stored key, else `PIMLICO_API_KEY`.
 /// Non-`https://` overrides error with `BUNDLER_CONFIG` (no URL echo).
+#[cfg(test)]
 pub fn bundler_rpc_url(network_key: &str) -> Result<Option<String>, String> {
     bundler_rpc_url_with_stored(network_key, None)
 }
@@ -116,6 +117,7 @@ fn explicit_bundler_rpc_url() -> Result<Option<String>, String> {
 }
 
 /// UI status only: no URLs or keys.
+#[cfg(test)]
 pub fn bundler_status_source(network_key: &str) -> &'static str {
     bundler_status_source_with_stored(network_key, None)
 }
@@ -200,11 +202,6 @@ fn resolved_pimlico_key(stored_key: Option<&str>) -> Option<String> {
         .or_else(pimlico_env_key)
 }
 
-/// Pimlico EP v0.7 bundler URL. Stored account key wins over `PIMLICO_API_KEY`.
-fn pimlico_bundler_rpc_url(network_key: &str) -> Option<String> {
-    pimlico_bundler_rpc_url_with_key(network_key, None)
-}
-
 fn pimlico_bundler_rpc_url_with_key(network_key: &str, stored_key: Option<&str>) -> Option<String> {
     let key = resolved_pimlico_key(stored_key)?;
     let chain_id = pimlico_chain_id_for_network(network_key)?;
@@ -213,15 +210,17 @@ fn pimlico_bundler_rpc_url_with_key(network_key: &str, stored_key: Option<&str>)
     ))
 }
 
+/// Pimlico EP v0.7 bundler URL. Stored account key wins over `PIMLICO_API_KEY`.
+#[cfg(test)]
+fn pimlico_bundler_rpc_url(network_key: &str) -> Option<String> {
+    pimlico_bundler_rpc_url_with_key(network_key, None)
+}
+
 #[tauri::command]
 pub fn set_pimlico_api_key<R: Runtime>(app: AppHandle<R>, key: String) -> Result<(), String> {
     let key = validate_pimlico_api_key(&key)?;
     crate::account_manager::get_current_account().map_err(|_| {
-        wallet_err_json(
-            "BUNDLER_CONFIG",
-            "Sign in to save a Pimlico API key.",
-            None,
-        )
+        wallet_err_json("BUNDLER_CONFIG", "Sign in to save a Pimlico API key.", None)
     })?;
     db::set_sql_setting(app, PIMLICO_API_KEY_SETTING.to_string(), key)
 }
@@ -1413,9 +1412,8 @@ mod tests {
         parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
         parse_sponsored_user_op_receipt, paymaster_data, pimlico_bundler_rpc_url,
         pimlico_chain_id_for_network, receipt_transaction_hash, retriable_bundler_status,
-        validate_pimlico_api_key,
-        user_op_json, userop_max_cost_wei, SponsoredUserOpReceipt, UserOpParams,
-        FALLBACK_MAX_PRIORITY_FEE,
+        user_op_json, userop_max_cost_wei, validate_pimlico_api_key, SponsoredUserOpReceipt,
+        UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};

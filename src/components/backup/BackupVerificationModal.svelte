@@ -234,7 +234,7 @@
           <button
             type="button"
             class="btn-reveal"
-            on:click={toggleReveal}
+            onclick={toggleReveal}
             aria-pressed={revealed}
           >
           {revealed ? $t('backup.modal.hideSeedPhrase') : $t('backup.modal.showSeedPhrase')}
@@ -242,7 +242,7 @@
           <button
             type="button"
             class="btn-copy"
-            on:click={() => void copySeed()}
+            onclick={() => void copySeed()}
             disabled={!revealed}
           >
             {copied ? $t('settings.copied') : $t('settings.copy')}
@@ -251,11 +251,11 @@
       {/if}
 
       <div class="backup-actions">
-        <button type="button" class="btn-secondary" on:click={handleClose}>{$t('backup.modal.later')}</button>
+        <button type="button" class="btn-secondary" onclick={handleClose}>{$t('backup.modal.later')}</button>
         <button
           type="button"
           class="btn-primary"
-          on:click={goToConfirm}
+          onclick={goToConfirm}
           disabled={!revealed || seedWords.length === 0}
         >
           {$t('backup.modal.wroteItDown')}
@@ -272,11 +272,11 @@
       </div>
 
       <div class="backup-actions">
-        <button type="button" class="btn-secondary" on:click={() => (phase = 'show')}>{$t('auth.back')}</button>
+        <button type="button" class="btn-secondary" onclick={() => (phase = 'show')}>{$t('auth.back')}</button>
         <button
           type="button"
           class="btn-primary"
-          on:click={goToQuiz}
+          onclick={goToQuiz}
           disabled={!writtenDown}
         >
           {$t('auth.continue')}
@@ -297,7 +297,7 @@
             autocomplete="off"
             spellcheck="false"
             aria-label={$t('backup.quiz.wordNumberAria', { values: { position } })}
-            on:keydown={(e) => handleInputKey(i, e)}
+            onkeydown={(e) => handleInputKey(i, e)}
           />
         {/each}
       </div>
@@ -307,8 +307,8 @@
       {/if}
 
       <div class="backup-actions">
-        <button type="button" class="btn-secondary" on:click={goToShow}>{$t('backup.modal.showSeedAgain')}</button>
-        <button type="button" class="btn-primary" on:click={() => void submitQuiz()}>
+        <button type="button" class="btn-secondary" onclick={goToShow}>{$t('backup.modal.showSeedAgain')}</button>
+        <button type="button" class="btn-primary" onclick={() => void submitQuiz()}>
           {$t('commons.verify')}
         </button>
       </div>

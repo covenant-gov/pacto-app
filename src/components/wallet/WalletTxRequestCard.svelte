@@ -73,7 +73,7 @@
             type="button"
             class="wallet-tx-request-btn wallet-tx-request-btn-accept"
             disabled={accepting}
-            on:click={onAccept}
+            onclick={onAccept}
           >
             {accepting ? $t('wallet.accepting') : $t('wallet.accept')}
           </button>
@@ -81,7 +81,7 @@
             type="button"
             class="wallet-tx-request-btn wallet-tx-request-btn-decline"
             disabled={accepting}
-            on:click={onDecline}
+            onclick={onDecline}
           >
             {$t('wallet.decline')}
           </button>
