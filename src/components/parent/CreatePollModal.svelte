@@ -6,20 +6,24 @@
   import type { ParentPoll, ParentPollOption } from '../../lib/parent/parent-polls';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
 
-  export let open: boolean;
-  export let parentId: string;
-  export let onClose: () => void;
-  export let onCreate: (poll: ParentPoll) => void | Promise<void>;
+  interface Props {
+    open: boolean;
+    parentId: string;
+    onClose: () => void;
+    onCreate: (poll: ParentPoll) => void | Promise<void>;
+  }
+
+  let { open, parentId, onClose, onCreate }: Props = $props();
 
   const titleId = 'create-poll-title';
   const descId = 'create-poll-desc';
 
-  let title = '';
-  let description = '';
+  let title = $state('');
+  let description = $state('');
   /** Editable labels; trimmed non-empty become options */
-  let optionRows: string[] = ['', ''];
-  let saving = false;
-  let error = '';
+  let optionRows = $state<string[]>(['', '']);
+  let saving = $state(false);
+  let error = $state('');
 
   function reset() {
     title = '';
@@ -29,7 +33,9 @@
     saving = false;
   }
 
-  $: if (!open) reset();
+  $effect(() => {
+    if (!open) reset();
+  });
 
   function addOption() {
     optionRows = [...optionRows, ''];
@@ -121,7 +127,6 @@
             value={optionRows[i]}
             oninput={(e) => {
               optionRows[i] = e.currentTarget.value;
-              optionRows = optionRows;
             }}
             disabled={saving}
             placeholder={$t('governance.createPoll.optionPlaceholder', { values: { n: i + 1 } })}

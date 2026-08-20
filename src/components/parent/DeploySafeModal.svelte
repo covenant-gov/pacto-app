@@ -2,7 +2,7 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   const tFn = get(t);
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import Modal from '../ui/Modal.svelte';
   import { getMlsGroupMembers } from '../../lib/api/nostr';
@@ -22,35 +22,44 @@
   import { listSquadMemberEvmInvokeArgs } from '../../lib/squad/squad-member-evm-share';
   import { runOnChainInBackground } from '../../lib/evm/on-chain-background';
 
-  export let parentId: string;
-  export let announcementsGroupId: string | null;
-  export let treasurySafeCount: number;
-  /** Established squad network; when set the picker is pinned to it. */
-  export let squadNetwork: SupportedChainId | null = null;
-  export let onClose: () => void;
-  export let onSuccess: (params: {
-    safeAddress: string;
-    chain: string;
-    label: string;
-    entryId: string;
-    txHash?: string;
-  }) => Promise<void>;
+  let {
+    parentId,
+    announcementsGroupId,
+    treasurySafeCount,
+    squadNetwork = null,
+    onClose,
+    onSuccess,
+  }: {
+    parentId: string;
+    announcementsGroupId: string | null;
+    treasurySafeCount: number;
+    /** Established squad network; when set the picker is pinned to it. */
+    squadNetwork?: SupportedChainId | null;
+    onClose: () => void;
+    onSuccess: (params: {
+      safeAddress: string;
+      chain: string;
+      label: string;
+      entryId: string;
+      txHash?: string;
+    }) => Promise<void>;
+  } = $props();
 
   const titleId = 'deploy-safe-title';
   const descId = 'deploy-safe-desc';
 
-  let loading = true;
-  let channelMembers: string[] = [];
+  let loading = $state(true);
+  let channelMembers = $state<string[]>([]);
   type SquadMemberEvmRow = { memberNpub: string; evmAddress: string; updatedAtMs: number };
-  let roster: Record<string, string> = {};
-  let myEvm: string | null = null;
+  let roster = $state<Record<string, string>>({});
+  let myEvm = $state<string | null>(null);
 
-  let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
-  let selectedMemberNpubs: string[] = [];
-  let includeMeAsOwner = true;
-  let deployLabel = '';
-  let thresholdInput = '1';
-  let deployError = '';
+  let deployNetwork = $state<SupportedChainId | ''>(untrack(() => squadNetwork ?? ''));
+  let selectedMemberNpubs = $state<string[]>([]);
+  let includeMeAsOwner = $state(true);
+  let deployLabel = $state('');
+  let thresholdInput = $state('1');
+  let deployError = $state('');
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -84,18 +93,16 @@
     });
   }
 
-  $: sortedMembers = sortedMemberNpubs(channelMembers);
+  const sortedMembers = $derived(sortedMemberNpubs(channelMembers));
   /** #announcements peers who shared a squad roster address (excludes you; use "Include me"). */
-  $: signersListNpubs = sortedMembers.filter((n) => {
-    if (n === ($currentUser?.npub ?? '')) return false;
-    return !!roster[n]?.trim();
-  });
+  const signersListNpubs = $derived(
+    sortedMembers.filter((n) => {
+      if (n === ($currentUser?.npub ?? '')) return false;
+      return !!roster[n]?.trim();
+    }),
+  );
 
-  /**
-   * Inline map (no helper fn): Svelte 5 reactive statements may not register deps read inside nested
-   * functions, so owner count stayed 0 after async `myEvm` assignment.
-   */
-  $: ownerAddresses = (() => {
+  const ownerAddresses = $derived.by(() => {
     const m = new Map<string, string>();
     for (const n of selectedMemberNpubs) {
       const a = effectiveEvm(n);
@@ -105,12 +112,12 @@
       m.set(myEvm.toLowerCase(), myEvm);
     }
     return [...m.values()];
-  })();
-  $: ownerCount = ownerAddresses.length;
-  $: thresholdNum = Math.max(1, parseInt(thresholdInput, 10) || 1);
-  $: thresholdValid = ownerCount > 0 && thresholdNum >= 1 && thresholdNum <= ownerCount;
-  $: maxSafeSigners = $appConfig.deploySafeMaxSigners;
-  $: ownerOverMax = ownerCount > maxSafeSigners;
+  });
+  const ownerCount = $derived(ownerAddresses.length);
+  const thresholdNum = $derived(Math.max(1, parseInt(thresholdInput, 10) || 1));
+  const thresholdValid = $derived(ownerCount > 0 && thresholdNum >= 1 && thresholdNum <= ownerCount);
+  const maxSafeSigners = $derived($appConfig.deploySafeMaxSigners);
+  const ownerOverMax = $derived(ownerCount > maxSafeSigners);
 
   function toggleMember(npub: string): void {
     const evm = effectiveEvm(npub);

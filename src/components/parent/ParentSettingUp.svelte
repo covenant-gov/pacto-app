@@ -1,13 +1,26 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  /** Optional id for the error element (for aria-describedby on retry button). */
-  export let errorId: string | undefined = undefined;
-  export let error: string | undefined = undefined;
-  export let canRetry = false;
-  export let retrying = false;
-  export let onRetry: (() => void) | undefined = undefined;
-  export let canDiscard = false;
-  export let onDiscard: (() => void) | undefined = undefined;
+
+  interface Props {
+    /** Optional id for the error element (for aria-describedby on retry button). */
+    errorId?: string;
+    error?: string;
+    canRetry?: boolean;
+    retrying?: boolean;
+    onRetry?: () => void;
+    canDiscard?: boolean;
+    onDiscard?: () => void;
+  }
+
+  let {
+    errorId,
+    error,
+    canRetry = false,
+    retrying = false,
+    onRetry,
+    canDiscard = false,
+    onDiscard,
+  }: Props = $props();
 </script>
 
 <div class="parent-setting-up" role="status" aria-live="polite">

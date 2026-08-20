@@ -16,20 +16,21 @@
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
   import { currentUser } from '../../stores/auth';
 
-  export let parent: Squad;
+  let { parent }: { parent: Squad } = $props();
 
   const VIEWS: MyDashboardChannelMode[] = [
     'status',
     'alerts',
   ];
 
-  $: dashboardView = $myDashboardChannelMode;
-  $: parentId = parent?.id ?? '';
-  $: announcementsGroupId =
+  const dashboardView = $derived($myDashboardChannelMode);
+  const parentId = $derived(parent?.id ?? '');
+  const announcementsGroupId = $derived(
     parent?.channels?.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ??
-    parent?.channels?.[0]?.groupId ??
-    null;
-  $: squadMemberEvmByNpub = parentId ? ($squadMemberEvmByParentId[parentId] ?? {}) : {};
+      parent?.channels?.[0]?.groupId ??
+      null,
+  );
+  const squadMemberEvmByNpub = $derived(parentId ? ($squadMemberEvmByParentId[parentId] ?? {}) : {});
 
   async function loadSquadMemberEvm() {
     if (!parentId) return;
@@ -41,7 +42,10 @@
     if (npub) persistSquadMemberEvmForParent(npub, loadParentId, rows);
   }
 
-  $: if (parentId) void loadSquadMemberEvm();
+  $effect(() => {
+    void parentId;
+    void loadSquadMemberEvm();
+  });
 
   function selectView(id: MyDashboardChannelMode) {
     myDashboardChannelMode.set(id);
