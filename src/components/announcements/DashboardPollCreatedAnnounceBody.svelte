@@ -1,11 +1,19 @@
+<svelte:options runes={true} />
+
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import type { DashboardPollCreatedPayload } from '../../lib/announcements';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
-  export let payload: DashboardPollCreatedPayload;
-  export let authorName: string;
-  export let timestamp: string;
+  let {
+    payload,
+    authorName,
+    timestamp,
+  }: {
+    payload: DashboardPollCreatedPayload;
+    authorName: string;
+    timestamp: string;
+  } = $props();
 </script>
 
 <div class="poll-announce-body">

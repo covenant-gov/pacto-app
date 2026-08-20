@@ -1,3 +1,5 @@
+<svelte:options runes={true} />
+
 <script lang="ts">
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -12,10 +14,17 @@
   import { profiles } from '../../stores/profiles';
   import { getProfileDisplayName } from '../../lib/utils/profile';
 
-  export let payload: GovernanceUpdatedPayload;
-  export let authorName: string;
-  export let authorNpub: string | undefined = undefined;
-  export let timestamp: string;
+  let {
+    payload,
+    authorName,
+    authorNpub = undefined,
+    timestamp,
+  }: {
+    payload: GovernanceUpdatedPayload;
+    authorName: string;
+    authorNpub?: string;
+    timestamp: string;
+  } = $props();
 
   const tFn = get(t);
 
@@ -52,16 +61,17 @@
     }
   }
 
-  $: displayName =
-    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || tFn('announcements.governanceUpdated.aMember');
-  $: chainId = parseSupportedChainId(payload.chain);
-  $: networkLabel = getWalletNetworkDisplayName(chainId);
-  $: contractAddr = payload.canonical_ref?.trim() ?? '';
-  $: explorerUrl = contractAddr ? explorerAddressUrl(chainId, contractAddr) : '';
-  $: explorerLabel = explorerTxLinkLabel(chainId);
-  $: summary = governanceSummary(payload.provider, displayName);
-  $: txHash = txHashFromProviderPayload(payload.provider_payload);
-  $: explorerTxUrl = txHash ? getExplorerTxUrl(chainId, txHash) : null;
+  const displayName = $derived(
+    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || tFn('announcements.governanceUpdated.aMember')
+  );
+  const chainId = $derived(parseSupportedChainId(payload.chain));
+  const networkLabel = $derived(getWalletNetworkDisplayName(chainId));
+  const contractAddr = $derived(payload.canonical_ref?.trim() ?? '');
+  const explorerUrl = $derived(contractAddr ? explorerAddressUrl(chainId, contractAddr) : '');
+  const explorerLabel = $derived(explorerTxLinkLabel(chainId));
+  const summary = $derived(governanceSummary(payload.provider, displayName));
+  const txHash = $derived(txHashFromProviderPayload(payload.provider_payload));
+  const explorerTxUrl = $derived(txHash ? getExplorerTxUrl(chainId, txHash) : null);
 </script>
 
 <div class="gov-updated-body">

@@ -1,3 +1,5 @@
+<svelte:options runes={true} />
+
 <script lang="ts">
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -9,16 +11,24 @@
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import PactoGovInfraList from '../parent/governance/PactoGovInfraList.svelte';
 
-  export let payload: GovernanceUpdatedPayload;
-  export let authorName: string;
-  export let authorNpub: string | undefined = undefined;
-  export let timestamp: string;
+  let {
+    payload,
+    authorName,
+    authorNpub = undefined,
+    timestamp,
+  }: {
+    payload: GovernanceUpdatedPayload;
+    authorName: string;
+    authorNpub?: string;
+    timestamp: string;
+  } = $props();
 
   const tFn = get(t);
 
-  $: displayName =
-    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || tFn('announcements.governanceUpdated.aMember');
-  $: networkLabel = getWalletNetworkDisplayName(parseSupportedChainId(payload.chain));
+  const displayName = $derived(
+    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || tFn('announcements.governanceUpdated.aMember')
+  );
+  const networkLabel = $derived(getWalletNetworkDisplayName(parseSupportedChainId(payload.chain)));
 </script>
 
 <div class="pacto-gov-deploy-body">

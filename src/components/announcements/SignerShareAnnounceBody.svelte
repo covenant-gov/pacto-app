@@ -1,3 +1,5 @@
+<svelte:options runes={true} />
+
 <script lang="ts">
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -5,21 +7,29 @@
   import { currentUser } from '../../stores/auth';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
-  export let payload: SquadMemberEvmSharePayload;
-  export let authorName: string;
-  export let authorNpub: string | undefined = undefined;
-  export let timestamp: string;
+  let {
+    payload,
+    authorName,
+    authorNpub = undefined,
+    timestamp,
+  }: {
+    payload: SquadMemberEvmSharePayload;
+    authorName: string;
+    authorNpub?: string;
+    timestamp: string;
+  } = $props();
 
   const tFn = get(t);
 
-  $: isMine =
-    Boolean(authorNpub && $currentUser?.npub && authorNpub === $currentUser.npub);
+  const isMine = $derived(Boolean(authorNpub && $currentUser?.npub && authorNpub === $currentUser.npub));
 
-  $: summary = isMine
-    ? tFn('announcements.signerShare.mine')
-    : tFn('announcements.signerShare.theirs', { values: { authorName: authorName || tFn('announcements.signerShare.aMember') } });
+  const summary = $derived(
+    isMine
+      ? tFn('announcements.signerShare.mine')
+      : tFn('announcements.signerShare.theirs', { values: { authorName: authorName || tFn('announcements.signerShare.aMember') } })
+  );
 
-  $: evmAddress = payload.evm_address?.trim() ?? '';
+  const evmAddress = $derived(payload.evm_address?.trim() ?? '');
 
   function shortAddr(addr: string): string {
     const a = addr.trim();
