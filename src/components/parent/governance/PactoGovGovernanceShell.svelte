@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import GovProposalsBoard from './GovProposalsBoard.svelte';
   import GovCrewActions from './GovCrewActions.svelte';
   import GovCaptainActions from './GovCaptainActions.svelte';
@@ -41,68 +40,96 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let payload: PactoGovProviderPayloadV1;
-  export let network: string;
-  export let parentId: string;
-  export let myAddress = '';
-  export let captainWearers: string[] = [];
-  export let crewWearers: string[] = [];
-  export let memberEvmOptions: { address: string; label: string }[] = [];
-  export let treasuryProposals: TreasuryProposalDto[] = [];
-  export let treasuryProposalsLoading = false;
-  export let treasuryProposalsError = '';
-  export let onRefreshProposals: () => void = () => {};
-  export let hasSponsor = false;
+  interface Props {
+    payload: PactoGovProviderPayloadV1;
+    network: string;
+    parentId: string;
+    myAddress?: string;
+    captainWearers?: string[];
+    crewWearers?: string[];
+    memberEvmOptions?: { address: string; label: string }[];
+    treasuryProposals?: TreasuryProposalDto[];
+    treasuryProposalsLoading?: boolean;
+    treasuryProposalsError?: string;
+    onRefreshProposals?: () => void;
+    hasSponsor?: boolean;
+  }
+
+  let {
+    payload,
+    network,
+    parentId,
+    myAddress = '',
+    captainWearers = [],
+    crewWearers = [],
+    memberEvmOptions = [],
+    treasuryProposals = [],
+    treasuryProposalsLoading = false,
+    treasuryProposalsError = '',
+    onRefreshProposals = () => {},
+    hasSponsor = false,
+  }: Props = $props();
 
   type GovSubMode = 'proposals' | 'crew' | 'captain';
   type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
+  /** Capability-preflight state: `unresolved` must never render a gated action as available. */
+  type CapabilitiesStatus = 'unresolved' | 'ready' | 'error';
 
   const tFn = get(t);
 
-  let govSubMode: GovSubMode = 'proposals';
-  let mutinyCaptain = '';
-  let capabilities: SquadCapabilitiesDto | null = null;
-  let capabilitiesLoadKey = '';
+  let govSubMode: GovSubMode = $state('proposals');
+  let mutinyCaptain = $state('');
+  let capabilities: SquadCapabilitiesDto | null = $state(null);
+  let capabilitiesStatus: CapabilitiesStatus = $state('unresolved');
+  let capabilitiesLoadKey = $state('');
 
-  let mutinyStatus: MutinyStatusDto | null = null;
-  let mutinyHasVotedFlag = false;
-  let mutinyLoading = false;
-  let mutinyHydrateKey = '';
+  let mutinyStatus: MutinyStatusDto | null = $state(null);
+  let mutinyHasVotedFlag = $state(false);
+  let mutinyLoading = $state(false);
+  let mutinyHydrateKey = $state('');
 
-  let qmStatus: QuartermasterStatusDto | null = null;
-  let qmHydrateKey = '';
+  let qmStatus: QuartermasterStatusDto | null = $state(null);
+  let qmHydrateKey = $state('');
 
-  let qmPending: QuartermasterPendingActionDto[] = [];
-  let qmPendingLoading = false;
-  let qmPendingError = '';
-  let qmPendingHydrateKey = '';
-  let lastSeenProcessNonce = 0;
+  let qmPending: QuartermasterPendingActionDto[] = $state([]);
+  let qmPendingLoading = $state(false);
+  let qmPendingError = $state('');
+  let qmPendingHydrateKey = $state('');
+  let lastSeenProcessNonce = $state(0);
 
-  $: processNonce = $governanceProcessNonceByParentId[parentId.trim()] ?? 0;
-  $: if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
-    lastSeenProcessNonce = processNonce;
-    refreshAllProposals();
-  }
+  let rosterBalanceRaw = $state('0');
+  let rosterBalanceKnown = $state(false);
+  let fundingBalanceKey = $state('');
 
-  let rosterBalanceRaw = '0';
-  let rosterBalanceKnown = false;
-  let fundingBalanceKey = '';
+  let processNonce = $derived($governanceProcessNonceByParentId[parentId.trim()] ?? 0);
 
-  $: captainList = (() => {
+  $effect(() => {
+    if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
+      lastSeenProcessNonce = processNonce;
+      refreshAllProposals();
+    }
+  });
+
+  let captainList = $derived.by(() => {
     const set = new Set(captainWearers.map((a) => a.trim().toLowerCase()).filter(Boolean));
     if (mutinyCaptain.trim()) set.add(mutinyCaptain.trim().toLowerCase());
     return [...set];
-  })();
+  });
 
-  $: privilege = resolveGovernancePrivilege({
-    myAddress,
-    safeAddress: payload.safe,
-    captainWearers: captainList,
-    crewWearers,
-    capabilities,
-  }) as GovernancePrivilege;
+  /** Destructive captain/crew CTAs must stay closed until the ACL preflight resolves. */
+  let capabilitiesPending = $derived(capabilitiesStatus === 'unresolved');
 
-  $: {
+  let privilege = $derived(
+    resolveGovernancePrivilege({
+      myAddress,
+      safeAddress: payload.safe,
+      captainWearers: captainList,
+      crewWearers,
+      capabilities,
+    }) as GovernancePrivilege,
+  );
+
+  $effect(() => {
     const addr = (privilege.myAddress || myAddress).trim();
     const key = `${network}|${addr}|${hasSponsor}`;
     if (key !== fundingBalanceKey) {
@@ -113,46 +140,49 @@
         rosterBalanceKnown = false;
       }
     }
-  }
-
-  $: fundingHint = displayGovWriteFundingHint({
-    balanceRaw: rosterBalanceRaw,
-    balanceKnown: rosterBalanceKnown,
-    hasSponsorInfra: hasSponsor,
   });
 
-  $: {
+  let fundingHint = $derived(
+    displayGovWriteFundingHint({
+      balanceRaw: rosterBalanceRaw,
+      balanceKnown: rosterBalanceKnown,
+      hasSponsorInfra: hasSponsor,
+    }),
+  );
+
+  $effect(() => {
     const pid = parentId.trim();
     const key = `${pid}|${network}`;
     if (pid && key !== capabilitiesLoadKey) {
       capabilitiesLoadKey = key;
+      capabilitiesStatus = 'unresolved';
       void loadCapabilities(pid);
     }
-  }
+  });
 
-  $: {
+  $effect(() => {
     const key = `${parentId}|${network}|${payload.mutinyModule ?? ''}|${privilege.myAddress}`;
     if (key !== mutinyHydrateKey && parentId.trim() && payload.mutinyModule?.trim()) {
       mutinyHydrateKey = key;
       void reloadMutiny(false);
     }
-  }
+  });
 
-  $: {
+  $effect(() => {
     const key = `${parentId}|${network}|${payload.quartermaster ?? ''}`;
     if (key !== qmHydrateKey && parentId.trim() && payload.quartermaster?.trim()) {
       qmHydrateKey = key;
       void reloadQm(false);
     }
-  }
+  });
 
-  $: {
+  $effect(() => {
     const key = `${parentId}|${network}|${payload.quartermaster ?? ''}|pending`;
     if (key !== qmPendingHydrateKey && parentId.trim() && payload.quartermaster?.trim()) {
       qmPendingHydrateKey = key;
       void reloadQmPending();
     }
-  }
+  });
 
   async function loadCapabilities(pid: string) {
     const key = `${pid}|${network}`;
@@ -160,9 +190,11 @@
       const snap = await getSquadCapabilities(pid, network);
       if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
+      capabilitiesStatus = 'ready';
     } catch {
       if (key !== capabilitiesLoadKey) return;
       capabilities = null;
+      capabilitiesStatus = 'error';
     }
   }
 
@@ -306,14 +338,6 @@
     }
   }
 
-  onMount(() => {
-    const pid = parentId.trim();
-    if (pid) {
-      capabilitiesLoadKey = `${pid}|${network}`;
-      void loadCapabilities(pid);
-    }
-  });
-
   function shortAddr(addr: string): string {
     const a = addr.trim();
     if (a.length < 14) return a || '—';
@@ -370,6 +394,7 @@
         onRefreshProposals={refreshAllProposals}
         onExecuteMutiny={executeMutinyFromBoard}
         {fundingHint}
+        {capabilitiesPending}
       />
     {:else if govSubMode === 'crew'}
       <GovCrewActions
@@ -384,6 +409,7 @@
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         {fundingHint}
+        {capabilitiesPending}
       />
     {:else}
       <GovCaptainActions
@@ -405,6 +431,7 @@
           void reloadQmPending();
         }}
         {fundingHint}
+        {capabilitiesPending}
       />
     {/if}
   </div>

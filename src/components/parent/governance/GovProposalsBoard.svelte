@@ -14,6 +14,7 @@
   import {
     gatePermissionlessSigner,
     gateQuartermasterExecute,
+    type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import {
@@ -32,43 +33,74 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let network: string;
-  export let parentId: string;
-  export let treasuryAuthority: string;
-  export let quartermaster = '';
-  export let privilege: GovernancePrivilege;
-  export let proposals: TreasuryProposalDto[] = [];
-  export let proposalsLoading = false;
-  export let proposalsError = '';
-  export let mutinyStatus: MutinyStatusDto | null = null;
-  export let mutinyLoading = false;
-  export let qmPending: QuartermasterPendingActionDto[] = [];
-  export let qmPendingLoading = false;
-  export let qmPendingError = '';
-  export let mutinyMode = false;
-  export let onRefreshProposals: () => void = () => {};
-  export let onExecuteMutiny: () => void | Promise<void> = () => {};
-  export let fundingHint = '';
+  interface Props {
+    network: string;
+    parentId: string;
+    treasuryAuthority: string;
+    quartermaster?: string;
+    privilege: GovernancePrivilege;
+    proposals?: TreasuryProposalDto[];
+    proposalsLoading?: boolean;
+    proposalsError?: string;
+    mutinyStatus?: MutinyStatusDto | null;
+    mutinyLoading?: boolean;
+    qmPending?: QuartermasterPendingActionDto[];
+    qmPendingLoading?: boolean;
+    qmPendingError?: string;
+    mutinyMode?: boolean;
+    onRefreshProposals?: () => void;
+    onExecuteMutiny?: () => void | Promise<void>;
+    fundingHint?: string;
+    /** True while capability preflight is still loading; forces every gate closed. */
+    capabilitiesPending?: boolean;
+  }
+
+  let {
+    network,
+    parentId,
+    treasuryAuthority,
+    quartermaster = '',
+    privilege,
+    proposals = [],
+    proposalsLoading = false,
+    proposalsError = '',
+    mutinyStatus = null,
+    mutinyLoading = false,
+    qmPending = [],
+    qmPendingLoading = false,
+    qmPendingError = '',
+    mutinyMode = false,
+    onRefreshProposals = () => {},
+    onExecuteMutiny = () => {},
+    fundingHint = '',
+    capabilitiesPending = false,
+  }: Props = $props();
 
   const tFn = get(t);
+  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
-  let acting = false;
+  let acting = $state(false);
 
-  $: execGate = gatePermissionlessSigner(privilege);
-  $: qmExecGate = gateQuartermasterExecute(privilege, mutinyMode);
-  $: processCards = buildGovProcessCards({
-    treasuryProposals: proposals,
-    mutinyStatus,
-    qmPending,
-  });
-  $: openCount = countOpenGovProcesses(processCards);
-  $: boardLoading =
+  let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
+  let qmExecGate = $derived(
+    capabilitiesPending ? PENDING_GATE : gateQuartermasterExecute(privilege, mutinyMode),
+  );
+  let processCards = $derived(
+    buildGovProcessCards({
+      treasuryProposals: proposals,
+      mutinyStatus,
+      qmPending,
+    }),
+  );
+  let openCount = $derived(countOpenGovProcesses(processCards));
+  let boardLoading = $derived(
     (proposalsLoading && proposals.length === 0) ||
-    (mutinyLoading && !mutinyStatus) ||
-    (qmPendingLoading && qmPending.length === 0);
-  $: refreshSpinning = proposalsLoading || mutinyLoading || qmPendingLoading;
-  $: proposalsRpcKind = rpcReadErrorKind(proposalsError);
-  $: qmPendingRpcKind = rpcReadErrorKind(qmPendingError);
+      (mutinyLoading && !mutinyStatus) ||
+      (qmPendingLoading && qmPending.length === 0),
+  );
+  let refreshSpinning = $derived(proposalsLoading || mutinyLoading || qmPendingLoading);
+  let proposalsRpcKind = $derived(rpcReadErrorKind(proposalsError));
+  let qmPendingRpcKind = $derived(rpcReadErrorKind(qmPendingError));
 
   async function runTreasuryExecute(proposalId: string) {
     if (acting || !execGate.enabled) return;

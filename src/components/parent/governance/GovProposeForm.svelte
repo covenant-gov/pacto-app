@@ -1,7 +1,11 @@
 <script lang="ts">
   import GovCtaButton from './GovCtaButton.svelte';
   import { treasuryAuthorityPropose } from '../../../lib/governance/api';
-  import { gateRequiresCaptainOrCrew, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+  import {
+    gateRequiresCaptainOrCrew,
+    type CtaGate,
+    type GovernancePrivilege,
+  } from '../../../lib/governance/governance-privilege';
   import {
     fundedByFromWriteResult,
     govWriteSubmittedToast,
@@ -11,22 +15,37 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let network: string;
-  export let parentId: string;
-  export let treasuryAuthority: string;
-  export let privilege: GovernancePrivilege;
-  export let fundingHint = '';
-  export let onSubmitted: () => void = () => {};
+  interface Props {
+    network: string;
+    parentId: string;
+    treasuryAuthority: string;
+    privilege: GovernancePrivilege;
+    fundingHint?: string;
+    /** True while capability preflight is still loading; forces the gate closed. */
+    capabilitiesPending?: boolean;
+    onSubmitted?: () => void;
+  }
+
+  let {
+    network,
+    parentId,
+    treasuryAuthority,
+    privilege,
+    fundingHint = '',
+    capabilitiesPending = false,
+    onSubmitted = () => {},
+  }: Props = $props();
 
   const tFn = get(t);
+  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
-  let acting = false;
-  let proposeTo = '';
-  let proposeValue = '0';
-  let proposeData = '0x';
-  let proposeOp = 'call';
+  let acting = $state(false);
+  let proposeTo = $state('');
+  let proposeValue = $state('0');
+  let proposeData = $state('0x');
+  let proposeOp = $state('call');
 
-  $: proposeGate = gateRequiresCaptainOrCrew(privilege);
+  let proposeGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCaptainOrCrew(privilege));
 
   async function submit() {
     if (acting || !proposeGate.enabled) return;

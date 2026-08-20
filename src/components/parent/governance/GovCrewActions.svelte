@@ -23,6 +23,7 @@
   import {
     gatePermissionlessSigner,
     gateRequiresCrew,
+    type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import {
@@ -35,37 +36,63 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let network: string;
-  export let parentId: string;
-  export let treasuryAuthority: string;
-  export let mutinyModule: string;
-  export let privilege: GovernancePrivilege;
-  export let proposals: TreasuryProposalDto[] = [];
-  export let mutinyStatus: MutinyStatusDto | null = null;
-  export let mutinyHasVotedFlag = false;
-  export let onRefreshProposals: () => void = () => {};
-  export let onRefreshMutiny: () => void = () => {};
-  export let fundingHint = '';
+  interface Props {
+    network: string;
+    parentId: string;
+    treasuryAuthority: string;
+    mutinyModule: string;
+    privilege: GovernancePrivilege;
+    proposals?: TreasuryProposalDto[];
+    mutinyStatus?: MutinyStatusDto | null;
+    mutinyHasVotedFlag?: boolean;
+    onRefreshProposals?: () => void;
+    onRefreshMutiny?: () => void;
+    fundingHint?: string;
+    /** True while capability preflight is still loading; forces every gate closed. */
+    capabilitiesPending?: boolean;
+  }
+
+  let {
+    network,
+    parentId,
+    treasuryAuthority,
+    mutinyModule,
+    privilege,
+    proposals = [],
+    mutinyStatus = null,
+    mutinyHasVotedFlag = false,
+    onRefreshProposals = () => {},
+    onRefreshMutiny = () => {},
+    fundingHint = '',
+    capabilitiesPending = false,
+  }: Props = $props();
 
   const tFn = get(t);
+  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
-  let acting = false;
-  let voteProposalId = '';
-  let execProposalId = '';
-  let startKind: 'crew' | 'committee' | 'eoa' | 'contract' | 'pause' = 'crew';
-  let proposed = '';
+  let acting = $state(false);
+  let voteProposalId = $state('');
+  let execProposalId = $state('');
+  let startKind: 'crew' | 'committee' | 'eoa' | 'contract' | 'pause' = $state('crew');
+  let proposed = $state('');
 
-  $: crewGate = gateRequiresCrew(privilege);
-  $: execGate = gatePermissionlessSigner(privilege);
-  $: votable = crewVotableProposals(proposals);
-  $: executable = executableTreasuryProposals(proposals);
-  $: mutinyActive = isMutinyActive(mutinyStatus);
-  $: if (votable.length && !votable.some((p) => p.proposalId === voteProposalId)) {
-    voteProposalId = votable[0]?.proposalId ?? '';
-  }
-  $: if (executable.length && !executable.some((p) => p.proposalId === execProposalId)) {
-    execProposalId = executable[0]?.proposalId ?? '';
-  }
+  let crewGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCrew(privilege));
+  let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
+  let votable = $derived(crewVotableProposals(proposals));
+  let executable = $derived(executableTreasuryProposals(proposals));
+  let mutinyActive = $derived(isMutinyActive(mutinyStatus));
+
+  $effect(() => {
+    if (votable.length && !votable.some((p) => p.proposalId === voteProposalId)) {
+      voteProposalId = votable[0]?.proposalId ?? '';
+    }
+  });
+
+  $effect(() => {
+    if (executable.length && !executable.some((p) => p.proposalId === execProposalId)) {
+      execProposalId = executable[0]?.proposalId ?? '';
+    }
+  });
 
   async function run(label: string, fn: () => Promise<unknown>, refresh: () => void) {
     if (acting) return;
@@ -112,6 +139,7 @@
         {treasuryAuthority}
         {privilege}
         {fundingHint}
+        {capabilitiesPending}
         onSubmitted={onRefreshProposals}
       />
 

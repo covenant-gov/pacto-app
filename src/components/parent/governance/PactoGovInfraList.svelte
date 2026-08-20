@@ -12,10 +12,14 @@
   import { hatsTreeDomain, prettyHatId } from '../../../lib/governance/pretty-hat-id';
   import { t } from 'svelte-i18n';
 
-  export let providerPayload: string | null | undefined = undefined;
-  export let topHatId = '';
-  export let chain: string | undefined = undefined;
-  export let showDeployTx = true;
+  interface Props {
+    providerPayload?: string | null;
+    topHatId?: string;
+    chain?: string;
+    showDeployTx?: boolean;
+  }
+
+  let { providerPayload = undefined, topHatId = '', chain = undefined, showDeployTx = true }: Props = $props();
 
   function shortAddr(addr: string): string {
     const a = addr.trim();
@@ -27,12 +31,12 @@
     return hatsTreeDomain(id) ?? prettyHatId(id) ?? id.trim();
   }
 
-  $: chainId = parseSupportedChainId(chain);
-  $: chainIdNumeric = SUPPORTED_CHAINS[chainId].id;
-  $: explorerLabel = explorerTxLinkLabel(chainId);
-  $: rows = pactoGovDeployAnnounceRows({ providerPayload, topHatId });
-  $: txHash = showDeployTx ? txHashFromPactoGovProviderPayload(providerPayload) : '';
-  $: explorerTxUrl = txHash ? getExplorerTxUrl(chainId, txHash) : null;
+  let chainId = $derived(parseSupportedChainId(chain));
+  let chainIdNumeric = $derived(SUPPORTED_CHAINS[chainId].id);
+  let explorerLabel = $derived(explorerTxLinkLabel(chainId));
+  let rows = $derived(pactoGovDeployAnnounceRows({ providerPayload, topHatId }));
+  let txHash = $derived(showDeployTx ? txHashFromPactoGovProviderPayload(providerPayload) : '');
+  let explorerTxUrl = $derived(txHash ? getExplorerTxUrl(chainId, txHash) : null);
 </script>
 
 {#if rows.length > 0}
