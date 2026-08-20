@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
@@ -24,36 +23,54 @@
   import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
   import EditIconButton from '../ui/EditIconButton.svelte';
 
-  export let accountNpub: string | null = null;
-  export let evmAddress: string | null = null;
-  export let embeddedInSettings = false;
-  export let evmAccountList: EvmAccountRow[] = [];
-  export let accountsLoading = false;
-  export let onSetActiveAccount: (id: string) => void = () => {};
-  export let onSetActiveAdvancedAccount: (id: string) => void = () => {};
-  export let onEditAccount: (acc: EvmAccountRow) => void = () => {};
-  export let onAddSquad: () => void = () => {};
-  export let onAddAdvanced: () => void = () => {};
-  export let onImportKey: () => void = () => {};
-
-  let bindings: EvmAccountSquadBinding[] = [];
-  let bindingsLoading = false;
-  let exportAccount: EvmAccountRow | null = null;
-  let exportModalOpen = false;
-
-  $: squadList = squadEvmAccounts(evmAccountList);
-  $: advancedList = advancedEvmAccounts(evmAccountList);
-  $: bindingMap = bindingsByAccountId(bindings);
-  $: displayRows = embeddedInSettings ? squadList : [...squadList, ...advancedList];
-
-  $: accountNpub, evmAccountList, void loadBindings();
-
-  $: if (embeddedInSettings && ($settingsSectionCollapsed['settings-evm'] ?? true) && exportModalOpen) {
-    closeExportModal();
+  interface Props {
+    accountNpub?: string | null;
+    evmAddress?: string | null;
+    embeddedInSettings?: boolean;
+    evmAccountList?: EvmAccountRow[];
+    accountsLoading?: boolean;
+    onSetActiveAccount?: (id: string) => void;
+    onSetActiveAdvancedAccount?: (id: string) => void;
+    onEditAccount?: (acc: EvmAccountRow) => void;
+    onAddSquad?: () => void;
+    onAddAdvanced?: () => void;
+    onImportKey?: () => void;
   }
 
-  onMount(() => {
+  let {
+    accountNpub = null,
+    evmAddress = null,
+    embeddedInSettings = false,
+    evmAccountList = [],
+    accountsLoading = false,
+    onSetActiveAccount = () => {},
+    onSetActiveAdvancedAccount = () => {},
+    onEditAccount = () => {},
+    onAddSquad = () => {},
+    onAddAdvanced = () => {},
+    onImportKey = () => {},
+  }: Props = $props();
+
+  let bindings: EvmAccountSquadBinding[] = $state([]);
+  let bindingsLoading = $state(false);
+  let exportAccount: EvmAccountRow | null = $state(null);
+  let exportModalOpen = $state(false);
+
+  let squadList = $derived(squadEvmAccounts(evmAccountList));
+  let advancedList = $derived(advancedEvmAccounts(evmAccountList));
+  let bindingMap = $derived(bindingsByAccountId(bindings));
+  let displayRows = $derived(embeddedInSettings ? squadList : [...squadList, ...advancedList]);
+
+  $effect(() => {
+    void accountNpub;
+    void evmAccountList;
     void loadBindings();
+  });
+
+  $effect(() => {
+    if (embeddedInSettings && ($settingsSectionCollapsed['settings-evm'] ?? true) && exportModalOpen) {
+      closeExportModal();
+    }
   });
 
   async function loadBindings() {

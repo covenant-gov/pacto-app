@@ -10,33 +10,39 @@
   import { showToast } from '../../stores/toast';
   import { appConfig } from '../../stores/app-config';
 
-  export let open = false;
-  /** `evm` | `nostr` | `seed` (BIP-39 recovery phrase). */
-  export let variant: 'evm' | 'nostr' | 'seed' = 'evm';
-  export let account: EvmAccountRow | null = null;
-  /** Shown in PIN step when `variant` is `nostr`. */
-  export let npub = '';
-  export let onClose: () => void = () => {};
+  interface Props {
+    open?: boolean;
+    /** `evm` | `nostr` | `seed` (BIP-39 recovery phrase). */
+    variant?: 'evm' | 'nostr' | 'seed';
+    account?: EvmAccountRow | null;
+    /** Shown in PIN step when `variant` is `nostr`. */
+    npub?: string;
+    onClose?: () => void;
+  }
+
+  let { open = false, variant = 'evm', account = null, npub = '', onClose = () => {} }: Props = $props();
 
   const tFn = get(t);
 
   type Phase = 'pin' | 'key';
 
-  let phase: Phase = 'pin';
-  let pinDigits = Array(6).fill('');
-  let pinError = '';
-  let busy = false;
-  let privateKey = '';
-  let revealed = false;
-  let copied = false;
-  let pinInputs: HTMLInputElement[] = [];
+  let phase: Phase = $state('pin');
+  let pinDigits: string[] = $state(Array(6).fill(''));
+  let pinError = $state('');
+  let busy = $state(false);
+  let privateKey = $state('');
+  let revealed = $state(false);
+  let copied = $state(false);
+  let pinInputs: HTMLInputElement[] = $state([]);
 
   let wasOpen = false;
 
-  $: pinDigitCount = $appConfig.pinDigitCount;
-  $: if (pinDigits.length !== pinDigitCount) pinDigits = Array(pinDigitCount).fill('');
+  let pinDigitCount = $derived($appConfig.pinDigitCount);
+  $effect(() => {
+    if (pinDigits.length !== pinDigitCount) pinDigits = Array(pinDigitCount).fill('');
+  });
 
-  $: {
+  $effect(() => {
     if (open && !wasOpen && phase === 'pin') {
       setTimeout(() => pinInputs[0]?.focus(), 100);
     }
@@ -44,7 +50,7 @@
       resetState();
     }
     wasOpen = open;
-  }
+  });
 
   function resetState() {
     phase = 'pin';

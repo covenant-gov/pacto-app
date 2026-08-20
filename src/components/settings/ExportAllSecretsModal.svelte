@@ -10,9 +10,13 @@
   import { showToast } from '../../stores/toast';
   import { appConfig } from '../../stores/app-config';
 
-  export let open = false;
-  export let npub = '';
-  export let onClose: () => void = () => {};
+  interface Props {
+    open?: boolean;
+    npub?: string;
+    onClose?: () => void;
+  }
+
+  let { open = false, npub = '', onClose = () => {} }: Props = $props();
 
   const tFn = get(t);
 
@@ -31,20 +35,22 @@
     evmKeys: EvmSecretRow[];
   }
 
-  let phase: Phase = 'pin';
-  let pinDigits = Array(6).fill('');
-  let pinError = '';
-  let busy = false;
-  let bundle: ExportBundle | null = null;
-  let revealed = new Set<string>();
-  let pinInputs: HTMLInputElement[] = [];
+  let phase: Phase = $state('pin');
+  let pinDigits: string[] = $state(Array(6).fill(''));
+  let pinError = $state('');
+  let busy = $state(false);
+  let bundle: ExportBundle | null = $state(null);
+  let revealed = $state(new Set<string>());
+  let pinInputs: HTMLInputElement[] = $state([]);
 
   let wasOpen = false;
 
-  $: pinDigitCount = $appConfig.pinDigitCount;
-  $: if (pinDigits.length !== pinDigitCount) pinDigits = Array(pinDigitCount).fill('');
+  let pinDigitCount = $derived($appConfig.pinDigitCount);
+  $effect(() => {
+    if (pinDigits.length !== pinDigitCount) pinDigits = Array(pinDigitCount).fill('');
+  });
 
-  $: {
+  $effect(() => {
     if (open && !wasOpen && phase === 'pin') {
       setTimeout(() => pinInputs[0]?.focus(), 100);
     }
@@ -52,7 +58,7 @@
       resetState();
     }
     wasOpen = open;
-  }
+  });
 
   function resetState() {
     phase = 'pin';

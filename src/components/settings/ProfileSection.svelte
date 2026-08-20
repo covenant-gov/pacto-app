@@ -15,32 +15,34 @@
   import AvatarPicker from '../ui/AvatarPicker.svelte';
   import { requireBackupVerified } from '../../stores/backup-verification';
 
-  $: userNpub = $currentUser?.npub || '';
-  $: profile = userNpub ? $profiles[userNpub] : null;
-  $: loading = userNpub ? ($profileLoadingStates[userNpub] || false) : false;
+  let userNpub = $derived($currentUser?.npub || '');
+  let profile = $derived(userNpub ? $profiles[userNpub] : null);
+  let loading = $derived(userNpub ? ($profileLoadingStates[userNpub] || false) : false);
 
   // Compute avatar and banner sources with caching priority
-  $: avatarSrc = getProfileAvatarSrc(profile);
-  $: bannerSrc = getProfileBannerSrc(profile);
+  let avatarSrc = $derived(getProfileAvatarSrc(profile));
+  let bannerSrc = $derived(getProfileBannerSrc(profile));
 
-  let error: string | null = null;
+  let error: string | null = $state(null);
 
   // Edit profile state
-  let isEditing = false;
-  let editName = '';
-  let editAbout = '';
-  let editAvatarUrl = '';
-  let saveError: string | null = null;
-  let savingProfile = false;
+  let isEditing = $state(false);
+  let editName = $state('');
+  let editAbout = $state('');
+  let editAvatarUrl = $state('');
+  let saveError: string | null = $state(null);
+  let savingProfile = $state(false);
 
-  let copiedNpub = false;
-  let exportSeedModalOpen = false;
-  let exportAllModalOpen = false;
+  let copiedNpub = $state(false);
+  let exportSeedModalOpen = $state(false);
+  let exportAllModalOpen = $state(false);
 
-  // Watch for changes to userNpub and load profile
-  $: if (userNpub) {
-    loadUserProfile(userNpub);
-  }
+  // Load profile whenever the logged-in user's npub changes
+  $effect(() => {
+    if (userNpub) {
+      loadUserProfile(userNpub);
+    }
+  });
 
   async function loadUserProfile(npub: string) {
     if (!npub) return;
