@@ -156,7 +156,7 @@
     <RefreshIconButton
       spinning={refreshSpinning}
       ariaLabel={refreshSpinning ? $t('governance.aria.refreshingProposals') : $t('governance.aria.refreshProposals')}
-      on:click={onRefreshProposals}
+      onclick={onRefreshProposals}
     />
   </div>
   {#if fundingHint}

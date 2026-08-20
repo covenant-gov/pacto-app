@@ -149,7 +149,7 @@
     <p class="err" role="alert">{error}</p>
   {:else if !state}
     <p class="muted">{$t('governance.botHolders.botNotInitialized')}</p>
-    <button type="button" class="btn" disabled={acting || !squadId} on:click={() => void reload()}>
+    <button type="button" class="btn" disabled={acting || !squadId} onclick={() => void reload()}>
       {$t('governance.botHolders.initialize')}
     </button>
   {:else}
@@ -163,7 +163,7 @@
             class="bot-key-copy-btn"
             aria-label={copiedBotNpub ? $t('governance.common.copied') : $t('governance.botHolders.copyBotNpub')}
             title={copiedBotNpub ? $t('governance.common.copied') : $t('governance.common.copy')}
-            on:click={copyBotNpub}
+            onclick={copyBotNpub}
           >
             <svg
               class="bot-key-copy-icon"
@@ -200,7 +200,7 @@
               type="button"
               class="linkish danger"
               disabled={acting}
-              on:click={() => void onRemove(npub)}
+              onclick={() => void onRemove(npub)}
             >
               {$t('governance.common.remove')}
             </button>
@@ -218,7 +218,7 @@
             <option value={npub}>{label(npub)}</option>
           {/each}
         </select>
-        <button type="button" class="btn" disabled={acting || !addNpub} on:click={() => void onAdd()}>
+        <button type="button" class="btn" disabled={acting || !addNpub} onclick={() => void onAdd()}>
           {$t('governance.common.add')}
         </button>
       </div>
@@ -228,7 +228,7 @@
           type="button"
           class="btn-secondary squad-bot-rotate-btn"
           disabled={acting}
-          on:click={() => void onRotate()}
+          onclick={() => void onRotate()}
         >
           {$t('governance.botHolders.rotateBotKey')}
         </button>

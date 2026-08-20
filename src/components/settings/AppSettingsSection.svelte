@@ -113,7 +113,7 @@
               name="locale"
               value={opt.value}
               checked={$locale === opt.value}
-              on:change={() => setLocale(opt.value)}
+              onchange={() => setLocale(opt.value)}
             />
             <span class="theme-option-label">{opt.label}</span>
           </label>
@@ -134,7 +134,7 @@
               name="theme"
               value={opt.value}
               checked={$theme === opt.value}
-              on:change={() => setTheme(opt.value)}
+              onchange={() => setTheme(opt.value)}
             />
             <span class="theme-option-label">{opt.label}</span>
           </label>
@@ -155,7 +155,7 @@
         type="button"
         class="btn-primary check-for-updates-btn"
         disabled={isChecking}
-        on:click={handleCheck}
+        onclick={handleCheck}
       >
         {isChecking ? $t('settings.checkingForUpdatesButton') : (isDev ? $t('settings.releaseBuildOnlyButton') : $t('settings.checkForUpdatesButton'))}
       </button>
@@ -176,7 +176,7 @@
         <input
           type="checkbox"
           checked={$startupCheckEnabled}
-          on:change={handleToggleStartupCheck}
+          onchange={handleToggleStartupCheck}
         />
         <span>{$t('settings.checkForUpdatesOnStartup')}</span>
       </label>
@@ -203,7 +203,7 @@
               value={opt.minutes}
               checked={selectedTimeout === opt.minutes}
               disabled={savingTimeout}
-              on:change={() => handleTimeoutChange(opt.minutes)}
+              onchange={() => handleTimeoutChange(opt.minutes)}
             />
             <span class="timeout-option-label">{$t(opt.key)}</span>
           </label>

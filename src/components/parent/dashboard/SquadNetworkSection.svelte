@@ -85,7 +85,7 @@
     <EditIconButton
       ariaLabel={$t('governance.status.editNetwork')}
       title={$t('governance.status.editNetworkTitle')}
-      on:click={() => (editingNetwork = true)}
+      onclick={() => (editingNetwork = true)}
     />
     {/if}
   </div>

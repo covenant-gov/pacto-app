@@ -161,7 +161,7 @@
         value="disabled"
         checked={mode === 'disabled'}
         disabled={savingMode}
-        on:change={() => void setMode('disabled')}
+        onchange={() => void setMode('disabled')}
       />
       <span>{$t('governance.broadcast.off')}</span>
     </label>
@@ -172,7 +172,7 @@
         value="enabled"
         checked={mode === 'enabled'}
         disabled={savingMode}
-        on:change={() => void setMode('enabled')}
+        onchange={() => void setMode('enabled')}
       />
       <span>{$t('governance.broadcast.on')}</span>
     </label>
@@ -199,7 +199,7 @@
               <button
                 type="button"
                 class="commons-personal-inline-btn is-danger"
-                on:click={handleTerminate}
+                onclick={handleTerminate}
                 disabled={cancelling || !roleAllowed}
                 title={!roleAllowed ? broadcastDeniedReason : undefined}
               >
@@ -214,7 +214,7 @@
                 <button
                   type="button"
                   class="commons-personal-see-more"
-                  on:click={() => (messageExpanded = !messageExpanded)}
+                  onclick={() => (messageExpanded = !messageExpanded)}
                 >
                   {messageExpanded ? $t('governance.common.seeLess') : $t('governance.common.seeMore')}
                 </button>
@@ -236,7 +236,7 @@
               <button
                 type="button"
                 class="commons-personal-inline-btn is-accent"
-                on:click={openBroadcastModal}
+                onclick={openBroadcastModal}
                 disabled={!canStartBroadcast}
                 title={!roleAllowed ? broadcastDeniedReason : undefined}
               >

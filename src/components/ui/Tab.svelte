@@ -35,15 +35,15 @@
   bind:this={buttonEl}
   class="server-button {active ? 'active' : ''}"
   aria-label={label}
-  on:mouseenter={handleTooltipEnter}
-  on:mouseleave={handleTooltipLeave}
+  onmouseenter={handleTooltipEnter}
+  onmouseleave={handleTooltipLeave}
 >
   {#if hasUnreadDot}
     <span class="tab-unread-dot" aria-hidden="true"></span>
   {/if}
   {#if showImage}
     <span class="tab-image-wrap">
-      <img src={image} alt={label} class="tab-image" on:error={() => (imageBroken = true)} />
+      <img src={image} alt={label} class="tab-image" onerror={() => (imageBroken = true)} />
     </span>
   {:else if icon}
     <img src={icon} alt={label} class="tab-icon" />

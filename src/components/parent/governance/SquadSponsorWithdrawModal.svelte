@@ -178,12 +178,12 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" disabled={acting} on:click={onClose}>{$t('governance.common.cancel')}</button>
+      <button type="button" class="btn-secondary" disabled={acting} onclick={onClose}>{$t('governance.common.cancel')}</button>
       <button
         type="button"
         class="btn-primary"
         disabled={acting || !selectedAccountId || accounts.length === 0}
-        on:click={submit}
+        onclick={submit}
       >
         {acting ? $t('governance.withdraw.action.withdrawing') : $t('governance.withdraw.action.confirm')}
       </button>

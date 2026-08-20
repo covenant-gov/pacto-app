@@ -262,7 +262,7 @@
           type="button"
           class="linkish"
           disabled={acting || !qmAddress.trim()}
-          on:click={() => void checkQmPending()}
+          onclick={() => void checkQmPending()}
         >
           {$t('governance.quartermaster.checkPending')}
         </button>

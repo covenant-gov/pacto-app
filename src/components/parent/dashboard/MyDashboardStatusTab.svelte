@@ -93,7 +93,7 @@
             class="user-roster-copy-btn"
             aria-label={copiedRosterEvm ? $t('governance.myStatus.copied') : $t('governance.myStatus.copyEvmAddress')}
             title={copiedRosterEvm ? $t('governance.myStatus.copied') : $t('governance.myStatus.copy')}
-            on:click={copyRosterEvm}
+            onclick={copyRosterEvm}
           >
             <svg
               class="user-roster-copy-icon"
@@ -120,7 +120,7 @@
       type="button"
       class="btn-secondary"
       disabled={!ROTATE_SQUAD_KEY_ENABLED}
-      on:click={() => (rotateModalOpen = true)}
+      onclick={() => (rotateModalOpen = true)}
     >
       {$t('governance.myStatus.rotateEvmKey')}
     </button>
@@ -139,7 +139,7 @@
       type="button"
       class="btn-secondary"
       disabled={syncRequesting || !announcementsGroupId}
-      on:click={() => void onRequestSync()}
+      onclick={() => void onRequestSync()}
     >
       {syncRequesting ? $t('governance.myStatus.requestingSync') : $t('governance.myStatus.requestSync')}
     </button>

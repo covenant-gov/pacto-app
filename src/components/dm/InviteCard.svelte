@@ -78,7 +78,7 @@
     {/if}
     <p class="invite-card-text">
       {#if !isMine && onMessageInviter}
-        <button type="button" class="invite-card-inviter-link" on:click={onMessageInviter}>
+        <button type="button" class="invite-card-inviter-link" onclick={onMessageInviter}>
           {inviterName}
         </button>
         {#if variant === 'squad-pair'}
@@ -116,7 +116,7 @@
           type="button"
           class="invite-card-btn invite-card-btn-accept"
           disabled={accepting}
-          on:click={onAccept}
+          onclick={onAccept}
         >
           {accepting ? $t('messaging.inviteCard.accepting') : $t('messaging.inviteCard.accept')}
         </button>
@@ -124,7 +124,7 @@
           type="button"
           class="invite-card-btn invite-card-btn-decline"
           disabled={accepting}
-          on:click={onDecline}
+          onclick={onDecline}
         >
           {$t('messaging.inviteCard.decline')}
         </button>

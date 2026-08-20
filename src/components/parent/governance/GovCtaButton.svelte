@@ -22,7 +22,7 @@
     {disabled}
     {title}
     aria-disabled={disabled}
-    on:click={() => {
+    onclick={() => {
       if (!disabled) onClick();
     }}
   >

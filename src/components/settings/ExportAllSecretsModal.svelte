@@ -192,14 +192,14 @@
   <div use:portal>
   <div
     class="modal-overlay"
-    on:click={handleClose}
-    on:keydown={(e) => e.key === 'Escape' && handleClose()}
+    onclick={handleClose}
+    onkeydown={(e) => e.key === 'Escape' && handleClose()}
     role="presentation"
   >
     <div
       class="modal-content"
-      on:click|stopPropagation
-      on:keydown={(e) => e.key === 'Escape' && handleClose()}
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && handleClose()}
       role="dialog"
       aria-modal="true"
       aria-labelledby="export-all-title"
@@ -224,19 +224,19 @@
               value={digit}
               disabled={busy}
               aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
-              on:input={(e) => handlePinInput(i, e)}
-              on:keydown={(e) => handlePinKeydown(i, e)}
-              on:paste={handlePinPaste}
+              oninput={(e) => handlePinInput(i, e)}
+              onkeydown={(e) => handlePinKeydown(i, e)}
+              onpaste={handlePinPaste}
             />
           {/each}
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-cancel" on:click={handleClose} disabled={busy}>{$t('settings.cancel')}</button>
+          <button type="button" class="btn-cancel" onclick={handleClose} disabled={busy}>{$t('settings.cancel')}</button>
           <button
             type="button"
             class="btn-confirm"
-            on:click={handlePinSubmit}
+            onclick={handlePinSubmit}
             disabled={busy || pinDigits.some((d) => d === '')}
           >
             {busy ? $t('commons.verifying') : $t('auth.continue')}
@@ -269,7 +269,7 @@
                       ? $t('export.modal.hide.seedPhrase')
                       : $t('export.modal.reveal.seedPhrase')}
                     title={revealed.has('seed') ? $t('commons.hide') : $t('commons.reveal')}
-                    on:click={() => toggleReveal('seed')}
+                    onclick={() => toggleReveal('seed')}
                   >
                     {#if revealed.has('seed')}
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
@@ -287,7 +287,7 @@
                     class="btn-copy"
                     aria-label={$t('export.modal.aria.copySeedPhrase')}
                     title={$t('settings.copy')}
-                    on:click={() => copyValue('seed', bundle!.seed ?? '', 'Seed phrase')}
+                    onclick={() => copyValue('seed', bundle!.seed ?? '', 'Seed phrase')}
                   >
                     <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
@@ -321,7 +321,7 @@
                     ? $t('export.modal.hide.nsec')
                     : $t('export.modal.reveal.nsec')}
                   title={revealed.has('nsec') ? $t('commons.hide') : $t('commons.reveal')}
-                  on:click={() => toggleReveal('nsec')}
+                  onclick={() => toggleReveal('nsec')}
                 >
                   {#if revealed.has('nsec')}
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
@@ -339,7 +339,7 @@
                   class="btn-copy"
                   aria-label={$t('export.modal.aria.copyNsec')}
                   title={$t('settings.copy')}
-                  on:click={() => copyValue('nsec', bundle!.nsec, 'nsec')}
+                  onclick={() => copyValue('nsec', bundle!.nsec, 'nsec')}
                 >
                   <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
@@ -377,7 +377,7 @@
                             ? $t('export.modal.hide.privateKey')
                             : $t('export.modal.reveal.privateKey')}
                           title={revealed.has(rowKey) ? $t('commons.hide') : $t('commons.reveal')}
-                          on:click={() => toggleReveal(rowKey)}
+                          onclick={() => toggleReveal(rowKey)}
                         >
                           {#if revealed.has(rowKey)}
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
@@ -395,7 +395,7 @@
                           class="btn-copy"
                           aria-label={$t('export.modal.aria.copyPrivateKeyForAddress', { values: { address: row.address } })}
                           title={$t('settings.copy')}
-                          on:click={() => copyValue(rowKey, row.privateKey, 'Private key')}
+                          onclick={() => copyValue(rowKey, row.privateKey, 'Private key')}
                         >
                           <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
@@ -412,7 +412,7 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-close" on:click={handleClose}>{$t('commons.close')}</button>
+          <button type="button" class="btn-close" onclick={handleClose}>{$t('commons.close')}</button>
         </div>
       {/if}
     </div>

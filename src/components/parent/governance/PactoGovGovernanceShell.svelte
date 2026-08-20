@@ -343,7 +343,7 @@
         class="submode-tab"
         class:selected={govSubMode === mode.id}
         aria-selected={govSubMode === mode.id}
-        on:click={() => (govSubMode = mode.id)}
+        onclick={() => (govSubMode = mode.id)}
       >
         {mode.label}
       </button>

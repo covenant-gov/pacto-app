@@ -81,7 +81,7 @@
 
 <div class="settings-page">
   <header class="settings-page-header">
-    <button type="button" class="settings-back" on:click={onBack} aria-label={$t('nav.settings.backAria')}>
+    <button type="button" class="settings-back" onclick={onBack} aria-label={$t('nav.settings.backAria')}>
       <img src={backIcon} alt="" class="settings-back-icon" />
       <span>{$t('nav.settings.back')}</span>
     </button>
@@ -98,7 +98,7 @@
               class:active={activeSectionId === link.id}
               href={`#${link.id}`}
               aria-current={activeSectionId === link.id ? 'location' : undefined}
-              on:click={() => openSection(link.id)}
+              onclick={() => openSection(link.id)}
             >
               {$t(link.labelKey)}
             </a>

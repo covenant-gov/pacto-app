@@ -768,12 +768,12 @@
 </script>
 
 <svelte:window
-  on:click={(e) => {
+  onclick={(e) => {
     const t = e.target as HTMLElement | null;
     if (channelMenuOpen && t && !t.closest('.channel-header-actions')) closeChannelMenu();
   }}
-  on:mousemove={onPollsSplitMouseMove}
-  on:mouseup={stopPollsSplitResize}
+  onmousemove={onPollsSplitMouseMove}
+  onmouseup={stopPollsSplitResize}
 />
 <div class="chat-view">
   {#if parentSettingUp}
@@ -802,7 +802,7 @@
               type="button"
               class="channel-menu-btn"
               title={$t('messaging.channel.optionsTitle')}
-              on:click={() => (channelMenuOpen = !channelMenuOpen)}
+              onclick={() => (channelMenuOpen = !channelMenuOpen)}
               aria-expanded={channelMenuOpen}
               aria-haspopup="menu"
             >
@@ -813,7 +813,7 @@
             <button
               type="button"
               class="polls-chat-layout-btn"
-              on:click={togglePollsChatCollapsed}
+              onclick={togglePollsChatCollapsed}
               aria-pressed={pollsChatCollapsed}
               title={pollsChatCollapsed ? $t('messaging.channel.showChatBelowPolls') : $t('messaging.channel.hideChatShowPollsOnly')}
             >
@@ -824,7 +824,7 @@
             type="button"
             class="channel-members-btn"
             title={$t('messaging.channel.membersTitle')}
-            on:click={toggleMembersPanel}
+            onclick={toggleMembersPanel}
             aria-label={$showMembersPanel ? $t('messaging.channel.closeMembersAria') : $t('messaging.channel.viewMembersAria')}
             aria-expanded={$showMembersPanel}
           >
@@ -834,7 +834,7 @@
         {#if channelMenuOpen}
           <div class="channel-menu-dropdown" role="menu">
             {#if !hideChannelOverflowMenu}
-              <button type="button" class="channel-menu-item" role="menuitem" on:click={openInviteToChannelModal}>
+              <button type="button" class="channel-menu-item" role="menuitem" onclick={openInviteToChannelModal}>
                 {$t('messaging.channel.inviteToChannel')}
               </button>
               <button
@@ -842,7 +842,7 @@
                 class="channel-menu-item channel-menu-item-danger"
                 role="menuitem"
                 disabled={leavingChannel}
-                on:click={openLeaveChannelConfirm}
+                onclick={openLeaveChannelConfirm}
               >
                 {$t('messaging.channel.leaveChannel')}
               </button>
@@ -880,14 +880,14 @@
             type="button"
             class="polls-channel-split-handle"
             aria-label={$t('messaging.channel.resizePollsAria')}
-            on:mousedown={startPollsSplitResize}
-            on:dblclick={() => {
+            onmousedown={startPollsSplitResize}
+            ondblclick={() => {
               pollsChatSplitPercent = POLLS_SPLIT_DEFAULT;
               savePollsChannelLayout();
             }}
           ></button>
           <div class="polls-channel-chat-pane">
-            <div class="messages-container" bind:this={messagesContainer} on:scroll={handleMessagesScroll}>
+            <div class="messages-container" bind:this={messagesContainer} onscroll={handleMessagesScroll}>
               <div class="messages-list">
                 {#if isChannelCreating}
                   <p class="channel-creating-message">{$t('messaging.channel.creatingMessage')}</p>
@@ -897,7 +897,7 @@
                       <button
                         type="button"
                         class="load-older-btn"
-                        on:click={loadOlder}
+                        onclick={loadOlder}
                         disabled={loadingOlder}
                       >
                         {loadingOlder ? $t('messaging.channel.loading') : $t('messaging.channel.loadOlder')}
@@ -958,14 +958,14 @@
             {/if}
           </div>
         {:else}
-          <button type="button" class="polls-channel-chat-collapsed-bar" on:click={expandPollsChat}>
+          <button type="button" class="polls-channel-chat-collapsed-bar" onclick={expandPollsChat}>
             <span class="polls-channel-chat-collapsed-label">{$t('messaging.channel.chatHidden')}</span>
             <span class="polls-channel-chat-collapsed-action">{$t('messaging.channel.showChatAction')}</span>
           </button>
         {/if}
       </div>
     {:else}
-      <div class="messages-container" bind:this={messagesContainer} on:scroll={handleMessagesScroll}>
+      <div class="messages-container" bind:this={messagesContainer} onscroll={handleMessagesScroll}>
       <div class="messages-list">
         {#if isChannelCreating}
           <p class="channel-creating-message">{$t('messaging.channel.creatingMessage')}</p>
@@ -975,7 +975,7 @@
               <button
                 type="button"
                 class="load-older-btn"
-                on:click={loadOlder}
+                onclick={loadOlder}
                 disabled={loadingOlder}
               >
                 {loadingOlder ? $t('messaging.channel.loading') : $t('messaging.channel.loadOlder')}
@@ -1065,12 +1065,12 @@
         <h2 id="leave-channel-title">{$t('messaging.channel.leaveTitle')}</h2>
         <p class="channel-leave-explainer">{$t('messaging.channel.leaveExplainer')}</p>
         <div class="channel-modal-actions">
-          <button type="button" class="channel-modal-close" on:click={() => (showLeaveChannelConfirm = false)}>{$t('messaging.channel.cancel')}</button>
+          <button type="button" class="channel-modal-close" onclick={() => (showLeaveChannelConfirm = false)}>{$t('messaging.channel.cancel')}</button>
           <button
             type="button"
             class="channel-modal-primary channel-modal-danger"
             disabled={leavingChannel}
-            on:click={handleLeaveChannel}
+            onclick={handleLeaveChannel}
           >
             {leavingChannel ? $t('messaging.channel.leaving') : $t('messaging.channel.leave')}
           </button>
@@ -1097,14 +1097,14 @@
           </div>
         {/if}
         <div class="channel-modal-actions">
-          <button type="button" class="channel-modal-close" on:click={() => (showInviteToChannelModal = false)}>
+          <button type="button" class="channel-modal-close" onclick={() => (showInviteToChannelModal = false)}>
             {$t('messaging.channel.cancel')}
           </button>
           <button
             type="button"
             class="channel-modal-primary"
             disabled={!selectedInviteNpub}
-            on:click={handleInviteToChannel}
+            onclick={handleInviteToChannel}
           >
             {$t('messaging.channel.invite')}
           </button>

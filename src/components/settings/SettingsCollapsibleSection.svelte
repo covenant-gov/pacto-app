@@ -31,7 +31,7 @@
       class="settings-section-toggle"
       aria-expanded={!collapsed}
       aria-controls={panelId}
-      on:click={toggleCollapsed}
+      onclick={toggleCollapsed}
     >
       <img
         src={chevronDownIcon}

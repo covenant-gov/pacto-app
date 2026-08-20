@@ -112,7 +112,7 @@
   {#if canMessage || canJoin || (isSquad && joinBlockReason && myNpub && broadcast.authorNpub !== myNpub)}
     <div class="commons-detail-actions">
       {#if canMessage}
-        <button type="button" class="commons-detail-btn" disabled={messageBusy} on:click={handleRequestDm}>
+        <button type="button" class="commons-detail-btn" disabled={messageBusy} onclick={handleRequestDm}>
           {messageBusy ? $t('commons.detail.opening') : $t('commons.detail.requestDm')}
         </button>
       {/if}
@@ -121,7 +121,7 @@
           type="button"
           class="commons-detail-btn commons-detail-btn-primary"
           disabled={joinInFlight}
-          on:click={handleJoinRequest}
+          onclick={handleJoinRequest}
         >
           {joinInFlight ? $t('commons.detail.sending') : $t('commons.detail.requestJoin')}
         </button>

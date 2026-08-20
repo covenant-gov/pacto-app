@@ -66,7 +66,7 @@
         role="tab"
         class="mode-segment"
         class:active={$activeTopNavTab === tab}
-        on:click={() => selectTab(tab)}
+        onclick={() => selectTab(tab)}
         aria-selected={$activeTopNavTab === tab}
         aria-label={tab === 'catchup' && $catchUpCount > 0
           ? `${$t(`nav.topNavbar.tabs.${tab}`)} (${$catchUpCount})`

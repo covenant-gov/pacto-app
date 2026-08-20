@@ -407,7 +407,7 @@
         autocomplete="off"
         placeholder={$t('wallet.amountPlaceholder')}
         value={amountStr}
-        on:input={onAmountInput}
+        oninput={onAmountInput}
         disabled={sending || requestPosting}
         aria-invalid={amountStr.trim() !== '' && (!amountValid || insufficientFunds)}
         aria-label={$t('wallet.amountLabel')}
@@ -439,7 +439,7 @@
               type="button"
               class="wallet-stub-copy-hash"
               aria-label={$t('wallet.copyFullTransactionHash')}
-              on:click={copyErrorTxHash}
+              onclick={copyErrorTxHash}
             >
               {$t('wallet.copyHash')}
             </button>
@@ -461,7 +461,7 @@
             {$t('wallet.retryHint')}
           </p>
         {:else if canRetryAfterError}
-          <button type="button" class="wallet-stub-retry" on:click={retryFailedSend}>
+          <button type="button" class="wallet-stub-retry" onclick={retryFailedSend}>
             {$t('wallet.tryAgain')}
           </button>
         {/if}
@@ -474,8 +474,8 @@
       type="button"
       class="wallet-stub-btn wallet-stub-btn-secondary"
       disabled={mode === 'send' ? sending : requestPosting}
-      on:click={onClose}>{$t('wallet.cancel')}</button>
-    <button type="button" class="wallet-stub-btn wallet-stub-btn-primary" disabled={!canConfirm} on:click={handleConfirm}>
+      onclick={onClose}>{$t('wallet.cancel')}</button>
+    <button type="button" class="wallet-stub-btn wallet-stub-btn-primary" disabled={!canConfirm} onclick={handleConfirm}>
       {requestPosting
         ? $t('wallet.sending')
         : sending

@@ -127,7 +127,7 @@
   <Modal {titleId} descriptionId={descId} {onClose} dismissible={true}>
     <div class="w-import-head">
       <h2 id={titleId}>{$t('wallet.importTokensTitle')}</h2>
-      <button type="button" class="w-import-close" aria-label={$t('wallet.close')} on:click={onClose}>×</button>
+      <button type="button" class="w-import-close" aria-label={$t('wallet.close')} onclick={onClose}>×</button>
     </div>
     <p id={descId} class="w-import-desc">
       {$t('wallet.importTokensDesc')}
@@ -143,7 +143,7 @@
           class="w-import-tab"
           aria-selected={tab === 'search'}
           class:w-import-tab-active={tab === 'search'}
-          on:click={() => (tab = 'search')}>{$t('wallet.searchTab')}</button
+          onclick={() => (tab = 'search')}>{$t('wallet.searchTab')}</button
         >
         <button
           type="button"
@@ -151,7 +151,7 @@
           class="w-import-tab"
           aria-selected={tab === 'custom'}
           class:w-import-tab-active={tab === 'custom'}
-          on:click={() => (tab = 'custom')}>{$t('wallet.customTokenTab')}</button
+          onclick={() => (tab = 'custom')}>{$t('wallet.customTokenTab')}</button
         >
       </div>
 
@@ -173,7 +173,7 @@
                 <input
                   type="checkbox"
                   checked={selectedCatalogIds.has(entry.id)}
-                  on:change={() => toggleCatalog(entry)}
+                  onchange={() => toggleCatalog(entry)}
                 />
                 <span class="w-import-row-main">
                   <span class="w-import-sym">{entry.symbol}</span>
@@ -186,8 +186,8 @@
           {/each}
         </ul>
         <div class="w-import-actions">
-          <button type="button" class="w-import-btn-secondary" on:click={onClose}>{$t('wallet.cancel')}</button>
-          <button type="button" class="w-import-btn-primary" on:click={saveCatalogSelection}
+          <button type="button" class="w-import-btn-secondary" onclick={onClose}>{$t('wallet.cancel')}</button>
+          <button type="button" class="w-import-btn-primary" onclick={saveCatalogSelection}
             >{$t('wallet.save')}</button
           >
         </div>
@@ -236,12 +236,12 @@
           {$t('wallet.tokenSecurityHint')}
         </p>
         <div class="w-import-actions">
-          <button type="button" class="w-import-btn-secondary" on:click={onClose}>{$t('wallet.cancel')}</button>
+          <button type="button" class="w-import-btn-secondary" onclick={onClose}>{$t('wallet.cancel')}</button>
           <button
             type="button"
             class="w-import-btn-primary"
             disabled={!canSaveCustom}
-            on:click={saveCustomToken}>{$t('wallet.importToken')}</button
+            onclick={saveCustomToken}>{$t('wallet.importToken')}</button
           >
         </div>
       {/if}

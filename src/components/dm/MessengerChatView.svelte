@@ -94,7 +94,7 @@
     <p class="subtitle">{$t('messaging.dm.newChat.subtitle')}</p>
   </div>
 
-  <form class="form" on:submit|preventDefault={handleSend}>
+  <form class="form" onsubmit={(e) => { e.preventDefault(); handleSend(); }}>
     <label class="label" for="npub-input">{$t('messaging.dm.newChat.recipientLabel')}</label>
     <input
       id="npub-input"
@@ -126,7 +126,7 @@
     {/if}
 
     <div class="actions">
-      <button type="button" class="btn btn-secondary" on:click={handleCancel} disabled={sending}>
+      <button type="button" class="btn btn-secondary" onclick={handleCancel} disabled={sending}>
         {$t('messaging.dm.newChat.cancel')}
       </button>
       <button type="submit" class="btn btn-primary" disabled={!canSend}>

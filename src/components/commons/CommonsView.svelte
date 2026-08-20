@@ -206,7 +206,7 @@
           disabled={$commonsFeedSyncing}
           spinning={$commonsFeedSyncing}
           ariaLabel={$commonsFeedSyncing ? $t('commons.view.refreshSyncing') : $t('commons.view.refresh')}
-          on:click={() => loadFeed()}
+          onclick={() => loadFeed()}
         />
       </div>
     </header>

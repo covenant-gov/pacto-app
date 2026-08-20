@@ -65,7 +65,7 @@
         type="button"
         class="safe-copy-btn"
         aria-label={$t('announcements.safe.copyAddressAria')}
-        on:click={() => copySafeAddress(payload.safe_address)}
+        onclick={() => copySafeAddress(payload.safe_address)}
       >
         {$t('announcements.safe.copyAddress')}
       </button>
@@ -92,7 +92,7 @@
           type="button"
           class="safe-copy-btn"
           aria-label={$t('announcements.safe.copyTxHashAria')}
-          on:click={() => copyTxHash(txHash)}
+          onclick={() => copyTxHash(txHash)}
         >
           {$t('announcements.safe.copyTxHash')}
         </button>

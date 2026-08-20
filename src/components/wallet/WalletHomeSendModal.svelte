@@ -342,7 +342,7 @@
           autocomplete="off"
           placeholder={$t('wallet.amountPlaceholder')}
           value={amountStr}
-          on:input={onAmountInput}
+          oninput={onAmountInput}
           disabled={sending}
           aria-invalid={amountStr.trim() !== '' && (!amountValid || insufficientFunds)}
           aria-label={$t('wallet.amountLabel')}
@@ -370,7 +370,7 @@
           {#if sendError.txHash}
             <div class="home-send-tx-row">
               <code class="home-send-tx-code" title={sendError.txHash}>{sendError.txHash}</code>
-              <button type="button" class="home-send-copy-hash" on:click={copyErrorTxHash}>{$t('wallet.copyHash')}</button>
+              <button type="button" class="home-send-copy-hash" onclick={copyErrorTxHash}>{$t('wallet.copyHash')}</button>
             </div>
           {/if}
           {#if explorerLinkForError}
@@ -383,17 +383,17 @@
               {$t('wallet.retryHint')}
             </p>
           {:else if canRetryAfterError}
-            <button type="button" class="home-send-retry" on:click={retryFailedSend}>{$t('wallet.tryAgain')}</button>
+            <button type="button" class="home-send-retry" onclick={retryFailedSend}>{$t('wallet.tryAgain')}</button>
           {/if}
         </div>
       {/if}
     </div>
 
     <div class="home-send-actions">
-      <button type="button" class="home-send-btn home-send-btn-secondary" disabled={sending} on:click={onClose}>
+      <button type="button" class="home-send-btn home-send-btn-secondary" disabled={sending} onclick={onClose}>
         {$t('wallet.cancel')}
       </button>
-      <button type="button" class="home-send-btn home-send-btn-primary" disabled={!canConfirm} on:click={handleConfirm}>
+      <button type="button" class="home-send-btn home-send-btn-primary" disabled={!canConfirm} onclick={handleConfirm}>
         {sending ? $t('wallet.submitting') : $t('wallet.confirm')}
       </button>
     </div>

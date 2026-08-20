@@ -919,7 +919,7 @@
   }
 </script>
 
-<svelte:window on:pointerdown={handleClickOutside} on:keydown={handleGlobalKeydown} />
+<svelte:window onpointerdown={handleClickOutside} onkeydown={handleGlobalKeydown} />
 
 <div class="message-input-container" class:disabled>
   {#if $dropActive}
@@ -927,7 +927,7 @@
       <span>{$t('messaging.messageInput.dropToAttach')}</span>
     </div>
   {/if}
-  <form on:submit|preventDefault={handleSubmit}>
+  <form onsubmit={(e) => { e.preventDefault(); handleSubmit(e); }}>
     {#if repliedTo}
       <div class="reply-preview" role="region" aria-label="{$t('messaging.messageInput.replyingTo')} {repliedToPreview ?? $t('messaging.message.replyToDefault')}">
         <span class="reply-preview-label">{$t('messaging.messageInput.replyingTo')} {repliedToPreview ?? $t('messaging.message.replyToDefault')}</span>
@@ -937,7 +937,7 @@
             class="reply-preview-cancel"
             aria-label={$t('messaging.messageInput.cancelReplyAria')}
             title={$t('messaging.messageInput.cancelReplyAria')}
-            on:click={onCancelReply}
+            onclick={onCancelReply}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
               <path
@@ -974,7 +974,7 @@
           aria-label={$t('messaging.messageInput.removeAttachmentAria')}
           title={$t('messaging.messageInput.removeAttachmentAria')}
           disabled={isSendingAttachment}
-          on:click={clearPendingAttachment}
+          onclick={clearPendingAttachment}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
             <path
@@ -997,7 +997,7 @@
         aria-expanded={attachmentMenuOpen}
         aria-haspopup="menu"
         title={$t('messaging.messageInput.attachFile')}
-        on:click={toggleAttachmentMenu}
+        onclick={toggleAttachmentMenu}
       >
         <img src={attachmentIcon} alt="" width="20" height="20" />
       </button>
@@ -1007,13 +1007,13 @@
           role="menu"
           aria-label={$t('messaging.messageInput.attachmentOptions')}
           tabindex="-1"
-          on:pointerdown|stopPropagation
+          onpointerdown={(e) => e.stopPropagation()}
         >
           <button
             type="button"
             class="attachment-menu-item"
             role="menuitem"
-            on:click={(e) => pickAttachmentType('media', e)}
+            onclick={(e) => pickAttachmentType('media', e)}
           >
             <img src={imageIcon} alt="" width="20" height="20" />
             <span>{$t('messaging.messageInput.photoOrVideo')}</span>
@@ -1022,7 +1022,7 @@
             type="button"
             class="attachment-menu-item"
             role="menuitem"
-            on:click={(e) => pickAttachmentType('file', e)}
+            onclick={(e) => pickAttachmentType('file', e)}
           >
             <img src={fileIcon} alt="" width="20" height="20" />
             <span>{$t('messaging.messageInput.fileOption')}</span>
@@ -1032,7 +1032,7 @@
               type="button"
               class="attachment-menu-item"
               role="menuitem"
-              on:click={(e) => pickAttachmentType('camera', e)}
+              onclick={(e) => pickAttachmentType('camera', e)}
             >
               <img src={imageIcon} alt="" width="20" height="20" />
               <span>{$t('messaging.messageInput.takePhoto')}</span>
@@ -1048,7 +1048,7 @@
         aria-expanded={emojiPanelOpen}
         aria-haspopup="dialog"
         title={$t('messaging.messageInput.insertEmojiAria')}
-        on:click={openEmojiPanel}
+        onclick={openEmojiPanel}
       >
         <img src={smileFaceIcon} alt="" width="20" height="20" />
       </button>
@@ -1059,7 +1059,7 @@
           role="dialog"
           aria-label={$t('messaging.messageInput.insertEmojiAria')}
           tabindex="-1"
-          on:pointerdown|stopPropagation
+          onpointerdown={(e) => e.stopPropagation()}
         >
           <div class="emoji-panel-search">
             <input
@@ -1067,8 +1067,8 @@
               class="emoji-search-input"
               placeholder={emojiPanelTab === 'gifs' ? $t('messaging.messageInput.gifsSearchPlaceholder') : emojiPanelTab === 'stickers' ? $t('messaging.messageInput.searchStickersPlaceholder') : $t('messaging.messageInput.searchEmojiPlaceholder')}
               bind:value={emojiSearchQuery}
-              on:click|stopPropagation
-              on:keydown={handleEmojiSearchKeydown}
+              onclick={(e) => e.stopPropagation()}
+              onkeydown={handleEmojiSearchKeydown}
               aria-label={emojiPanelTab === 'gifs' ? $t('messaging.messageInput.gifsSearchAria') : emojiPanelTab === 'stickers' ? $t('messaging.messageInput.searchStickersAria') : $t('messaging.messageInput.searchEmojiAria')}
             />
             <button
@@ -1076,7 +1076,7 @@
               class="emoji-picker-close"
               aria-label={$t('messaging.messageInput.closePanelAria')}
               title={$t('messaging.messageInput.close')}
-              on:click|stopPropagation={() => closeEmojiPanel({ refocusComposer: true })}
+              onclick={(e) => { e.stopPropagation(); closeEmojiPanel({ refocusComposer: true }); }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                 <path
@@ -1088,7 +1088,7 @@
               </svg>
             </button>
           </div>
-          <div class="emoji-panel-body" bind:this={emojiPanelBodyEl} on:scroll={handleEmojiPanelBodyScroll}>
+          <div class="emoji-panel-body" bind:this={emojiPanelBodyEl} onscroll={handleEmojiPanelBodyScroll}>
             {#if emojiPanelTab === 'emoji'}
               {#if emojiSearchQuery.trim()}
                 <div class="emoji-picker-section">
@@ -1100,7 +1100,7 @@
                           class="emoji-picker-item"
                           role="gridcell"
                           aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji: entry.emoji } })}
-                          on:click={() => insertEmoji(entry.emoji)}
+                          onclick={() => insertEmoji(entry.emoji)}
                         >
                           {entry.emoji}
                         </button>
@@ -1124,7 +1124,7 @@
                           class="emoji-picker-item"
                           role="gridcell"
                           aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji: entry.emoji } })}
-                          on:click={() => insertEmoji(entry.emoji)}
+                          onclick={() => insertEmoji(entry.emoji)}
                         >
                           {entry.emoji}
                         </button>
@@ -1141,7 +1141,7 @@
                         class="emoji-picker-item"
                         role="gridcell"
                         aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji } })}
-                        on:click={() => insertEmoji(emoji)}
+                        onclick={() => insertEmoji(emoji)}
                       >
                         {emoji}
                       </button>
@@ -1173,7 +1173,7 @@
                           disabled={disabled || isSendingAttachment}
                           aria-label={$t('messaging.messageInput.insertStickerNamed', { values: { shortcode: entry.shortcode } })}
                           use:stickerVisible={entry}
-                          on:click={() => insertSticker(entry)}
+                          onclick={() => insertSticker(entry)}
                         >
                           {#if stickerImageCache[entry.url]}
                             <img src={stickerImageCache[entry.url]} alt={entry.shortcode} width="28" height="28" />
@@ -1210,7 +1210,7 @@
                         disabled={disabled || isSendingAttachment}
                         aria-label={gif.title || gif.slug}
                         title={gif.title}
-                        on:click={() => selectGif(gif)}
+                        onclick={() => selectGif(gif)}
                       >
                         {#if gifThumbCache[gif.previewUrl]}
                           <img src={gifThumbCache[gif.previewUrl]} alt={gif.title} loading="lazy" />
@@ -1230,7 +1230,7 @@
               role="tab"
               aria-selected={emojiPanelTab === 'emoji'}
               aria-controls="emoji-panel-body"
-              on:click={() => switchEmojiPanelTab('emoji')}
+              onclick={() => switchEmojiPanelTab('emoji')}
             >
               {$t('messaging.messageInput.emojiTab')}
             </button>
@@ -1242,7 +1242,7 @@
               aria-selected={emojiPanelTab === 'gifs'}
               aria-controls="emoji-panel-body"
               disabled={disabled || isSendingAttachment}
-              on:click={() => switchEmojiPanelTab('gifs')}
+              onclick={() => switchEmojiPanelTab('gifs')}
             >
               {$t('messaging.messageInput.gifsTab')}
             </button>
@@ -1254,7 +1254,7 @@
               aria-selected={emojiPanelTab === 'stickers'}
               aria-controls="emoji-panel-body"
               disabled={disabled || isSendingAttachment}
-              on:click={() => switchEmojiPanelTab('stickers')}
+              onclick={() => switchEmojiPanelTab('stickers')}
             >
               {$t('messaging.messageInput.stickersTab')}
             </button>
@@ -1264,9 +1264,9 @@
       <textarea
         bind:this={textareaEl}
         bind:value={messageText}
-        on:keydown={handleKeydown}
-        on:input={handleInput}
-        on:paste={handlePaste}
+        onkeydown={handleKeydown}
+        oninput={handleInput}
+        onpaste={handlePaste}
         placeholder={inputPlaceholder}
         class="message-input"
         rows="1"
@@ -1281,7 +1281,7 @@
           tabindex="-1"
           style={mentionPickerStyle}
           use:portal
-          on:pointerdown|stopPropagation
+          onpointerdown={(e) => e.stopPropagation()}
         >
           {#if filteredMentions.length > 0}
             <ul class="mention-list" role="listbox" aria-label={$t('messaging.messageInput.mentionCandidates')}>
@@ -1292,9 +1292,9 @@
                   class="mention-item"
                   class:selected={i === mentionSelectedIndex}
                   title={candidate.npub}
-                  on:click|stopPropagation={() => selectMention(candidate)}
-                  on:keydown={(e) => e.key === 'Enter' && selectMention(candidate)}
-                  on:mouseenter={() => (mentionSelectedIndex = i)}
+                  onclick={(e) => { e.stopPropagation(); selectMention(candidate); }}
+                  onkeydown={(e) => e.key === 'Enter' && selectMention(candidate)}
+                  onmouseenter={() => (mentionSelectedIndex = i)}
                 >
                   {#if candidate.avatar}
                     <img src={candidate.avatar} alt="" class="mention-avatar" />
@@ -1322,7 +1322,7 @@
         class="send-button"
         disabled={disabled || isSendingAttachment || (!messageText.trim() && !$pendingFilePreview)}
         aria-label={$t('messaging.messageInput.sendMessage')}
-        on:click={handleSubmit}
+        onclick={handleSubmit}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
           <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
@@ -1334,7 +1334,7 @@
       bind:this={fileInput}
       accept={pendingInputAccept}
       capture={pendingInputCapture}
-      on:change={handleFileInputChange}
+      onchange={handleFileInputChange}
       style="display: none;"
       aria-hidden="true"
       tabindex="-1"

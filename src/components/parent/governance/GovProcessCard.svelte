@@ -173,7 +173,7 @@
         class="execute-btn"
         disabled={executePending || !execUi.executeEnabled}
         title={executeTitle}
-        on:click={() => onExecute()}
+        onclick={() => onExecute()}
       >
         {$t('governance.common.execute')}
       </button>

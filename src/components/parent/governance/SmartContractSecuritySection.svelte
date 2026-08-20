@@ -273,7 +273,7 @@
             <span class="allowlist-meta">{getWalletNetworkDisplayName(row.chain as SupportedChainId)} · {shortAddr(row.contractAddress)}</span>
           </div>
           {#if canManage}
-            <button type="button" class="allowlist-remove" on:click={() => onRemove(row)}>{tFn('governance.action.remove')}</button>
+            <button type="button" class="allowlist-remove" onclick={() => onRemove(row)}>{tFn('governance.action.remove')}</button>
           {/if}
         </li>
       {/each}
@@ -288,7 +288,7 @@
           class="allowlist-call-toggle"
           aria-expanded={addSectionOpen}
           aria-controls="squad-contract-add-panel"
-          on:click={() => (addSectionOpen = !addSectionOpen)}
+          onclick={() => (addSectionOpen = !addSectionOpen)}
         >
           <img
             src={chevronDownIcon}
@@ -312,7 +312,7 @@
         <input id="allowlist-label" class="allowlist-input" placeholder={$t('governance.field.labelPlaceholder')} bind:value={addLabel} />
         <label class="allowlist-field-label" for="allowlist-abi">{$t('governance.field.abiRef')}</label>
         <input id="allowlist-abi" class="allowlist-input" placeholder={$t('governance.field.abiRefPlaceholder')} bind:value={addAbiRef} />
-        <button type="button" class="allowlist-btn" disabled={addBusy} on:click={onAddContract}>
+        <button type="button" class="allowlist-btn" disabled={addBusy} onclick={onAddContract}>
           {addBusy ? tFn('governance.allowlist.addingToAllowlist') : tFn('governance.action.addToAllowlist')}
         </button>
       </div>
@@ -328,7 +328,7 @@
         class="allowlist-call-toggle"
         aria-expanded={callSectionOpen}
         aria-controls="squad-contract-call-panel"
-        on:click={() => (callSectionOpen = !callSectionOpen)}
+        onclick={() => (callSectionOpen = !callSectionOpen)}
       >
         <img
           src={chevronDownIcon}
@@ -382,10 +382,10 @@
         <p class="allowlist-sim" class:ok={callSimOk === true} class:err={callSimOk === false}>{callSimMessage}</p>
       {/if}
       <div class="allowlist-call-actions">
-        <button type="button" class="allowlist-btn allowlist-btn-secondary" disabled={callSimulating} on:click={onSimulateCall}>
+        <button type="button" class="allowlist-btn allowlist-btn-secondary" disabled={callSimulating} onclick={onSimulateCall}>
           {callSimulating ? tFn('governance.allowlist.simulating') : tFn('governance.action.simulate')}
         </button>
-        <button type="button" class="allowlist-btn" disabled={!canSendCall || callSending} on:click={onSendCall}>
+        <button type="button" class="allowlist-btn" disabled={!canSendCall || callSending} onclick={onSendCall}>
           {callSending ? tFn('governance.allowlist.sending') : tFn('governance.action.sendSquadKey')}
         </button>
       </div>

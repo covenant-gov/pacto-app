@@ -110,12 +110,12 @@
     {#if govExUrl || govSafeAppUrl}
       <div class="treasury-card-links">
         {#if govExUrl}
-          <button type="button" class="btn-link treasury-explorer-link" on:click={() => openExternalUrl(govExUrl)}>
+          <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(govExUrl)}>
             {$t('governance.treasury.viewExplorer')}
           </button>
         {/if}
         {#if govSafeAppUrl}
-          <button type="button" class="btn-link treasury-explorer-link" on:click={() => openExternalUrl(govSafeAppUrl)}>
+          <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(govSafeAppUrl)}>
             {$t('governance.treasury.openSafe')}
           </button>
         {/if}
@@ -139,8 +139,8 @@
     {/if}
     {#if (treasurySafes?.length ?? 0) < TREASURY_SAFE_UI_CAP}
       <div class="treasury-action-btns">
-        <button type="button" class="btn-primary treasury-deploy-btn" on:click={onOpenDeploySafe}>{$t('governance.treasury.deploySafe')}</button>
-        <button type="button" class="btn-secondary treasury-import-btn" on:click={onOpenImportSafe}>{$t('governance.treasury.importSafe')}</button>
+        <button type="button" class="btn-primary treasury-deploy-btn" onclick={onOpenDeploySafe}>{$t('governance.treasury.deploySafe')}</button>
+        <button type="button" class="btn-secondary treasury-import-btn" onclick={onOpenImportSafe}>{$t('governance.treasury.importSafe')}</button>
       </div>
     {/if}
   </div>
@@ -180,7 +180,7 @@
                 <button
                   type="button"
                   class="btn-link treasury-explorer-link"
-                  on:click={() => openTreasuryExplorer(entry)}
+                  onclick={() => openTreasuryExplorer(entry)}
                 >
                   {$t('governance.treasury.viewExplorer')}
                 </button>
@@ -189,7 +189,7 @@
                 <button
                   type="button"
                   class="btn-link treasury-explorer-link"
-                  on:click={() => openTreasurySafeApp(entry)}
+                  onclick={() => openTreasurySafeApp(entry)}
                 >
                   {$t('governance.treasury.openSafe')}
                 </button>

@@ -67,7 +67,7 @@
           class="btn-primary proposal-vote-btn"
           disabled={votePending || voteLocked || !onVoteYea}
           title={voteLocked ? voteDisabledReason : tFn('governance.proposal.voteYea')}
-          on:click={() => {
+          onclick={() => {
             if (!voteLocked) onVoteYea?.();
           }}
         >
@@ -78,7 +78,7 @@
           class="btn-secondary proposal-vote-btn"
           disabled={votePending || voteLocked || !onVoteNay}
           title={voteLocked ? voteDisabledReason : tFn('governance.proposal.voteNay')}
-          on:click={() => {
+          onclick={() => {
             if (!voteLocked) onVoteNay?.();
           }}
         >

@@ -137,7 +137,7 @@
         type="button"
         class="wallet-view-btn wallet-view-btn-secondary"
         disabled={!evmAddress}
-        on:click={onAddSquad}
+        onclick={onAddSquad}
       >
         {embeddedInSettings ? $t('wallet.addSquadAccount') : $t('wallet.addNewAccount')}
       </button>
@@ -146,7 +146,7 @@
           type="button"
           class="wallet-view-btn wallet-view-btn-secondary"
           disabled={!evmAddress}
-          on:click={onAddAdvanced}
+          onclick={onAddAdvanced}
         >
           {$t('wallet.addAdvancedAccount')}
         </button>
@@ -154,7 +154,7 @@
           type="button"
           class="wallet-view-btn wallet-view-btn-secondary"
           disabled={!evmAddress}
-          on:click={onImportKey}
+          onclick={onImportKey}
         >
           {$t('wallet.importPrivateKey')}
         </button>
@@ -204,7 +204,7 @@
                     type="button"
                     class="wallet-view-btn-export-key"
                     disabled={accountsLoading}
-                    on:click={() => openExportModal(acc)}
+                    onclick={() => openExportModal(acc)}
                   >
                     {$t('wallet.exportKey')}
                   </button>
@@ -213,7 +213,7 @@
                     ariaLabel={$t('wallet.editAccountName')}
                     title={$t('wallet.editDisplayName')}
                     className="evm-account-edit-btn"
-                    on:click={() => onEditAccount(acc)}
+                    onclick={() => onEditAccount(acc)}
                   />
                   <button
                     type="button"
@@ -221,7 +221,7 @@
                     disabled={accountsLoading || !acc.address?.trim()}
                     aria-label={$t('wallet.copyAddressToClipboard')}
                     title={$t('wallet.copyAddress')}
-                    on:click|stopPropagation={() => copyAddress(acc.address)}
+                    onclick={(e) => { e.stopPropagation(); copyAddress(acc.address); }}
                   >
                     <svg
                       class="wallet-view-account-copy-svg"
@@ -256,7 +256,7 @@
                       <button
                         type="button"
                         class="evm-account-squad-link"
-                        on:click={() => openSquadDashboard(link.parentId)}
+                        onclick={() => openSquadDashboard(link.parentId)}
                       >
                         <span class="evm-account-squad-name">{squadName(link.parentId)}</span>
                         <span class="evm-account-squad-id" title={link.parentId}>{shortParentId(link.parentId)}</span>
@@ -273,7 +273,7 @@
                 name={isAdvancedRow(acc) ? 'active_advanced_evm_account' : 'active_evm_account'}
                 checked={isAdvancedRow(acc) ? acc.isActiveAdvanced : acc.isActive}
                 disabled={accountsLoading}
-                on:change={() =>
+                onchange={() =>
                   isAdvancedRow(acc) ? onSetActiveAdvancedAccount(acc.id) : onSetActiveAccount(acc.id)}
               />
               <span class="wallet-view-account-meta">
@@ -303,7 +303,7 @@
                 ariaLabel={$t('wallet.editAccountName')}
                 title={$t('wallet.editDisplayName')}
                 className="evm-account-edit-btn"
-                on:click={() => onEditAccount(acc)}
+                onclick={() => onEditAccount(acc)}
               />
               <button
                 type="button"
@@ -311,7 +311,7 @@
                 disabled={accountsLoading || !acc.address?.trim()}
                 aria-label={$t('wallet.copyAddressToClipboard')}
                 title={$t('wallet.copyAddress')}
-                on:click|stopPropagation={() => copyAddress(acc.address)}
+                onclick={(e) => { e.stopPropagation(); copyAddress(acc.address); }}
               >
                 <svg
                   class="wallet-view-account-copy-svg"
@@ -347,7 +347,7 @@
           type="button"
           class="wallet-view-btn wallet-view-btn-secondary"
           disabled={!evmAddress}
-          on:click={onAddAdvanced}
+          onclick={onAddAdvanced}
         >
           {$t('wallet.addAdvancedAccount')}
         </button>
@@ -355,7 +355,7 @@
           type="button"
           class="wallet-view-btn wallet-view-btn-secondary"
           disabled={!evmAddress}
-          on:click={onImportKey}
+          onclick={onImportKey}
         >
           {$t('wallet.importPrivateKey')}
         </button>
@@ -379,7 +379,7 @@
                   type="button"
                   class="wallet-view-btn-export-key"
                   disabled={accountsLoading}
-                  on:click={() => openExportModal(acc)}
+                  onclick={() => openExportModal(acc)}
                 >
                   {$t('wallet.exportKey')}
                 </button>
@@ -388,7 +388,7 @@
                   ariaLabel={$t('wallet.editAccountName')}
                   title={$t('wallet.editDisplayName')}
                   className="evm-account-edit-btn"
-                  on:click={() => onEditAccount(acc)}
+                  onclick={() => onEditAccount(acc)}
                 />
                 </div>
               </div>

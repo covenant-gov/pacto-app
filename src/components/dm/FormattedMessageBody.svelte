@@ -97,8 +97,8 @@
   bind:this={bodyEl}
   class="formatted-message-body"
   class:empty={!content?.trim()}
-  on:click={handleClick}
-  on:keydown={handleKeydown}
+  onclick={handleClick}
+  onkeydown={handleKeydown}
   role="document"
   aria-label={$t('messaging.message.messageContent')}
 >

@@ -30,7 +30,7 @@
 
     <div class="receive-address-row">
       <code class="receive-address">{address.trim()}</code>
-      <button type="button" class="receive-copy" on:click={copyAddress}>{copied ? $t('wallet.copied') : $t('wallet.copy')}</button>
+      <button type="button" class="receive-copy" onclick={copyAddress}>{copied ? $t('wallet.copied') : $t('wallet.copy')}</button>
     </div>
   </Modal>
 {/if}

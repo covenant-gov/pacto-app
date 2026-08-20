@@ -171,7 +171,7 @@
       <button
         type="button"
         class="broadcast-btn-terminate"
-        on:click={handleTerminate}
+        onclick={handleTerminate}
         disabled={busy}
       >
         {cancelling ? $t('commons.broadcast.terminating') : $t('commons.broadcast.terminate')}
@@ -184,7 +184,7 @@
     {#if !roleAllowed}
       <p class="broadcast-role-denied" role="status">{broadcastDeniedReason}</p>
     {/if}
-    <form on:submit|preventDefault={handleSubmit}>
+    <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       <span class="broadcast-label">{$t('commons.broadcast.tagsLabel')}</span>
       <CommonsTagPicker
         bind:selected={tags}
@@ -228,7 +228,7 @@
       {/if}
 
       <div class="broadcast-actions">
-        <button type="button" class="broadcast-btn-cancel" on:click={onClose} disabled={busy}>{$t('commons.broadcast.cancel')}</button>
+        <button type="button" class="broadcast-btn-cancel" onclick={onClose} disabled={busy}>{$t('commons.broadcast.cancel')}</button>
         <button type="submit" class="broadcast-btn-submit" disabled={!canSubmit}>
           {publishing ? $t('commons.broadcast.publishing') : $t('commons.broadcast.broadcast')}
         </button>

@@ -218,7 +218,7 @@
                 type="button"
                 class="join-request-btn is-mute"
                 disabled={anyRespondInFlight}
-                on:click={() => handleMute(request)}
+                onclick={() => handleMute(request)}
               >
                 {$t('squad.joinRequests.mute')}
               </button>
@@ -226,7 +226,7 @@
                 type="button"
                 class="join-request-btn is-reject"
                 disabled={anyRespondInFlight}
-                on:click={() => handleReject(request)}
+                onclick={() => handleReject(request)}
               >
                 {isJoinRequestRespondInFlight(request.eventId)
                   ? $t('squad.joinRequests.working')
@@ -236,7 +236,7 @@
                 type="button"
                 class="join-request-btn is-accept"
                 disabled={anyRespondInFlight}
-                on:click={() => handleAccept(request)}
+                onclick={() => handleAccept(request)}
               >
                 {isJoinRequestRespondInFlight(request.eventId)
                   ? $t('squad.joinRequests.working')
@@ -254,7 +254,7 @@
       disabled={syncing}
       spinning={syncing}
       ariaLabel={syncing ? $t('squad.joinRequests.refreshingAria') : $t('squad.joinRequests.refreshAria')}
-      on:click={() => refresh()}
+      onclick={() => refresh()}
     />
   </div>
 </section>

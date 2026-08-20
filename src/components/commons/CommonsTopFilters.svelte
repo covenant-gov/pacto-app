@@ -86,7 +86,7 @@
       type="button"
       class="commons-filters-browse"
       class:is-open={isLatestActive}
-      on:click={showLatest}
+      onclick={showLatest}
     >
       {$t('commons.topFilters.latest')}
     </button>
@@ -94,7 +94,7 @@
       type="button"
       class="commons-filters-browse"
       class:is-open={isCategoriesActive}
-      on:click={showCategories}
+      onclick={showCategories}
     >
       {$t('commons.topFilters.categories')}
     </button>
@@ -103,7 +103,7 @@
       class="commons-filters-browse"
       class:is-open={isTagsActive}
       aria-expanded={tagMenuOpen}
-      on:click={toggleMenu}
+      onclick={toggleMenu}
     >
       {$t('commons.topFilters.tags')}
       <span class="commons-filters-browse-chevron" aria-hidden="true">{tagMenuOpen ? '–' : '+'}</span>
@@ -113,7 +113,7 @@
         type="button"
         class="commons-filters-browse commons-filters-search"
         class:is-open={isSearchActive}
-        on:click={runTagSearch}
+        onclick={runTagSearch}
       >
         {$t('commons.topFilters.search')}
       </button>
@@ -127,7 +127,7 @@
             type="button"
             class="commons-filters-chip-remove"
             aria-label={$t('commons.topFilters.removeCategoryFilter', { values: { categoryLabel } })}
-            on:click={removeCategory}
+            onclick={removeCategory}
           >
             ×
           </button>
@@ -142,7 +142,7 @@
               type="button"
               class="commons-filters-chip-remove"
               aria-label={$t('commons.topFilters.removeTagFilter', { values: { tag } })}
-              on:click={() => removeTag(tag)}
+              onclick={() => removeTag(tag)}
             >
               ×
             </button>

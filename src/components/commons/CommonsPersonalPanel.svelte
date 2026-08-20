@@ -105,7 +105,7 @@
       style={avatarSrc ? '' : `background-image: ${commonsTagGradient(npub || displayName)}`}
       aria-label={$t('commons.personal.profileSettings')}
       title={$t('commons.personal.profileSettings')}
-      on:click={openSettings}
+      onclick={openSettings}
     >
       {#if avatarSrc}
         <img src={avatarSrc} alt="" loading="lazy" decoding="async" />
@@ -126,7 +126,7 @@
           <button
             type="button"
             class="commons-personal-inline-btn is-danger"
-            on:click={handleCancel}
+            onclick={handleCancel}
             disabled={cancelling}
           >
             {cancelling ? $t('commons.personal.terminating') : $t('commons.personal.terminate')}
@@ -140,7 +140,7 @@
             <button
               type="button"
               class="commons-personal-see-more"
-              on:click={() => (messageExpanded = !messageExpanded)}
+              onclick={() => (messageExpanded = !messageExpanded)}
             >
               {messageExpanded ? $t('commons.personal.seeLess') : $t('commons.personal.seeMore')}
             </button>
@@ -159,7 +159,7 @@
             <span class="commons-status-dot" aria-hidden="true"></span>
             {$t('commons.personal.noActiveBroadcast')}
           </span>
-          <button type="button" class="commons-personal-inline-btn is-accent" on:click={onBroadcast}>
+          <button type="button" class="commons-personal-inline-btn is-accent" onclick={onBroadcast}>
             {$t('commons.personal.startBroadcast')}
           </button>
         </div>

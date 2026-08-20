@@ -22,8 +22,8 @@
     class="parent-modal-overlay"
     role="button"
     tabindex="-1"
-    on:click={onClose}
-    on:keydown={(e) => e.key === 'Escape' && onClose()}
+    onclick={onClose}
+    onkeydown={(e) => e.key === 'Escape' && onClose()}
   >
     <div
       class="parent-modal-content exit-parent-content"
@@ -32,8 +32,8 @@
       aria-labelledby={titleId}
       aria-label="{$t('messaging.exitParent.title')}{parentName ? ' ' + parentName : ''}"
       tabindex="0"
-      on:click|stopPropagation
-      on:keydown={(e) => e.key === 'Escape' && onClose()}
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && onClose()}
     >
       <h2 id={titleId}>{title}</h2>
       <p class="exit-parent-message">{message}</p>
@@ -44,7 +44,7 @@
         <button
           type="button"
           class="exit-parent-btn-cancel"
-          on:click={onClose}
+          onclick={onClose}
           disabled={exiting}
         >
           {$t('messaging.exitParent.cancel')}
@@ -52,7 +52,7 @@
         <button
           type="button"
           class="exit-parent-btn-confirm"
-          on:click={onConfirm}
+          onclick={onConfirm}
           disabled={exiting}
         >
           {exiting ? $t('messaging.exitParent.exiting') : confirmLabel}

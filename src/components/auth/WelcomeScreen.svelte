@@ -18,10 +18,10 @@
     </div>
 
     <div class="welcome-actions">
-      <button class="btn-primary" on:click={onCreateAccount}>
+      <button class="btn-primary" onclick={onCreateAccount}>
         {$t('auth.createAccount')}
       </button>
-      <button class="btn-secondary" on:click={onImportKeys}>
+      <button class="btn-secondary" onclick={onImportKeys}>
         {$t('auth.importWithRecoveryPhrase')}
       </button>
     </div>

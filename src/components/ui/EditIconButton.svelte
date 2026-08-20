@@ -4,6 +4,7 @@
   export let title: string | undefined = undefined;
   /** Extra class names for the button element. */
   export let className = '';
+  export let onclick: (() => void) | undefined = undefined;
 </script>
 
 <button
@@ -12,7 +13,7 @@
   {disabled}
   aria-label={ariaLabel}
   {title}
-  on:click
+  {onclick}
 >
   <svg
     class="edit-icon-btn-icon"

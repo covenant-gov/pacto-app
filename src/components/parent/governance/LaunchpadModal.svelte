@@ -65,7 +65,7 @@
           type="button"
           class="btn-primary launchpad-card-btn"
           disabled={channelBlocked}
-          on:click={() => {
+          onclick={() => {
             onClose();
             onDeployGovAndSponsor();
           }}
@@ -80,7 +80,7 @@
           type="button"
           class="btn-primary launchpad-card-btn"
           disabled={channelBlocked}
-          on:click={() => {
+          onclick={() => {
             onClose();
             onDeployPactoGov();
           }}
@@ -95,7 +95,7 @@
           type="button"
           class="btn-primary launchpad-card-btn"
           disabled={channelBlocked}
-          on:click={() => {
+          onclick={() => {
             onClose();
             onDeployGovAndSponsor();
           }}
@@ -137,7 +137,7 @@
           type="button"
           class="btn-primary launchpad-card-btn"
           disabled={channelBlocked}
-          on:click={() => {
+          onclick={() => {
             onClose();
             onDeployExtSponsor();
           }}
@@ -166,7 +166,7 @@
           type="button"
           class="btn-primary launchpad-card-btn"
           disabled={channelBlocked}
-          on:click={() => {
+          onclick={() => {
             onClose();
             onDeploySquadAdmin();
           }}
@@ -178,7 +178,7 @@
   </ul>
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.common.close')}</button>
+    <button type="button" class="btn-secondary" onclick={onClose}>{$t('governance.common.close')}</button>
   </div>
 </Modal>
 

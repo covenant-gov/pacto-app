@@ -119,7 +119,7 @@
       <p class="muted">{$t('governance.bootstrapCrew.empty')}</p>
     {:else}
       <div class="select-row">
-        <button type="button" class="btn-link" disabled={acting} on:click={toggleAll}>
+        <button type="button" class="btn-link" disabled={acting} onclick={toggleAll}>
           {allSelected ? $t('governance.common.clearSelection') : $t('governance.common.selectAll')}
         </button>
         <span class="muted tiny">{$t('governance.bootstrapCrew.selectCount', { values: { selected: selected.size, total: eligible.length } })}</span>
@@ -133,7 +133,7 @@
                 type="checkbox"
                 checked={selected.has(key)}
                 disabled={acting}
-                on:change={() => toggle(member.address)}
+                onchange={() => toggle(member.address)}
               />
               <span class="member-name">{member.label}</span>
               <code class="member-addr">{member.address}</code>
@@ -151,12 +151,12 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" disabled={acting} on:click={onClose}>{$t('governance.common.cancel')}</button>
+      <button type="button" class="btn-secondary" disabled={acting} onclick={onClose}>{$t('governance.common.cancel')}</button>
       <button
         type="button"
         class="btn-primary"
         disabled={acting || !captainGate.enabled || selected.size === 0}
-        on:click={submit}
+        onclick={submit}
       >
         {acting ? $t('governance.common.submitting') : $t('governance.bootstrapCrew.action')}
       </button>
