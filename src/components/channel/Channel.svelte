@@ -2,12 +2,16 @@
   import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
   import { t } from 'svelte-i18n';
 
-  export let name: string = "";
-  export let active: boolean = false;
-  /** Unread / action-needed count; hidden when 0 or channel is active. */
-  export let alertCount = 0;
+  interface Props {
+    name?: string;
+    active?: boolean;
+    /** Unread / action-needed count; hidden when 0 or channel is active. */
+    alertCount?: number;
+  }
 
-  $: alertLabel = formatUnreadBadgeCount(alertCount);
+  let { name = '', active = false, alertCount = 0 }: Props = $props();
+
+  let alertLabel = $derived(formatUnreadBadgeCount(alertCount));
 </script>
 
 <button
@@ -80,4 +84,3 @@
     text-align: center;
   }
 </style>
-

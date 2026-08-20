@@ -1,35 +1,59 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { appConfig } from '../../stores/app-config';
-  export let open = false;
-  export let parentName = '';
-  export let subtitle = '';
-  export let membersLabel = '';
-  export let channelName = '';
-  export let memberList: string[] = [];
-  export let loading = false;
-  export let selectedNpubs: string[] = [];
-  export let emptyMessage = '';
-  export let error = '';
-  export let creating = false;
-  /** When true, show closed-channel member picker. */
-  export let showMemberPicker = false;
-  export let canCreateClosed = false;
-  export let inputId: string | undefined = undefined;
 
-  export let onClose: () => void = () => {};
-  export let onOpenChannel: () => void = () => {};
-  export let onChooseClosed: () => void = () => {};
-  export let onCreateClosed: () => void = () => {};
-  export let onToggleMember: (npub: string) => void = () => {};
-  export let getMemberDisplayName: (npub: string) => string = (npub) => npub;
+  interface Props {
+    open?: boolean;
+    parentName?: string;
+    subtitle?: string;
+    membersLabel?: string;
+    channelName?: string;
+    memberList?: string[];
+    loading?: boolean;
+    selectedNpubs?: string[];
+    emptyMessage?: string;
+    error?: string;
+    creating?: boolean;
+    /** When true, show closed-channel member picker. */
+    showMemberPicker?: boolean;
+    canCreateClosed?: boolean;
+    inputId?: string;
+    onClose?: () => void;
+    onOpenChannel?: () => void;
+    onChooseClosed?: () => void;
+    onCreateClosed?: () => void;
+    onToggleMember?: (npub: string) => void;
+    getMemberDisplayName?: (npub: string) => string;
+  }
 
-  $: maxChannelNameLength = $appConfig.channelNameMaxLength;
+  let {
+    open = false,
+    parentName = '',
+    subtitle = '',
+    membersLabel = '',
+    channelName = $bindable(''),
+    memberList = [],
+    loading = false,
+    selectedNpubs = $bindable([]),
+    emptyMessage = '',
+    error = '',
+    creating = false,
+    showMemberPicker = false,
+    canCreateClosed = false,
+    inputId,
+    onClose = () => {},
+    onOpenChannel = () => {},
+    onChooseClosed = () => {},
+    onCreateClosed = () => {},
+    onToggleMember = () => {},
+    getMemberDisplayName = (npub) => npub,
+  }: Props = $props();
 
   const titleId = 'create-channel-modal-title';
-  const resolvedInputId = inputId ?? 'create-channel-name';
+  let resolvedInputId = $derived(inputId ?? 'create-channel-name');
 
-  $: nameReady = channelName.trim().length > 0;
+  let maxChannelNameLength = $derived($appConfig.channelNameMaxLength);
+  let nameReady = $derived(channelName.trim().length > 0);
 </script>
 
 {#if open}
