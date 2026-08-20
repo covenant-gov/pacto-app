@@ -17,49 +17,80 @@
   import { observeLinkPreview } from '../../lib/messaging/link-preview-observer';
   import { outboundDeliveryLabel } from '../../lib/dm/resolve-dm-message-presentation';
 
-  export let id: string = '';
-  export let authorName: string = '';
-  export let content: string = '';
-  export let body: string = '';
-  export let mentions: Mention[] | undefined = undefined;
-  export let rosterNpubs: string[] | Set<string> | undefined = undefined;
-  export let profiles: Record<string, NostrProfile | undefined> | undefined = undefined;
-  export let currentUserNpub: string | undefined = undefined;
-  export let isMentioned: boolean = false;
-  export let timestamp: string = '';
-  export let avatar: string = '';
-  /** Hide avatar + name/timestamp; nest under the previous message from the same author. */
-  export let compact: boolean = false;
-  /** When set, show a reply bar above the body (author + truncated content or "Attachment"). */
-  export let replyToId: string | undefined = undefined;
-  export let replyAuthorName: string | undefined = undefined;
-  export let replyPreview: string | undefined = undefined;
-  export let reactions: Reaction[] | undefined = undefined;
-  export let attachments: Attachment[] | undefined = undefined;
-  export let previewMetadata: PreviewMetadata | null | undefined = undefined;
-  export let chatId: string = '';
-  export let pending: boolean = false;
-  export let failed: boolean = false;
-  export let onReact: (messageId: string, emoji: string) => void = () => {};
-  export let onCopy: (messageId: string, text: string) => void = () => {};
-  export let onReply: (messageId: string) => void = () => {};
+  interface Props {
+    id?: string;
+    authorName?: string;
+    content?: string;
+    body?: string;
+    mentions?: Mention[];
+    rosterNpubs?: string[] | Set<string>;
+    profiles?: Record<string, NostrProfile | undefined>;
+    currentUserNpub?: string;
+    isMentioned?: boolean;
+    timestamp?: string;
+    avatar?: string;
+    /** Hide avatar + name/timestamp; nest under the previous message from the same author. */
+    compact?: boolean;
+    /** When set, show a reply bar above the body (author + truncated content or "Attachment"). */
+    replyToId?: string;
+    replyAuthorName?: string;
+    replyPreview?: string;
+    reactions?: Reaction[];
+    attachments?: Attachment[];
+    previewMetadata?: PreviewMetadata | null;
+    chatId?: string;
+    pending?: boolean;
+    failed?: boolean;
+    onReact?: (messageId: string, emoji: string) => void;
+    onCopy?: (messageId: string, text: string) => void;
+    onReply?: (messageId: string) => void;
+  }
 
-  $: displayContent = body || content;
-  $: deliveryLabel = outboundDeliveryLabel({ pending, failed }, $t);
+  let {
+    id = '',
+    authorName = '',
+    content = '',
+    body = '',
+    mentions = undefined,
+    rosterNpubs = undefined,
+    profiles = undefined,
+    currentUserNpub = undefined,
+    isMentioned = false,
+    timestamp = '',
+    avatar = '',
+    compact = false,
+    replyToId = undefined,
+    replyAuthorName = undefined,
+    replyPreview = undefined,
+    reactions = undefined,
+    attachments = undefined,
+    previewMetadata = undefined,
+    chatId = '',
+    pending = false,
+    failed = false,
+    onReact = () => {},
+    onCopy = () => {},
+    onReply = () => {},
+  }: Props = $props();
+
+  let displayContent = $derived(body || content);
+  let deliveryLabel = $derived(outboundDeliveryLabel({ pending, failed }, $t));
   /** Only fields `requestLinkPreview` reads are populated; viewport-triggered via `observeLinkPreview`. */
-  $: linkPreviewParams = chatId && id
-    ? { chatId, message: { id, content, pending, preview_metadata: previewMetadata } as DmMessage }
-    : undefined;
-  $: structuredNotice = summarizeStructuredMessageContent(displayContent, $t);
-  $: aggregated = aggregateReactions(reactions ?? [], currentUserNpub ?? '');
+  let linkPreviewParams = $derived(
+    chatId && id
+      ? { chatId, message: { id, content, pending, preview_metadata: previewMetadata } as DmMessage }
+      : undefined,
+  );
+  let structuredNotice = $derived(summarizeStructuredMessageContent(displayContent, $t));
+  let aggregated = $derived(aggregateReactions(reactions ?? [], currentUserNpub ?? ''));
   /** Telegram-style reactions overlay onto the last attachment when it's an image/video tile; otherwise they sit in normal flow below the content. */
-  $: lastAttachmentIsTile = (() => {
+  let lastAttachmentIsTile = $derived.by(() => {
     if (!attachments || attachments.length === 0) return false;
     const last = attachments[attachments.length - 1];
     const kind = attachmentKind(last.extension, last.img_meta != null);
     return kind === 'image' || kind === 'video';
-  })();
-  $: reactionsOverlayMedia = lastAttachmentIsTile && aggregated.length > 0;
+  });
+  let reactionsOverlayMedia = $derived(lastAttachmentIsTile && aggregated.length > 0);
 
   function jumpToMessage(targetId: string) {
     const el = document.getElementById(`msg-${targetId}`);
@@ -71,15 +102,15 @@
     jumpToMessage(replyToId);
   }
 
-  let menuOpen = false;
-  let menuX = 0;
-  let menuY = 0;
-  let popoverEl: HTMLElement | undefined;
+  let menuOpen = $state(false);
+  let menuX = $state(0);
+  let menuY = $state(0);
+  let popoverEl: HTMLElement | undefined = $state();
   let longPressTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Combined menu has two panels: the quick-reaction bar + action list, or the expanded emoji picker. */
-  let pickerExpanded = false;
-  let emojiSearchQuery = '';
+  let pickerExpanded = $state(false);
+  let emojiSearchQuery = $state('');
 
   const QUICK_REACTIONS = ['🥰', '❤️', '👍', '👎', '🔥', '👏', '😁'];
   const COMMON_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡', '🎉', '👏'];
@@ -96,17 +127,17 @@
     return out;
   })();
 
-  $: recentEmojis = $recentEmojisStore.map((e) => e.emoji);
-  $: emojiSearchResults = emojiSearchQuery.trim()
-    ? searchEmojis(emojiSearchQuery.trim()).slice(0, EMOJI_PICKER_LIMIT)
-    : [];
-  $: quickReactedSet = new Set(aggregated.filter((r) => r.includesMe).map((r) => r.emoji));
+  let recentEmojis = $derived($recentEmojisStore.map((e) => e.emoji));
+  let emojiSearchResults = $derived(
+    emojiSearchQuery.trim() ? searchEmojis(emojiSearchQuery.trim()).slice(0, EMOJI_PICKER_LIMIT) : [],
+  );
+  let quickReactedSet = $derived(new Set(aggregated.filter((r) => r.includesMe).map((r) => r.emoji)));
 
   let longPressStartX = 0;
   let longPressStartY = 0;
 
   /** Reactor-list tooltip: at most one chip's tooltip is open at a time. */
-  let reactionTooltipEmoji: string | null = null;
+  let reactionTooltipEmoji: string | null = $state(null);
   const REACTOR_TOOLTIP_LIMIT = 8;
   let chipLongPressTimer: ReturnType<typeof setTimeout> | undefined;
   let chipLongPressTriggered = false;

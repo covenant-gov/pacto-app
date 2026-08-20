@@ -3,10 +3,14 @@
   import { t } from 'svelte-i18n';
   import type { PreviewMetadata } from '../../stores/dm';
 
-  export let metadata: PreviewMetadata | null | undefined = undefined;
+  interface Props {
+    metadata?: PreviewMetadata | null;
+  }
 
-  $: displayTitle = metadata?.og_title || metadata?.title || '';
-  $: displayDescription = metadata?.og_description || metadata?.description || '';
+  let { metadata = undefined }: Props = $props();
+
+  let displayTitle = $derived(metadata?.og_title || metadata?.title || '');
+  let displayDescription = $derived(metadata?.og_description || metadata?.description || '');
   function isHttpUrl(url: string | null | undefined): boolean {
     try {
       const parsed = new URL(url ?? '');
@@ -16,17 +20,19 @@
     }
   }
 
-  $: displayImage = isHttpUrl(metadata?.og_image) ? (metadata?.og_image ?? '') : '';
-  $: linkUrl = metadata?.og_url || metadata?.domain || '';
-  $: displayDomain = (metadata?.domain ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');
-  $: hasContent = Boolean(displayTitle || displayDescription || displayImage);
+  let displayImage = $derived(isHttpUrl(metadata?.og_image) ? (metadata?.og_image ?? '') : '');
+  let linkUrl = $derived(metadata?.og_url || metadata?.domain || '');
+  let displayDomain = $derived((metadata?.domain ?? '').replace(/^https?:\/\//, '').replace(/\/$/, ''));
+  let hasContent = $derived(Boolean(displayTitle || displayDescription || displayImage));
 
-  let imageError = false;
-  let faviconError = false;
-  $: if (metadata) {
-    imageError = false;
-    faviconError = false;
-  }
+  let imageError = $state(false);
+  let faviconError = $state(false);
+  $effect(() => {
+    if (metadata) {
+      imageError = false;
+      faviconError = false;
+    }
+  });
 
   function handleClick(event: MouseEvent) {
     if (!linkUrl) return;

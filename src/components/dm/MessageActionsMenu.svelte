@@ -1,10 +1,14 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
 
-  export let messageId: string;
-  export let text: string = '';
-  export let onCopy: (messageId: string, text: string) => void = () => {};
-  export let onReply: (messageId: string) => void = () => {};
+  interface Props {
+    messageId: string;
+    text?: string;
+    onCopy?: (messageId: string, text: string) => void;
+    onReply?: (messageId: string) => void;
+  }
+
+  let { messageId, text = '', onCopy = () => {}, onReply = () => {} }: Props = $props();
 </script>
 
 <div class="message-actions-menu" role="group" aria-label="Message actions">

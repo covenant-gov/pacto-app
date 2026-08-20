@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { afterUpdate } from 'svelte';
   import { formatMessageContent, formatMessageContentWithMentions } from '../../lib/utils/message-formatting';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { get } from 'svelte/store';
@@ -7,18 +6,25 @@
   import type { Mention } from '../../lib/messaging/mentions';
   import type { NostrProfile } from '../../lib/api/nostr';
 
-  export let content: string = '';
-  export let mentions: Mention[] | undefined = undefined;
-  export let profiles: Record<string, NostrProfile | undefined> | undefined = undefined;
-  export let rosterNpubs: string[] | Set<string> | undefined = undefined;
+  interface Props {
+    content?: string;
+    mentions?: Mention[];
+    profiles?: Record<string, NostrProfile | undefined>;
+    rosterNpubs?: string[] | Set<string>;
+  }
 
-  $: formatted = mentions && profiles && rosterNpubs
-    ? formatMessageContentWithMentions(content, mentions, profiles, rosterNpubs)
-    : formatMessageContent(content);
+  let { content = '', mentions = undefined, profiles = undefined, rosterNpubs = undefined }: Props = $props();
 
-  let bodyEl: HTMLDivElement | undefined;
+  let formatted = $derived(
+    mentions && profiles && rosterNpubs
+      ? formatMessageContentWithMentions(content, mentions, profiles, rosterNpubs)
+      : formatMessageContent(content),
+  );
 
-  afterUpdate(() => {
+  let bodyEl: HTMLDivElement | undefined = $state();
+
+  $effect(() => {
+    void formatted;
     if (!bodyEl) return;
     bodyEl.querySelectorAll('img.twemoji').forEach((img) => {
       if ((img as HTMLElement).dataset.fallbackBound) return;
