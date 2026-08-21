@@ -87,7 +87,7 @@
 				{#if squad.unreadCount}
 					<Badge
 						variant="notif"
-						class="absolute -right-1 -bottom-1 ring-2 ring-secondary"
+						class="absolute -right-1 -bottom-1 z-10 ring-2 ring-secondary"
 						aria-label={labels.unreadCount(squad.unreadCount)}
 					>
 						{squad.unreadCount > 99 ? '99+' : squad.unreadCount}

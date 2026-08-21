@@ -79,7 +79,7 @@
 					>
 						<MessageCircle class="size-5" />
 						{#if dmCount > 0}
-							<Badge variant="notif" class="absolute -right-0.5 -bottom-0.5 ring-3 ring-shell-rail">{dmCount}</Badge>
+							<Badge variant="notif" class="absolute -right-0.5 -bottom-0.5 z-10 ring-3 ring-shell-rail">{dmCount}</Badge>
 						{/if}
 					</RailTile>
 				{/snippet}
@@ -99,7 +99,7 @@
 					>
 						<Bell class="size-5" />
 						{#if activityCount > 0}
-							<Badge variant="notif" class="absolute -right-0.5 -bottom-0.5 ring-3 ring-shell-rail">
+							<Badge variant="notif" class="absolute -right-0.5 -bottom-0.5 z-10 ring-3 ring-shell-rail">
 								{activityCount}
 							</Badge>
 						{/if}
@@ -132,7 +132,7 @@
 									>
 										<span class="text-sm font-semibold">{squad.initials}</span>
 										{#if squad.mentionCount}
-											<Badge variant="notif" class="absolute -right-0.5 -bottom-0.5 ring-3 ring-shell-rail">
+											<Badge variant="notif" class="absolute -right-0.5 -bottom-0.5 z-10 ring-3 ring-shell-rail">
 												{squad.mentionCount}
 											</Badge>
 										{/if}

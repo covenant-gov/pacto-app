@@ -15,6 +15,7 @@
 	import DesignRail from './components/DesignRail.svelte';
 	import DesignChannels from './components/DesignChannels.svelte';
 	import DesignMembers from './components/DesignMembers.svelte';
+	import DesignGate from './components/DesignGate.svelte';
 	import { design } from './design-state.svelte.js';
 	import { currentUser, members, overlayChannels, overlayMembers } from './fixtures';
 	import type { DashboardMode } from './fixtures';
@@ -84,7 +85,11 @@
 	<title>{$t('design.pageTitle')}</title>
 </svelte:head>
 
-<div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
+<div
+	class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background"
+	data-dither-pattern={design.ditherPattern}
+	style={`--dither-mix: ${design.ditherMix}; --dither-tile: ${design.ditherTile}px; --dither-edge: ${design.ditherEdge}px;`}
+>
 	<DesignToolbar
 		theme={$theme}
 		{previewState}
@@ -92,7 +97,7 @@
 		onPreviewStateChange={selectPreviewState}
 	/>
 
-	<div class="min-h-0 flex-1 overflow-hidden">
+	<div class="relative min-h-0 flex-1 overflow-hidden">
 		<AppShell labels={appShellLabels} bind:asideCollapsed={design.asideCollapsed}>
 			{#snippet rail()}
 				<DesignRail
@@ -135,6 +140,9 @@
 				<DesignMembers members={visibleMembers} />
 			{/snippet}
 		</AppShell>
+		{#if design.gateOpen}
+			<DesignGate onClose={() => (design.gateOpen = false)} />
+		{/if}
 	</div>
 </div>
 

@@ -7,6 +7,7 @@
 	import { t } from 'svelte-i18n';
 	import { THEME_OPTIONS, type Theme } from '../../stores/theme';
 	import type { ShellPreviewState } from '$lib/shell';
+	import DesignDitherPanel from './components/DesignDitherPanel.svelte';
 
 	interface Props {
 		theme: Theme;
@@ -45,6 +46,7 @@
 	</div>
 
 	<div class="flex shrink-0 items-center gap-2.5">
+		<DesignDitherPanel />
 		<div class="flex shrink-0 items-center gap-1.5 text-[0.625rem] font-semibold tracking-[0.04em] text-muted-foreground uppercase whitespace-nowrap">
 			<Palette class="size-3.5" aria-hidden="true" />
 			<span class="max-[560px]:sr-only">{$t('design.toolbar.theme')}</span>

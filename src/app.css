@@ -35,6 +35,14 @@
 }
 
 @font-face {
+  font-family: 'Instrument Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/instrument-sans-600.woff2') format('woff2');
+}
+
+@font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
   font-weight: 400;
@@ -63,7 +71,7 @@
 
   color: var(--text-primary);
 
-  font-synthesis: none;
+  font-synthesis: style;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -137,6 +145,9 @@
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans: var(--font-ui);
   --font-mono: var(--font-mono-family);
+  --font-weight-bold: 600;
+  --font-weight-extrabold: 600;
+  --font-weight-black: 600;
 }
 
 :is(h1, h2, h3, h4, h5, h6) {
@@ -154,6 +165,23 @@ body {
   padding: 0;
   overflow: hidden;
   background-color: var(--bg-page);
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-ui);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  letter-spacing: inherit;
 }
 
 body {
@@ -175,6 +203,270 @@ body {
   justify-content: flex-start;
   height: 100%;
   min-height: 0;
+}
+
+/* Mask urls must be literal — inherited url() vars do not paint on ::before. Mix is 8–70 unitless. */
+:root {
+  --dither-mix: 42;
+  --dither-tile: 8px;
+  --dither-edge: 12px;
+}
+
+[data-slot='rail-tile'][data-variant='squad']::before,
+.shell-dither-wash {
+  -webkit-mask-image: url('/dither/bayer.svg');
+  mask-image: url('/dither/bayer.svg');
+  -webkit-mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px);
+  mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px);
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+}
+
+[data-slot='rail-tile'][data-variant='squad']::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background-color: color-mix(
+    in srgb,
+    var(--foreground) calc(var(--dither-mix, 42) * 1%),
+    transparent
+  );
+  opacity: 1;
+  transition: opacity 150ms var(--ease-out);
+}
+
+.shell-dither-wash {
+  pointer-events: none;
+  background-color: color-mix(
+    in srgb,
+    var(--foreground) calc(var(--dither-mix, 42) * 1%),
+    transparent
+  );
+}
+
+[data-slot='rail-tile'][data-variant='squad'] > :not([data-slot='badge']) {
+  position: relative;
+  z-index: 2;
+}
+
+[data-slot='rail-tile'][data-variant='squad']:hover::before,
+[data-slot='rail-tile'][data-variant='squad']:focus-visible::before,
+[data-slot='rail-tile'][data-variant='squad'][data-active]::before {
+  opacity: 0;
+}
+
+.shell-dither-seam {
+  position: relative;
+  isolation: isolate;
+}
+
+.shell-dither-seam::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: var(--dither-edge, 12px);
+  border-top-left-radius: inherit;
+  background-color: var(--muted);
+  mask-image: url('/dither/bayer.svg'), linear-gradient(to right, #000, transparent);
+  mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px), 100% 100%;
+  mask-repeat: repeat, no-repeat;
+  mask-composite: intersect;
+  -webkit-mask-image: url('/dither/bayer.svg'), linear-gradient(to right, #000, transparent);
+  -webkit-mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px), 100% 100%;
+  -webkit-mask-repeat: repeat, no-repeat;
+  -webkit-mask-composite: source-in;
+}
+
+.shell-grid-void {
+  background-image:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 28px 28px, 28px 28px;
+  background-position: 12px 8px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/bayer.svg');
+  mask-size: 100% 100%, var(--dither-tile, 8px) var(--dither-tile, 8px);
+  mask-repeat: no-repeat, repeat;
+  mask-composite: intersect;
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/bayer.svg');
+  -webkit-mask-size: 100% 100%, var(--dither-tile, 8px) var(--dither-tile, 8px);
+  -webkit-mask-repeat: no-repeat, repeat;
+  -webkit-mask-composite: source-in;
+  opacity: calc(0.2 + var(--dither-mix, 42) * 0.01);
+}
+
+.shell-gate-scan {
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 2px,
+    color-mix(
+        in srgb,
+        var(--foreground) calc(var(--dither-mix, 42) * 0.28%),
+        transparent
+      )
+      2px 3px
+  );
+}
+
+[data-dither-pattern='checker'] [data-slot='rail-tile'][data-variant='squad']::before,
+[data-dither-pattern='checker'] .shell-dither-wash {
+  -webkit-mask-image: url('/dither/checker.svg');
+  mask-image: url('/dither/checker.svg');
+}
+
+[data-dither-pattern='checker'] .shell-dither-seam::before {
+  mask-image: url('/dither/checker.svg'), linear-gradient(to right, #000, transparent);
+  -webkit-mask-image: url('/dither/checker.svg'), linear-gradient(to right, #000, transparent);
+}
+
+[data-dither-pattern='checker'] .shell-grid-void {
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/checker.svg');
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/checker.svg');
+}
+
+[data-dither-pattern='dots'] [data-slot='rail-tile'][data-variant='squad']::before,
+[data-dither-pattern='dots'] .shell-dither-wash {
+  -webkit-mask-image: url('/dither/dots.svg');
+  mask-image: url('/dither/dots.svg');
+}
+
+[data-dither-pattern='dots'] .shell-dither-seam::before {
+  mask-image: url('/dither/dots.svg'), linear-gradient(to right, #000, transparent);
+  -webkit-mask-image: url('/dither/dots.svg'), linear-gradient(to right, #000, transparent);
+}
+
+[data-dither-pattern='dots'] .shell-grid-void {
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/dots.svg');
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/dots.svg');
+}
+
+[data-dither-pattern='hline'] [data-slot='rail-tile'][data-variant='squad']::before,
+[data-dither-pattern='hline'] .shell-dither-wash {
+  -webkit-mask-image: url('/dither/hline.svg');
+  mask-image: url('/dither/hline.svg');
+}
+
+[data-dither-pattern='hline'] .shell-dither-seam::before {
+  mask-image: url('/dither/hline.svg'), linear-gradient(to right, #000, transparent);
+  -webkit-mask-image: url('/dither/hline.svg'), linear-gradient(to right, #000, transparent);
+}
+
+[data-dither-pattern='hline'] .shell-grid-void {
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/hline.svg');
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/hline.svg');
+}
+
+[data-dither-pattern='vline'] [data-slot='rail-tile'][data-variant='squad']::before,
+[data-dither-pattern='vline'] .shell-dither-wash {
+  -webkit-mask-image: url('/dither/vline.svg');
+  mask-image: url('/dither/vline.svg');
+}
+
+[data-dither-pattern='vline'] .shell-dither-seam::before {
+  mask-image: url('/dither/vline.svg'), linear-gradient(to right, #000, transparent);
+  -webkit-mask-image: url('/dither/vline.svg'), linear-gradient(to right, #000, transparent);
+}
+
+[data-dither-pattern='vline'] .shell-grid-void {
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/vline.svg');
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/vline.svg');
+}
+
+[data-dither-pattern='diag'] [data-slot='rail-tile'][data-variant='squad']::before,
+[data-dither-pattern='diag'] .shell-dither-wash {
+  -webkit-mask-image: url('/dither/diag.svg');
+  mask-image: url('/dither/diag.svg');
+}
+
+[data-dither-pattern='diag'] .shell-dither-seam::before {
+  mask-image: url('/dither/diag.svg'), linear-gradient(to right, #000, transparent);
+  -webkit-mask-image: url('/dither/diag.svg'), linear-gradient(to right, #000, transparent);
+}
+
+[data-dither-pattern='diag'] .shell-grid-void {
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/diag.svg');
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/diag.svg');
+}
+
+[data-dither-pattern='cross'] [data-slot='rail-tile'][data-variant='squad']::before,
+[data-dither-pattern='cross'] .shell-dither-wash {
+  -webkit-mask-image: url('/dither/cross.svg');
+  mask-image: url('/dither/cross.svg');
+}
+
+[data-dither-pattern='cross'] .shell-dither-seam::before {
+  mask-image: url('/dither/cross.svg'), linear-gradient(to right, #000, transparent);
+  -webkit-mask-image: url('/dither/cross.svg'), linear-gradient(to right, #000, transparent);
+}
+
+[data-dither-pattern='cross'] .shell-grid-void {
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/cross.svg');
+  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
+    url('/dither/cross.svg');
+}
+
+.shell-gate-split {
+  text-shadow:
+    0 1px 18px var(--bg-page),
+    -1px 0 color-mix(in srgb, var(--danger) 70%, transparent),
+    1px 0 color-mix(in srgb, var(--brand) 70%, transparent);
+}
+
+.shell-gate .shell-dither-wash,
+.shell-gate .shell-gate-scan {
+  -webkit-mask-image: radial-gradient(ellipse 58% 50% at 50% 46%, transparent 12%, #000 64%);
+  mask-image: radial-gradient(ellipse 58% 50% at 50% 46%, transparent 12%, #000 64%);
+}
+
+.shell-gate-well {
+  background: radial-gradient(
+    ellipse 46% 38% at 50% 46%,
+    var(--bg-page) 0%,
+    color-mix(in srgb, var(--bg-page) 42%, transparent) 46%,
+    transparent 74%
+  );
+}
+
+.shell-gate-pin {
+  display: block;
+  width: 2.25rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--foreground) 10%, var(--bg-page));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--foreground) 62%, transparent);
+}
+
+.shell-gate-pin[data-active] {
+  box-shadow: inset 0 0 0 2px var(--brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='rail-tile'][data-variant='squad']::before {
+    transition: none;
+  }
+
+  .shell-gate-split {
+    text-shadow: none;
+  }
 }
 
 /* Identity chips keep hue; lightness and glyph track color-scheme. Set --identity (hex/hsl) on the element. */

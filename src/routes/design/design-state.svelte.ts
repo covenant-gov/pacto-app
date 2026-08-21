@@ -9,6 +9,7 @@ import {
 import type { Channel, Message, PresenceStatus, RailLens, Squad } from './fixtures.js';
 import { currentUser } from './fixtures.js';
 import { consumeChannelInList, withSyncedMentions } from './session.js';
+import type { DitherPattern } from './dither.js';
 
 const squadPalette = ['#2a4a3d', '#3d2c6b', '#1e3a4a', '#5a2a2a', '#26324a', '#3a2c4a'];
 
@@ -43,6 +44,19 @@ class DesignSession {
 	newSquadName = $state('');
 	newChannelName = $state('');
 	asideCollapsed = $state(false);
+
+	ditherMix = $state(42);
+	ditherTile = $state(8);
+	ditherEdge = $state(12);
+	ditherPattern = $state<DitherPattern>('bayer');
+	gateOpen = $state(false);
+
+	resetDither() {
+		this.ditherMix = 42;
+		this.ditherTile = 8;
+		this.ditherEdge = 12;
+		this.ditherPattern = 'bayer';
+	}
 
 	get activeSquad() {
 		return this.squadList.find((squad) => squad.id === this.activeSquadId) ?? this.squadList[0];
