@@ -2,11 +2,12 @@
 
 use alloy::primitives::{Address, B256, U256};
 use alloy::providers::Provider;
+use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
 use super::contracts::pacto_sponsor::ISquadSponsorBase::{
-    paymasterCall, squadIdCall, totalSharesCall,
+    paymasterCall, poolCall, spendablePoolWeiCall, squadIdCall, totalSharesCall,
 };
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
@@ -31,18 +32,39 @@ pub struct SquadSponsorSummary {
     pub total_shares: String,
 }
 
+/// Parent pool behind an eligibility clone (`sponsor.pool()`). Shares and deposits live here.
+pub(crate) async fn read_clone_pool<P: Provider>(
+    provider: &P,
+    sponsor: Address,
+) -> Result<Address, String> {
+    let pool: Address = eth_call_decode(provider, sponsor, &poolCall {})
+        .await
+        .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?;
+    if pool.is_zero() {
+        return Err(wallet_err_json(
+            "SPONSOR_READ",
+            "sponsor clone has no pool",
+            None,
+        ));
+    }
+    Ok(pool)
+}
+
+/// Clone `spendablePoolWei` (forwards to the pool) plus pool `totalShares`.
 pub(crate) async fn read_sponsor_pool<P: Provider>(
     provider: &P,
     sponsor: Address,
 ) -> Result<(U256, U256, Address, B256), String> {
-    let total_shares = eth_call_decode(provider, sponsor, &totalSharesCall {}).await?;
-    let balance = provider
-        .get_balance(sponsor)
-        .await
-        .map_err(|e| wallet_err_json("SPONSOR_BALANCE", e.to_string(), None))?;
+    let spendable: U256 = eth_call_decode(provider, sponsor, &spendablePoolWeiCall {}).await?;
     let pm: Address = eth_call_decode(provider, sponsor, &paymasterCall {}).await?;
     let sid: B256 = eth_call_decode(provider, sponsor, &squadIdCall {}).await?;
-    Ok((balance, total_shares, pm, sid))
+    let total_shares = match read_clone_pool(provider, sponsor).await {
+        Ok(pool) => eth_call_decode(provider, pool, &totalSharesCall {})
+            .await
+            .unwrap_or(U256::ZERO),
+        Err(_) => U256::ZERO,
+    };
+    Ok((spendable, total_shares, pm, sid))
 }
 
 #[tauri::command]
@@ -124,4 +146,28 @@ pub async fn get_squad_sponsor_summary<R: Runtime>(
         pool_balance_wei: pool_balance.to_string(),
         total_shares: total_shares.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::keccak256;
+
+    fn selector(signature: &str) -> [u8; 4] {
+        let hash = keccak256(signature.as_bytes());
+        [hash[0], hash[1], hash[2], hash[3]]
+    }
+
+    #[test]
+    fn pool_and_spendable_selectors_match_solidity() {
+        assert_eq!(poolCall {}.abi_encode(), selector("pool()").to_vec());
+        assert_eq!(
+            spendablePoolWeiCall {}.abi_encode(),
+            selector("spendablePoolWei()").to_vec()
+        );
+        assert_eq!(
+            totalSharesCall {}.abi_encode(),
+            selector("totalShares()").to_vec()
+        );
+    }
 }

@@ -79,6 +79,8 @@ sol! {
 
         function factory() external view returns (address factory);
 
+        function pool() external view returns (address pool);
+
         function totalShares() external view returns (uint256 totalShares);
 
         function sponsorShares(address sponsor) external view returns (uint256 shares);

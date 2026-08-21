@@ -9,7 +9,10 @@ function unwrapJsonErrorString(raw: string): string | null {
     const parsed = JSON.parse(trimmed) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const message = (parsed as { message?: unknown }).message;
-    if (typeof message === 'string' && message.trim()) return message.trim();
+    if (typeof message === 'string' && message.trim()) {
+      const inner = message.trim();
+      return unwrapJsonErrorString(inner) ?? inner;
+    }
   } catch {
     /* not JSON */
   }
@@ -69,7 +72,10 @@ export function isMigrationGateError(error: unknown): boolean {
 /**
  * Map known backend error messages to friendlier copy for the UI.
  */
-export function friendlyMessage(raw: string, context: 'dm_send' | 'generic' = 'generic'): string {
+export function friendlyMessage(
+  raw: string,
+  context: 'dm_send' | 'generic' | 'sponsor' = 'generic'
+): string {
   const lower = raw.toLowerCase();
   if (context === 'dm_send') {
     if (lower.includes('invalid npub') || lower.includes('invalid pubkey'))
@@ -89,6 +95,14 @@ export function friendlyMessage(raw: string, context: 'dm_send' | 'generic' = 'g
   }
   if (raw.includes('no sponsor clone registered for this squad id')) {
     return get(t)('governance.error.noSponsorCloneRegistered');
+  }
+  if (
+    context === 'sponsor' &&
+    (raw.includes('ETH_CALL_FAILED') ||
+      raw.includes('execution reverted') ||
+      raw.includes('could not decode return data'))
+  ) {
+    return get(t)('governance.error.couldNotLoadSponsorBalance');
   }
   return raw;
 }

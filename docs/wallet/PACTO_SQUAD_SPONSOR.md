@@ -66,7 +66,7 @@ Alchemy’s AA bundler echoes estimate ceilings and rejects with a verification-
 
 ### Protocol paymaster float and stake (once per chain)
 
-Squad **sponsor pool** deposits (Treasury UI / clone `deposit`) are **not** the same as the shared paymaster’s EntryPoint **deposit** or **stake**. Addresses: [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) Sepolia `squadSponsor` (source: upstream [`deployments/11155111/full-system.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/full-system.json)). EIP-7702 account: upstream [`deployments/11155111/eip7702-account.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/eip7702-account.json).
+Squad **sponsor pool** deposits (Treasury UI / `sponsor.pool().deposit()`) are **not** the same as the shared paymaster’s EntryPoint **deposit** or **stake**. Addresses: [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) Sepolia `squadSponsor` (source: upstream [`deployments/11155111/full-system.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/full-system.json)). EIP-7702 account: upstream [`deployments/11155111/eip7702-account.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/eip7702-account.json).
 
 | Bucket | Who funds | Role |
 |--------|-----------|------|

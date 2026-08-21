@@ -104,7 +104,9 @@ pub(crate) fn mls_key_package_kinds() -> [nostr_sdk::Kind; 2] {
 
 /// Sort KeyPackage candidates newest-first; ties (e.g. a simultaneous dual publish) prefer
 /// the spec kind (30443) over the legacy one.
-pub(crate) fn sort_keypackage_candidates(mut events: Vec<nostr_sdk::Event>) -> Vec<nostr_sdk::Event> {
+pub(crate) fn sort_keypackage_candidates(
+    mut events: Vec<nostr_sdk::Event>,
+) -> Vec<nostr_sdk::Event> {
     events.sort_by(|a, b| {
         b.created_at.cmp(&a.created_at).then_with(|| {
             let a_is_30443 = a.kind == MLS_KEY_PACKAGE_KIND_30443;
@@ -550,7 +552,10 @@ impl MlsService {
     /// missing the MIP-00/02 encoding tag) must be treated as a cache miss, not reused.
     pub fn key_package_event_usable(&self, event: &nostr_sdk::Event) -> Result<(), String> {
         let engine = self.engine().map_err(|e| e.to_string())?;
-        engine.parse_key_package(event).map(|_| ()).map_err(|e| e.to_string())
+        engine
+            .parse_key_package(event)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// Publish the device's keypackage to enable others to add this device to groups
@@ -806,7 +811,9 @@ impl MlsService {
         // retry path only recovers a create that failed before anything was created, so a member
         // dropped only because a relay was unreachable must not be baked into a partial group.
         if skipped.iter().any(|s| s.transient) {
-            return Err(MlsError::NetworkError(format_transient_skip_error(&skipped)));
+            return Err(MlsError::NetworkError(format_transient_skip_error(
+                &skipped,
+            )));
         }
 
         // Perform engine operations without awaits in scope
@@ -818,7 +825,10 @@ impl MlsService {
             // first so a stale/legacy key package only drops that member.
             let mut valid_events: Vec<Event> = Vec::with_capacity(member_kp_events.len());
             let mut valid_recipients: Vec<PublicKey> = Vec::with_capacity(invited_recipients.len());
-            for (event, recipient) in member_kp_events.into_iter().zip(invited_recipients.into_iter()) {
+            for (event, recipient) in member_kp_events
+                .into_iter()
+                .zip(invited_recipients.into_iter())
+            {
                 match engine.parse_key_package(&event) {
                     Ok(_) => {
                         valid_events.push(event);
@@ -4135,7 +4145,9 @@ mod mls_key_package_validity_tests {
     #[test]
     fn key_package_filter_matches_both_kinds() {
         let keys = Keys::generate();
-        let filter = Filter::new().author(keys.public_key()).kinds(mls_key_package_kinds());
+        let filter = Filter::new()
+            .author(keys.public_key())
+            .kinds(mls_key_package_kinds());
 
         let event_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content")
             .sign_with_keys(&keys)
@@ -4233,7 +4245,10 @@ mod sanitize_skip_reason_tests {
 
     #[test]
     fn leaves_a_short_plain_reason_untouched() {
-        assert_eq!(sanitize_skip_reason("no key package published"), "no key package published");
+        assert_eq!(
+            sanitize_skip_reason("no key package published"),
+            "no key package published"
+        );
     }
 }
 
@@ -4281,7 +4296,10 @@ mod format_transient_skip_error_tests {
     #[test]
     fn carries_the_marker_the_frontend_matches() {
         let msg = format_transient_skip_error(&[transient("npub1abc")]);
-        assert!(msg.starts_with(super::RELAY_KEYPACKAGE_UNREACHABLE), "{msg}");
+        assert!(
+            msg.starts_with(super::RELAY_KEYPACKAGE_UNREACHABLE),
+            "{msg}"
+        );
     }
 
     #[test]

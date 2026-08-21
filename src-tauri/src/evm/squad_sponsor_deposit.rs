@@ -1,4 +1,4 @@
-//! Send ETH to a squad sponsor clone via `ISquadSponsorBase.deposit()`.
+//! Send ETH to the parent sponsor pool via `ISquadSponsorBase.deposit()`.
 
 use alloy::network::TransactionBuilder;
 use alloy::primitives::U256;
@@ -21,7 +21,7 @@ use super::squad_sponsor_common::{
     active_game_squad_id_for_parent, parse_deposit_wei, parse_signer_wallet, require_parent_member,
     resolve_sponsor_for_parent,
 };
-use super::squad_sponsor_read::read_sponsor_pool;
+use super::squad_sponsor_read::{read_clone_pool, read_sponsor_pool};
 use super::wallet_chain_config;
 
 #[derive(Serialize)]
@@ -112,6 +112,8 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
     )
     .await?;
 
+    let pool = read_clone_pool(&read_provider, sponsor).await?;
+
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "default")?;
     let (_signer, wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
@@ -123,7 +125,7 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
     let provider = connect_signing_provider(&urls, wallet).await?;
 
     let calldata = depositCall {}.abi_encode();
-    let tx = contract_call_request(sponsor, calldata).with_value(amount);
+    let tx = contract_call_request(pool, calldata).with_value(amount);
     let receipt = send_and_confirm(
         &provider,
         tx,

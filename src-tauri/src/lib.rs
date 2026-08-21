@@ -9068,7 +9068,8 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         let cached_entry: Option<serde_json::Value> = {
             let index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
             index.into_iter().find(|entry| {
-                entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner_pubkey_b32.as_str())
+                entry.get("owner_pubkey").and_then(|v| v.as_str())
+                    == Some(owner_pubkey_b32.as_str())
                     && entry.get("device_id").and_then(|v| v.as_str()) == Some(device_id.as_str())
             })
         };
@@ -9187,7 +9188,10 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     // independently verify, so caching an id no relay holds would just force every future
     // call to republish anyway, without ever telling the caller why.
     let send_output_30443 = client
-        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event_30443)
+        .send_event_to(
+            trusted_relays::trusted_relays().iter().cloned(),
+            &kp_event_30443,
+        )
         .await
         .map_err(|e| e.to_string())?;
     record_send_outcome(&kp_event_30443, &send_output_30443);
@@ -9198,7 +9202,10 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         ));
     }
     let send_output_443 = client
-        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event_443)
+        .send_event_to(
+            trusted_relays::trusted_relays().iter().cloned(),
+            &kp_event_443,
+        )
         .await
         .map_err(|e| e.to_string())?;
     record_send_outcome(&kp_event_443, &send_output_443);
@@ -9280,8 +9287,8 @@ async fn keypackage_ref_still_usable(
         .next()
         .await
         .ok_or_else(|| "not found on the trusted relays".to_string())?;
-    let mls_service = MlsService::new_persistent_for_keypackage_refresh(handle)
-        .map_err(|e| e.to_string())?;
+    let mls_service =
+        MlsService::new_persistent_for_keypackage_refresh(handle).map_err(|e| e.to_string())?;
     mls_service.key_package_event_usable(&event)
 }
 
@@ -9495,10 +9502,7 @@ async fn create_group_chat(
 
     let skipped_members = merge_skipped_members(preflight_skipped, outcome.skipped);
     for s in &skipped_members {
-        eprintln!(
-            "[MLS][create_group_chat] skipped {}: {}",
-            s.npub, s.reason
-        );
+        eprintln!("[MLS][create_group_chat] skipped {}: {}", s.npub, s.reason);
     }
 
     tokio::spawn(async {

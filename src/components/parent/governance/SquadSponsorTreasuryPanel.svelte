@@ -335,7 +335,7 @@
   {:else if loading && !summary}
     <p class="muted">{$t('governance.status.loadingSponsorBalance')}</p>
   {:else if loadError}
-    <p class="sponsor-error" role="alert">{$t(friendlyMessage(loadError, 'generic'))}</p>
+    <p class="sponsor-error" role="alert">{friendlyMessage(loadError, 'sponsor')}</p>
     <button type="button" class="btn-secondary" onclick={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
     <p class="sponsor-lead muted">{$t('governance.info.sponsorLead', { values: { chain: summary.chain } })}</p>
