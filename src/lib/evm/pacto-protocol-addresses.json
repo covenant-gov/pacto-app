@@ -1,5 +1,5 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/full-system.json (de1e0c0). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor deployments/11155111/full-system.json (0ac1719); navePirataRegistry matches pacto-gov. EIP-7702: eip7702-account.json (0x33F920B5…, unchanged).",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/full-system.json (de1e0c0). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor deployments/11155111/full-system.json (34518d4); navePirataRegistry matches pacto-gov (not the sponsor artifact’s registry). EIP-7702: eip7702-account.json (0x33F920B5…, unchanged).",
   "version": 1,
   "networks": {
     "sepolia": {
@@ -8,8 +8,8 @@
         "deployer": "0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38"
       },
       "squadSponsor": {
-        "factory": "0xb758DB170C6D8da5AEDe32764d099AB1e496873B",
-        "paymaster": "0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A",
+        "factory": "0xD8bdc2e5Ca92e129E84207380076c1F18AA3aA95",
+        "paymaster": "0xc7c3Ea95734CcCa62C7FFf4d12Be2B5b8cC92BA1",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
         "navePirataRegistry": "0xf6747bE3425139FCe92B67fA482331D7435bd483"
       },

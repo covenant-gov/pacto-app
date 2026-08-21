@@ -76,13 +76,13 @@ Squad **sponsor pool** deposits (Treasury UI / clone `deposit`) are **not** the 
 | Paymaster EntryPoint deposit | protocol / any wallet | Bundler prepaid gas (`paymaster.deposit()`) |
 | Paymaster EntryPoint stake | protocol (FCFS `paymasterStaker` via factory) | Bundler reputation / ERC-7562; typical Sepolia floor **≥ 0.1 ETH**, delay ≥ **1 day** |
 
-**Greenfield cutover:** a factory redeploy creates a new paymaster. Existing clones were initialized with the old paymaster — **recreate** the squad sponsor for the parent and replace stale `squad_infra` sponsor rows (no dual-read of old clones). Restart `pnpm tauri:dev` after address-book changes so Rust recompiles the embedded JSON. Sponsored writes preflight `clone.paymaster() ==` address book (`SPONSOR_PAYMASTER_MISMATCH` if not). Paymaster also requires EIP-7702 stubs to delegate to the allowlisted `PactoSimple7702Account` (`SS_Invalid7702Implementation` otherwise). Current Sepolia addresses: pacto-squad-sponsor [`0ac1719`](https://github.com/covenant-gov/pacto-squad-sponsor/commit/0ac171915cbf454b24b0d26fd227301221230f4f) `full-system.json`. Do **not** send UserOps at retired paymaster `0x065dA133…` / factory `0x128839…`.
+**Greenfield cutover:** a factory redeploy creates a new paymaster. Existing clones were initialized with the old paymaster — **recreate** the squad sponsor for the parent and replace stale `squad_infra` sponsor rows (no dual-read of old clones). Restart `pnpm tauri:dev` after address-book changes so Rust recompiles the embedded JSON. Sponsored writes preflight `clone.paymaster() ==` address book (`SPONSOR_PAYMASTER_MISMATCH` if not). Paymaster also requires EIP-7702 stubs to delegate to the allowlisted `PactoSimple7702Account` (`SS_Invalid7702Implementation` otherwise). Current Sepolia addresses: pacto-squad-sponsor [`34518d4`](https://github.com/covenant-gov/pacto-squad-sponsor/commit/34518d42fe187201ca9d5937aada77c227f31c51) `full-system.json`. Do **not** send UserOps at retired paymaster `0x78197483…` / factory `0xb758DB17…`.
 
 Dev/protocol ops (no product UI) — Sepolia addrs from the current address book:
 
 ```bash
-FACTORY=0xb758DB170C6D8da5AEDe32764d099AB1e496873B
-PAYMASTER=0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A
+FACTORY=0xD8bdc2e5Ca92e129E84207380076c1F18AA3aA95
+PAYMASTER=0xc7c3Ea95734CcCa62C7FFf4d12Be2B5b8cC92BA1
 EP=0x0000000071727De22E5E9d8BAf0edAc6f37da032
 
 # EP deposit (anyone)
@@ -108,7 +108,7 @@ Do **not** use eth-infinitism `Simple7702Account` at `0xe6Cae83BdE06E4c305530e19
 
 ## Manual smoke (Sepolia)
 
-See **[OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md)** and **[ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md)**. After the `0ac1719` address-book pin: full-restart Tauri, recreate Ext on the **new** factory (`keccak256(parentId)`), fund the clone pool, then **0 ETH roster → sponsored Bootstrap crew** (section 1).
+See **[OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md)** and **[ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md)**. After the `34518d4` address-book pin: full-restart Tauri, recreate squad sponsor clones on the **new** factory, fund the clone pool, then **0 ETH roster → sponsored Bootstrap crew** (section 1).
 
 ## Out of scope here
 

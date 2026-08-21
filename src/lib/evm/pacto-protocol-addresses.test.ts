@@ -8,8 +8,8 @@ describe('pacto-protocol-addresses', () => {
   it('loads Sepolia sponsor and gov factories from the book', () => {
     const sepolia = pactoProtocolNetworkBook('sepolia');
     expect(sepolia?.chainId).toBe(11155111);
-    expect(sepolia?.squadSponsor?.factory).toBe('0xb758DB170C6D8da5AEDe32764d099AB1e496873B');
-    expect(sepolia?.squadSponsor?.paymaster).toBe('0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A');
+    expect(sepolia?.squadSponsor?.factory).toBe('0xD8bdc2e5Ca92e129E84207380076c1F18AA3aA95');
+    expect(sepolia?.squadSponsor?.paymaster).toBe('0xc7c3Ea95734CcCa62C7FFf4d12Be2B5b8cC92BA1');
     expect(sepolia?.erc4337?.accountImplementation).toBe(
       '0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60',
     );
