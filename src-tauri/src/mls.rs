@@ -1431,7 +1431,7 @@ impl MlsService {
             )
             .await
         } else if is_resend {
-            Self::fetch_latest_keypackage(&client, member_pk).await
+            self.fetch_latest_keypackage(&client, member_pk).await
         } else {
             let mut kp_event: Option<Event> = None;
 
