@@ -360,6 +360,14 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     if (gid) bumpMembershipVersion(gid);
   });
 
+  register(unsubs, 'mls_group_metadata', (event) => {
+    const payload = event.payload;
+    if (payload && typeof payload === 'object' && 'group_id' in payload) {
+      const gid = payload.group_id;
+      if (typeof gid === 'string' && gid) bumpMembershipVersion(gid);
+    }
+  });
+
   register(unsubs, 'dashboard_poll_replica_updated', (event) => {
     const raw = event.payload as Record<string, unknown> | undefined;
     const pidRaw = raw?.parent_id ?? raw?.parentId;

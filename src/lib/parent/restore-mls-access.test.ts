@@ -31,8 +31,13 @@ describe('restoreMlsMemberAccess', () => {
   it('invites an existing member so the backend can Restore', async () => {
     const result = await restoreMlsMemberAccess('group-1', 'npub-bob');
     expect(result).toEqual({ ok: true });
-    expect(inviteMemberToGroup).toHaveBeenCalledWith('group-1', 'npub-bob');
+    expect(inviteMemberToGroup).toHaveBeenCalledWith('group-1', 'npub-bob', false);
     expect(bumpMembershipVersion).toHaveBeenCalledWith('group-1');
+  });
+
+  it('passes isResend through for the "Resend invite" action', async () => {
+    await restoreMlsMemberAccess('group-1', 'npub-bob', true);
+    expect(inviteMemberToGroup).toHaveBeenCalledWith('group-1', 'npub-bob', true);
   });
 
   it('rejects blank ids without calling the backend', async () => {

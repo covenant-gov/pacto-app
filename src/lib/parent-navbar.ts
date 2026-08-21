@@ -14,7 +14,7 @@ import {
   defaultChannelRowsForGroupId,
   ensureDefaultHubChannelRows,
 } from './squad/hub-channel-rows';
-import { createGroupChat, getMlsGroupMembers, type SkippedMember, type PendingInvite } from './api/nostr';
+import { createGroupChat, getMlsGroupMembers, type SkippedMember, type UndeliveredInvite } from './api/nostr';
 
 export { defaultChannelRowsForGroupId, ensureDefaultHubChannelRows };
 
@@ -144,7 +144,7 @@ export interface DefaultParentChannelsCreated {
   parentId: string;
   channels: Channel[];
   skippedMembers: SkippedMember[];
-  pendingInvites: PendingInvite[];
+  pendingInvites: UndeliveredInvite[];
 }
 
 /**

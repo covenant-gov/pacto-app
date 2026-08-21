@@ -23,6 +23,7 @@ mod account_manager;
 mod mls;
 pub use mls::MlsService;
 mod mls_legacy_checksum;
+mod mls_orphan_reaper;
 mod mls_store_reset;
 mod mls_store_reset_state;
 
@@ -9278,7 +9279,7 @@ fn merge_skipped_members(
 struct GroupChatCreated {
     group_id: String,
     skipped_members: Vec<mls::SkippedMember>,
-    pending_invites: Vec<mls::PendingInvite>,
+    pending_invites: Vec<mls::UndeliveredInvite>,
 }
 
 /// Runs `MlsService::create_group` on a blocking thread (the engine is `!Send`) and returns the
@@ -9530,7 +9531,7 @@ async fn add_mls_member_device(
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
-            mls.add_member_device(&group_id, &member_npub, &device_id)
+            mls.add_member_device(&group_id, &member_npub, &device_id, false)
                 .await
                 .map_err(|e| e.to_string())
         })
@@ -9540,9 +9541,16 @@ async fn add_mls_member_device(
 }
 
 /// Invite a new member to an existing MLS group
-/// Similar to create_group_chat, this refreshes the member's keypackages and adds them to the group
+/// Similar to create_group_chat, this refreshes the member's keypackages and adds them to the group.
+/// `is_resend`: true for the "Resend invite" UI action on an already-pending member (lets
+/// `add_member_device` no-op if a concurrent call already resolved it); false for a genuine
+/// first-time invite or "Restore access".
 #[tauri::command]
-async fn invite_member_to_group(group_id: String, member_npub: String) -> Result<(), String> {
+async fn invite_member_to_group(
+    group_id: String,
+    member_npub: String,
+    is_resend: bool,
+) -> Result<(), String> {
     session::heartbeat();
     require_key_derivation_version_2()?;
     // Refresh keypackages for the new member
@@ -9568,7 +9576,7 @@ async fn invite_member_to_group(group_id: String, member_npub: String) -> Result
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
-            mls.add_member_device(&group_id_clone, &member_npub, &device_id)
+            mls.add_member_device(&group_id_clone, &member_npub, &device_id, is_resend)
                 .await
                 .map_err(|e| e.to_string())
         })

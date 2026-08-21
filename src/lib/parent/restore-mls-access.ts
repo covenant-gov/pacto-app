@@ -13,6 +13,7 @@ export type RestoreMlsAccessResult = { ok: true } | { ok: false; error: string }
 export async function restoreMlsMemberAccess(
   groupId: string,
   memberNpub: string,
+  isResend = false,
 ): Promise<RestoreMlsAccessResult> {
   const gid = groupId.trim();
   const npub = memberNpub.trim();
@@ -20,7 +21,7 @@ export async function restoreMlsMemberAccess(
     return { ok: false, error: 'Missing group or member.' };
   }
   try {
-    await inviteMemberToGroup(gid, npub);
+    await inviteMemberToGroup(gid, npub, isResend);
     bumpMembershipVersion(gid);
     await refreshMlsGroupMembers(gid).catch(() => {});
     return { ok: true };

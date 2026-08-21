@@ -67,7 +67,7 @@
   async function resendInvite(npub: string): Promise<void> {
     if (!groupId || resendingNpub) return;
     resendingNpub = npub;
-    const result = await restoreMlsMemberAccess(groupId, npub);
+    const result = await restoreMlsMemberAccess(groupId, npub, true);
     resendingNpub = null;
     if (result.ok) {
       showToast($t('messaging.channel.mlsResendInviteSuccess', { values: { name: displayName(npub) } }));

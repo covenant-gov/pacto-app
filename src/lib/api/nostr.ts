@@ -435,7 +435,7 @@ export interface SkippedMember {
 }
 
 /** Member added to the engine group whose welcome delivery failed; retry via invite_member_to_group. */
-export interface PendingInvite {
+export interface UndeliveredInvite {
   npub: string;
   reason: string;
 }
@@ -443,7 +443,7 @@ export interface PendingInvite {
 export interface GroupChatCreated {
   groupId: string;
   skippedMembers: SkippedMember[];
-  pendingInvites: PendingInvite[];
+  pendingInvites: UndeliveredInvite[];
 }
 
 /**
@@ -458,7 +458,7 @@ export async function createGroupChat(
   const result = (await invoke('create_group_chat', {
     groupName,
     memberIds,
-  })) as { groupId: string; skippedMembers?: SkippedMember[]; pendingInvites?: PendingInvite[] };
+  })) as { groupId: string; skippedMembers?: SkippedMember[]; pendingInvites?: UndeliveredInvite[] };
   dmLog('create_group_chat result', { groupId: result.groupId?.slice(0, 16) + '…' });
   return {
     groupId: result.groupId,
@@ -670,15 +670,19 @@ export async function acceptMlsWelcome(welcomeEventIdHex: string): Promise<boole
 
 /**
  * Invite a member (npub) to an MLS group. Backend: invite_member_to_group.
+ * `isResend`: true for the "Resend invite" action on an already-pending member (backend
+ * no-ops if a concurrent call already resolved it); false for a first-time invite or restore.
  */
 export async function inviteMemberToGroup(
   groupId: string,
-  memberNpub: string
+  memberNpub: string,
+  isResend = false
 ): Promise<void> {
   dmLog('invite_member_to_group', { groupId: groupId.slice(0, 16) + '…', memberNpub: memberNpub.slice(0, 20) + '…' });
   await invoke('invite_member_to_group', {
     groupId,
     memberNpub,
+    isResend,
   });
   dmLog('invite_member_to_group done');
 }
