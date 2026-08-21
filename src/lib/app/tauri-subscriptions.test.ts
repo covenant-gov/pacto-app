@@ -687,6 +687,12 @@ describe('subscribeAppEvents', () => {
       emit(event, { group_id: 'g1' });
       expect(mocks.mockFunctions.bumpMembershipVersion).toHaveBeenCalledWith('g1');
     });
+
+    it('mls_group_metadata bumps membership version from nested metadata.group_id', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('mls_group_metadata', { metadata: { group_id: 'g1' } });
+      expect(mocks.mockFunctions.bumpMembershipVersion).toHaveBeenCalledWith('g1');
+    });
   });
 
   describe('dashboard_poll_replica_updated', () => {

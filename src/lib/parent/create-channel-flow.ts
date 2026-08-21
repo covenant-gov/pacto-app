@@ -9,7 +9,8 @@ import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-b
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
 import { persistSquadPatch } from '../squad/squad-catalog';
 import { publishSquadChannelsCatalog } from '../squad/squad-channels-catalog';
-import { reportSkippedMembers } from '../squad/skipped-members';
+import { warnSkippedMembers, skippedMembersNotice, warnPendingInvites, pendingInvitesNotice } from '../squad/skipped-members';
+import { showToast } from '../../stores/toast';
 import type { ChannelAccess } from './channel-access';
 import {
   squads,
@@ -60,7 +61,7 @@ export function runCreateChannelInParent(opts: {
 
   void (async () => {
     try {
-      const { groupId, skippedMembers } = await createGroupChat(name, selectedNpubs);
+      const { groupId, skippedMembers, pendingInvites } = await createGroupChat(name, selectedNpubs);
       await persistSquadPatch(squadId, (s) => ({
         ...s,
         channels: s.channels.map((ch) =>
@@ -97,7 +98,12 @@ export function runCreateChannelInParent(opts: {
           console.warn('[create-channel] channel notify failed for', npub.slice(0, 20) + '…', e);
         }
       }
-      reportSkippedMembers(skippedMembers);
+      if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
+      if (pendingInvites.length > 0) warnPendingInvites(pendingInvites);
+      const readyNotice = [skippedMembersNotice(skippedMembers), pendingInvitesNotice(pendingInvites)]
+        .filter(Boolean)
+        .join(' ');
+      if (readyNotice) showToast(readyNotice);
     } catch (e) {
       onErrorBanner(friendlyMessage(getInvokeErrorMessage(e)));
       await persistSquadPatch(squadId, (s) => ({

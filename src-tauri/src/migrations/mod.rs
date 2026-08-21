@@ -225,7 +225,8 @@ fn baseline_existing_account(conn: &mut rusqlite::Connection) -> Result<(), Stri
     Ok(())
 }
 
-/// Minimal V1–V27 tables for baseline tests. Real accounts had `squad_infra` from V14.
+/// Minimal V1–V27 tables for baseline tests. Real accounts had `mls_groups` from V1
+/// and `squad_infra` from V14.
 #[cfg(test)]
 pub(crate) fn seed_pre_v28_schema(conn: &rusqlite::Connection) {
     conn.execute_batch(
@@ -287,6 +288,16 @@ pub(crate) fn seed_pre_v28_schema(conn: &rusqlite::Connection) {
             wrapper_event_id TEXT,
             npub TEXT,
             virtual_bucket TEXT
+        );
+        CREATE TABLE mls_groups (
+            group_id TEXT PRIMARY KEY,
+            engine_group_id TEXT NOT NULL DEFAULT '',
+            creator_pubkey TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            avatar_ref TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            evicted INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE squad_infra (
             id TEXT PRIMARY KEY NOT NULL,

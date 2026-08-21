@@ -16,7 +16,7 @@ import {
   defaultChannelRowsForGroupId,
   ensureDefaultHubChannelRows,
 } from './squad/hub-channel-rows';
-import { createGroupChat, getMlsGroupMembers, type SkippedMember } from './api/nostr';
+import { createGroupChat, getMlsGroupMembers, type SkippedMember, type UndeliveredInvite } from './api/nostr';
 
 export { defaultChannelRowsForGroupId, ensureDefaultHubChannelRows };
 
@@ -160,6 +160,7 @@ export interface DefaultParentChannelsCreated {
   parentId: string;
   channels: Channel[];
   skippedMembers: SkippedMember[];
+  pendingInvites: UndeliveredInvite[];
 }
 
 /**
@@ -169,8 +170,16 @@ export interface DefaultParentChannelsCreated {
 export async function createDefaultParentChannels(
   memberNpubs: string[]
 ): Promise<DefaultParentChannelsCreated> {
-  const { groupId, skippedMembers } = await createGroupChat(ANNOUNCEMENTS_CHANNEL_NAME, memberNpubs);
-  return { parentId: groupId, channels: defaultChannelRowsForGroupId(groupId), skippedMembers };
+  const { groupId, skippedMembers, pendingInvites } = await createGroupChat(
+    ANNOUNCEMENTS_CHANNEL_NAME,
+    memberNpubs
+  );
+  return {
+    parentId: groupId,
+    channels: defaultChannelRowsForGroupId(groupId),
+    skippedMembers,
+    pendingInvites,
+  };
 }
 
 /**

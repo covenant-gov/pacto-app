@@ -37,6 +37,7 @@
 	"nav.navbar.organizeSquad.createAnnouncementsError": "No se pudo crear el canal de anuncios del escuad",
 	"nav.navbar.organizeSquad.squadReady": "¡{squadName} está listo!",
 	"nav.navbar.organizeSquad.membersSkipped": "No se pudo agregar a {names}. Su app Pacto necesita publicar un key package actualizado antes de poder unirse.",
+	"nav.navbar.organizeSquad.membersPendingInvite": "Se invitó a {names}, pero la bienvenida aún no se pudo entregar. Puedes reenviarla desde el panel de miembros.",
 	"nav.parentSidebar.squadHeading": "Escuad {squadName}",
 	"nav.parentSidebar.squadOptionsTitle": "Opciones del escuad",
 	"nav.parentSidebar.squadMenuAria": "Menú del escuad",

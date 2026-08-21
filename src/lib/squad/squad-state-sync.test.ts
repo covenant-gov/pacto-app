@@ -148,7 +148,7 @@ describe('squad-state-sync', () => {
     publishSquadRpcUpdated.mockResolvedValue(true);
     publishSquadChannelsCatalog.mockResolvedValue(true);
     publishSquadIdentityUpdated.mockResolvedValue(true);
-    getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [] });
+    getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [], pending_welcomes: [] });
     inviteMemberToGroup.mockResolvedValue(undefined);
     listSquadInfra.mockResolvedValue([]);
     mockParent.iconUrl = 'https://cdn.example/a.jpg';
@@ -427,6 +427,7 @@ describe('squad-state-sync', () => {
       group_id: 'g-ops',
       members: ['npub1joiner'],
       admins: [],
+      pending_welcomes: [],
     });
     const raw = JSON.stringify({
       type: SQUAD_STATE_SYNC_REQUEST_TYPE,

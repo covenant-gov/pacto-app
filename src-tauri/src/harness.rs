@@ -647,6 +647,7 @@ async fn seed_squad_slice<R: Runtime>(
         created_at: HARNESS_EPOCH_SECS,
         updated_at: HARNESS_EPOCH_SECS,
         evicted: false,
+        pending_welcomes: Vec::new(),
     };
     db::save_mls_group(handle.clone(), &metadata).await?;
 
@@ -740,6 +741,7 @@ async fn recover_squad_from_mls_store<R: Runtime>(
         created_at: HARNESS_EPOCH_SECS,
         updated_at: HARNESS_EPOCH_SECS,
         evicted: false,
+        pending_welcomes: Vec::new(),
     };
     db::save_mls_group(handle.clone(), &metadata).await?;
 

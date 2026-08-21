@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('./api/nostr', () => ({
-  createGroupChat: vi.fn().mockResolvedValue({ groupId: 'mls-single', skippedMembers: [] }),
+  createGroupChat: vi.fn().mockResolvedValue({ groupId: 'mls-single', skippedMembers: [], pendingInvites: [] }),
   getMlsGroupMembers: vi.fn(),
 }));
 
@@ -143,15 +143,27 @@ describe('createDefaultParentChannels', () => {
       POLLS_CHANNEL_NAME,
     ]);
     expect(out.skippedMembers).toEqual([]);
+    expect(out.pendingInvites).toEqual([]);
   });
 
   it('passes through skipped members from createGroupChat', async () => {
     vi.mocked(createGroupChat).mockResolvedValueOnce({
       groupId: 'mls-single',
       skippedMembers: [{ npub: 'npub-stale', reason: 'Missing required encoding tag' }],
+      pendingInvites: [],
     });
     const out = await createDefaultParentChannels(['npub1', 'npub-stale']);
     expect(out.skippedMembers).toEqual([{ npub: 'npub-stale', reason: 'Missing required encoding tag' }]);
+  });
+
+  it('passes through pending invites from createGroupChat', async () => {
+    vi.mocked(createGroupChat).mockResolvedValueOnce({
+      groupId: 'mls-single',
+      skippedMembers: [],
+      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
+    });
+    const out = await createDefaultParentChannels(['npub1', 'npub-pending']);
+    expect(out.pendingInvites).toEqual([{ npub: 'npub-pending', reason: 'Welcome delivery failed' }]);
   });
 });
 
