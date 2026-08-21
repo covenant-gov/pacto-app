@@ -2975,6 +2975,131 @@ fn json_nonempty_str<'a>(p: &'a serde_json::Value, key: &str) -> Option<&'a str>
         .filter(|s| !s.is_empty())
 }
 
+fn json_round_u64(v: &serde_json::Value) -> Option<u64> {
+    if let Some(s) = v.get("round").and_then(|x| x.as_str()) {
+        return s.trim().parse().ok().filter(|n| *n > 0);
+    }
+    if let Some(n) = v.get("round").and_then(|x| x.as_u64()) {
+        return (n > 0).then_some(n);
+    }
+    v.get("round")
+        .and_then(|x| x.as_i64())
+        .and_then(|n| u64::try_from(n).ok())
+        .filter(|n| *n > 0)
+}
+
+fn war_game_round_snapshot(payload: &serde_json::Value) -> serde_json::Value {
+    let mut obj = payload.as_object().cloned().unwrap_or_default();
+    obj.remove("priorRounds");
+    obj.insert("status".into(), serde_json::json!("retired"));
+    serde_json::Value::Object(obj)
+}
+
+fn prior_round_number(v: &serde_json::Value) -> Option<u64> {
+    json_round_u64(v)
+}
+
+fn push_unique_prior_round(priors: &mut Vec<serde_json::Value>, snap: serde_json::Value) {
+    let Some(round) = prior_round_number(&snap) else {
+        return;
+    };
+    if priors.iter().any(|p| prior_round_number(p) == Some(round)) {
+        return;
+    }
+    priors.push(snap);
+}
+
+fn union_prior_rounds(
+    stored: Option<&serde_json::Value>,
+    incoming: Option<&serde_json::Value>,
+) -> Vec<serde_json::Value> {
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    if let Some(arr) = stored.and_then(|v| v.as_array()) {
+        for item in arr {
+            push_unique_prior_round(&mut out, item.clone());
+        }
+    }
+    if let Some(arr) = incoming.and_then(|v| v.as_array()) {
+        for item in arr {
+            push_unique_prior_round(&mut out, item.clone());
+        }
+    }
+    out.sort_by_key(|p| prior_round_number(p).unwrap_or(0));
+    out
+}
+
+/// Merge an incoming war-game payload with the stored singleton.
+/// Lower rounds never replace Active; they only append to `priorRounds`.
+pub fn merge_war_game_provider_payloads(stored: Option<&str>, incoming: &str) -> String {
+    let Ok(incoming_v) = serde_json::from_str::<serde_json::Value>(incoming) else {
+        return incoming.to_string();
+    };
+    let Some(incoming_round) = json_round_u64(&incoming_v) else {
+        return incoming.to_string();
+    };
+    let Some(stored_s) = stored.map(str::trim).filter(|s| !s.is_empty()) else {
+        return incoming.to_string();
+    };
+    let Ok(stored_v) = serde_json::from_str::<serde_json::Value>(stored_s) else {
+        return incoming.to_string();
+    };
+    let stored_round = json_round_u64(&stored_v).unwrap_or(0);
+
+    if incoming_round < stored_round {
+        let mut kept = stored_v;
+        let snap = war_game_round_snapshot(&incoming_v);
+        let merged = union_prior_rounds(kept.get("priorRounds"), Some(&serde_json::json!([snap])));
+        if let Some(obj) = kept.as_object_mut() {
+            obj.insert("priorRounds".into(), serde_json::Value::Array(merged));
+        }
+        return kept.to_string();
+    }
+
+    if incoming_round > stored_round {
+        let mut out = incoming_v;
+        let snap = war_game_round_snapshot(&stored_v);
+        let merged = union_prior_rounds(
+            stored_v.get("priorRounds"),
+            Some(&serde_json::json!([snap])),
+        );
+        if let Some(obj) = out.as_object_mut() {
+            obj.insert("priorRounds".into(), serde_json::Value::Array(merged));
+        }
+        return out.to_string();
+    }
+
+    let mut out = incoming_v;
+    let merged = union_prior_rounds(stored_v.get("priorRounds"), out.get("priorRounds"));
+    if let Some(obj) = out.as_object_mut() {
+        if merged.is_empty() {
+            obj.remove("priorRounds");
+        } else {
+            obj.insert("priorRounds".into(), serde_json::Value::Array(merged));
+        }
+    }
+    out.to_string()
+}
+
+fn pacto_gov_wargame_stored_row<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Option<(String, String)> {
+    let conn = crate::account_manager::get_db_connection(handle).ok()?;
+    let row = conn
+        .query_row(
+            "SELECT canonical_ref, provider_payload FROM squad_infra \
+             WHERE parent_id = ?1 AND infra_type = 'pacto_gov_wargame' \
+             ORDER BY updated_at_ms DESC LIMIT 1",
+            rusqlite::params![parent_id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    crate::account_manager::return_db_connection(conn);
+    row.filter(|(hat, payload)| !hat.trim().is_empty() && !payload.trim().is_empty())
+}
+
 /// If content is a `war_game_updated` announce JSON, upsert `pacto_gov_wargame` (never `pacto_gov`).
 pub fn maybe_upsert_war_game_from_announce<R: Runtime>(
     handle: &AppHandle<R>,
@@ -3024,19 +3149,38 @@ pub fn maybe_upsert_war_game_from_announce<R: Runtime>(
     let Some(provider_payload) = json_nonempty_str(p, "provider_payload") else {
         return;
     };
-    let payload_ok = serde_json::from_str::<serde_json::Value>(provider_payload)
-        .ok()
-        .is_some_and(|v| {
-            json_nonempty_str(&v, "gameSquadId").is_some()
-                && json_nonempty_str(&v, "round").is_some()
-                && json_nonempty_str(&v, "sponsor").is_some()
-        });
-    if !payload_ok {
+    let incoming_v = match serde_json::from_str::<serde_json::Value>(provider_payload) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if json_nonempty_str(&incoming_v, "gameSquadId").is_none()
+        || json_round_u64(&incoming_v).is_none()
+        || json_nonempty_str(&incoming_v, "sponsor").is_none()
+    {
         return;
     }
+    let incoming_round = json_round_u64(&incoming_v).unwrap_or(0);
+    let stored = pacto_gov_wargame_stored_row(handle, parent_id);
+    let stored_round = stored
+        .as_ref()
+        .and_then(|(_, payload)| serde_json::from_str::<serde_json::Value>(payload).ok())
+        .and_then(|v| json_round_u64(&v))
+        .unwrap_or(0);
+    let merged = merge_war_game_provider_payloads(
+        stored.as_ref().map(|(_, payload)| payload.as_str()),
+        provider_payload,
+    );
+    let hat = if incoming_round < stored_round {
+        stored
+            .as_ref()
+            .map(|(h, _)| h.as_str())
+            .filter(|h| !h.is_empty())
+            .unwrap_or(canonical_ref)
+    } else {
+        canonical_ref
+    };
     let chain = json_nonempty_str(p, "chain").unwrap_or("sepolia");
-    let _ =
-        persist_pacto_gov_wargame_infra(handle, parent_id, chain, canonical_ref, provider_payload);
+    let _ = persist_pacto_gov_wargame_infra(handle, parent_id, chain, hat, merged.as_str());
 }
 
 /// Max sticker entries a single pack announce may declare, and the max serialized
@@ -3600,13 +3744,19 @@ mod war_game_announce_tests {
         n
     }
 
-    fn announce(parent_id: &str, action: &str) -> String {
+    fn announce_round(
+        parent_id: &str,
+        action: &str,
+        round: &str,
+        sponsor: &str,
+        hat: &str,
+    ) -> String {
         let payload = serde_json::json!({
             "v": 1,
             "status": "active",
-            "round": "1",
+            "round": round,
             "gameSquadId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "sponsor": "0x5555555555555555555555555555555555555555",
+            "sponsor": sponsor,
         })
         .to_string();
         serde_json::json!({
@@ -3615,16 +3765,52 @@ mod war_game_announce_tests {
             "payload": {
                 "parent_id": parent_id,
                 "action": action,
-                "canonical_ref": "42",
+                "canonical_ref": hat,
                 "chain": "sepolia",
                 "entry_id": pacto_gov_wargame_infra_row_id(parent_id),
-                "round": "1",
+                "round": round,
                 "game_squad_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "sponsor": "0x5555555555555555555555555555555555555555",
+                "sponsor": sponsor,
                 "provider_payload": payload,
             }
         })
         .to_string()
+    }
+
+    fn announce(parent_id: &str, action: &str) -> String {
+        announce_round(
+            parent_id,
+            action,
+            "1",
+            "0x5555555555555555555555555555555555555555",
+            "42",
+        )
+    }
+
+    #[test]
+    fn merge_older_round_keeps_active_and_archives_incoming() {
+        let stored = r#"{"round":"3","status":"active","sponsor":"0x3"}"#;
+        let incoming = r#"{"round":"1","status":"active","sponsor":"0x1"}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(Some(stored), incoming))
+                .unwrap();
+        assert_eq!(v["round"], "3");
+        assert_eq!(v["sponsor"], "0x3");
+        assert_eq!(v["priorRounds"][0]["round"], "1");
+        assert_eq!(v["priorRounds"][0]["status"], "retired");
+    }
+
+    #[test]
+    fn merge_newer_round_archives_stored_active() {
+        let stored = r#"{"round":"1","status":"active","sponsor":"0x1"}"#;
+        let incoming = r#"{"round":"2","status":"active","sponsor":"0x2"}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(Some(stored), incoming))
+                .unwrap();
+        assert_eq!(v["round"], "2");
+        assert_eq!(v["sponsor"], "0x2");
+        assert_eq!(v["priorRounds"][0]["round"], "1");
+        assert_eq!(v["priorRounds"][0]["status"], "retired");
     }
 
     #[test]
@@ -3642,6 +3828,71 @@ mod war_game_announce_tests {
         assert_eq!(row.1, "pacto_gov_wargame");
         assert!(row.2.contains("gameSquadId"));
         assert_eq!(pacto_gov_count(app.handle(), "squad-wg"), 0);
+    }
+
+    #[test]
+    fn wargame_announce_is_monotonic_on_round() {
+        let app = setup("npub1wargamemonotonic");
+        insert_chat_with_participants(app.handle(), "squad-wg-mono", &["npub1author"]);
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce_round(
+                "squad-wg-mono",
+                "deploy",
+                "1",
+                "0x1111111111111111111111111111111111111111",
+                "42",
+            ),
+            "squad-wg-mono",
+            Some("npub1author"),
+        );
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce_round(
+                "squad-wg-mono",
+                "redeploy",
+                "2",
+                "0x2222222222222222222222222222222222222222",
+                "99",
+            ),
+            "squad-wg-mono",
+            Some("npub1author"),
+        );
+        let after_newer = stored_wargame(app.handle(), "squad-wg-mono").expect("wargame row");
+        let newer: serde_json::Value = serde_json::from_str(&after_newer.2).unwrap();
+        assert_eq!(newer["round"], "2");
+        assert_eq!(
+            newer["sponsor"],
+            "0x2222222222222222222222222222222222222222"
+        );
+        let priors = newer["priorRounds"].as_array().expect("priorRounds");
+        assert_eq!(priors.len(), 1);
+        assert_eq!(priors[0]["round"], "1");
+        assert_eq!(priors[0]["status"], "retired");
+
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce_round(
+                "squad-wg-mono",
+                "deploy",
+                "1",
+                "0x1111111111111111111111111111111111111111",
+                "42",
+            ),
+            "squad-wg-mono",
+            Some("npub1author"),
+        );
+        let after_older = stored_wargame(app.handle(), "squad-wg-mono").expect("wargame row");
+        let kept: serde_json::Value = serde_json::from_str(&after_older.2).unwrap();
+        assert_eq!(kept["round"], "2");
+        assert_eq!(
+            kept["sponsor"],
+            "0x2222222222222222222222222222222222222222"
+        );
+        let priors = kept["priorRounds"].as_array().expect("priorRounds");
+        assert_eq!(priors.len(), 1);
+        assert_eq!(priors[0]["round"], "1");
+        assert_eq!(priors[0]["status"], "retired");
     }
 
     #[test]

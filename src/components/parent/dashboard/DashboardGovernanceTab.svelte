@@ -25,6 +25,7 @@
     onOpenLaunchpad?: () => void;
     hasSponsor?: boolean;
     warGameStack?: boolean;
+    archiveView?: boolean;
   }
 
   let {
@@ -44,6 +45,7 @@
     onOpenLaunchpad = () => {},
     hasSponsor = false,
     warGameStack = false,
+    archiveView = false,
   }: Props = $props();
 
   const liveProvider = $derived(resolveGovernanceProvider(squadInfraRows));
@@ -58,9 +60,11 @@
 <section class="governance-section" aria-labelledby="governance-heading">
   <div class="governance-heading-row">
     <h3 id="governance-heading" class="section-heading">{$t('governance.governance.title')}</h3>
-    <button type="button" class="btn-primary governance-deploy-btn" onclick={onOpenLaunchpad}>
-      {$t('governance.governance.deploy')}
-    </button>
+    {#if !archiveView}
+      <button type="button" class="btn-primary governance-deploy-btn" onclick={onOpenLaunchpad}>
+        {$t('governance.governance.deploy')}
+      </button>
+    {/if}
   </div>
 
   {#if showAbiModules}
@@ -91,6 +95,7 @@
       {onRefreshProposals}
       {hasSponsor}
       {warGameStack}
+      {archiveView}
     />
   {:else}
     <p class="dashboard-placeholder-text muted">

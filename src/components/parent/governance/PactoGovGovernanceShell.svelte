@@ -16,6 +16,7 @@
     type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
+  import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
   import {
     fetchGovModuleReadCached,
     isGovModuleReadStale,
@@ -59,6 +60,7 @@
     onRefreshProposals?: () => void;
     hasSponsor?: boolean;
     warGameStack?: boolean;
+    archiveView?: boolean;
   }
 
   let {
@@ -75,6 +77,7 @@
     onRefreshProposals = () => {},
     hasSponsor = false,
     warGameStack = false,
+    archiveView = false,
   }: Props = $props();
 
   type GovSubMode = 'proposals' | 'crew' | 'captain';
@@ -167,12 +170,16 @@
 
   $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}`;
-    if (pid && key !== capabilitiesLoadKey) {
-      capabilitiesLoadKey = key;
-      capabilitiesStatus = 'unresolved';
-      void loadCapabilities(pid, key);
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}|${archiveView ? 'archive' : 'live'}`;
+    if (!pid || key === capabilitiesLoadKey) return;
+    capabilitiesLoadKey = key;
+    if (archiveView) {
+      capabilities = warGameArchiveCapabilities(pid);
+      capabilitiesStatus = 'ready';
+      return;
     }
+    capabilitiesStatus = 'unresolved';
+    void loadCapabilities(pid, key);
   });
 
   $effect(() => {

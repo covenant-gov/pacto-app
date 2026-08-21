@@ -394,6 +394,7 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
         round_sponsor_hex.as_str(),
         retired_sponsor.as_deref(),
     );
+    let payload = db::merge_war_game_provider_payloads(prior_payload.as_deref(), payload.as_str());
 
     let infra_row_id = db::pacto_gov_wargame_infra_row_id(pid);
     db::persist_pacto_gov_wargame_infra(
@@ -502,6 +503,46 @@ mod tests {
         assert_eq!(v["variant"], "sponsor");
         assert_eq!(v["retiredSponsor"], "0xold");
         assert!(v["gameSquadId"].as_str().unwrap().starts_with("0x"));
+    }
+
+    #[test]
+    fn merge_archives_prior_round_on_newer_payload() {
+        let prior = war_game_provider_payload(
+            "parent-1",
+            "0xoldtx",
+            "0xsafe",
+            "0xqm",
+            "0xmm",
+            "0xta",
+            "0xadmin",
+            &U256::from(1u64),
+            B256::repeat_byte(0x11),
+            "0xoldsponsor",
+            None,
+        );
+        let next = war_game_provider_payload(
+            "parent-1",
+            "0xnewtx",
+            "0xsafe2",
+            "0xqm2",
+            "0xmm2",
+            "0xta2",
+            "0xadmin2",
+            &U256::from(2u64),
+            B256::repeat_byte(0x22),
+            "0xnewsponsor",
+            Some("0xoldsponsor"),
+        );
+        let merged =
+            crate::db::merge_war_game_provider_payloads(Some(prior.as_str()), next.as_str());
+        let v: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(v["round"], "2");
+        assert_eq!(v["status"], "active");
+        let priors = v["priorRounds"].as_array().expect("priorRounds");
+        assert_eq!(priors.len(), 1);
+        assert_eq!(priors[0]["round"], "1");
+        assert_eq!(priors[0]["status"], "retired");
+        assert_eq!(priors[0]["sponsor"], "0xoldsponsor");
     }
 
     #[test]

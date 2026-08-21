@@ -6,6 +6,7 @@
   import { TREASURY_SAFE_UI_CAP } from '../../../lib/treasury/treasury-safes';
   import type { SquadInfraDto } from '../../../lib/governance/api';
   import { getSquadCapabilities } from '../../../lib/governance/api';
+  import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import {
     resolveGovernancePrivilege,
@@ -36,6 +37,7 @@
     onOpenDeploySafe?: () => void;
     onOpenImportSafe?: () => void;
     warGameStack?: boolean;
+    archiveView?: boolean;
   }
 
   let {
@@ -54,6 +56,7 @@
     onOpenDeploySafe = () => {},
     onOpenImportSafe = () => {},
     warGameStack = false,
+    archiveView = false,
   }: Props = $props();
 
   let capabilitiesLoadKey = $state('');
@@ -72,12 +75,15 @@
 
   $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}`;
-    if (pid && key !== capabilitiesLoadKey) {
-      capabilitiesLoadKey = key;
-      capabilities = null;
-      void loadCapabilities(pid, key);
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}|${archiveView ? 'archive' : 'live'}`;
+    if (!pid || key === capabilitiesLoadKey) return;
+    capabilitiesLoadKey = key;
+    if (archiveView) {
+      capabilities = warGameArchiveCapabilities(pid);
+      return;
     }
+    capabilities = null;
+    void loadCapabilities(pid, key);
   });
 
   async function loadCapabilities(pid: string, key: string) {

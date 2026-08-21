@@ -26,6 +26,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     withLegacyProvider,
   } from '../../lib/governance/api';
   import { resolveHubSponsorRow } from '../../lib/governance/hub-sponsor';
+  import { isWarGameArchiveView, parseWarGameRoundNumber } from '../../lib/governance/war-game-payload';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';  import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
   import {
@@ -163,9 +164,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   $: parentId = parent?.id;
   $: liveSponsorRow = sponsorInfraRow(squadInfraRows);
   $: liveHasSponsor = liveSponsorRow != null;
-  $: sponsorRow = resolveHubSponsorRow({ warGameStack, rows: squadInfraRows });
-  $: sponsorVariant = resolveSquadSponsorVariant(sponsorRow);
-  $: hasSponsor = sponsorRow != null;
   $: displayedTreasurySafes = vaultTreasurySafesForParent(
     treasurySafes ?? [],
     parentId ?? '',
@@ -175,6 +173,27 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   $: pactoGovRow = warGameStack
     ? pactoGovWargameInfraRow(squadInfraRows)
     : pactoGovInfraRow(squadInfraRows);
+  let warGameViewedRound = 0;
+  let warGameViewedParentId = '';
+  let warGameSeenActiveRound = 0;
+  $: if ((parentId ?? '') !== warGameViewedParentId) {
+    warGameViewedParentId = parentId ?? '';
+    warGameViewedRound = 0;
+    warGameSeenActiveRound = 0;
+  }
+  $: warGameActiveRound = warGameStack ? parseWarGameRoundNumber(pactoGovRow?.providerPayload) : 0;
+  $: if (warGameStack && warGameActiveRound !== warGameSeenActiveRound) {
+    warGameSeenActiveRound = warGameActiveRound;
+    warGameViewedRound = warGameActiveRound;
+  }
+  $: warGameArchiveView = warGameStack && isWarGameArchiveView(warGameViewedRound, warGameActiveRound);
+  $: sponsorRow = resolveHubSponsorRow({
+    warGameStack,
+    rows: squadInfraRows,
+    archiveView: warGameArchiveView,
+  });
+  $: sponsorVariant = resolveSquadSponsorVariant(sponsorRow);
+  $: hasSponsor = sponsorRow != null;
   $: hasPactoGov = pactoGovRow != null;
   $: squadAdminCtx = warGameStack
     ? resolveWarGameSquadAdminContext(pactoGovRow)
@@ -735,7 +754,13 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       </div>
     </div>
     {#if warGameStack}
-      <WarGameHubBanner providerPayload={pactoGovRow?.providerPayload} />
+      <WarGameHubBanner
+        providerPayload={pactoGovRow?.providerPayload}
+        viewedRound={warGameViewedRound}
+        onViewedRound={(round) => {
+          warGameViewedRound = round;
+        }}
+      />
     {/if}
     <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.dashboardSection')}>
       <span class="dashboard-view-nav-label" aria-hidden="true">{$t('governance.mode')}</span>
@@ -808,6 +833,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenLaunchpad={openLaunchpad}
               {hasSponsor}
               {warGameStack}
+              archiveView={warGameArchiveView}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.governance')}</p>
@@ -859,6 +885,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenDeploySafe={openDeploySafe}
               onOpenImportSafe={openSetSafe}
               {warGameStack}
+              archiveView={warGameArchiveView}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.treasury')}</p>
@@ -879,9 +906,9 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {squadMemberEvmByNpub}
               {memberHatByAddress}
               {memberRolesByAddress}
-              showManagePrivileges={!!squadAdminCtx}
+              showManagePrivileges={!!squadAdminCtx && !warGameArchiveView}
               pactoGovRevision={permissionsCtx.pactoGovRevision ?? ''}
-              onOpenSquadRolesModal={() => deployCoordinator?.openSquadRolesModal()}
+              onOpenSquadRolesModal={warGameArchiveView ? () => {} : () => deployCoordinator?.openSquadRolesModal()}
               {sponsorExtStatus}
               {sponsorExtLoading}
               {sponsorExtError}

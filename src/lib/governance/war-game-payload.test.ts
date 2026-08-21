@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { parseWarGameSponsorAddress, parseWarGameStackMeta, warGameRoundSponsorRow } from './war-game-payload';
+import {
+  isWarGameArchiveView,
+  parseWarGameDelaySecs,
+  parseWarGamePriorRounds,
+  parseWarGameRoundNumber,
+  parseWarGameSponsorAddress,
+  parseWarGameStackMeta,
+  warGameDelayMinutes,
+  warGameRoundSponsorRow,
+  warGameVisibleRounds,
+} from './war-game-payload';
 import type { SquadInfraDto } from './api';
+import { WAR_GAME_SQUAD_PARAMS } from './squad-params';
 
 const SPONSOR = '0x5555555555555555555555555555555555555555';
 
@@ -38,6 +49,45 @@ describe('parseWarGameStackMeta', () => {
       status: 'retired',
       round: '4',
     });
+  });
+});
+
+describe('round history helpers', () => {
+  it('parses round numbers and visible 1..=active range', () => {
+    expect(parseWarGameRoundNumber(null)).toBe(0);
+    expect(parseWarGameRoundNumber(JSON.stringify({ round: '3' }))).toBe(3);
+    expect(warGameVisibleRounds(JSON.stringify({ round: '3' }))).toEqual([1, 2, 3]);
+    expect(warGameVisibleRounds('{}')).toEqual([1]);
+  });
+
+  it('treats a viewed older round as archive', () => {
+    expect(isWarGameArchiveView(1, 3)).toBe(true);
+    expect(isWarGameArchiveView(3, 3)).toBe(false);
+    expect(isWarGameArchiveView(0, 3)).toBe(false);
+  });
+
+  it('reads priorRounds snapshots', () => {
+    expect(
+      parseWarGamePriorRounds(
+        JSON.stringify({
+          round: '3',
+          priorRounds: [
+            { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa' },
+            { round: 2 },
+          ],
+        }),
+      ),
+    ).toEqual([
+      { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa' },
+      { round: '2' },
+    ]);
+  });
+
+  it('uses payload delay when present, otherwise the wargame default', () => {
+    expect(parseWarGameDelaySecs(null)).toBe(WAR_GAME_SQUAD_PARAMS.crewChangeDelaySecs);
+    expect(warGameDelayMinutes(null)).toBe(5);
+    expect(parseWarGameDelaySecs(JSON.stringify({ crewChangeDelaySecs: 120 }))).toBe(120);
+    expect(warGameDelayMinutes(JSON.stringify({ crewChangeDelaySecs: 120 }))).toBe(2);
   });
 });
 
