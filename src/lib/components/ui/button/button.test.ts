@@ -44,7 +44,7 @@ describe('Button disabled anchor', () => {
 		expect(screen.getByRole('button', { name: 'Add channel' }).className).toContain('border-dashed');
 
 		rerender({ href: '/design/dashboard/status', label: 'Status', variant: 'tab' });
-		expect(screen.getByRole('link', { name: 'Status' }).className).toContain('aria-[current=page]:bg-accent');
+		expect(screen.getByRole('link', { name: 'Status' }).className).toContain('aria-[current=page]:bg-background');
 	});
 
 	it('applies theme tokens on ghost without a dark: hover split', () => {
