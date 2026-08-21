@@ -511,7 +511,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       return;
     }
     // Hats-linked SquadSponsor has no Ext permit list API.
-    if (sponsorVariant === 'hats') {
+    if (sponsorVariant === 'hats' || warGameStack) {
       sponsorExtStatus = null;
       sponsorExtError = '';
       sponsorExtKey = `hats:${parentId}`;

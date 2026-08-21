@@ -1,7 +1,7 @@
 //! Send ETH to a squad sponsor clone via `ISquadSponsorBase.deposit()`.
 
 use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::U256;
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
@@ -14,12 +14,12 @@ use super::rpc::signer::{
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
 use super::rpc::{
-    connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
-    send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
+    connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
+    wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::squad_sponsor_common::{
-    parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
-    squad_id_from_parent_id,
+    active_game_squad_id_for_parent, parse_deposit_wei, parse_signer_wallet, require_parent_member,
+    resolve_sponsor_for_parent,
 };
 use super::squad_sponsor_read::read_sponsor_pool;
 use super::wallet_chain_config;
@@ -75,26 +75,6 @@ pub(super) fn require_network_config(
     })
 }
 
-/// Sponsor clone address: an explicit override must match the factory registry record;
-/// without an override the registry record is used.
-fn resolve_sponsor_from_registry(
-    registry_sponsor: Address,
-    explicit: Option<&str>,
-) -> Result<Address, String> {
-    if let Some(raw) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
-        let addr = parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
-        if registry_sponsor != addr {
-            return Err(wallet_err_json(
-                "SPONSOR_REGISTRY",
-                "sponsor address does not match factory registry for parent id",
-                None,
-            ));
-        }
-        return Ok(addr);
-    }
-    Ok(registry_sponsor)
-}
-
 #[tauri::command]
 pub async fn deposit_squad_sponsor<R: Runtime>(
     app: AppHandle<R>,
@@ -122,14 +102,15 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
     }
 
     let read_provider = connect_read_provider(&urls).await?;
-    let (registry_sponsor, _, _) = read_squad_record(
+    let game_squad_id = active_game_squad_id_for_parent(&app, pid);
+    let sponsor = resolve_sponsor_for_parent(
         &read_provider,
         addrs.squad_sponsor_factory,
-        squad_id_from_parent_id(pid),
+        pid,
+        sponsor_address.as_deref(),
+        game_squad_id,
     )
-    .await
-    .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-    let sponsor = resolve_sponsor_from_registry(registry_sponsor, sponsor_address.as_deref())?;
+    .await?;
 
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "default")?;
     let (_signer, wallet) = if signer_mode == "default" {
@@ -184,9 +165,6 @@ mod tests {
             .unwrap_or_default()
     }
 
-    const ADDR_A: &str = "0x1111111111111111111111111111111111111111";
-    const ADDR_B: &str = "0x2222222222222222222222222222222222222222";
-
     #[test]
     fn require_non_empty_parent_id_rejects_blank() {
         for blank in ["", "   ", "\t\n"] {
@@ -236,44 +214,6 @@ mod tests {
         );
         let err = parse_signer_wallet(Some("hardware"), "default").unwrap_err();
         assert_eq!(err_code(&err), "INVALID_SIGNER");
-    }
-
-    #[test]
-    fn resolve_sponsor_from_registry_uses_registry_without_override() {
-        let reg = parse_address(ADDR_A).unwrap();
-        assert_eq!(resolve_sponsor_from_registry(reg, None).unwrap(), reg);
-        assert_eq!(resolve_sponsor_from_registry(reg, Some("")).unwrap(), reg);
-        assert_eq!(
-            resolve_sponsor_from_registry(reg, Some("   ")).unwrap(),
-            reg
-        );
-    }
-
-    #[test]
-    fn resolve_sponsor_from_registry_accepts_matching_override() {
-        let reg = parse_address(ADDR_A).unwrap();
-        assert_eq!(
-            resolve_sponsor_from_registry(reg, Some(ADDR_A)).unwrap(),
-            reg
-        );
-        assert_eq!(
-            resolve_sponsor_from_registry(reg, Some(&format!("  {ADDR_A}  "))).unwrap(),
-            reg
-        );
-    }
-
-    #[test]
-    fn resolve_sponsor_from_registry_rejects_mismatch() {
-        let reg = parse_address(ADDR_A).unwrap();
-        let err = resolve_sponsor_from_registry(reg, Some(ADDR_B)).unwrap_err();
-        assert_eq!(err_code(&err), "SPONSOR_REGISTRY");
-    }
-
-    #[test]
-    fn resolve_sponsor_from_registry_rejects_invalid_override() {
-        let reg = parse_address(ADDR_A).unwrap();
-        let err = resolve_sponsor_from_registry(reg, Some("not-an-address")).unwrap_err();
-        assert_eq!(err_code(&err), "INVALID_SPONSOR");
     }
 
     #[test]

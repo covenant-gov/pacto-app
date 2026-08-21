@@ -10,9 +10,9 @@ use super::contracts::pacto_sponsor::ISquadSponsorBase::{
 };
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
-use super::rpc::{call::eth_call_decode, connect_read_provider, parse_address, wallet_err_json};
+use super::rpc::{call::eth_call_decode, connect_read_provider, wallet_err_json};
 use super::squad_sponsor_common::{
-    read_squad_record, squad_id_from_parent_id, squad_variant_label,
+    active_game_squad_id_for_parent, resolve_sponsor_record_for_parent, squad_variant_label,
 };
 use super::wallet_chain_config;
 
@@ -47,7 +47,7 @@ pub(crate) async fn read_sponsor_pool<P: Provider>(
 
 #[tauri::command]
 pub async fn get_squad_sponsor_summary<R: Runtime>(
-    _app: AppHandle<R>,
+    app: AppHandle<R>,
     network: String,
     parent_id: String,
     sponsor_address: Option<String>,
@@ -81,30 +81,17 @@ pub async fn get_squad_sponsor_summary<R: Runtime>(
 
     let provider = connect_read_provider(&urls).await?;
     let factory = addrs.squad_sponsor_factory;
-    let squad_id = squad_id_from_parent_id(pid);
-
-    let (sponsor, variant, top_hat) = if let Some(raw) = sponsor_address
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        let addr = parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
-        let (reg, v, hat) = read_squad_record(&provider, factory, squad_id)
-            .await
-            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-        if reg != addr {
-            return Err(wallet_err_json(
-                "SPONSOR_REGISTRY",
-                "sponsor address does not match factory registry for parent id",
-                None,
-            ));
-        }
-        (addr, v, hat)
-    } else {
-        read_squad_record(&provider, factory, squad_id)
-            .await
-            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?
-    };
+    let game_squad_id = active_game_squad_id_for_parent(&app, pid);
+    let resolved = resolve_sponsor_record_for_parent(
+        &provider,
+        factory,
+        pid,
+        sponsor_address.as_deref(),
+        game_squad_id,
+    )
+    .await?;
+    let sponsor = resolved.address;
+    let squad_id = resolved.squad_id;
 
     let (pool_balance, total_shares, paymaster, on_chain_squad_id) =
         read_sponsor_pool(&provider, sponsor)
@@ -114,7 +101,7 @@ pub async fn get_squad_sponsor_summary<R: Runtime>(
     if on_chain_squad_id != squad_id {
         return Err(wallet_err_json(
             "SQUAD_ID_MISMATCH",
-            "sponsor clone squad id does not match parent id derivation",
+            "sponsor clone squad id does not match factory registry key",
             None,
         ));
     }
@@ -132,8 +119,8 @@ pub async fn get_squad_sponsor_summary<R: Runtime>(
         squad_id: format!("{:#x}", squad_id),
         sponsor_address: format!("{:#x}", sponsor),
         paymaster_address: format!("{:#x}", paymaster_display),
-        variant: squad_variant_label(variant).to_string(),
-        top_hat_id: top_hat.to_string(),
+        variant: squad_variant_label(resolved.variant).to_string(),
+        top_hat_id: resolved.top_hat_id.to_string(),
         pool_balance_wei: pool_balance.to_string(),
         total_shares: total_shares.to_string(),
     })

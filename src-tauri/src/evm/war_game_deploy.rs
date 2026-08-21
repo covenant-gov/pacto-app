@@ -125,6 +125,7 @@ fn war_game_provider_payload(
         json!(format!("{:#x}", game_squad_id)),
     );
     map.insert("sponsor".to_string(), json!(sponsor));
+    map.insert("variant".to_string(), json!("sponsor"));
     if let Some(retired) = retired_sponsor.map(str::trim).filter(|s| !s.is_empty()) {
         map.insert("retiredSponsor".to_string(), json!(retired));
     } else {
@@ -354,9 +355,10 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
             round_tx.clone(),
         ));
     }
-    let parent_still_empty = read_squad_record_opt(&read_provider, factory_sponsor, parent_squad_id)
-        .await
-        .map_err(|e| wallet_err_json_with_tx_hash("SPONSOR_READ", e, None, round_tx.clone()))?;
+    let parent_still_empty =
+        read_squad_record_opt(&read_provider, factory_sponsor, parent_squad_id)
+            .await
+            .map_err(|e| wallet_err_json_with_tx_hash("SPONSOR_READ", e, None, round_tx.clone()))?;
     if parent_still_empty.is_some() {
         return Err(wallet_err_json_with_tx_hash(
             "SPONSOR_PARENT_SLOT",
@@ -497,6 +499,7 @@ mod tests {
         assert_eq!(v["parentId"], "parent-1");
         assert_eq!(v["round"], "2");
         assert_eq!(v["sponsor"], "0xsponsor");
+        assert_eq!(v["variant"], "sponsor");
         assert_eq!(v["retiredSponsor"], "0xold");
         assert!(v["gameSquadId"].as_str().unwrap().starts_with("0x"));
     }

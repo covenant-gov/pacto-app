@@ -42,4 +42,14 @@ describe('resolveSquadSponsorVariant', () => {
     expect(resolveSquadSponsorVariant({ providerPayload: 'not json' })).toBeNull();
     expect(resolveSquadSponsorVariant({ providerPayload: '42' })).toBeNull();
   });
+
+  it('treats wargame infra rows as hats-linked even without a payload variant', () => {
+    expect(
+      resolveSquadSponsorVariant({
+        infraType: 'pacto_gov_wargame',
+        providerPayload: '{"sponsor":"0x5555555555555555555555555555555555555555"}',
+      }),
+    ).toBe('hats');
+    expect(resolveSquadSponsorVariant({ infraType: ' pacto_gov_wargame ' })).toBe('hats');
+  });
 });
