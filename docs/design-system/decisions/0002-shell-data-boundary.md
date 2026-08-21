@@ -23,3 +23,4 @@ If shell components import stores or fixtures directly, the sandbox and producti
 - Feature UI stays in domain folders; shell stays layout chrome.
 - New shared primitives continue to go to `src/lib/components/ui` (shadcn), not into shell or old `src/components/ui` primitive dumps.
 - Crossing this boundary (store import inside presentational shell) needs a new decision — prefer not to.
+- Production `vite build` (including Tauri `frontendDist`) does not emit `/design`. The sandbox exists only in the Vite dev server unless `PACTO_INCLUDE_DESIGN=1`.

@@ -21,6 +21,7 @@
 	import type { DashboardMode } from './fixtures';
 	import en from './locales/en.json';
 	import es from './locales/es.json';
+	import './dither.css';
 
 	let { children }: { children: Snippet } = $props();
 
