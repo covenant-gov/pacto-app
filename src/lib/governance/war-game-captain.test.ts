@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getAddress } from 'viem';
 import {
+  labeledWearerOptions,
   pickRandomRosterCaptain,
   randomizeCaptainCandidates,
   uniqueRosterAddresses,
@@ -16,6 +17,30 @@ describe('uniqueRosterAddresses', () => {
   });
 });
 
+describe('labeledWearerOptions', () => {
+  it('keeps on-chain wearers missing from the MLS options list', () => {
+    expect(labeledWearerOptions([B, C], [{ address: A, label: 'Captain' }])).toEqual([
+      { address: B, label: `${B.slice(0, 6)}…${B.slice(-4)}` },
+      { address: C, label: `${C.slice(0, 6)}…${C.slice(-4)}` },
+    ]);
+  });
+
+  it('uses known roster labels and checksums', () => {
+    expect(
+      labeledWearerOptions([B.toLowerCase(), C], [{ address: B.toLowerCase(), label: 'bravo-test' }]),
+    ).toEqual([
+      { address: B, label: 'bravo-test' },
+      { address: C, label: `${C.slice(0, 6)}…${C.slice(-4)}` },
+    ]);
+  });
+
+  it('skips junk and dedupes', () => {
+    expect(labeledWearerOptions(['', 'nope', B, B.toLowerCase()])).toEqual([
+      { address: B, label: `${B.slice(0, 6)}…${B.slice(-4)}` },
+    ]);
+  });
+});
+
 describe('randomizeCaptainCandidates', () => {
   it('drops the current captain and extra wearers', () => {
     expect(
@@ -26,6 +51,11 @@ describe('randomizeCaptainCandidates', () => {
   it('returns empty when only the captain has a bound EVM', () => {
     expect(randomizeCaptainCandidates([{ address: A }], A)).toEqual([]);
     expect(randomizeCaptainCandidates([], A)).toEqual([]);
+  });
+
+  it('keeps crew wearers that are missing from the MLS options list', () => {
+    const pool = labeledWearerOptions([B, C], [{ address: A, label: 'Captain' }]);
+    expect(randomizeCaptainCandidates(pool, A)).toEqual([B, C]);
   });
 });
 

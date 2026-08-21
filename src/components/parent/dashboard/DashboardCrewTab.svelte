@@ -13,7 +13,7 @@
   } from '../../../lib/squad/squad-roster-key-choice';
   import { npubByEvmAddressFromSquadRoster } from '../../../lib/governance/hats-tree-annotations';
   import {
-    isHatsSponsoredAddress,
+    crewRosterEligibilityColumns,
     permittedByAddressFromExtStatus,
   } from '../../../lib/governance/squad-sponsor-crew';
   import {
@@ -49,8 +49,6 @@
     onRefreshSponsorExt = () => {},
     sponsorHatsMode = false,
     hasSponsor = false,
-    captainWearers = [],
-    crewWearers = [],
   }: {
     squad: Squad;
     announcementsGroupId?: string | null;
@@ -75,8 +73,6 @@
     /** Hats-linked sponsor: eligibility from captain/crew wear. */
     sponsorHatsMode?: boolean;
     hasSponsor?: boolean;
-    captainWearers?: string[];
-    crewWearers?: string[];
   } = $props();
 
   let sponsoringAddress = $state('');
@@ -94,7 +90,11 @@
   );
   const hatsWired = $derived(sponsorExtStatus?.hatsWired === true);
   const canManagePermits = $derived(iAmSponsorOwner && !hatsWired && !!sponsorNetwork && !!parentId);
-  const showSponsoredCol = $derived(hasSponsor && (sponsorHatsMode || !!sponsorExtStatus || sponsorExtLoading || !!sponsorExtError));
+  const eligibilityCols = $derived(
+    crewRosterEligibilityColumns({ hasSponsor, sponsorHatsMode, hatsWired }),
+  );
+  const showHatsCol = $derived(eligibilityCols.showHatsCol);
+  const showSponsoredCol = $derived(eligibilityCols.showSponsoredCol);
   const sponsorExtRpcKind = $derived(rpcReadErrorKind(sponsorExtError));
   const settingsChainRpcKind = $derived(rpcReadErrorKind(settingsChainError));
 
@@ -204,12 +204,9 @@
           {@const rosterEvm = displayEvmByNpub[npub]}
           {@const rosterKey = rosterEvm?.trim().toLowerCase() ?? ''}
           {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
-          {@const isHatsSponsored =
-            sponsorHatsMode && isHatsSponsoredAddress(rosterEvm, captainWearers, crewWearers)}
           {@const isExtSponsored = rosterKey ? permittedByAddress[rosterKey] === true : false}
-          {@const isSponsored = sponsorHatsMode ? isHatsSponsored : isExtSponsored}
           {@const showSponsorBtn =
-            !sponsorHatsMode && !!sponsorExtStatus && !hatsWired && !!rosterEvm && !isSponsored}
+            showSponsoredCol && !!sponsorExtStatus && !hatsWired && !!rosterEvm && !isExtSponsored}
           <li class="roles-member-row">
             {#if avatarSrc}
               <img src={avatarSrc} alt="" class="roles-member-avatar" />
@@ -257,17 +254,18 @@
               {:else}
                 <span class="roles-col-value muted">{$t('governance.crew.notShared')}</span>
               {/if}
-              <span class="roles-col-label">{$t('governance.crew.colHats')}</span>
-              <span
-                class="roles-col-value"
-                class:muted={!rosterEvm || !memberHatByAddress[rosterEvm.toLowerCase()]}
-                >{settingsChainLoading && !memberHatByAddress[rosterEvm?.toLowerCase() ?? '']
-                  ? $t('governance.crew.loadingShort')
-                  : rosterEvm
-                    ? memberHatByAddress[rosterEvm.toLowerCase()] || $t('governance.crew.dash')
-                    : $t('governance.crew.notShared')}
-                </span
-              >
+              {#if showHatsCol}
+                <span class="roles-col-label">{$t('governance.crew.colHats')}</span>
+                <span
+                  class="roles-col-value"
+                  class:muted={!rosterEvm || !memberHatByAddress[rosterEvm.toLowerCase()]}
+                  >{settingsChainLoading && !memberHatByAddress[rosterEvm?.toLowerCase() ?? '']
+                    ? $t('governance.crew.loadingShort')
+                    : rosterEvm
+                      ? memberHatByAddress[rosterEvm.toLowerCase()] || $t('governance.crew.dash')
+                      : $t('governance.crew.notShared')}
+                </span>
+              {/if}
               <span class="roles-col-label">{$t('governance.crew.colPrivileges')}</span>
               <span
                 class="roles-col-value"
@@ -285,7 +283,7 @@
                   <span class="roles-col-value muted">{$t('governance.crew.notShared')}</span>
                 {:else if !sponsorHatsMode && sponsorExtLoading && permittedByAddress[rosterKey] === undefined}
                   <span class="roles-col-value muted">{$t('governance.crew.loading')}</span>
-                {:else if isSponsored}
+                {:else if isExtSponsored}
                   <span class="roles-col-value">{$t('governance.crew.sponsoredYes')}</span>
                 {:else if showSponsorBtn}
                   <span class="roles-col-value roles-col-sponsored">

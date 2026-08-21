@@ -35,6 +35,38 @@ export function uniqueRosterAddresses(addresses: string[]): string[] {
   return out;
 }
 
+export type MemberEvmOption = { address: string; label: string };
+
+function shortEvmLabel(addr: string): string {
+  if (addr.length < 12) return addr;
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+/** Label on-chain wearers from known roster options; checksum + short address fallback. */
+export function labeledWearerOptions(
+  wearerAddresses: string[],
+  knownOptions: MemberEvmOption[] = [],
+): MemberEvmOption[] {
+  const labelByKey = new Map<string, string>();
+  for (const o of knownOptions) {
+    const addr = checksumAddress(o.address);
+    if (!addr) continue;
+    const key = addr.toLowerCase();
+    if (!labelByKey.has(key)) labelByKey.set(key, o.label);
+  }
+  const out: MemberEvmOption[] = [];
+  const seen = new Set<string>();
+  for (const raw of wearerAddresses) {
+    const addr = checksumAddress(raw);
+    if (!addr) continue;
+    const key = addr.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ address: addr, label: labelByKey.get(key) || shortEvmLabel(addr) });
+  }
+  return out;
+}
+
 /** Unique roster EVMs excluding the current captain (and any extra wearers). */
 export function randomizeCaptainCandidates(
   options: { address: string }[],

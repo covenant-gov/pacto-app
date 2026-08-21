@@ -866,8 +866,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onRefreshSponsorExt={refreshSponsorExtStatus}
               hasSponsor={hasSponsor}
               sponsorHatsMode={sponsorVariant === 'hats'}
-              {captainWearers}
-              {crewWearers}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.crew')}</p>

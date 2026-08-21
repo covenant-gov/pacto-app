@@ -37,6 +37,7 @@
   } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import { get } from 'svelte/store';
@@ -54,6 +55,7 @@
     mutinyHasVotedFlag?: boolean;
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
+    squadMemberOptions?: { address: string; label: string }[];
     offboardHasVoted?: boolean;
     onRefreshProposals?: () => void;
     onRefreshMutiny?: () => void;
@@ -75,6 +77,7 @@
     mutinyHasVotedFlag = false,
     qmStatus = null,
     memberEvmOptions = [],
+    squadMemberOptions = [],
     offboardHasVoted = false,
     onRefreshProposals = () => {},
     onRefreshMutiny = () => {},
@@ -100,11 +103,24 @@
   let mutinyActive = $derived(isMutinyActive(mutinyStatus));
   let offboardActive = $derived(isCrewOffboardActive(qmStatus));
   let mutinyExpired = $derived(isMutinyExpirable(mutinyStatus, nowSec));
-  let startGate = $derived(
+  let kindGate = $derived(
     offboardActive
       ? ({ enabled: false, reason: 'governance.gate.cannotStartMutinyWhileOffboard' } as const)
       : crewGate,
   );
+  let startPickerOptions = $derived(
+    startKind === 'crew' ? memberEvmOptions : startKind === 'eoa' ? squadMemberOptions : [],
+  );
+  let startGate = $derived.by((): CtaGate => {
+    if (!kindGate.enabled) return kindGate;
+    if (startKind === 'crew' && memberEvmOptions.length === 0) {
+      return { enabled: false, reason: 'governance.gate.noCrewHatForMutiny' };
+    }
+    if (startKind === 'eoa' && squadMemberOptions.length === 0) {
+      return { enabled: false, reason: 'governance.gate.noSquadMemberForMutiny' };
+    }
+    return kindGate;
+  });
   let mutinyVoteGate = $derived(
     mutinyExpired
       ? ({ enabled: false, reason: 'governance.gate.mutinyExpired' } as const)
@@ -137,6 +153,17 @@
   $effect(() => {
     if (executable.length && !executable.some((p) => p.proposalId === execProposalId)) {
       execProposalId = executable[0]?.proposalId ?? '';
+    }
+  });
+
+  $effect(() => {
+    const opts = startPickerOptions;
+    if (opts.length === 0) return;
+    const hit = opts.some(
+      (o) => o.address.trim().toLowerCase() === proposed.trim().toLowerCase(),
+    );
+    if (!proposed.trim() || !hit) {
+      proposed = opts[0].address;
     }
   });
 
@@ -361,18 +388,32 @@
       {:else}
         <div class="section">
           <h6 class="section-label">{$t('governance.section.startMutiny')}</h6>
-          <select bind:value={startKind} disabled={!startGate.enabled || acting}>
+          <select
+            bind:value={startKind}
+            disabled={!kindGate.enabled || acting}
+            aria-label={$t('governance.section.startMutiny')}
+          >
             <option value="crew">{$t('governance.mutiny.startOption.crew')}</option>
             <option value="committee">{$t('governance.mutiny.startOption.committee')}</option>
             <option value="eoa">{$t('governance.mutiny.startOption.eoa')}</option>
             <option value="contract">{$t('governance.mutiny.startOption.contract')}</option>
             <option value="pause">{$t('governance.mutiny.startOption.pause')}</option>
           </select>
-          {#if startKind !== 'pause'}
+          {#if startKind === 'crew' || startKind === 'eoa'}
+            <select
+              bind:value={proposed}
+              disabled={!kindGate.enabled || acting || startPickerOptions.length === 0}
+              aria-label={$t('governance.field.proposedAddress')}
+            >
+              {#each startPickerOptions as opt (opt.address)}
+                <option value={opt.address}>{opt.label} — {shortEvmAddress(opt.address)}</option>
+              {/each}
+            </select>
+          {:else if startKind !== 'pause'}
             <input
               bind:value={proposed}
               placeholder={$t('governance.field.proposedAddressPlaceholder')}
-              disabled={!startGate.enabled || acting}
+              disabled={!kindGate.enabled || acting}
             />
           {/if}
           <GovCtaButton label={tFn('governance.action.startMutiny')} variant="primary" gate={startGate} {acting} onClick={startMutiny} />

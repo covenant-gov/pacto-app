@@ -44,6 +44,7 @@
   import {
     pickRandomRosterCaptain,
     randomizeCaptainCandidates,
+    labeledWearerOptions,
   } from '../../../lib/governance/war-game-captain';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
@@ -61,6 +62,7 @@
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
     captainWearers?: string[];
+    crewWearers?: string[];
     warGameStack?: boolean;
     onRefreshProposals?: () => void;
     onRefreshMutiny?: () => void;
@@ -82,6 +84,7 @@
     qmStatus = null,
     memberEvmOptions = [],
     captainWearers = [],
+    crewWearers = [],
     warGameStack = false,
     onRefreshProposals = () => {},
     onRefreshMutiny = () => {},
@@ -133,7 +136,8 @@
   let mutinyActive = $derived(isMutinyActive(mutinyStatus));
   let mutinyExpired = $derived(isMutinyExpirable(mutinyStatus));
   let randomizeExclude = $derived([privilege.myAddress, ...captainWearers]);
-  let randomizeCandidates = $derived(randomizeCaptainCandidates(memberEvmOptions, randomizeExclude));
+  let randomizePool = $derived(labeledWearerOptions(crewWearers, memberEvmOptions));
+  let randomizeCandidates = $derived(randomizeCaptainCandidates(randomizePool, randomizeExclude));
   let resignGate = $derived(
     mutinyActive
       ? ({ enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' } as const)
@@ -192,7 +196,7 @@
   }
 
   function randomizeCaptain() {
-    const picked = pickRandomRosterCaptain(memberEvmOptions, randomizeExclude);
+    const picked = pickRandomRosterCaptain(randomizePool, randomizeExclude);
     if (!picked) return;
     resignTo = picked;
     void run(

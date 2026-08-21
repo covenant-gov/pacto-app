@@ -39,6 +39,7 @@
   import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
+  import { labeledWearerOptions } from '../../../lib/governance/war-game-captain';
   import { showToast } from '../../../stores/toast';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
   import { get } from 'svelte/store';
@@ -115,12 +116,7 @@
       ? 'governance.gate.quartermasterLocked'
       : 'governance.gate.rosterFrozenOffboard',
   );
-  let crewMemberOptions = $derived(
-    memberEvmOptions.filter((o) => {
-      const addr = o.address.trim().toLowerCase();
-      return crewWearers.some((c) => c.trim().toLowerCase() === addr);
-    }),
-  );
+  let crewMemberOptions = $derived(labeledWearerOptions(crewWearers, memberEvmOptions));
 
   $effect(() => {
     if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
@@ -479,6 +475,7 @@
         mutinyHasVotedFlag={mutinyHasVotedFlag}
         {qmStatus}
         memberEvmOptions={crewMemberOptions}
+        squadMemberOptions={memberEvmOptions}
         {offboardHasVoted}
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
@@ -502,6 +499,7 @@
         {qmStatus}
         {memberEvmOptions}
         {captainWearers}
+        {crewWearers}
         {warGameStack}
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
