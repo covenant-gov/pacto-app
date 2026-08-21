@@ -23,6 +23,7 @@ mod account_manager;
 mod mls;
 pub use mls::MlsService;
 mod mls_legacy_checksum;
+mod mls_orphan_reaper;
 mod mls_store_reset;
 mod mls_store_reset_state;
 
@@ -9356,6 +9357,7 @@ fn merge_skipped_members(
 struct GroupChatCreated {
     group_id: String,
     skipped_members: Vec<mls::SkippedMember>,
+    pending_invites: Vec<mls::UndeliveredInvite>,
 }
 
 /// Runs `MlsService::create_group` on a blocking thread (the engine is `!Send`) and returns the
@@ -9501,6 +9503,14 @@ async fn create_group_chat(
         );
     }
 
+    let pending_invites = outcome.pending_invites;
+    for p in &pending_invites {
+        eprintln!(
+            "[MLS][create_group_chat] pending welcome {}: {}",
+            p.npub, p.reason
+        );
+    }
+
     tokio::spawn(async {
         if let Err(err) = regenerate_device_keypackage(false).await {
             eprintln!(
@@ -9513,6 +9523,7 @@ async fn create_group_chat(
     Ok(GroupChatCreated {
         group_id: outcome.group_id,
         skipped_members,
+        pending_invites,
     })
 }
 
@@ -9598,7 +9609,7 @@ async fn add_mls_member_device(
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
-            mls.add_member_device(&group_id, &member_npub, &device_id)
+            mls.add_member_device(&group_id, &member_npub, &device_id, false)
                 .await
                 .map_err(|e| e.to_string())
         })
@@ -9608,9 +9619,16 @@ async fn add_mls_member_device(
 }
 
 /// Invite a new member to an existing MLS group
-/// Similar to create_group_chat, this refreshes the member's keypackages and adds them to the group
+/// Similar to create_group_chat, this refreshes the member's keypackages and adds them to the group.
+/// `is_resend`: true for the "Resend invite" UI action on an already-pending member (lets
+/// `add_member_device` no-op if a concurrent call already resolved it); false for a genuine
+/// first-time invite or "Restore access".
 #[tauri::command]
-async fn invite_member_to_group(group_id: String, member_npub: String) -> Result<(), String> {
+async fn invite_member_to_group(
+    group_id: String,
+    member_npub: String,
+    is_resend: bool,
+) -> Result<(), String> {
     session::heartbeat();
     require_key_derivation_version_2()?;
     // Refresh keypackages for the new member
@@ -9636,7 +9654,7 @@ async fn invite_member_to_group(group_id: String, member_npub: String) -> Result
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
-            mls.add_member_device(&group_id_clone, &member_npub, &device_id)
+            mls.add_member_device(&group_id_clone, &member_npub, &device_id, is_resend)
                 .await
                 .map_err(|e| e.to_string())
         })
@@ -9699,6 +9717,13 @@ async fn sync_mls_groups_now(group_id: Option<String>) -> Result<(u32, u32), Str
                     .await
                     .map_err(|e| e.to_string())
             } else {
+                // Reconcile local engine state on startup / relay reconnection: reap any engine
+                // group left behind by a prior release's create_group failure mode (see
+                // MlsService::reap_orphaned_engine_groups). Non-fatal — log-only.
+                if let Err(e) = mls.reap_orphaned_engine_groups().await {
+                    eprintln!("[MLS] Orphan reap failed: {}", e);
+                }
+
                 // Multi-group sync: load MLS groups from SQL and sync each
                 let group_ids: Vec<String> = match db::load_mls_groups(&handle).await {
                     Ok(groups) => {
@@ -9954,6 +9979,13 @@ async fn do_accept_mls_welcome<R: Runtime>(
 ) -> Result<bool, String> {
     let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
 
+    // Serialize accept-then-persist against the reaper. `accept_welcome` commits the
+    // group into the engine before `save_mls_group`; without this lock a login/reconnect
+    // reap can delete the just-joined group as an "orphan".
+    let _create_lock_guard = crate::mls_orphan_reaper::MLS_GROUPS_ENGINE_CREATE_LOCK
+        .lock()
+        .await;
+
     let (nostr_group_id, engine_group_id, group_name, welcomer_hex, wrapper_event_id_hex) = {
         let engine = mls.engine().map_err(|e| e.to_string())?;
         let id = nostr_sdk::EventId::from_hex(&welcome_event_id_hex).map_err(|e| e.to_string())?;
@@ -9963,21 +9995,11 @@ async fn do_accept_mls_welcome<R: Runtime>(
         let group_name = welcome.group_name.clone();
         let welcomer_hex = welcome.welcomer.to_hex();
         let wrapper_event_id_hex = welcome.wrapper_event_id.to_hex();
+        // The welcome already carries the engine GroupId. Falling back to nostr_group_id
+        // made the reaper treat a live group as unmatched and delete it.
+        let engine_group_id = hex::encode(welcome.mls_group_id.as_slice());
         engine.accept_welcome(&welcome).map_err(|e| e.to_string())?;
         let nostr_group_id = hex::encode(&nostr_group_id_bytes);
-        let engine_group_id = {
-            let groups = engine
-                .get_groups()
-                .map_err(|e| format!("Failed to get groups after accepting welcome: {}", e))?;
-            let matching_group = groups
-                .iter()
-                .find(|g| hex::encode(&g.nostr_group_id) == nostr_group_id);
-            if let Some(group) = matching_group {
-                hex::encode(group.mls_group_id.as_slice())
-            } else {
-                nostr_group_id.clone()
-            }
-        };
         (
             nostr_group_id,
             engine_group_id,
@@ -10011,20 +10033,27 @@ async fn do_accept_mls_welcome<R: Runtime>(
             group_id: nostr_group_id.clone(),
             engine_group_id: engine_group_id.clone(),
             creator_pubkey: welcomer_hex,
-            name: group_name,
+            name: group_name.clone(),
             avatar_ref: None,
             created_at: now_secs,
             updated_at: now_secs,
             evicted: false,
+            pending_welcomes: Vec::new(),
         };
         crate::db::save_mls_group(handle.clone(), &metadata)
             .await
             .map_err(|e| e.to_string())?;
         mls::emit_group_metadata_event(&metadata);
+    }
+    // Metadata is durable; release before STATE so this cannot deadlock with
+    // paths that take STATE then the create lock. Matches `create_group`.
+    drop(_create_lock_guard);
+
+    if existing_index.is_none() {
         let mut state = STATE.lock().await;
         let chat_id = state.create_or_get_mls_group_chat(&nostr_group_id, vec![]);
         if let Some(chat) = state.get_chat_mut(&chat_id) {
-            chat.metadata.set_name(metadata.name.clone());
+            chat.metadata.set_name(group_name);
         }
         if let Some(chat) = state.get_chat(&chat_id) {
             let _ = db::save_chat(handle.clone(), chat).await;
@@ -10132,6 +10161,7 @@ struct GroupMembers {
     group_id: String,
     members: Vec<String>, // npubs
     admins: Vec<String>,  // admin npubs
+    pending_welcomes: Vec<String>,
 }
 
 /// Sync the participants array for an MLS group chat with the actual members from the engine
@@ -10207,7 +10237,7 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
             // Map wire-id/engine-id using encrypted metadata
             let meta_groups = mls.read_groups().await.unwrap_or_default();
-            let (wire_id, engine_id) = if let Some(m) = meta_groups.iter().find(|g| {
+            let (wire_id, engine_id, pending_welcomes) = if let Some(m) = meta_groups.iter().find(|g| {
                 g.group_id == group_id
                     || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id)
             }) {
@@ -10218,9 +10248,10 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
                     } else {
                         m.group_id.clone()
                     },
+                    m.pending_welcomes.clone(),
                 )
             } else {
-                (group_id.clone(), group_id.clone())
+                (group_id.clone(), group_id.clone(), Vec::new())
             };
 
             // Acquire non-Send engine; all calls below must be non-await while engine is in scope
@@ -10289,6 +10320,7 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
                 group_id: wire_id,
                 members,
                 admins,
+                pending_welcomes,
             })
         })
     })
@@ -10412,10 +10444,6 @@ async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, St
 
     Ok(results)
 }
-
-/// Check MLS group health and identify groups that need re-syncing
-
-/// Remove orphaned MLS groups from metadata that are not in engine state
 
 #[tauri::command]
 async fn queue_profile_sync(

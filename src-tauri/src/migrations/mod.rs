@@ -261,10 +261,10 @@ mod tests {
         .expect("stamp migration");
     }
 
-    /// Seed the `chats`, `profiles`, and `events` tables as they existed
-    /// immediately before V28 (the first migration above `PRE_REFINERY_CEILING`),
-    /// so a baselined connection has real tables for post-ceiling migrations
-    /// to run against — matching a real existing account.
+    /// Seed the `chats`, `profiles`, `events`, and `mls_groups` tables as they
+    /// existed immediately before V28 (the first migration above
+    /// `PRE_REFINERY_CEILING`), so a baselined connection has real tables for
+    /// post-ceiling migrations to run against — matching a real existing account.
     fn seed_pre_v28_schema(conn: &rusqlite::Connection) {
         conn.execute_batch(
             "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -325,6 +325,16 @@ mod tests {
                 wrapper_event_id TEXT,
                 npub TEXT,
                 virtual_bucket TEXT
+            );
+            CREATE TABLE mls_groups (
+                group_id TEXT PRIMARY KEY,
+                engine_group_id TEXT NOT NULL DEFAULT '',
+                creator_pubkey TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                avatar_ref TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                evicted INTEGER NOT NULL DEFAULT 0
             );",
         )
         .expect("seed pre-V28 schema");

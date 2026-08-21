@@ -8,7 +8,10 @@ vi.mock('../api/nostr', () => ({
 }));
 
 vi.mock('../squad/skipped-members', () => ({
-  reportSkippedMembers: vi.fn(),
+  warnSkippedMembers: vi.fn(),
+  skippedMembersNotice: vi.fn((skipped: unknown[]) => (skipped.length ? 'skipped-notice' : '')),
+  warnPendingInvites: vi.fn(),
+  pendingInvitesNotice: vi.fn((pending: unknown[]) => (pending.length ? 'pending-notice' : '')),
 }));
 
 vi.mock('../parent-navbar', () => ({
@@ -35,6 +38,10 @@ vi.mock('../squad/squad-channels-catalog', () => ({
   publishSquadChannelsCatalog: vi.fn(),
 }));
 
+vi.mock('../../stores/toast', () => ({
+  showToast: vi.fn(),
+}));
+
 vi.mock('../../stores/squads', () => ({
   squads: createMockWritable<Squad[]>([]),
   SQUAD_DASHBOARD_CHANNEL_ID: '__squad_dashboard__',
@@ -50,7 +57,8 @@ vi.mock('../../stores/navigation', () => ({
 }));
 
 import { createGroupChat, formatChannelInSquadMessage, sendDmMessage } from '../api/nostr';
-import { reportSkippedMembers } from '../squad/skipped-members';
+import { warnSkippedMembers, warnPendingInvites } from '../squad/skipped-members';
+import { showToast } from '../../stores/toast';
 import { getAnnouncementsChannel, loadMembersForParent } from '../parent-navbar';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
 import { persistSquadPatch } from '../squad/squad-catalog';
@@ -118,8 +126,10 @@ describe('runCreateChannelInParent', () => {
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
 
-    vi.mocked(createGroupChat).mockReset().mockResolvedValue({ groupId: 'g-new-channel', skippedMembers: [] });
-    vi.mocked(reportSkippedMembers).mockReset();
+    vi.mocked(createGroupChat).mockReset().mockResolvedValue({ groupId: 'g-new-channel', skippedMembers: [], pendingInvites: [] });
+    vi.mocked(warnSkippedMembers).mockReset();
+    vi.mocked(warnPendingInvites).mockReset();
+    vi.mocked(showToast).mockReset();
     vi.mocked(formatChannelInSquadMessage).mockReset().mockReturnValue('channel-in-squad-payload');
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
     vi.mocked(publishSquadChannelsCatalog).mockReset().mockResolvedValue(true);
@@ -237,6 +247,7 @@ describe('runCreateChannelInParent', () => {
     vi.mocked(createGroupChat).mockResolvedValueOnce({
       groupId: 'g-new-channel',
       skippedMembers: [{ npub: 'npub-b', reason: 'Missing required encoding tag' }],
+      pendingInvites: [],
     });
 
     runCreateChannelInParent({
@@ -249,12 +260,38 @@ describe('runCreateChannelInParent', () => {
     });
 
     await vi.waitFor(() => {
-      expect(reportSkippedMembers).toHaveBeenCalledWith([
+      expect(warnSkippedMembers).toHaveBeenCalledWith([
         { npub: 'npub-b', reason: 'Missing required encoding tag' },
       ]);
     });
 
     expect(sendDmMessage).toHaveBeenCalledWith('npub-a', 'channel-in-squad-payload');
     expect(sendDmMessage).not.toHaveBeenCalledWith('npub-b', expect.anything());
+  });
+
+  it('warns about pending invites when welcome delivery fails', async () => {
+    vi.mocked(createGroupChat).mockResolvedValueOnce({
+      groupId: 'g-new-channel',
+      skippedMembers: [],
+      pendingInvites: [{ npub: 'npub-b', reason: 'relay unreachable' }],
+    });
+
+    runCreateChannelInParent({
+      parent,
+      squadId: 'parent-1',
+      name: 'new-channel',
+      selectedNpubs: ['npub-a', 'npub-b'],
+      access: 'open',
+      onErrorBanner: vi.fn(),
+    });
+
+    await vi.waitFor(() => {
+      expect(warnPendingInvites).toHaveBeenCalledWith([
+        { npub: 'npub-b', reason: 'relay unreachable' },
+      ]);
+    });
+    expect(showToast).toHaveBeenCalledWith('pending-notice');
+    expect(sendDmMessage).toHaveBeenCalledWith('npub-a', 'channel-in-squad-payload');
+    expect(sendDmMessage).toHaveBeenCalledWith('npub-b', 'channel-in-squad-payload');
   });
 });

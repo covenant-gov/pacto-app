@@ -8,6 +8,9 @@ export const membersByGroupId = writable<Record<string, string[]>>({});
 /** MLS group id → admin npubs from the engine (same fetch as members). */
 export const adminsByGroupId = writable<Record<string, string[]>>({});
 
+/** MLS group id → npubs added to the engine group but never delivered a welcome. */
+export const pendingWelcomesByGroupId = writable<Record<string, string[]>>({});
+
 export const membersLoadingByGroupId = writable<Record<string, boolean>>({});
 
 const hydratedGroupIds = new Set<string>();
@@ -21,10 +24,16 @@ function isValidMembersGroupId(groupId: string | null | undefined): groupId is s
   return true;
 }
 
-function setMembersForGroup(groupId: string, members: string[], admins: string[]): void {
+function setMembersForGroup(
+  groupId: string,
+  members: string[],
+  admins: string[],
+  pendingWelcomes: string[]
+): void {
   const id = groupId.trim();
   membersByGroupId.update((m) => ({ ...m, [id]: members }));
   adminsByGroupId.update((m) => ({ ...m, [id]: admins }));
+  pendingWelcomesByGroupId.update((m) => ({ ...m, [id]: pendingWelcomes }));
   hydratedGroupIds.add(id);
 }
 
@@ -34,7 +43,8 @@ async function fetchMembersForGroup(groupId: string, syncFirst: boolean): Promis
   const result = await getMlsGroupMembers(id);
   const members = result.members ?? [];
   const admins = result.admins ?? [];
-  setMembersForGroup(id, members, admins);
+  const pendingWelcomes = result.pending_welcomes ?? [];
+  setMembersForGroup(id, members, admins, pendingWelcomes);
   return members;
 }
 
@@ -78,6 +88,7 @@ export function isMlsGroupMembersHydrated(groupId: string): boolean {
 export function resetMlsGroupMembersStores(): void {
   membersByGroupId.set({});
   adminsByGroupId.set({});
+  pendingWelcomesByGroupId.set({});
   membersLoadingByGroupId.set({});
   hydratedGroupIds.clear();
   loadingGroupIds.clear();

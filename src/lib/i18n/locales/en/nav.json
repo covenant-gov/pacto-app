@@ -37,6 +37,7 @@
 	"nav.navbar.organizeSquad.createAnnouncementsError": "Failed to create squad announcements channel",
 	"nav.navbar.organizeSquad.squadReady": "{squadName} is ready!",
 	"nav.navbar.organizeSquad.membersSkipped": "Couldn't add {names}. Their Pacto app needs to publish an updated key package before they can join.",
+	"nav.navbar.organizeSquad.membersPendingInvite": "Invited, but the welcome couldn't be delivered to {names} yet. You can resend it from the members panel.",
 	"nav.parentSidebar.squadHeading": "Squad {squadName}",
 	"nav.parentSidebar.squadOptionsTitle": "Squad options",
 	"nav.parentSidebar.squadMenuAria": "Squad menu",

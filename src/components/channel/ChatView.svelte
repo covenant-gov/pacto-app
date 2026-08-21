@@ -23,6 +23,7 @@
     ensureMlsGroupMembers,
     membersByGroupId,
     adminsByGroupId,
+    pendingWelcomesByGroupId,
     membersLoadingByGroupId,
     refreshMlsGroupMembers,
     isMlsGroupMembersHydrated,
@@ -336,6 +337,8 @@
     panelMembersGroupId != null ? ($membersByGroupId[panelMembersGroupId] ?? []) : [];
   $: panelAdmins =
     panelMembersGroupId != null ? ($adminsByGroupId[panelMembersGroupId] ?? []) : [];
+  $: panelPendingWelcomes =
+    panelMembersGroupId != null ? ($pendingWelcomesByGroupId[panelMembersGroupId] ?? []) : [];
   $: panelMembersLoading =
     panelMembersGroupId != null ? ($membersLoadingByGroupId[panelMembersGroupId] ?? false) : false;
   $: showPanelMembersLoading = panelMembersLoading && panelMembers.length === 0;
@@ -1118,6 +1121,7 @@
         groupId={panelMembersGroupId}
         members={panelMembers}
         admins={panelAdmins}
+        pendingWelcomes={panelPendingWelcomes}
         loading={showPanelMembersLoading}
         currentUserNpub={currentUserNpub ?? ''}
         profiles={$profiles}

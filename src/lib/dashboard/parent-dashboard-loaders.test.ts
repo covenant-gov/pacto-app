@@ -106,6 +106,7 @@ describe('fetchDashboardChannelMembers', () => {
       group_id: 'group-1',
       members: ['npub-1', 'npub-2'],
       admins: [],
+      pending_welcomes: [],
     });
     expect(await fetchDashboardChannelMembers('group-1')).toEqual(['npub-1', 'npub-2']);
     expect(mockedGetMlsGroupMembers).toHaveBeenCalledWith('group-1');
