@@ -9060,86 +9060,87 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         }
     }
 
-    // If caching is requested, attempt to load and verify an existing KeyPackage
+    // If caching is requested, attempt to load and verify an existing KeyPackage. Dual
+    // publish mints two event ids from the same content — a 30443 (spec, primary) and a
+    // 443 (legacy, secondary) — so both must independently still verify before the cache
+    // is trusted. An entry recorded before this feature shipped has no secondary ref and
+    // falls through to republish, which is how it picks up 30443 coverage.
     if cache {
-        // Load existing keypackage index and verify it exists on relay before returning cached
-        let cached_kp_ref: Option<String> = {
+        let cached_entry: Option<serde_json::Value> = {
             let index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
-
-            index
-                .iter()
-                .find(|entry| {
-                    entry.get("owner_pubkey").and_then(|v| v.as_str())
-                        == Some(owner_pubkey_b32.as_str())
-                        && entry.get("device_id").and_then(|v| v.as_str())
-                            == Some(device_id.as_str())
-                })
-                .and_then(|existing| {
-                    existing
-                        .get("keypackage_ref")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                })
+            index.into_iter().find(|entry| {
+                entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner_pubkey_b32.as_str())
+                    && entry.get("device_id").and_then(|v| v.as_str()) == Some(device_id.as_str())
+            })
         };
 
-        // If we have a cached reference, verify it exists on the relay
-        if let Some(ref_id) = cached_kp_ref {
-            println!(
-                "[MLS][KeyPackage] Found cached reference {}, verifying on relay...",
-                ref_id
-            );
+        if let Some(entry) = cached_entry {
+            let primary_ref = entry
+                .get("keypackage_ref")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let secondary_ref = entry
+                .get("keypackage_ref_secondary")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-            // Try to fetch the event from the relay to verify it exists
-            if let Ok(event_id) = nostr_sdk::EventId::from_hex(&ref_id) {
-                let filter = Filter::new()
-                    .id(event_id)
-                    .kind(Kind::MlsKeyPackage)
-                    .limit(1);
-
-                match client
-                    .stream_events_from(
-                        trusted_relays::trusted_relays().to_vec(),
-                        filter,
-                        std::time::Duration::from_secs(5),
-                    )
-                    .await
-                {
-                    Ok(mut events) => {
-                        // Check if we got any events - if so, confirm the current MLS
-                        // engine can still parse it before trusting the cache. A legacy
-                        // event (e.g. missing the MIP-00/02 encoding tag) must fall
-                        // through to republish instead of short-circuiting forever.
-                        if let Some(event) = events.next().await {
-                            let usable = {
-                                let mls_service =
-                                    MlsService::new_persistent_for_keypackage_refresh(&handle)
-                                        .map_err(|e| e.to_string())?;
-                                mls_service.key_package_event_usable(&event)
-                            }; // mls_service dropped here before any await
-
-                            match usable {
-                                Ok(()) => {
-                                    return Ok(serde_json::json!({
-                                        "device_id": device_id,
-                                        "owner_pubkey": owner_pubkey_b32,
-                                        "keypackage_ref": ref_id,
-                                        "cached": true
-                                    }));
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "[MLS][KeyPackage] Cached event {} no longer parses ({}); republishing",
-                                        ref_id, e
-                                    );
-                                }
-                            }
+            if let (Some(primary_hex), Some(secondary_hex)) =
+                (primary_ref.as_deref(), secondary_ref.as_deref())
+            {
+                println!(
+                    "[MLS][KeyPackage] Found cached references (30443={}, 443={}), verifying on relay...",
+                    primary_hex, secondary_hex
+                );
+                // Short-circuit: the secondary ref's verdict cannot change the outcome once
+                // the primary has already failed, and each check is a relay round trip plus
+                // an MLS store open.
+                match keypackage_ref_still_usable(&client, &handle, primary_hex).await {
+                    Ok(()) => match keypackage_ref_still_usable(&client, &handle, secondary_hex).await {
+                        Ok(()) => {
+                            return Ok(serde_json::json!({
+                                "device_id": device_id,
+                                "owner_pubkey": owner_pubkey_b32,
+                                "keypackage_ref": primary_hex,
+                                "keypackage_ref_secondary": secondary_hex,
+                                "cached": true
+                            }));
                         }
-                    }
-                    _ => {}
+                        Err(e) => eprintln!(
+                            "[MLS][KeyPackage] Cached 443 reference {} no longer usable ({}); republishing",
+                            secondary_hex, e
+                        ),
+                    },
+                    Err(e) => eprintln!(
+                        "[MLS][KeyPackage] Cached 30443 reference {} no longer usable ({}); republishing",
+                        primary_hex, e
+                    ),
                 }
+            } else {
+                println!(
+                    "[MLS][KeyPackage] Cached entry missing dual-kind (30443+443) coverage; republishing"
+                );
             }
         }
     }
+
+    // Reuse this device's addressable (kind 30443) `d` tag across rotations — NIP-33
+    // replacement only fires when successive publishes share the same (kind, pubkey, d)
+    // tuple, so a fresh random `d` every rotation would leave every past KeyPackage this
+    // device ever published live and addressable on the relay forever.
+    let existing_d_tag: Option<String> = db::load_mls_keypackages(&handle)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .find(|entry| {
+            entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner_pubkey_b32.as_str())
+                && entry.get("device_id").and_then(|v| v.as_str()) == Some(device_id.as_str())
+        })
+        .and_then(|entry| {
+            entry
+                .get("keypackage_d_tag")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        });
 
     // Create device KeyPackage using persistent MLS engine inside a no-await scope
     let kp_data = {
@@ -9152,23 +9153,64 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
             .map_err(|e| e.to_string())?
     }; // engine and mls_service dropped here before any await
 
-    // Build and sign event with nostr client
-    let kp_event = client
-        // `Kind::MlsKeyPackage` is 443, so the tag set without the `d` tag is the right one.
+    let d_tag = existing_d_tag.unwrap_or_else(|| kp_data.d_tag.clone());
+    let mut tags_30443 = kp_data.tags_30443;
+    if let Some(pos) = tags_30443.iter().position(|t| t.kind() == TagKind::d()) {
+        tags_30443[pos] = Tag::identifier(&d_tag);
+    }
+
+    // Sign and publish both the spec (30443, addressable) and legacy (443) events from the
+    // same KeyPackage content, so clients that still only understand 443 and clients that
+    // already require 30443 can both resolve this device. Both events share one timestamp
+    // so `mls::sort_keypackage_candidates`'s "prefer 30443 on a tie" actually applies —
+    // signed separately, they would otherwise straddle a second boundary and let the
+    // legacy event's later timestamp win instead.
+    let published_at = Timestamp::now();
+    let kp_event_30443 = client
         .sign_event_builder(
-            EventBuilder::new(Kind::MlsKeyPackage, kp_data.content).tags(kp_data.tags_443),
+            EventBuilder::new(mls::MLS_KEY_PACKAGE_KIND_30443, kp_data.content.clone())
+                .tags(tags_30443)
+                .custom_created_at(published_at),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let kp_event_443 = client
+        .sign_event_builder(
+            EventBuilder::new(mls::MLS_KEY_PACKAGE_KIND_LEGACY, kp_data.content)
+                .tags(kp_data.tags_443)
+                .custom_created_at(published_at),
         )
         .await
         .map_err(|e| e.to_string())?;
 
-    // Publish to the trusted relay set
-    let send_output = client
-        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event)
+    // Publish both to the trusted relay set. A publish every relay rejects must not be
+    // cached as if it succeeded — the cache check above requires both refs to
+    // independently verify, so caching an id no relay holds would just force every future
+    // call to republish anyway, without ever telling the caller why.
+    let send_output_30443 = client
+        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event_30443)
         .await
         .map_err(|e| e.to_string())?;
-    record_send_outcome(&kp_event, &send_output);
+    record_send_outcome(&kp_event_30443, &send_output_30443);
+    if send_output_30443.success.is_empty() {
+        return Err(format!(
+            "No trusted relay accepted the kind 30443 KeyPackage: {:?}",
+            send_output_30443.failed
+        ));
+    }
+    let send_output_443 = client
+        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event_443)
+        .await
+        .map_err(|e| e.to_string())?;
+    record_send_outcome(&kp_event_443, &send_output_443);
+    if send_output_443.success.is_empty() {
+        return Err(format!(
+            "No trusted relay accepted the legacy 443 KeyPackage: {:?}",
+            send_output_443.failed
+        ));
+    }
 
-    // Upsert into mls_keypackage_index
+    // Upsert into mls_keypackage_index, recording both event ids and the reusable `d` tag
     {
         let mut index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
         index.retain(|entry| {
@@ -9181,7 +9223,9 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         index.push(serde_json::json!({
             "owner_pubkey": owner_pubkey_b32,
             "device_id": device_id,
-            "keypackage_ref": kp_event.id.to_hex(),
+            "keypackage_ref": kp_event_30443.id.to_hex(),
+            "keypackage_ref_secondary": kp_event_443.id.to_hex(),
+            "keypackage_d_tag": d_tag,
             "fetched_at": now,
             "expires_at": 0u64
         }));
@@ -9203,9 +9247,43 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     Ok(serde_json::json!({
         "device_id": device_id,
         "owner_pubkey": owner_pubkey_b32,
-        "keypackage_ref": kp_event.id.to_hex(),
+        "keypackage_ref": kp_event_30443.id.to_hex(),
+        "keypackage_ref_secondary": kp_event_443.id.to_hex(),
         "cached": false
     }))
+}
+
+/// Fetch a KeyPackage event by id across both the spec (30443) and legacy (443) kinds and
+/// confirm the current MLS engine can still parse it. `regenerate_device_keypackage`'s cache
+/// check calls this once per dual-published ref, so one kind being pruned from a relay does
+/// not silently pass the check on the strength of the other still resolving. Returns the
+/// rejection reason on failure so the caller can log why the cache was invalidated.
+async fn keypackage_ref_still_usable(
+    client: &nostr_sdk::Client,
+    handle: &AppHandle,
+    ref_id_hex: &str,
+) -> Result<(), String> {
+    let event_id = nostr_sdk::EventId::from_hex(ref_id_hex)
+        .map_err(|e| format!("invalid keypackage ref: {}", e))?;
+    let filter = Filter::new()
+        .id(event_id)
+        .kinds(mls::mls_key_package_kinds())
+        .limit(1);
+    let mut events = client
+        .stream_events_from(
+            trusted_relays::trusted_relays().to_vec(),
+            filter,
+            std::time::Duration::from_secs(5),
+        )
+        .await
+        .map_err(|e| format!("relay fetch failed: {}", e))?;
+    let event = events
+        .next()
+        .await
+        .ok_or_else(|| "not found on the trusted relays".to_string())?;
+    let mls_service = MlsService::new_persistent_for_keypackage_refresh(handle)
+        .map_err(|e| e.to_string())?;
+    mls_service.key_package_event_usable(&event)
 }
 
 /// Re-fetch pending pre-reset welcomes by id. Forward sync is time-windowed,
@@ -10267,8 +10345,11 @@ async fn leave_mls_group(group_id: String) -> Result<(), String> {
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-//// Refresh keypackages for a contact from the trusted relay set
-//// Fetches Kind::MlsKeyPackage from the contact, updates local index, and returns (device_id, keypackage_ref)
+/// Refresh keypackages for a contact from the trusted relay set.
+/// Fetches KeyPackage events (kind 30443, or legacy 443) from the contact, updates the local
+/// index, and returns (device_id, keypackage_ref) pairs, newest first. The 30443/443 pair
+/// from one dual publish collapses into a single entry; separate rotations do not, so a
+/// contact who has republished multiple times may still return more than one entry.
 #[tauri::command]
 async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, String)>, String> {
     // Resolve contact pubkey
@@ -10277,12 +10358,13 @@ async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, St
     // Access client
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
 
-    // Build filter: author(contact) + MlsKeyPackage
+    // Build filter: author(contact) + both KeyPackage kinds (dual publish). A generous
+    // limit tolerates a contact having several real devices, each visible under both
+    // kinds.
     let filter = Filter::new()
         .author(contact_pubkey)
-        .kind(Kind::MlsKeyPackage)
-        // Only need the newest KeyPackage
-        .limit(1);
+        .kinds(mls::mls_key_package_kinds())
+        .limit(50);
 
     // Fetch from the trusted relay set with a short timeout
     let mut events = client
@@ -10294,12 +10376,30 @@ async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, St
         .await
         .map_err(|e| e.to_string())?;
 
+    let mut raw_events: Vec<Event> = Vec::new();
+    while let Some(e) = events.next().await {
+        raw_events.push(e);
+    }
+
+    // A dual-published device yields two distinct event ids (30443 + 443) carrying identical
+    // content. Collapse those into one logical device, keeping the sort order intact —
+    // downstream callers (create_group_chat, invite_member_to_group) treat the first
+    // returned entry as the device to use, so an unordered dedupe (e.g. draining a HashMap)
+    // could hand back a stale duplicate instead of the newest one.
+    let mut seen_content: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut deduped: Vec<Event> = Vec::new();
+    for event in mls::sort_keypackage_candidates(raw_events) {
+        if seen_content.insert(event.content.clone()) {
+            deduped.push(event);
+        }
+    }
+
     // Prepare results and index entries
     let owner_pubkey_b32 = contact_pubkey.to_bech32().map_err(|e| e.to_string())?;
     let mut results: Vec<(String, String)> = Vec::new();
     let mut new_entries: Vec<serde_json::Value> = Vec::new();
 
-    while let Some(e) = events.next().await {
+    for e in deduped {
         // Use event id as synthetic device_id when not explicitly provided by remote
         let device_id = e.id.to_hex();
         let keypackage_ref = e.id.to_hex();
