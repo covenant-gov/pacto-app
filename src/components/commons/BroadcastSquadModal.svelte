@@ -21,36 +21,44 @@
   import { currentUser } from '../../stores/auth';
   import CommonsTagPicker from './CommonsTagPicker.svelte';
 
-  export let squad: PublicSquadBroadcastTarget;
-  export let onClose: () => void;
-  export let broadcastAllowed = true;
-  export let broadcastDeniedReason = get(t)('commons.broadcast.deniedReason');
+  interface Props {
+    squad: PublicSquadBroadcastTarget;
+    onClose: () => void;
+    broadcastAllowed?: boolean;
+    broadcastDeniedReason?: string;
+  }
+
+  let {
+    squad,
+    onClose,
+    broadcastAllowed = true,
+    broadcastDeniedReason = get(t)('commons.broadcast.deniedReason'),
+  }: Props = $props();
 
   const tFn = get(t);
 
-  let tags: string[] = [];
-  let message = '';
-  let durationHours: CommonsBroadcastDurationHours = 24;
-  let submitError = '';
-  let publishing = false;
-  let cancelling = false;
-  let loadingActive = true;
-  let activeBroadcast: CommonsBroadcastLocalState | null = null;
-  let cooldownLabel = '';
+  let tags: string[] = $state([]);
+  let message = $state('');
+  let durationHours: CommonsBroadcastDurationHours = $state(24);
+  let submitError = $state('');
+  let publishing = $state(false);
+  let cancelling = $state(false);
+  let loadingActive = $state(true);
+  let activeBroadcast: CommonsBroadcastLocalState | null = $state(null);
+  let cooldownLabel = $state('');
   let cooldownTimer: ReturnType<typeof setInterval> | null = null;
 
-  $: hasActiveBroadcast = !!activeBroadcast;
-  $: roleAllowed =
-    broadcastAllowed &&
-    canBroadcastSquad({ userNpub: $currentUser?.npub, squad });
-  $: canSubmit =
+  const hasActiveBroadcast = $derived(!!activeBroadcast);
+  const roleAllowed = $derived(broadcastAllowed && canBroadcastSquad({ userNpub: $currentUser?.npub, squad }));
+  const canSubmit = $derived(
     roleAllowed &&
     !hasActiveBroadcast &&
     message.trim().length > 0 &&
     tags.length === 3 &&
     !publishing &&
-    !cancelling;
-  $: busy = publishing || cancelling;
+    !cancelling
+  );
+  const busy = $derived(publishing || cancelling);
 
   function updateCooldownLabel() {
     if (!activeBroadcast) {

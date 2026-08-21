@@ -16,35 +16,44 @@
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
   import { getAddress, isAddress } from 'viem';
 
-  export let parentId: string;
-  export let squadNetwork: SupportedChainId | null = null;
-  /** Kept for parent wiring; captain is always the deployer's roster EVM. */
-  export let captainMemberOptions: PactoGovCaptainOption[] = [];
-  export let onClose: () => void;
-  export let onComplete: (out: PactoGovDeployComplete) => void | Promise<void>;
+  let {
+    parentId,
+    squadNetwork = null,
+    captainMemberOptions = [],
+    onClose,
+    onComplete,
+  }: {
+    parentId: string;
+    squadNetwork?: SupportedChainId | null;
+    /** Kept for parent wiring; captain is always the deployer's roster EVM. */
+    captainMemberOptions?: PactoGovCaptainOption[];
+    onClose: () => void;
+    onComplete: (out: PactoGovDeployComplete) => void | Promise<void>;
+  } = $props();
 
   const titleId = 'deploy-pacto-gov-title';
   const descId = 'deploy-pacto-gov-desc';
 
   const tFn = get(t);
 
-  let captainAddress = '';
-  let resolvingDeployer = true;
-  let deployError = '';
-  let customizeParams = false;
-  let crewChangeDelaySecs = PRODUCTION_SQUAD_PARAMS.crewChangeDelaySecs;
-  let proposalExpirySecs = PRODUCTION_SQUAD_PARAMS.proposalExpirySecs;
-  let crewVoteMode = PRODUCTION_SQUAD_PARAMS.crewVoteMode;
-  let quorumBps = PRODUCTION_SQUAD_PARAMS.quorumBps;
+  let captainAddress = $state('');
+  let resolvingDeployer = $state(true);
+  let deployError = $state('');
+  let customizeParams = $state(false);
+  let crewChangeDelaySecs = $state(PRODUCTION_SQUAD_PARAMS.crewChangeDelaySecs);
+  let proposalExpirySecs = $state(PRODUCTION_SQUAD_PARAMS.proposalExpirySecs);
+  let crewVoteMode = $state(PRODUCTION_SQUAD_PARAMS.crewVoteMode);
+  let quorumBps = $state(PRODUCTION_SQUAD_PARAMS.quorumBps);
 
-  $: customizeInvalid =
+  const customizeInvalid = $derived(
     customizeParams &&
-    !!validateSquadParams({
-      crewChangeDelaySecs,
-      proposalExpirySecs,
-      crewVoteMode,
-      quorumBps,
-    });
+      !!validateSquadParams({
+        crewChangeDelaySecs,
+        proposalExpirySecs,
+        crewVoteMode,
+        quorumBps,
+      }),
+  );
 
   function shortAddress(addr: string): string {
     if (addr.length < 18) return addr;

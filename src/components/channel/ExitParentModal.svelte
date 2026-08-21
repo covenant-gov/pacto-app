@@ -1,20 +1,32 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
 
-  export let open = false;
-  export let parentName = '';
-  export let error = '';
-  export let exiting = false;
+  interface Props {
+    open?: boolean;
+    parentName?: string;
+    error?: string;
+    exiting?: boolean;
+    onClose?: () => void;
+    onConfirm?: () => void;
+  }
 
-  export let onClose: () => void = () => {};
-  export let onConfirm: () => void = () => {};
+  let {
+    open = false,
+    parentName = '',
+    error = '',
+    exiting = false,
+    onClose = () => {},
+    onConfirm = () => {},
+  }: Props = $props();
 
   const titleId = 'exit-parent-modal-title';
-  $: title = $t('messaging.exitParent.title');
-  $: confirmLabel = $t('messaging.exitParent.confirm');
-  $: message = parentName
-    ? $t('messaging.exitParent.messageNamed', { values: { parentName } })
-    : $t('messaging.exitParent.messageUnnamed');
+  let title = $derived($t('messaging.exitParent.title'));
+  let confirmLabel = $derived($t('messaging.exitParent.confirm'));
+  let message = $derived(
+    parentName
+      ? $t('messaging.exitParent.messageNamed', { values: { parentName } })
+      : $t('messaging.exitParent.messageUnnamed')
+  );
 </script>
 
 {#if open}

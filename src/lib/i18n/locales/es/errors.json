@@ -6,5 +6,6 @@
 	"errors.dm.invalidNpub": "Ingresa un npub válido (comienza con npub1).",
 	"errors.dm.invalidRequest": "Solicitud inválida. Inténtalo de nuevo.",
 	"errors.dm.notInitialized": "Inicia sesión primero.",
-	"errors.dm.sendFailed": "No se pudo enviar el mensaje"
+	"errors.dm.sendFailed": "No se pudo enviar el mensaje",
+	"errors.mls.relayKeyPackageUnreachable": "No se pudo contactar a los relays para verificar si {members} puede unirse. No se creó nada; inténtalo de nuevo."
 }

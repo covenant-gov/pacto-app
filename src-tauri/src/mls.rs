@@ -12,7 +12,7 @@
 //! - group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted
 //!
 //! ### mls_keypackages table (plaintext)
-//! - owner_pubkey, device_id, keypackage_ref, fetched_at, expires_at
+//! - owner_pubkey, device_id, keypackage_ref, keypackage_ref_secondary, keypackage_d_tag, fetched_at, expires_at
 //!
 //! ### mls_event_cursors table (plaintext)
 //! - group_id, last_seen_event_id, last_seen_at
@@ -87,6 +87,34 @@ pub(crate) fn mls_wrapper_failure_reason(event_id: &[u8; 32]) -> Option<String> 
     .flatten()
 }
 
+/// Spec kind (NIP-33 addressable) for MLS KeyPackage events per MIP-00. mdk-core's matching
+/// constant is private to that crate, so Pacto mirrors it here for filter construction.
+pub(crate) const MLS_KEY_PACKAGE_KIND_30443: nostr_sdk::Kind = nostr_sdk::Kind::Custom(30443);
+
+/// Legacy kind for MLS KeyPackage events, accepted by mdk-core through the transition period.
+/// Same numeric value as `nostr_sdk::Kind::MlsKeyPackage`.
+pub(crate) const MLS_KEY_PACKAGE_KIND_LEGACY: nostr_sdk::Kind = nostr_sdk::Kind::MlsKeyPackage;
+
+/// Both KeyPackage kinds, for fetch filters during the dual-publish transition: Pacto
+/// publishes 30443 and legacy 443 from the same KeyPackage content, and must accept either
+/// when resolving a peer's — or another NIP-EE client's — published KeyPackage.
+pub(crate) fn mls_key_package_kinds() -> [nostr_sdk::Kind; 2] {
+    [MLS_KEY_PACKAGE_KIND_30443, MLS_KEY_PACKAGE_KIND_LEGACY]
+}
+
+/// Sort KeyPackage candidates newest-first; ties (e.g. a simultaneous dual publish) prefer
+/// the spec kind (30443) over the legacy one.
+pub(crate) fn sort_keypackage_candidates(mut events: Vec<nostr_sdk::Event>) -> Vec<nostr_sdk::Event> {
+    events.sort_by(|a, b| {
+        b.created_at.cmp(&a.created_at).then_with(|| {
+            let a_is_30443 = a.kind == MLS_KEY_PACKAGE_KIND_30443;
+            let b_is_30443 = b.kind == MLS_KEY_PACKAGE_KIND_30443;
+            b_is_30443.cmp(&a_is_30443)
+        })
+    });
+    events
+}
+
 /// MLS group metadata stored encrypted in "mls_groups"
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MlsGroupMetadata {
@@ -113,6 +141,16 @@ struct KeyPackageIndexEntry {
     owner_pubkey: String,
     device_id: String,
     keypackage_ref: String,
+    /// The other kind's event id for the same dual-published KeyPackage: the 443 id when
+    /// `keypackage_ref` is the 30443 one, or `None` for contact-resolved rows, which only
+    /// ever track a single fetched event.
+    #[serde(default)]
+    keypackage_ref_secondary: Option<String>,
+    /// The addressable (kind 30443) `d` tag value for a self-device row, reused across
+    /// rotations so republishing actually replaces the previous 30443 event on relays
+    /// (NIP-33) instead of leaving it live forever. `None` for contact-resolved rows.
+    #[serde(default)]
+    keypackage_d_tag: Option<String>,
     fetched_at: u64,
     expires_at: u64,
 }
@@ -122,6 +160,30 @@ struct KeyPackageIndexEntry {
 pub struct EventCursor {
     pub last_seen_event_id: String,
     pub last_seen_at: u64,
+}
+
+/// A member deliberately left out of a newly created group: no KeyPackage event could be
+/// resolved, or the resolved event failed MDK's key-package validation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedMember {
+    pub npub: String,
+    pub reason: String,
+    /// Backend-internal classification, never sent to the frontend: `true` means the skip was
+    /// caused by a transient relay failure and a retry may recover this member; `false` means
+    /// the member's key package is genuinely unusable (bad npub, stale index entry, never
+    /// published, or fails MDK validation).
+    #[serde(skip)]
+    pub transient: bool,
+}
+
+/// Outcome of `MlsService::create_group`: the new group's wire id plus any requested members
+/// who could not be added.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupCreateOutcome {
+    pub group_id: String,
+    pub skipped: Vec<SkippedMember>,
 }
 
 /// Message record for persisting decrypted MLS messages
@@ -291,6 +353,96 @@ fn map_add_member_failure(
     ))
 }
 
+/// Format the "every requested member was skipped" error naming each npub and why, so a
+/// group is never silently created solo when at least one member was actually requested.
+fn format_all_skipped_error(skipped: &[SkippedMember]) -> String {
+    let detail = skipped
+        .iter()
+        .map(|s| format!("{} ({})", s.npub, s.reason))
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!("create_group: no usable member key packages: {}", detail)
+}
+
+/// Upper bound on a relay- or MDK-supplied reason string before it lands in
+/// `SkippedMember.reason`: long enough for a real diagnostic, short enough that neither a
+/// relay nor a malformed event can stuff arbitrary text into a logged/UI-reachable string.
+const SKIP_REASON_MAX_CHARS: usize = 200;
+
+/// Redact any embedded URLs and cap the length of a relay- or MDK-supplied reason string
+/// before it is stored in `SkippedMember.reason` — this text is logged and reachable from UI
+/// surfaces, so it must never carry an unredacted relay URL or unbounded third-party text.
+fn sanitize_skip_reason(reason: &str) -> String {
+    let redacted = crate::evm::wallet_security::redact_urls_in_text(reason);
+    if redacted.chars().count() <= SKIP_REASON_MAX_CHARS {
+        return redacted;
+    }
+    let truncated: String = redacted.chars().take(SKIP_REASON_MAX_CHARS).collect();
+    format!("{}…", truncated)
+}
+
+/// Marker the frontend matches to localize this failure; keep it and the message shape in sync
+/// with `friendlyMessage` in `src/lib/utils/tauri-errors.ts`.
+pub(crate) const RELAY_KEYPACKAGE_UNREACHABLE: &str =
+    "could not reach the relays to check key packages for:";
+
+/// Error returned when `create_group` aborts because a relay fetch failed for at least one
+/// member, as opposed to that member genuinely having no usable key package. Returned before
+/// the MLS group exists so the frontend's retry path can recover every member. Names members
+/// by shortened npub: the frontend maps this string to localized copy, and falls back to
+/// showing it verbatim.
+fn format_transient_skip_error(skipped: &[SkippedMember]) -> String {
+    let npubs = skipped
+        .iter()
+        .filter(|s| s.transient)
+        .map(|s| short_npub(&s.npub))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{} {}", RELAY_KEYPACKAGE_UNREACHABLE, npubs)
+}
+
+/// First 12 characters of an npub, matching how the UI abbreviates members.
+fn short_npub(npub: &str) -> String {
+    if npub.chars().count() <= 16 {
+        return npub.to_string();
+    }
+    format!("{}…", npub.chars().take(12).collect::<String>())
+}
+
+#[cfg(test)]
+mod format_all_skipped_error_tests {
+    use super::{format_all_skipped_error, SkippedMember};
+
+    #[test]
+    fn names_every_skipped_npub_with_its_reason() {
+        let skipped = vec![
+            SkippedMember {
+                npub: "npub1legacy".to_string(),
+                reason: "Missing required encoding tag".to_string(),
+                transient: false,
+            },
+            SkippedMember {
+                npub: "npub1unresolved".to_string(),
+                reason: "key package event not found on the trusted relays".to_string(),
+                transient: false,
+            },
+        ];
+        let msg = format_all_skipped_error(&skipped);
+        assert_eq!(
+            msg,
+            "create_group: no usable member key packages: npub1legacy (Missing required encoding tag); npub1unresolved (key package event not found on the trusted relays)"
+        );
+    }
+
+    #[test]
+    fn formats_empty_list_without_panicking() {
+        assert_eq!(
+            format_all_skipped_error(&[]),
+            "create_group: no usable member key packages: "
+        );
+    }
+}
+
 impl MlsService {
     /// Create a new MLS service instance (no engine initialized)
     pub fn new() -> Self {
@@ -393,6 +545,14 @@ impl MlsService {
         self.engine.clone().ok_or(MlsError::NotInitialized)
     }
 
+    /// Whether the current MLS engine can still parse a previously published KeyPackage
+    /// event. A cached reference to an event that no longer parses (e.g. a legacy event
+    /// missing the MIP-00/02 encoding tag) must be treated as a cache miss, not reused.
+    pub fn key_package_event_usable(&self, event: &nostr_sdk::Event) -> Result<(), String> {
+        let engine = self.engine().map_err(|e| e.to_string())?;
+        engine.parse_key_package(event).map(|_| ()).map_err(|e| e.to_string())
+    }
+
     /// Publish the device's keypackage to enable others to add this device to groups
     ///
     /// This will:
@@ -427,10 +587,17 @@ impl MlsService {
       1) Resolve creator pubkey and build NostrGroupConfigData scoped to the trusted relay set.
       2) Resolve each member device to its KeyPackage Event before touching the MLS engine:
          • Prefer local plaintext index "mls_keypackage_index" to get keypackage_ref by member npub + device_id.
-         • If ref exists: fetch exact event by id; else: fetch latest Kind::MlsKeyPackage by author.
-         • Any member device with no resolvable KeyPackage is skipped here (this is a safe-guard; the UI path pre-validates via [rust.create_group_chat()](src-tauri/src/lib.rs:3108) and should not reach here with missing devices).
-      3) Create the group with the persistent sqlite-backed engine (no await while engine is in scope):
-         • engine.create_group(my_pubkey, member_kp_events, admins=[my_pubkey], group_config)
+         • If ref exists: fetch exact event by id; else: fetch latest KeyPackage (kind 30443 or legacy 443) by author.
+         • Any member device with no resolvable KeyPackage event, or an npub that fails bech32
+           parsing, is recorded as a `SkippedMember` and left out — it never reaches the engine.
+      3) Inside the no-await engine scope, validate every candidate event with
+         `engine.parse_key_package(...)` before calling `engine.create_group(...)`. MDK's
+         `create_group` parses every event with `collect::<Result<_, _>>()?`, so a single
+         unusable KeyPackage (e.g. a legacy event missing the MIP-00/02 encoding tag) would
+         otherwise abort the whole group; validating up front turns that into one more skipped
+         member instead. If every candidate is rejected while at least one member was
+         requested, the call fails instead of silently creating a solo group.
+         • engine.create_group(my_pubkey, valid_kp_events, admins=[my_pubkey], group_config)
          • Capture:
            - engine_group_id (internal engine id, hex) for local operations and send path.
            - wire group id used on relays (h tag). We derive a canonical 64-hex when possible; fallback to engine id.
@@ -443,7 +610,8 @@ impl MlsService {
     - Error mapping (propagated as strings to the UI):
       • MlsError::NotInitialized: Nostr client/app handle not ready.
       • MlsError::NetworkError: signer resolution, relay parsing, or network fetch/publish failures.
-      • MlsError::NostrMlsError: engine create_group/create_message failures (e.g., storage/codec issues).
+      • MlsError::NostrMlsError: engine create_group/create_message failures, or every candidate
+        member being skipped (unresolvable or unparseable KeyPackage).
       • MlsError::StorageError: reading/writing SQL database or sqlite engine initialization paths.
       • MlsError::CryptoError: bech32 conversions or encrypted data (de)serialization.
       These are returned as Err(String) up to [rust.create_group_chat()](src-tauri/src/lib.rs:3108) and surfaced verbatim by the UI.
@@ -453,21 +621,21 @@ impl MlsService {
       • Event "mls_group_initial_sync" is emitted here for zero-latency list refresh.
 
     - Partial membership:
-      • If some members had no resolvable KeyPackage at engine time, they are skipped here; however, the preflight in [rust.create_group_chat()](src-tauri/src/lib.rs:3108) aborts early on any missing device, ensuring atomic creation semantics for the UI flow.
+      • Members with no resolvable or no parseable KeyPackage are skipped, not fatal: the group
+        is created with whoever remains and each skip's npub + reason comes back in
+        `GroupCreateOutcome.skipped`.
     */
     pub async fn create_group(
         &self,
         name: &str,
         avatar_ref: Option<&str>,
         initial_member_devices: &[(String, String)], // (member_pubkey, device_id) pairs
-    ) -> Result<String, MlsError> {
+    ) -> Result<GroupCreateOutcome, MlsError> {
         // Persistent group creation using sqlite-backed engine.
         // - Resolve signer and relay config
         // - Use engine.create_group() inside a no-await scope (avoid holding !Send across await)
         // - Publish welcome (if any) to the trusted relay set
         // - Store encrypted UI metadata to "mls_groups"
-        //
-        // TODO: Resolve `initial_member_devices` into Vec<Event> KeyPackages (from index or network).
 
         // Resolve client and my pubkey
         let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
@@ -500,6 +668,7 @@ impl MlsService {
         use nostr_sdk::prelude::*;
         let mut member_kp_events: Vec<Event> = Vec::new();
         let mut invited_recipients: Vec<PublicKey> = Vec::new();
+        let mut skipped: Vec<SkippedMember> = Vec::new();
 
         // Load plaintext index
         let index = self.read_keypackage_index().await.unwrap_or_default();
@@ -510,6 +679,11 @@ impl MlsService {
                 Ok(pk) => pk,
                 Err(_) => {
                     eprintln!("[MLS] Invalid member npub: {}", member_npub);
+                    skipped.push(SkippedMember {
+                        npub: member_npub.clone(),
+                        reason: "invalid npub".to_string(),
+                        transient: false,
+                    });
                     continue;
                 }
             };
@@ -523,6 +697,7 @@ impl MlsService {
                 }
             }
 
+            let mut relay_fetch_error: Option<String> = None;
             let kp_event: Option<Event> = if let Some(id_hex) = ref_event_id_hex {
                 // Fetch exact event by id from the trusted relay set
                 let id = match EventId::from_hex(&id_hex) {
@@ -532,6 +707,11 @@ impl MlsService {
                             "[MLS] Invalid keypackage_ref in index for {}:{}",
                             member_npub, device_id
                         );
+                        skipped.push(SkippedMember {
+                            npub: member_npub.clone(),
+                            reason: "invalid key package reference in local index".to_string(),
+                            transient: false,
+                        });
                         continue;
                     }
                 };
@@ -551,14 +731,20 @@ impl MlsService {
                             "[MLS] Fetch KeyPackage by id failed ({}:{}): {}",
                             member_npub, device_id, e
                         );
+                        relay_fetch_error = Some(e.to_string());
                         None
                     }
                 }
             } else {
-                // Fallback: fetch latest KeyPackage by author from the trusted relay set
+                // Fallback: fetch latest KeyPackage by author across both the spec (30443)
+                // and legacy (443) kinds, preferring the newest event this engine can
+                // actually parse — a stale duplicate under one kind must not beat a fresh,
+                // parseable one under the other. If nothing parses, fall back to the newest
+                // candidate anyway so the validation pass below reports the real rejection
+                // reason instead of a generic "not found".
                 let filter = Filter::new()
                     .author(member_pk)
-                    .kind(Kind::MlsKeyPackage)
+                    .kinds(mls_key_package_kinds())
                     .limit(50);
                 match get_nostr_client()
                     .unwrap()
@@ -570,8 +756,12 @@ impl MlsService {
                     .await
                 {
                     Ok(events) => {
-                        // Heuristic: pick newest by created_at
-                        let selected = events.into_iter().max_by_key(|e| e.created_at.as_secs());
+                        let candidates = sort_keypackage_candidates(events.into_iter().collect());
+                        let selected = candidates
+                            .iter()
+                            .find(|&e| self.key_package_event_usable(e).is_ok())
+                            .cloned()
+                            .or_else(|| candidates.into_iter().next());
                         if selected.is_none() {
                             eprintln!("[MLS] No KeyPackage events found for {}", member_npub);
                         }
@@ -579,6 +769,7 @@ impl MlsService {
                     }
                     Err(e) => {
                         eprintln!("[MLS] Fetch KeyPackages for {} failed: {}", member_npub, e);
+                        relay_fetch_error = Some(e.to_string());
                         None
                     }
                 }
@@ -587,25 +778,76 @@ impl MlsService {
             if let Some(ev) = kp_event {
                 member_kp_events.push(ev);
                 invited_recipients.push(member_pk);
+            } else if let Some(fetch_err) = relay_fetch_error {
+                // The relay fetch itself failed (unreachable relay, budget exceeded, etc.) —
+                // distinct from "no event was found": this member must not be silently
+                // dropped, so the abort check right after this loop turns it into a hard
+                // failure instead of a permanent skip.
+                skipped.push(SkippedMember {
+                    npub: member_npub.clone(),
+                    reason: format!("relay fetch failed: {}", sanitize_skip_reason(&fetch_err)),
+                    transient: true,
+                });
             } else {
                 // Continue without this member device (will create group without them)
                 eprintln!(
                     "[MLS] Skipping member device {}:{} (no KeyPackage event)",
                     member_npub, device_id
                 );
+                skipped.push(SkippedMember {
+                    npub: member_npub.clone(),
+                    reason: "key package event not found on the trusted relays".to_string(),
+                    transient: false,
+                });
             }
         }
 
-        let invited_count = member_kp_events.len();
+        // A transient (relay-fetch) skip must abort before the MLS group exists: the frontend's
+        // retry path only recovers a create that failed before anything was created, so a member
+        // dropped only because a relay was unreachable must not be baked into a partial group.
+        if skipped.iter().any(|s| s.transient) {
+            return Err(MlsError::NetworkError(format_transient_skip_error(&skipped)));
+        }
 
         // Perform engine operations without awaits in scope
-        let (group_id_hex, engine_gid_hex, welcome_rumors) = {
+        let (group_id_hex, engine_gid_hex, welcome_rumors, invited_recipients) = {
             let engine = self.engine()?; // Arc to sqlite engine (may be !Send internally)
+
+            // MDK's create_group parses every event with collect::<Result<_, _>>()? — one
+            // unusable KeyPackage would otherwise abort the whole group. Validate individually
+            // first so a stale/legacy key package only drops that member.
+            let mut valid_events: Vec<Event> = Vec::with_capacity(member_kp_events.len());
+            let mut valid_recipients: Vec<PublicKey> = Vec::with_capacity(invited_recipients.len());
+            for (event, recipient) in member_kp_events.into_iter().zip(invited_recipients.into_iter()) {
+                match engine.parse_key_package(&event) {
+                    Ok(_) => {
+                        valid_events.push(event);
+                        valid_recipients.push(recipient);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[MLS] KeyPackage failed validation for {}: {}",
+                            recipient.to_bech32().unwrap_or_default(),
+                            e
+                        );
+                        skipped.push(SkippedMember {
+                            npub: recipient.to_bech32().unwrap_or_default(),
+                            reason: sanitize_skip_reason(&e.to_string()),
+                            transient: false,
+                        });
+                    }
+                }
+            }
+
+            if valid_events.is_empty() && !initial_member_devices.is_empty() {
+                return Err(MlsError::NostrMlsError(format_all_skipped_error(&skipped)));
+            }
+
             let create_out = engine
                 .create_group(
                     &my_pubkey,
-                    member_kp_events, // invited devices' keypackage events
-                    group_config,     // admins now in config
+                    valid_events, // invited devices' keypackage events (validated above)
+                    group_config, // admins now in config
                 )
                 .map_err(|e| MlsError::NostrMlsError(format!("create_group: {}", e)))?;
 
@@ -645,8 +887,15 @@ impl MlsService {
             // Use wire id for UI/store group_id (relay filtering), engine id for local engine ops.
             let gid_hex = wire_gid_hex;
 
-            (gid_hex, engine_gid_hex, create_out.welcome_rumors)
+            (
+                gid_hex,
+                engine_gid_hex,
+                create_out.welcome_rumors,
+                valid_recipients,
+            )
         }; // engine dropped here before any await
+
+        let invited_count = invited_recipients.len();
 
         // Accept 32-hex or 64-hex group ids (engine/codec variability)
         if group_id_hex.len() != 32 && group_id_hex.len() != 64 {
@@ -783,12 +1032,16 @@ impl MlsService {
         }
 
         println!(
-            "[MLS] Created group (persistent) id={}, name=\"{}\", invited_devices_hint={}",
+            "[MLS] Created group (persistent) id={}, name=\"{}\", invited_devices_hint={}, skipped={}",
             group_id_hex,
             name,
-            initial_member_devices.len()
+            initial_member_devices.len(),
+            skipped.len()
         );
-        Ok(group_id_hex)
+        Ok(GroupCreateOutcome {
+            group_id: group_id_hex,
+            skipped,
+        })
     }
 
     /// Add a member device to an existing group
@@ -908,7 +1161,7 @@ impl MlsService {
                 RESTORE_KEYPACKAGE_RETRY_ATTEMPTS,
                 move || {
                     let retry_client = retry_client.clone();
-                    async move { Self::fetch_latest_keypackage(&retry_client, member_pk).await }
+                    async move { self.fetch_latest_keypackage(&retry_client, member_pk).await }
                 },
                 |delay| tokio::time::sleep(delay),
             )
@@ -937,7 +1190,7 @@ impl MlsService {
 
             // Fallback: fetch latest from network
             if kp_event.is_none() {
-                kp_event = Self::fetch_latest_keypackage(&client, member_pk).await;
+                kp_event = self.fetch_latest_keypackage(&client, member_pk).await;
             }
 
             kp_event
@@ -1142,9 +1395,15 @@ impl MlsService {
         Ok(())
     }
 
-    /// Fetch the newest published KeyPackage (Kind:443) for a pubkey directly from the network,
-    /// bypassing the local keypackage index/cache.
+    /// Fetch the newest published KeyPackage for a pubkey directly from the network,
+    /// bypassing the local keypackage index/cache. Matches both the spec (30443) and legacy
+    /// (443) kinds during the dual-publish transition, preferring the spec kind on a tie and
+    /// preferring an event this engine can actually parse. Falls back to the newest
+    /// candidate even if unparseable when nothing parses, so the caller's own validation
+    /// (e.g. `add_members`) surfaces the real rejection reason instead of a generic
+    /// "not found".
     async fn fetch_latest_keypackage(
+        &self,
         client: &nostr_sdk::Client,
         member_pk: PublicKey,
     ) -> Option<nostr_sdk::Event> {
@@ -1152,17 +1411,22 @@ impl MlsService {
 
         let filter = Filter::new()
             .author(member_pk)
-            .kind(Kind::MlsKeyPackage)
+            .kinds(mls_key_package_kinds())
             .limit(50);
-        client
+        let events = client
             .fetch_events_from(
                 crate::trusted_relays::trusted_relays().to_vec(),
                 filter,
                 std::time::Duration::from_secs(10),
             )
             .await
-            .ok()
-            .and_then(|events| events.into_iter().max_by_key(|e| e.created_at.as_secs()))
+            .ok()?;
+        let candidates = sort_keypackage_candidates(events.into_iter().collect());
+        candidates
+            .iter()
+            .find(|&e| self.key_package_event_usable(e).is_ok())
+            .cloned()
+            .or_else(|| candidates.into_iter().next())
     }
 
     /// Leave a group voluntarily
@@ -2564,6 +2828,8 @@ impl MlsService {
             owner_pubkey: owner_pubkey.to_string(),
             device_id: device_id.to_string(),
             keypackage_ref: keypackage_ref.to_string(),
+            keypackage_ref_secondary: None,
+            keypackage_d_tag: None,
             fetched_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -3685,6 +3951,344 @@ mod mls_leave_group_state_lost_tests {
         assert!(
             members.contains(&alice_keys.public_key()),
             "admin must remain"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mls_key_package_validity_tests {
+    use super::*;
+    use nostr_sdk::prelude::*;
+
+    /// Pins the contract `regenerate_device_keypackage`'s cache gate depends on: a
+    /// freshly generated key package event parses, and the same content republished
+    /// without the `encoding` tag (matching Pacto <= v0.5.2's legacy hex-content
+    /// events) is rejected. If MDK's acceptance rules ever change, this must fail.
+    #[tokio::test]
+    async fn key_package_without_encoding_tag_is_rejected() {
+        let engine = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([21u8; 32])).unwrap(),
+        );
+        let keys = Keys::generate();
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+
+        let kp = engine
+            .create_key_package_for_event(&keys.public_key(), [relay_url])
+            .expect("create keypackage");
+
+        let valid_event = EventBuilder::new(Kind::MlsKeyPackage, kp.content.clone())
+            .tags(kp.tags_443.clone())
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign keypackage");
+        engine
+            .parse_key_package(&valid_event)
+            .expect("freshly generated key package must parse");
+
+        let tags_without_encoding: Vec<Tag> = kp
+            .tags_443
+            .into_iter()
+            .filter(|tag| tag.kind() != TagKind::Custom("encoding".into()))
+            .collect();
+        let legacy_event = EventBuilder::new(Kind::MlsKeyPackage, kp.content)
+            .tags(tags_without_encoding)
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign legacy keypackage");
+
+        let err = engine
+            .parse_key_package(&legacy_event)
+            .expect_err("key package missing the encoding tag must be rejected");
+        assert!(
+            err.to_string().contains("encoding tag"),
+            "expected an encoding-tag error, got: {}",
+            err
+        );
+    }
+
+    /// Exercises `MlsService::key_package_event_usable` itself (not just the underlying MDK
+    /// call it wraps): the gate `regenerate_device_keypackage` actually calls must accept a
+    /// freshly built key package event.
+    #[tokio::test]
+    async fn key_package_event_usable_accepts_a_freshly_built_event() {
+        let engine = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([22u8; 32])).unwrap(),
+        );
+        let keys = Keys::generate();
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let kp = engine
+            .create_key_package_for_event(&keys.public_key(), [relay_url])
+            .expect("create keypackage");
+        let valid_event = EventBuilder::new(Kind::MlsKeyPackage, kp.content.clone())
+            .tags(kp.tags_443.clone())
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign keypackage");
+
+        let service = MlsService {
+            engine: Some(Arc::new(engine)),
+            _initialized: true,
+        };
+        service
+            .key_package_event_usable(&valid_event)
+            .expect("freshly built key package must be usable");
+    }
+
+    /// Same gate, rejection path: a legacy event missing the encoding tag must be reported as
+    /// unusable, with the returned error naming the tag that's missing.
+    #[tokio::test]
+    async fn key_package_event_usable_rejects_event_missing_encoding_tag() {
+        let engine = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([23u8; 32])).unwrap(),
+        );
+        let keys = Keys::generate();
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let kp = engine
+            .create_key_package_for_event(&keys.public_key(), [relay_url])
+            .expect("create keypackage");
+        let tags_without_encoding: Vec<Tag> = kp
+            .tags_443
+            .into_iter()
+            .filter(|tag| tag.kind() != TagKind::Custom("encoding".into()))
+            .collect();
+        let legacy_event = EventBuilder::new(Kind::MlsKeyPackage, kp.content)
+            .tags(tags_without_encoding)
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign legacy keypackage");
+
+        let service = MlsService {
+            engine: Some(Arc::new(engine)),
+            _initialized: true,
+        };
+        let err = service
+            .key_package_event_usable(&legacy_event)
+            .expect_err("key package missing the encoding tag must be rejected");
+        assert!(
+            err.contains("encoding tag"),
+            "expected an encoding-tag error, got: {}",
+            err
+        );
+    }
+
+    /// Golden vector: `create_key_package_for_event` must hand back a 30443 tag set carrying
+    /// the addressable `d` tag and a 443 tag set that is identical minus that tag, both
+    /// sharing the same base64 `content` — and the current engine must parse an event built
+    /// from either kind/tag-set pair (dual publish).
+    #[tokio::test]
+    async fn create_key_package_for_event_yields_parseable_tags_for_both_kinds() {
+        let engine = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([24u8; 32])).unwrap(),
+        );
+        let keys = Keys::generate();
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let kp = engine
+            .create_key_package_for_event(&keys.public_key(), [relay_url])
+            .expect("create keypackage");
+
+        assert!(
+            kp.tags_30443.iter().any(|t| t.kind() == TagKind::d()),
+            "30443 tag set must carry the addressable `d` tag"
+        );
+        assert!(
+            !kp.tags_443.iter().any(|t| t.kind() == TagKind::d()),
+            "legacy 443 tag set must not carry the `d` tag"
+        );
+        let expected_443: Vec<Tag> = kp
+            .tags_30443
+            .iter()
+            .filter(|t| t.kind() != TagKind::d())
+            .cloned()
+            .collect();
+        assert_eq!(
+            kp.tags_443, expected_443,
+            "443 tag set must be exactly the 30443 set minus the `d` tag, unchanged otherwise"
+        );
+
+        let event_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, kp.content.clone())
+            .tags(kp.tags_30443)
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign 30443 keypackage");
+        let event_443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_LEGACY, kp.content)
+            .tags(kp.tags_443)
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign 443 keypackage");
+
+        engine
+            .parse_key_package(&event_30443)
+            .expect("30443 event must parse");
+        engine
+            .parse_key_package(&event_443)
+            .expect("443 event must parse");
+    }
+
+    /// The dual-publish fetch filter must accept events of either kind, and reject an unrelated
+    /// one.
+    #[test]
+    fn key_package_filter_matches_both_kinds() {
+        let keys = Keys::generate();
+        let filter = Filter::new().author(keys.public_key()).kinds(mls_key_package_kinds());
+
+        let event_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content")
+            .sign_with_keys(&keys)
+            .unwrap();
+        let event_443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_LEGACY, "content")
+            .sign_with_keys(&keys)
+            .unwrap();
+        let unrelated = EventBuilder::new(Kind::TextNote, "content")
+            .sign_with_keys(&keys)
+            .unwrap();
+
+        assert!(filter.match_event(&event_30443, MatchEventOptions::default()));
+        assert!(filter.match_event(&event_443, MatchEventOptions::default()));
+        assert!(!filter.match_event(&unrelated, MatchEventOptions::default()));
+    }
+
+    /// `sort_keypackage_candidates` breaks a created_at tie by preferring the spec kind
+    /// (30443) over the legacy one ("prefer the newest usable 30443 when both exist").
+    #[test]
+    fn sort_keypackage_candidates_prefers_30443_on_tie() {
+        let keys = Keys::generate();
+        let now = Timestamp::now();
+        let event_443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_LEGACY, "content")
+            .custom_created_at(now)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let event_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content")
+            .custom_created_at(now)
+            .sign_with_keys(&keys)
+            .unwrap();
+
+        let sorted = sort_keypackage_candidates(vec![event_443, event_30443]);
+        assert_eq!(sorted.len(), 2);
+        assert_eq!(sorted[0].kind, MLS_KEY_PACKAGE_KIND_30443);
+    }
+
+    /// The primary sort key is `created_at`, newest first — the kind tie-break only applies
+    /// when timestamps are equal. Pins that a newer event of either kind beats an older one
+    /// of the *other* kind, so a stale duplicate under one kind can never beat a fresh,
+    /// parseable one under the other.
+    #[test]
+    fn sort_keypackage_candidates_orders_by_created_at_first() {
+        let keys = Keys::generate();
+        let older = Timestamp::now();
+        let newer = Timestamp::from_secs(older.as_secs() + 60);
+
+        // Same kind: newer must win regardless of the tie-break.
+        let same_kind_old = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content-a")
+            .custom_created_at(older)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let same_kind_new = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content-b")
+            .custom_created_at(newer)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let sorted = sort_keypackage_candidates(vec![same_kind_old, same_kind_new.clone()]);
+        assert_eq!(sorted[0].id, same_kind_new.id);
+
+        // Mixed kind: a newer legacy (443) event must still beat an older spec (30443) one —
+        // the 30443 tie-break must not override a real timestamp difference.
+        let older_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content-c")
+            .custom_created_at(older)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let newer_443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_LEGACY, "content-d")
+            .custom_created_at(newer)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let sorted = sort_keypackage_candidates(vec![older_30443, newer_443.clone()]);
+        assert_eq!(
+            sorted[0].id, newer_443.id,
+            "a newer legacy event must beat an older spec-kind one"
+        );
+    }
+}
+
+#[cfg(test)]
+mod sanitize_skip_reason_tests {
+    use super::{sanitize_skip_reason, SKIP_REASON_MAX_CHARS};
+
+    #[test]
+    fn redacts_urls_embedded_in_the_reason() {
+        let reason = "fetch failed: https://relay.example.com/?token=SECRET";
+        let sanitized = sanitize_skip_reason(reason);
+        assert!(!sanitized.contains("SECRET"));
+    }
+
+    #[test]
+    fn truncates_overlong_reasons_with_a_trailing_ellipsis() {
+        let reason = "x".repeat(SKIP_REASON_MAX_CHARS * 2);
+        let sanitized = sanitize_skip_reason(&reason);
+        assert!(sanitized.ends_with('…'));
+        assert_eq!(sanitized.chars().count(), SKIP_REASON_MAX_CHARS + 1);
+    }
+
+    #[test]
+    fn leaves_a_short_plain_reason_untouched() {
+        assert_eq!(sanitize_skip_reason("no key package published"), "no key package published");
+    }
+}
+
+#[cfg(test)]
+mod format_transient_skip_error_tests {
+    use super::{format_transient_skip_error, SkippedMember};
+
+    fn transient(npub: &str) -> SkippedMember {
+        SkippedMember {
+            npub: npub.to_string(),
+            reason: "relay fetch failed: timed out".to_string(),
+            transient: true,
+        }
+    }
+
+    #[test]
+    fn names_every_transiently_skipped_npub() {
+        let skipped = vec![transient("npub1abc"), transient("npub1def")];
+        let msg = format_transient_skip_error(&skipped);
+        assert!(msg.contains("npub1abc"), "{msg}");
+        assert!(msg.contains("npub1def"), "{msg}");
+    }
+
+    #[test]
+    fn ignores_non_transient_skips_in_the_named_list() {
+        let mut skipped = vec![transient("npub1abc")];
+        skipped.push(SkippedMember {
+            npub: "npub1permanent".to_string(),
+            reason: "invalid npub".to_string(),
+            transient: false,
+        });
+        let msg = format_transient_skip_error(&skipped);
+        assert!(msg.contains("npub1abc"));
+        assert!(!msg.contains("npub1permanent"));
+    }
+
+    #[test]
+    fn shortens_full_length_npubs_so_the_toast_stays_readable() {
+        let long = format!("npub1{}", "q".repeat(58));
+        let msg = format_transient_skip_error(&[transient(&long)]);
+        assert!(msg.contains("npub1qqqqqqq…"), "{msg}");
+        assert!(!msg.contains(&long), "{msg}");
+    }
+
+    #[test]
+    fn carries_the_marker_the_frontend_matches() {
+        let msg = format_transient_skip_error(&[transient("npub1abc")]);
+        assert!(msg.starts_with(super::RELAY_KEYPACKAGE_UNREACHABLE), "{msg}");
+    }
+
+    #[test]
+    fn is_stable_for_an_empty_list() {
+        assert_eq!(
+            format_transient_skip_error(&[]),
+            format!("{} ", super::RELAY_KEYPACKAGE_UNREACHABLE)
         );
     }
 }

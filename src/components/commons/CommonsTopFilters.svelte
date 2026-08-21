@@ -7,20 +7,34 @@
   } from '../../lib/commons/commons-feed';
   import { getLocalizedCommonsTagCategory } from '../../lib/commons/tag-catalog';
 
-  export let tags: string[] = [];
-  export let categoryId: string | null = null;
-  export let focusedCategoryId: string | null = null;
-  export let browseMode: CommonsBrowseMode = 'categories';
-  export let subjectFilter: CommonsSubjectFilter = 'both';
-  export let audienceFilter: CommonsAudienceFilter = 'any';
-  /** Whether the focused tag (genre) menu is open; hides the passive tiles. */
-  export let tagMenuOpen = false;
-  export let onRemoveTag: ((tag: string) => void) | undefined = undefined;
-  export let onClearCategory: (() => void) | undefined = undefined;
+  interface Props {
+    tags?: string[];
+    categoryId?: string | null;
+    focusedCategoryId?: string | null;
+    browseMode?: CommonsBrowseMode;
+    subjectFilter?: CommonsSubjectFilter;
+    audienceFilter?: CommonsAudienceFilter;
+    /** Whether the focused tag (genre) menu is open; hides the passive tiles. */
+    tagMenuOpen?: boolean;
+    onRemoveTag?: (tag: string) => void;
+    onClearCategory?: () => void;
+  }
 
-  $: categoryLabel = categoryId
-    ? (getLocalizedCommonsTagCategory($t, categoryId)?.title ?? categoryId)
-    : null;
+  let {
+    tags = $bindable([]),
+    categoryId = $bindable(null),
+    focusedCategoryId = $bindable(null),
+    browseMode = $bindable('categories'),
+    subjectFilter = $bindable('both'),
+    audienceFilter = $bindable('any'),
+    tagMenuOpen = $bindable(false),
+    onRemoveTag = undefined,
+    onClearCategory = undefined,
+  }: Props = $props();
+
+  const categoryLabel = $derived(
+    categoryId ? (getLocalizedCommonsTagCategory($t, categoryId)?.title ?? categoryId) : null
+  );
 
   function removeTag(tag: string) {
     if (onRemoveTag) onRemoveTag(tag);
@@ -70,14 +84,13 @@
   }
 
   /** Tag-library search (not category drill-down). */
-  $: isTagLibrarySearch = tags.length > 0 && categoryId == null && focusedCategoryId == null;
+  const isTagLibrarySearch = $derived(tags.length > 0 && categoryId == null && focusedCategoryId == null);
 
-  $: isLatestActive = browseMode === 'latest' && !tagMenuOpen;
-  $: isCategoriesActive =
-    browseMode === 'categories' && !tagMenuOpen && !isTagLibrarySearch;
-  $: isTagsActive = tagMenuOpen && tags.length === 0;
-  $: isSearchActive = (tagMenuOpen && tags.length > 0) || isTagLibrarySearch;
-  $: showSearchButton = tagMenuOpen || isTagLibrarySearch;
+  const isLatestActive = $derived(browseMode === 'latest' && !tagMenuOpen);
+  const isCategoriesActive = $derived(browseMode === 'categories' && !tagMenuOpen && !isTagLibrarySearch);
+  const isTagsActive = $derived(tagMenuOpen && tags.length === 0);
+  const isSearchActive = $derived((tagMenuOpen && tags.length > 0) || isTagLibrarySearch);
+  const showSearchButton = $derived(tagMenuOpen || isTagLibrarySearch);
 </script>
 
 <div class="commons-filters" role="search">

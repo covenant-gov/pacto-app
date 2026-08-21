@@ -25,48 +25,59 @@
   import type { CommonsBroadcastLocalState } from '../../../lib/commons/types';
   import type { Squad } from '../../../stores/squads';
 
-  export let squad: Squad;
+  interface Props {
+    squad: Squad;
+  }
+
+  let { squad }: Props = $props();
 
   type BroadcastMode = 'disabled' | 'enabled';
 
-  let mode: BroadcastMode = squad.visibility === 'public' ? 'enabled' : 'disabled';
-  let savingMode = false;
-  let activeBroadcast: CommonsBroadcastLocalState | null = null;
-  let loadingBroadcast = true;
-  let cancelling = false;
-  let messageExpanded = false;
-  let showBroadcastModal = false;
-  let refreshToken = 0;
-  let prevSquadId = '';
+  let mode = $state<BroadcastMode>(squad.visibility === 'public' ? 'enabled' : 'disabled');
+  let savingMode = $state(false);
+  let activeBroadcast = $state<CommonsBroadcastLocalState | null>(null);
+  let loadingBroadcast = $state(true);
+  let cancelling = $state(false);
+  let messageExpanded = $state(false);
+  let showBroadcastModal = $state(false);
+  let refreshToken = $state(0);
+  let prevSquadId = $state('');
 
-  $: broadcastEnabled = isPublicSquadForCommonsBroadcast(squad);
-  $: broadcastTarget = {
+  const broadcastEnabled = $derived(isPublicSquadForCommonsBroadcast(squad));
+  const broadcastTarget = $derived({
     id: squad.id,
     name: squad.name,
     kind: squad.kind,
     iconUrl: squad.iconUrl,
     visibility: squad.visibility,
     commonsTags: squad.commonsTags,
-  };
-  $: roleAllowed = canBroadcastSquad({ userNpub: $currentUser?.npub, squad: broadcastTarget });
-  $: broadcastDeniedReason =
+  });
+  const roleAllowed = $derived(canBroadcastSquad({ userNpub: $currentUser?.npub, squad: broadcastTarget }));
+  const broadcastDeniedReason = $derived(
     broadcastSquadRoleDeniedReason({ userNpub: $currentUser?.npub, squad: broadcastTarget }) ??
-    COMMONS_BROADCAST_ROLE_DENIED_REASON;
-  $: hasActive = !!activeBroadcast;
-  $: fullMessage = activeBroadcast?.message ?? '';
-  $: messageTruncated = isCommonsMessageTruncated(fullMessage, COMMONS_MESSAGE_PREVIEW_MAX);
-  $: previewMessage = messageTruncated
-    ? truncateCommonsMessage(fullMessage, COMMONS_MESSAGE_PREVIEW_MAX)
-    : fullMessage;
-  $: canStartBroadcast = broadcastEnabled && roleAllowed && !hasActive && !loadingBroadcast;
+      COMMONS_BROADCAST_ROLE_DENIED_REASON,
+  );
+  const hasActive = $derived(!!activeBroadcast);
+  const fullMessage = $derived(activeBroadcast?.message ?? '');
+  const messageTruncated = $derived(isCommonsMessageTruncated(fullMessage, COMMONS_MESSAGE_PREVIEW_MAX));
+  const previewMessage = $derived(
+    messageTruncated ? truncateCommonsMessage(fullMessage, COMMONS_MESSAGE_PREVIEW_MAX) : fullMessage,
+  );
+  const canStartBroadcast = $derived(broadcastEnabled && roleAllowed && !hasActive && !loadingBroadcast);
 
-  $: if (squad.id !== prevSquadId) {
-    prevSquadId = squad.id;
-    mode = squad.visibility === 'public' ? 'enabled' : 'disabled';
-    refreshToken += 1;
-  }
+  $effect(() => {
+    if (squad.id !== prevSquadId) {
+      prevSquadId = squad.id;
+      mode = squad.visibility === 'public' ? 'enabled' : 'disabled';
+      refreshToken += 1;
+    }
+  });
 
-  $: squad.id, refreshToken, void loadBroadcast();
+  $effect(() => {
+    void squad.id;
+    void refreshToken;
+    void loadBroadcast();
+  });
 
   function relativeExpiry(expiresAt: number, tFn: (key: string, opts?: object) => string): string {
     const ms = expiresAt * 1000 - Date.now();

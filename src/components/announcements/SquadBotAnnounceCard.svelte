@@ -1,3 +1,5 @@
+<svelte:options runes={true} />
+
 <script lang="ts">
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -6,18 +8,25 @@
   import { currentUser } from '../../stores/auth';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
-  export let id: string = '';
-  export let announce: SquadBotAnnounceMessage;
-  export let authorName: string = '';
-  export let authorNpub: string | undefined = undefined;
-  export let timestamp: string = '';
+  let {
+    id = '',
+    announce,
+    authorName = '',
+    authorNpub = undefined,
+    timestamp = '',
+  }: {
+    id?: string;
+    announce: SquadBotAnnounceMessage;
+    authorName?: string;
+    authorNpub?: string;
+    timestamp?: string;
+  } = $props();
 
   const tFn = get(t);
 
-  $: isMine =
-    Boolean(authorNpub && $currentUser?.npub && authorNpub === $currentUser.npub);
+  const isMine = $derived(Boolean(authorNpub && $currentUser?.npub && authorNpub === $currentUser.npub));
 
-  $: title =
+  const title = $derived(
     announce.kind === 'meta'
       ? isMine
         ? tFn('announcements.squadBot.rosterMine')
@@ -26,20 +35,18 @@
         ? isMine
           ? tFn('announcements.squadBot.rotatedMine')
           : tFn('announcements.squadBot.rotatedTheirs', { values: { authorName: authorName || tFn('announcements.squadBot.aMember') } })
-        : tFn('announcements.squadBot.updateTitle');
+        : tFn('announcements.squadBot.updateTitle')
+  );
 
-  $: holderCount =
-    announce.kind === 'meta' ? announce.payload.holders.length : null;
+  const holderCount = $derived(announce.kind === 'meta' ? announce.payload.holders.length : null);
 
-  $: botNpub =
-    announce.kind === 'meta' || announce.kind === 'key_rotated'
-      ? announce.payload.botNpub
-      : '';
+  const botNpub = $derived(
+    announce.kind === 'meta' || announce.kind === 'key_rotated' ? announce.payload.botNpub : ''
+  );
 
-  $: keyEpoch =
-    announce.kind === 'meta' || announce.kind === 'key_rotated'
-      ? announce.payload.keyEpoch
-      : null;
+  const keyEpoch = $derived(
+    announce.kind === 'meta' || announce.kind === 'key_rotated' ? announce.payload.keyEpoch : null
+  );
 </script>
 
 <div class="announce-card" id={id ? `msg-${id}` : undefined} data-squad-bot-announce={announce.kind}>

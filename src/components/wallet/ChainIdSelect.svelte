@@ -2,10 +2,14 @@
   import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
   import type { SupportedChainId } from '../../lib/wallet/chains';
 
-  export let id: string | undefined = undefined;
-  export let value: SupportedChainId;
-  export let disabled = false;
-  export let selectClass = 'input-select';
+  interface Props {
+    id?: string;
+    value: SupportedChainId;
+    disabled?: boolean;
+    selectClass?: string;
+  }
+
+  let { id = undefined, value = $bindable(), disabled = false, selectClass = 'input-select' }: Props = $props();
 </script>
 
 <select {id} class={selectClass} bind:value {disabled}>

@@ -6,27 +6,42 @@
     launchpadPrimaryCardState,
   } from '../../../lib/governance/launchpad-cta';
 
-  export let hasSponsor: boolean;
-  export let hasPactoGov: boolean;
-  export let hasSquadAdmin: boolean;
-  export let hasAnnouncementsChannel: boolean;
-  /** Sponsor clone address when already deployed. */
-  export let sponsorAddress = '';
-  /** Pacto Gov reference when deployed. */
-  export let pactoGovAddress = '';
-  /** Squad Admin proxy when deployed. */
-  export let squadAdminAddress = '';
-  export let onClose: () => void;
-  export let onDeployGovAndSponsor: () => void;
-  export let onDeployPactoGov: () => void = () => {};
-  export let onDeployExtSponsor: () => void;
-  export let onDeploySquadAdmin: () => void;
+  let {
+    hasSponsor,
+    hasPactoGov,
+    hasSquadAdmin,
+    hasAnnouncementsChannel,
+    sponsorAddress = '',
+    pactoGovAddress = '',
+    squadAdminAddress = '',
+    onClose,
+    onDeployGovAndSponsor,
+    onDeployPactoGov = () => {},
+    onDeployExtSponsor,
+    onDeploySquadAdmin,
+  }: {
+    hasSponsor: boolean;
+    hasPactoGov: boolean;
+    hasSquadAdmin: boolean;
+    hasAnnouncementsChannel: boolean;
+    /** Sponsor clone address when already deployed. */
+    sponsorAddress?: string;
+    /** Pacto Gov reference when deployed. */
+    pactoGovAddress?: string;
+    /** Squad Admin proxy when deployed. */
+    squadAdminAddress?: string;
+    onClose: () => void;
+    onDeployGovAndSponsor: () => void;
+    onDeployPactoGov?: () => void;
+    onDeployExtSponsor: () => void;
+    onDeploySquadAdmin: () => void;
+  } = $props();
 
   const titleId = 'deploy-governance-modal-title';
   const descId = 'deploy-governance-modal-desc';
 
-  $: channelBlocked = launchpadCtaDisabled({ hasAnnouncementsChannel });
-  $: primaryCard = launchpadPrimaryCardState({ hasSponsor, hasPactoGov });
+  const channelBlocked = $derived(launchpadCtaDisabled({ hasAnnouncementsChannel }));
+  const primaryCard = $derived(launchpadPrimaryCardState({ hasSponsor, hasPactoGov }));
 </script>
 
 <Modal {titleId} descriptionId={descId} {onClose} contentClass="launchpad-modal-panel">

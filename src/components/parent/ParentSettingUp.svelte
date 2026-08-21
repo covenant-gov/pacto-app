@@ -1,27 +1,49 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  /** Optional id for the error element (for aria-describedby on retry button). */
-  export let errorId: string | undefined = undefined;
-  export let error: string | undefined = undefined;
-  export let canRetry = false;
-  export let retrying = false;
-  export let onRetry: (() => void) | undefined = undefined;
+
+  interface Props {
+    /** Optional id for the error element (for aria-describedby on retry button). */
+    errorId?: string;
+    error?: string;
+    canRetry?: boolean;
+    retrying?: boolean;
+    onRetry?: () => void;
+    canDiscard?: boolean;
+    onDiscard?: () => void;
+  }
+
+  let {
+    errorId,
+    error,
+    canRetry = false,
+    retrying = false,
+    onRetry,
+    canDiscard = false,
+    onDiscard,
+  }: Props = $props();
 </script>
 
 <div class="parent-setting-up" role="status" aria-live="polite">
   {#if error}
     <p class="setting-up-error" role="alert" id={errorId}>{error}</p>
-    {#if canRetry && onRetry}
-      <button
-        type="button"
-        class="setting-up-retry-btn"
-        disabled={retrying}
-        onclick={onRetry}
-        aria-describedby={errorId || undefined}
-      >
-        {retrying ? $t('governance.common.retrying') : $t('governance.common.retry')}
-      </button>
-    {/if}
+    <div class="setting-up-actions">
+      {#if canRetry && onRetry}
+        <button
+          type="button"
+          class="setting-up-retry-btn"
+          disabled={retrying}
+          onclick={onRetry}
+          aria-describedby={errorId || undefined}
+        >
+          {retrying ? $t('governance.common.retrying') : $t('governance.common.retry')}
+        </button>
+      {/if}
+      {#if canDiscard && onDiscard}
+        <button type="button" class="setting-up-discard-btn" onclick={onDiscard}>
+          {$t('nav.parentNavbar.create.discard')}
+        </button>
+      {/if}
+    </div>
   {:else}
     <div class="setting-up-spinner" aria-hidden="true"></div>
     <p class="setting-up-text">{$t('governance.settingUp')}</p>
@@ -84,5 +106,26 @@
   .setting-up-retry-btn:disabled {
     opacity: 0.7;
     cursor: not-allowed;
+  }
+
+  .setting-up-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .setting-up-discard-btn {
+    margin-top: 4px;
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .setting-up-discard-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
   }
 </style>

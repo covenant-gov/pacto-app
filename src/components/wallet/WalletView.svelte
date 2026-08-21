@@ -44,36 +44,40 @@
 
   const tFn = get(t);
 
-  /** When true, omit the standalone page title (embedded under Settings → EVM). */
-  export let embeddedInSettings = false;
+  interface Props {
+    /** When true, omit the standalone page title (embedded under Settings → EVM). */
+    embeddedInSettings?: boolean;
+  }
 
-  let importModalOpen = false;
-  let homeSendOpen = false;
-  let receiveOpen = false;
-  let watchedRows: WatchedErc20Row[] = [];
-  let enabledSet = new Set<SupportedChainId>(defaultWalletEnabledChains());
-  let tokenNetworkFilter: 'all' | SupportedChainId = DEFAULT_PREFERRED_NETWORK;
+  let { embeddedInSettings = false }: Props = $props();
 
-  $: walletAccountLabelMaxLength = $appConfig.walletAccountLabelMaxLength;
+  let importModalOpen = $state(false);
+  let homeSendOpen = $state(false);
+  let receiveOpen = $state(false);
+  let watchedRows: WatchedErc20Row[] = $state([]);
+  let enabledSet = $state(new Set<SupportedChainId>(defaultWalletEnabledChains()));
+  let tokenNetworkFilter: 'all' | SupportedChainId = $state(DEFAULT_PREFERRED_NETWORK);
 
-  $: accountNpub = $currentUser?.npub ?? null;
+  const walletAccountLabelMaxLength = $derived($appConfig.walletAccountLabelMaxLength);
 
-  let evmAddress: string | null = null;
+  const accountNpub = $derived($currentUser?.npub ?? null);
 
-  let evmAccountList: EvmAccountRow[] = [];
-  let accountsLoading = false;
-  let importKeyModalOpen = false;
-  let importKeyInput = '';
-  let importKeyBusy = false;
+  let evmAddress: string | null = $state(null);
+
+  let evmAccountList: EvmAccountRow[] = $state([]);
+  let accountsLoading = $state(false);
+  let importKeyModalOpen = $state(false);
+  let importKeyInput = $state('');
+  let importKeyBusy = $state(false);
 
   /** Unified add / edit account modal (same fields as add). */
-  let accountFormMode: 'add' | 'edit' | null = null;
-  let accountFormPurpose: EvmAccountPurpose = 'squad';
-  let accountFormEditId: string | null = null;
-  let accountFormLabel = '';
-  let accountFormSetSigning = false;
-  let accountFormSetReceiving = false;
-  let accountFormBusy = false;
+  let accountFormMode: 'add' | 'edit' | null = $state(null);
+  let accountFormPurpose = $state<EvmAccountPurpose>('squad');
+  let accountFormEditId: string | null = $state(null);
+  let accountFormLabel = $state('');
+  let accountFormSetSigning = $state(false);
+  let accountFormSetReceiving = $state(false);
+  let accountFormBusy = $state(false);
 
   async function loadEvmAccountsList() {
     if (!accountNpub) {
@@ -107,7 +111,10 @@
     await loadEvmAccountsList();
   }
 
-  $: accountNpub, void refreshEvmAddress();
+  $effect(() => {
+    void accountNpub;
+    void refreshEvmAddress();
+  });
 
   function syncFromDisk() {
     if (!accountNpub) return;
@@ -115,19 +122,23 @@
     enabledSet = new Set(loadWalletEnabledChains(accountNpub));
   }
 
-  $: accountNpub, $walletUiEnabledChainsTick, syncFromDisk();
+  $effect(() => {
+    void accountNpub;
+    void $walletUiEnabledChainsTick;
+    syncFromDisk();
+  });
 
-  $: if (
-    embeddedInSettings &&
-    ($settingsSectionCollapsed['settings-evm'] ?? true)
-  ) {
+  /** Auto-closes account/import modals once the EVM settings section collapses. */
+  $effect(() => {
+    if (!embeddedInSettings) return;
+    if (!($settingsSectionCollapsed['settings-evm'] ?? true)) return;
     if (accountFormMode) closeAccountFormModal();
     if (importKeyModalOpen && !importKeyBusy) {
       importKeyModalOpen = false;
       importKeyInput = '';
     }
     if (importModalOpen) importModalOpen = false;
-  }
+  });
 
   onMount(syncFromDisk);
 
@@ -276,13 +287,15 @@
   }
 
   /** Enabled chains in catalog order (Send network list + settings). */
-  $: enabledChainsOrdered = WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id));
+  const enabledChainsOrdered = $derived(WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id)));
 
   /** Kind 0 / profile default; when unset, receiving matches the signing address. */
-  $: profileDefaultEvmAddress = evmAccountList.find((a) => a.isDefaultShared)?.address?.trim() || null;
-  $: displayReceivingAddress = profileDefaultEvmAddress ?? evmAddress;
-  $: squadAccountList = squadEvmAccounts(evmAccountList);
-  $: accountFormIsAdvanced = accountFormPurpose === 'advanced';
+  const profileDefaultEvmAddress = $derived(
+    evmAccountList.find((a) => a.isDefaultShared)?.address?.trim() || null
+  );
+  const displayReceivingAddress = $derived(profileDefaultEvmAddress ?? evmAddress);
+  const squadAccountList = $derived(squadEvmAccounts(evmAccountList));
+  const accountFormIsAdvanced = $derived(accountFormPurpose === 'advanced');
 </script>
 
 <div class="wallet-view" class:wallet-view--embedded={embeddedInSettings} aria-labelledby={embeddedInSettings ? undefined : 'wallet-view-title'}>

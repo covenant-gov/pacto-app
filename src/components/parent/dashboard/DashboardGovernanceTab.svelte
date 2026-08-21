@@ -8,30 +8,51 @@
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { isTreasuryProposalActive } from '../../../lib/governance/treasury-proposal-ui';
 
-  export let squadInfraRows: SquadInfraDto[] | undefined = undefined;
-  export let pactoPayload: PactoGovProviderPayloadV1 | null = null;
-  export let pactoGovChain: string | undefined = undefined;
-  export let parentId = '';
-  export let myAddress = '';
-  export let captainWearers: string[] = [];
-  export let crewWearers: string[] = [];
-  export let memberEvmOptions: { address: string; label: string }[] = [];
-  export let treasuryProposals: TreasuryProposalDto[] = [];
-  export let treasuryProposalsLoading = false;
-  export let treasuryProposalsRefreshing = false;
-  export let treasuryProposalsError = '';
-  export let onRefreshProposals: () => void = () => {};
-  export let onOpenLaunchpad: () => void = () => {};
-  export let hasSponsor = false;
-  export let warGameStack = false;
+  interface Props {
+    squadInfraRows?: SquadInfraDto[];
+    pactoPayload?: PactoGovProviderPayloadV1 | null;
+    pactoGovChain?: string;
+    parentId?: string;
+    myAddress?: string;
+    captainWearers?: string[];
+    crewWearers?: string[];
+    memberEvmOptions?: { address: string; label: string }[];
+    treasuryProposals?: TreasuryProposalDto[];
+    treasuryProposalsLoading?: boolean;
+    treasuryProposalsRefreshing?: boolean;
+    treasuryProposalsError?: string;
+    onRefreshProposals?: () => void;
+    onOpenLaunchpad?: () => void;
+    hasSponsor?: boolean;
+    warGameStack?: boolean;
+  }
 
-  $: liveProvider = resolveGovernanceProvider(squadInfraRows);
-  $: showPactoGovShell = Boolean(pactoPayload?.treasuryAuthority?.trim()) && (
-    warGameStack || liveProvider === 'pacto_gov'
+  let {
+    squadInfraRows = undefined,
+    pactoPayload = null,
+    pactoGovChain = undefined,
+    parentId = '',
+    myAddress = '',
+    captainWearers = [],
+    crewWearers = [],
+    memberEvmOptions = [],
+    treasuryProposals = [],
+    treasuryProposalsLoading = false,
+    treasuryProposalsRefreshing = false,
+    treasuryProposalsError = '',
+    onRefreshProposals = () => {},
+    onOpenLaunchpad = () => {},
+    hasSponsor = false,
+    warGameStack = false,
+  }: Props = $props();
+
+  const liveProvider = $derived(resolveGovernanceProvider(squadInfraRows));
+  const showPactoGovShell = $derived(
+    Boolean(pactoPayload?.treasuryAuthority?.trim()) && (warGameStack || liveProvider === 'pacto_gov'),
   );
-  $: showAbiModules = !warGameStack && liveProvider === 'abi_modules';
-  $: network = pactoGovChain ?? 'sepolia';
-  $: openCount = treasuryProposals.filter((p) => isTreasuryProposalActive(p.status)).length;
+  const showAbiModules = $derived(!warGameStack && liveProvider === 'abi_modules');
+  const network = $derived(pactoGovChain ?? 'sepolia');
+  const openCount = $derived(treasuryProposals.filter((p) => isTreasuryProposalActive(p.status)).length);
 </script>
 
 <section class="governance-section" aria-labelledby="governance-heading">

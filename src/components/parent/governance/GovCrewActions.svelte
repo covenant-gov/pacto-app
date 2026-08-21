@@ -42,74 +42,103 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let network: string;
-  export let parentId: string;
-  export let treasuryAuthority: string;
-  export let mutinyModule: string;
-  export let quartermaster = '';
-  export let privilege: GovernancePrivilege;
-  export let proposals: TreasuryProposalDto[] = [];
-  export let mutinyStatus: MutinyStatusDto | null = null;
-  export let mutinyHasVotedFlag = false;
-  export let qmStatus: QuartermasterStatusDto | null = null;
-  export let memberEvmOptions: { address: string; label: string }[] = [];
-  export let offboardHasVoted = false;
-  export let onRefreshProposals: () => void = () => {};
-  export let onRefreshMutiny: () => void = () => {};
-  export let onRefreshQm: () => void = () => {};
-  export let fundingHint = '';
+  interface Props {
+    network: string;
+    parentId: string;
+    treasuryAuthority: string;
+    mutinyModule: string;
+    quartermaster?: string;
+    privilege: GovernancePrivilege;
+    proposals?: TreasuryProposalDto[];
+    mutinyStatus?: MutinyStatusDto | null;
+    mutinyHasVotedFlag?: boolean;
+    qmStatus?: QuartermasterStatusDto | null;
+    memberEvmOptions?: { address: string; label: string }[];
+    offboardHasVoted?: boolean;
+    onRefreshProposals?: () => void;
+    onRefreshMutiny?: () => void;
+    onRefreshQm?: () => void;
+    fundingHint?: string;
+    /** True while capability preflight is still loading; forces every gate closed. */
+    capabilitiesPending?: boolean;
+  }
+
+  let {
+    network,
+    parentId,
+    treasuryAuthority,
+    mutinyModule,
+    quartermaster = '',
+    privilege,
+    proposals = [],
+    mutinyStatus = null,
+    mutinyHasVotedFlag = false,
+    qmStatus = null,
+    memberEvmOptions = [],
+    offboardHasVoted = false,
+    onRefreshProposals = () => {},
+    onRefreshMutiny = () => {},
+    onRefreshQm = () => {},
+    fundingHint = '',
+    capabilitiesPending = false,
+  }: Props = $props();
 
   const tFn = get(t);
+  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
-  let acting = false;
-  let voteProposalId = '';
-  let execProposalId = '';
-  let startKind: 'crew' | 'committee' | 'eoa' | 'contract' | 'pause' = 'crew';
-  let proposed = '';
-  let nowSec = Math.floor(Date.now() / 1000);
-  let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  let acting = $state(false);
+  let voteProposalId = $state('');
+  let execProposalId = $state('');
+  let startKind: 'crew' | 'committee' | 'eoa' | 'contract' | 'pause' = $state('crew');
+  let proposed = $state('');
+  let nowSec = $state(Math.floor(Date.now() / 1000));
 
-  $: crewGate = gateRequiresCrew(privilege);
-  $: execGate = gatePermissionlessSigner(privilege);
-  $: votable = crewVotableProposals(proposals);
-  $: executable = executableTreasuryProposals(proposals);
-  $: mutinyActive = isMutinyActive(mutinyStatus);
-  $: offboardActive = isCrewOffboardActive(qmStatus);
-  $: {
-    if (deadlineTimer != null) {
-      clearTimeout(deadlineTimer);
-      deadlineTimer = null;
-    }
+  let crewGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCrew(privilege));
+  let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
+  let votable = $derived(crewVotableProposals(proposals));
+  let executable = $derived(executableTreasuryProposals(proposals));
+  let mutinyActive = $derived(isMutinyActive(mutinyStatus));
+  let offboardActive = $derived(isCrewOffboardActive(qmStatus));
+  let mutinyExpired = $derived(isMutinyExpirable(mutinyStatus, nowSec));
+  let startGate = $derived(
+    offboardActive
+      ? ({ enabled: false, reason: 'governance.gate.cannotStartMutinyWhileOffboard' } as const)
+      : crewGate,
+  );
+  let mutinyVoteGate = $derived(
+    mutinyExpired
+      ? ({ enabled: false, reason: 'governance.gate.mutinyExpired' } as const)
+      : mutinyHasVotedFlag
+        ? ({ enabled: false, reason: 'governance.gate.alreadyVoted' } as const)
+        : crewGate,
+  );
+  let mutinyExecGate = $derived(
+    mutinyExpired ? ({ enabled: false, reason: 'governance.gate.mutinyExpired' } as const) : execGate,
+  );
+
+  $effect(() => {
     nowSec = Math.floor(Date.now() / 1000);
     const deadline = mutinyStatus?.deadline ?? 0;
     if (deadline > nowSec) {
-      deadlineTimer = setTimeout(() => {
+      const timer = setTimeout(() => {
         nowSec = Math.floor(Date.now() / 1000);
       }, Math.max(0, deadline * 1000 - Date.now()));
+      return () => clearTimeout(timer);
     }
-  }
-  $: mutinyExpired = isMutinyExpirable(mutinyStatus, nowSec);
-  $: startGate = ((): CtaGate => {
-    if (offboardActive) {
-      return { enabled: false, reason: 'governance.gate.cannotStartMutinyWhileOffboard' };
+    return undefined;
+  });
+
+  $effect(() => {
+    if (votable.length && !votable.some((p) => p.proposalId === voteProposalId)) {
+      voteProposalId = votable[0]?.proposalId ?? '';
     }
-    return crewGate;
-  })();
-  $: mutinyVoteGate = ((): CtaGate => {
-    if (mutinyExpired) return { enabled: false, reason: 'governance.gate.mutinyExpired' };
-    if (mutinyHasVotedFlag) return { enabled: false, reason: 'governance.gate.alreadyVoted' };
-    return crewGate;
-  })();
-  $: mutinyExecGate = ((): CtaGate => {
-    if (mutinyExpired) return { enabled: false, reason: 'governance.gate.mutinyExpired' };
-    return execGate;
-  })();
-  $: if (votable.length && !votable.some((p) => p.proposalId === voteProposalId)) {
-    voteProposalId = votable[0]?.proposalId ?? '';
-  }
-  $: if (executable.length && !executable.some((p) => p.proposalId === execProposalId)) {
-    execProposalId = executable[0]?.proposalId ?? '';
-  }
+  });
+
+  $effect(() => {
+    if (executable.length && !executable.some((p) => p.proposalId === execProposalId)) {
+      execProposalId = executable[0]?.proposalId ?? '';
+    }
+  });
 
   async function run(label: string, fn: () => Promise<unknown>, refresh: () => void) {
     if (acting) return;
@@ -156,6 +185,7 @@
         {treasuryAuthority}
         {privilege}
         {fundingHint}
+        {capabilitiesPending}
         onSubmitted={onRefreshProposals}
       />
 

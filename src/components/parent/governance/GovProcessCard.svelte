@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { GovProcessCard } from '../../../lib/governance/gov-process';
   import { govProcessToolLabel } from '../../../lib/governance/gov-process';
@@ -16,33 +15,36 @@
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import ProposalActionSummary from './ProposalActionSummary.svelte';
 
-  export let card: GovProcessCard;
-  export let showExecute = false;
-  export let executePending = false;
-  /** Privilege gate i18n key (empty when allowed). Delay lock is derived from the card. */
-  export let privilegeReasonKey = '';
-  export let onExecute: (() => void) | undefined = undefined;
-  export let onExpire: (() => void) | undefined = undefined;
-  export let network = 'sepolia';
-  export let txHash = '';
-
-  let delayElapsed = false;
-  let unlockTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function clearUnlockTimer() {
-    if (unlockTimer != null) {
-      clearTimeout(unlockTimer);
-      unlockTimer = null;
-    }
+  interface Props {
+    card: GovProcessCard;
+    showExecute?: boolean;
+    executePending?: boolean;
+    /** Privilege gate i18n key (empty when allowed). Delay lock is derived from the card. */
+    privilegeReasonKey?: string;
+    onExecute?: () => void;
+    onExpire?: () => void;
+    network?: string;
+    txHash?: string;
   }
 
-  onDestroy(clearUnlockTimer);
+  let {
+    card,
+    showExecute = false,
+    executePending = false,
+    privilegeReasonKey = '',
+    onExecute = undefined,
+    onExpire = undefined,
+    network = 'sepolia',
+    txHash = '',
+  }: Props = $props();
 
-  $: tool = $t(govProcessToolLabel(card));
-  $: isActive =
-    card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true;
-  $: isPast = card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false;
-  $: cardUnlockAtSec =
+  let delayElapsed = $state(false);
+
+  const nowSec = $derived(delayElapsed ? Math.floor(Date.now() / 1000) : 0);
+  let tool = $derived($t(govProcessToolLabel(card)));
+  let isActive = $derived(card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true);
+  let isPast = $derived(card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false);
+  let cardUnlockAtSec = $derived(
     card.kind === 'crew_add' || card.kind === 'crew_remove'
       ? card.executableAt > 0
         ? card.executableAt
@@ -51,35 +53,19 @@
         ? card.status.deadline > 0
           ? card.status.deadline
           : null
-        : null;
-  $: {
-    clearUnlockTimer();
-    const alreadyOpen = cardUnlockAtSec == null || cardUnlockAtSec <= Math.floor(Date.now() / 1000);
-    delayElapsed = alreadyOpen;
-    if (!alreadyOpen && cardUnlockAtSec != null) {
-      unlockTimer = setTimeout(() => {
-        delayElapsed = true;
-      }, Math.max(0, cardUnlockAtSec * 1000 - Date.now()));
-    }
-  }
-  $: execUi = govExecuteUiState({
-    card,
-    privilegeReasonKey,
-    nowSec: delayElapsed ? Math.floor(Date.now() / 1000) : 0,
-  });
-  $: isExecutable =
+        : null,
+  );
+  let execUi = $derived(govExecuteUiState({ card, privilegeReasonKey, nowSec }));
+  let isExecutable = $derived(
     card.kind === 'treasury'
       ? executableTreasuryProposals([card.proposal]).length > 0
       : card.kind === 'mutiny'
-        ? isMutinyExecutable(card.status, delayElapsed ? Math.floor(Date.now() / 1000) : 0)
+        ? isMutinyExecutable(card.status, nowSec)
         : card.kind === 'crew_offboard'
-          ? isCrewOffboardExecutable(
-              card.status,
-              card.quorumBps,
-              delayElapsed ? Math.floor(Date.now() / 1000) : 0,
-            )
-          : card.status === 'executable';
-  $: title =
+          ? isCrewOffboardExecutable(card.status, card.quorumBps, nowSec)
+          : card.status === 'executable',
+  );
+  let title = $derived(
     card.kind === 'treasury'
       ? $t('governance.proposal.title', { values: { id: card.proposal.proposalId } })
       : card.kind === 'mutiny'
@@ -88,39 +74,33 @@
           ? $t('governance.proposal.offboardTitle', { values: { id: card.status.offboardId } })
           : card.kind === 'crew_add'
             ? $t('governance.proposal.addCrewTitle')
-            : $t('governance.proposal.removeCrewTitle');
-  $: statusLabel =
+            : $t('governance.proposal.removeCrewTitle'),
+  );
+  let statusLabel = $derived(
     card.kind === 'treasury'
       ? treasuryProposalStatusLabel(card.proposal.status)
       : card.kind === 'mutiny'
-        ? isMutinyExpirable(card.status, delayElapsed ? Math.floor(Date.now() / 1000) : 0)
+        ? isMutinyExpirable(card.status, nowSec)
           ? $t('governance.proposal.expired')
-          : isMutinyExecutable(card.status, delayElapsed ? Math.floor(Date.now() / 1000) : 0)
+          : isMutinyExecutable(card.status, nowSec)
             ? $t('governance.proposal.readyToExecute')
             : $t('governance.proposal.active')
         : card.kind === 'crew_offboard'
-          ? isCrewOffboardExpirable(card.status, delayElapsed ? Math.floor(Date.now() / 1000) : 0)
+          ? isCrewOffboardExpirable(card.status, nowSec)
             ? $t('governance.proposal.expired')
-            : isCrewOffboardExecutable(
-                  card.status,
-                  card.quorumBps,
-                  delayElapsed ? Math.floor(Date.now() / 1000) : 0,
-                )
+            : isCrewOffboardExecutable(card.status, card.quorumBps, nowSec)
               ? $t('governance.proposal.readyToExecute')
               : $t('governance.proposal.active')
         : card.status === 'executable'
           ? $t('governance.proposal.readyToExecute')
-          : $t('governance.proposal.timelock');
-  $: outcome =
-    card.kind === 'treasury' ? treasuryProposalOutcomeLabel(card.proposal.status) : '';
-  $: executeTitle = (() => {
+          : $t('governance.proposal.timelock'),
+  );
+  let outcome = $derived(card.kind === 'treasury' ? treasuryProposalOutcomeLabel(card.proposal.status) : '');
+  let executeTitle = $derived.by(() => {
     if (execUi.executeEnabled || !execUi.disabledReasonKey) {
       return $t('governance.common.execute');
     }
-    if (
-      execUi.disabledReasonKey === 'governance.proposal.executeLockedUntil' &&
-      execUi.unlockAtSec
-    ) {
+    if (execUi.disabledReasonKey === 'governance.proposal.executeLockedUntil' && execUi.unlockAtSec) {
       return $t(execUi.disabledReasonKey, {
         values: { when: new Date(execUi.unlockAtSec * 1000).toLocaleString() },
       });
@@ -128,18 +108,32 @@
     return execUi.disabledReasonKey.startsWith('governance.')
       ? $t(execUi.disabledReasonKey)
       : execUi.disabledReasonKey;
-  })();
-  $: expireTitle = (() => {
+  });
+  let expireTitle = $derived.by(() => {
     if (execUi.expireEnabled || !execUi.expireReasonKey) {
       return $t('governance.common.expire');
     }
     return execUi.expireReasonKey.startsWith('governance.')
       ? $t(execUi.expireReasonKey)
       : execUi.expireReasonKey;
-  })();
-  $: mutinyExplorerUrl =
-    card.kind === 'mutiny' && txHash.trim() ? mutinyTxExplorerUrl(network, txHash) : null;
-  $: mutinyTxShort = txHash.trim() ? shortTxHash(txHash.trim()) : '';
+  });
+  let mutinyExplorerUrl = $derived(
+    card.kind === 'mutiny' && txHash.trim() ? mutinyTxExplorerUrl(network, txHash) : null,
+  );
+  let mutinyTxShort = $derived(txHash.trim() ? shortTxHash(txHash.trim()) : '');
+
+  $effect(() => {
+    const unlockAt = cardUnlockAtSec;
+    const alreadyOpen = unlockAt == null || unlockAt <= Math.floor(Date.now() / 1000);
+    delayElapsed = alreadyOpen;
+    if (!alreadyOpen && unlockAt != null) {
+      const timer = setTimeout(() => {
+        delayElapsed = true;
+      }, Math.max(0, unlockAt * 1000 - Date.now()));
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  });
 </script>
 
 <li

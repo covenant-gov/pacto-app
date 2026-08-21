@@ -2383,14 +2383,14 @@ impl WelcomeOutcome {
 
 /// Classify a `process_welcome` error message as permanent (no retry will ever help)
 /// or transient (may succeed later). Once a welcome permanently fails (e.g. no
-/// matching key package after a seed restore), the MDK engine marks the wrapper
-/// event processed/failed forever; these replay errors carry no new information.
+/// matching key package after a seed restore), mdk-core's `process_welcome` refuses
+/// to retry it and instead returns `Error::WelcomePreviouslyFailed(reason)` on every
+/// later call — Display `"welcome previously failed to process: {reason}"`, with the
+/// original failure text interpolated in, so it can only be matched by prefix, never
+/// by exact equality (mdk-core 0.8.0's `welcomes.rs`, `process_welcome`'s retry guard).
 fn classify_welcome_error(msg: &str) -> WelcomeOutcome {
-    const PERMANENT_ERRORS: [&str; 2] = [
-        "missing welcome for processed welcome",
-        "processed welcome not found",
-    ];
-    if PERMANENT_ERRORS.contains(&msg) {
+    const PERMANENT_RETRY_PREFIX: &str = "welcome previously failed to process:";
+    if msg.starts_with(PERMANENT_RETRY_PREFIX) {
         WelcomeOutcome::PermanentFailure
     } else {
         WelcomeOutcome::TransientFailure
@@ -2402,17 +2402,19 @@ mod welcome_outcome_tests {
     use super::{classify_welcome_error, WelcomeOutcome};
 
     #[test]
-    fn classifies_missing_welcome_for_processed_welcome_as_permanent() {
+    fn classifies_welcome_previously_failed_as_permanent() {
         assert_eq!(
-            classify_welcome_error("missing welcome for processed welcome"),
+            classify_welcome_error(
+                "welcome previously failed to process: Error previewing welcome: Welcome(\"No matching key package was found in the key store.\")"
+            ),
             WelcomeOutcome::PermanentFailure
         );
     }
 
     #[test]
-    fn classifies_processed_welcome_not_found_as_permanent() {
+    fn classifies_bare_permanent_prefix_with_no_reason_as_permanent() {
         assert_eq!(
-            classify_welcome_error("processed welcome not found"),
+            classify_welcome_error("welcome previously failed to process:"),
             WelcomeOutcome::PermanentFailure
         );
     }
@@ -9057,66 +9059,87 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         }
     }
 
-    // If caching is requested, attempt to load and verify an existing KeyPackage
+    // If caching is requested, attempt to load and verify an existing KeyPackage. Dual
+    // publish mints two event ids from the same content — a 30443 (spec, primary) and a
+    // 443 (legacy, secondary) — so both must independently still verify before the cache
+    // is trusted. An entry recorded before this feature shipped has no secondary ref and
+    // falls through to republish, which is how it picks up 30443 coverage.
     if cache {
-        // Load existing keypackage index and verify it exists on relay before returning cached
-        let cached_kp_ref: Option<String> = {
+        let cached_entry: Option<serde_json::Value> = {
             let index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
-
-            index
-                .iter()
-                .find(|entry| {
-                    entry.get("owner_pubkey").and_then(|v| v.as_str())
-                        == Some(owner_pubkey_b32.as_str())
-                        && entry.get("device_id").and_then(|v| v.as_str())
-                            == Some(device_id.as_str())
-                })
-                .and_then(|existing| {
-                    existing
-                        .get("keypackage_ref")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                })
+            index.into_iter().find(|entry| {
+                entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner_pubkey_b32.as_str())
+                    && entry.get("device_id").and_then(|v| v.as_str()) == Some(device_id.as_str())
+            })
         };
 
-        // If we have a cached reference, verify it exists on the relay
-        if let Some(ref_id) = cached_kp_ref {
-            println!(
-                "[MLS][KeyPackage] Found cached reference {}, verifying on relay...",
-                ref_id
-            );
+        if let Some(entry) = cached_entry {
+            let primary_ref = entry
+                .get("keypackage_ref")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let secondary_ref = entry
+                .get("keypackage_ref_secondary")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-            // Try to fetch the event from the relay to verify it exists
-            if let Ok(event_id) = nostr_sdk::EventId::from_hex(&ref_id) {
-                let filter = Filter::new()
-                    .id(event_id)
-                    .kind(Kind::MlsKeyPackage)
-                    .limit(1);
-
-                match client
-                    .stream_events_from(
-                        trusted_relays::trusted_relays().to_vec(),
-                        filter,
-                        std::time::Duration::from_secs(5),
-                    )
-                    .await
-                {
-                    Ok(mut events) => {
-                        // Check if we got any events - if so, the cached KeyPackage exists on relay
-                        if events.next().await.is_some() {
+            if let (Some(primary_hex), Some(secondary_hex)) =
+                (primary_ref.as_deref(), secondary_ref.as_deref())
+            {
+                println!(
+                    "[MLS][KeyPackage] Found cached references (30443={}, 443={}), verifying on relay...",
+                    primary_hex, secondary_hex
+                );
+                // Short-circuit: the secondary ref's verdict cannot change the outcome once
+                // the primary has already failed, and each check is a relay round trip plus
+                // an MLS store open.
+                match keypackage_ref_still_usable(&client, &handle, primary_hex).await {
+                    Ok(()) => match keypackage_ref_still_usable(&client, &handle, secondary_hex).await {
+                        Ok(()) => {
                             return Ok(serde_json::json!({
                                 "device_id": device_id,
                                 "owner_pubkey": owner_pubkey_b32,
-                                "keypackage_ref": ref_id,
+                                "keypackage_ref": primary_hex,
+                                "keypackage_ref_secondary": secondary_hex,
                                 "cached": true
                             }));
                         }
-                    }
-                    _ => {}
+                        Err(e) => eprintln!(
+                            "[MLS][KeyPackage] Cached 443 reference {} no longer usable ({}); republishing",
+                            secondary_hex, e
+                        ),
+                    },
+                    Err(e) => eprintln!(
+                        "[MLS][KeyPackage] Cached 30443 reference {} no longer usable ({}); republishing",
+                        primary_hex, e
+                    ),
                 }
+            } else {
+                println!(
+                    "[MLS][KeyPackage] Cached entry missing dual-kind (30443+443) coverage; republishing"
+                );
             }
         }
     }
+
+    // Reuse this device's addressable (kind 30443) `d` tag across rotations — NIP-33
+    // replacement only fires when successive publishes share the same (kind, pubkey, d)
+    // tuple, so a fresh random `d` every rotation would leave every past KeyPackage this
+    // device ever published live and addressable on the relay forever.
+    let existing_d_tag: Option<String> = db::load_mls_keypackages(&handle)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .find(|entry| {
+            entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner_pubkey_b32.as_str())
+                && entry.get("device_id").and_then(|v| v.as_str()) == Some(device_id.as_str())
+        })
+        .and_then(|entry| {
+            entry
+                .get("keypackage_d_tag")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        });
 
     // Create device KeyPackage using persistent MLS engine inside a no-await scope
     let kp_data = {
@@ -9129,23 +9152,64 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
             .map_err(|e| e.to_string())?
     }; // engine and mls_service dropped here before any await
 
-    // Build and sign event with nostr client
-    let kp_event = client
-        // `Kind::MlsKeyPackage` is 443, so the tag set without the `d` tag is the right one.
+    let d_tag = existing_d_tag.unwrap_or_else(|| kp_data.d_tag.clone());
+    let mut tags_30443 = kp_data.tags_30443;
+    if let Some(pos) = tags_30443.iter().position(|t| t.kind() == TagKind::d()) {
+        tags_30443[pos] = Tag::identifier(&d_tag);
+    }
+
+    // Sign and publish both the spec (30443, addressable) and legacy (443) events from the
+    // same KeyPackage content, so clients that still only understand 443 and clients that
+    // already require 30443 can both resolve this device. Both events share one timestamp
+    // so `mls::sort_keypackage_candidates`'s "prefer 30443 on a tie" actually applies —
+    // signed separately, they would otherwise straddle a second boundary and let the
+    // legacy event's later timestamp win instead.
+    let published_at = Timestamp::now();
+    let kp_event_30443 = client
         .sign_event_builder(
-            EventBuilder::new(Kind::MlsKeyPackage, kp_data.content).tags(kp_data.tags_443),
+            EventBuilder::new(mls::MLS_KEY_PACKAGE_KIND_30443, kp_data.content.clone())
+                .tags(tags_30443)
+                .custom_created_at(published_at),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let kp_event_443 = client
+        .sign_event_builder(
+            EventBuilder::new(mls::MLS_KEY_PACKAGE_KIND_LEGACY, kp_data.content)
+                .tags(kp_data.tags_443)
+                .custom_created_at(published_at),
         )
         .await
         .map_err(|e| e.to_string())?;
 
-    // Publish to the trusted relay set
-    let send_output = client
-        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event)
+    // Publish both to the trusted relay set. A publish every relay rejects must not be
+    // cached as if it succeeded — the cache check above requires both refs to
+    // independently verify, so caching an id no relay holds would just force every future
+    // call to republish anyway, without ever telling the caller why.
+    let send_output_30443 = client
+        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event_30443)
         .await
         .map_err(|e| e.to_string())?;
-    record_send_outcome(&kp_event, &send_output);
+    record_send_outcome(&kp_event_30443, &send_output_30443);
+    if send_output_30443.success.is_empty() {
+        return Err(format!(
+            "No trusted relay accepted the kind 30443 KeyPackage: {:?}",
+            send_output_30443.failed
+        ));
+    }
+    let send_output_443 = client
+        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event_443)
+        .await
+        .map_err(|e| e.to_string())?;
+    record_send_outcome(&kp_event_443, &send_output_443);
+    if send_output_443.success.is_empty() {
+        return Err(format!(
+            "No trusted relay accepted the legacy 443 KeyPackage: {:?}",
+            send_output_443.failed
+        ));
+    }
 
-    // Upsert into mls_keypackage_index
+    // Upsert into mls_keypackage_index, recording both event ids and the reusable `d` tag
     {
         let mut index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
         index.retain(|entry| {
@@ -9158,7 +9222,9 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         index.push(serde_json::json!({
             "owner_pubkey": owner_pubkey_b32,
             "device_id": device_id,
-            "keypackage_ref": kp_event.id.to_hex(),
+            "keypackage_ref": kp_event_30443.id.to_hex(),
+            "keypackage_ref_secondary": kp_event_443.id.to_hex(),
+            "keypackage_d_tag": d_tag,
             "fetched_at": now,
             "expires_at": 0u64
         }));
@@ -9180,9 +9246,43 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     Ok(serde_json::json!({
         "device_id": device_id,
         "owner_pubkey": owner_pubkey_b32,
-        "keypackage_ref": kp_event.id.to_hex(),
+        "keypackage_ref": kp_event_30443.id.to_hex(),
+        "keypackage_ref_secondary": kp_event_443.id.to_hex(),
         "cached": false
     }))
+}
+
+/// Fetch a KeyPackage event by id across both the spec (30443) and legacy (443) kinds and
+/// confirm the current MLS engine can still parse it. `regenerate_device_keypackage`'s cache
+/// check calls this once per dual-published ref, so one kind being pruned from a relay does
+/// not silently pass the check on the strength of the other still resolving. Returns the
+/// rejection reason on failure so the caller can log why the cache was invalidated.
+async fn keypackage_ref_still_usable(
+    client: &nostr_sdk::Client,
+    handle: &AppHandle,
+    ref_id_hex: &str,
+) -> Result<(), String> {
+    let event_id = nostr_sdk::EventId::from_hex(ref_id_hex)
+        .map_err(|e| format!("invalid keypackage ref: {}", e))?;
+    let filter = Filter::new()
+        .id(event_id)
+        .kinds(mls::mls_key_package_kinds())
+        .limit(1);
+    let mut events = client
+        .stream_events_from(
+            trusted_relays::trusted_relays().to_vec(),
+            filter,
+            std::time::Duration::from_secs(5),
+        )
+        .await
+        .map_err(|e| format!("relay fetch failed: {}", e))?;
+    let event = events
+        .next()
+        .await
+        .ok_or_else(|| "not found on the trusted relays".to_string())?;
+    let mls_service = MlsService::new_persistent_for_keypackage_refresh(handle)
+        .map_err(|e| e.to_string())?;
+    mls_service.key_package_event_usable(&event)
 }
 
 /// Re-fetch pending pre-reset welcomes by id. Forward sync is time-windowed,
@@ -9237,16 +9337,34 @@ async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Res
     mls_store_reset_state::retain_pending_wrapper_ids(handle, &remaining)
 }
 
-/// Create a new MLS group with initial member devices
-#[tauri::command]
-async fn create_mls_group(
+/// Merge preflight skips (no key package published) with engine-time skips (key package
+/// unfetchable or rejected by MDK's parser) into one list for the caller, preflight first.
+fn merge_skipped_members(
+    preflight: Vec<mls::SkippedMember>,
+    mut engine_skips: Vec<mls::SkippedMember>,
+) -> Vec<mls::SkippedMember> {
+    let mut merged = preflight;
+    merged.append(&mut engine_skips);
+    merged
+}
+
+/// Result returned to the frontend by `create_group_chat`: the new group's wire id plus every
+/// requested member who was left out and why. Reasons are backend diagnostics for logging only
+/// — the UI never renders them, it maps skipped npubs through its own copy.
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+struct GroupChatCreated {
+    group_id: String,
+    skipped_members: Vec<mls::SkippedMember>,
+}
+
+/// Runs `MlsService::create_group` on a blocking thread (the engine is `!Send`) and returns the
+/// full outcome, including any members skipped for an unresolved or unparseable KeyPackage.
+async fn run_create_mls_group(
     name: String,
     avatar_ref: Option<String>,
     initial_member_devices: Vec<(String, String)>,
-) -> Result<String, String> {
-    session::heartbeat();
-    require_key_derivation_version_2()?;
-    // Use tokio::task::spawn_blocking to run the non-Send MlsService in a blocking context
+) -> Result<mls::GroupCreateOutcome, String> {
     tokio::task::spawn_blocking(move || {
         // Get handle in blocking context
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
@@ -9268,7 +9386,10 @@ async fn create_mls_group(
 /// - Validates non-empty group name (channel name; squad display name is a separate
 ///   field validated in `squad_catalog::upsert_squad`) and at least one member
 /// - For each member npub, refreshes their latest device keypackage(s)
-/// - If any member fails refresh or has zero keypackages, aborts with a clear error
+/// - A member with zero keypackages after refresh, or whose KeyPackage the MLS engine cannot
+///   parse (e.g. a legacy event missing the MIP-00/02 encoding tag), is skipped rather than
+///   aborting the whole group. If *every* requested member ends up skipped, creation still
+///   fails with a per-member reason.
 /// - Creates the MLS group and persists metadata so it's immediately discoverable
 ///
 /// Note on device selection policy:
@@ -9276,9 +9397,13 @@ async fn create_mls_group(
 /// - For now we choose the first returned device as the member's device to add
 ///   This can be evolved to pick "newest" by fetched_at if exposed; UI can later allow device selection.
 ///
-/// Frontend will invoke this command via: invoke('create_group_chat', { groupName, memberIds })
+/// Frontend invokes this via: invoke('create_group_chat', { groupName, memberIds }) and gets
+/// back `{ groupId, skippedMembers }`. Skipped members are never sent squad-invite DMs.
 #[tauri::command]
-async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Result<String, String> {
+async fn create_group_chat(
+    group_name: String,
+    member_ids: Vec<String>,
+) -> Result<GroupChatCreated, String> {
     session::heartbeat();
     require_key_derivation_version_2()?;
     // Input validation
@@ -9287,12 +9412,17 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     - "Group name must not be empty": validation error. Frontend disables Create until non-empty; if surfaced, show inline status.
     - "Select at least one member to create a group": validation error. Frontend disables Create until at least one contact is selected; if surfaced, show inline status.
     - "Failed to refresh device keypackage for {npub}: {error}": hard failure for a specific member during preflight refresh. Abort creation and show this exact string in popup/toast and inline status.
-    - Members with zero device keypackages after refresh are skipped (they are not added to the group). If *all* selected members are missing keypackages, creation aborts with:
-      "No device keypackages found for any selected member: [npub1..., npub1...]".
-    - Any error bubbled from create_mls_group(...): engine/storage/network issues are propagated as user-facing strings. Surface them verbatim in the UI.
+    - Members with zero device keypackages after refresh, or whose KeyPackage the engine rejects,
+      are skipped rather than aborting: they show up in the response's `skippedMembers` instead of
+      blocking the rest of the group. If *every* selected member ends up skipped, creation aborts
+      with an error naming each npub and why.
+    - Any other error bubbled from group creation: engine/storage/network issues are propagated as
+      user-facing strings. Surface them verbatim in the UI.
 
     Success path
-    - Returns group_id (wire id used for relay 'h' tag filtering).
+    - Returns `{ groupId, skippedMembers }`: groupId is the wire id used for relay 'h' tag
+      filtering; skippedMembers lists members left out with their reason (backend diagnostics —
+      the UI maps skipped npubs through its own copy, it never renders these strings).
     - Backend also emits "mls_group_initial_sync" so the list view updates without restart.
     */
     let name = group_name.trim();
@@ -9311,7 +9441,7 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
 
     // For each member id (npub), refresh keypackages and pick one device to add
     let mut initial_member_devices: Vec<(String, String)> = Vec::with_capacity(member_ids.len());
-    let mut skipped_missing_keypackages: Vec<String> = Vec::new();
+    let mut preflight_skipped: Vec<mls::SkippedMember> = Vec::new();
 
     for npub in member_ids {
         // Attempt to refresh and fetch device keypackages for this contact
@@ -9323,7 +9453,7 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
         // Choose a device. Currently: first entry. Future: prefer newest by fetched_at if available.
         let maybe_first = devices.into_iter().next();
         if let Some((device_id, _kp_ref)) = maybe_first {
-            // Shape required by create_mls_group: (member_npub, device_id)
+            // Shape required by run_create_mls_group: (member_npub, device_id)
             initial_member_devices.push((npub, device_id));
         } else {
             // No keypackages for this member → skip them but keep going
@@ -9331,47 +9461,126 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
                 "[MLS][create_group_chat] Skipping member with no device keypackages: {}",
                 npub
             );
-            skipped_missing_keypackages.push(npub);
+            preflight_skipped.push(mls::SkippedMember {
+                npub,
+                reason: "no key package published".to_string(),
+                transient: false,
+            });
         }
     }
 
     // If everyone was skipped, abort with a clear error
     if initial_member_devices.is_empty() {
-        let list = if skipped_missing_keypackages.is_empty() {
-            "none".to_string()
-        } else {
-            format!("[{}]", skipped_missing_keypackages.join(", "))
-        };
         return Err(format!(
             "No device keypackages found for any selected member: {}",
-            list
+            skipped_members_detail(&preflight_skipped)
         ));
     }
 
     // Log any partially skipped members for troubleshooting
-    if !skipped_missing_keypackages.is_empty() {
+    if !preflight_skipped.is_empty() {
         eprintln!(
             "[MLS][create_group_chat] Proceeding without members missing keypackages: [{}]",
-            skipped_missing_keypackages.join(", ")
+            preflight_skipped
+                .iter()
+                .map(|s| s.npub.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
 
-    // Delegate to existing helper that persists metadata, publishes welcomes and emits UI events
-    // avatar_ref: None for now (out of scope for this subtask)
-    let result = create_mls_group(name.to_string(), None, initial_member_devices).await;
+    // Delegate to the shared helper that persists metadata, publishes welcomes and emits UI
+    // events; avatar_ref is None for now (out of scope for this subtask)
+    let outcome = run_create_mls_group(name.to_string(), None, initial_member_devices).await?;
 
-    if result.is_ok() {
-        tokio::spawn(async {
-            if let Err(err) = regenerate_device_keypackage(false).await {
-                eprintln!(
-                    "[MLS] Failed to regenerate device KeyPackage after group creation: {}",
-                    err
-                );
-            }
-        });
+    let skipped_members = merge_skipped_members(preflight_skipped, outcome.skipped);
+    for s in &skipped_members {
+        eprintln!(
+            "[MLS][create_group_chat] skipped {}: {}",
+            s.npub, s.reason
+        );
     }
 
-    result
+    tokio::spawn(async {
+        if let Err(err) = regenerate_device_keypackage(false).await {
+            eprintln!(
+                "[MLS] Failed to regenerate device KeyPackage after group creation: {}",
+                err
+            );
+        }
+    });
+
+    Ok(GroupChatCreated {
+        group_id: outcome.group_id,
+        skipped_members,
+    })
+}
+
+/// Format a skip list as `"[npub1 (reason1), npub2 (reason2)]"`, or `"none"` when empty — used
+/// in the "every selected member was skipped" error text.
+fn skipped_members_detail(skipped: &[mls::SkippedMember]) -> String {
+    if skipped.is_empty() {
+        return "none".to_string();
+    }
+    format!(
+        "[{}]",
+        skipped
+            .iter()
+            .map(|s| format!("{} ({})", s.npub, s.reason))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+#[cfg(test)]
+mod create_group_chat_helper_tests {
+    use super::{merge_skipped_members, skipped_members_detail};
+    use crate::mls::SkippedMember;
+
+    fn member(npub: &str, reason: &str) -> SkippedMember {
+        SkippedMember {
+            npub: npub.to_string(),
+            reason: reason.to_string(),
+            transient: false,
+        }
+    }
+
+    #[test]
+    fn merge_skipped_members_keeps_preflight_before_engine_skips() {
+        let preflight = vec![member("npub1", "no key package published")];
+        let engine = vec![member("npub2", "Missing required encoding tag")];
+        let merged = merge_skipped_members(preflight, engine);
+        assert_eq!(
+            merged.iter().map(|s| s.npub.as_str()).collect::<Vec<_>>(),
+            vec!["npub1", "npub2"]
+        );
+    }
+
+    #[test]
+    fn merge_skipped_members_handles_either_side_empty() {
+        assert!(merge_skipped_members(vec![], vec![]).is_empty());
+        let only_preflight = merge_skipped_members(vec![member("npub1", "reason")], vec![]);
+        assert_eq!(only_preflight.len(), 1);
+        let only_engine = merge_skipped_members(vec![], vec![member("npub1", "reason")]);
+        assert_eq!(only_engine.len(), 1);
+    }
+
+    #[test]
+    fn skipped_members_detail_formats_npub_and_reason() {
+        let skipped = vec![
+            member("npub1", "no key package published"),
+            member("npub2", "Missing required encoding tag"),
+        ];
+        assert_eq!(
+            skipped_members_detail(&skipped),
+            "[npub1 (no key package published), npub2 (Missing required encoding tag)]"
+        );
+    }
+
+    #[test]
+    fn skipped_members_detail_reports_none_when_empty() {
+        assert_eq!(skipped_members_detail(&[]), "none");
+    }
 }
 
 /// Add a member device to an MLS group
@@ -10104,8 +10313,11 @@ async fn leave_mls_group(group_id: String) -> Result<(), String> {
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-//// Refresh keypackages for a contact from the trusted relay set
-//// Fetches Kind::MlsKeyPackage from the contact, updates local index, and returns (device_id, keypackage_ref)
+/// Refresh keypackages for a contact from the trusted relay set.
+/// Fetches KeyPackage events (kind 30443, or legacy 443) from the contact, updates the local
+/// index, and returns (device_id, keypackage_ref) pairs, newest first. The 30443/443 pair
+/// from one dual publish collapses into a single entry; separate rotations do not, so a
+/// contact who has republished multiple times may still return more than one entry.
 #[tauri::command]
 async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, String)>, String> {
     // Resolve contact pubkey
@@ -10114,12 +10326,13 @@ async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, St
     // Access client
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
 
-    // Build filter: author(contact) + MlsKeyPackage
+    // Build filter: author(contact) + both KeyPackage kinds (dual publish). A generous
+    // limit tolerates a contact having several real devices, each visible under both
+    // kinds.
     let filter = Filter::new()
         .author(contact_pubkey)
-        .kind(Kind::MlsKeyPackage)
-        // Only need the newest KeyPackage
-        .limit(1);
+        .kinds(mls::mls_key_package_kinds())
+        .limit(50);
 
     // Fetch from the trusted relay set with a short timeout
     let mut events = client
@@ -10131,12 +10344,30 @@ async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, St
         .await
         .map_err(|e| e.to_string())?;
 
+    let mut raw_events: Vec<Event> = Vec::new();
+    while let Some(e) = events.next().await {
+        raw_events.push(e);
+    }
+
+    // A dual-published device yields two distinct event ids (30443 + 443) carrying identical
+    // content. Collapse those into one logical device, keeping the sort order intact —
+    // downstream callers (create_group_chat, invite_member_to_group) treat the first
+    // returned entry as the device to use, so an unordered dedupe (e.g. draining a HashMap)
+    // could hand back a stale duplicate instead of the newest one.
+    let mut seen_content: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut deduped: Vec<Event> = Vec::new();
+    for event in mls::sort_keypackage_candidates(raw_events) {
+        if seen_content.insert(event.content.clone()) {
+            deduped.push(event);
+        }
+    }
+
     // Prepare results and index entries
     let owner_pubkey_b32 = contact_pubkey.to_bech32().map_err(|e| e.to_string())?;
     let mut results: Vec<(String, String)> = Vec::new();
     let mut new_entries: Vec<serde_json::Value> = Vec::new();
 
-    while let Some(e) = events.next().await {
+    for e in deduped {
         // Use event id as synthetic device_id when not explicitly provided by remote
         let device_id = e.id.to_hex();
         let keypackage_ref = e.id.to_hex();
@@ -10689,7 +10920,6 @@ pub fn run() {
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,
-            create_mls_group,
             sync_mls_groups_now,
             list_mls_groups,
             get_mls_group_metadata,

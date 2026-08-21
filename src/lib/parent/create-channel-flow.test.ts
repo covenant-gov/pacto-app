@@ -7,6 +7,10 @@ vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn(),
 }));
 
+vi.mock('../squad/skipped-members', () => ({
+  reportSkippedMembers: vi.fn(),
+}));
+
 vi.mock('../parent-navbar', () => ({
   getAnnouncementsChannel: vi.fn(),
   loadMembersForParent: vi.fn(),
@@ -46,6 +50,7 @@ vi.mock('../../stores/navigation', () => ({
 }));
 
 import { createGroupChat, formatChannelInSquadMessage, sendDmMessage } from '../api/nostr';
+import { reportSkippedMembers } from '../squad/skipped-members';
 import { getAnnouncementsChannel, loadMembersForParent } from '../parent-navbar';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
 import { persistSquadPatch } from '../squad/squad-catalog';
@@ -113,7 +118,8 @@ describe('runCreateChannelInParent', () => {
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
 
-    vi.mocked(createGroupChat).mockReset().mockResolvedValue('g-new-channel');
+    vi.mocked(createGroupChat).mockReset().mockResolvedValue({ groupId: 'g-new-channel', skippedMembers: [] });
+    vi.mocked(reportSkippedMembers).mockReset();
     vi.mocked(formatChannelInSquadMessage).mockReset().mockReturnValue('channel-in-squad-payload');
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
     vi.mocked(publishSquadChannelsCatalog).mockReset().mockResolvedValue(true);
@@ -225,5 +231,30 @@ describe('runCreateChannelInParent', () => {
     const state = get(squads);
     expect(state[0]?.channels).toHaveLength(2);
     expect(state[0]?.channels.some((c) => c.groupId.startsWith('creating-'))).toBe(false);
+  });
+
+  it('reports skipped members and does not DM them', async () => {
+    vi.mocked(createGroupChat).mockResolvedValueOnce({
+      groupId: 'g-new-channel',
+      skippedMembers: [{ npub: 'npub-b', reason: 'Missing required encoding tag' }],
+    });
+
+    runCreateChannelInParent({
+      parent,
+      squadId: 'parent-1',
+      name: 'new-channel',
+      selectedNpubs: ['npub-a', 'npub-b'],
+      access: 'open',
+      onErrorBanner: vi.fn(),
+    });
+
+    await vi.waitFor(() => {
+      expect(reportSkippedMembers).toHaveBeenCalledWith([
+        { npub: 'npub-b', reason: 'Missing required encoding tag' },
+      ]);
+    });
+
+    expect(sendDmMessage).toHaveBeenCalledWith('npub-a', 'channel-in-squad-payload');
+    expect(sendDmMessage).not.toHaveBeenCalledWith('npub-b', expect.anything());
   });
 });

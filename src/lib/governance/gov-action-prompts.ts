@@ -74,7 +74,11 @@ export function deriveGovActionPrompts(params: {
   const crewGate = gateRequiresCrew(params.privilege);
   const captainGate = gateRequiresCaptain(params.privilege);
   const execGate = gatePermissionlessSigner(params.privilege);
-  const qmExecGate = gateQuartermasterExecute(params.privilege, params.mutinyMode);
+  const rosterFrozen = params.mutinyMode || isCrewOffboardActive(params.crewOffboard);
+  const rosterFreezeReason = isMutinyActive(params.mutinyStatus)
+    ? 'governance.gate.quartermasterLocked'
+    : 'governance.gate.rosterFrozenOffboard';
+  const qmExecGate = gateQuartermasterExecute(params.privilege, rosterFrozen, rosterFreezeReason);
   const execPrivilegeKey = execGate.enabled ? '' : execGate.reason;
   const qmPrivilegeKey = qmExecGate.enabled ? '' : qmExecGate.reason;
 

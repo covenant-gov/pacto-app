@@ -19,22 +19,26 @@
   } from '../../lib/commons/message-preview';
   import { commonsUserHasActiveBroadcast } from '../../stores/commons-ui';
 
-  /** Bump to force a reload after publishing. */
-  export let refreshKey = 0;
-  export let onBroadcast: () => void = () => {};
-  /** Notify parent (feed) after the active broadcast changes. */
-  export let onChanged: () => void = () => {};
+  interface Props {
+    /** Bump to force a reload after publishing. */
+    refreshKey?: number;
+    onBroadcast?: () => void;
+    /** Notify parent (feed) after the active broadcast changes. */
+    onChanged?: () => void;
+  }
 
-  let lastBroadcast: CommonsBroadcastLocalState | null = null;
-  let loading = true;
-  let loadedKey = -1;
-  let cancelling = false;
-  let messageExpanded = false;
+  let { refreshKey = 0, onBroadcast = () => {}, onChanged = () => {} }: Props = $props();
 
-  $: npub = $currentUser?.npub ?? '';
-  $: profile = npub ? $profiles[npub] : null;
-  $: avatarSrc = getProfileAvatarSrc(profile);
-  $: displayName = npub ? getProfileDisplayName(profile) : '';
+  let lastBroadcast: CommonsBroadcastLocalState | null = $state(null);
+  let loading = $state(true);
+  let loadedKey = $state(-1);
+  let cancelling = $state(false);
+  let messageExpanded = $state(false);
+
+  const npub = $derived($currentUser?.npub ?? '');
+  const profile = $derived(npub ? $profiles[npub] : null);
+  const avatarSrc = $derived(getProfileAvatarSrc(profile));
+  const displayName = $derived(npub ? getProfileDisplayName(profile) : '');
 
   const tFn = get(t);
 
@@ -52,10 +56,12 @@
     loading = false;
   }
 
-  $: if (refreshKey !== loadedKey && npub) {
-    loadedKey = refreshKey;
-    void load();
-  }
+  $effect(() => {
+    if (refreshKey !== loadedKey && npub) {
+      loadedKey = refreshKey;
+      void load();
+    }
+  });
 
   function relativeExpiry(expiresAt: number): string {
     const ms = expiresAt * 1000 - Date.now();
@@ -88,12 +94,15 @@
     onChanged();
   }
 
-  $: hasActive = !!lastBroadcast;
-  $: fullMessage = lastBroadcast?.message ?? '';
-  $: messageTruncated = isCommonsMessageTruncated(fullMessage, COMMONS_MESSAGE_PREVIEW_MAX);
-  $: previewMessage = messageTruncated
-    ? truncateCommonsMessage(fullMessage, COMMONS_MESSAGE_PREVIEW_MAX)
-    : fullMessage;
+  const hasActive = $derived(!!lastBroadcast);
+  const fullMessage = $derived.by(() => {
+    const broadcast = lastBroadcast;
+    return broadcast?.message ?? '';
+  });
+  const messageTruncated = $derived(isCommonsMessageTruncated(fullMessage, COMMONS_MESSAGE_PREVIEW_MAX));
+  const previewMessage = $derived(
+    messageTruncated ? truncateCommonsMessage(fullMessage, COMMONS_MESSAGE_PREVIEW_MAX) : fullMessage
+  );
 </script>
 
 <section class="commons-personal" aria-label={$t('commons.personal.ariaLabel')}>

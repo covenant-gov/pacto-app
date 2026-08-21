@@ -11,13 +11,13 @@
 
   type AuthStep = 'checking' | 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
 
-  let currentStep: AuthStep = 'checking';
-  let privateKey: string = '';
-  let firstPin: string = '';
-  let error: string | null = null;
-  let unlockInFlight = false;
+  let currentStep: AuthStep = $state('checking');
+  let privateKey: string = $state('');
+  let firstPin: string = $state('');
+  let error: string | null = $state(null);
+  let unlockInFlight = $state(false);
 
-  $: pinDigitCount = $appConfig.pinDigitCount;
+  let pinDigitCount = $derived($appConfig.pinDigitCount);
 
   // Check if user has stored encrypted key on mount, and confirm backend session state.
   onMount(async () => {

@@ -262,6 +262,15 @@ pub(crate) fn seed_pre_v28_schema(conn: &rusqlite::Connection) {
             metadata TEXT NOT NULL DEFAULT '{}',
             muted INTEGER NOT NULL DEFAULT 0
         );
+        CREATE TABLE mls_keypackages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_pubkey TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            keypackage_ref TEXT NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX idx_keypackages_owner ON mls_keypackages(owner_pubkey);
         CREATE TABLE events (
             id TEXT PRIMARY KEY,
             kind INTEGER NOT NULL,

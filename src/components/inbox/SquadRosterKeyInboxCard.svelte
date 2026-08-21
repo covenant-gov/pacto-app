@@ -9,11 +9,17 @@
   import { setPersonalAlertNeeded } from '../../stores/squad-hub-alerts';
   import { showToast } from '../../stores/toast';
 
-  export let parentId: string;
-  export let announcementsGroupId: string;
-  export let onComplete: () => void = () => {};
+  let {
+    parentId,
+    announcementsGroupId,
+    onComplete = () => {},
+  }: {
+    parentId: string;
+    announcementsGroupId: string;
+    onComplete?: () => void;
+  } = $props();
 
-  let busy: 'default' | 'new' | null = null;
+  let busy: 'default' | 'new' | null = $state(null);
 
   async function useDefault(): Promise<void> {
     if (busy) return;

@@ -3,7 +3,7 @@
   import { downloadAttachment, decodeBlurhash, saveAttachmentAs } from '../../lib/api/nostr';
   import { showToast } from '../../stores/toast';
   import { t } from 'svelte-i18n';
-  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import type { Attachment } from '../../stores/dm';
   import { attachmentKind, attachmentDisplayName, type AttachmentKind } from '../../lib/messaging/attachment-display';
   import ImageViewer from './ImageViewer.svelte';
@@ -13,15 +13,26 @@
   import saveIcon from '../../icons/download.svg';
   import { fetchGifBlobUrl, isKlipyMediaUrl } from '../../lib/api/klipy';
 
-  export let attachment: Attachment;
-  export let chatId: string = '';
-  export let messageId: string = '';
-  /** Sender identity, threaded straight into the image viewer's bottom-left bar. */
-  export let authorName: string = '';
-  export let avatarSrc: string = '';
-  export let timestamp: string = '';
+  interface Props {
+    attachment: Attachment;
+    chatId?: string;
+    messageId?: string;
+    /** Sender identity, threaded straight into the image viewer's bottom-left bar. */
+    authorName?: string;
+    avatarSrc?: string;
+    timestamp?: string;
+    onShowMessage?: (messageId: string) => void;
+  }
 
-  const dispatch = createEventDispatcher<{ showMessage: { messageId: string } }>();
+  let {
+    attachment,
+    chatId = '',
+    messageId = '',
+    authorName = '',
+    avatarSrc = '',
+    timestamp = '',
+    onShowMessage = () => {},
+  }: Props = $props();
 
   const KIND_LABEL_KEY: Record<AttachmentKind, string> = {
     image: 'messaging.attachment.image',
@@ -33,30 +44,35 @@
     file: 'messaging.attachment.file',
   };
 
-  $: kind = attachmentKind(attachment.extension, attachment.img_meta != null);
-  $: isImage = kind === 'image';
-  $: isVideo = kind === 'video';
-  $: isAudio = kind === 'audio';
+  let kind = $derived(attachmentKind(attachment.extension, attachment.img_meta != null));
+  let isImage = $derived(kind === 'image');
+  let isVideo = $derived(kind === 'video');
+  let isAudio = $derived(kind === 'audio');
   /** Image and video share the poster-tile surface; audio and documents are rows. */
-  $: isTile = isImage || isVideo;
-  $: displayName = attachmentDisplayName(attachment, (key) => $t(key));
-  $: kindLabel = $t(KIND_LABEL_KEY[kind]);
+  let isTile = $derived(isImage || isVideo);
+  let displayName = $derived(attachmentDisplayName(attachment, (key) => $t(key)));
+  let kindLabel = $derived($t(KIND_LABEL_KEY[kind]));
 
   /** Klipy GIFs arrive as a plaintext provider URL — empty `key`/`nonce` marks
    * "do not decrypt" (see `message::klipy_gif_message`). Rendering fetches
    * through the Rust egress chokepoint only when the URL's host is on
    * Klipy's CDN allowlist; the authoritative check lives in Rust
    * (`klipy_fetch_media`), this is a client-side convenience gate. */
-  $: isKlipyGif = attachment.key === '' && attachment.nonce === '' && isKlipyMediaUrl(attachment.url);
+  let isKlipyGif = $derived(attachment.key === '' && attachment.nonce === '' && isKlipyMediaUrl(attachment.url));
 
-  let klipyBlobSrc: string | undefined;
-  let klipyUnavailable = false;
-  let klipyFetchedForUrl: string | undefined;
+  let klipyBlobSrc: string | undefined = $state();
+  let klipyUnavailable = $state(false);
+  let klipyFetchedForUrl: string | undefined = $state();
 
-  $: if (isKlipyGif && attachment.url !== klipyFetchedForUrl) {
-    klipyFetchedForUrl = attachment.url;
-    void loadKlipyMedia(attachment.url);
-  }
+  $effect(() => {
+    if (isKlipyGif && attachment.url !== klipyFetchedForUrl) {
+      const url = attachment.url;
+      klipyFetchedForUrl = url;
+      // The fetch reads/writes klipyBlobSrc; untrack so those don't become
+      // hidden effect dependencies alongside the url sentinel above.
+      untrack(() => void loadKlipyMedia(url));
+    }
+  });
 
   /** Fetches the GIF into memory and renders it as a blob URL. Never written to
    * disk, per Klipy's no-retain terms. A fetch failure — e.g. a purged slug —
@@ -78,50 +94,57 @@
     if (klipyBlobSrc) URL.revokeObjectURL(klipyBlobSrc);
   });
 
+  let viewerOpen = $state(false);
+  let downloading = $state(false);
+  let blurhashRequested = $state(false);
+  let savingAs = $state(false);
+  /** Set once the user asks to play; the element mounts as soon as the file is local. */
+  let playRequested = $state(false);
+
   /** Decrypted local file (`download_attachment`), or the in-memory Klipy
    * blob once fetched — never a decrypted file for a Klipy GIF. */
-  $: localSrc = isKlipyGif
-    ? klipyBlobSrc
-    : attachment.downloaded && attachment.path
-      ? toDisplaySrc(attachment.path)
-      : undefined;
-  $: onDisk = localSrc != null;
-  $: busy = downloading || attachment.downloading === true;
+  let localSrc = $derived(
+    isKlipyGif
+      ? klipyBlobSrc
+      : attachment.downloaded && attachment.path
+        ? toDisplaySrc(attachment.path)
+        : undefined,
+  );
+  let onDisk = $derived(localSrc != null);
+  let busy = $derived(downloading || attachment.downloading === true);
 
   /** Blurred stand-in shown until the real file is on disk. */
-  let blurSrc: string | undefined;
-  $: posterSrc = (isImage ? localSrc : undefined) ?? blurSrc;
-
-  let viewerOpen = false;
-  let downloading = false;
-  let blurhashRequested = false;
-  let savingAs = false;
-  /** Set once the user asks to play; the element mounts as soon as the file is local. */
-  let playRequested = false;
+  let blurSrc: string | undefined = $state();
+  let posterSrc = $derived((isImage ? localSrc : undefined) ?? blurSrc);
 
   // The blob on the media host is ciphertext, so there is nothing to show until
   // the backend has fetched and decrypted it. Until then, fall back to the
   // blurhash carried in the message itself. Video needs it even once the file
   // is local, because a video element is not a poster.
-  $: if (isTile && posterSrc == null && !blurhashRequested && attachment.img_meta?.blurhash) {
-    blurhashRequested = true;
-    void loadBlurhash(attachment.img_meta.blurhash, attachment.img_meta.width, attachment.img_meta.height);
-  }
+  $effect(() => {
+    if (isTile && posterSrc == null && !blurhashRequested && attachment.img_meta?.blurhash) {
+      blurhashRequested = true;
+      void loadBlurhash(attachment.img_meta.blurhash, attachment.img_meta.width, attachment.img_meta.height);
+    }
+  });
 
   /** Real dimensions when the sender supplied them, so the tile reserves the right box. */
-  $: tileAspect =
+  let tileAspect = $derived(
     attachment.img_meta && attachment.img_meta.width > 0 && attachment.img_meta.height > 0
       ? `${attachment.img_meta.width} / ${attachment.img_meta.height}`
-      : '4 / 3';
+      : '4 / 3',
+  );
 
-  $: sizeLabel = formatBytes(attachment.size);
+  let sizeLabel = $derived(formatBytes(attachment.size));
 
   /** Exactly one accessible name per tile state: fetch, play, or view. */
-  $: tileActionLabel = !onDisk
-    ? $t('messaging.attachment.download', { values: { name: displayName } })
-    : isVideo
-      ? $t('messaging.attachment.play', { values: { name: displayName } })
-      : $t('messaging.attachment.open', { values: { name: displayName } });
+  let tileActionLabel = $derived(
+    !onDisk
+      ? $t('messaging.attachment.download', { values: { name: displayName } })
+      : isVideo
+        ? $t('messaging.attachment.play', { values: { name: displayName } })
+        : $t('messaging.attachment.open', { values: { name: displayName } }),
+  );
 
   async function loadBlurhash(hash: string, width: number, height: number) {
     try {
@@ -213,10 +236,6 @@
       savingAs = false;
     }
   }
-
-  function forwardShowMessage(event: CustomEvent<{ messageId: string }>) {
-    dispatch('showMessage', event.detail);
-  }
 </script>
 
 <div class="attachment" class:tile-layout={isTile}>
@@ -247,7 +266,7 @@
         {/if}
       {:else}
       {#if isVideo && playRequested && localSrc}
-        <!-- svelte-ignore a11y-media-has-caption -->
+        <!-- svelte-ignore a11y_media_has_caption -->
         <video
           class="tile-media"
           src={localSrc}
@@ -372,7 +391,7 @@
   {chatId}
   {messageId}
   attachmentId={attachment.id}
-  on:showMessage={forwardShowMessage}
+  {onShowMessage}
 />
 
 <style>

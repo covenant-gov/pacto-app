@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import Message from './Message.svelte';
   import InviteCard from './InviteCard.svelte';
   import WalletTxRequestCard from '../wallet/WalletTxRequestCard.svelte';
@@ -39,43 +38,66 @@
   import { reactToMessage } from '../../lib/api/nostr';
   import { clearPendingReactions } from '../../lib/messaging/reactions';
 
-  export let msg: DmMessage;
-  export let npub: string;
-  export let contactDisplayName: string;
-  export let fulfilledWalletRequestIds: ReadonlySet<string>;
-  export let acceptingSquadInviteId: string | null = null;
-  export let acceptingChannelInSquadId: string | null = null;
-  export let acceptingWalletPeerInfoRequestId: string | null = null;
-  export let onAcceptSquadInvite: (msg: DmMessage, groupId: string) => void = () => {};
-  export let onAcceptChannelInSquad: (
-    msg: DmMessage,
-    payload: { channelGroupId: string; announcementsGroupId: string; channelName: string }
-  ) => void = () => {};
-  export let onDeclineSquad: (msg: DmMessage) => void = () => {};
-  export let onDeclineChannelInSquad: (msg: DmMessage) => void = () => {};
-  export let onAcceptWalletPeerInfoRequest: (
-    msg: DmMessage,
-    payload: WalletPeerInfoRequestPayload
-  ) => void | Promise<void> = () => {};
-  export let onDeclineWalletPeerInfoRequest: (
-    msg: DmMessage,
-    payload: WalletPeerInfoRequestPayload
-  ) => void | Promise<void> = () => {};
-  export let onOpenInviterChat: ((inviterNpub: string) => void) | undefined = undefined;
-  /** Nest under previous same-author plain message (hide avatar/header). */
-  export let compact: boolean = false;
+  interface Props {
+    msg: DmMessage;
+    npub: string;
+    contactDisplayName: string;
+    fulfilledWalletRequestIds: ReadonlySet<string>;
+    acceptingSquadInviteId?: string | null;
+    acceptingChannelInSquadId?: string | null;
+    acceptingWalletPeerInfoRequestId?: string | null;
+    onAcceptSquadInvite?: (msg: DmMessage, groupId: string) => void;
+    onAcceptChannelInSquad?: (
+      msg: DmMessage,
+      payload: { channelGroupId: string; announcementsGroupId: string; channelName: string }
+    ) => void;
+    onDeclineSquad?: (msg: DmMessage) => void;
+    onDeclineChannelInSquad?: (msg: DmMessage) => void;
+    onAcceptWalletPeerInfoRequest?: (
+      msg: DmMessage,
+      payload: WalletPeerInfoRequestPayload
+    ) => void | Promise<void>;
+    onDeclineWalletPeerInfoRequest?: (
+      msg: DmMessage,
+      payload: WalletPeerInfoRequestPayload
+    ) => void | Promise<void>;
+    onOpenInviterChat?: (inviterNpub: string) => void;
+    onReply?: (messageId: string) => void;
+    /** Nest under previous same-author plain message (hide avatar/header). */
+    compact?: boolean;
+  }
 
-  $: presentation = resolveDmMessagePresentation(msg);
-  $: inviterNpubForCard = isInvitePresentation(presentation) ? inviteInviterNpub(msg, npub) : null;
-  $: inviterDisplay = isInvitePresentation(presentation)
-    ? getInviterDisplayFromNpub(inviterNpubForCard, $profiles)
-    : { inviterName: '', inviterAvatarSrc: null };
-  $: openInviter =
+  let {
+    msg,
+    npub,
+    contactDisplayName,
+    fulfilledWalletRequestIds,
+    acceptingSquadInviteId = null,
+    acceptingChannelInSquadId = null,
+    acceptingWalletPeerInfoRequestId = null,
+    onAcceptSquadInvite = () => {},
+    onAcceptChannelInSquad = () => {},
+    onDeclineSquad = () => {},
+    onDeclineChannelInSquad = () => {},
+    onAcceptWalletPeerInfoRequest = () => {},
+    onDeclineWalletPeerInfoRequest = () => {},
+    onOpenInviterChat,
+    onReply = () => {},
+    compact = false,
+  }: Props = $props();
+
+  let presentation = $derived(resolveDmMessagePresentation(msg));
+  let inviterNpubForCard = $derived(isInvitePresentation(presentation) ? inviteInviterNpub(msg, npub) : null);
+  let inviterDisplay = $derived(
+    isInvitePresentation(presentation)
+      ? getInviterDisplayFromNpub(inviterNpubForCard, $profiles)
+      : { inviterName: '', inviterAvatarSrc: null }
+  );
+  let openInviter = $derived(
     !msg.mine && inviterNpubForCard && inviterNpubForCard !== npub && onOpenInviterChat
       ? () => onOpenInviterChat!(inviterNpubForCard!)
-      : undefined;
-
-  const dispatch = createEventDispatcher<{ reply: { messageId: string } }>();
+      : undefined
+  );
 
   async function onReact(messageId: string, emoji: string) {
     try {
@@ -92,10 +114,6 @@
       return;
     }
     navigator.clipboard.writeText(text).catch(() => showToast('Could not copy message'));
-  }
-
-  function onReply(messageId: string) {
-    dispatch('reply', { messageId });
   }
 </script>
 

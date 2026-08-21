@@ -13,23 +13,27 @@
   /** Enable when squad key rotation backend is wired. */
   const ROTATE_SQUAD_KEY_ENABLED = false;
 
-  export let announcementsGroupId: string | null = null;
-  export let parentId = '';
-  export let squadMemberEvmByNpub: Record<string, string> = {};
+  interface Props {
+    announcementsGroupId?: string | null;
+    parentId?: string;
+    squadMemberEvmByNpub?: Record<string, string>;
+  }
 
-  let rotateModalOpen = false;
-  let rosterKeyNeeded: boolean | null = null;
+  let { announcementsGroupId = null, parentId = '', squadMemberEvmByNpub = {} }: Props = $props();
 
-  $: myNpub = $currentUser?.npub ?? '';
-  $: myRosterEvmRaw = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
+  let rotateModalOpen = $state(false);
+  let rosterKeyNeeded = $state<boolean | null>(null);
+
+  const myNpub = $derived($currentUser?.npub ?? '');
+  const myRosterEvmRaw = $derived(myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '');
   /** Hide orphan auto-share until personal-alerts bind. */
-  $: myRosterEvm = rosterKeyNeeded === true ? '' : myRosterEvmRaw;
-  $: void $squadStateSyncRequestInFlightRevision;
-  $: syncRequesting = announcementsGroupId
-    ? isSquadStateSyncInFlight(announcementsGroupId)
-    : false;
+  const myRosterEvm = $derived(rosterKeyNeeded === true ? '' : myRosterEvmRaw);
+  const syncRequesting = $derived.by(() => {
+    void $squadStateSyncRequestInFlightRevision;
+    return announcementsGroupId ? isSquadStateSyncInFlight(announcementsGroupId) : false;
+  });
 
-  let copiedRosterEvm = false;
+  let copiedRosterEvm = $state(false);
 
   async function copyRosterEvm() {
     if (!myRosterEvm) return;

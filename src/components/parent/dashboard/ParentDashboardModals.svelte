@@ -15,113 +15,178 @@
   import type { PactoGovCaptainOption, PactoGovDeployComplete } from '../../../lib/governance/start-pacto-gov-deploy';
   import type { CombinedGovSponsorDeployComplete } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
 
-  export let parentId: string;
-  export let announcementsGroupId: string | null = null;
-  export let treasurySafeCount = 0;
-  export let hasSponsor = false;
-  export let hasPactoGov = false;
-  export let hasSquadAdmin = false;
-  export let warGameStack = false;
-  export let squadAdminProxy = '';
-  export let squadAdminNetwork: SupportedChainId = DEFAULT_CHAIN_ID;
-  /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
-  export let squadNetwork: SupportedChainId | null = null;
-  /** Sponsor clone address when sponsor infra is deployed. */
-  export let sponsorAddress = '';
-  /** Pacto Gov reference (Safe / proxy / top hat) when deployed. */
-  export let pactoGovAddress = '';
-  export let memberEvmOptions: { address: string; label: string }[] = [];
-  export let captainMemberOptions: PactoGovCaptainOption[] = [];
+  interface Props {
+    parentId: string;
+    announcementsGroupId?: string | null;
+    treasurySafeCount?: number;
+    hasSponsor?: boolean;
+    hasPactoGov?: boolean;
+    hasSquadAdmin?: boolean;
+    warGameStack?: boolean;
+    squadAdminProxy?: string;
+    squadAdminNetwork?: SupportedChainId;
+    /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
+    squadNetwork?: SupportedChainId | null;
+    /** Sponsor clone address when sponsor infra is deployed. */
+    sponsorAddress?: string;
+    /** Pacto Gov reference (Safe / proxy / top hat) when deployed. */
+    pactoGovAddress?: string;
+    memberEvmOptions?: { address: string; label: string }[];
+    captainMemberOptions?: PactoGovCaptainOption[];
 
-  export let showDeploySafeModal = false;
-  export let showLaunchpad = false;
-  export let showPactoGovDeploy = false;
-  export let showGovAndSponsorDeploy = false;
-  export let showExtSponsorDeploy = false;
-  export let showSquadAdminDeploy = false;
-  export let showSquadRolesModal = false;
-  export let showSetSafeModal = false;
-  /** When set, combined wizard finishes hats sponsor only. */
-  export let existingTopHatId = '';
-  export let quartermaster = '';
+    showDeploySafeModal?: boolean;
+    showLaunchpad?: boolean;
+    showPactoGovDeploy?: boolean;
+    showGovAndSponsorDeploy?: boolean;
+    showExtSponsorDeploy?: boolean;
+    showSquadAdminDeploy?: boolean;
+    showSquadRolesModal?: boolean;
+    showSetSafeModal?: boolean;
+    /** When set, combined wizard finishes hats sponsor only. */
+    existingTopHatId?: string;
+    quartermaster?: string;
 
-  export let setSafeInput = '';
-  export let setSafeChain: SupportedChainId = DEFAULT_CHAIN_ID;
-  export let setSafeLabel = '';
-  export let setSafeError = '';
-  export let setSafeSaving = false;
+    setSafeInput?: string;
+    setSafeChain?: SupportedChainId;
+    setSafeLabel?: string;
+    setSafeError?: string;
+    setSafeSaving?: boolean;
 
-  export let onDeploySafeSuccess: (params: {
-    safeAddress: string;
-    chain: string;
-    label: string;
-    entryId: string;
-    txHash?: string;
-  }) => Promise<void> = async () => {};
-  export let onPactoGovComplete: (out: PactoGovDeployComplete) => Promise<void> = async () => {};
-  export let onGovAndSponsorComplete: (out: CombinedGovSponsorDeployComplete) => Promise<void> =
-    async () => {};
-  export let onSquadAdminComplete: (out: {
-    chain: string;
-    squadAdminProxy: string;
-    providerPayload: string;
-    infraRowId: string;
-  }) => Promise<void> = async () => {};
-  export let onExtSponsorComplete: (out: {
-    txHash: string;
-    chain: string;
-    sponsorAddress: string;
-    providerPayload: string;
-    infraRowId: string;
-  }) => Promise<void> = async () => {};
-  export let onConfirmSetSafe: () => void | Promise<void> = () => {};
-  export let onCloseSetSafe: () => void = () => {};
-  export let onCloseDeploySafe: () => void = () => {};
-  export let onCloseLaunchpad: () => void = () => {};
-  export let onClosePactoGovDeploy: () => void = () => {};
-  export let onCloseGovAndSponsorDeploy: () => void = () => {};
-  export let onCloseExtSponsorDeploy: () => void = () => {};
-  export let onCloseSquadAdminDeploy: () => void = () => {};
-  export let onCloseSquadRolesModal: () => void = () => {};
-  export let onDeploySquadAdmin: () => void = () => {};
-  export let onDeployPactoGov: () => void = () => {};
-  export let onDeployGovAndSponsor: () => void = () => {};
-  export let onDeployExtSponsor: () => void = () => {};
+    onDeploySafeSuccess?: (params: {
+      safeAddress: string;
+      chain: string;
+      label: string;
+      entryId: string;
+      txHash?: string;
+    }) => Promise<void>;
+    onPactoGovComplete?: (out: PactoGovDeployComplete) => Promise<void>;
+    onGovAndSponsorComplete?: (out: CombinedGovSponsorDeployComplete) => Promise<void>;
+    onSquadAdminComplete?: (out: {
+      chain: string;
+      squadAdminProxy: string;
+      providerPayload: string;
+      infraRowId: string;
+    }) => Promise<void>;
+    onExtSponsorComplete?: (out: {
+      txHash: string;
+      chain: string;
+      sponsorAddress: string;
+      providerPayload: string;
+      infraRowId: string;
+    }) => Promise<void>;
+    onConfirmSetSafe?: () => void | Promise<void>;
+    onCloseSetSafe?: () => void;
+    onCloseDeploySafe?: () => void;
+    onCloseLaunchpad?: () => void;
+    onClosePactoGovDeploy?: () => void;
+    onCloseGovAndSponsorDeploy?: () => void;
+    onCloseExtSponsorDeploy?: () => void;
+    onCloseSquadAdminDeploy?: () => void;
+    onCloseSquadRolesModal?: () => void;
+    onDeploySquadAdmin?: () => void;
+    onDeployPactoGov?: () => void;
+    onDeployGovAndSponsor?: () => void;
+    onDeployExtSponsor?: () => void;
+  }
 
-  let DeploySafeModalComponent: Awaited<ReturnType<typeof loadDeploySafeModal>> | null = null;
-  let DeploySquadAdminComponent: Awaited<ReturnType<typeof loadDeploySquadAdminModal>> | null = null;
-  let DeployPactoGovModalComponent: Awaited<ReturnType<typeof loadDeployPactoGovModal>> | null = null;
-  let DeployGovAndSponsorComponent: Awaited<
-    ReturnType<typeof loadDeployPactoGovAndSponsorModal>
-  > | null = null;
-  let DeployExtSponsorComponent: Awaited<ReturnType<typeof loadDeploySquadSponsorExtModal>> | null =
-    null;
+  let {
+    parentId,
+    announcementsGroupId = null,
+    treasurySafeCount = 0,
+    hasSponsor = false,
+    hasPactoGov = false,
+    hasSquadAdmin = false,
+    warGameStack = false,
+    squadAdminProxy = '',
+    squadAdminNetwork = DEFAULT_CHAIN_ID,
+    squadNetwork = null,
+    sponsorAddress = '',
+    pactoGovAddress = '',
+    memberEvmOptions = [],
+    captainMemberOptions = [],
 
-  $: if (showDeploySafeModal && !DeploySafeModalComponent) {
-    void loadDeploySafeModal().then((c) => {
-      DeploySafeModalComponent = c;
-    });
-  }
-  $: if (showPactoGovDeploy && !DeployPactoGovModalComponent) {
-    void loadDeployPactoGovModal().then((c) => {
-      DeployPactoGovModalComponent = c;
-    });
-  }
-  $: if (showGovAndSponsorDeploy && !DeployGovAndSponsorComponent) {
-    void loadDeployPactoGovAndSponsorModal().then((c) => {
-      DeployGovAndSponsorComponent = c;
-    });
-  }
-  $: if (showSquadAdminDeploy && !DeploySquadAdminComponent) {
-    void loadDeploySquadAdminModal().then((c) => {
-      DeploySquadAdminComponent = c;
-    });
-  }
-  $: if (showExtSponsorDeploy && !DeployExtSponsorComponent) {
-    void loadDeploySquadSponsorExtModal().then((c) => {
-      DeployExtSponsorComponent = c;
-    });
-  }
+    showDeploySafeModal = $bindable(false),
+    showLaunchpad = $bindable(false),
+    showPactoGovDeploy = $bindable(false),
+    showGovAndSponsorDeploy = $bindable(false),
+    showExtSponsorDeploy = $bindable(false),
+    showSquadAdminDeploy = $bindable(false),
+    showSquadRolesModal = $bindable(false),
+    showSetSafeModal = $bindable(false),
+    existingTopHatId = '',
+    quartermaster = '',
+
+    setSafeInput = $bindable(''),
+    setSafeChain = $bindable(DEFAULT_CHAIN_ID),
+    setSafeLabel = $bindable(''),
+    setSafeError = $bindable(''),
+    setSafeSaving = $bindable(false),
+
+    onDeploySafeSuccess = async () => {},
+    onPactoGovComplete = async () => {},
+    onGovAndSponsorComplete = async () => {},
+    onSquadAdminComplete = async () => {},
+    onExtSponsorComplete = async () => {},
+    onConfirmSetSafe = () => {},
+    onCloseSetSafe = () => {},
+    onCloseDeploySafe = () => {},
+    onCloseLaunchpad = () => {},
+    onClosePactoGovDeploy = () => {},
+    onCloseGovAndSponsorDeploy = () => {},
+    onCloseExtSponsorDeploy = () => {},
+    onCloseSquadAdminDeploy = () => {},
+    onCloseSquadRolesModal = () => {},
+    onDeploySquadAdmin = () => {},
+    onDeployPactoGov = () => {},
+    onDeployGovAndSponsor = () => {},
+    onDeployExtSponsor = () => {},
+  }: Props = $props();
+
+  let DeploySafeModalComponent = $state<Awaited<ReturnType<typeof loadDeploySafeModal>> | null>(null);
+  let DeploySquadAdminComponent = $state<Awaited<ReturnType<typeof loadDeploySquadAdminModal>> | null>(null);
+  let DeployPactoGovModalComponent = $state<Awaited<ReturnType<typeof loadDeployPactoGovModal>> | null>(null);
+  let DeployGovAndSponsorComponent = $state<
+    Awaited<ReturnType<typeof loadDeployPactoGovAndSponsorModal>> | null
+  >(null);
+  let DeployExtSponsorComponent = $state<Awaited<ReturnType<typeof loadDeploySquadSponsorExtModal>> | null>(
+    null,
+  );
+
+  $effect(() => {
+    if (showDeploySafeModal && !DeploySafeModalComponent) {
+      void loadDeploySafeModal().then((c) => {
+        DeploySafeModalComponent = c;
+      });
+    }
+  });
+  $effect(() => {
+    if (showPactoGovDeploy && !DeployPactoGovModalComponent) {
+      void loadDeployPactoGovModal().then((c) => {
+        DeployPactoGovModalComponent = c;
+      });
+    }
+  });
+  $effect(() => {
+    if (showGovAndSponsorDeploy && !DeployGovAndSponsorComponent) {
+      void loadDeployPactoGovAndSponsorModal().then((c) => {
+        DeployGovAndSponsorComponent = c;
+      });
+    }
+  });
+  $effect(() => {
+    if (showSquadAdminDeploy && !DeploySquadAdminComponent) {
+      void loadDeploySquadAdminModal().then((c) => {
+        DeploySquadAdminComponent = c;
+      });
+    }
+  });
+  $effect(() => {
+    if (showExtSponsorDeploy && !DeployExtSponsorComponent) {
+      void loadDeploySquadSponsorExtModal().then((c) => {
+        DeployExtSponsorComponent = c;
+      });
+    }
+  });
 </script>
 
 {#if showDeploySafeModal && parentId}

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import backIcon from '../../icons/chevron-double-left.svg';
   import { setSettingsSectionCollapsed, settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
 
-  export let onBack: () => void;
+  let { onBack, children }: { onBack: () => void; children: Snippet } = $props();
 
   const SECTION_LINKS = [
     { id: 'settings-profile', labelKey: 'nav.settings.sections.profile' },
@@ -18,7 +18,7 @@
   const SCROLL_MARKER_OFFSET_PX = 48;
   const SCROLL_BOTTOM_TOLERANCE_PX = 8;
 
-  let activeSectionId: (typeof SECTION_LINKS)[number]['id'] = SECTION_LINKS[0].id;
+  let activeSectionId: (typeof SECTION_LINKS)[number]['id'] = $state(SECTION_LINKS[0].id);
   let settingsMainEl: HTMLElement | undefined;
 
   function openSection(sectionId: (typeof SECTION_LINKS)[number]['id']) {
@@ -109,7 +109,7 @@
 
     <div class="settings-main" bind:this={settingsMainEl}>
       <div class="settings-sections">
-        <slot />
+        {@render children()}
       </div>
     </div>
   </div>

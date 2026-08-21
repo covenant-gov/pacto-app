@@ -11,21 +11,33 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let proposal: TreasuryProposalDto;
-  export let hasVoted: boolean | undefined = undefined;
-  export let voterAddress = '';
-  export let votePending = false;
-  export let voteDisabledReason = '';
-  export let onVoteYea: (() => void) | undefined = undefined;
-  export let onVoteNay: (() => void) | undefined = undefined;
+  interface Props {
+    proposal: TreasuryProposalDto;
+    hasVoted?: boolean | undefined;
+    voterAddress?: string;
+    votePending?: boolean;
+    voteDisabledReason?: string;
+    onVoteYea?: () => void;
+    onVoteNay?: () => void;
+  }
+
+  let {
+    proposal,
+    hasVoted = undefined,
+    voterAddress = '',
+    votePending = false,
+    voteDisabledReason = '',
+    onVoteYea = undefined,
+    onVoteNay = undefined,
+  }: Props = $props();
 
   const tFn = get(t);
 
-  $: voteState = resolveProposalVoteUiState({ proposal, hasVoted, voterAddress });
-  $: isActive = isTreasuryProposalActive(proposal.status);
-  $: isPast = isTreasuryProposalPast(proposal.status);
-  $: outcome = treasuryProposalOutcomeLabel(proposal.status);
-  $: voteLocked = !!voteDisabledReason;
+  const voteState = $derived(resolveProposalVoteUiState({ proposal, hasVoted, voterAddress }));
+  const isActive = $derived(isTreasuryProposalActive(proposal.status));
+  const isPast = $derived(isTreasuryProposalPast(proposal.status));
+  const outcome = $derived(treasuryProposalOutcomeLabel(proposal.status));
+  const voteLocked = $derived(!!voteDisabledReason);
 
   function voteStateLabel(state: ProposalVoteUiState): string {
     switch (state) {

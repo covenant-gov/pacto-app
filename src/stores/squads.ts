@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import type { TreasurySafeEntry } from '../lib/treasury/treasury-safes';
 import type { SquadInfraDto } from '../lib/governance/api';
+import type { SupportedChainId } from '../lib/wallet/chains';
 import { ensureDefaultHubChannelRows } from '../lib/squad/hub-channel-rows';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
@@ -114,6 +115,16 @@ export function removeParentCreatingAnnouncements(id: string): void {
 
 export const parentCreateErrorById = writable<Record<string, string>>({});
 export const parentPendingCreateMembers = writable<Record<string, string[]>>({});
+
+/** Create-time choices a retry has to replay so a retried squad is not a lesser squad. */
+export interface ParentPendingCreateOptions {
+  network?: SupportedChainId;
+}
+
+export const parentPendingCreateOptions = writable<Record<string, ParentPendingCreateOptions>>({});
+
+/** Parent ids with a create/retry attempt in flight; gates Retry re-entry and Discard. */
+export const parentRetryingCreateIds = writable<Set<string>>(new Set());
 
 export const ungroupedChannels = writable<Channel[]>([]);
 

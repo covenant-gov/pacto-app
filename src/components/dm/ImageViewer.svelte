@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { onDestroy, createEventDispatcher } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { revealInFolder, canRevealInFolder } from '../../lib/utils/reveal-in-folder';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { saveAttachmentAs } from '../../lib/api/nostr';
@@ -9,36 +9,104 @@
   import rotateIcon from '../../icons/rotate.svg';
   import downloadIcon from '../../icons/download.svg';
 
-  export let open = false;
-  export let src: string | undefined = undefined;
-  export let alt = '';
-  export let localPath: string | undefined = undefined;
-  /** Sender identity for the bottom-left bar; omitted entirely when no author name is given. */
-  export let authorName: string | undefined = undefined;
-  export let avatarSrc: string | undefined = undefined;
-  export let timestamp: string | undefined = undefined;
-  /** Needed for the download/save-as control and the "Show Message" menu action. */
-  export let chatId: string | undefined = undefined;
-  export let messageId: string | undefined = undefined;
-  export let attachmentId: string | undefined = undefined;
+  interface Props {
+    open?: boolean;
+    src?: string;
+    alt?: string;
+    localPath?: string;
+    /** Sender identity for the bottom-left bar; omitted entirely when no author name is given. */
+    authorName?: string;
+    avatarSrc?: string;
+    timestamp?: string;
+    /** Needed for the download/save-as control and the "Show Message" menu action. */
+    chatId?: string;
+    messageId?: string;
+    attachmentId?: string;
+    onShowMessage?: (messageId: string) => void;
+  }
 
-  const dispatch = createEventDispatcher<{ showMessage: { messageId: string } }>();
+  let {
+    open = $bindable(false),
+    src = undefined,
+    alt = '',
+    localPath = undefined,
+    authorName = undefined,
+    avatarSrc = undefined,
+    timestamp = undefined,
+    chatId = undefined,
+    messageId = undefined,
+    attachmentId = undefined,
+    onShowMessage = () => {},
+  }: Props = $props();
 
-  let scale = 1;
-  let translateX = 0;
-  let translateY = 0;
-  let rotation = 0;
-  let dragging = false;
+  let scale = $state(1);
+  let translateX = $state(0);
+  let translateY = $state(0);
+  let rotation = $state(0);
+  let dragging = $state(false);
   let startX = 0;
   let startY = 0;
   let startTranslateX = 0;
   let startTranslateY = 0;
-  let backdropEl: HTMLDivElement | undefined;
-  let menuOpen = false;
-  let menuWrapperEl: HTMLDivElement | undefined;
-  let savingAs = false;
+  let backdropEl: HTMLDivElement | undefined = $state();
+  let menuOpen = $state(false);
+  let menuWrapperEl: HTMLDivElement | undefined = $state();
+  let savingAs = $state(false);
 
-  $: if (!open) resetView();
+  $effect(() => {
+    if (!open) resetView();
+  });
+
+  const FOCUSABLE_SELECTOR =
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  /** Traps Tab within the dialog while open; restores focus to whatever was
+   * focused before the viewer opened once it closes or unmounts. */
+  $effect(() => {
+    if (!open || !backdropEl) return;
+    const dialogEl = backdropEl;
+    const previouslyFocused = document.activeElement;
+
+    function focusables(): HTMLElement[] {
+      return Array.from(dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+        (el) => !el.hasAttribute('disabled'),
+      );
+    }
+
+    const list = focusables();
+    if (list.length > 0) {
+      list[0].focus();
+    } else {
+      dialogEl.focus();
+    }
+
+    function onDocumentKeydown(e: KeyboardEvent) {
+      if (e.key !== 'Tab') return;
+      const nodes = focusables();
+      if (nodes.length === 0) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || active === dialogEl) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener('keydown', onDocumentKeydown, true);
+
+    return () => {
+      document.removeEventListener('keydown', onDocumentKeydown, true);
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
+    };
+  });
 
   function resetView() {
     scale = 1;
@@ -152,7 +220,7 @@
   /** Closes the viewer and asks the caller to scroll to/highlight this image's source message. */
   function handleShowMessage() {
     closeMenu();
-    if (messageId) dispatch('showMessage', { messageId });
+    if (messageId) onShowMessage(messageId);
     close();
   }
 

@@ -10,29 +10,25 @@ describe('MessageActionsMenu', () => {
     expect(screen.getByRole('menuitem', { name: 'Reply to message' })).toBeTruthy();
   });
 
-  it('dispatches copy with message id and text', async () => {
+  it('calls onCopy with message id and text', async () => {
     const onCopy = vi.fn();
     render(MessageActionsMenu, {
-      props: { messageId: 'msg-2', text: 'copy me' },
-      events: { copy: onCopy },
+      props: { messageId: 'msg-2', text: 'copy me', onCopy },
     });
 
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy message' }));
     expect(onCopy).toHaveBeenCalledTimes(1);
-    const event = onCopy.mock.calls[0][0];
-    expect(event.detail).toEqual({ messageId: 'msg-2', text: 'copy me' });
+    expect(onCopy).toHaveBeenCalledWith('msg-2', 'copy me');
   });
 
-  it('dispatches reply with message id', async () => {
+  it('calls onReply with message id', async () => {
     const onReply = vi.fn();
     render(MessageActionsMenu, {
-      props: { messageId: 'msg-3', text: 'reply to me' },
-      events: { reply: onReply },
+      props: { messageId: 'msg-3', text: 'reply to me', onReply },
     });
 
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Reply to message' }));
     expect(onReply).toHaveBeenCalledTimes(1);
-    const event = onReply.mock.calls[0][0];
-    expect(event.detail).toEqual({ messageId: 'msg-3' });
+    expect(onReply).toHaveBeenCalledWith('msg-3');
   });
 });

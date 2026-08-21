@@ -1,22 +1,14 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { createEventDispatcher } from 'svelte';
 
-  export let messageId: string;
-  export let text: string = '';
-
-  const dispatch = createEventDispatcher<{
-    copy: { messageId: string; text: string };
-    reply: { messageId: string };
-  }>();
-
-  function onCopy() {
-    dispatch('copy', { messageId, text });
+  interface Props {
+    messageId: string;
+    text?: string;
+    onCopy?: (messageId: string, text: string) => void;
+    onReply?: (messageId: string) => void;
   }
 
-  function onReply() {
-    dispatch('reply', { messageId });
-  }
+  let { messageId, text = '', onCopy = () => {}, onReply = () => {} }: Props = $props();
 </script>
 
 <div class="message-actions-menu" role="group" aria-label="Message actions">
@@ -26,7 +18,7 @@
     role="menuitem"
     aria-label="Copy message"
     title={$t('messaging.message.copy')}
-    onclick={onCopy}
+    onclick={() => onCopy(messageId, text)}
   >
     <span class="menu-icon" aria-hidden="true">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -42,7 +34,7 @@
     role="menuitem"
     aria-label="Reply to message"
     title={$t('messaging.message.reply')}
-    onclick={onReply}
+    onclick={() => onReply(messageId)}
   >
     <span class="menu-icon" aria-hidden="true">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

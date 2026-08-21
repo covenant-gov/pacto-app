@@ -3,11 +3,19 @@
   import CommonsTagPicker from '../commons/CommonsTagPicker.svelte';
   import type { SquadVisibility } from '../../stores/squads';
 
-  export let visibility: SquadVisibility = 'private';
-  export let tags: string[] = [];
-  export let tagError = '';
-  export let fieldsetName = 'squad-commons';
-  export let disabled = false;
+  let {
+    visibility = $bindable('private'),
+    tags = $bindable([]),
+    tagError = $bindable(''),
+    fieldsetName = 'squad-commons',
+    disabled = false,
+  }: {
+    visibility?: SquadVisibility;
+    tags?: string[];
+    tagError?: string;
+    fieldsetName?: string;
+    disabled?: boolean;
+  } = $props();
 
   export function resetCommonsFields() {
     visibility = 'private';

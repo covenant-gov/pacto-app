@@ -2,18 +2,28 @@
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  export let title: string;
-  export let onComplete: (pin: string) => void;
-  export let isProcessing: boolean = false;
-  export let error: string | null = null;
-  export let onErrorClear: (() => void) | undefined = undefined;
-  export let onBack: (() => void) | undefined = undefined;
-  export let pinDigitCount: number = 6;
+  let {
+    title,
+    onComplete,
+    isProcessing = false,
+    error = null,
+    onErrorClear = undefined,
+    onBack = undefined,
+    pinDigitCount = 6,
+  }: {
+    title: string;
+    onComplete: (pin: string) => void;
+    isProcessing?: boolean;
+    error?: string | null;
+    onErrorClear?: (() => void) | undefined;
+    onBack?: (() => void) | undefined;
+    pinDigitCount?: number;
+  } = $props();
 
-  let digits: string[] = Array(pinDigitCount).fill('');
-  let inputs: HTMLInputElement[] = [];
-  let isShaking = false;
-  let lastClearedForError: string | null = null;
+  let digits: string[] = $state(Array(pinDigitCount).fill(''));
+  let inputs: HTMLInputElement[] = $state([]);
+  let isShaking = $state(false);
+  let lastClearedForError: string | null = $state(null);
 
   function clearInputs() {
     digits = Array(pinDigitCount).fill('');
@@ -89,15 +99,15 @@
     inputs[0]?.focus();
   });
 
-  $: if (error && error !== lastClearedForError && digits.every((d) => d !== '')) {
-    lastClearedForError = error;
-    clearInputs();
-    triggerShake();
-  }
-
-  $: if (!error) {
-    lastClearedForError = null;
-  }
+  $effect(() => {
+    if (error && error !== lastClearedForError && digits.every((d) => d !== '')) {
+      lastClearedForError = error;
+      clearInputs();
+      triggerShake();
+    } else if (!error) {
+      lastClearedForError = null;
+    }
+  });
 </script>
 
 <div class="pin-input-container">

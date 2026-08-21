@@ -48,50 +48,82 @@
 
   const tFn = get(t);
 
-  export let npub: string;
-  export let messages: DmMessage[] = [];
-  export let canLoadOlder = false;
-  export let loadingOlder = false;
-  export let onLoadOlder: () => void = () => {};
-  export let onSend: (content: string, repliedTo?: string) => void | boolean | Promise<boolean> = () => {};
-  export let onSendFile:
-    | ((bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>)
-    | undefined = undefined;
-  export let onSendGif:
-    | ((url: string, slug: string, repliedTo: string) => Promise<void>)
-    | undefined = undefined;
-  export let onTyping: () => void = () => {};
-  export let onAcceptSquadInvite: (msg: DmMessage, groupId: string) => void = () => {};
-  export let onAcceptChannelInSquad: (
-    msg: DmMessage,
-    payload: { channelGroupId: string; announcementsGroupId: string; channelName: string }
-  ) => void = () => {};
-  export let onDeclineSquad: (msg: DmMessage) => void = () => {};
-  export let onDeclineChannelInSquad: (msg: DmMessage) => void = () => {};
-  export let acceptingSquadInviteId: string | null = null;
-  export let acceptingChannelInSquadId: string | null = null;
-  export let showOptionsMenu = true;
-  export let showPinOption = true;
-  export let onSaveNickname: (value: string) => Promise<void> = async () => {};
-  export let onDeleteChat: (() => void) | undefined = undefined;
-  export let showWalletButton: boolean = false;
-  export let onAcceptWalletPeerInfoRequest: ((msg: DmMessage, payload: WalletPeerInfoRequestPayload) => void | Promise<void>) =
-    () => {};
-  export let onDeclineWalletPeerInfoRequest: ((
-    msg: DmMessage,
-    payload: WalletPeerInfoRequestPayload
-  ) => void | Promise<void>) = () => {};
-  export let acceptingWalletPeerInfoRequestId: string | null = null;
-  export let onOpenInviterChat: ((inviterNpub: string) => void) | undefined = undefined;
-  /** Called when the user scrolls to the bottom — marks messages read up to `messageId`. */
-  export let onMarkReadUpTo: (messageId: string) => void = () => {};
+  interface Props {
+    npub: string;
+    messages?: DmMessage[];
+    canLoadOlder?: boolean;
+    loadingOlder?: boolean;
+    onLoadOlder?: () => void;
+    onSend?: (content: string, repliedTo?: string) => void | boolean | Promise<boolean>;
+    onSendFile?: (
+      bytes: ArrayBuffer,
+      fileName: string,
+      repliedTo: string,
+      useCompression: boolean
+    ) => Promise<void>;
+    onSendGif?: (url: string, slug: string, repliedTo: string) => Promise<void>;
+    onTyping?: () => void;
+    onAcceptSquadInvite?: (msg: DmMessage, groupId: string) => void;
+    onAcceptChannelInSquad?: (
+      msg: DmMessage,
+      payload: { channelGroupId: string; announcementsGroupId: string; channelName: string }
+    ) => void;
+    onDeclineSquad?: (msg: DmMessage) => void;
+    onDeclineChannelInSquad?: (msg: DmMessage) => void;
+    acceptingSquadInviteId?: string | null;
+    acceptingChannelInSquadId?: string | null;
+    showOptionsMenu?: boolean;
+    showPinOption?: boolean;
+    onSaveNickname?: (value: string) => Promise<void>;
+    onDeleteChat?: () => void;
+    showWalletButton?: boolean;
+    onAcceptWalletPeerInfoRequest?: (
+      msg: DmMessage,
+      payload: WalletPeerInfoRequestPayload
+    ) => void | Promise<void>;
+    onDeclineWalletPeerInfoRequest?: (
+      msg: DmMessage,
+      payload: WalletPeerInfoRequestPayload
+    ) => void | Promise<void>;
+    acceptingWalletPeerInfoRequestId?: string | null;
+    onOpenInviterChat?: (inviterNpub: string) => void;
+    /** Called when the user scrolls to the bottom — marks messages read up to `messageId`. */
+    onMarkReadUpTo?: (messageId: string) => void;
+  }
 
-  let replyToMessageId: string | null = null;
-  let replyPreview: string | undefined = undefined;
-  $: chatDeleting = $deletingDmNpubs.has(npub);
+  let {
+    npub,
+    messages = [],
+    canLoadOlder = false,
+    loadingOlder = false,
+    onLoadOlder = () => {},
+    onSend = () => {},
+    onSendFile,
+    onSendGif,
+    onTyping = () => {},
+    onAcceptSquadInvite = () => {},
+    onAcceptChannelInSquad = () => {},
+    onDeclineSquad = () => {},
+    onDeclineChannelInSquad = () => {},
+    acceptingSquadInviteId = null,
+    acceptingChannelInSquadId = null,
+    showOptionsMenu = true,
+    showPinOption = true,
+    onSaveNickname = async () => {},
+    onDeleteChat,
+    showWalletButton = false,
+    onAcceptWalletPeerInfoRequest = () => {},
+    onDeclineWalletPeerInfoRequest = () => {},
+    acceptingWalletPeerInfoRequestId = null,
+    onOpenInviterChat,
+    onMarkReadUpTo = () => {},
+  }: Props = $props();
 
-  function onReply(event: CustomEvent<{ messageId: string }>) {
-    const messageId = event.detail.messageId;
+  let replyToMessageId: string | null = $state(null);
+  let replyPreview: string | undefined = $state(undefined);
+  let chatDeleting = $derived($deletingDmNpubs.has(npub));
+
+  function onReply(messageId: string) {
     const msg = messages.find((m) => m.id === messageId);
     if (!msg) return;
     replyToMessageId = messageId;
@@ -133,11 +165,14 @@
     cancelReply();
   }
 
+  // Reply state resets whenever the open conversation changes.
   let prevNpubForReply: string | null = null;
-  $: if (npub !== prevNpubForReply) {
-    prevNpubForReply = npub;
-    cancelReply();
-  }
+  $effect(() => {
+    if (npub !== prevNpubForReply) {
+      prevNpubForReply = npub;
+      cancelReply();
+    }
+  });
 
   function lastReadableMessageId(): string | null {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -148,14 +183,16 @@
     return null;
   }
 
-  let dmMessagesContainer: HTMLDivElement | null = null;
+  let dmMessagesContainer: HTMLDivElement | null = $state(null);
   let scrollPrevNpub: string | null = null;
   let lastScrolledToBottomNpub: string | null = null;
   let lastReportedReadId = '';
 
-  $: if (npub !== scrollPrevNpub) {
-    lastReportedReadId = '';
-  }
+  $effect(() => {
+    if (npub !== scrollPrevNpub) {
+      lastReportedReadId = '';
+    }
+  });
 
   function notifyIfAtBottom() {
     if (!dmMessagesContainer) {
@@ -179,13 +216,15 @@
   let appliedWalletGrantsForNpub: string | null = null;
   let reciprocalGrantInFlight = new Set<string>();
 
-  $: if (npub !== appliedWalletGrantsForNpub) {
-    appliedWalletGrantsForNpub = npub;
-    appliedWalletGrantIds = new Set();
-    reciprocalGrantInFlight = new Set();
-  }
+  $effect(() => {
+    if (npub !== appliedWalletGrantsForNpub) {
+      appliedWalletGrantsForNpub = npub;
+      appliedWalletGrantIds = new Set();
+      reciprocalGrantInFlight = new Set();
+    }
+  });
 
-  $: (() => {
+  $effect(() => {
     const uid = $currentUser?.npub;
     const peerNpub = npub;
     if (!uid || !peerNpub) return;
@@ -279,55 +318,61 @@
         }
       })();
     }
-  })();
+  });
 
   function truncateNpub(n: string): string {
     if (n.length <= 16) return n;
     return n.slice(0, 8) + '…' + n.slice(-4);
   }
 
-  $: if (dmMessagesContainer && messages.length) {
+  // $effect runs after the DOM has already been updated with the new message list, so
+  // (unlike its Svelte 4 `setTimeout(0)` predecessor, which deferred until after a `$:`
+  // block that ran before the DOM update) the scroll measurement below sees the real
+  // scrollHeight synchronously and does not need to wait a tick.
+  $effect(() => {
     const container = dmMessagesContainer;
+    if (!container || !messages.length) return;
     const conversationJustChanged = npub !== scrollPrevNpub;
     const firstTimeWithMessages = npub !== lastScrolledToBottomNpub;
     if (conversationJustChanged) {
       scrollPrevNpub = npub;
       dmThreadScrolledToBottom.set(false);
     }
-    setTimeout(() => {
-      if (!container || !document.contains(container)) return;
-      const isNearBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-      if (conversationJustChanged || firstTimeWithMessages || isNearBottom) {
-        container.scrollTop = container.scrollHeight;
-        lastScrolledToBottomNpub = npub;
-        notifyIfAtBottom();
-      }
-    }, 0);
-  }
-  $: if (npub !== scrollPrevNpub && messages.length === 0) {
-    scrollPrevNpub = npub;
-    dmThreadScrolledToBottom.set(false);
-  }
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    if (conversationJustChanged || firstTimeWithMessages || isNearBottom) {
+      container.scrollTop = container.scrollHeight;
+      lastScrolledToBottomNpub = npub;
+      notifyIfAtBottom();
+    }
+  });
+  $effect(() => {
+    if (npub !== scrollPrevNpub && messages.length === 0) {
+      scrollPrevNpub = npub;
+      dmThreadScrolledToBottom.set(false);
+    }
+  });
 
-  $: contactProfile = npub ? $profiles[npub] : null;
-  $: peerBlockedByMe = contactProfile?.blocked === true;
-  $: contactAvatarSrc = getProfileAvatarSrc(contactProfile);
-  $: contactDisplayName = contactProfile
-    ? getProfileDisplayName(contactProfile)
-    : npub
-      ? truncateNpub(npub)
-      : $t('messaging.message.replyUnknown');
+  let contactProfile = $derived(npub ? $profiles[npub] : null);
+  let peerBlockedByMe = $derived(contactProfile?.blocked === true);
+  let contactAvatarSrc = $derived(getProfileAvatarSrc(contactProfile));
+  let contactDisplayName = $derived(
+    contactProfile
+      ? getProfileDisplayName(contactProfile)
+      : npub
+        ? truncateNpub(npub)
+        : $t('messaging.message.replyUnknown')
+  );
 
-  let menuOpen = false;
-  let deleteConfirmOpen = false;
-  let showNicknameEdit = false;
-  let nicknameEditValue = '';
-  let nicknameSaving = false;
-  let nicknameError: string | null = null;
+  let menuOpen = $state(false);
+  let deleteConfirmOpen = $state(false);
+  let showNicknameEdit = $state(false);
+  let nicknameEditValue = $state('');
+  let nicknameSaving = $state(false);
+  let nicknameError: string | null = $state(null);
 
   /** `request_id`s tied by a `wallet_tx_announcement` in this thread (on-chain completion). */
-  $: fulfilledWalletRequestIds = getFulfilledWalletRequestIdsFromMessages(messages);
+  let fulfilledWalletRequestIds = $derived(getFulfilledWalletRequestIdsFromMessages(messages));
 
   function openNicknameEdit() {
     menuOpen = false;
@@ -577,7 +622,7 @@
           {onDeclineWalletPeerInfoRequest}
           {onOpenInviterChat}
           compact={shouldStackWithPrevious(messages[i - 1], msg)}
-          on:reply={onReply}
+          {onReply}
         />
       {/each}
     {:else}

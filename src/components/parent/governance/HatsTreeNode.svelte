@@ -12,31 +12,45 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { localizeRoleLabel } from '../../../lib/governance/governance-privilege';
+  import HatsTreeNode from './HatsTreeNode.svelte';
 
-  export let node: HatTreeNodeDto;
-  export let roleLabelByHatId: Record<string, string> = {};
-  export let wearerAddressesByHatId: Record<string, string[]> = {};
-  export let executorRolesByAddress: Record<string, string> = {};
-  export let squadMemberEvmByNpub: Record<string, string> = {};
-  /** Known protocol module labels keyed by lowercase address. */
-  export let knownWearerLabels: Record<string, string> = {};
-  export let chainKey: SupportedChainId | null = null;
+  interface Props {
+    node: HatTreeNodeDto;
+    roleLabelByHatId?: Record<string, string>;
+    wearerAddressesByHatId?: Record<string, string[]>;
+    executorRolesByAddress?: Record<string, string>;
+    squadMemberEvmByNpub?: Record<string, string>;
+    /** Known protocol module labels keyed by lowercase address. */
+    knownWearerLabels?: Record<string, string>;
+    chainKey?: SupportedChainId | null;
+  }
+
+  let {
+    node,
+    roleLabelByHatId = {},
+    wearerAddressesByHatId = {},
+    executorRolesByAddress = {},
+    squadMemberEvmByNpub = {},
+    knownWearerLabels = {},
+    chainKey = null,
+  }: Props = $props();
 
   const tFn = get(t);
 
-  $: roleLabel = roleLabelByHatId[node.hatId] ?? '';
-  $: wearerAddresses = wearerAddressesByHatId[node.hatId] ?? [];
-  $: npubByAddress = npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub);
-  $: prettyId = prettyHatId(node.hatId) ?? node.hatId;
-  $: humanDetails = humanHatDetails(node.details);
+  const roleLabel = $derived(roleLabelByHatId[node.hatId] ?? '');
+  const wearerAddresses = $derived(wearerAddressesByHatId[node.hatId] ?? []);
+  const npubByAddress = $derived(npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub));
+  const prettyId = $derived(prettyHatId(node.hatId) ?? node.hatId);
+  const humanDetails = $derived(humanHatDetails(node.details));
   /** Extra line only when role label and a distinct human details string both exist. */
-  $: detailsSubtitle =
-    roleLabel && humanDetails && humanDetails !== roleLabel ? humanDetails : '';
-  $: hasWearers = wearerAddresses.length > 0 || node.supply > 0;
-  $: children = node.children ?? [];
-  $: childCount = children.length;
-  $: primaryWearer = wearerAddresses[0] ?? '';
-  $: primaryWearerRoles = primaryWearer ? executorRolesLabel(primaryWearer) : '';
+  const detailsSubtitle = $derived(
+    roleLabel && humanDetails && humanDetails !== roleLabel ? humanDetails : '',
+  );
+  const hasWearers = $derived(wearerAddresses.length > 0 || node.supply > 0);
+  const children = $derived(node.children ?? []);
+  const childCount = $derived(children.length);
+  const primaryWearer = $derived(wearerAddresses[0] ?? '');
+  const primaryWearerRoles = $derived(primaryWearer ? executorRolesLabel(primaryWearer) : '');
 
   function wearerLabel(address: string): string {
     return formatWearerDisplayLabel(
@@ -136,7 +150,7 @@
       {#each children as child (child.hatId)}
         <div class="hats-tree-child">
           <span class="hats-tree-child-stem" aria-hidden="true"></span>
-          <svelte:self
+          <HatsTreeNode
             node={child}
             {roleLabelByHatId}
             {wearerAddressesByHatId}

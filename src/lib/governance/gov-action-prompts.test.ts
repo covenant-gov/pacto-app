@@ -233,6 +233,32 @@ describe('deriveGovActionPrompts', () => {
     expect(offboard.some((p) => p.sourceEventId === 'gov-vote:crew-offboard:squad-1:4')).toBe(true);
   });
 
+  it('suppresses quartermaster execute prompts while crew offboard freezes the roster', () => {
+    const prompts = deriveGovActionPrompts({
+      parentId: 'squad-1',
+      proposals: [],
+      mutinyStatus: null,
+      qmPending: [{ kind: 'add', address: '0xA1', executableAt: '50' }],
+      privilege: privilege({ wearsCaptain: true }),
+      mutinyMode: false,
+      treasuryVoteMap: {},
+      mutinyHasVoted: false,
+      crewOffboard: {
+        offboardId: '4',
+        target: '0xabc',
+        proposer: '0xdef',
+        deadline: 400,
+        snapshot: 10,
+        yeas: 1,
+        nays: 0,
+        executed: false,
+      },
+      crewOffboardQuorumBps: 3000,
+      nowSec: 100,
+    });
+    expect(prompts.some((p) => p.sourceEventId.startsWith('gov-execute:crew_add'))).toBe(false);
+  });
+
   it('caps prompts and sorts execute before vote before delay', () => {
     const prompts = deriveGovActionPrompts({
       parentId: 'squad-1',

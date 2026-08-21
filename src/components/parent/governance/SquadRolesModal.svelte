@@ -18,47 +18,64 @@
   import { showToast } from '../../../stores/toast';
   import { appConfig } from '../../../stores/app-config';
 
-  export let open = false;
-  export let onClose: () => void;
-  export let parentId = '';
-  export let squadAdminProxy: string;
-  export let network: SupportedChainId = 'sepolia';
-  /** EVM address → display label for executor picker. */
-  export let memberEvmOptions: { address: string; label: string }[] = [];
-  export let privilege: GovernancePrivilege | null = null;
-  export let warGameStack = false;
+  interface Props {
+    open?: boolean;
+    onClose: () => void;
+    parentId?: string;
+    squadAdminProxy: string;
+    network?: SupportedChainId;
+    /** EVM address → display label for executor picker. */
+    memberEvmOptions?: { address: string; label: string }[];
+    privilege?: GovernancePrivilege | null;
+    warGameStack?: boolean;
+  }
+
+  let {
+    open = false,
+    onClose,
+    parentId = '',
+    squadAdminProxy,
+    network = 'sepolia',
+    memberEvmOptions = [],
+    privilege = null,
+    warGameStack = false,
+  }: Props = $props();
 
   const titleId = 'squad-roles-modal-title';
   const descId = 'squad-roles-modal-desc';
 
   const tFn = get(t);
 
-  let roleLabel = '';
-  let executorAddress = '';
-  let grantFullPermission = false;
-  let actionError = '';
-  let loadedPrivilege: GovernancePrivilege | null = null;
-  let privilegeLoadKey = '';
+  let roleLabel = $state('');
+  let executorAddress = $state('');
+  let grantFullPermission = $state(false);
+  let actionError = $state('');
+  let loadedPrivilege = $state<GovernancePrivilege | null>(null);
+  let privilegeLoadKey = $state('');
 
-  $: roleLabelMaxLength = $appConfig.roleLabelMaxLength;
+  const roleLabelMaxLength = $derived($appConfig.roleLabelMaxLength);
 
-  $: effectivePrivilege = privilege ?? loadedPrivilege;
-  $: saGate = effectivePrivilege
-    ? gateSquadAdminWrite(effectivePrivilege)
-    : ({ enabled: true, reason: '' } as const);
+  const effectivePrivilege = $derived(privilege ?? loadedPrivilege);
+  const saGate = $derived(
+    effectivePrivilege ? gateSquadAdminWrite(effectivePrivilege) : ({ enabled: true, reason: '' } as const),
+  );
 
-  $: if (open && !executorAddress && memberEvmOptions.length > 0) {
-    executorAddress = memberEvmOptions[0].address;
-  }
-
-  $: if (open && parentId.trim()) {
-    const pid = parentId.trim();
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
-    if (key !== privilegeLoadKey) {
-      privilegeLoadKey = key;
-      void loadPrivilege(pid);
+  $effect(() => {
+    if (open && !executorAddress && memberEvmOptions.length > 0) {
+      executorAddress = memberEvmOptions[0].address;
     }
-  }
+  });
+
+  $effect(() => {
+    if (open && parentId.trim()) {
+      const pid = parentId.trim();
+      const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
+      if (key !== privilegeLoadKey) {
+        privilegeLoadKey = key;
+        void loadPrivilege(pid);
+      }
+    }
+  });
 
   async function loadPrivilege(pid: string) {
     const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;

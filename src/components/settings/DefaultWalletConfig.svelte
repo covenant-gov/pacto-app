@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
@@ -23,34 +22,42 @@
   import { showToast } from '../../stores/toast';
   import EditIconButton from '../ui/EditIconButton.svelte';
 
-  export let accountNpub: string;
-  export let squadAccounts: EvmAccountRow[] = [];
-  export let accountsLoading = false;
-  export let onSaved: () => void | Promise<void> = () => {};
+  interface Props {
+    accountNpub: string;
+    squadAccounts?: EvmAccountRow[];
+    accountsLoading?: boolean;
+    onSaved?: () => void | Promise<void>;
+  }
 
-  let preferredNetwork: PreferredNetworkId = 'arbitrum';
-  let editOpen = false;
-  let saving = false;
+  let { accountNpub, squadAccounts = [], accountsLoading = false, onSaved = () => {} }: Props = $props();
 
-  let editNetwork: PreferredNetworkId = 'arbitrum';
-  let editSignerId = '';
-  let editReceiverId = '';
+  let preferredNetwork: PreferredNetworkId = $state('arbitrum');
+  let editOpen = $state(false);
+  let saving = $state(false);
+
+  let editNetwork: PreferredNetworkId = $state('arbitrum');
+  let editSignerId = $state('');
+  let editReceiverId = $state('');
 
   const networkOptions = listPreferredNetworkOptions();
 
-  $: activeSigner = squadAccounts.find((a) => a.isActive) ?? null;
-  $: activeReceiver = squadAccounts.find((a) => a.isDefaultShared) ?? null;
-  $: signerAddress = activeSigner?.address?.trim() || null;
-  $: receiverAddress = activeReceiver?.address?.trim() || signerAddress || null;
-  $: preferredNetworkLabel = getPreferredNetworkDisplayName(preferredNetwork);
+  let activeSigner = $derived(squadAccounts.find((a) => a.isActive) ?? null);
+  let activeReceiver = $derived(squadAccounts.find((a) => a.isDefaultShared) ?? null);
+  let signerAddress = $derived(activeSigner?.address?.trim() || null);
+  let receiverAddress = $derived(activeReceiver?.address?.trim() || signerAddress || null);
+  let preferredNetworkLabel = $derived(getPreferredNetworkDisplayName(preferredNetwork));
 
-  $: accountNpub, $walletPreferredNetworkTick, syncPreferredNetwork();
+  $effect(() => {
+    void accountNpub;
+    void $walletPreferredNetworkTick;
+    syncPreferredNetwork();
+  });
 
-  $: if (($settingsSectionCollapsed['settings-evm'] ?? true) && editOpen && !saving) {
-    editOpen = false;
-  }
-
-  onMount(syncPreferredNetwork);
+  $effect(() => {
+    if (($settingsSectionCollapsed['settings-evm'] ?? true) && editOpen && !saving) {
+      editOpen = false;
+    }
+  });
 
   function syncPreferredNetwork() {
     if (!accountNpub) return;

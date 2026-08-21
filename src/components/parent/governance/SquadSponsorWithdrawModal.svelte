@@ -17,52 +17,70 @@
   import { showToast } from '../../../stores/toast';
   import { formatEther } from 'viem';
 
-  export let open = false;
-  export let onClose: () => void = () => {};
-  export let network = 'sepolia';
-  export let parentId = '';
-  export let sponsorAddress = '';
-  export let onSubmitted: () => void = () => {};
+  interface Props {
+    open?: boolean;
+    onClose?: () => void;
+    network?: string;
+    parentId?: string;
+    sponsorAddress?: string;
+    onSubmitted?: () => void;
+  }
+
+  let {
+    open = false,
+    onClose = () => {},
+    network = 'sepolia',
+    parentId = '',
+    sponsorAddress = '',
+    onSubmitted = () => {},
+  }: Props = $props();
 
   const titleId = 'sponsor-withdraw-title';
   const descId = 'sponsor-withdraw-desc';
 
   const tFn = get(t);
 
-  let accounts: EvmAccountRow[] = [];
-  let accountsLoading = false;
-  let selectedAccountId = '';
-  let withdrawableWei: string | null = null;
-  let withdrawableLoading = false;
-  let acting = false;
-  let error = '';
-  let wasOpen = false;
+  let accounts = $state<EvmAccountRow[]>([]);
+  let accountsLoading = $state(false);
+  let selectedAccountId = $state('');
+  let withdrawableWei = $state<string | null>(null);
+  let withdrawableLoading = $state(false);
+  let acting = $state(false);
+  let error = $state('');
+  let wasOpen = $state(false);
 
-  $: selected = accounts.find((a) => a.id === selectedAccountId) ?? null;
-  let lastWithdrawableKey = '';
+  const selected = $derived(accounts.find((a) => a.id === selectedAccountId) ?? null);
+  let lastWithdrawableKey = $state('');
 
-  $: if (open && !wasOpen) {
-    wasOpen = true;
-    error = '';
-    withdrawableWei = null;
-    selectedAccountId = '';
-    lastWithdrawableKey = '';
-    void loadAccounts();
-  }
-  $: if (!open) {
-    wasOpen = false;
-  }
+  $effect(() => {
+    if (open && !wasOpen) {
+      wasOpen = true;
+      error = '';
+      withdrawableWei = null;
+      selectedAccountId = '';
+      lastWithdrawableKey = '';
+      void loadAccounts();
+    }
+  });
+  $effect(() => {
+    if (!open) {
+      wasOpen = false;
+    }
+  });
 
-  $: withdrawableKey =
+  const withdrawableKey = $derived(
     open && selected?.address
       ? `${parentId.trim()}|${selected.address.trim().toLowerCase()}|${sponsorAddress.trim().toLowerCase()}`
-      : '';
-  $: if (withdrawableKey && withdrawableKey !== lastWithdrawableKey) {
-    lastWithdrawableKey = withdrawableKey;
-    if (selected) {
-      void loadWithdrawable(selected.address);
+      : '',
+  );
+  $effect(() => {
+    if (withdrawableKey && withdrawableKey !== lastWithdrawableKey) {
+      lastWithdrawableKey = withdrawableKey;
+      if (selected) {
+        void loadWithdrawable(selected.address);
+      }
     }
-  }
+  });
 
   async function loadAccounts() {
     accountsLoading = true;

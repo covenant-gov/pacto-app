@@ -34,10 +34,10 @@
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
-  $: userNpub = $currentUser?.npub ?? '';
+  let userNpub = $derived($currentUser?.npub ?? '');
 
-  let copiedNpub = false;
-  let exportModalOpen = false;
+  let copiedNpub = $state(false);
+  let exportModalOpen = $state(false);
 
   async function copyNpub() {
     if (!userNpub) return;
@@ -50,22 +50,24 @@
     }
   }
 
-  let relays: RelayInfo[] = [];
-  let loading = true;
-  let loadError: string | null = null;
+  let relays: RelayInfo[] = $state([]);
+  let loading = $state(true);
+  let loadError: string | null = $state(null);
 
-  let newRelayUrl = '';
-  let newRelayMode: RelayMode = 'both';
-  let addError: string | null = null;
-  let adding = false;
+  let newRelayUrl = $state('');
+  let newRelayMode: RelayMode = $state('both');
+  let addError: string | null = $state(null);
+  let adding = $state(false);
 
-  let probing = false;
-  let probeResult: ProbeResult | null = null;
-  let probedUrl: string | null = null;
+  let probing = $state(false);
+  let probeResult: ProbeResult | null = $state(null);
+  let probedUrl: string | null = $state(null);
   // Stale results (from a probe of a URL the operator has since edited) never render.
-  $: if (newRelayUrl.trim() !== probedUrl) probeResult = null;
+  $effect(() => {
+    if (newRelayUrl.trim() !== probedUrl) probeResult = null;
+  });
 
-  let busyUrl: string | null = null;
+  let busyUrl: string | null = $state(null);
 
   type RelayDetailState = {
     loading: boolean;
@@ -83,8 +85,8 @@
     return url.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
-  let openUrls = new Set<string>();
-  let detailByUrl: Record<string, RelayDetailState> = {};
+  let openUrls = $state(new Set<string>());
+  let detailByUrl: Record<string, RelayDetailState> = $state({});
 
   function toggleDetail(url: string) {
     const next = new Set(openUrls);

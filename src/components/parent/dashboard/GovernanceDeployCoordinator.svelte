@@ -15,91 +15,108 @@
   import type { CombinedGovSponsorDeployComplete } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
   import ParentDashboardModals from './ParentDashboardModals.svelte';
 
-  export let parentId: string;
-  export let announcementsGroupId: string | null = null;
-  export let treasurySafeCount = 0;
-  export let hasSponsor = false;
-  export let hasPactoGov = false;
-  export let hasSquadAdmin = false;
-  export let warGameStack = false;
-  export let squadAdminProxy = '';
-  export let squadAdminNetwork: SupportedChainId = DEFAULT_CHAIN_ID;
-  /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
-  export let squadNetwork: SupportedChainId | null = null;
-  /** Sponsor clone address when sponsor infra is deployed. */
-  export let sponsorAddress = '';
-  /** Pacto Gov reference (Safe / proxy / top hat) when deployed. */
-  export let pactoGovAddress = '';
-  /** Top hat id of the deployed Pacto Gov row ('' before gov deploy). */
-  export let pactoGovTopHatId = '';
-  export let quartermaster = '';
-  export let memberEvmOptions: { address: string; label: string }[] = [];
-  export let captainMemberOptions: PactoGovCaptainOption[] = [];
+  interface Props {
+    parentId: string;
+    announcementsGroupId?: string | null;
+    treasurySafeCount?: number;
+    hasSponsor?: boolean;
+    hasPactoGov?: boolean;
+    hasSquadAdmin?: boolean;
+    warGameStack?: boolean;
+    squadAdminProxy?: string;
+    squadAdminNetwork?: SupportedChainId;
+    /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
+    squadNetwork?: SupportedChainId | null;
+    /** Sponsor clone address when sponsor infra is deployed. */
+    sponsorAddress?: string;
+    /** Pacto Gov reference (Safe / proxy / top hat) when deployed. */
+    pactoGovAddress?: string;
+    /** Top hat id of the deployed Pacto Gov row ('' before gov deploy). */
+    pactoGovTopHatId?: string;
+    quartermaster?: string;
+    memberEvmOptions?: { address: string; label: string }[];
+    captainMemberOptions?: PactoGovCaptainOption[];
+    onConfirmImportSafe?: (params: {
+      safeAddress: string;
+      chain: string;
+      label: string;
+      entryId: string;
+      txHash?: string;
+    }) => Promise<void>;
+    onPactoGovDeployComplete?: (params: {
+      parentId: string;
+      announcementsGroupId: string;
+      chain: string;
+      topHatId: string;
+      providerPayload: string;
+      safeAddress: string;
+      txHash: string;
+      infraRowId?: string;
+    }) => Promise<void>;
+    onSponsorDeployComplete?: (params: {
+      parentId: string;
+      announcementsGroupId: string;
+      chain: string;
+      sponsorAddress: string;
+      providerPayload: string;
+      infraRowId: string;
+    }) => Promise<void>;
+    onSquadAdminDeployComplete?: (params: {
+      parentId: string;
+      announcementsGroupId: string;
+      chain: string;
+      squadAdminProxy: string;
+      providerPayload: string;
+      infraRowId: string;
+    }) => Promise<void>;
+    /** Navigate the dashboard after a deploy completes. */
+    onNavigate?: (view: SquadDashboardChannelMode) => void;
+    /** Warm member/EVM caches before a deploy wizard opens. */
+    onPrefetchDeployContext?: () => void;
+  }
 
-  export let onConfirmImportSafe:
-    | ((params: {
-        safeAddress: string;
-        chain: string;
-        label: string;
-        entryId: string;
-        txHash?: string;
-      }) => Promise<void>)
-    | undefined = undefined;
-  export let onPactoGovDeployComplete:
-    | ((params: {
-        parentId: string;
-        announcementsGroupId: string;
-        chain: string;
-        topHatId: string;
-        providerPayload: string;
-        safeAddress: string;
-        txHash: string;
-        infraRowId?: string;
-      }) => Promise<void>)
-    | undefined = undefined;
-  export let onSponsorDeployComplete:
-    | ((params: {
-        parentId: string;
-        announcementsGroupId: string;
-        chain: string;
-        sponsorAddress: string;
-        providerPayload: string;
-        infraRowId: string;
-      }) => Promise<void>)
-    | undefined = undefined;
-  export let onSquadAdminDeployComplete:
-    | ((params: {
-        parentId: string;
-        announcementsGroupId: string;
-        chain: string;
-        squadAdminProxy: string;
-        providerPayload: string;
-        infraRowId: string;
-      }) => Promise<void>)
-    | undefined = undefined;
+  let {
+    parentId,
+    announcementsGroupId = null,
+    treasurySafeCount = 0,
+    hasSponsor = false,
+    hasPactoGov = false,
+    hasSquadAdmin = false,
+    warGameStack = false,
+    squadAdminProxy = '',
+    squadAdminNetwork = DEFAULT_CHAIN_ID,
+    squadNetwork = null,
+    sponsorAddress = '',
+    pactoGovAddress = '',
+    pactoGovTopHatId = '',
+    quartermaster = '',
+    memberEvmOptions = [],
+    captainMemberOptions = [],
+    onConfirmImportSafe = undefined,
+    onPactoGovDeployComplete = undefined,
+    onSponsorDeployComplete = undefined,
+    onSquadAdminDeployComplete = undefined,
+    onNavigate = () => {},
+    onPrefetchDeployContext = () => {},
+  }: Props = $props();
 
-  /** Navigate the dashboard after a deploy completes. */
-  export let onNavigate: (view: SquadDashboardChannelMode) => void = () => {};
-  /** Warm member/EVM caches before a deploy wizard opens. */
-  export let onPrefetchDeployContext: () => void = () => {};
+  let showSetSafeModal = $state(false);
+  let showDeploySafeModal = $state(false);
+  let showLaunchpad = $state(false);
+  let showPactoGovDeploy = $state(false);
+  let showGovAndSponsorDeploy = $state(false);
+  let showExtSponsorDeploy = $state(false);
+  let showSquadAdminDeploy = $state(false);
+  let showSquadRolesModal = $state(false);
 
-  let showSetSafeModal = false;
-  let showDeploySafeModal = false;
-  let showLaunchpad = false;
-  let showPactoGovDeploy = false;
-  let showGovAndSponsorDeploy = false;
-  let showExtSponsorDeploy = false;
-  let showSquadAdminDeploy = false;
-  let showSquadRolesModal = false;
-
-  let setSafeInput = '';
-  let setSafeChain: SupportedChainId = DEFAULT_CHAIN_ID;
-  let setSafeLabel = '';
-  let setSafeError = '';
-  let setSafeSaving = false;
+  let setSafeInput = $state('');
+  let setSafeChain = $state<SupportedChainId>(DEFAULT_CHAIN_ID);
+  let setSafeLabel = $state('');
+  let setSafeError = $state('');
+  let setSafeSaving = $state(false);
 
   /** Combined wizard finishes the hats sponsor only when gov exists without a sponsor. */
-  $: existingTopHatId = hasPactoGov && !hasSponsor ? pactoGovTopHatId : '';
+  const existingTopHatId = $derived(hasPactoGov && !hasSponsor ? pactoGovTopHatId : '');
 
   export function openLaunchpad(): void {
     if (!requireBackupVerified()) return;

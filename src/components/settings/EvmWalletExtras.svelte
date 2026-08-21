@@ -29,29 +29,41 @@
     return $t(source === 'custom' ? 'settings.tokenSourceCustom' : 'settings.tokenSourceCatalog');
   }
 
-  export let accountNpub: string | null = null;
-  export let enabledSet: Set<SupportedChainId>;
-  export let watchedRows: WatchedErc20Row[] = [];
-  /** `all` or one enabled chain; defaults to preferred network per account. */
-  export let tokenNetworkFilter: 'all' | SupportedChainId = DEFAULT_PREFERRED_NETWORK;
-  export let onToggleChain: (chain: SupportedChainId) => void = () => {};
-  export let onRemoveWatchedRow: (row: WatchedErc20Row) => void = () => {};
-  export let onImportTokens: () => void = () => {};
+  interface Props {
+    accountNpub: string | null;
+    enabledSet: Set<SupportedChainId>;
+    watchedRows: WatchedErc20Row[];
+    /** `all` or one enabled chain; defaults to preferred network per account. */
+    tokenNetworkFilter: 'all' | SupportedChainId;
+    onToggleChain?: (chain: SupportedChainId) => void;
+    onRemoveWatchedRow?: (row: WatchedErc20Row) => void;
+    onImportTokens?: () => void;
+  }
 
-  let tokenFilterInitializedFor: string | null = null;
-  let lastPreferred: PreferredNetworkId = DEFAULT_PREFERRED_NETWORK;
-  let preferredNetwork: PreferredNetworkId = DEFAULT_PREFERRED_NETWORK;
-  let rpcNetworkFilter: SupportedChainId = DEFAULT_PREFERRED_NETWORK;
-  let rpcFilterInitializedFor: string | null = null;
-  let personalRpcs: string[] = [];
-  let defaultRpcOptions: ReturnType<typeof listDefaultRpcOptions> = [];
-  let selectedDefaultRpc = '';
-  let newRpcUrl = '';
-  let addRpcError: string | null = null;
+  let {
+    accountNpub = null,
+    enabledSet,
+    watchedRows = [],
+    tokenNetworkFilter = $bindable(DEFAULT_PREFERRED_NETWORK),
+    onToggleChain = () => {},
+    onRemoveWatchedRow = () => {},
+    onImportTokens = () => {},
+  }: Props = $props();
 
-  $: enabledChainIdsOrdered = WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id));
+  let tokenFilterInitializedFor: string | null = $state(null);
+  let lastPreferred: PreferredNetworkId = $state(DEFAULT_PREFERRED_NETWORK);
+  let preferredNetwork: PreferredNetworkId = $state(DEFAULT_PREFERRED_NETWORK);
+  let rpcNetworkFilter: SupportedChainId = $state(DEFAULT_PREFERRED_NETWORK);
+  let rpcFilterInitializedFor: string | null = $state(null);
+  let personalRpcs: string[] = $state([]);
+  let defaultRpcOptions: ReturnType<typeof listDefaultRpcOptions> = $state([]);
+  let selectedDefaultRpc = $state('');
+  let newRpcUrl = $state('');
+  let addRpcError: string | null = $state(null);
 
-  $: {
+  let enabledChainIdsOrdered = $derived(WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id)));
+
+  $effect(() => {
     void $walletPreferredNetworkTick;
     void $walletRpcPrefsTick;
     preferredNetwork = accountNpub ? loadPreferredNetwork(accountNpub) : DEFAULT_PREFERRED_NETWORK;
@@ -73,38 +85,45 @@
     } else if (preferredNetwork !== lastPreferred && rpcNetworkFilter === lastPreferred) {
       rpcNetworkFilter = preferredNetwork;
     }
-  }
+  });
 
   // Prefer the user's preferred network, but never show a disabled chain in the
   // filter: fall back to the first enabled chain when the preferred one is off.
-  $: rpcFilterFallback = enabledSet.has(preferredNetwork)
-    ? preferredNetwork
-    : enabledChainIdsOrdered[0] ?? preferredNetwork;
-  $: if (!enabledSet.has(rpcNetworkFilter)) {
-    rpcNetworkFilter = rpcFilterFallback;
-  }
-  $: if (tokenNetworkFilter !== 'all' && !enabledSet.has(tokenNetworkFilter)) {
-    tokenNetworkFilter = 'all';
-  }
+  let rpcFilterFallback = $derived(
+    enabledSet.has(preferredNetwork) ? preferredNetwork : enabledChainIdsOrdered[0] ?? preferredNetwork
+  );
+  $effect(() => {
+    if (!enabledSet.has(rpcNetworkFilter)) {
+      rpcNetworkFilter = rpcFilterFallback;
+    }
+  });
+  $effect(() => {
+    if (tokenNetworkFilter !== 'all' && !enabledSet.has(tokenNetworkFilter)) {
+      tokenNetworkFilter = 'all';
+    }
+  });
 
-  $: filteredWatchedRows =
+  let filteredWatchedRows = $derived(
     tokenNetworkFilter === 'all'
       ? watchedRows
-      : watchedRows.filter((row) => row.network === tokenNetworkFilter);
+      : watchedRows.filter((row) => row.network === tokenNetworkFilter)
+  );
 
   const ALCHEMY_SIGNUP_URL = 'https://www.alchemy.com/';
   const POCKET_SIGNUP_URL = 'https://pocket.network/';
 
-  $: if (accountNpub) {
-    void $walletRpcPrefsTick;
-    personalRpcs = listPersonalRpcs(accountNpub, rpcNetworkFilter);
-    defaultRpcOptions = listDefaultRpcOptions(accountNpub, rpcNetworkFilter);
-    selectedDefaultRpc = loadDefaultRpc(accountNpub, rpcNetworkFilter) ?? '';
-  } else {
-    personalRpcs = [];
-    defaultRpcOptions = [];
-    selectedDefaultRpc = '';
-  }
+  $effect(() => {
+    if (accountNpub) {
+      void $walletRpcPrefsTick;
+      personalRpcs = listPersonalRpcs(accountNpub, rpcNetworkFilter);
+      defaultRpcOptions = listDefaultRpcOptions(accountNpub, rpcNetworkFilter);
+      selectedDefaultRpc = loadDefaultRpc(accountNpub, rpcNetworkFilter) ?? '';
+    } else {
+      personalRpcs = [];
+      defaultRpcOptions = [];
+      selectedDefaultRpc = '';
+    }
+  });
 
   function openAlchemySignup() {
     openExternalUrl(ALCHEMY_SIGNUP_URL);

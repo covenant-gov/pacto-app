@@ -34,52 +34,51 @@
   import { profiles, loadProfile } from '../../stores/profiles';
   import { get } from 'svelte/store';
 
-  let filterTags: string[] = [...DEFAULT_COMMONS_FEED_FILTERS.tags];
-  let filterCategoryId: string | null = DEFAULT_COMMONS_FEED_FILTERS.categoryId;
-  let focusedCategoryId: string | null = null;
-  let browseMode: CommonsBrowseMode = 'categories';
-  let subjectFilter: CommonsSubjectFilter = DEFAULT_COMMONS_FEED_FILTERS.subjectFilter;
-  let audienceFilter: CommonsAudienceFilter = DEFAULT_COMMONS_FEED_FILTERS.audienceFilter;
+  let filterTags: string[] = $state([...DEFAULT_COMMONS_FEED_FILTERS.tags]);
+  let filterCategoryId: string | null = $state(DEFAULT_COMMONS_FEED_FILTERS.categoryId);
+  let focusedCategoryId: string | null = $state(null);
+  let browseMode: CommonsBrowseMode = $state('categories');
+  let subjectFilter: CommonsSubjectFilter = $state(DEFAULT_COMMONS_FEED_FILTERS.subjectFilter);
+  let audienceFilter: CommonsAudienceFilter = $state(DEFAULT_COMMONS_FEED_FILTERS.audienceFilter);
 
-  let personalNonce = 0;
+  let personalNonce = $state(0);
   let lastModalClosedNonce = 0;
-  let tagMenuOpen = false;
+  let tagMenuOpen = $state(false);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let wasCommonsActive = false;
 
-  $: feedFilters = { tags: filterTags, categoryId: filterCategoryId, subjectFilter, audienceFilter };
-  $: filteredBroadcasts = prepareCommonsFeed($commonsBroadcasts, feedFilters);
-  $: latestBroadcasts = prepareCommonsFeed($commonsBroadcasts, {
-    tags: [],
-    categoryId: null,
-    subjectFilter,
-    audienceFilter,
-  });
-  $: hasTagFilters =
+  const feedFilters = $derived({ tags: filterTags, categoryId: filterCategoryId, subjectFilter, audienceFilter });
+  const filteredBroadcasts = $derived(prepareCommonsFeed($commonsBroadcasts, feedFilters));
+  const latestBroadcasts = $derived(
+    prepareCommonsFeed($commonsBroadcasts, {
+      tags: [],
+      categoryId: null,
+      subjectFilter,
+      audienceFilter,
+    })
+  );
+  const hasTagFilters = $derived(
     filterTags.length > 0 ||
     filterCategoryId != null ||
-    focusedCategoryId != null;
-  $: hasFilters =
+    focusedCategoryId != null
+  );
+  const hasFilters = $derived(
     hasTagFilters ||
     subjectFilter !== 'both' ||
-    audienceFilter !== 'any';
-  $: showTileGrid =
-    browseMode === 'categories' && !tagMenuOpen && focusedCategoryId == null && !hasTagFilters;
-  $: categoryAllMode = focusedCategoryId != null && filterCategoryId != null && filterTags.length === 0;
-  $: focusedCategoryTitle = focusedCategoryId
-    ? (getLocalizedCommonsTagCategory($t, focusedCategoryId)?.title ??
-      focusedCategoryId.toUpperCase())
-    : null;
-
-  $: if ($commonsBroadcastModalClosedNonce !== lastModalClosedNonce) {
-    lastModalClosedNonce = $commonsBroadcastModalClosedNonce;
-    personalNonce += 1;
-    void loadFeed({ silent: true });
-  }
+    audienceFilter !== 'any'
+  );
+  const showTileGrid = $derived(
+    browseMode === 'categories' && !tagMenuOpen && focusedCategoryId == null && !hasTagFilters
+  );
+  const categoryAllMode = $derived(focusedCategoryId != null && filterCategoryId != null && filterTags.length === 0);
+  const focusedCategoryTitle = $derived.by(() => {
+    const catId = focusedCategoryId;
+    return catId ? (getLocalizedCommonsTagCategory($t, catId)?.title ?? catId.toUpperCase()) : null;
+  });
 
   // Active broadcast counts per catalog tag for the grid "live" badges.
-  $: countsByTag = (() => {
+  const countsByTag = $derived.by(() => {
     const counts: Record<string, number> = {};
     const active = dedupeCommonsBroadcasts($commonsBroadcasts).filter((b) => isCommonsBroadcastActive(b));
     const known = new Set(COMMONS_TAG_GROUPS.map((g) => g.tag));
@@ -89,7 +88,7 @@
       }
     }
     return counts;
-  })();
+  });
 
   async function loadFeed(options: { silent?: boolean } = {}) {
     const rows = await refreshCommonsBroadcasts(options);
@@ -181,7 +180,15 @@
     }, COMMONS_FEED_REFRESH_MS);
   }
 
-  $: {
+  $effect(() => {
+    if ($commonsBroadcastModalClosedNonce !== lastModalClosedNonce) {
+      lastModalClosedNonce = $commonsBroadcastModalClosedNonce;
+      personalNonce += 1;
+      void loadFeed({ silent: true });
+    }
+  });
+
+  $effect(() => {
     const commonsActive = $activeTopNavTab === 'commons';
     if (commonsActive && !wasCommonsActive) {
       void loadFeed({ silent: get(commonsBroadcasts).length > 0 });
@@ -190,7 +197,7 @@
       stopPolling();
     }
     wasCommonsActive = commonsActive;
-  }
+  });
 
   onDestroy(() => {
     stopPolling();

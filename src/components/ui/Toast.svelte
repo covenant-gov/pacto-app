@@ -1,3 +1,5 @@
+<svelte:options runes={true} />
+
 <script lang="ts">
   import { toastMessage, clearToast, runToastRetryAction, type ToastGoTo } from '../../stores/toast';
   import { navigateToTarget } from '../../lib/navigation/open-squad-dashboard';

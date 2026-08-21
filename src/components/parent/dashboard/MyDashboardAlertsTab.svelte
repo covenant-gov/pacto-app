@@ -12,14 +12,18 @@
   import { squads } from '../../../stores/squads';
   import type { GovActionPrompt } from '../../../lib/governance/gov-action-prompts';
 
-  export let parentId = '';
-  export let announcementsGroupId: string | null = null;
+  interface Props {
+    parentId?: string;
+    announcementsGroupId?: string | null;
+  }
 
-  let showRosterCard = false;
-  let loading = true;
+  let { parentId = '', announcementsGroupId = null }: Props = $props();
 
-  $: prompts = ($govActionPromptsBySquadId[parentId] ?? []) as GovActionPrompt[];
-  $: hasGovPrompts = prompts.length > 0;
+  let showRosterCard = $state(false);
+  let loading = $state(true);
+
+  const prompts = $derived(($govActionPromptsBySquadId[parentId] ?? []) as GovActionPrompt[]);
+  const hasGovPrompts = $derived(prompts.length > 0);
 
   async function refreshNeed() {
     if (!parentId) {

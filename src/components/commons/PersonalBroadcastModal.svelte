@@ -6,11 +6,15 @@
 
   import { closeCommonsBroadcastModal } from '../../stores/commons-ui';
 
-  export let onClose: () => void = closeCommonsBroadcastModal;
+  interface Props {
+    onClose?: () => void;
+  }
 
-  let publishing = false;
+  let { onClose = closeCommonsBroadcastModal }: Props = $props();
 
-  $: userNpub = $currentUser?.npub ?? '';
+  let publishing = $state(false);
+
+  const userNpub = $derived($currentUser?.npub ?? '');
 </script>
 
 <Modal

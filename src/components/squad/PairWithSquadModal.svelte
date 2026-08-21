@@ -8,41 +8,53 @@
   import type { SquadVisibility } from '../../stores/squads';
   import { appConfig } from '../../stores/app-config';
 
-  export let open = false;
-  export let anchorSquadName = '';
-  export let candidates: Squad[] = [];
-  export let error = '';
-  export let creating = false;
+  let {
+    open = false,
+    anchorSquadName = '',
+    candidates = [],
+    error = '',
+    creating = false,
+    onClose = () => {},
+    onCreate = () => {},
+  }: {
+    open?: boolean;
+    anchorSquadName?: string;
+    candidates?: Squad[];
+    error?: string;
+    creating?: boolean;
+    onClose?: () => void;
+    onCreate?: (params: {
+      name: string;
+      partnerSquadId: string;
+      iconUrl?: string;
+      visibility: SquadVisibility;
+      commonsTags?: string[];
+    }) => void;
+  } = $props();
 
-  export let onClose: () => void = () => {};
-  export let onCreate: (params: {
-    name: string;
-    partnerSquadId: string;
-    iconUrl?: string;
-    visibility: SquadVisibility;
-    commonsTags?: string[];
-  }) => void = () => {};
+  let pairName = $state('');
+  let iconUrl = $state('');
+  let selectedPartnerSquadId = $state('');
+  let visibility = $state<SquadVisibility>('private');
+  let tags: string[] = $state([]);
+  let tagError = $state('');
+  let commonsFields = $state<SquadCommonsVisibilityFields>();
 
-  let pairName = '';
-  let iconUrl = '';
-  let selectedPartnerSquadId = '';
-  let visibility: SquadVisibility = 'private';
-  let tags: string[] = [];
-  let tagError = '';
-  let commonsFields: SquadCommonsVisibilityFields;
+  let maxCommonsTags = $derived($appConfig.commonsMaxTags);
 
-  $: maxCommonsTags = $appConfig.commonsMaxTags;
-
-  $: canCreate =
+  let canCreate = $derived(
     pairName.trim().length > 0 &&
-    !!selectedPartnerSquadId &&
-    candidates.length > 0 &&
-    !creating &&
-    (visibility !== 'public' || tags.length === maxCommonsTags);
+      !!selectedPartnerSquadId &&
+      candidates.length > 0 &&
+      !creating &&
+      (visibility !== 'public' || tags.length === maxCommonsTags)
+  );
 
-  $: if (open) {
-    setTimeout(() => document.getElementById('squad-pair-name')?.focus(), 0);
-  }
+  $effect(() => {
+    if (open) {
+      setTimeout(() => document.getElementById('squad-pair-name')?.focus(), 0);
+    }
+  });
 
   function selectPartner(squadId: string) {
     selectedPartnerSquadId = squadId;

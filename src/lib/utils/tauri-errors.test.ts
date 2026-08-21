@@ -87,4 +87,12 @@ describe('friendlyMessage', () => {
     );
     expect(friendlyMessage('Invalid args', 'dm_send')).toBe('Invalid request. Please try again.');
   });
+
+  it('localizes the relay-unreachable key-package abort and keeps the member list', () => {
+    const raw =
+      'Network error: could not reach the relays to check key packages for: npub1qqqqqqq…, npub1zzzzzzz…';
+    expect(friendlyMessage(raw)).toBe(
+      "Couldn't reach the relays to check whether npub1qqqqqqq…, npub1zzzzzzz… can be added. Nothing was created — try again."
+    );
+  });
 });

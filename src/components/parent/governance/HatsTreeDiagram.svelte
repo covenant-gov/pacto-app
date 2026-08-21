@@ -4,13 +4,25 @@
   import HatsTreeNode from './HatsTreeNode.svelte';
   import { t } from 'svelte-i18n';
 
-  export let root: HatTreeNodeDto;
-  export let roleLabelByHatId: Record<string, string> = {};
-  export let wearerAddressesByHatId: Record<string, string[]> = {};
-  export let executorRolesByAddress: Record<string, string> = {};
-  export let squadMemberEvmByNpub: Record<string, string> = {};
-  export let knownWearerLabels: Record<string, string> = {};
-  export let chainKey: SupportedChainId | null = null;
+  interface Props {
+    root: HatTreeNodeDto;
+    roleLabelByHatId?: Record<string, string>;
+    wearerAddressesByHatId?: Record<string, string[]>;
+    executorRolesByAddress?: Record<string, string>;
+    squadMemberEvmByNpub?: Record<string, string>;
+    knownWearerLabels?: Record<string, string>;
+    chainKey?: SupportedChainId | null;
+  }
+
+  let {
+    root,
+    roleLabelByHatId = {},
+    wearerAddressesByHatId = {},
+    executorRolesByAddress = {},
+    squadMemberEvmByNpub = {},
+    knownWearerLabels = {},
+    chainKey = null,
+  }: Props = $props();
 </script>
 
 <div class="hats-tree-scroll" role="tree" aria-label={$t('governance.title.hatsTree')}>

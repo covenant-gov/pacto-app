@@ -2,14 +2,18 @@
   import { t } from 'svelte-i18n';
   import type { CtaGate } from '../../../lib/governance/governance-privilege';
 
-  export let label: string;
-  export let gate: CtaGate;
-  export let acting = false;
-  export let variant: 'primary' | 'secondary' | 'danger' | 'execute' = 'secondary';
-  export let onClick: () => void = () => {};
+  interface Props {
+    label: string;
+    gate: CtaGate;
+    acting?: boolean;
+    variant?: 'primary' | 'secondary' | 'danger' | 'execute';
+    onClick?: () => void;
+  }
 
-  $: disabled = acting || !gate.enabled;
-  $: title = gate.enabled ? label : $t(gate.reason);
+  let { label, gate, acting = false, variant = 'secondary', onClick = () => {} }: Props = $props();
+
+  let disabled = $derived(acting || !gate.enabled);
+  let title = $derived(gate.enabled ? label : $t(gate.reason));
 </script>
 
 <div class="gov-cta-wrap">

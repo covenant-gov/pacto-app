@@ -8,29 +8,40 @@
   } from '../../lib/commons/tag-catalog';
   import { appConfig } from '../../stores/app-config';
 
-  /** Selected leaf tags (bindable). */
-  export let selected: string[] = [];
-  export let maxTags: number | undefined = undefined;
-  export let disabled = false;
-  export let placeholder = $t('commons.tagPicker.searchPlaceholder');
+  interface Props {
+    /** Selected leaf tags (bindable). */
+    selected?: string[];
+    maxTags?: number;
+    disabled?: boolean;
+    placeholder?: string;
+  }
 
-  let query = '';
+  let {
+    selected = $bindable([]),
+    maxTags = undefined,
+    disabled = false,
+    placeholder = $t('commons.tagPicker.searchPlaceholder'),
+  }: Props = $props();
+
+  let query = $state('');
   /** Flat predictive list visible (search mode only). */
-  let listOpen = false;
+  let listOpen = $state(false);
   /** Category tree replaces the search bar. */
-  let categoryBrowse = false;
+  let categoryBrowse = $state(false);
   let container: HTMLDivElement;
   let blurCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
-  $: resolvedMaxTags = maxTags ?? $appConfig.commonsMaxTags;
-  $: atMax = selected.length >= resolvedMaxTags;
-  $: q = query.trim().toLowerCase();
-  $: activeSet = new Set(selected);
+  const resolvedMaxTags = $derived(maxTags ?? $appConfig.commonsMaxTags);
+  const atMax = $derived(selected.length >= resolvedMaxTags);
+  const q = $derived(query.trim().toLowerCase());
+  const activeSet = $derived(new Set(selected));
 
-  $: flatMatches = getLocalizedCommonsTagGroups($t).filter((g) => {
-    if (!q) return true;
-    return g.title.toLowerCase().includes(q) || g.tag.includes(q);
-  });
+  const flatMatches = $derived(
+    getLocalizedCommonsTagGroups($t).filter((g) => {
+      if (!q) return true;
+      return g.title.toLowerCase().includes(q) || g.tag.includes(q);
+    })
+  );
 
   function selectTag(tag: string) {
     const group = findCommonsTagGroup(tag);
@@ -108,7 +119,7 @@
     };
   });
 
-  $: showFlatList = !categoryBrowse && listOpen;
+  const showFlatList = $derived(!categoryBrowse && listOpen);
 </script>
 
 <div class="tag-picker" bind:this={container}>

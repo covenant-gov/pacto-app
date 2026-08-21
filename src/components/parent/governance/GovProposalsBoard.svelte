@@ -17,6 +17,7 @@
   import {
     gatePermissionlessSigner,
     gateQuartermasterExecute,
+    type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import {
@@ -40,49 +41,83 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let network: string;
-  export let parentId: string;
-  export let treasuryAuthority: string;
-  export let quartermaster = '';
-  export let privilege: GovernancePrivilege;
-  export let proposals: TreasuryProposalDto[] = [];
-  export let proposalsLoading = false;
-  export let proposalsError = '';
-  export let mutinyStatus: MutinyStatusDto | null = null;
-  export let mutinyLoading = false;
-  export let qmStatus: QuartermasterStatusDto | null = null;
-  export let qmPending: QuartermasterPendingActionDto[] = [];
-  export let qmPendingLoading = false;
-  export let qmPendingError = '';
-  export let mutinyMode = false;
-  export let rosterFreezeReason = 'governance.gate.quartermasterLocked';
-  export let onRefreshProposals: () => void = () => {};
-  export let onExecuteMutiny: () => void | Promise<void> = () => {};
-  export let onExpireMutiny: () => void | Promise<void> = () => {};
-  export let fundingHint = '';
+  interface Props {
+    network: string;
+    parentId: string;
+    treasuryAuthority: string;
+    quartermaster?: string;
+    privilege: GovernancePrivilege;
+    proposals?: TreasuryProposalDto[];
+    proposalsLoading?: boolean;
+    proposalsError?: string;
+    mutinyStatus?: MutinyStatusDto | null;
+    mutinyLoading?: boolean;
+    qmStatus?: QuartermasterStatusDto | null;
+    qmPending?: QuartermasterPendingActionDto[];
+    qmPendingLoading?: boolean;
+    qmPendingError?: string;
+    mutinyMode?: boolean;
+    rosterFreezeReason?: string;
+    onRefreshProposals?: () => void;
+    onExecuteMutiny?: () => void | Promise<void>;
+    onExpireMutiny?: () => void | Promise<void>;
+    fundingHint?: string;
+    /** True while capability preflight is still loading; forces every gate closed. */
+    capabilitiesPending?: boolean;
+  }
+
+  let {
+    network,
+    parentId,
+    treasuryAuthority,
+    quartermaster = '',
+    privilege,
+    proposals = [],
+    proposalsLoading = false,
+    proposalsError = '',
+    mutinyStatus = null,
+    mutinyLoading = false,
+    qmStatus = null,
+    qmPending = [],
+    qmPendingLoading = false,
+    qmPendingError = '',
+    mutinyMode = false,
+    rosterFreezeReason = 'governance.gate.quartermasterLocked',
+    onRefreshProposals = () => {},
+    onExecuteMutiny = () => {},
+    onExpireMutiny = () => {},
+    fundingHint = '',
+    capabilitiesPending = false,
+  }: Props = $props();
 
   const tFn = get(t);
+  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
-  let acting = false;
+  let acting = $state(false);
 
-  $: execGate = gatePermissionlessSigner(privilege);
-  $: qmExecGate = gateQuartermasterExecute(privilege, mutinyMode, rosterFreezeReason);
-  $: processCards = buildGovProcessCards({
-    treasuryProposals: proposals,
-    mutinyStatus,
-    qmPending,
-    crewOffboard: qmStatus?.offboard ?? null,
-    crewOffboardQuorumBps: parseQuorumBps(qmStatus?.crewOffboardQuorumBps),
-  });
-  $: openCount = countOpenGovProcesses(processCards);
-  $: mutinyTxHash = mutinyTxHashForCard($mutinyProcessTxByParentId, parentId);
-  $: boardLoading =
+  let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
+  let qmExecGate = $derived(
+    capabilitiesPending ? PENDING_GATE : gateQuartermasterExecute(privilege, mutinyMode, rosterFreezeReason),
+  );
+  let processCards = $derived(
+    buildGovProcessCards({
+      treasuryProposals: proposals,
+      mutinyStatus,
+      qmPending,
+      crewOffboard: qmStatus?.offboard ?? null,
+      crewOffboardQuorumBps: parseQuorumBps(qmStatus?.crewOffboardQuorumBps),
+    }),
+  );
+  let openCount = $derived(countOpenGovProcesses(processCards));
+  let mutinyTxHash = $derived(mutinyTxHashForCard($mutinyProcessTxByParentId, parentId));
+  let boardLoading = $derived(
     (proposalsLoading && proposals.length === 0) ||
-    (mutinyLoading && !mutinyStatus) ||
-    (qmPendingLoading && qmPending.length === 0);
-  $: refreshSpinning = proposalsLoading || mutinyLoading || qmPendingLoading;
-  $: proposalsRpcKind = rpcReadErrorKind(proposalsError);
-  $: qmPendingRpcKind = rpcReadErrorKind(qmPendingError);
+      (mutinyLoading && !mutinyStatus) ||
+      (qmPendingLoading && qmPending.length === 0),
+  );
+  let refreshSpinning = $derived(proposalsLoading || mutinyLoading || qmPendingLoading);
+  let proposalsRpcKind = $derived(rpcReadErrorKind(proposalsError));
+  let qmPendingRpcKind = $derived(rpcReadErrorKind(qmPendingError));
 
   async function runTreasuryExecute(proposalId: string) {
     if (acting || !execGate.enabled) return;

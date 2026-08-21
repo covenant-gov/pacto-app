@@ -8,7 +8,6 @@
   import {
     isJoinRequestRespondInFlight,
     joinRequestRespondInFlight,
-    joinRequestRespondInFlightRevision,
     respondToMlsJoinRequest,
   } from '../../lib/squad/squad-join-mls';
   import { muteJoinRequester } from '../../lib/squad/squad-join-spam';
@@ -32,32 +31,36 @@
   import type { Squad } from '../../stores/squads';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
-  export let squad: Squad;
+  let { squad }: { squad: Squad } = $props();
 
-  let refreshError = '';
+  let refreshError = $state('');
   let profileLoadToken = 0;
-  let botState: SquadBotState | null = null;
-  let botStateLoading = true;
+  let botState = $state<SquadBotState | null>(null);
+  let botStateLoading = $state(true);
 
   const tFn = get(t);
 
-  $: void $joinRequestRespondInFlightRevision;
-  $: anyRespondInFlight = $joinRequestRespondInFlight.size > 0;
-  $: requests = $pendingJoinRequestsBySquadId[squad.id] ?? [];
-  $: hydrated = $joinRequestsHydratedBySquadId[squad.id] ?? false;
-  $: syncing = $joinRequestsSyncingBySquadId[squad.id] ?? false;
-  $: loadError = $joinRequestsErrorBySquadId[squad.id] ?? refreshError;
-  $: loading = (!hydrated && syncing) || botStateLoading;
-  $: canAct = !!(botState?.iAmHolder && botState?.hasLocalSecret);
-  $: admitting = listPendingAdmitForParent(squad.id).filter((e) => e.kind === 'join');
-  $: void $pendingAdmitQueue;
+  let anyRespondInFlight = $derived($joinRequestRespondInFlight.size > 0);
+  let requests = $derived($pendingJoinRequestsBySquadId[squad.id] ?? []);
+  let hydrated = $derived($joinRequestsHydratedBySquadId[squad.id] ?? false);
+  let syncing = $derived($joinRequestsSyncingBySquadId[squad.id] ?? false);
+  let loadError = $derived($joinRequestsErrorBySquadId[squad.id] ?? refreshError);
+  let loading = $derived((!hydrated && syncing) || botStateLoading);
+  let canAct = $derived(!!(botState?.iAmHolder && botState?.hasLocalSecret));
+  let admitting = $derived.by(() => {
+    void $pendingAdmitQueue;
+    return listPendingAdmitForParent(squad.id).filter((e) => e.kind === 'join');
+  });
 
-  $: if (squad?.id) {
-    void ensureJoinRequestsHydrated(squad.id);
-    void loadBotState(squad.id);
-  }
+  $effect(() => {
+    if (squad?.id) {
+      void ensureJoinRequestsHydrated(squad.id);
+      void loadBotState(squad.id);
+    }
+  });
 
-  $: if (requests.length > 0 || admitting.length > 0) {
+  $effect(() => {
+    if (requests.length === 0 && admitting.length === 0) return;
     const token = ++profileLoadToken;
     const npubs = [
       ...new Set([
@@ -68,7 +71,7 @@
     void Promise.all(npubs.map((npub) => loadProfile(npub))).then(() => {
       if (token !== profileLoadToken) return;
     });
-  }
+  });
 
   async function loadBotState(squadId: string) {
     botStateLoading = true;
@@ -228,7 +231,7 @@
                 disabled={anyRespondInFlight}
                 onclick={() => handleReject(request)}
               >
-                {isJoinRequestRespondInFlight(request.eventId)
+                {$joinRequestRespondInFlight.has(request.eventId)
                   ? $t('squad.joinRequests.working')
                   : $t('squad.joinRequests.reject')}
               </button>
@@ -238,7 +241,7 @@
                 disabled={anyRespondInFlight}
                 onclick={() => handleAccept(request)}
               >
-                {isJoinRequestRespondInFlight(request.eventId)
+                {$joinRequestRespondInFlight.has(request.eventId)
                   ? $t('squad.joinRequests.working')
                   : $t('squad.joinRequests.accept')}
               </button>

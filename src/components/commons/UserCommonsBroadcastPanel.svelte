@@ -17,28 +17,33 @@
   import type { CommonsBroadcastLocalState } from '../../lib/commons/types';
   import { commonsUserHasActiveBroadcast } from '../../stores/commons-ui';
 
-  export let userNpub: string;
-  /** Called after a successful publish (e.g. close modal). */
-  export let onPublished: () => void = () => {};
+  interface Props {
+    userNpub: string;
+    /** Called after a successful publish (e.g. close modal). */
+    onPublished?: () => void;
+    publishing?: boolean;
+  }
 
-  let tags: string[] = [];
-  let message = '';
-  let durationHours: CommonsBroadcastDurationHours = 24;
-  let submitError = '';
-  export let publishing = false;
-  let loadingActive = true;
-  let activeBroadcast: CommonsBroadcastLocalState | null = null;
-  let cooldownLabel = '';
+  let { userNpub, onPublished = () => {}, publishing = $bindable(false) }: Props = $props();
+
+  let tags: string[] = $state([]);
+  let message = $state('');
+  let durationHours: CommonsBroadcastDurationHours = $state(24);
+  let submitError = $state('');
+  let loadingActive = $state(true);
+  let activeBroadcast: CommonsBroadcastLocalState | null = $state(null);
+  let cooldownLabel = $state('');
   let cooldownTimer: ReturnType<typeof setInterval> | null = null;
 
   const tFn = get(t);
 
-  $: onCooldown = !!activeBroadcast;
-  $: canSubmit =
+  const onCooldown = $derived(!!activeBroadcast);
+  const canSubmit = $derived(
     !onCooldown &&
     message.trim().length > 0 &&
     tags.length >= 1 &&
-    !publishing;
+    !publishing
+  );
 
   function updateCooldownLabel() {
     if (!activeBroadcast) {

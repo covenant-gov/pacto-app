@@ -1,21 +1,35 @@
 <script lang="ts">
   import { portal } from '../../lib/utils/portal';
+  import type { Snippet } from 'svelte';
 
-  export let active: boolean = false;
-  export let label: string = "";
-  export let image: string = "";
-  export let icon: string = "";
-  /** Unread indicator (no count) on the server button. */
-  export let hasUnreadDot = false;
+  let {
+    active = false,
+    label = '',
+    image = '',
+    icon = '',
+    hasUnreadDot = false,
+    children,
+  }: {
+    active?: boolean;
+    label?: string;
+    image?: string;
+    icon?: string;
+    /** Unread indicator (no count) on the server button. */
+    hasUnreadDot?: boolean;
+    children?: Snippet;
+  } = $props();
 
-  $: firstLetter = label.charAt(0).toUpperCase();
+  const firstLetter = $derived(label.charAt(0).toUpperCase());
 
   let buttonEl: HTMLButtonElement;
-  let imageBroken = false;
-  $: image, (imageBroken = false);
-  $: showImage = !!image && !imageBroken;
-  let showTooltip = false;
-  let tooltipPos = { x: 0, y: 0 };
+  let imageBroken = $state(false);
+  $effect(() => {
+    image;
+    imageBroken = false;
+  });
+  const showImage = $derived(!!image && !imageBroken);
+  let showTooltip = $state(false);
+  let tooltipPos = $state({ x: 0, y: 0 });
 
   function handleTooltipEnter() {
     const rect = buttonEl.getBoundingClientRect();
@@ -49,7 +63,7 @@
     <img src={icon} alt={label} class="tab-icon" />
   {:else}
     <span class="label">
-      <slot>{firstLetter}</slot>
+      {#if children}{@render children()}{:else}{firstLetter}{/if}
     </span>
   {/if}
 </button>

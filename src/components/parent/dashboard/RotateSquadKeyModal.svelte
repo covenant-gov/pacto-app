@@ -2,8 +2,12 @@
   import { t } from 'svelte-i18n';
   import Modal from '../../ui/Modal.svelte';
 
-  export let open = false;
-  export let onClose: () => void = () => {};
+  interface Props {
+    open?: boolean;
+    onClose?: () => void;
+  }
+
+  let { open = false, onClose = () => {} }: Props = $props();
 
   /** Enable when squad key rotation backend is wired. */
   const GENERATE_NEW_KEY_ENABLED = false;

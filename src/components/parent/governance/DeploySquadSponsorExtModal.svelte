@@ -24,37 +24,46 @@
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
   import SquadDeployNetworkField from './SquadDeployNetworkField.svelte';
 
-  export let parentId: string;
-  /** Established squad network; when set the picker is pinned to it. */
-  export let squadNetwork: SupportedChainId | null = null;
-  export let onClose: () => void;
-  export let onComplete: (result: {
-    txHash: string;
-    chain: string;
-    sponsorAddress: string;
-    providerPayload: string;
-    infraRowId: string;
-  }) => Promise<void>;
+  let {
+    parentId,
+    squadNetwork = null,
+    onClose,
+    onComplete,
+  }: {
+    parentId: string;
+    /** Established squad network; when set the picker is pinned to it. */
+    squadNetwork?: SupportedChainId | null;
+    onClose: () => void;
+    onComplete: (result: {
+      txHash: string;
+      chain: string;
+      sponsorAddress: string;
+      providerPayload: string;
+      infraRowId: string;
+    }) => Promise<void>;
+  } = $props();
 
   const titleId = 'deploy-sponsor-ext-title';
   const descId = 'deploy-sponsor-ext-desc';
 
   const tFn = get(t);
 
-  let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
-  let initialDepositEth = '';
-  let deployError = '';
-  let deploying = false;
+  /** Seeds the picker once; user can still change it before squadNetwork pins. */
+  // svelte-ignore state_referenced_locally
+  let deployNetwork: SupportedChainId | '' = $state(squadNetwork ?? '');
+  let initialDepositEth = $state('');
+  let deployError = $state('');
+  let deploying = $state(false);
   let closed = false;
 
-  let signerWallet: SquadSponsorDeploySignerWallet = 'default';
-  let defaultSignerAddress: string | null = null;
-  let squadSignerAddress: string | null = null;
-  let addressesLoading = true;
+  let signerWallet = $state<SquadSponsorDeploySignerWallet>('default');
+  let defaultSignerAddress: string | null = $state(null);
+  let squadSignerAddress: string | null = $state(null);
+  let addressesLoading = $state(true);
   let refreshSeq = 0;
   let preferredPayerOnce = false;
-  let defaultBalance: SignerBalance = emptyBalance();
-  let squadBalance: SignerBalance = emptyBalance();
+  let defaultBalance: SignerBalance = $state(emptyBalance());
+  let squadBalance: SignerBalance = $state(emptyBalance());
 
   function parsePositiveDepositWei(amountTrimmed: string): bigint | null {
     try {
@@ -117,55 +126,59 @@
     refreshSeq += 1;
   });
 
-  $: parentId, deployNetwork, void refreshAll();
+  $effect(() => {
+    void parentId;
+    void deployNetwork;
+    void refreshAll();
+  });
 
-  $: defaultCanonical = canonicalAddress(defaultSignerAddress);
-  $: squadCanonical = canonicalAddress(squadSignerAddress);
-  $: signersAreSame =
-    defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical;
-  $: payFromEffective = (signersAreSame ? 'squad' : signerWallet) as SquadSponsorDeploySignerWallet;
-  $: selectedBalance = signersAreSame
-    ? squadBalance
-    : payFromEffective === 'default'
-      ? defaultBalance
-      : squadBalance;
+  const defaultCanonical = $derived(canonicalAddress(defaultSignerAddress));
+  const squadCanonical = $derived(canonicalAddress(squadSignerAddress));
+  const signersAreSame = $derived(
+    defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical,
+  );
+  const payFromEffective = $derived(
+    (signersAreSame ? 'squad' : signerWallet) as SquadSponsorDeploySignerWallet,
+  );
+  const selectedBalance = $derived(
+    signersAreSame ? squadBalance : payFromEffective === 'default' ? defaultBalance : squadBalance,
+  );
 
-  $: depositTrimmed = initialDepositEth.trim();
-  $: depositWei = parsePositiveDepositWei(depositTrimmed);
-  $: depositInvalidFormat =
-    depositTrimmed.length > 0 &&
-    (() => {
-      try {
-        parseEther(depositTrimmed.replace(/,/g, ''));
-        return depositWei === null;
-      } catch {
-        return true;
-      }
-    })();
+  const depositTrimmed = $derived(initialDepositEth.trim());
+  const depositWei = $derived(parsePositiveDepositWei(depositTrimmed));
+  const depositInvalidFormat = $derived.by(() => {
+    if (depositTrimmed.length === 0) return false;
+    try {
+      parseEther(depositTrimmed.replace(/,/g, ''));
+      return depositWei === null;
+    } catch {
+      return true;
+    }
+  });
 
-  $: depositExceedsBalance =
+  const depositExceedsBalance = $derived(
     depositWei !== null &&
-    !selectedBalance.loading &&
-    !selectedBalance.error &&
-    amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
+      !selectedBalance.loading &&
+      !selectedBalance.error &&
+      amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw),
+  );
 
-  $: ownerUnavailable = !squadCanonical;
-  $: payerUnavailable = signersAreSame
-    ? !squadCanonical
-    : payFromEffective === 'default'
-      ? !defaultCanonical
-      : !squadCanonical;
+  const ownerUnavailable = $derived(!squadCanonical);
+  const payerUnavailable = $derived(
+    signersAreSame ? !squadCanonical : payFromEffective === 'default' ? !defaultCanonical : !squadCanonical,
+  );
 
-  $: canDeploy =
+  const canDeploy = $derived(
     deployNetwork !== '' &&
-    !addressesLoading &&
-    !ownerUnavailable &&
-    !payerUnavailable &&
-    !deploying &&
-    depositWei !== null &&
-    !depositInvalidFormat &&
-    !depositExceedsBalance &&
-    !selectedBalance.loading;
+      !addressesLoading &&
+      !ownerUnavailable &&
+      !payerUnavailable &&
+      !deploying &&
+      depositWei !== null &&
+      !depositInvalidFormat &&
+      !depositExceedsBalance &&
+      !selectedBalance.loading,
+  );
 
   function onDepositInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;

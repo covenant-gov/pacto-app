@@ -17,8 +17,8 @@
 
   const tFn = get(t);
 
-  $: isDev = $updateStatus.status === 'dev-disabled';
-  $: isChecking = $updateStatus.status === 'checking';
+  let isDev = $derived($updateStatus.status === 'dev-disabled');
+  let isChecking = $derived($updateStatus.status === 'checking');
 
   function versionLabel(): string {
     const version = $updateStatus.currentVersion || buildVersion;
@@ -63,9 +63,9 @@
     { minutes: 0, key: 'settings.timeoutNever' },
   ];
 
-  let selectedTimeout = 15;
-  let savingTimeout = false;
-  let savedTimeoutMessage: string | null = null;
+  let selectedTimeout = $state(15);
+  let savingTimeout = $state(false);
+  let savedTimeoutMessage: string | null = $state(null);
 
   onMount(async () => {
     try {

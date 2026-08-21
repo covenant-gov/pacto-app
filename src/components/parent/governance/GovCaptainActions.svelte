@@ -49,32 +49,57 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
-  export let network: string;
-  export let parentId: string;
-  export let treasuryAuthority: string;
-  export let quartermaster: string;
-  export let mutinyModule: string;
-  export let privilege: GovernancePrivilege;
-  export let proposals: TreasuryProposalDto[] = [];
-  export let mutinyStatus: MutinyStatusDto | null = null;
-  export let qmStatus: QuartermasterStatusDto | null = null;
-  export let memberEvmOptions: { address: string; label: string }[] = [];
-  export let captainWearers: string[] = [];
-  export let warGameStack = false;
-  export let onRefreshProposals: () => void = () => {};
-  export let onRefreshMutiny: () => void = () => {};
-  export let onRefreshQm: () => void = () => {};
-  export let fundingHint = '';
+  interface Props {
+    network: string;
+    parentId: string;
+    treasuryAuthority: string;
+    quartermaster: string;
+    mutinyModule: string;
+    privilege: GovernancePrivilege;
+    proposals?: TreasuryProposalDto[];
+    mutinyStatus?: MutinyStatusDto | null;
+    qmStatus?: QuartermasterStatusDto | null;
+    memberEvmOptions?: { address: string; label: string }[];
+    captainWearers?: string[];
+    warGameStack?: boolean;
+    onRefreshProposals?: () => void;
+    onRefreshMutiny?: () => void;
+    onRefreshQm?: () => void;
+    fundingHint?: string;
+    /** True while capability preflight is still loading; forces every gate closed. */
+    capabilitiesPending?: boolean;
+  }
+
+  let {
+    network,
+    parentId,
+    treasuryAuthority,
+    quartermaster,
+    mutinyModule,
+    privilege,
+    proposals = [],
+    mutinyStatus = null,
+    qmStatus = null,
+    memberEvmOptions = [],
+    captainWearers = [],
+    warGameStack = false,
+    onRefreshProposals = () => {},
+    onRefreshMutiny = () => {},
+    onRefreshQm = () => {},
+    fundingHint = '',
+    capabilitiesPending = false,
+  }: Props = $props();
 
   const tFn = get(t);
+  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
-  let acting = false;
-  let voteProposalId = '';
-  let execProposalId = '';
-  let resignTo = '';
-  let qmAddress = '';
-  let qmPending: QuartermasterPendingDto | null = null;
-  let showBootstrapModal = false;
+  let acting = $state(false);
+  let voteProposalId = $state('');
+  let execProposalId = $state('');
+  let resignTo = $state('');
+  let qmAddress = $state('');
+  let qmPending: QuartermasterPendingDto | null = $state(null);
+  let showBootstrapModal = $state(false);
 
   function shortEvm(addr: string): string {
     const a = addr.trim();
@@ -82,35 +107,39 @@
     return `${a.slice(0, 6)}…${a.slice(-4)}`;
   }
 
-  $: if (memberEvmOptions.length > 0) {
-    const hit = memberEvmOptions.some(
-      (o) => o.address.trim().toLowerCase() === qmAddress.trim().toLowerCase(),
-    );
-    if (!qmAddress.trim() || !hit) {
-      qmAddress = memberEvmOptions[0].address;
+  $effect(() => {
+    if (memberEvmOptions.length > 0) {
+      const hit = memberEvmOptions.some(
+        (o) => o.address.trim().toLowerCase() === qmAddress.trim().toLowerCase(),
+      );
+      if (!qmAddress.trim() || !hit) {
+        qmAddress = memberEvmOptions[0].address;
+      }
     }
-  }
+  });
 
-  $: captainGate = gateRequiresCaptain(privilege);
-  $: offboardActive = isCrewOffboardActive(qmStatus);
-  $: rosterFrozen = !!qmStatus?.mutinyActive || offboardActive;
-  $: rosterFreezeReason = qmStatus?.mutinyActive
-    ? 'governance.gate.quartermasterLocked'
-    : 'governance.gate.rosterFrozenOffboard';
-  $: qmGate = gateBlockedByMutinyMode(privilege, rosterFrozen, rosterFreezeReason);
-  $: execGate = gatePermissionlessSigner(privilege);
-  $: votable = captainVotableProposals(proposals);
-  $: executable = executableTreasuryProposals(proposals);
-  $: mutinyActive = isMutinyActive(mutinyStatus);
-  $: mutinyExpired = isMutinyExpirable(mutinyStatus);
-  $: randomizeExclude = [privilege.myAddress, ...captainWearers];
-  $: randomizeCandidates = randomizeCaptainCandidates(memberEvmOptions, randomizeExclude);
-  $: resignGate = ((): CtaGate =>
+  let captainGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCaptain(privilege));
+  let offboardActive = $derived(isCrewOffboardActive(qmStatus));
+  let rosterFrozen = $derived(!!qmStatus?.mutinyActive || offboardActive);
+  let rosterFreezeReason = $derived(
+    qmStatus?.mutinyActive ? 'governance.gate.quartermasterLocked' : 'governance.gate.rosterFrozenOffboard',
+  );
+  let qmGate = $derived(
+    capabilitiesPending ? PENDING_GATE : gateBlockedByMutinyMode(privilege, rosterFrozen, rosterFreezeReason),
+  );
+  let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
+  let votable = $derived(captainVotableProposals(proposals));
+  let executable = $derived(executableTreasuryProposals(proposals));
+  let mutinyActive = $derived(isMutinyActive(mutinyStatus));
+  let mutinyExpired = $derived(isMutinyExpirable(mutinyStatus));
+  let randomizeExclude = $derived([privilege.myAddress, ...captainWearers]);
+  let randomizeCandidates = $derived(randomizeCaptainCandidates(memberEvmOptions, randomizeExclude));
+  let resignGate = $derived(
     mutinyActive
-      ? { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' }
-      : captainGate
-  )();
-  $: randomizeGate = ((): CtaGate => {
+      ? ({ enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' } as const)
+      : captainGate,
+  );
+  let randomizeGate = $derived.by((): CtaGate => {
     if (mutinyActive) {
       return { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' };
     }
@@ -119,9 +148,10 @@
       return { enabled: false, reason: 'governance.gate.noOtherRosterForCaptain' };
     }
     return captainGate;
-  })();
-  $: bootstrapAvailable = qmStatus?.bootstrapAvailable === true;
-  $: bootstrapGate = ((): CtaGate => {
+  });
+  let bootstrapAvailable = $derived(qmStatus?.bootstrapAvailable === true);
+  let bootstrapGate = $derived.by((): CtaGate => {
+    if (capabilitiesPending) return PENDING_GATE;
     if (!bootstrapAvailable) {
       return {
         enabled: false,
@@ -133,13 +163,19 @@
       };
     }
     return captainGate;
-  })();
-  $: if (votable.length && !votable.some((p) => p.proposalId === voteProposalId)) {
-    voteProposalId = votable[0]?.proposalId ?? '';
-  }
-  $: if (executable.length && !executable.some((p) => p.proposalId === execProposalId)) {
-    execProposalId = executable[0]?.proposalId ?? '';
-  }
+  });
+
+  $effect(() => {
+    if (votable.length && !votable.some((p) => p.proposalId === voteProposalId)) {
+      voteProposalId = votable[0]?.proposalId ?? '';
+    }
+  });
+
+  $effect(() => {
+    if (executable.length && !executable.some((p) => p.proposalId === execProposalId)) {
+      execProposalId = executable[0]?.proposalId ?? '';
+    }
+  });
 
   async function run(label: string, fn: () => Promise<unknown>, refresh: () => void) {
     if (acting) return;
@@ -194,6 +230,7 @@
         {treasuryAuthority}
         {privilege}
         {fundingHint}
+        {capabilitiesPending}
         onSubmitted={onRefreshProposals}
       />
 

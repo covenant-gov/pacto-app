@@ -3,9 +3,13 @@
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { profiles } from '../../../stores/profiles';
 
-  export let open = false;
-  export let channelMembers: string[] = [];
-  export let loadingMembers = false;
+  interface Props {
+    open?: boolean;
+    channelMembers?: string[];
+    loadingMembers?: boolean;
+  }
+
+  let { open = false, channelMembers = [], loadingMembers = false }: Props = $props();
 </script>
 
 {#if open}

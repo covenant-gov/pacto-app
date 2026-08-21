@@ -55,6 +55,9 @@ export function getInvokeErrorMessage(e: unknown, fallback = get(t)('errors.fall
 
 const MIGRATION_GATE_MESSAGE = 'Account security must be updated. Unlock the app to migrate.';
 
+/** Marker in `format_transient_skip_error` (src-tauri/src/mls.rs); the tail is the member list. */
+const RELAY_KEYPACKAGE_UNREACHABLE = 'could not reach the relays to check key packages for:';
+
 /**
  * Recognize the migration-gate error returned by sensitive backend commands.
  */
@@ -78,6 +81,11 @@ export function friendlyMessage(raw: string, context: 'dm_send' | 'generic' = 'g
   }
   if (raw.includes(MIGRATION_GATE_MESSAGE)) {
     return get(t)('errors.migrationGate');
+  }
+  const relayIndex = raw.indexOf(RELAY_KEYPACKAGE_UNREACHABLE);
+  if (relayIndex !== -1) {
+    const members = raw.slice(relayIndex + RELAY_KEYPACKAGE_UNREACHABLE.length).trim();
+    return get(t)('errors.mls.relayKeyPackageUnreachable', { values: { members } });
   }
   if (raw.includes('no sponsor clone registered for this squad id')) {
     return get(t)('governance.error.noSponsorCloneRegistered');

@@ -11,49 +11,69 @@
   import { gateRequiresCaptain, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
   import { showToast } from '../../../stores/toast';
 
-  export let open = false;
-  export let onClose: () => void = () => {};
-  export let network = 'sepolia';
-  export let parentId = '';
-  export let quartermaster = '';
-  export let privilege: GovernancePrivilege;
-  export let memberOptions: { address: string; label: string }[] = [];
-  export let captainAddresses: string[] = [];
-  export let onSubmitted: () => void = () => {};
-  export let fundingHint = '';
+  let {
+    open = false,
+    onClose = () => {},
+    network = 'sepolia',
+    parentId = '',
+    quartermaster = '',
+    privilege,
+    memberOptions = [],
+    captainAddresses = [],
+    onSubmitted = () => {},
+    fundingHint = '',
+  }: {
+    open?: boolean;
+    onClose?: () => void;
+    network?: string;
+    parentId?: string;
+    quartermaster?: string;
+    privilege: GovernancePrivilege;
+    memberOptions?: { address: string; label: string }[];
+    captainAddresses?: string[];
+    onSubmitted?: () => void;
+    fundingHint?: string;
+  } = $props();
 
   const titleId = 'gov-bootstrap-crew-title';
   const descId = 'gov-bootstrap-crew-desc';
 
   const tFn = get(t);
 
-  let selected = new Set<string>();
-  let acting = false;
-  let error = '';
+  let selected = $state(new Set<string>());
+  let acting = $state(false);
+  let error = $state('');
   let wasOpen = false;
 
-  $: gasLine = fundingHint.trim() || govWriteFundingFallbackHint();
+  const gasLine = $derived(fundingHint.trim() || govWriteFundingFallbackHint());
 
-  $: captainSet = new Set(
-    [...captainAddresses, privilege?.myAddress ?? '']
-      .map((a) => a.trim().toLowerCase())
-      .filter(Boolean),
+  const captainSet = $derived(
+    new Set(
+      [...captainAddresses, privilege?.myAddress ?? '']
+        .map((a) => a.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   );
-  $: eligible = memberOptions.filter((m) => {
-    const addr = m.address.trim().toLowerCase();
-    return addr && !captainSet.has(addr);
-  });
-  $: captainGate = gateRequiresCaptain(privilege);
-  $: allSelected = eligible.length > 0 && eligible.every((m) => selected.has(m.address.trim().toLowerCase()));
+  const eligible = $derived(
+    memberOptions.filter((m) => {
+      const addr = m.address.trim().toLowerCase();
+      return addr && !captainSet.has(addr);
+    }),
+  );
+  const captainGate = $derived(gateRequiresCaptain(privilege));
+  const allSelected = $derived(
+    eligible.length > 0 && eligible.every((m) => selected.has(m.address.trim().toLowerCase())),
+  );
 
-  $: if (open && !wasOpen) {
-    wasOpen = true;
-    selected = new Set(eligible.map((m) => m.address.trim().toLowerCase()));
-    error = '';
-  }
-  $: if (!open) {
-    wasOpen = false;
-  }
+  $effect(() => {
+    if (open && !wasOpen) {
+      wasOpen = true;
+      selected = new Set(eligible.map((m) => m.address.trim().toLowerCase()));
+      error = '';
+    } else if (!open && wasOpen) {
+      wasOpen = false;
+    }
+  });
 
   function toggle(addr: string) {
     const key = addr.trim().toLowerCase();

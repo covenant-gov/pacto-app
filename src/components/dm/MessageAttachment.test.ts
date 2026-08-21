@@ -174,7 +174,7 @@ describe('MessageAttachment', () => {
     expect(screen.queryByText('Alice')).not.toBeNull();
   });
 
-  it('forwards the image viewer showMessage event as its own', async () => {
+  it('forwards the image viewer showMessage callback as its own', async () => {
     const attachment: Attachment = {
       ...baseAttachment,
       path: '/cache/abc123.png',
@@ -182,8 +182,7 @@ describe('MessageAttachment', () => {
     };
     const onShowMessage = vi.fn();
     render(MessageAttachment, {
-      props: { attachment, chatId: 'npub1abc', messageId: 'm1' },
-      events: { showMessage: onShowMessage },
+      props: { attachment, chatId: 'npub1abc', messageId: 'm1', onShowMessage },
     });
 
     await waitFor(() => {
@@ -195,7 +194,7 @@ describe('MessageAttachment', () => {
     await fireEvent.click(screen.getByLabelText('Show message'));
 
     expect(onShowMessage).toHaveBeenCalledTimes(1);
-    expect(onShowMessage.mock.calls[0][0].detail).toEqual({ messageId: 'm1' });
+    expect(onShowMessage).toHaveBeenCalledWith('m1');
   });
 
   it('downloads a non-image attachment when the file card is clicked', async () => {
@@ -503,6 +502,39 @@ describe('MessageAttachment', () => {
       });
       expect(screen.queryByLabelText('Save as…')).toBeNull();
       expect(mockedSaveAttachmentAs).not.toHaveBeenCalled();
+    });
+
+    it('fetches the Klipy blob once for a given attachment, not again on unrelated re-renders', async () => {
+      mockedFetchGifBlobUrl.mockResolvedValueOnce('blob://mock-gif');
+      const { rerender } = render(MessageAttachment, {
+        props: { attachment: klipyAttachment, chatId: 'npub1abc', messageId: 'm1' },
+      });
+
+      await waitFor(() => {
+        expect(mockedFetchGifBlobUrl).toHaveBeenCalledTimes(1);
+      });
+
+      // Unrelated prop changes (and even a fresh attachment object with the same url) must not re-trigger the fetch.
+      await rerender({
+        attachment: { ...klipyAttachment },
+        chatId: 'npub1abc',
+        messageId: 'm1',
+        authorName: 'Alice',
+      });
+      await rerender({
+        attachment: { ...klipyAttachment },
+        chatId: 'npub1abc',
+        messageId: 'm1',
+        authorName: 'Alice',
+      });
+
+      // Prove the rerenders actually reached the component (not a silent no-op that would
+      // make the "not called again" assertion below vacuous): the new authorName shows up
+      // once the viewer opens.
+      await fireEvent.click(screen.getByLabelText('Open Image.gif'));
+      expect(screen.queryByText('Alice')).not.toBeNull();
+
+      expect(mockedFetchGifBlobUrl).toHaveBeenCalledTimes(1);
     });
   });
 });

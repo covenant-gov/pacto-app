@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { fireEvent, render } from '@testing-library/svelte';
 import LinkPreview from './LinkPreview.svelte';
 import type { PreviewMetadata } from '../../stores/dm';
 
@@ -46,5 +46,19 @@ describe('LinkPreview', () => {
       props: { metadata: { ...baseMetadata, favicon: 'javascript:alert(1)' } },
     });
     expect(container.querySelector('img.link-preview-favicon')).toBeNull();
+  });
+
+  it('resolves a fresh preview after a broken image on the previous one, once metadata points at a new URL', async () => {
+    const metadata: PreviewMetadata = { ...baseMetadata, og_image: 'https://example.com/x.png' };
+    const { container, rerender } = render(LinkPreview, { props: { metadata } });
+
+    const img = container.querySelector('img.link-preview-image') as HTMLImageElement;
+    await fireEvent.error(img);
+    expect(container.querySelector('img.link-preview-image')).toBeNull();
+
+    // A distinct metadata object (a new preview, e.g. a different URL) resolves fresh and shows its own image.
+    await rerender({ metadata: { ...baseMetadata, og_image: 'https://example.com/y.png' } });
+    const nextImg = container.querySelector('img.link-preview-image') as HTMLImageElement;
+    expect(nextImg?.getAttribute('src')).toBe('https://example.com/y.png');
   });
 });

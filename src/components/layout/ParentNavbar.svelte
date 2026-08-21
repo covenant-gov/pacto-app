@@ -7,8 +7,11 @@
   import {
     squads,
     parentsCreatingAnnouncements,
+    removeParentCreatingAnnouncements,
     parentCreateErrorById,
     parentPendingCreateMembers,
+    parentPendingCreateOptions,
+    parentRetryingCreateIds,
     squadInfraByParentId,
     type Squad,
   } from '../../stores/squads';
@@ -20,7 +23,9 @@
     activeTopNavTab,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
+    squadNavOrder,
   } from '../../stores/navigation';
+  import { removeSquadNavId } from '../../lib/squad/squad-nav-order';
   import { dmList, requestsList, pendingList } from '../../stores/dm';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
@@ -66,91 +71,116 @@
 
   const translate = get(t);
 
-  $: activeParent = $squads.find((s) => s.id === $activeSquadId) as Squad | undefined;
+  let activeParent = $derived($squads.find((s) => s.id === $activeSquadId) as Squad | undefined);
 
-  $: if ($activeTopNavTab === 'squads' && $squads.length > 0) {
-    void ensureJoinRequestsHydratedForSquads($squads);
-  }
+  /** First load of pending join requests for every visible squad; hydration is idempotent per squad. */
+  $effect(() => {
+    if ($activeTopNavTab === 'squads' && $squads.length > 0) {
+      void ensureJoinRequestsHydratedForSquads($squads);
+    }
+  });
 
-  $: activeSquadJoinRequestSyncKey =
-    $activeTopNavTab === 'squads' && activeParent ? activeParent.id : '';
-  $: if (activeSquadJoinRequestSyncKey && isJoinRequestsHydrated(activeSquadJoinRequestSyncKey)) {
-    void syncJoinRequestsForSquad(activeSquadJoinRequestSyncKey);
-  }
+  let activeSquadJoinRequestSyncKey = $derived(
+    $activeTopNavTab === 'squads' && activeParent ? activeParent.id : ''
+  );
+  $effect(() => {
+    if (activeSquadJoinRequestSyncKey && isJoinRequestsHydrated(activeSquadJoinRequestSyncKey)) {
+      void syncJoinRequestsForSquad(activeSquadJoinRequestSyncKey);
+    }
+  });
 
-  $: if ($activeTopNavTab === 'squads' && activeParent && $deferredSquadRosterKeyParentIds) {
-    void refreshPersonalAlertForSquad(activeParent);
-    void refreshGovActionPromptsForSquad(activeParent);
-  }
+  $effect(() => {
+    if ($activeTopNavTab === 'squads' && activeParent && $deferredSquadRosterKeyParentIds) {
+      void refreshPersonalAlertForSquad(activeParent);
+      void refreshGovActionPromptsForSquad(activeParent);
+    }
+  });
 
-  $: personalAlertRefreshKey =
+  let personalAlertRefreshKey = $derived(
     $activeTopNavTab === 'squads' && activeParent
       ? `${activeParent.id}:${$activeChannelId ?? ''}:${$activeHubChannelName ?? ''}`
-      : '';
-  $: if (personalAlertRefreshKey && activeParent) {
-    void refreshPersonalAlertForSquad(activeParent);
-    void refreshGovActionPromptsForSquad(activeParent);
-  }
+      : ''
+  );
+  $effect(() => {
+    if (personalAlertRefreshKey && activeParent) {
+      void refreshPersonalAlertForSquad(activeParent);
+      void refreshGovActionPromptsForSquad(activeParent);
+    }
+  });
 
-  $: rawChannels = activeParent
-    ? [...activeParent.channels].sort((a, b) => a.order - b.order)
-    : [];
-  $: includeWarGame = activeParent
-    ? pactoGovWargameInfraRow($squadInfraByParentId[activeParent.id]) != null
-    : false;
-  $: channels = activeParent ? buildHubSidebarChannels(rawChannels, { includeWarGame }) : [];
+  let rawChannels = $derived(
+    activeParent ? [...activeParent.channels].sort((a, b) => a.order - b.order) : []
+  );
+  let includeWarGame = $derived(
+    activeParent ? pactoGovWargameInfraRow($squadInfraByParentId[activeParent.id]) != null : false
+  );
+  let channels = $derived(
+    activeParent ? buildHubSidebarChannels(rawChannels, { includeWarGame }) : []
+  );
 
-  $: creating =
+  let creating = $derived(
     activeParent &&
-    activeParent.channels.length === 0 &&
-    $parentsCreatingAnnouncements.has(activeParent.id);
+      activeParent.channels.length === 0 &&
+      $parentsCreatingAnnouncements.has(activeParent.id)
+  );
 
-  $: createError = activeParent ? $parentCreateErrorById[activeParent.id] ?? '' : '';
+  let createError = $derived(activeParent ? $parentCreateErrorById[activeParent.id] ?? '' : '');
 
-  $: canRetryCreate =
+  let retryingCreate = $derived(!!activeParent && $parentRetryingCreateIds.has(activeParent.id));
+
+  let canRetryCreate = $derived(
     activeParent &&
-    createError &&
-    ($parentPendingCreateMembers[activeParent.id]?.length ?? 0) > 0;
+      createError &&
+      ($parentPendingCreateMembers[activeParent.id]?.length ?? 0) > 0
+  );
 
-  $: subheading =
+  /** Discard is destructive: never offer it while a create for this parent is still running. */
+  let canDiscardCreate = $derived(!!activeParent && !!createError && !retryingCreate);
+
+  let subheading = $derived(
     activeParent &&
-    activeParent.kind === 'squad-pair' &&
-    activeParent.pairedSquads
+      activeParent.kind === 'squad-pair' &&
+      activeParent.pairedSquads
       ? activeParent.pairedSquads.map((s) => s.name).join(', ')
-      : undefined;
+      : undefined
+  );
 
-  $: showPartnerSquadsSection = !!activeParent && !!$activeSquadId;
+  let showPartnerSquadsSection = $derived(!!activeParent && !!$activeSquadId);
 
-  $: partnerSquads =
+  let partnerSquads = $derived(
     showPartnerSquadsSection && $activeSquadId
       ? partnerSquadsForHubParent($squads, $activeSquadId).map((s) => ({ id: s.id, name: s.name }))
-      : [];
+      : []
+  );
 
-  $: pairAnchorSquad =
-    activeParent && showPartnerSquadsSection ? resolvePairAnchorFromHub(activeParent, $squads) : undefined;
+  let pairAnchorSquad = $derived(
+    activeParent && showPartnerSquadsSection ? resolvePairAnchorFromHub(activeParent, $squads) : undefined
+  );
 
-  $: canPairFromHub = !!pairAnchorSquad;
+  let canPairFromHub = $derived(!!pairAnchorSquad);
 
-  $: activePartnerSquadId =
-    activeParent && activeParent.kind === 'squad-pair' ? activeParent.id : null;
+  let activePartnerSquadId = $derived(
+    activeParent && activeParent.kind === 'squad-pair' ? activeParent.id : null
+  );
 
   function selectPartnerSquad(squadPairId: string) {
     activateSquadHub(squadPairId);
   }
 
-  let showPairWithSquadModal = false;
-  let pairCreateError = '';
-  let pairCreating = false;
+  let showPairWithSquadModal = $state(false);
+  let pairCreateError = $state('');
+  let pairCreating = $state(false);
   let pairModal: PairWithSquadModal;
 
-  $: pairPartnerCandidates =
+  let pairPartnerCandidates = $derived(
     pairAnchorSquad && activeParent
       ? partnerSquadCandidates(
           $squads,
           pairAnchorSquad.id,
           pairPartnerExcludeSquadIds(activeParent, pairAnchorSquad)
         )
-      : [];
+      : []
+  );
 
   function openPairWithSquadModal() {
     if (!canPairFromHub || !showPartnerSquadsSection || !canShowParentMenuActions) return;
@@ -214,32 +244,36 @@
     }
   }
 
-  $: emptyMessage = $t('nav.parentNavbar.emptySquad');
+  let emptyMessage = $derived($t('nav.parentNavbar.emptySquad'));
 
-  $: canShowParentMenuActions =
-    !!activeParent && !creating && activeParent.channels.length > 0;
+  let canShowParentMenuActions = $derived(
+    !!activeParent && !creating && activeParent.channels.length > 0
+  );
 
-  $: maxChannelNameLength = $appConfig.channelNameMaxLength;
+  let maxChannelNameLength = $derived($appConfig.channelNameMaxLength);
 
-  $: createChannelSubtitle = $t('nav.parentNavbar.createChannel.subtitle', {
-    values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
-  });
-  $: createChannelMembersLabel = $t('nav.parentNavbar.createChannel.membersLabel');
-  $: createChannelEmptyMessage = $t('nav.parentNavbar.createChannel.empty');
-  $: inviteModalTitle = $t('nav.parentNavbar.invite.title');
-  $: inviteModalSubtitle = $t('nav.parentNavbar.invite.subtitle', {
-    values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
-  });
-  $: inviteModalEmptyMessage = $t('nav.parentNavbar.invite.empty');
+  let createChannelSubtitle = $derived(
+    $t('nav.parentNavbar.createChannel.subtitle', {
+      values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
+    })
+  );
+  let createChannelMembersLabel = $derived($t('nav.parentNavbar.createChannel.membersLabel'));
+  let createChannelEmptyMessage = $derived($t('nav.parentNavbar.createChannel.empty'));
+  let inviteModalTitle = $derived($t('nav.parentNavbar.invite.title'));
+  let inviteModalSubtitle = $derived(
+    $t('nav.parentNavbar.invite.subtitle', {
+      values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
+    })
+  );
+  let inviteModalEmptyMessage = $derived($t('nav.parentNavbar.invite.empty'));
 
-  let retryingCreate = false;
-  let inviteErrorBanner = '';
-  let createChannelErrorBanner = '';
+  let inviteErrorBanner = $state('');
+  let createChannelErrorBanner = $state('');
 
-  $: errorBanners = [
+  let errorBanners = $derived([
     ...(inviteErrorBanner ? [{ id: 'invite', text: inviteErrorBanner }] : []),
     ...(createChannelErrorBanner ? [{ id: 'createChannel', text: createChannelErrorBanner }] : []),
-  ];
+  ]);
 
   function onDismissBanner(id: string) {
     if (id === 'invite') inviteErrorBanner = '';
@@ -267,7 +301,6 @@
     const parent = activeParent;
     if (!parent || !createError || retryingCreate) return;
     if (!$parentPendingCreateMembers[parent.id]?.length) return;
-    retryingCreate = true;
     try {
       await retryParentAnnouncementsCreate(parent);
     } catch (e) {
@@ -275,19 +308,46 @@
         ...m,
         [parent.id]: friendlyMessage(getInvokeErrorMessage(e)),
       }));
-    } finally {
-      retryingCreate = false;
     }
   }
 
-  let showCreateChannelModal = false;
-  let createChannelName = '';
-  let selectedNpubs: string[] = [];
-  let createChannelError = '';
-  let createChannelMemberList: string[] = [];
-  let loadingCreateChannelMembers = false;
-  let showClosedChannelPicker = false;
-  let creatingChannel = false;
+  /** Discards a failed placeholder squad and its associated create-flow state. */
+  function handleDiscardCreate() {
+    const parent = activeParent;
+    if (!parent || !createError || retryingCreate) return;
+    squads.update((list) => list.filter((s) => s.id !== parent.id));
+    squadNavOrder.update((order) => removeSquadNavId(order, parent.id));
+    removeParentCreatingAnnouncements(parent.id);
+    parentCreateErrorById.update((m) => {
+      const next = { ...m };
+      delete next[parent.id];
+      return next;
+    });
+    parentPendingCreateMembers.update((m) => {
+      const next = { ...m };
+      delete next[parent.id];
+      return next;
+    });
+    parentPendingCreateOptions.update((m) => {
+      const next = { ...m };
+      delete next[parent.id];
+      return next;
+    });
+    if (get(activeSquadId) === parent.id) {
+      activeSquadId.set(null);
+      activeChannelId.set(null);
+      activeHubChannelName.set(null);
+    }
+  }
+
+  let showCreateChannelModal = $state(false);
+  let createChannelName = $state('');
+  let selectedNpubs: string[] = $state([]);
+  let createChannelError = $state('');
+  let createChannelMemberList: string[] = $state([]);
+  let loadingCreateChannelMembers = $state(false);
+  let showClosedChannelPicker = $state(false);
+  let creatingChannel = $state(false);
 
   function openCreateChannelModal() {
     showCreateChannelModal = true;
@@ -323,8 +383,9 @@
       : [...selectedNpubs, npub];
   }
 
-  $: canCreateClosedChannel =
-    createChannelName.trim().length > 0 && selectedNpubs.length > 0;
+  let canCreateClosedChannel = $derived(
+    createChannelName.trim().length > 0 && selectedNpubs.length > 0
+  );
 
   function startCreateChannel(access: 'open' | 'closed', members: string[]) {
     const name = createChannelName.trim();
@@ -397,13 +458,13 @@
     return getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
   }
 
-  let showInviteModal = false;
-  let inviteCandidates: string[] = [];
-  let selectedInviteNpubs: string[] = [];
-  let inviteByNpub = '';
-  let loadingInvite = false;
-  let inviteError = '';
-  let inviting = false;
+  let showInviteModal = $state(false);
+  let inviteCandidates: string[] = $state([]);
+  let selectedInviteNpubs: string[] = $state([]);
+  let inviteByNpub = $state('');
+  let loadingInvite = $state(false);
+  let inviteError = $state('');
+  let inviting = $state(false);
 
   function openInviteModal() {
     showInviteModal = true;
@@ -474,8 +535,8 @@
     });
   }
 
-  let showExitModal = false;
-  let exitError = '';
+  let showExitModal = $state(false);
+  let exitError = $state('');
 
   function openExitModal() {
     showExitModal = true;
@@ -512,6 +573,7 @@
   creating={Boolean(creating)}
   createError={createError}
   canRetryCreate={Boolean(canRetryCreate)}
+  canDiscardCreate={Boolean(canDiscardCreate)}
   retryingCreate={retryingCreate}
   emptyMessage={emptyMessage}
   hasParent={!!activeParent}
@@ -520,6 +582,7 @@
   onSelectChannel={selectChannel}
   onCreateChannel={openCreateChannelModal}
   onRetryCreate={handleRetryCreate}
+  onDiscardCreate={handleDiscardCreate}
   onInvite={openInviteModal}
   onExitSquad={openExitModal}
   partnerSquads={partnerSquads}

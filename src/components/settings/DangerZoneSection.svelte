@@ -6,8 +6,8 @@
   import { t } from 'svelte-i18n';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
 
-  let isLoggingOut = false;
-  let showLogoutConfirm = false;
+  let isLoggingOut = $state(false);
+  let showLogoutConfirm = $state(false);
 
   function openLogoutConfirm() {
     showLogoutConfirm = true;

@@ -24,7 +24,7 @@
   import PendingWelcomeRequests from './PendingWelcomeRequests.svelte';
   import { offeredWelcomeList } from '../../lib/invites/pending-welcomes-store';
 
-  $: title = $t(`messaging.dm.navbar.${$activeDmTab}`);
+  let title = $derived($t(`messaging.dm.navbar.${$activeDmTab}`));
 
   function displayName(entry: DmEntry): string {
     const profile = $profiles[entry.npub];
@@ -33,7 +33,7 @@
   }
 
   /** Search tab: filter unified list by npub or display name (case-insensitive substring). */
-  let dmSearchQuery = '';
+  let dmSearchQuery = $state('');
 
   function matchesDmSearch(entry: DmEntry, rawQuery: string): boolean {
     const q = rawQuery.trim().toLowerCase();
@@ -50,14 +50,14 @@
     return $allDmEntriesUnified as DmEntry[];
   }
 
-  $: filteredEntries = (() => {
+  let filteredEntries = $derived.by(() => {
     const tab = $activeDmTab;
     const list = tabSourceList(tab);
     if (tab === 'search' && dmSearchQuery.trim() !== '') {
       return list.filter((e) => matchesDmSearch(e, dmSearchQuery));
     }
     return list;
-  })();
+  });
 
   function categoryLabel(cat: DmSidebarCategory): string {
     const tFn = get(t);
@@ -73,7 +73,7 @@
     $activeDmId = npub;
   }
 
-  let width = 240;
+  let width = $state(240);
   let isResizing = false;
   const minWidth = 180;
   const maxWidth = 400;
