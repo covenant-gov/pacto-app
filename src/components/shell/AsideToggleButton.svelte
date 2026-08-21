@@ -1,7 +1,7 @@
 <script lang="ts">
-	import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
-	import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { MediaQuery } from 'svelte/reactivity';
+	import * as Avatar from '$lib/components/ui/avatar/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { SHELL_WIDE_QUERY } from '$lib/shell';
 	import { cn } from '$lib/utils.js';
@@ -10,25 +10,28 @@
 		collapsed,
 		openLabel,
 		closeLabel,
+		faces = [],
 		class: className,
 		onToggle,
 	}: {
 		collapsed: boolean;
 		openLabel: string;
 		closeLabel: string;
+		faces?: readonly { id?: string; initials: string; color: string }[];
 		class?: string;
 		onToggle: () => void;
 	} = $props();
 
 	const wideShell = new MediaQuery(SHELL_WIDE_QUERY);
+	const stack = $derived(faces.slice(0, 3));
 </script>
 
 {#if wideShell.current}
 	<Button
 		variant="ghost"
-		size="icon"
+		size="sm"
 		class={cn(
-			'size-8 bg-transparent! text-[color-mix(in_oklab,var(--foreground)_62%,var(--muted-foreground))] shadow-none',
+			'h-8 w-auto min-w-8 gap-1 bg-transparent! px-1.5 text-[color-mix(in_oklab,var(--foreground)_62%,var(--muted-foreground))] shadow-none',
 			'hover:bg-[color-mix(in_oklab,var(--foreground)_8%,transparent)]! hover:text-foreground',
 			'aria-expanded:bg-[color-mix(in_oklab,var(--foreground)_10%,transparent)]! aria-expanded:text-foreground',
 			'dark:hover:bg-[color-mix(in_oklab,var(--foreground)_12%,transparent)]!',
@@ -39,10 +42,24 @@
 		aria-expanded={!collapsed}
 		onclick={onToggle}
 	>
-		{#if collapsed}
-			<PanelRightOpen class="size-4" aria-hidden="true" />
-		{:else}
-			<PanelRightClose class="size-4" aria-hidden="true" />
+		{#if stack.length}
+			<Avatar.Group class="-space-x-1.5 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-muted" aria-hidden="true">
+				{#each stack as face (face.id ?? face.initials + face.color)}
+					<Avatar.Root size="sm" class="size-5">
+						<Avatar.Fallback class="identity-fill text-[8px] font-semibold" style={`--identity: ${face.color}`}>
+							{face.initials}
+						</Avatar.Fallback>
+					</Avatar.Root>
+				{/each}
+			</Avatar.Group>
 		{/if}
+		<ChevronRight
+			class={cn(
+				'size-3.5 shrink-0 transition-transform duration-200 ease-[var(--ease-out)]',
+				collapsed && '-rotate-180',
+				'motion-reduce:transition-none',
+			)}
+			aria-hidden="true"
+		/>
 	</Button>
 {/if}

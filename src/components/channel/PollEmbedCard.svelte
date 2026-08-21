@@ -1,11 +1,10 @@
 <script lang="ts">
 	import * as Avatar from '$lib/components/ui/avatar/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import Check from '@lucide/svelte/icons/check';
-	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { t } from 'svelte-i18n';
 	import { cn } from '$lib/utils.js';
+	import { embedCardClass } from './embed-surface.js';
 
 	let {
 		title,
@@ -13,7 +12,6 @@
 		tag,
 		closes,
 		options,
-		announcementOnly = false,
 	}: {
 		title: string;
 		channel: string;
@@ -25,26 +23,27 @@
 			selected?: boolean;
 			voters?: { initials: string; color: string }[];
 		}[];
-		announcementOnly?: boolean;
 	} = $props();
 
 	const seededPick = $derived(options.findIndex((option) => option.selected));
 	let picked = $state<number | null>(null);
 
-	const activePick = $derived(
-		announcementOnly ? (seededPick >= 0 ? seededPick : null) : (picked ?? (seededPick >= 0 ? seededPick : null)),
-	);
+	const activePick = $derived(picked ?? (seededPick >= 0 ? seededPick : null));
 	const total = $derived(options.reduce((sum, option) => sum + option.votes, 0));
 	const leadVotes = $derived(options.reduce((max, option) => Math.max(max, option.votes), 0));
-	const interactive = $derived(!announcementOnly && options.length > 0);
+	const interactive = $derived(options.length > 0);
 
 	function pick(index: number) {
 		if (!interactive) return;
 		picked = index;
 	}
+
+	function formatVoteCount(votes: number): string {
+		return votes > 99 ? '99+' : String(votes);
+	}
 </script>
 
-<Card.Root class="max-w-110 overflow-hidden">
+<Card.Root class={embedCardClass}>
 	<Card.Header class="gap-1.5">
 		<p class="col-span-2 m-0 flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-xs leading-none text-muted-foreground">
 			<span class="font-medium tracking-[0.04em] text-mention-accent uppercase">{tag ?? $t('design.chat.pollTag')}</span>
@@ -71,7 +70,7 @@
 					{@const selected = activePick === index}
 					{@const leading = option.votes === leadVotes && leadVotes > 0}
 					{@const rowClass = cn(
-						'grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5 rounded-lg px-2.5 py-2.5 text-left outline-none transition-[transform,background-color] duration-150 ease-[var(--ease-out)] motion-reduce:transition-none',
+						'grid w-full min-w-0 appearance-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1.5 rounded-lg border-0 bg-transparent px-2.5 py-2.5 text-left font-inherit shadow-none outline-none transition-[transform,background-color] duration-150 ease-[var(--ease-out)] motion-reduce:transition-none',
 						interactive &&
 							'cursor-pointer hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.98]',
 						selected && 'bg-accent',
@@ -126,9 +125,9 @@
 								</Avatar.Group>
 							{/if}
 							<span
-								class="rounded-md bg-secondary px-1.5 py-0.5 text-[11px] leading-none font-medium text-secondary-foreground tabular-nums"
+								class="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-secondary px-1 text-[10px] leading-none font-semibold text-secondary-foreground tabular-nums"
 							>
-								{option.votes}
+								{formatVoteCount(option.votes)}
 							</span>
 						</span>
 						<span class="col-start-2 col-end-4 block h-1.5 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
@@ -152,16 +151,10 @@
 			<span class="tabular-nums text-secondary-foreground">{$t('design.chat.voted', { values: { count: total } })}</span>
 			<span aria-hidden="true"> · </span>
 			<span>{$t('design.chat.expires', { values: { when: closes } })}</span>
-			{#if !announcementOnly && activePick !== null}
+			{#if activePick !== null}
 				<span aria-hidden="true"> · </span>
 				<span class="text-mention-accent">{$t('design.chat.voteRecorded')}</span>
 			{/if}
 		</p>
-		{#if announcementOnly}
-			<Button variant="ghost" size="sm" class="h-auto shrink-0 px-1.5 py-1 text-xs text-mention-accent">
-				{$t('design.chat.openToVote', { values: { channel } })}
-				<ChevronRight class="size-3.5" />
-			</Button>
-		{/if}
 	</Card.Footer>
 </Card.Root>

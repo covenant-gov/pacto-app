@@ -102,44 +102,44 @@
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
-		{#if groups.length}
-			{#each groups as group (group.id)}
-				<section class="channel-group" aria-labelledby={`channel-group-${group.id}`}>
-					<h3
-						id={`channel-group-${group.id}`}
-						class="px-2 pt-3.5 pb-1 text-[0.6875rem] font-bold tracking-[0.07em] text-muted-foreground uppercase"
-					>
-						{group.label}
-					</h3>
-					{#each group.channels as channel (channel.id)}
-						<ChannelRow
-							active={channel.id === activeChannelId}
-							unread={Boolean(channel.unread)}
-							aria-label={channelAriaLabel(channel)}
-							aria-current={channel.id === activeChannelId ? 'page' : undefined}
-							onclick={() => onSelectChannel(channel.id)}
+			{#if groups.length}
+				{#each groups as group (group.id)}
+					<section class="channel-group" aria-labelledby={`channel-group-${group.id}`}>
+						<h3
+							id={`channel-group-${group.id}`}
+							class="px-2 pt-3.5 pb-1 text-[0.6875rem] font-bold tracking-[0.07em] text-muted-foreground uppercase"
 						>
-							{#if channel.kind === 'private'}
-								<Lock class="size-3.5 shrink-0" aria-hidden="true" />
-							{:else if channel.kind === 'announcement'}
-								<Megaphone class="size-3.5 shrink-0" aria-hidden="true" />
-							{:else}
-								<Hash class="size-3.5 shrink-0" aria-hidden="true" />
-							{/if}
-							<span class="min-w-0 flex-1 truncate text-left">{channel.name}</span>
-							<span class="flex h-[18px] w-[26px] shrink-0 items-center justify-center" aria-hidden="true">
-								{#if channel.mentionCount}
-									<Badge variant="notif">{channel.mentionCount}</Badge>
-								{:else if channel.unread}
-									<span class="text-xs leading-none text-foreground">✷</span>
+							{group.label}
+						</h3>
+						{#each group.channels as channel (channel.id)}
+							<ChannelRow
+								active={channel.id === activeChannelId}
+								unread={Boolean(channel.unread)}
+								aria-label={channelAriaLabel(channel)}
+								aria-current={channel.id === activeChannelId ? 'page' : undefined}
+								onclick={() => onSelectChannel(channel.id)}
+							>
+								{#if channel.kind === 'private'}
+									<Lock class="size-3.5 shrink-0" aria-hidden="true" />
+								{:else if channel.kind === 'announcement'}
+									<Megaphone class="size-3.5 shrink-0" aria-hidden="true" />
+								{:else}
+									<Hash class="size-3.5 shrink-0" aria-hidden="true" />
 								{/if}
-							</span>
-						</ChannelRow>
-					{/each}
-				</section>
-			{/each}
-		{:else}
-			<p class="m-4 mx-2 text-[0.8125rem] leading-snug text-muted-foreground" role="status">{labels.empty}</p>
-		{/if}
+								<span class="min-w-0 flex-1 truncate text-left">{channel.name}</span>
+								<span class="flex h-[18px] w-[26px] shrink-0 items-center justify-center" aria-hidden="true">
+									{#if channel.mentionCount}
+										<Badge variant="notif">{channel.mentionCount}</Badge>
+									{:else if channel.unread}
+										<span class="text-xs leading-none text-foreground">✷</span>
+									{/if}
+								</span>
+							</ChannelRow>
+						{/each}
+					</section>
+				{/each}
+			{:else}
+				<p class="m-4 mx-2 text-[0.8125rem] leading-snug text-muted-foreground" role="status">{labels.empty}</p>
+			{/if}
 	</div>
 </aside>

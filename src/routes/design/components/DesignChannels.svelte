@@ -156,34 +156,34 @@
 		</div>
 	</div>
 
-	<div class="flex-1 overflow-y-auto px-2 pb-2">
-		{#if filteredChannels.length === 0}
-			<p class="px-2 py-3 text-xs text-muted-foreground">{$t('design.channels.empty')}</p>
-		{:else}
-			{#if squadChannels.length > 0}
-				<div class="flex items-center gap-1 px-2 pt-5 pb-1 text-[11px] font-medium tracking-[0.07em] text-muted-foreground uppercase">
-					{$t('design.channels.categorySquad')}
-				</div>
-				{#each squadChannels as channel (channel.id)}
-					{@render channelRow(channel)}
-				{/each}
+	<div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+			{#if filteredChannels.length === 0}
+				<p class="px-2 py-3 text-xs text-muted-foreground">{$t('design.channels.empty')}</p>
+			{:else}
+				{#if squadChannels.length > 0}
+					<div class="flex items-center gap-1 px-2 pt-5 pb-1 text-[11px] font-medium tracking-[0.07em] text-muted-foreground uppercase">
+						{$t('design.channels.categorySquad')}
+					</div>
+					{#each squadChannels as channel (channel.id)}
+						{@render channelRow(channel)}
+					{/each}
+				{/if}
+
+				{#if otherChannels.length > 0}
+					<div class="flex items-center gap-1 px-2 pt-5 pb-1 text-[11px] font-medium tracking-[0.07em] text-muted-foreground uppercase">
+						{$t('design.channels.categoryChannels')}
+					</div>
+					{#each otherChannels as channel (channel.id)}
+						{@render channelRow(channel)}
+					{/each}
+				{/if}
 			{/if}
 
-			{#if otherChannels.length > 0}
-				<div class="flex items-center gap-1 px-2 pt-5 pb-1 text-[11px] font-medium tracking-[0.07em] text-muted-foreground uppercase">
-					{$t('design.channels.categoryChannels')}
-				</div>
-				{#each otherChannels as channel (channel.id)}
-					{@render channelRow(channel)}
-				{/each}
-			{/if}
-		{/if}
-
-		<Button variant="dashed" class="mt-1 h-8 w-full justify-start gap-1.5 text-[13.5px]" onclick={onAddChannel}>
-			<Plus class="size-3.5" />
-			<span>{$t('design.channels.addChannel')}</span>
-		</Button>
-	</div>
+			<Button variant="dashed" class="mt-1 h-8 w-full justify-start gap-1.5 text-[13.5px]" onclick={onAddChannel}>
+				<Plus class="size-3.5" />
+				<span>{$t('design.channels.addChannel')}</span>
+			</Button>
+		</div>
 
 	<div class="flex h-[52px] shrink-0 items-center gap-2 bg-user-strip px-2">
 		<PresenceAvatar

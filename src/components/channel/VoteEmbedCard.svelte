@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Clock from '@lucide/svelte/icons/clock';
 	import { t } from 'svelte-i18n';
 	import { cn } from '$lib/utils.js';
+	import { embedCardClass } from './embed-surface.js';
 
 	let {
 		title,
@@ -17,7 +16,6 @@
 		forPct = 50,
 		againstPct = 50,
 		quorumNeeded,
-		announcementOnly = false,
 	}: {
 		title: string;
 		detail: string;
@@ -29,7 +27,6 @@
 		forPct?: number;
 		againstPct?: number;
 		quorumNeeded?: number;
-		announcementOnly?: boolean;
 	} = $props();
 
 	let stance = $state<'for' | 'against' | null>(null);
@@ -42,7 +39,7 @@
 	const quorumMet = $derived(quorumShare != null && forPct >= quorumShare);
 </script>
 
-<Card.Root class="max-w-110 overflow-hidden">
+<Card.Root class={embedCardClass}>
 	<Card.Header class="grid-cols-[minmax(0,1fr)_auto] gap-1.5">
 		<p class="m-0 flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-xs leading-none text-muted-foreground">
 			<span class="font-medium tracking-[0.04em] text-gov-success uppercase">
@@ -131,37 +128,39 @@
 	</Card.Content>
 
 	<Card.Footer class="border-border/80">
-		{#if announcementOnly}
-			<div class="flex w-full items-center justify-between gap-3">
-				<p class="m-0 min-w-0 text-xs leading-snug text-muted-foreground">
-					<span class="text-gov-success">{$t('design.chat.forPct', { values: { pct: forPct } })}</span>
-					<span aria-hidden="true"> · </span>
-					<span class="text-destructive">{$t('design.chat.againstPct', { values: { pct: againstPct } })}</span>
-				</p>
-				<Button variant="ghost" size="sm" class="h-auto shrink-0 px-1.5 py-1 text-xs text-mention-accent">
-					{$t('design.chat.castOnTreasury')}
-					<ChevronRight class="size-3.5" />
-				</Button>
-			</div>
-		{:else}
-			<div class="grid w-full grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-2">
-				<Button
-					variant="success"
-					class="h-9"
-					aria-pressed={stance === 'for'}
-					onclick={() => (stance = 'for')}
-				>
-					{$t('design.chat.voteFor')}
-				</Button>
-				<Button
-					variant="danger-soft"
-					class="h-9"
-					aria-pressed={stance === 'against'}
-					onclick={() => (stance = 'against')}
-				>
-					{$t('design.chat.voteAgainst')}
-				</Button>
-			</div>
-		{/if}
+		<div
+			class="grid w-full grid-cols-2 overflow-hidden rounded-lg border border-border"
+			role="group"
+			aria-label={$t('design.chat.voteStance')}
+		>
+			<button
+				type="button"
+				class={cn(
+					'appearance-none inline-flex h-9 items-center justify-center gap-1.5 border-0 border-r border-solid border-border bg-transparent text-sm font-medium text-foreground',
+					'hover:bg-accent focus-visible:z-1 focus-visible:ring-3 focus-visible:ring-ring/50',
+					'active:scale-[0.99] motion-reduce:active:scale-100',
+					stance === 'for' && 'bg-accent',
+				)}
+				aria-pressed={stance === 'for'}
+				onclick={() => (stance = 'for')}
+			>
+				<span class="size-1.5 shrink-0 rounded-full bg-gov-success" aria-hidden="true"></span>
+				{$t('design.chat.voteFor')}
+			</button>
+			<button
+				type="button"
+				class={cn(
+					'appearance-none inline-flex h-9 items-center justify-center gap-1.5 border-0 bg-transparent text-sm font-medium text-foreground',
+					'hover:bg-accent focus-visible:z-1 focus-visible:ring-3 focus-visible:ring-ring/50',
+					'active:scale-[0.99] motion-reduce:active:scale-100',
+					stance === 'against' && 'bg-accent',
+				)}
+				aria-pressed={stance === 'against'}
+				onclick={() => (stance = 'against')}
+			>
+				<span class="size-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true"></span>
+				{$t('design.chat.voteAgainst')}
+			</button>
+		</div>
 	</Card.Footer>
 </Card.Root>

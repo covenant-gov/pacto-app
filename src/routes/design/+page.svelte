@@ -7,13 +7,14 @@
 	import { replaceState } from '$app/navigation';
 	import ChatColumn from './components/ChatColumn.svelte';
 	import { design } from './design-state.svelte.js';
-	import { overlayMessages } from './fixtures';
+	import { memberToggleFaces, members, overlayMessages } from './fixtures';
 
 	const previewState = $derived(parseShellPreviewState(page.url.searchParams.get('state')));
 	const showChat = $derived(
 		Boolean(design.activeChannel && design.activeChannel.id !== 'dashboard'),
 	);
 	const visibleMessages = $derived(overlayMessages(design.messageList, previewState));
+	const memberFaces = $derived(memberToggleFaces(members, previewState));
 	const chromeState = $derived(
 		previewState === 'loading' || previewState === 'empty' || previewState === 'error'
 			? previewState
@@ -51,22 +52,25 @@
 	</ChatFrame>
 {:else if showChat && design.activeChannel}
 	<ChatColumn
+		channelId={design.activeChannel.id}
 		channelName={design.activeChannel.name}
 		channelCategory={design.activeChannel.category}
 		announcementOnly={design.activeChannel.id === 'announcements'}
 		messages={visibleMessages}
 		membersCollapsed={design.asideCollapsed}
+		{memberFaces}
 		onSend={(text) => design.sendMessage(text, $t('design.chat.justNow'))}
 		onToggleMembers={() => (design.asideCollapsed = !design.asideCollapsed)}
 	/>
 {:else}
 	<div
-		class="flex h-full flex-col items-center justify-center gap-2 overflow-hidden rounded-tl-lg bg-background px-6 text-center"
+		class="shell-dither-seam relative flex h-full flex-col items-center justify-center gap-2 overflow-hidden rounded-tl-lg bg-background px-6 text-center"
 	>
-		<p class="text-[15px] font-medium text-balance text-foreground">
+		<div class="shell-grid-void pointer-events-none absolute inset-0" aria-hidden="true"></div>
+		<p class="relative z-10 m-0 text-[15px] font-medium text-balance text-foreground">
 			{$t('design.chat.pickTitle')}
 		</p>
-		<p class="max-w-sm text-sm text-pretty text-muted-foreground">
+		<p class="relative z-10 max-w-sm text-sm text-pretty text-muted-foreground">
 			{$t('design.chat.pickBody')}
 		</p>
 	</div>

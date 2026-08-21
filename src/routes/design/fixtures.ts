@@ -131,6 +131,20 @@ export function proposalTitle(token: string): string | undefined {
 	return proposals[id]?.title;
 }
 
+export interface PollRef {
+	id: number;
+	title: string;
+}
+
+export const pollRefs: Record<string, PollRef> = {
+	'1': { id: 1, title: 'Friday demo night' }
+};
+
+export function pollTitle(token: string): string | undefined {
+	const id = token.replace(/^#poll-/, '');
+	return pollRefs[id]?.title;
+}
+
 export type MessageEmbed =
 	| {
 			kind: 'poll';
@@ -170,10 +184,10 @@ export interface Message {
 	role?: MessageRole;
 	time: string;
 	kind: MessageKind;
-	/** Plain text; @Name and #channel tokens render as chips. */
+	/** Plain text; @Name, #channel, #N proposals, and #poll-N render as chips. */
 	text: string;
 	network?: string;
-	embed?: MessageEmbed;
+	embeds?: MessageEmbed[];
 }
 
 export const messages: Message[] = [
@@ -231,7 +245,59 @@ export const messagesByChannel: Record<string, Message[]> = {
 			role: 'cm',
 			time: 'Today at 10:02 AM',
 			kind: 'text',
-			text: '✷ Weekend pulse — two official asks for @Crew. Discussion stays in the linked channels; this feed is announce-only.'
+			text: '✷ Weekend pulse — #poll-1 and #14 for @Crew. Vote in the linked channels; this feed is announce-only.',
+			embeds: [
+				{
+					kind: 'poll',
+					title: 'Should we run a live Friday demo night?',
+					channel: 'polls',
+					tag: 'Squad poll',
+					closes: 'Fri 4:00 PM',
+					options: [
+						{
+							label: 'Hell yes — projectors & snacks',
+							votes: 14,
+							voters: [
+								{ initials: 'R', color: '#f97316' },
+								{ initials: 'A', color: '#2a4a3d' },
+								{ initials: 'B', color: '#3d2c6b' }
+							]
+						},
+						{
+							label: 'Async recap thread is enough',
+							votes: 6,
+							voters: [
+								{ initials: 'D', color: '#5a2a2a' },
+								{ initials: 'E', color: '#26324a' }
+							]
+						},
+						{
+							label: 'Only if Alice DJs',
+							votes: 9,
+							voters: [
+								{ initials: 'M', color: '#3a2c4a' },
+								{ initials: 'D', color: '#1a3a3a' },
+								{ initials: 'B', color: '#3d2c6b' }
+							]
+						}
+					]
+				},
+				{
+					kind: 'vote',
+					title: 'Hackathon prize pool',
+					detail: 'Move 0.5 ETH from the Safe to prizes for the weekend build sprint. Quartermaster-sponsored.',
+					amount: '0.5 ETH',
+					quorum: '61% · needs 75%',
+					status: 'open',
+					channel: 'governance',
+					tag: 'Proposal',
+					proposalId: 14,
+					closes: '8h left',
+					forPct: 61,
+					againstPct: 39,
+					quorumNeeded: 75
+				}
+			]
 		},
 		{
 			id: 'a2',
@@ -241,42 +307,44 @@ export const messagesByChannel: Record<string, Message[]> = {
 			role: 'cm',
 			time: 'Today at 10:03 AM',
 			kind: 'text',
-			text: '1 · Poll open in #polls — should we run a live Friday demo night? Vote there (not here). Winner gets pinned Fri EOD.',
-			embed: {
-				kind: 'poll',
-				title: 'Should we run a live Friday demo night?',
-				channel: 'polls',
-				tag: 'Squad poll',
-				closes: 'Fri 4:00 PM',
-				options: [
-					{
-						label: 'Hell yes — projectors & snacks',
-						votes: 14,
-						voters: [
-							{ initials: 'R', color: '#f97316' },
-							{ initials: 'A', color: '#2a4a3d' },
-							{ initials: 'B', color: '#3d2c6b' }
-						]
-					},
-					{
-						label: 'Async recap thread is enough',
-						votes: 6,
-						voters: [
-							{ initials: 'D', color: '#5a2a2a' },
-							{ initials: 'E', color: '#26324a' }
-						]
-					},
-					{
-						label: 'Only if Alice DJs',
-						votes: 9,
-						voters: [
-							{ initials: 'M', color: '#3a2c4a' },
-							{ initials: 'D', color: '#1a3a3a' },
-							{ initials: 'B', color: '#3d2c6b' }
-						]
-					}
-				]
-			}
+			text: '1 · #poll-1 is open — vote in #polls, not here. Winner gets pinned Fri EOD.',
+			embeds: [
+				{
+					kind: 'poll',
+					title: 'Should we run a live Friday demo night?',
+					channel: 'polls',
+					tag: 'Squad poll',
+					closes: 'Fri 4:00 PM',
+					options: [
+						{
+							label: 'Hell yes — projectors & snacks',
+							votes: 14,
+							voters: [
+								{ initials: 'R', color: '#f97316' },
+								{ initials: 'A', color: '#2a4a3d' },
+								{ initials: 'B', color: '#3d2c6b' }
+							]
+						},
+						{
+							label: 'Async recap thread is enough',
+							votes: 6,
+							voters: [
+								{ initials: 'D', color: '#5a2a2a' },
+								{ initials: 'E', color: '#26324a' }
+							]
+						},
+						{
+							label: 'Only if Alice DJs',
+							votes: 9,
+							voters: [
+								{ initials: 'M', color: '#3a2c4a' },
+								{ initials: 'D', color: '#1a3a3a' },
+								{ initials: 'B', color: '#3d2c6b' }
+							]
+						}
+					]
+				}
+			]
 		},
 		{
 			id: 'a3',
@@ -287,21 +355,23 @@ export const messagesByChannel: Record<string, Message[]> = {
 			time: 'Today at 10:04 AM',
 			kind: 'text',
 			text: '2 · #14 is live on-chain — 0.5 ETH hackathon prize pool. Cast under dashboard → Treasury; chatter in #governance. Quorum needs a push before tonight — @Alice @daopunk on nudge duty.',
-			embed: {
-				kind: 'vote',
-				title: 'Hackathon prize pool',
-				detail: 'Move 0.5 ETH from the Safe to prizes for the weekend build sprint. Quartermaster-sponsored.',
-				amount: '0.5 ETH',
-				quorum: '61% · needs 75%',
-				status: 'open',
-				channel: 'governance',
-				tag: 'Proposal',
-				proposalId: 14,
-				closes: '8h left',
-				forPct: 61,
-				againstPct: 39,
-				quorumNeeded: 75
-			}
+			embeds: [
+				{
+					kind: 'vote',
+					title: 'Hackathon prize pool',
+					detail: 'Move 0.5 ETH from the Safe to prizes for the weekend build sprint. Quartermaster-sponsored.',
+					amount: '0.5 ETH',
+					quorum: '61% · needs 75%',
+					status: 'open',
+					channel: 'governance',
+					tag: 'Proposal',
+					proposalId: 14,
+					closes: '8h left',
+					forPct: 61,
+					againstPct: 39,
+					quorumNeeded: 75
+				}
+			]
 		}
 	],
 	polls: [
@@ -313,43 +383,45 @@ export const messagesByChannel: Record<string, Message[]> = {
 			role: 'cm',
 			time: 'Today at 10:03 AM',
 			kind: 'text',
-			text: 'Poll mirrored from #announcements — smash a button before Friday:',
-			embed: {
-				kind: 'poll',
-				title: 'Should we run a live Friday demo night?',
-				channel: 'polls',
-				tag: 'Live',
-				closes: 'Fri 4:00 PM',
-				options: [
-					{
-						label: 'Hell yes — projectors & snacks',
-						votes: 14,
-						selected: true,
-						voters: [
-							{ initials: 'R', color: '#f97316' },
-							{ initials: 'A', color: '#2a4a3d' },
-							{ initials: 'B', color: '#3d2c6b' }
-						]
-					},
-					{
-						label: 'Async recap thread is enough',
-						votes: 6,
-						voters: [
-							{ initials: 'D', color: '#5a2a2a' },
-							{ initials: 'E', color: '#26324a' }
-						]
-					},
-					{
-						label: 'Only if Alice DJs',
-						votes: 9,
-						voters: [
-							{ initials: 'M', color: '#3a2c4a' },
-							{ initials: 'D', color: '#1a3a3a' },
-							{ initials: 'B', color: '#3d2c6b' }
-						]
-					}
-				]
-			}
+			text: '#poll-1 — smash a button before Friday:',
+			embeds: [
+				{
+					kind: 'poll',
+					title: 'Should we run a live Friday demo night?',
+					channel: 'polls',
+					tag: 'Live',
+					closes: 'Fri 4:00 PM',
+					options: [
+						{
+							label: 'Hell yes — projectors & snacks',
+							votes: 14,
+							selected: true,
+							voters: [
+								{ initials: 'R', color: '#f97316' },
+								{ initials: 'A', color: '#2a4a3d' },
+								{ initials: 'B', color: '#3d2c6b' }
+							]
+						},
+						{
+							label: 'Async recap thread is enough',
+							votes: 6,
+							voters: [
+								{ initials: 'D', color: '#5a2a2a' },
+								{ initials: 'E', color: '#26324a' }
+							]
+						},
+						{
+							label: 'Only if Alice DJs',
+							votes: 9,
+							voters: [
+								{ initials: 'M', color: '#3a2c4a' },
+								{ initials: 'D', color: '#1a3a3a' },
+								{ initials: 'B', color: '#3d2c6b' }
+							]
+						}
+					]
+				}
+			]
 		}
 	],
 	governance: [
@@ -373,21 +445,23 @@ export const messagesByChannel: Record<string, Message[]> = {
 			time: 'Today at 10:01 AM',
 			kind: 'text',
 			text: "It's live. #14 is finally on-chain! we have been grinding this prize-pool proposal for weeks and the Safe path just cleared. 0.5 ETH for the weekend sprint. So excited!!",
-			embed: {
-				kind: 'vote',
-				title: 'Hackathon prize pool',
-				detail: 'Move 0.5 ETH from the Safe to prizes for the weekend build sprint.',
-				amount: '0.5 ETH',
-				quorum: '61% · needs 75%',
-				status: 'open',
-				channel: 'governance',
-				tag: 'Proposal',
-				proposalId: 14,
-				closes: '8h left',
-				forPct: 61,
-				againstPct: 39,
-				quorumNeeded: 75
-			}
+			embeds: [
+				{
+					kind: 'vote',
+					title: 'Hackathon prize pool',
+					detail: 'Move 0.5 ETH from the Safe to prizes for the weekend build sprint.',
+					amount: '0.5 ETH',
+					quorum: '61% · needs 75%',
+					status: 'open',
+					channel: 'governance',
+					tag: 'Proposal',
+					proposalId: 14,
+					closes: '8h left',
+					forPct: 61,
+					againstPct: 39,
+					quorumNeeded: 75
+				}
+			]
 		}
 	]
 };
@@ -497,6 +571,17 @@ export function overlayMembers(memberList: readonly Member[], state: ShellPrevie
 	if (state === 'dense') return [...memberList, ...denseMembers];
 	if (state === 'long') return [longMember, ...memberList];
 	return [...memberList];
+}
+
+export function memberToggleFaces(
+	memberList: readonly Member[],
+	state: ShellPreviewState,
+): Array<{ id: string; initials: string; color: string }> {
+	const list = overlayMembers(memberList, state);
+	const present = list.filter((member) => member.status !== 'offline' && member.status !== 'invisible');
+	return (present.length ? present : list)
+		.slice(0, 3)
+		.map(({ id, initials, color }) => ({ id, initials, color }));
 }
 
 export function overlayMessages(messageList: readonly Message[], state: ShellPreviewState): Message[] {
