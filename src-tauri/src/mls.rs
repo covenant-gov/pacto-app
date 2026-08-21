@@ -12,7 +12,7 @@
 //! - group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted
 //!
 //! ### mls_keypackages table (plaintext)
-//! - owner_pubkey, device_id, keypackage_ref, fetched_at, expires_at
+//! - owner_pubkey, device_id, keypackage_ref, keypackage_ref_secondary, keypackage_d_tag, fetched_at, expires_at
 //!
 //! ### mls_event_cursors table (plaintext)
 //! - group_id, last_seen_event_id, last_seen_at
@@ -87,6 +87,34 @@ pub(crate) fn mls_wrapper_failure_reason(event_id: &[u8; 32]) -> Option<String> 
     .flatten()
 }
 
+/// Spec kind (NIP-33 addressable) for MLS KeyPackage events per MIP-00. mdk-core's matching
+/// constant is private to that crate, so Pacto mirrors it here for filter construction.
+pub(crate) const MLS_KEY_PACKAGE_KIND_30443: nostr_sdk::Kind = nostr_sdk::Kind::Custom(30443);
+
+/// Legacy kind for MLS KeyPackage events, accepted by mdk-core through the transition period.
+/// Same numeric value as `nostr_sdk::Kind::MlsKeyPackage`.
+pub(crate) const MLS_KEY_PACKAGE_KIND_LEGACY: nostr_sdk::Kind = nostr_sdk::Kind::MlsKeyPackage;
+
+/// Both KeyPackage kinds, for fetch filters during the dual-publish transition: Pacto
+/// publishes 30443 and legacy 443 from the same KeyPackage content, and must accept either
+/// when resolving a peer's — or another NIP-EE client's — published KeyPackage.
+pub(crate) fn mls_key_package_kinds() -> [nostr_sdk::Kind; 2] {
+    [MLS_KEY_PACKAGE_KIND_30443, MLS_KEY_PACKAGE_KIND_LEGACY]
+}
+
+/// Sort KeyPackage candidates newest-first; ties (e.g. a simultaneous dual publish) prefer
+/// the spec kind (30443) over the legacy one.
+pub(crate) fn sort_keypackage_candidates(mut events: Vec<nostr_sdk::Event>) -> Vec<nostr_sdk::Event> {
+    events.sort_by(|a, b| {
+        b.created_at.cmp(&a.created_at).then_with(|| {
+            let a_is_30443 = a.kind == MLS_KEY_PACKAGE_KIND_30443;
+            let b_is_30443 = b.kind == MLS_KEY_PACKAGE_KIND_30443;
+            b_is_30443.cmp(&a_is_30443)
+        })
+    });
+    events
+}
+
 /// MLS group metadata stored encrypted in "mls_groups"
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MlsGroupMetadata {
@@ -113,6 +141,16 @@ struct KeyPackageIndexEntry {
     owner_pubkey: String,
     device_id: String,
     keypackage_ref: String,
+    /// The other kind's event id for the same dual-published KeyPackage: the 443 id when
+    /// `keypackage_ref` is the 30443 one, or `None` for contact-resolved rows, which only
+    /// ever track a single fetched event.
+    #[serde(default)]
+    keypackage_ref_secondary: Option<String>,
+    /// The addressable (kind 30443) `d` tag value for a self-device row, reused across
+    /// rotations so republishing actually replaces the previous 30443 event on relays
+    /// (NIP-33) instead of leaving it live forever. `None` for contact-resolved rows.
+    #[serde(default)]
+    keypackage_d_tag: Option<String>,
     fetched_at: u64,
     expires_at: u64,
 }
@@ -549,7 +587,7 @@ impl MlsService {
       1) Resolve creator pubkey and build NostrGroupConfigData scoped to the trusted relay set.
       2) Resolve each member device to its KeyPackage Event before touching the MLS engine:
          • Prefer local plaintext index "mls_keypackage_index" to get keypackage_ref by member npub + device_id.
-         • If ref exists: fetch exact event by id; else: fetch latest Kind::MlsKeyPackage by author.
+         • If ref exists: fetch exact event by id; else: fetch latest KeyPackage (kind 30443 or legacy 443) by author.
          • Any member device with no resolvable KeyPackage event, or an npub that fails bech32
            parsing, is recorded as a `SkippedMember` and left out — it never reaches the engine.
       3) Inside the no-await engine scope, validate every candidate event with
@@ -698,10 +736,15 @@ impl MlsService {
                     }
                 }
             } else {
-                // Fallback: fetch latest KeyPackage by author from the trusted relay set
+                // Fallback: fetch latest KeyPackage by author across both the spec (30443)
+                // and legacy (443) kinds, preferring the newest event this engine can
+                // actually parse — a stale duplicate under one kind must not beat a fresh,
+                // parseable one under the other. If nothing parses, fall back to the newest
+                // candidate anyway so the validation pass below reports the real rejection
+                // reason instead of a generic "not found".
                 let filter = Filter::new()
                     .author(member_pk)
-                    .kind(Kind::MlsKeyPackage)
+                    .kinds(mls_key_package_kinds())
                     .limit(50);
                 match get_nostr_client()
                     .unwrap()
@@ -713,8 +756,12 @@ impl MlsService {
                     .await
                 {
                     Ok(events) => {
-                        // Heuristic: pick newest by created_at
-                        let selected = events.into_iter().max_by_key(|e| e.created_at.as_secs());
+                        let candidates = sort_keypackage_candidates(events.into_iter().collect());
+                        let selected = candidates
+                            .iter()
+                            .find(|&e| self.key_package_event_usable(e).is_ok())
+                            .cloned()
+                            .or_else(|| candidates.into_iter().next());
                         if selected.is_none() {
                             eprintln!("[MLS] No KeyPackage events found for {}", member_npub);
                         }
@@ -1114,7 +1161,7 @@ impl MlsService {
                 RESTORE_KEYPACKAGE_RETRY_ATTEMPTS,
                 move || {
                     let retry_client = retry_client.clone();
-                    async move { Self::fetch_latest_keypackage(&retry_client, member_pk).await }
+                    async move { self.fetch_latest_keypackage(&retry_client, member_pk).await }
                 },
                 |delay| tokio::time::sleep(delay),
             )
@@ -1143,7 +1190,7 @@ impl MlsService {
 
             // Fallback: fetch latest from network
             if kp_event.is_none() {
-                kp_event = Self::fetch_latest_keypackage(&client, member_pk).await;
+                kp_event = self.fetch_latest_keypackage(&client, member_pk).await;
             }
 
             kp_event
@@ -1348,9 +1395,15 @@ impl MlsService {
         Ok(())
     }
 
-    /// Fetch the newest published KeyPackage (Kind:443) for a pubkey directly from the network,
-    /// bypassing the local keypackage index/cache.
+    /// Fetch the newest published KeyPackage for a pubkey directly from the network,
+    /// bypassing the local keypackage index/cache. Matches both the spec (30443) and legacy
+    /// (443) kinds during the dual-publish transition, preferring the spec kind on a tie and
+    /// preferring an event this engine can actually parse. Falls back to the newest
+    /// candidate even if unparseable when nothing parses, so the caller's own validation
+    /// (e.g. `add_members`) surfaces the real rejection reason instead of a generic
+    /// "not found".
     async fn fetch_latest_keypackage(
+        &self,
         client: &nostr_sdk::Client,
         member_pk: PublicKey,
     ) -> Option<nostr_sdk::Event> {
@@ -1358,17 +1411,22 @@ impl MlsService {
 
         let filter = Filter::new()
             .author(member_pk)
-            .kind(Kind::MlsKeyPackage)
+            .kinds(mls_key_package_kinds())
             .limit(50);
-        client
+        let events = client
             .fetch_events_from(
                 crate::trusted_relays::trusted_relays().to_vec(),
                 filter,
                 std::time::Duration::from_secs(10),
             )
             .await
-            .ok()
-            .and_then(|events| events.into_iter().max_by_key(|e| e.created_at.as_secs()))
+            .ok()?;
+        let candidates = sort_keypackage_candidates(events.into_iter().collect());
+        candidates
+            .iter()
+            .find(|&e| self.key_package_event_usable(e).is_ok())
+            .cloned()
+            .or_else(|| candidates.into_iter().next())
     }
 
     /// Leave a group voluntarily
@@ -2770,6 +2828,8 @@ impl MlsService {
             owner_pubkey: owner_pubkey.to_string(),
             device_id: device_id.to_string(),
             keypackage_ref: keypackage_ref.to_string(),
+            keypackage_ref_secondary: None,
+            keypackage_d_tag: None,
             fetched_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -4012,6 +4072,142 @@ mod mls_key_package_validity_tests {
             err.contains("encoding tag"),
             "expected an encoding-tag error, got: {}",
             err
+        );
+    }
+
+    /// Golden vector: `create_key_package_for_event` must hand back a 30443 tag set carrying
+    /// the addressable `d` tag and a 443 tag set that is identical minus that tag, both
+    /// sharing the same base64 `content` — and the current engine must parse an event built
+    /// from either kind/tag-set pair (dual publish).
+    #[tokio::test]
+    async fn create_key_package_for_event_yields_parseable_tags_for_both_kinds() {
+        let engine = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([24u8; 32])).unwrap(),
+        );
+        let keys = Keys::generate();
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let kp = engine
+            .create_key_package_for_event(&keys.public_key(), [relay_url])
+            .expect("create keypackage");
+
+        assert!(
+            kp.tags_30443.iter().any(|t| t.kind() == TagKind::d()),
+            "30443 tag set must carry the addressable `d` tag"
+        );
+        assert!(
+            !kp.tags_443.iter().any(|t| t.kind() == TagKind::d()),
+            "legacy 443 tag set must not carry the `d` tag"
+        );
+        let expected_443: Vec<Tag> = kp
+            .tags_30443
+            .iter()
+            .filter(|t| t.kind() != TagKind::d())
+            .cloned()
+            .collect();
+        assert_eq!(
+            kp.tags_443, expected_443,
+            "443 tag set must be exactly the 30443 set minus the `d` tag, unchanged otherwise"
+        );
+
+        let event_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, kp.content.clone())
+            .tags(kp.tags_30443)
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign 30443 keypackage");
+        let event_443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_LEGACY, kp.content)
+            .tags(kp.tags_443)
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign 443 keypackage");
+
+        engine
+            .parse_key_package(&event_30443)
+            .expect("30443 event must parse");
+        engine
+            .parse_key_package(&event_443)
+            .expect("443 event must parse");
+    }
+
+    /// The dual-publish fetch filter must accept events of either kind, and reject an unrelated
+    /// one.
+    #[test]
+    fn key_package_filter_matches_both_kinds() {
+        let keys = Keys::generate();
+        let filter = Filter::new().author(keys.public_key()).kinds(mls_key_package_kinds());
+
+        let event_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content")
+            .sign_with_keys(&keys)
+            .unwrap();
+        let event_443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_LEGACY, "content")
+            .sign_with_keys(&keys)
+            .unwrap();
+        let unrelated = EventBuilder::new(Kind::TextNote, "content")
+            .sign_with_keys(&keys)
+            .unwrap();
+
+        assert!(filter.match_event(&event_30443, MatchEventOptions::default()));
+        assert!(filter.match_event(&event_443, MatchEventOptions::default()));
+        assert!(!filter.match_event(&unrelated, MatchEventOptions::default()));
+    }
+
+    /// `sort_keypackage_candidates` breaks a created_at tie by preferring the spec kind
+    /// (30443) over the legacy one ("prefer the newest usable 30443 when both exist").
+    #[test]
+    fn sort_keypackage_candidates_prefers_30443_on_tie() {
+        let keys = Keys::generate();
+        let now = Timestamp::now();
+        let event_443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_LEGACY, "content")
+            .custom_created_at(now)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let event_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content")
+            .custom_created_at(now)
+            .sign_with_keys(&keys)
+            .unwrap();
+
+        let sorted = sort_keypackage_candidates(vec![event_443, event_30443]);
+        assert_eq!(sorted.len(), 2);
+        assert_eq!(sorted[0].kind, MLS_KEY_PACKAGE_KIND_30443);
+    }
+
+    /// The primary sort key is `created_at`, newest first — the kind tie-break only applies
+    /// when timestamps are equal. Pins that a newer event of either kind beats an older one
+    /// of the *other* kind, so a stale duplicate under one kind can never beat a fresh,
+    /// parseable one under the other.
+    #[test]
+    fn sort_keypackage_candidates_orders_by_created_at_first() {
+        let keys = Keys::generate();
+        let older = Timestamp::now();
+        let newer = Timestamp::from_secs(older.as_secs() + 60);
+
+        // Same kind: newer must win regardless of the tie-break.
+        let same_kind_old = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content-a")
+            .custom_created_at(older)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let same_kind_new = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content-b")
+            .custom_created_at(newer)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let sorted = sort_keypackage_candidates(vec![same_kind_old, same_kind_new.clone()]);
+        assert_eq!(sorted[0].id, same_kind_new.id);
+
+        // Mixed kind: a newer legacy (443) event must still beat an older spec (30443) one —
+        // the 30443 tie-break must not override a real timestamp difference.
+        let older_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content-c")
+            .custom_created_at(older)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let newer_443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_LEGACY, "content-d")
+            .custom_created_at(newer)
+            .sign_with_keys(&keys)
+            .unwrap();
+        let sorted = sort_keypackage_candidates(vec![older_30443, newer_443.clone()]);
+        assert_eq!(
+            sorted[0].id, newer_443.id,
+            "a newer legacy event must beat an older spec-kind one"
         );
     }
 }

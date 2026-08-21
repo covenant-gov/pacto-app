@@ -4922,6 +4922,15 @@ mod legacy_mls_store_harvest_tests {
                 metadata TEXT NOT NULL DEFAULT '{}',
                 muted INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE mls_keypackages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_pubkey TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                keypackage_ref TEXT NOT NULL,
+                fetched_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );
+            CREATE INDEX idx_keypackages_owner ON mls_keypackages(owner_pubkey);
             CREATE TABLE events (
                 id TEXT PRIMARY KEY,
                 kind INTEGER NOT NULL,
@@ -5273,13 +5282,15 @@ pub async fn save_mls_keypackages<R: Runtime>(
             .get("keypackage_ref")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        let keypackage_ref_secondary = pkg.get("keypackage_ref_secondary").and_then(|v| v.as_str());
+        let keypackage_d_tag = pkg.get("keypackage_d_tag").and_then(|v| v.as_str());
         let fetched_at = pkg.get("fetched_at").and_then(|v| v.as_u64()).unwrap_or(0);
         let expires_at = pkg.get("expires_at").and_then(|v| v.as_u64()).unwrap_or(0);
 
         conn.execute(
-            "INSERT INTO mls_keypackages (owner_pubkey, device_id, keypackage_ref, fetched_at, expires_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![owner_pubkey, device_id, keypackage_ref, fetched_at as i64, expires_at as i64],
+            "INSERT INTO mls_keypackages (owner_pubkey, device_id, keypackage_ref, keypackage_ref_secondary, keypackage_d_tag, fetched_at, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![owner_pubkey, device_id, keypackage_ref, keypackage_ref_secondary, keypackage_d_tag, fetched_at as i64, expires_at as i64],
         ).map_err(|e| format!("Failed to insert MLS keypackage: {}", e))?;
     }
 
@@ -5295,17 +5306,21 @@ pub async fn load_mls_keypackages<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(handle)?;
 
     let mut stmt = conn.prepare(
-        "SELECT owner_pubkey, device_id, keypackage_ref, fetched_at, expires_at FROM mls_keypackages"
+        "SELECT owner_pubkey, device_id, keypackage_ref, keypackage_ref_secondary, keypackage_d_tag, fetched_at, expires_at FROM mls_keypackages"
     ).map_err(|e| format!("Failed to prepare MLS keypackages query: {}", e))?;
 
     let rows = stmt
         .query_map([], |row| {
-            let fetched_at: i64 = row.get(3)?;
-            let expires_at: i64 = row.get(4)?;
+            let keypackage_ref_secondary: Option<String> = row.get(3)?;
+            let keypackage_d_tag: Option<String> = row.get(4)?;
+            let fetched_at: i64 = row.get(5)?;
+            let expires_at: i64 = row.get(6)?;
             Ok(serde_json::json!({
                 "owner_pubkey": row.get::<_, String>(0)?,
                 "device_id": row.get::<_, String>(1)?,
                 "keypackage_ref": row.get::<_, String>(2)?,
+                "keypackage_ref_secondary": keypackage_ref_secondary,
+                "keypackage_d_tag": keypackage_d_tag,
                 "fetched_at": fetched_at as u64,
                 "expires_at": expires_at as u64,
             }))
