@@ -15,7 +15,9 @@ use crate::evm::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     isExecutorFullPermissionCall, isExecutorPausedCall,
 };
 use crate::evm::gov_read::{connect_gov_read_provider, parse_top_hat_id};
-use crate::evm::nave_pirata_read::read_nave_pirata_deployment;
+use crate::evm::nave_pirata_read::{
+    deployment_mentions_module, read_nave_pirata_deployment, read_war_game_active_deployment,
+};
 use crate::evm::pacto_chain_config;
 use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::rpc::{parse_address, wallet_err_json};
@@ -45,7 +47,7 @@ impl GovStack {
         }
     }
 
-    /// War-game module `to` uses WarGameRegistry hats; anything else stays live.
+    /// Local payload hint only. Write paths must use `for_wargame_target_corroborated`.
     pub fn for_wargame_target(wargame_payload: Option<&str>, to: Address) -> Self {
         if wargame_payload
             .and_then(parse_war_game_userop_context)
@@ -55,6 +57,63 @@ impl GovStack {
         } else {
             Self::Live
         }
+    }
+
+    /// Combine local hint with `WarGameRegistry.active` membership.
+    pub fn stack_after_corroboration(local_targets: bool, on_chain_match: bool) -> Self {
+        if local_targets && on_chain_match {
+            Self::WarGame
+        } else {
+            Self::Live
+        }
+    }
+
+    /// MLS payload may hint war-game routing; WarGameRegistry is authoritative.
+    pub async fn for_wargame_target_corroborated<R: Runtime>(
+        app: &AppHandle<R>,
+        parent_id: &str,
+        to: Address,
+        rpc_urls: Option<Vec<String>>,
+    ) -> Result<Self, String> {
+        let payload = db::pacto_gov_wargame_payload_for_parent(app, parent_id)
+            .ok()
+            .flatten();
+        let Some(ctx) = payload.as_deref().and_then(parse_war_game_userop_context) else {
+            return Ok(Self::Live);
+        };
+        if !ctx.targets(to) {
+            return Ok(Self::Live);
+        }
+
+        let (network, _top_hat) = load_gov_infra_row(app, parent_id, Self::WarGame)?;
+        let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&network)
+            .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
+        let registry = addrs.war_game_registry.ok_or_else(|| {
+            wallet_err_json(
+                "REGISTRY_CONFIG",
+                "PACTO_WAR_GAME_REGISTRY is not configured for this network",
+                None,
+            )
+        })?;
+        let (provider, rpc_ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+        let on_chain = read_war_game_active_deployment(
+            &provider,
+            registry,
+            ctx.game_squad_id,
+            rpc_ctx.key.as_str(),
+            rpc_ctx.chain_id,
+        )
+        .await?;
+        let on_chain_match = on_chain
+            .as_ref()
+            .is_some_and(|d| deployment_mentions_module(d, to));
+        if !on_chain_match {
+            log::warn!(
+                target: "pacto_wallet",
+                "war-game payload claimed module {to:#x} but WarGameRegistry.active did not confirm"
+            );
+        }
+        Ok(Self::stack_after_corroboration(true, on_chain_match))
     }
 }
 
@@ -362,5 +421,25 @@ mod tests {
             GovStack::Live
         );
         assert_eq!(GovStack::for_wargame_target(None, ta), GovStack::Live);
+    }
+
+    #[test]
+    fn stack_after_corroboration_poisoned_payload_stays_live() {
+        assert_eq!(
+            GovStack::stack_after_corroboration(true, false),
+            GovStack::Live
+        );
+        assert_eq!(
+            GovStack::stack_after_corroboration(false, true),
+            GovStack::Live
+        );
+        assert_eq!(
+            GovStack::stack_after_corroboration(false, false),
+            GovStack::Live
+        );
+        assert_eq!(
+            GovStack::stack_after_corroboration(true, true),
+            GovStack::WarGame
+        );
     }
 }

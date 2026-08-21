@@ -25,7 +25,7 @@
     activeRound > 0 ? (viewedRound > 0 ? viewedRound : activeRound) : 0,
   );
   const archiveView = $derived(isWarGameArchiveView(currentRound, activeRound));
-  const inactive = $derived(archiveView || meta.status === 'retired');
+  const inactive = $derived(archiveView || meta.status !== 'active');
   const networkLabel = getWalletNetworkDisplayName('sepolia');
   const statusKey = $derived(
     inactive ? 'governance.warGameHub.statusRetired' : 'governance.warGameHub.statusActive',

@@ -1,7 +1,7 @@
 import type { SquadInfraDto } from './api';
 import { WAR_GAME_SQUAD_PARAMS } from './squad-params';
 
-export type WarGameStackStatus = 'active' | 'retired';
+export type WarGameStackStatus = 'active' | 'retired' | 'pending_sponsor';
 
 export type WarGamePriorRound = {
   round: string;
@@ -57,8 +57,10 @@ export function parseWarGameStackMeta(raw: string | null | undefined): {
   let round = '';
   const p = asRecord(raw);
   if (!p) return { status, round };
-  if (typeof p.status === 'string' && p.status.trim().toLowerCase() === 'retired') {
-    status = 'retired';
+  if (typeof p.status === 'string') {
+    const s = p.status.trim().toLowerCase();
+    if (s === 'retired') status = 'retired';
+    else if (s === 'pending_sponsor') status = 'pending_sponsor';
   }
   round = roundFromUnknown(p.round);
   return { status, round };

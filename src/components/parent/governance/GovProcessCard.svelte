@@ -13,6 +13,7 @@
   import { isCrewOffboardExecutable, isCrewOffboardExpirable } from '../../../lib/governance/crew-offboard';
   import { mutinyTxExplorerUrl, shortTxHash } from '../../../lib/governance/mutiny-process-tx';
   import { openExternalUrl } from '../../../lib/utils/open-external';
+  import { scheduleDeadlineTimeout } from '../../../lib/utils/deadline-timeout';
   import ProposalActionSummary from './ProposalActionSummary.svelte';
 
   interface Props {
@@ -127,10 +128,9 @@
     const alreadyOpen = unlockAt == null || unlockAt <= Math.floor(Date.now() / 1000);
     delayElapsed = alreadyOpen;
     if (!alreadyOpen && unlockAt != null) {
-      const timer = setTimeout(() => {
+      return scheduleDeadlineTimeout(unlockAt, () => {
         delayElapsed = true;
-      }, Math.max(0, unlockAt * 1000 - Date.now()));
-      return () => clearTimeout(timer);
+      });
     }
     return undefined;
   });

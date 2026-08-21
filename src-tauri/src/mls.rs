@@ -22,12 +22,12 @@
 //! This allows protocol-agnostic message handling across DMs and MLS groups.
 
 use crate::db::{save_chat, save_chat_messages};
+use crate::mls_orphan_reaper::MLS_GROUPS_ENGINE_CREATE_LOCK;
 use crate::nostr_tags;
 use crate::rumor::{
     process_rumor, ConversationType, RumorContext, RumorEvent, RumorProcessingResult,
 };
 use crate::{get_nostr_client, STATE, TAURI_APP};
-use crate::mls_orphan_reaper::MLS_GROUPS_ENGINE_CREATE_LOCK;
 use mdk_core::prelude::*;
 use mdk_sqlite_storage::{EncryptionConfig, MdkSqliteStorage};
 use nostr_sdk::PublicKey;
@@ -587,7 +587,10 @@ mod deliver_welcomes_tests {
         .await;
         let pending = pending_invites_from_delivery_outcomes(outcomes);
         assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].npub, fail_recipient.to_bech32().unwrap_or_default());
+        assert_eq!(
+            pending[0].npub,
+            fail_recipient.to_bech32().unwrap_or_default()
+        );
     }
 
     #[tokio::test]
@@ -600,8 +603,14 @@ mod deliver_welcomes_tests {
         assert_eq!(outcomes.len(), recipients.len());
         let pending = pending_invites_from_delivery_outcomes(outcomes);
         assert_eq!(pending.len(), 2);
-        assert_eq!(pending[0].npub, recipients[1].to_bech32().unwrap_or_default());
-        assert_eq!(pending[1].npub, recipients[2].to_bech32().unwrap_or_default());
+        assert_eq!(
+            pending[0].npub,
+            recipients[1].to_bech32().unwrap_or_default()
+        );
+        assert_eq!(
+            pending[1].npub,
+            recipients[2].to_bech32().unwrap_or_default()
+        );
         assert!(pending
             .iter()
             .all(|p| p.reason == "MLS group create returned no welcome for this member"));
@@ -1146,7 +1155,7 @@ impl MlsService {
             avatar_ref: avatar_ref.map(|s| s.to_string()),
             created_at: now_secs,
             updated_at: now_secs,
-            evicted: false,          // New groups are not evicted
+            evicted: false,               // New groups are not evicted
             pending_welcomes: Vec::new(), // Populated below if any welcome delivery fails
         };
 
@@ -3662,7 +3671,10 @@ mod mls_group_metadata_serde_tests {
         };
         let json = serde_json::to_value(&meta).unwrap();
         let round_tripped: MlsGroupMetadata = serde_json::from_value(json).unwrap();
-        assert_eq!(round_tripped.pending_welcomes, vec!["npub1pending".to_string()]);
+        assert_eq!(
+            round_tripped.pending_welcomes,
+            vec!["npub1pending".to_string()]
+        );
     }
 }
 

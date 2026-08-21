@@ -402,10 +402,11 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, parent_id)
         .ok()
         .flatten();
-    let is_wargame_op = wargame_payload
-        .as_deref()
-        .and_then(parse_war_game_userop_context)
-        .is_some_and(|c| c.targets(to));
+    let stack = crate::evm::access_control::GovStack::for_wargame_target_corroborated(
+        &app, parent_id, to, None,
+    )
+    .await?;
+    let is_wargame_op = stack == crate::evm::access_control::GovStack::WarGame;
     if !db::parent_has_sponsor_infra(&app, parent_id).unwrap_or(false) && !is_wargame_op {
         return Err(wallet_err_json(
             "SPONSOR_REQUIRED",
@@ -413,7 +414,11 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
             None,
         ));
     }
-    let squad_id = resolve_sponsored_squad_id(parent_id, to, wargame_payload.as_deref());
+    let squad_id = if is_wargame_op {
+        resolve_sponsored_squad_id(parent_id, to, wargame_payload.as_deref())
+    } else {
+        squad_id_from_parent_id(parent_id)
+    };
 
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;

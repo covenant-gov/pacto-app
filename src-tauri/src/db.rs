@@ -2991,6 +2991,7 @@ fn json_round_u64(v: &serde_json::Value) -> Option<u64> {
 fn war_game_round_snapshot(payload: &serde_json::Value) -> serde_json::Value {
     let mut obj = payload.as_object().cloned().unwrap_or_default();
     obj.remove("priorRounds");
+    obj.remove("pendingNext");
     obj.insert("status".into(), serde_json::json!("retired"));
     serde_json::Value::Object(obj)
 }
@@ -3025,6 +3026,10 @@ fn union_prior_rounds(
         }
     }
     out.sort_by_key(|p| prior_round_number(p).unwrap_or(0));
+    const WAR_GAME_PRIOR_ROUNDS_MAX: usize = 300;
+    if out.len() > WAR_GAME_PRIOR_ROUNDS_MAX {
+        out.drain(0..out.len() - WAR_GAME_PRIOR_ROUNDS_MAX);
+    }
     out
 }
 
@@ -3811,6 +3816,33 @@ mod war_game_announce_tests {
         assert_eq!(v["sponsor"], "0x2");
         assert_eq!(v["priorRounds"][0]["round"], "1");
         assert_eq!(v["priorRounds"][0]["status"], "retired");
+    }
+
+    #[test]
+    fn merge_prior_rounds_keeps_newest_300() {
+        let priors: Vec<serde_json::Value> = (1..=300)
+            .map(|i| serde_json::json!({"round": i.to_string(), "status": "retired"}))
+            .collect();
+        let stored = serde_json::json!({
+            "status": "active",
+            "round": "301",
+            "priorRounds": priors,
+        })
+        .to_string();
+        let incoming = serde_json::json!({
+            "status": "active",
+            "round": "302",
+        })
+        .to_string();
+        let v: serde_json::Value = serde_json::from_str(&merge_war_game_provider_payloads(
+            Some(stored.as_str()),
+            incoming.as_str(),
+        ))
+        .unwrap();
+        let arr = v["priorRounds"].as_array().expect("priorRounds");
+        assert_eq!(arr.len(), 300);
+        assert_eq!(arr[0]["round"], "2");
+        assert_eq!(arr[299]["round"], "301");
     }
 
     #[test]
@@ -5277,8 +5309,12 @@ pub async fn save_mls_group<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     // Insert or replace a single group
-    let pending_welcomes_json = serde_json::to_string(&group.pending_welcomes)
-        .map_err(|e| format!("Failed to serialize pending_welcomes for {}: {}", group.group_id, e))?;
+    let pending_welcomes_json = serde_json::to_string(&group.pending_welcomes).map_err(|e| {
+        format!(
+            "Failed to serialize pending_welcomes for {}: {}",
+            group.group_id, e
+        )
+    })?;
     conn.execute(
         "INSERT OR REPLACE INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted, pending_welcomes)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -5427,13 +5463,14 @@ pub async fn load_mls_groups<R: Runtime>(
             let pending_welcomes_json: String = row.get(8)?;
             // A hard failure here would make the whole group list unreadable, so log loudly
             // and degrade to "no pending welcomes" instead of losing the row entirely.
-            let pending_welcomes = serde_json::from_str(&pending_welcomes_json).unwrap_or_else(|e| {
-                eprintln!(
-                    "[SQL] Failed to parse pending_welcomes for MLS group {}: {}",
-                    group_id, e
-                );
-                Vec::new()
-            });
+            let pending_welcomes =
+                serde_json::from_str(&pending_welcomes_json).unwrap_or_else(|e| {
+                    eprintln!(
+                        "[SQL] Failed to parse pending_welcomes for MLS group {}: {}",
+                        group_id, e
+                    );
+                    Vec::new()
+                });
             Ok(crate::mls::MlsGroupMetadata {
                 group_id,
                 engine_group_id: row.get(1)?,
@@ -5501,7 +5538,9 @@ mod mls_group_metadata_persistence_tests {
         let app = setup("npub1u4mlsgroupsroundtripfresh");
         let handle = app.handle().clone();
 
-        save_mls_group(handle.clone(), &fresh_group("g1")).await.unwrap();
+        save_mls_group(handle.clone(), &fresh_group("g1"))
+            .await
+            .unwrap();
 
         let groups = load_mls_groups(&handle).await.unwrap();
         assert_eq!(groups.len(), 1);
@@ -5534,7 +5573,10 @@ mod mls_group_metadata_persistence_tests {
             "a welcome delivery failure must leave exactly one row, not discard or duplicate the group"
         );
         assert_eq!(groups[0].group_id, "g2");
-        assert_eq!(groups[0].pending_welcomes, vec!["npub1undelivered".to_string()]);
+        assert_eq!(
+            groups[0].pending_welcomes,
+            vec!["npub1undelivered".to_string()]
+        );
         assert_eq!(groups[0].updated_at, 2_000);
     }
 
@@ -5687,8 +5729,12 @@ mod mls_group_metadata_persistence_tests {
         let app = setup("npub1u4mlsgroupsroundtripdelete");
         let handle = app.handle().clone();
 
-        save_mls_group(handle.clone(), &fresh_group("g5")).await.unwrap();
-        save_mls_group(handle.clone(), &fresh_group("g6")).await.unwrap();
+        save_mls_group(handle.clone(), &fresh_group("g5"))
+            .await
+            .unwrap();
+        save_mls_group(handle.clone(), &fresh_group("g6"))
+            .await
+            .unwrap();
 
         delete_mls_group(handle.clone(), "g5").await.unwrap();
 

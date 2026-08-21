@@ -15,6 +15,7 @@
     isCrewOffboardExpirable,
     parseQuorumBps,
   } from '../../../lib/governance/crew-offboard';
+  import { scheduleDeadlineTimeout } from '../../../lib/utils/deadline-timeout';
   import { quorumBpsToPercent } from '../../../lib/governance/crew-vote-mode';
   import {
     gatePermissionlessSigner,
@@ -72,11 +73,9 @@
     const deadline = offboard?.deadline ?? 0;
     nowSec = Math.floor(Date.now() / 1000);
     if (!deadline || deadline <= nowSec) return;
-    const waitMs = Math.max(0, deadline * 1000 - Date.now());
-    const id = setTimeout(() => {
+    return scheduleDeadlineTimeout(deadline, () => {
       nowSec = Math.floor(Date.now() / 1000);
-    }, waitMs);
-    return () => clearTimeout(id);
+    });
   });
 
   $effect(() => {

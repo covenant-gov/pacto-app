@@ -29,9 +29,8 @@ use super::rpc::{
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::sponsor_userop::{
-    call_gas_with_margin, estimate_call_gas, parse_war_game_userop_context,
-    roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
-    FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
+    call_gas_with_margin, estimate_call_gas, roster_native_balance_wei, send_sponsored_gov_userop,
+    wait_for_user_operation_receipt, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -68,18 +67,9 @@ pub async fn send_gov_module_call<R: Runtime>(
         ));
     }
 
-    let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
-        .ok()
-        .flatten();
-    let wargame_write = wargame_payload
-        .as_deref()
-        .and_then(parse_war_game_userop_context)
-        .is_some_and(|c| c.targets(to));
-    let stack = if wargame_write {
-        GovStack::WarGame
-    } else {
-        GovStack::Live
-    };
+    let stack =
+        GovStack::for_wargame_target_corroborated(&app, pid, to, rpc_urls_override.clone()).await?;
+    let wargame_write = stack == GovStack::WarGame;
     require_capability(&app, pid, capability, rpc_urls_override, stack).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 

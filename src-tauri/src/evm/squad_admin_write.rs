@@ -1,7 +1,7 @@
 //! Squad Admin roster mutations: createRole, enableExecutor, enableFullPermission.
 
 use alloy::network::TransactionBuilder;
-use alloy::primitives::B256;
+use alloy::primitives::{Address, B256};
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
@@ -10,7 +10,9 @@ use super::access_control::{require_capability, with_gov_write_lock, GovCapabili
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     createRoleCall, enableExecutorCall, enableFullPermissionCall,
 };
-use super::gov_read::rpc_urls_or_default;
+use super::gov_read::{connect_gov_read_provider, parse_top_hat_id, rpc_urls_or_default};
+use super::nave_pirata_read::{read_nave_pirata_deployment, read_war_game_active_deployment};
+use super::pacto_chain_config;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
@@ -18,6 +20,7 @@ use super::rpc::{
     connect_signing_provider, contract_call_request, parse_address, send_and_confirm,
     wallet_err_json,
 };
+use super::sponsor_userop::parse_war_game_userop_context;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -75,12 +78,18 @@ async fn squad_admin_write<R: Runtime>(
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
-    let parent = resolve_squad_admin_parent(&app, parent_id.as_str(), squad_admin_proxy.trim())?;
+    let parent = resolve_squad_admin_parent(
+        &app,
+        parent_id.as_str(),
+        admin,
+        net.key.as_str(),
+        rpc_urls.clone(),
+    )
+    .await?;
 
-    let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, parent.as_str())
-        .ok()
-        .flatten();
-    let stack = GovStack::for_wargame_target(wargame_payload.as_deref(), admin);
+    let stack =
+        GovStack::for_wargame_target_corroborated(&app, parent.as_str(), admin, rpc_urls.clone())
+            .await?;
     require_capability(&app, parent.as_str(), capability, rpc_urls, stack).await?;
     require_roster_treasury_signing_allowed(app.clone(), parent.as_str()).await?;
 
@@ -104,12 +113,14 @@ async fn squad_admin_write<R: Runtime>(
     })
 }
 
-fn resolve_squad_admin_parent<R: Runtime>(
+async fn resolve_squad_admin_parent<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
-    squad_admin_proxy: &str,
+    admin: Address,
+    network: &str,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<String, String> {
-    let from_infra = db::parent_id_for_canonical_infra_ref(app, squad_admin_proxy)?
+    let from_infra = db::parent_id_for_canonical_infra_ref(app, &format!("{admin:#x}"))?
         .filter(|s| !s.trim().is_empty());
     let pid = parent_id.trim();
     match (pid.is_empty(), from_infra) {
@@ -121,7 +132,7 @@ fn resolve_squad_admin_parent<R: Runtime>(
             None,
         )),
         (false, None) => {
-            if parent_payload_mentions_address(app, pid, squad_admin_proxy)? {
+            if parent_mentions_squad_admin_on_chain(app, pid, admin, network, rpc_urls).await? {
                 Ok(pid.to_string())
             } else {
                 Err(wallet_err_json(
@@ -139,20 +150,74 @@ fn resolve_squad_admin_parent<R: Runtime>(
     }
 }
 
-fn parent_payload_mentions_address<R: Runtime>(
+fn squad_admin_from_deployment_matches(admin: Address, squad_admin_proxy: &str) -> bool {
+    parse_address(squad_admin_proxy).ok() == Some(admin)
+}
+
+async fn parent_mentions_squad_admin_on_chain<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
-    address: &str,
+    admin: Address,
+    network: &str,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<bool, String> {
-    let Some(want) = crate::evm::normalize_hex_address(address.trim()) else {
-        return Ok(false);
-    };
-    let want = want.to_ascii_lowercase();
     let rows = db::list_squad_infra(app.clone(), parent_id.to_string())?;
-    for row in rows {
-        if let Some(payload) = row.provider_payload.as_deref() {
-            if payload.to_ascii_lowercase().contains(&want) {
-                return Ok(true);
+    let addrs = pacto_chain_config::pacto_gov_deploy_addresses(network)
+        .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
+    let (provider, rpc_ctx) = connect_gov_read_provider(network, rpc_urls).await?;
+
+    if let Some(row) = rows.iter().find(|r| r.infra_type == "pacto_gov") {
+        if let Some(registry) = addrs.nave_pirata_registry {
+            if let Ok(top_hat) = parse_top_hat_id(row.canonical_ref.trim()) {
+                match read_nave_pirata_deployment(
+                    &provider,
+                    registry,
+                    top_hat,
+                    rpc_ctx.key.as_str(),
+                    rpc_ctx.chain_id,
+                )
+                .await
+                {
+                    Ok(d)
+                        if squad_admin_from_deployment_matches(
+                            admin,
+                            d.squad_admin_proxy.as_str(),
+                        ) =>
+                    {
+                        return Ok(true);
+                    }
+                    Ok(_) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+    }
+
+    if let Some(row) = rows.iter().find(|r| r.infra_type == "pacto_gov_wargame") {
+        if let (Some(registry), Some(payload)) =
+            (addrs.war_game_registry, row.provider_payload.as_deref())
+        {
+            if let Some(ctx) = parse_war_game_userop_context(payload) {
+                match read_war_game_active_deployment(
+                    &provider,
+                    registry,
+                    ctx.game_squad_id,
+                    rpc_ctx.key.as_str(),
+                    rpc_ctx.chain_id,
+                )
+                .await
+                {
+                    Ok(Some(d))
+                        if squad_admin_from_deployment_matches(
+                            admin,
+                            d.squad_admin_proxy.as_str(),
+                        ) =>
+                    {
+                        return Ok(true);
+                    }
+                    Ok(_) => {}
+                    Err(e) => return Err(e),
+                }
             }
         }
     }
@@ -248,7 +313,8 @@ pub async fn squad_admin_enable_full_permission<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::bytes32_role_tag;
+    use super::{bytes32_role_tag, squad_admin_from_deployment_matches};
+    use alloy::primitives::address;
 
     #[test]
     fn bytes32_role_tag_rejects_empty_and_overlong() {
@@ -257,5 +323,19 @@ mod tests {
             bytes32_role_tag(&"a".repeat(crate::app_config::ROLE_LABEL_MAX_LENGTH + 1)).is_err()
         );
         assert!(bytes32_role_tag("FULL").is_ok());
+    }
+
+    #[test]
+    fn squad_admin_match_ignores_json_substring_poison() {
+        let admin = address!("0x4444444444444444444444444444444444444444");
+        let other = address!("0x5412b91d05101d3bd802e4e8d4c576f0e525aeda");
+        assert!(squad_admin_from_deployment_matches(
+            admin,
+            "0x4444444444444444444444444444444444444444"
+        ));
+        assert!(!squad_admin_from_deployment_matches(
+            other,
+            "0x4444444444444444444444444444444444444444"
+        ));
     }
 }

@@ -49,6 +49,10 @@ describe('parseWarGameStackMeta', () => {
       status: 'retired',
       round: '4',
     });
+    expect(parseWarGameStackMeta(JSON.stringify({ status: 'pending_sponsor' }))).toEqual({
+      status: 'pending_sponsor',
+      round: '',
+    });
   });
 });
 

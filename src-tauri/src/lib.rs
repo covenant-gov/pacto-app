@@ -10241,10 +10241,11 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
             // Map wire-id/engine-id using encrypted metadata
             let meta_groups = mls.read_groups().await.unwrap_or_default();
-            let (wire_id, engine_id, pending_welcomes) = if let Some(m) = meta_groups.iter().find(|g| {
-                g.group_id == group_id
-                    || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id)
-            }) {
+            let (wire_id, engine_id, pending_welcomes) = if let Some(m) =
+                meta_groups.iter().find(|g| {
+                    g.group_id == group_id
+                        || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id)
+                }) {
                 (
                     m.group_id.clone(),
                     if !m.engine_group_id.is_empty() {

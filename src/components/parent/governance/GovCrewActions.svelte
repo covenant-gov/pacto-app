@@ -42,6 +42,7 @@
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import { scheduleDeadlineTimeout } from '../../../lib/utils/deadline-timeout';
 
   interface Props {
     network: string;
@@ -136,10 +137,9 @@
     nowSec = Math.floor(Date.now() / 1000);
     const deadline = mutinyStatus?.deadline ?? 0;
     if (deadline > nowSec) {
-      const timer = setTimeout(() => {
+      return scheduleDeadlineTimeout(deadline, () => {
         nowSec = Math.floor(Date.now() / 1000);
-      }, Math.max(0, deadline * 1000 - Date.now()));
-      return () => clearTimeout(timer);
+      });
     }
     return undefined;
   });

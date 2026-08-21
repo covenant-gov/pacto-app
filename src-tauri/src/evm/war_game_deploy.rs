@@ -134,6 +134,105 @@ fn war_game_provider_payload(
     serde_json::Value::Object(map).to_string()
 }
 
+struct PendingNextStack {
+    deploy_tx: String,
+    top_hat: U256,
+    salt_nonce: U256,
+    safe: Address,
+    quartermaster: Address,
+    mutiny: Address,
+    treasury: Address,
+    squad_admin: Address,
+}
+
+fn pending_next_value(p: &PendingNextStack) -> serde_json::Value {
+    json!({
+        "deployTxHash": p.deploy_tx,
+        "topHatId": p.top_hat.to_string(),
+        "saltNonce": p.salt_nonce.to_string(),
+        "safe": format!("{:#x}", p.safe),
+        "quartermaster": format!("{:#x}", p.quartermaster),
+        "mutinyModule": format!("{:#x}", p.mutiny),
+        "treasuryAuthority": format!("{:#x}", p.treasury),
+        "squadAdminProxy": format!("{:#x}", p.squad_admin),
+    })
+}
+
+fn attach_pending_next(
+    stored: Option<&str>,
+    parent_id: &str,
+    pending: &PendingNextStack,
+) -> String {
+    let mut obj = stored
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    let is_active = obj
+        .get("status")
+        .and_then(|s| s.as_str())
+        .is_some_and(|s| s.eq_ignore_ascii_case("active"));
+    if !is_active {
+        obj.insert("v".to_string(), json!(1));
+        obj.insert("parentId".to_string(), json!(parent_id));
+        obj.insert("status".to_string(), json!("pending_sponsor"));
+    }
+    obj.insert("pendingNext".to_string(), pending_next_value(pending));
+    serde_json::Value::Object(obj).to_string()
+}
+
+fn parse_pending_next(payload: Option<&str>) -> Option<PendingNextStack> {
+    let raw = payload.map(str::trim).filter(|s| !s.is_empty())?;
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let p = v.get("pendingNext")?;
+    let deploy_tx = p.get("deployTxHash")?.as_str()?.trim().to_string();
+    if deploy_tx.is_empty() {
+        return None;
+    }
+    let top_hat_raw = p.get("topHatId")?.as_str()?.trim();
+    let top_hat = U256::from_str_radix(top_hat_raw, 10)
+        .ok()
+        .or_else(|| U256::from_str_radix(top_hat_raw.trim_start_matches("0x"), 16).ok())?;
+    if top_hat.is_zero() {
+        return None;
+    }
+    let salt_nonce = parse_salt_nonce(
+        p.get("saltNonce")
+            .and_then(|x| x.as_str())
+            .map(str::to_string),
+    )
+    .ok()?;
+    let safe = parse_address(p.get("safe")?.as_str()?).ok()?;
+    let quartermaster = parse_address(p.get("quartermaster")?.as_str()?).ok()?;
+    let mutiny = parse_address(p.get("mutinyModule")?.as_str()?).ok()?;
+    let treasury = parse_address(p.get("treasuryAuthority")?.as_str()?).ok()?;
+    let squad_admin = parse_address(p.get("squadAdminProxy")?.as_str()?).ok()?;
+    if safe.is_zero() {
+        return None;
+    }
+    Some(PendingNextStack {
+        deploy_tx,
+        top_hat,
+        salt_nonce,
+        safe,
+        quartermaster,
+        mutiny,
+        treasury,
+        squad_admin,
+    })
+}
+
+fn existing_wargame_canonical_ref<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+) -> Option<String> {
+    db::list_squad_infra(app.clone(), parent_id.to_string())
+        .ok()?
+        .into_iter()
+        .find(|r| r.infra_type == "pacto_gov_wargame")
+        .map(|r| r.canonical_ref)
+        .filter(|s| !s.trim().is_empty())
+}
+
 fn addresses_from_war_game_registered_log(
     log: &alloy::rpc::types::Log,
     registry: Address,
@@ -305,27 +404,68 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
     let factory_gov = gov_addrs.nave_pirata_factory;
     let read_provider = connect_read_provider(&urls).await?;
 
-    let params = nave_pirata_deploy_params(
-        captain_addr,
-        meta,
-        squad_params,
-        &gov_addrs,
-        salt,
-        StackKind::WarGame,
-        parent_squad_id,
-    );
-    let deploy_calldata = deployNavePirataCall { _params: params }.abi_encode();
-    let deploy_receipt = send_and_confirm(
-        &pay_provider,
-        contract_call_request(factory_gov, deploy_calldata),
-        "Timed out waiting for war-game stack confirmation.",
-    )
-    .await?;
-    let deploy_tx = format!("0x{:x}", deploy_receipt.transaction_hash);
-    let (top_hat, _captain_out, safe_a, qm_a, mm_a, ta_a, admin_a) =
-        war_game_addresses_from_receipt(&deploy_receipt, factory_gov, war_game_registry).map_err(
-            |e| wallet_err_json_with_tx_hash("PARSE_RECEIPT", e, None, deploy_tx.clone()),
-        )?;
+    let prior_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
+        .ok()
+        .flatten();
+    let pending = parse_pending_next(prior_payload.as_deref());
+
+    let (top_hat, _captain_out, safe_a, qm_a, mm_a, ta_a, admin_a) = if let Some(pending) = pending
+    {
+        (
+            pending.top_hat,
+            Address::ZERO,
+            pending.safe,
+            pending.quartermaster,
+            pending.mutiny,
+            pending.treasury,
+            pending.squad_admin,
+        )
+    } else {
+        let params = nave_pirata_deploy_params(
+            captain_addr,
+            meta,
+            squad_params,
+            &gov_addrs,
+            salt,
+            StackKind::WarGame,
+            parent_squad_id,
+        );
+        let deploy_calldata = deployNavePirataCall { _params: params }.abi_encode();
+        let deploy_receipt = send_and_confirm(
+            &pay_provider,
+            contract_call_request(factory_gov, deploy_calldata),
+            "Timed out waiting for war-game stack confirmation.",
+        )
+        .await?;
+        let deploy_tx = format!("0x{:x}", deploy_receipt.transaction_hash);
+        let parsed =
+            war_game_addresses_from_receipt(&deploy_receipt, factory_gov, war_game_registry)
+                .map_err(|e| {
+                    wallet_err_json_with_tx_hash("PARSE_RECEIPT", e, None, deploy_tx.clone())
+                })?;
+        let pending_stack = PendingNextStack {
+            deploy_tx,
+            top_hat: parsed.0,
+            salt_nonce: salt,
+            safe: parsed.2,
+            quartermaster: parsed.3,
+            mutiny: parsed.4,
+            treasury: parsed.5,
+            squad_admin: parsed.6,
+        };
+        let pending_payload = attach_pending_next(prior_payload.as_deref(), pid, &pending_stack);
+        let persist_hat = existing_wargame_canonical_ref(&app, pid)
+            .unwrap_or_else(|| pending_stack.top_hat.to_string());
+        db::persist_pacto_gov_wargame_infra(
+            &app,
+            pid,
+            net.key.as_str(),
+            persist_hat.as_str(),
+            pending_payload.as_str(),
+        )
+        .map_err(|e| wallet_err_json("PERSIST_PACTO_GOV_WARGAME", e, None))?;
+        parsed
+    };
 
     let round_calldata = createWarGameSponsorCall {
         parentSquadId: parent_squad_id,
@@ -614,5 +754,83 @@ mod tests {
         let decoded = deployNavePirataCall::abi_decode(&encoded).expect("decode");
         assert!(matches!(decoded._params.stackKind, StackKind::WarGame));
         assert_eq!(decoded._params.squadId, squad_id);
+    }
+
+    #[test]
+    fn pending_next_keeps_active_round_and_resumes() {
+        let active = war_game_provider_payload(
+            "parent-1",
+            "0xoldtx",
+            "0x1111111111111111111111111111111111111111",
+            "0x2222222222222222222222222222222222222222",
+            "0x3333333333333333333333333333333333333333",
+            "0x4444444444444444444444444444444444444444",
+            "0x5555555555555555555555555555555555555555",
+            &U256::from(1u64),
+            B256::repeat_byte(0x11),
+            "0x6666666666666666666666666666666666666666",
+            None,
+        );
+        let pending = PendingNextStack {
+            deploy_tx: "0xdeploy".into(),
+            top_hat: U256::from(99u64),
+            salt_nonce: U256::from(7u64),
+            safe: Address::repeat_byte(0xaa),
+            quartermaster: Address::repeat_byte(0xbb),
+            mutiny: Address::repeat_byte(0xcc),
+            treasury: Address::repeat_byte(0xdd),
+            squad_admin: Address::repeat_byte(0xee),
+        };
+        let attached = attach_pending_next(Some(active.as_str()), "parent-1", &pending);
+        let v: serde_json::Value = serde_json::from_str(&attached).unwrap();
+        assert_eq!(v["status"], "active");
+        assert_eq!(v["round"], "1");
+        assert_eq!(v["pendingNext"]["deployTxHash"], "0xdeploy");
+        assert_eq!(v["pendingNext"]["topHatId"], "99");
+        let parsed = parse_pending_next(Some(attached.as_str())).expect("pending");
+        assert_eq!(parsed.top_hat, U256::from(99u64));
+        assert_eq!(parsed.salt_nonce, U256::from(7u64));
+        assert_eq!(parsed.safe, Address::repeat_byte(0xaa));
+    }
+
+    #[test]
+    fn first_deploy_pending_is_not_active_userop_context() {
+        let pending = PendingNextStack {
+            deploy_tx: "0xdeploy".into(),
+            top_hat: U256::from(1u64),
+            salt_nonce: U256::from(3u64),
+            safe: Address::repeat_byte(0x11),
+            quartermaster: Address::repeat_byte(0x22),
+            mutiny: Address::repeat_byte(0x33),
+            treasury: Address::repeat_byte(0x44),
+            squad_admin: Address::repeat_byte(0x55),
+        };
+        let payload = attach_pending_next(None, "parent-1", &pending);
+        let v: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(v["status"], "pending_sponsor");
+        assert!(v.get("round").is_none());
+        assert!(crate::evm::sponsor_userop::parse_war_game_userop_context(&payload).is_none());
+        let next = war_game_provider_payload(
+            "parent-1",
+            "0xround",
+            "0x1111111111111111111111111111111111111111",
+            "0x2222222222222222222222222222222222222222",
+            "0x3333333333333333333333333333333333333333",
+            "0x4444444444444444444444444444444444444444",
+            "0x5555555555555555555555555555555555555555",
+            &U256::from(1u64),
+            B256::repeat_byte(0x22),
+            "0x6666666666666666666666666666666666666666",
+            None,
+        );
+        let merged =
+            crate::db::merge_war_game_provider_payloads(Some(payload.as_str()), next.as_str());
+        let mv: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(mv["status"], "active");
+        assert_eq!(mv["round"], "1");
+        assert!(
+            mv.get("priorRounds").is_none() || mv["priorRounds"].as_array().unwrap().is_empty()
+        );
+        assert!(mv.get("pendingNext").is_none());
     }
 }

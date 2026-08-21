@@ -114,7 +114,10 @@ impl MlsService {
             let gid_bytes = match hex::decode(id_hex) {
                 Ok(bytes) => bytes,
                 Err(e) => {
-                    eprintln!("[MLS] Skipping orphan reap for invalid hex id {}: {}", id_hex, e);
+                    eprintln!(
+                        "[MLS] Skipping orphan reap for invalid hex id {}: {}",
+                        id_hex, e
+                    );
                     continue;
                 }
             };
@@ -125,7 +128,10 @@ impl MlsService {
                     println!("[MLS] Reaped orphaned engine group {}", id_hex);
                 }
                 Err(e) => {
-                    eprintln!("[MLS] Failed to reap orphaned engine group {}: {}", id_hex, e);
+                    eprintln!(
+                        "[MLS] Failed to reap orphaned engine group {}: {}",
+                        id_hex, e
+                    );
                 }
             }
         }

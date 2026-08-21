@@ -27,6 +27,7 @@ pub mod squad_sponsor_common;
 pub mod squad_sponsor_deploy;
 pub mod squad_sponsor_deposit;
 pub mod squad_sponsor_ext;
+pub mod squad_sponsor_hats_wire;
 pub mod squad_sponsor_read;
 pub mod squad_sponsor_withdraw;
 pub mod treasury_authority_write;

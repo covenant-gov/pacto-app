@@ -11,10 +11,7 @@ use serde_json::json;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, GovCapability, GovStack};
-use super::contracts::pacto_sponsor::ISquadSponsorBase::depositCall;
-use super::contracts::pacto_sponsor::ISquadSponsorExt::{
-    addressOwnerCall, hatsWiredCall, postInitializeCall,
-};
+use super::contracts::pacto_sponsor::ISquadSponsorExt::{addressOwnerCall, hatsWiredCall};
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::{
     createSquadSponsorCall, createSquadSponsorExtCall, squadsCall,
 };
@@ -35,6 +32,7 @@ use super::squad_sponsor_common::{
     parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
     squad_id_from_parent_id, squad_variant_label,
 };
+use super::squad_sponsor_hats_wire::{hats_factory_slot, wire_parent_ext_hats, HatsFactorySlot};
 use super::wallet_chain_config;
 use crate::db;
 
@@ -166,25 +164,6 @@ fn sponsor_preflight_decision(has_local_row: bool, registry_sponsor: Address) ->
     }
 }
 
-/// Hats-deploy view of the parent factory slot. Unwired Ext is wired, not rejected.
-/// War-game-first leaves this Empty so Finish sponsor calls `createSquadSponsor`.
-#[derive(Debug, PartialEq, Eq)]
-enum HatsFactorySlot {
-    Empty,
-    Wire,
-    Already,
-}
-
-fn hats_factory_slot(sponsor: Address, variant: SquadVariant, hats_wired: bool) -> HatsFactorySlot {
-    if sponsor.is_zero() || matches!(variant, SquadVariant::NONE) {
-        HatsFactorySlot::Empty
-    } else if matches!(variant, SquadVariant::EXT) && !hats_wired {
-        HatsFactorySlot::Wire
-    } else {
-        HatsFactorySlot::Already
-    }
-}
-
 /// `variant` vocabulary of the deploy result DTO, derived from the on-chain registry variant.
 fn onchain_variant_result_label(v: SquadVariant) -> &'static str {
     match v {
@@ -218,7 +197,7 @@ fn already_deployed_onchain_err(sponsor_hex: &str, variant: &str) -> String {
 }
 
 /// `squad_infra.provider_payload` JSON for a deployed sponsor clone.
-fn sponsor_provider_payload(
+pub(crate) fn sponsor_provider_payload(
     pid: &str,
     squad_id: B256,
     sponsor: Address,
@@ -283,123 +262,6 @@ async fn return_already_deployed<R: Runtime>(
         &sponsor_hex,
         onchain_variant_result_label(variant),
     ))
-}
-
-/// Payload extras after wiring hats onto an existing parent Ext.
-fn hats_wire_payload_extras(
-    top_hat: U256,
-    registry: Address,
-    address_owner: Address,
-) -> Vec<(&'static str, serde_json::Value)> {
-    vec![
-        ("topHatId", json!(top_hat.to_string())),
-        ("registry", json!(format!("{:#x}", registry))),
-        ("hatsWired", json!(true)),
-        ("addressOwner", json!(format!("{:#x}", address_owner))),
-    ]
-}
-
-/// Deposit into the existing parent Ext, then `postInitialize` onto NavePirataRegistry.
-async fn wire_parent_ext_hats<R: Runtime>(
-    app: AppHandle<R>,
-    pid: &str,
-    net: &wallet_chain_config::WalletNetworkConfig,
-    addrs: &pacto_chain_config::SquadSponsorDeployAddresses,
-    urls: &[String],
-    squad_id: B256,
-    sponsor: Address,
-    top_hat: U256,
-    registry: Address,
-    deposit: U256,
-    signer_wallet: Option<&str>,
-) -> Result<SquadSponsorDeployResult, String> {
-    require_roster_treasury_signing_allowed(app.clone(), pid).await?;
-    let (roster_signer, roster_wallet) =
-        load_squad_roster_embedded_signer(app.clone(), pid).await?;
-    let roster_addr = roster_signer.address();
-
-    let signer_mode = parse_signer_wallet(signer_wallet, "squad")?;
-    let pay_addr;
-    let pay_wallet;
-    if signer_mode == "default" {
-        require_treasury_signing_allowed(app.clone()).await?;
-        let (pay_signer, wallet) = load_active_squad_embedded_signer(app.clone()).await?;
-        pay_addr = pay_signer.address();
-        pay_wallet = wallet;
-        let _ = roster_signer;
-    } else {
-        pay_addr = roster_addr;
-        pay_wallet = roster_wallet.clone();
-        let _ = roster_signer;
-    }
-
-    let pay_provider = connect_signing_provider(urls, pay_wallet).await?;
-    let roster_provider = if pay_addr == roster_addr {
-        pay_provider.clone()
-    } else {
-        connect_signing_provider(urls, roster_wallet).await?
-    };
-
-    // postInitialize is not payable; fund the clone pool first so a retry can still wire.
-    if !deposit.is_zero() {
-        let deposit_calldata = depositCall {}.abi_encode();
-        send_and_confirm(
-            &pay_provider,
-            contract_call_request(sponsor, deposit_calldata).with_value(deposit),
-            "Timed out waiting for sponsor deposit confirmation.",
-        )
-        .await?;
-    }
-
-    let wire_calldata = postInitializeCall {
-        topHatId: top_hat,
-        registry,
-        customEligibleHats: vec![],
-    }
-    .abi_encode();
-    let wire_receipt = send_and_confirm(
-        &roster_provider,
-        contract_call_request(sponsor, wire_calldata),
-        "Timed out waiting for hats sponsor wiring confirmation.",
-    )
-    .await?;
-    let tx_hash = format!("0x{:x}", wire_receipt.transaction_hash);
-    let sponsor_hex = format!("{:#x}", sponsor);
-    let address_owner: Address = eth_call_decode(&roster_provider, sponsor, &addressOwnerCall {})
-        .await
-        .map_err(|e| wallet_err_json_with_tx_hash("SPONSOR_READ", e, None, tx_hash.clone()))?;
-    let extras = hats_wire_payload_extras(top_hat, registry, address_owner);
-    let payload = sponsor_provider_payload(
-        pid,
-        squad_id,
-        sponsor,
-        addrs.pacto_sponsor_paymaster,
-        addrs.entry_point,
-        squad_variant_label(SquadVariant::EXT),
-        Some(tx_hash.clone()),
-        &extras,
-    );
-    let infra_row_id = db::squad_sponsor_infra_row_id(pid);
-    db::persist_sponsor_infra(
-        &app,
-        pid,
-        net.key.as_str(),
-        sponsor_hex.as_str(),
-        payload.as_str(),
-    )
-    .map_err(|e| wallet_err_json("PERSIST_SPONSOR", e, None))?;
-
-    Ok(SquadSponsorDeployResult {
-        tx_hash,
-        chain: net.key.clone(),
-        chain_id: net.chain_id,
-        squad_id: format!("{:#x}", squad_id),
-        sponsor_address: sponsor_hex,
-        paymaster_address: format!("{:#x}", addrs.pacto_sponsor_paymaster),
-        variant: "hats".to_string(),
-        provider_payload: payload,
-        infra_row_id,
-    })
 }
 
 async fn deploy_squad_sponsor_impl<R: Runtime>(
@@ -704,15 +566,12 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        already_deployed_onchain_err, checked_top_hat_id, hats_factory_slot,
-        hats_wire_payload_extras, onchain_variant_result_label, parse_required_deposit_wei,
-        reconcile_payload_extras, resolve_hats_registry, sponsor_preflight_decision,
-        sponsor_provider_payload, squad_id_from_parent_id, HatsFactorySlot, SponsorDeployVariant,
-        SponsorPreflight, DEPLOY_REQUIRED_CAPABILITY,
+        already_deployed_onchain_err, checked_top_hat_id, onchain_variant_result_label,
+        parse_required_deposit_wei, reconcile_payload_extras, resolve_hats_registry,
+        sponsor_preflight_decision, sponsor_provider_payload, squad_id_from_parent_id,
+        SponsorDeployVariant, SponsorPreflight, DEPLOY_REQUIRED_CAPABILITY,
     };
     use crate::evm::access_control::GovCapability;
-    use crate::evm::contracts::pacto_sponsor::ISquadSponsorBase::depositCall;
-    use crate::evm::contracts::pacto_sponsor::ISquadSponsorExt::postInitializeCall;
     use crate::evm::contracts::pacto_sponsor::ISquadSponsorFactory::{
         createSquadSponsorCall, createSquadSponsorExtCall,
     };
@@ -817,36 +676,6 @@ mod tests {
         assert_eq!(
             sponsor_preflight_decision(false, Address::repeat_byte(0x55)),
             SponsorPreflight::AlreadyDeployedOnChain
-        );
-    }
-
-    #[test]
-    fn hats_factory_slot_empty_wire_or_already() {
-        // Empty is the war-game-first Finish-sponsor path (`createSquadSponsor`).
-        let sponsor = Address::repeat_byte(0x55);
-        assert_eq!(
-            hats_factory_slot(Address::ZERO, SquadVariant::NONE, false),
-            HatsFactorySlot::Empty
-        );
-        assert_eq!(
-            hats_factory_slot(Address::ZERO, SquadVariant::EXT, false),
-            HatsFactorySlot::Empty
-        );
-        assert_eq!(
-            hats_factory_slot(sponsor, SquadVariant::EXT, false),
-            HatsFactorySlot::Wire
-        );
-        assert_eq!(
-            hats_factory_slot(sponsor, SquadVariant::EXT, true),
-            HatsFactorySlot::Already
-        );
-        assert_eq!(
-            hats_factory_slot(sponsor, SquadVariant::SPONSOR, false),
-            HatsFactorySlot::Already
-        );
-        assert_eq!(
-            hats_factory_slot(sponsor, SquadVariant::SPONSOR, true),
-            HatsFactorySlot::Already
         );
     }
 
@@ -1165,93 +994,5 @@ mod tests {
         assert_eq!(decoded.topHatId, top_hat);
         assert_eq!(decoded.registry, registry);
         assert!(decoded.customEligibleHats.is_empty());
-    }
-
-    #[test]
-    fn encode_post_initialize_targets_nave_pirata_registry_not_war_game() {
-        let nave_pirata_registry = Address::repeat_byte(0x71);
-        let war_game_registry = Address::repeat_byte(0x72);
-        let encoded = postInitializeCall {
-            topHatId: U256::from(42u64),
-            registry: nave_pirata_registry,
-            customEligibleHats: vec![],
-        }
-        .abi_encode();
-        assert_eq!(
-            &encoded[..4],
-            &selector("postInitialize(uint256,address,uint256[])")
-        );
-        let decoded = postInitializeCall::abi_decode(&encoded).expect("decode");
-        assert_eq!(decoded.topHatId, U256::from(42u64));
-        assert_eq!(decoded.registry, nave_pirata_registry);
-        assert_ne!(decoded.registry, war_game_registry);
-        assert!(decoded.customEligibleHats.is_empty());
-    }
-
-    #[test]
-    fn encode_clone_deposit_matches_selector() {
-        let encoded = depositCall {}.abi_encode();
-        assert_eq!(&encoded[..4], &selector("deposit()"));
-        assert_eq!(encoded.len(), 4);
-    }
-
-    #[test]
-    fn wire_payload_upserts_top_hat_registry_and_hats_wired() {
-        let conn = rusqlite::Connection::open_in_memory().expect("db");
-        squad_infra_schema(&conn);
-        let pid = "squad-alpha";
-        let sponsor = Address::repeat_byte(0x11);
-        let sponsor_hex = format!("{:#x}", sponsor);
-        let nave = Address::repeat_byte(0x71);
-        let owner = Address::repeat_byte(0x44);
-        persist_sponsor_row(
-            &conn,
-            pid,
-            "sepolia",
-            sponsor_hex.as_str(),
-            &sponsor_provider_payload(
-                pid,
-                squad_id_from_parent_id(pid),
-                sponsor,
-                Address::repeat_byte(0x22),
-                Address::repeat_byte(0x33),
-                "ext",
-                Some("0xwar".to_string()),
-                &[("addressOwner", serde_json::json!(format!("{:#x}", owner)))],
-            ),
-            1,
-        );
-        let wired = sponsor_provider_payload(
-            pid,
-            squad_id_from_parent_id(pid),
-            sponsor,
-            Address::repeat_byte(0x22),
-            Address::repeat_byte(0x33),
-            "ext",
-            Some("0xwire".to_string()),
-            &hats_wire_payload_extras(U256::from(42u64), nave, owner),
-        );
-        persist_sponsor_row(&conn, pid, "sepolia", sponsor_hex.as_str(), &wired, 2);
-        assert_eq!(sponsor_row_count(&conn, pid), 1);
-        let payload_back: String = conn
-            .query_row(
-                "SELECT provider_payload FROM squad_infra WHERE id = ?1",
-                rusqlite::params![crate::db::squad_sponsor_infra_row_id(pid)],
-                |row| row.get(0),
-            )
-            .expect("row");
-        let v: serde_json::Value = serde_json::from_str(&payload_back).expect("json");
-        assert_eq!(v.get("variant").and_then(|c| c.as_str()), Some("ext"));
-        assert_eq!(v.get("topHatId").and_then(|c| c.as_str()), Some("42"));
-        assert_eq!(
-            v.get("registry").and_then(|c| c.as_str()),
-            Some(format!("{:#x}", nave).as_str())
-        );
-        assert_eq!(v.get("hatsWired").and_then(|c| c.as_bool()), Some(true));
-        assert_eq!(
-            v.get("addressOwner").and_then(|c| c.as_str()),
-            Some(format!("{:#x}", owner).as_str())
-        );
-        assert_eq!(v.get("txHash").and_then(|c| c.as_str()), Some("0xwire"));
     }
 }
