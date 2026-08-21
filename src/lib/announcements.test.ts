@@ -181,6 +181,15 @@ describe('parseAnnouncement', () => {
     expect(
       parseAnnouncement(
         JSON.stringify({
+          type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
+          payload: { parent_id: 'p', kind: 'hats', tx_hash: '0xabc' },
+        }),
+      ),
+    ).toMatchObject({ type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED, payload: { kind: 'hats' } });
+
+    expect(
+      parseAnnouncement(
+        JSON.stringify({
           type: ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
           payload: {
             parent_id: 'p',
@@ -246,6 +255,15 @@ describe('parseAnnouncement', () => {
         JSON.stringify({
           type: ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED,
           payload: { squad_id: 1, safe_address: '0x1' },
+        }),
+      ),
+    ).toBeNull();
+
+    expect(
+      parseAnnouncement(
+        JSON.stringify({
+          type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
+          payload: { parent_id: 'p', kind: 'unknown' },
         }),
       ),
     ).toBeNull();

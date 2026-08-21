@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import PactoGovGovernanceShell from './PactoGovGovernanceShell.svelte';
 import { getSquadCapabilities } from '../../../lib/governance/api';
 import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
 import type { SquadCapabilitiesDto } from '../../../lib/governance/api';
 import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
+import { bumpGovernanceProcessNonce, governanceProcessNonceByParentId } from '../../../stores/navigation';
 
 vi.mock('../../../lib/governance/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../lib/governance/api')>();
@@ -57,6 +58,11 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
       loading: false,
       error: '',
     });
+    governanceProcessNonceByParentId.set({});
+  });
+
+  afterEach(() => {
+    governanceProcessNonceByParentId.set({});
   });
 
   it('keeps the propose action unavailable while capabilities are unresolved, then enables it once resolved', async () => {
@@ -152,6 +158,56 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     await waitFor(() =>
       expect(submitButton.title).toBe(
         'You need a Captain or Crew hat. Ask a captain or crew member for a hat.',
+      ),
+    );
+    expect(submitButton.disabled).toBe(true);
+  });
+
+  it('reloads capabilities and keeps CTAs pending when the process nonce bumps', async () => {
+    const first = Promise.withResolvers<SquadCapabilitiesDto>();
+    const second = Promise.withResolvers<SquadCapabilitiesDto>();
+    mockedGetSquadCapabilities
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    render(PactoGovGovernanceShell, {
+      props: {
+        payload: basePayload(),
+        network: 'sepolia',
+        parentId: 'parent1',
+        myAddress: CAPTAIN_ADDRESS,
+        captainWearers: [CAPTAIN_ADDRESS],
+        crewWearers: [],
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole('tab', { name: 'Captain' }));
+    const submitButton = (await screen.findByRole('button', {
+      name: 'Submit proposal',
+    })) as HTMLButtonElement;
+
+    first.resolve(capabilitiesSnapshot());
+    await waitFor(() => expect(submitButton.disabled).toBe(false));
+
+    bumpGovernanceProcessNonce('parent1');
+    await waitFor(() => {
+      expect(submitButton.disabled).toBe(true);
+      expect(submitButton.title).toBe('Loading…');
+    });
+    expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(2);
+
+    second.resolve(
+      capabilitiesSnapshot({
+        wearsCaptain: false,
+        roleLabel: 'No on-chain hat',
+        capabilities: {
+          proposeTreasury: { allowed: false, reason: 'Access denied' },
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(submitButton.title).toBe(
+        'Not allowed for your role. Check your hats or bind a squad EVM in My Dashboard → Alerts.',
       ),
     );
     expect(submitButton.disabled).toBe(true);

@@ -167,11 +167,11 @@
 
   $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}`;
     if (pid && key !== capabilitiesLoadKey) {
       capabilitiesLoadKey = key;
       capabilitiesStatus = 'unresolved';
-      void loadCapabilities(pid);
+      void loadCapabilities(pid, key);
     }
   });
 
@@ -199,8 +199,7 @@
     }
   });
 
-  async function loadCapabilities(pid: string) {
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
+  async function loadCapabilities(pid: string, key: string) {
     try {
       const snap = await getSquadCapabilities(pid, network, { wargame: warGameStack });
       if (key !== capabilitiesLoadKey) return;

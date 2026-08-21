@@ -1,5 +1,6 @@
 <script lang="ts">
   import { get } from 'svelte/store';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
   import {
@@ -355,12 +356,39 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     void loadTreasuryProposals();
   }
 
+  const ON_CHAIN_GOV_REFRESH_DEBOUNCE_MS = 300;
   let lastSeenProcessNonce = 0;
+  let onChainGovRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function refreshOnChainGovSnapshots() {
+    treasuryProposalsKey = '';
+    hatsTreeKey = '';
+    rolesTreeAnnotationsKey = '';
+    settingsChainKey = '';
+    void loadTreasuryProposals();
+    void loadHatsTree();
+    void loadRolesTreeAnnotations();
+    void loadSettingsChainContext();
+    void loadSquadMemberEvm();
+  }
+
+  function scheduleOnChainGovRefresh() {
+    if (onChainGovRefreshTimer) clearTimeout(onChainGovRefreshTimer);
+    onChainGovRefreshTimer = setTimeout(() => {
+      onChainGovRefreshTimer = null;
+      refreshOnChainGovSnapshots();
+    }, ON_CHAIN_GOV_REFRESH_DEBOUNCE_MS);
+  }
+
   $: processNonce = $governanceProcessNonceByParentId[parent.id.trim()] ?? 0;
   $: if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
     lastSeenProcessNonce = processNonce;
-    refreshTreasuryProposals();
+    scheduleOnChainGovRefresh();
   }
+
+  onDestroy(() => {
+    if (onChainGovRefreshTimer) clearTimeout(onChainGovRefreshTimer);
+  });
 
   async function loadHatsTree() {
     const topHat = pactoGovRow?.canonicalRef?.trim();
@@ -394,11 +422,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   function refreshRolesTree() {
-    hatsTreeKey = '';
-    rolesTreeAnnotationsKey = '';
-    void loadHatsTree();
-    void loadRolesTreeAnnotations();
-    void loadSquadMemberEvm();
+    refreshOnChainGovSnapshots();
   }
 
   async function loadRolesTreeAnnotations() {

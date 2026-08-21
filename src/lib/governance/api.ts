@@ -3,6 +3,7 @@ import type { GovernanceProcessKind } from '../announcements';
 import { withPactoGovProviderPayloadTxHash } from './pacto-gov-payload';
 import { announceGovernanceProcessUpdated } from './governance-process-announce';
 import { recordMutinyProcessTx } from './mutiny-process-tx';
+import { bumpGovernanceProcessNonce } from '../../stores/navigation';
 import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
 import type { SquadParamsInput } from './squad-params';
 import { squadParamsToInvoke } from './squad-params';
@@ -666,8 +667,8 @@ export interface GovernanceWriteResultDto {
   fundedBy?: 'sponsored' | 'self_funded';
 }
 
-function afterGovWrite(
-  result: GovernanceWriteResultDto,
+async function afterGovWrite<T extends { txHash?: string }>(
+  result: T,
   hint: {
     parentId: string;
     kind: GovernanceProcessKind;
@@ -675,7 +676,7 @@ function afterGovWrite(
     proposalId?: string;
     mutinyStart?: boolean;
   },
-): GovernanceWriteResultDto {
+): Promise<T> {
   if (hint.kind === 'mutiny' && result.txHash?.trim()) {
     recordMutinyProcessTx({
       parentId: hint.parentId,
@@ -683,7 +684,8 @@ function afterGovWrite(
       isStart: hint.mutinyStart === true,
     });
   }
-  void announceGovernanceProcessUpdated({
+  bumpGovernanceProcessNonce(hint.parentId);
+  await announceGovernanceProcessUpdated({
     parentId: hint.parentId,
     kind: hint.kind,
     address: hint.address,
@@ -1109,13 +1111,16 @@ export async function quartermasterBootstrapCrew(params: {
   quartermaster: string;
   candidates: string[];
 }): Promise<GovernanceWriteResultDto> {
-  return (await invoke('quartermaster_bootstrap_crew', {
-    network: params.network,
-    parentId: params.parentId.trim(),
-    quartermaster: params.quartermaster.trim(),
-    candidates: params.candidates.map((c) => c.trim()).filter(Boolean),
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
-  })) as GovernanceWriteResultDto;
+  return afterGovWrite(
+    (await invoke('quartermaster_bootstrap_crew', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      candidates: params.candidates.map((c) => c.trim()).filter(Boolean),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'hats' },
+  );
 }
 
 export async function quartermasterRequestRemoveCrew(params: {
@@ -1406,13 +1411,16 @@ export async function squadAdminCreateRole(params: {
   squadAdminProxy: string;
   roleLabel: string;
 }): Promise<SquadAdminWriteResultDto> {
-  return (await invoke('squad_admin_create_role', {
-    network: params.network,
-    parentId: params.parentId.trim(),
-    squadAdminProxy: params.squadAdminProxy.trim(),
-    roleLabel: params.roleLabel.trim(),
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
-  })) as SquadAdminWriteResultDto;
+  return afterGovWrite(
+    (await invoke('squad_admin_create_role', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      squadAdminProxy: params.squadAdminProxy.trim(),
+      roleLabel: params.roleLabel.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as SquadAdminWriteResultDto,
+    { parentId: params.parentId, kind: 'hats', address: params.squadAdminProxy },
+  );
 }
 
 export async function squadAdminEnableExecutor(params: {
@@ -1422,14 +1430,17 @@ export async function squadAdminEnableExecutor(params: {
   executorAddress: string;
   roleLabel: string;
 }): Promise<SquadAdminWriteResultDto> {
-  return (await invoke('squad_admin_enable_executor', {
-    network: params.network,
-    parentId: params.parentId.trim(),
-    squadAdminProxy: params.squadAdminProxy.trim(),
-    executorAddress: params.executorAddress.trim(),
-    roleLabel: params.roleLabel.trim(),
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
-  })) as SquadAdminWriteResultDto;
+  return afterGovWrite(
+    (await invoke('squad_admin_enable_executor', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      squadAdminProxy: params.squadAdminProxy.trim(),
+      executorAddress: params.executorAddress.trim(),
+      roleLabel: params.roleLabel.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as SquadAdminWriteResultDto,
+    { parentId: params.parentId, kind: 'hats', address: params.executorAddress },
+  );
 }
 
 export async function squadAdminEnableFullPermission(params: {
@@ -1439,14 +1450,17 @@ export async function squadAdminEnableFullPermission(params: {
   executorAddress: string;
   enable: boolean;
 }): Promise<SquadAdminWriteResultDto> {
-  return (await invoke('squad_admin_enable_full_permission', {
-    network: params.network,
-    parentId: params.parentId.trim(),
-    squadAdminProxy: params.squadAdminProxy.trim(),
-    executorAddress: params.executorAddress.trim(),
-    enable: params.enable,
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
-  })) as SquadAdminWriteResultDto;
+  return afterGovWrite(
+    (await invoke('squad_admin_enable_full_permission', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      squadAdminProxy: params.squadAdminProxy.trim(),
+      executorAddress: params.executorAddress.trim(),
+      enable: params.enable,
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as SquadAdminWriteResultDto,
+    { parentId: params.parentId, kind: 'hats', address: params.executorAddress },
+  );
 }
 
 export interface CapabilityFlagDto {

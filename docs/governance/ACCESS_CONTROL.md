@@ -40,7 +40,7 @@ flowchart TD
 | Layer | Role |
 |-------|------|
 | Rust `require_capability` | Source of truth before gov / Squad Admin / tracked-token mutations |
-| UI gates | Advisory; same predicates via `get_squad_capabilities` snapshot |
+| UI gates | Advisory; same predicates via `get_squad_capabilities` snapshot. Revalidate on MLS `governance_process_updated` (and the local write nonce bump) so hat transfers such as mutiny execute do not leave stale enabled CTAs. |
 | Contracts | Final reject / accept |
 
 Tauri IPC is not a security boundary if only the UI gates.

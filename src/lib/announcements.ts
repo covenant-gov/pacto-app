@@ -28,10 +28,15 @@ export const ANNOUNCE_TYPE_WAR_GAME_UPDATED = 'war_game_updated';
 /** Squad sticker pack sync (`sticker_packs` table), mirrors `governance_updated`. Wire: `sticker_pack_updated`. */
 export const ANNOUNCE_TYPE_STICKER_PACK_UPDATED = 'sticker_pack_updated';
 
-/** Notify-only: QM / TA / mutiny process changed. Revalidate from chain. */
+/** Notify-only: QM / TA / mutiny / hats process changed. Revalidate from chain. */
 export const ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED = 'governance_process_updated';
 
-export type GovernanceProcessKind = 'qm_pending' | 'ta_proposal' | 'mutiny' | 'crew_offboard';
+export type GovernanceProcessKind =
+  | 'qm_pending'
+  | 'ta_proposal'
+  | 'mutiny'
+  | 'crew_offboard'
+  | 'hats';
 
 export interface GovernanceProcessUpdatedPayload {
   parent_id: string;
@@ -259,7 +264,13 @@ function isDashboardPollCreatedPayload(p: unknown): p is DashboardPollCreatedPay
 }
 
 function isGovernanceProcessKind(v: unknown): v is GovernanceProcessKind {
-  return v === 'qm_pending' || v === 'ta_proposal' || v === 'mutiny' || v === 'crew_offboard';
+  return (
+    v === 'qm_pending' ||
+    v === 'ta_proposal' ||
+    v === 'mutiny' ||
+    v === 'crew_offboard' ||
+    v === 'hats'
+  );
 }
 
 function isGovernanceProcessUpdatedPayload(p: unknown): p is GovernanceProcessUpdatedPayload {

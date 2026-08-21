@@ -1,6 +1,5 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { onMount } from 'svelte';
   import SquadSponsorTreasuryPanel from '../governance/SquadSponsorTreasuryPanel.svelte';
   import TreasurySafeModulePanel from '../governance/TreasurySafeModulePanel.svelte';
   import type { TreasurySafeEntry } from '../../../lib/treasury/treasury-safes';
@@ -19,6 +18,7 @@
   import { refreshAllSafeStates } from '../../../lib/dashboard/batch-safe-state-refresh';
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
+  import { governanceProcessNonceByParentId } from '../../../stores/navigation';
 
   interface Props {
     parentId?: string;
@@ -58,6 +58,7 @@
 
   let capabilitiesLoadKey = $state('');
   let capabilities = $state<Awaited<ReturnType<typeof getSquadCapabilities>> | null>(null);
+  let processNonce = $derived($governanceProcessNonceByParentId[parentId.trim()] ?? 0);
 
   const privilege = $derived(
     resolveGovernancePrivilege({
@@ -71,15 +72,15 @@
 
   $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}`;
     if (pid && key !== capabilitiesLoadKey) {
       capabilitiesLoadKey = key;
-      void loadCapabilities(pid);
+      capabilities = null;
+      void loadCapabilities(pid, key);
     }
   });
 
-  async function loadCapabilities(pid: string) {
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
+  async function loadCapabilities(pid: string, key: string) {
     try {
       const snap = await getSquadCapabilities(pid, network, { wargame: warGameStack });
       if (key !== capabilitiesLoadKey) return;
@@ -89,14 +90,6 @@
       capabilities = null;
     }
   }
-
-  onMount(() => {
-    const pid = parentId.trim();
-    if (pid) {
-      capabilitiesLoadKey = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
-      void loadCapabilities(pid);
-    }
-  });
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;

@@ -243,6 +243,23 @@ describe('onMlsStructuredMessage', () => {
     expect(handlers.mergeSquadInfraForParent).not.toHaveBeenCalled();
   });
 
+  it('bumps governance process nonce for hats kind', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'governance_process_updated',
+        payload: { parent_id: 'g1', kind: 'hats' },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(get(governanceProcessNonceByParentId).g1).toBe(1);
+  });
+
   it('records mutiny tx hash from governance_process_updated without overwriting start', () => {
     const handlers = {
       mergeTreasurySafesForParent: vi.fn(),

@@ -29,7 +29,7 @@ import {
 } from '../squad/squad-identity-announce';
 import { currentUser } from '../../stores/auth';
 import {
-  governanceProcessNonceByParentId,
+  bumpGovernanceProcessNonce,
   squadAllowlistNonceByParentId,
   squadBotMetaNonceBySquadId,
   squadTrackedTokensNonceByParentId,
@@ -88,7 +88,7 @@ export function onMlsStructuredMessage(
     handlers.mergeSquadInfraForParent(announce.payload.parent_id);
   }
   if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED) {
-    bumpNonce(governanceProcessNonceByParentId, announce.payload.parent_id);
+    bumpGovernanceProcessNonce(announce.payload.parent_id);
     ingestMutinyProcessTxFromAnnounce(announce.payload);
   }
   if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {

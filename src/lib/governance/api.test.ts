@@ -35,6 +35,8 @@ import {
   pactoGovWargameInfraRow,
   primaryGovernanceView,
   mutinyExpire,
+  mutinyExecute,
+  quartermasterBootstrapCrew,
   quartermasterProposeOffboard,
   quartermasterCrewOffboardVote,
   quartermasterExecuteOffboard,
@@ -54,6 +56,12 @@ import {
   withLegacyProvider,
 } from './api';
 import type { SquadInfraDto } from './api';
+import { sendDmMessage } from '../api/nostr';
+import { squads } from '../../stores/squads';
+import { governanceProcessNonceByParentId } from '../../stores/navigation';
+import { ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED } from '../announcements';
+import { resetMutinyProcessTxStore } from './mutiny-process-tx';
+import { get } from 'svelte/store';
 
 vi.mock('@tauri-apps/api/core');
 vi.mock('../api/nostr', () => ({
@@ -61,6 +69,7 @@ vi.mock('../api/nostr', () => ({
 }));
 
 const mockedInvoke = vi.mocked(invoke);
+const mockedSendDm = vi.mocked(sendDmMessage);
 const PARENT = 'test-parent';
 const NETWORK = 'sepolia';
 
@@ -79,6 +88,11 @@ function makeSquadInfra(overrides: Partial<SquadInfraDto> = {}): SquadInfraDto {
 
 beforeEach(() => {
   mockedInvoke.mockReset();
+  mockedSendDm.mockReset();
+  mockedSendDm.mockResolvedValue(true);
+  governanceProcessNonceByParentId.set({});
+  squads.set([]);
+  resetMutinyProcessTxStore();
 });
 
 afterEach(() => {
@@ -836,6 +850,64 @@ describe('api command wrappers', () => {
       enable: true,
       rpcUrls: expect.any(Array),
     });
+  });
+});
+
+describe('governance process gossip after writes', () => {
+  const writeResult = { txHash: '0xabc', chain: 'sepolia', chainId: 11155111 };
+
+  function withAnnouncementsSquad() {
+    squads.set([
+      {
+        id: PARENT,
+        channels: [{ name: 'announcements', groupId: 'gid-1', order: 0 }],
+      } as never,
+    ]);
+  }
+
+  it('mutinyExecute bumps the process nonce even if the MLS announce fails', async () => {
+    withAnnouncementsSquad();
+    mockedSendDm.mockRejectedValueOnce(new Error('offline'));
+    mockedInvoke.mockResolvedValueOnce(writeResult);
+    await mutinyExecute({
+      network: NETWORK,
+      parentId: PARENT,
+      mutinyModule: '0xmutiny',
+      mutinyId: '1',
+    });
+    expect(get(governanceProcessNonceByParentId)[PARENT]).toBe(1);
+  });
+
+  it('quartermasterBootstrapCrew announces hats process updates', async () => {
+    withAnnouncementsSquad();
+    mockedInvoke.mockResolvedValueOnce(writeResult);
+    await quartermasterBootstrapCrew({
+      network: NETWORK,
+      parentId: PARENT,
+      quartermaster: '0xqm',
+      candidates: ['0x1'],
+    });
+    expect(mockedSendDm).toHaveBeenCalledWith(
+      'gid-1',
+      expect.stringContaining(ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED),
+      '',
+      { virtualBucket: 'announcements' },
+    );
+    expect(JSON.parse(String(mockedSendDm.mock.calls[0]?.[1])).payload.kind).toBe('hats');
+    expect(get(governanceProcessNonceByParentId)[PARENT]).toBe(1);
+  });
+
+  it('squadAdminCreateRole announces hats process updates', async () => {
+    withAnnouncementsSquad();
+    mockedInvoke.mockResolvedValueOnce(writeResult);
+    await squadAdminCreateRole({
+      network: NETWORK,
+      parentId: PARENT,
+      squadAdminProxy: '0xadmin',
+      roleLabel: 'Treasurer',
+    });
+    expect(JSON.parse(String(mockedSendDm.mock.calls[0]?.[1])).payload.kind).toBe('hats');
+    expect(get(governanceProcessNonceByParentId)[PARENT]).toBe(1);
   });
 });
 
