@@ -60,5 +60,6 @@ value-based-pr/
 
 ## Related Skills
 
+- `github-pr-closes-issues` — one `closes #n` per issue; stacked `#n0 #n1` leaves later issues open.
 - `ce-commit-push-pr` — full commit, push, and PR creation workflow.
 - `ce-demo-reel` — capture screenshots and recordings for PR evidence.
