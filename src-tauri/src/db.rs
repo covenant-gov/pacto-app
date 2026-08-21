@@ -4659,17 +4659,56 @@ pub async fn set_mls_group_pending_welcomes<R: Runtime>(
     updated_at: u64,
 ) -> Result<usize, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
-    let pending_welcomes_json = serde_json::to_string(pending_welcomes)
-        .map_err(|e| format!("Failed to serialize pending_welcomes for {}: {}", group_id, e))?;
+    let pending_welcomes_json = serde_json::to_string(pending_welcomes).map_err(|e| {
+        format!(
+            "Failed to serialize pending_welcomes for {}: {}",
+            group_id, e
+        )
+    })?;
+    // Guard empty ids: legacy rows default `engine_group_id` to '', so
+    // `OR engine_group_id = ?3` with an empty bind would rewrite every such row.
     let rows_affected = conn
         .execute(
-            "UPDATE mls_groups SET pending_welcomes = ?1, updated_at = ?2 WHERE group_id = ?3 OR engine_group_id = ?3",
+            "UPDATE mls_groups SET pending_welcomes = ?1, updated_at = ?2 WHERE group_id = ?3 OR (?3 != '' AND engine_group_id = ?3)",
             rusqlite::params![pending_welcomes_json, updated_at as i64, group_id],
         )
         .map_err(|e| format!("Failed to update pending_welcomes for MLS group {}: {}", group_id, e))?;
     println!(
         "[SQL] Updated pending_welcomes for MLS group {} ({} row(s) affected)",
         group_id, rows_affected
+    );
+    crate::account_manager::return_db_connection(conn);
+    Ok(rows_affected)
+}
+
+/// Atomically drop one npub from `pending_welcomes` without a full-list read-modify-write.
+/// Concurrent resend/remove of different npubs cannot resurrect a just-cleared entry.
+pub async fn remove_mls_group_pending_welcome<R: Runtime>(
+    handle: AppHandle<R>,
+    group_id: &str,
+    member_npub: &str,
+    updated_at: u64,
+) -> Result<usize, String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let rows_affected = conn
+        .execute(
+            "UPDATE mls_groups SET pending_welcomes = COALESCE((
+                 SELECT json_group_array(value)
+                 FROM json_each(mls_groups.pending_welcomes)
+                 WHERE value != ?1
+             ), '[]'), updated_at = ?2
+             WHERE group_id = ?3 OR (?3 != '' AND engine_group_id = ?3)",
+            rusqlite::params![member_npub, updated_at as i64, group_id],
+        )
+        .map_err(|e| {
+            format!(
+                "Failed to remove pending welcome {} from MLS group {}: {}",
+                member_npub, group_id, e
+            )
+        })?;
+    println!(
+        "[SQL] Removed pending welcome {} from MLS group {} ({} row(s) affected)",
+        member_npub, group_id, rows_affected
     );
     crate::account_manager::return_db_connection(conn);
     Ok(rows_affected)
@@ -4841,17 +4880,137 @@ mod mls_group_metadata_persistence_tests {
         let mut pending = fresh_group("g3");
         pending.pending_welcomes = vec!["npub1undelivered".to_string()];
         save_mls_group(handle.clone(), &pending).await.unwrap();
-        save_mls_group(handle.clone(), &fresh_group("g4")).await.unwrap();
+        save_mls_group(handle.clone(), &fresh_group("g4"))
+            .await
+            .unwrap();
 
-        pending.pending_welcomes.retain(|n| n != "npub1undelivered");
-        save_mls_group(handle.clone(), &pending).await.unwrap();
+        let rows = set_mls_group_pending_welcomes(handle.clone(), &pending.group_id, &[], 2_000)
+            .await
+            .unwrap();
+        assert_eq!(rows, 1);
 
         let groups = load_mls_groups(&handle).await.unwrap();
         assert_eq!(groups.len(), 2);
         let g3 = groups.iter().find(|g| g.group_id == "g3").unwrap();
         let g4 = groups.iter().find(|g| g.group_id == "g4").unwrap();
         assert!(g3.pending_welcomes.is_empty());
+        assert_eq!(g3.updated_at, 2_000);
         assert!(g4.pending_welcomes.is_empty());
+        assert_eq!(g4.updated_at, 1_000);
+    }
+
+    #[tokio::test]
+    async fn set_mls_group_pending_welcomes_matches_engine_group_id_alias() {
+        let app = setup("npub1u4mlsgroupsenginealias");
+        let handle = app.handle().clone();
+
+        save_mls_group(handle.clone(), &fresh_group("g-alias"))
+            .await
+            .unwrap();
+
+        let rows = set_mls_group_pending_welcomes(
+            handle.clone(),
+            "engine-g-alias",
+            &["npub1pending".to_string()],
+            3_000,
+        )
+        .await
+        .unwrap();
+        assert_eq!(rows, 1);
+
+        let groups = load_mls_groups(&handle).await.unwrap();
+        assert_eq!(groups[0].pending_welcomes, vec!["npub1pending".to_string()]);
+        assert_eq!(groups[0].updated_at, 3_000);
+    }
+
+    #[tokio::test]
+    async fn set_mls_group_pending_welcomes_unknown_id_affects_zero_rows() {
+        let app = setup("npub1u4mlsgroupsunknownid");
+        let handle = app.handle().clone();
+        save_mls_group(handle.clone(), &fresh_group("g-known"))
+            .await
+            .unwrap();
+
+        let rows = set_mls_group_pending_welcomes(handle.clone(), "missing", &[], 4_000)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0);
+        assert_eq!(load_mls_groups(&handle).await.unwrap()[0].updated_at, 1_000);
+    }
+
+    #[tokio::test]
+    async fn set_mls_group_pending_welcomes_empty_id_does_not_rewrite_legacy_rows() {
+        let app = setup("npub1u4mlsgroupsemptyid");
+        let handle = app.handle().clone();
+
+        let mut legacy_a = fresh_group("legacy-a");
+        legacy_a.engine_group_id = String::new();
+        legacy_a.pending_welcomes = vec!["npub1keep-a".to_string()];
+        let mut legacy_b = fresh_group("legacy-b");
+        legacy_b.engine_group_id = String::new();
+        legacy_b.pending_welcomes = vec!["npub1keep-b".to_string()];
+        save_mls_group(handle.clone(), &legacy_a).await.unwrap();
+        save_mls_group(handle.clone(), &legacy_b).await.unwrap();
+
+        let rows =
+            set_mls_group_pending_welcomes(handle.clone(), "", &["npub1wiped".to_string()], 99)
+                .await
+                .unwrap();
+        assert_eq!(rows, 0);
+
+        let groups = load_mls_groups(&handle).await.unwrap();
+        assert_eq!(groups.len(), 2);
+        for g in &groups {
+            assert!(!g.pending_welcomes.contains(&"npub1wiped".to_string()));
+            assert_eq!(g.updated_at, 1_000);
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_mls_group_pending_welcome_drops_one_npub_and_leaves_the_rest() {
+        let app = setup("npub1u4mlsgroupsremoveone");
+        let handle = app.handle().clone();
+
+        let mut pending = fresh_group("g-rm");
+        pending.pending_welcomes = vec!["npub1keep".to_string(), "npub1drop".to_string()];
+        save_mls_group(handle.clone(), &pending).await.unwrap();
+        save_mls_group(handle.clone(), &fresh_group("g-sibling"))
+            .await
+            .unwrap();
+
+        let rows =
+            remove_mls_group_pending_welcome(handle.clone(), &pending.group_id, "npub1drop", 5_000)
+                .await
+                .unwrap();
+        assert_eq!(rows, 1);
+
+        let groups = load_mls_groups(&handle).await.unwrap();
+        let g = groups.iter().find(|g| g.group_id == "g-rm").unwrap();
+        let sibling = groups.iter().find(|g| g.group_id == "g-sibling").unwrap();
+        assert_eq!(g.pending_welcomes, vec!["npub1keep".to_string()]);
+        assert_eq!(g.updated_at, 5_000);
+        assert!(sibling.pending_welcomes.is_empty());
+        assert_eq!(sibling.updated_at, 1_000);
+    }
+
+    #[tokio::test]
+    async fn remove_mls_group_pending_welcome_empty_id_does_not_rewrite_legacy_rows() {
+        let app = setup("npub1u4mlsgroupsremoveemptyid");
+        let handle = app.handle().clone();
+
+        let mut legacy = fresh_group("legacy-rm");
+        legacy.engine_group_id = String::new();
+        legacy.pending_welcomes = vec!["npub1keep".to_string()];
+        save_mls_group(handle.clone(), &legacy).await.unwrap();
+
+        let rows = remove_mls_group_pending_welcome(handle.clone(), "", "npub1keep", 99)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0);
+        assert_eq!(
+            load_mls_groups(&handle).await.unwrap()[0].pending_welcomes,
+            vec!["npub1keep".to_string()]
+        );
     }
 
     /// `delete_mls_group` is targeted: removing one group must never take a sibling's row with it.

@@ -2,13 +2,15 @@
 //! failed welcome delivery can leave behind mid `create_group`. `engine.delete_group` is
 //! local-only (no protocol side effects), so this is safe cleanup, not a network operation.
 //! `MLS_GROUPS_ENGINE_CREATE_LOCK` serializes the sweep against `create_group`'s
-//! engine-commit-then-first-persist window. Design details: `docs/mls/INVITES_AND_MEMBERSHIP.md`.
+//! engine-commit-then-first-persist window and `do_accept_mls_welcome`'s
+//! accept-then-persist window. Design details: `docs/mls/INVITES_AND_MEMBERSHIP.md`.
 
 use crate::mls::{MlsError, MlsService};
 use mdk_core::prelude::GroupId;
 
-/// Serializes `create_group`'s engine-commit-then-first-persist window against the reap sweep.
-/// Global, not per-account: only one account's MLS store is live in this process at a time.
+/// Serializes `create_group` and `do_accept_mls_welcome` engine-commit-then-first-persist
+/// windows against the reap sweep. Global, not per-account: only one account's MLS store is
+/// live in this process at a time.
 pub(crate) static MLS_GROUPS_ENGINE_CREATE_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 

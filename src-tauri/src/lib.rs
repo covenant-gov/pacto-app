@@ -9901,6 +9901,13 @@ async fn do_accept_mls_welcome<R: Runtime>(
 ) -> Result<bool, String> {
     let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
 
+    // Serialize accept-then-persist against the reaper. `accept_welcome` commits the
+    // group into the engine before `save_mls_group`; without this lock a login/reconnect
+    // reap can delete the just-joined group as an "orphan".
+    let _create_lock_guard = crate::mls_orphan_reaper::MLS_GROUPS_ENGINE_CREATE_LOCK
+        .lock()
+        .await;
+
     let (nostr_group_id, engine_group_id, group_name, welcomer_hex, wrapper_event_id_hex) = {
         let engine = mls.engine().map_err(|e| e.to_string())?;
         let id = nostr_sdk::EventId::from_hex(&welcome_event_id_hex).map_err(|e| e.to_string())?;
@@ -9910,21 +9917,11 @@ async fn do_accept_mls_welcome<R: Runtime>(
         let group_name = welcome.group_name.clone();
         let welcomer_hex = welcome.welcomer.to_hex();
         let wrapper_event_id_hex = welcome.wrapper_event_id.to_hex();
+        // The welcome already carries the engine GroupId. Falling back to nostr_group_id
+        // made the reaper treat a live group as unmatched and delete it.
+        let engine_group_id = hex::encode(welcome.mls_group_id.as_slice());
         engine.accept_welcome(&welcome).map_err(|e| e.to_string())?;
         let nostr_group_id = hex::encode(&nostr_group_id_bytes);
-        let engine_group_id = {
-            let groups = engine
-                .get_groups()
-                .map_err(|e| format!("Failed to get groups after accepting welcome: {}", e))?;
-            let matching_group = groups
-                .iter()
-                .find(|g| hex::encode(&g.nostr_group_id) == nostr_group_id);
-            if let Some(group) = matching_group {
-                hex::encode(group.mls_group_id.as_slice())
-            } else {
-                nostr_group_id.clone()
-            }
-        };
         (
             nostr_group_id,
             engine_group_id,
@@ -9958,7 +9955,7 @@ async fn do_accept_mls_welcome<R: Runtime>(
             group_id: nostr_group_id.clone(),
             engine_group_id: engine_group_id.clone(),
             creator_pubkey: welcomer_hex,
-            name: group_name,
+            name: group_name.clone(),
             avatar_ref: None,
             created_at: now_secs,
             updated_at: now_secs,
@@ -9969,10 +9966,16 @@ async fn do_accept_mls_welcome<R: Runtime>(
             .await
             .map_err(|e| e.to_string())?;
         mls::emit_group_metadata_event(&metadata);
+    }
+    // Metadata is durable; release before STATE so this cannot deadlock with
+    // paths that take STATE then the create lock. Matches `create_group`.
+    drop(_create_lock_guard);
+
+    if existing_index.is_none() {
         let mut state = STATE.lock().await;
         let chat_id = state.create_or_get_mls_group_chat(&nostr_group_id, vec![]);
         if let Some(chat) = state.get_chat_mut(&chat_id) {
-            chat.metadata.set_name(metadata.name.clone());
+            chat.metadata.set_name(group_name);
         }
         if let Some(chat) = state.get_chat(&chat_id) {
             let _ = db::save_chat(handle.clone(), chat).await;

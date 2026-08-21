@@ -30,10 +30,7 @@
 
   // Union of engine members and pending-only npubs: a resend can remove the engine leaf before
   // the re-add fails, dropping the npub from `members` while it's still in `pendingWelcomes`.
-  const renderNpubs = $derived([
-    ...members,
-    ...pendingWelcomes.filter((npub) => !members.includes(npub)),
-  ]);
+  const renderNpubs = $derived([...new Set([...members, ...pendingWelcomes])]);
 
   let confirmNpub = $state<string | null>(null);
   let restoringNpub = $state<string | null>(null);
@@ -118,7 +115,7 @@
               class="resend-invite"
               data-testid="mls-resend-invite"
               data-member={npub}
-              disabled={resendingNpub === npub}
+              disabled={!!resendingNpub}
               onclick={() => void resendInvite(npub)}
             >
               {$t('messaging.channel.mlsResendInviteButton')}

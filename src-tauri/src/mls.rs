@@ -1198,15 +1198,21 @@ impl MlsService {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| MlsError::StorageError(format!("system time error: {}", e)))?
                 .as_secs();
-            let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
-            crate::db::set_mls_group_pending_welcomes(
-                handle,
-                &meta.group_id,
-                &pending_npubs,
-                updated_at,
-            )
-            .await
-            .map_err(|e| MlsError::StorageError(e))?;
+            if let Some(handle) = TAURI_APP.get() {
+                if let Err(e) = crate::db::set_mls_group_pending_welcomes(
+                    handle.clone(),
+                    &meta.group_id,
+                    &pending_npubs,
+                    updated_at,
+                )
+                .await
+                {
+                    eprintln!(
+                        "[MLS] Failed to persist pending_welcomes after create for {}: {}",
+                        meta.group_id, e
+                    );
+                }
+            }
 
             let mut emitted_meta = meta.clone();
             emitted_meta.pending_welcomes = pending_npubs;
@@ -1353,7 +1359,8 @@ impl MlsService {
 
         // Fresh-resolve only for a genuine restore: a store-reset member's recorded KeyPackage's
         // private init key lives only in their archived store. A resend targets a member who
-        // never reset, so gating it on rotation would reject it forever.
+        // never reset, so gating it on rotation would reject it forever — but the KeyPackage
+        // recorded at create may already have been consumed, so resend always fetches latest.
         let kp_event = if action == MembershipAction::Restore && !is_resend {
             // Retry rather than trust the first response: the member's own post-reset
             // republish (triggered elsewhere, on their next decrypt/login, out of this call's
@@ -1376,6 +1383,8 @@ impl MlsService {
                 |delay| tokio::time::sleep(delay),
             )
             .await
+        } else if is_resend {
+            Self::fetch_latest_keypackage(&client, member_pk).await
         } else {
             let mut kp_event: Option<Event> = None;
 
@@ -1581,32 +1590,25 @@ impl MlsService {
         }
 
         // A successful add means any previously undelivered welcome for this member has now
-        // gone out; no-op if the npub wasn't pending.
-        let groups = self.read_groups().await?;
-        if let Some(group) = groups
-            .iter()
-            .find(|g| g.group_id == group_id || g.engine_group_id == group_id)
-        {
-            if group.pending_welcomes.iter().any(|n| n == member_pubkey) {
-                let remaining: Vec<String> = group
-                    .pending_welcomes
-                    .iter()
-                    .filter(|n| *n != member_pubkey)
-                    .cloned()
-                    .collect();
-                let updated_at = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
-                crate::db::set_mls_group_pending_welcomes(
-                    handle,
-                    &group.group_id,
-                    &remaining,
-                    updated_at,
-                )
-                .await
-                .map_err(|e| MlsError::StorageError(e))?;
+        // gone out. Element-scoped so a concurrent remove of another pending npub cannot
+        // resurrect this one. Bookkeeping must not fail the already-published invite.
+        let updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if let Some(handle) = TAURI_APP.get() {
+            if let Err(e) = crate::db::remove_mls_group_pending_welcome(
+                handle.clone(),
+                &group_meta.group_id,
+                member_pubkey,
+                updated_at,
+            )
+            .await
+            {
+                eprintln!(
+                    "[MLS] Failed to clear pending_welcomes after successful invite for {}: {}",
+                    member_pubkey, e
+                );
             }
         }
 
@@ -1805,6 +1807,8 @@ impl MlsService {
                 .map_err(|e| MlsError::CryptoError(format!("Invalid group ID hex: {}", e)))?,
         );
 
+        let _membership_guard = group_membership_lock(&group_meta.engine_group_id).await;
+
         // Sync the group first to ensure we have the latest state
         if let Err(e) = self.sync_group_since_cursor(group_id).await {
             eprintln!("[MLS] Failed to sync group before removal: {}", e);
@@ -1862,33 +1866,23 @@ impl MlsService {
 
         // Clear this member from pending_welcomes, if present: a removed member must not leave
         // a stale "pending invite" badge/resend button behind.
-        let groups_now = self.read_groups().await?;
-        if let Some(group) = groups_now.iter().find(|g| g.group_id == group_meta.group_id) {
-            if group.pending_welcomes.iter().any(|n| n == member_pubkey) {
-                let remaining: Vec<String> = group
-                    .pending_welcomes
-                    .iter()
-                    .filter(|n| *n != member_pubkey)
-                    .cloned()
-                    .collect();
-                let updated_at = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
-                if let Err(e) = crate::db::set_mls_group_pending_welcomes(
-                    handle,
-                    &group.group_id,
-                    &remaining,
-                    updated_at,
-                )
-                .await
-                {
-                    eprintln!(
-                        "[MLS] Failed to clear pending_welcomes for removed member {}: {}",
-                        member_pubkey, e
-                    );
-                }
+        let updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if let Some(handle) = TAURI_APP.get() {
+            if let Err(e) = crate::db::remove_mls_group_pending_welcome(
+                handle.clone(),
+                &group_meta.group_id,
+                member_pubkey,
+                updated_at,
+            )
+            .await
+            {
+                eprintln!(
+                    "[MLS] Failed to clear pending_welcomes for removed member {}: {}",
+                    member_pubkey, e
+                );
             }
         }
 

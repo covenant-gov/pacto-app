@@ -45,8 +45,8 @@ Past this point, a failure no longer aborts the create. `engine.create_group` co
 **Pending member** (already in the group — only delivery failed):
 
 - They do not need to do anything on their device; the membership already exists in the engine.
-- An admin uses the **Resend invite** action in the members panel, which removes and re-adds them (`add_member_device` with `is_resend`) to mint a fresh Welcome at the group's current epoch.
-- They will not receive a `squad_invite` DM or invite card until the resend succeeds.
+- An admin uses the **Resend invite** action in the members panel, which removes and re-adds them (`add_member_device` with `is_resend`) to mint a fresh Welcome at the group's current epoch. Resend always fetches the member's **latest** KeyPackage (the one recorded at create may already have been consumed).
+- Squad create does not send a `squad_invite` DM until that announcements-group resend succeeds. Channel create still sends the under-the-hood `channel_in_squad` notify to pending npubs — a missing welcome makes accept a no-op, and the cached DM names the channel once the resend lands.
 
 ## Related code
 

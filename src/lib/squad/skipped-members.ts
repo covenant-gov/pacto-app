@@ -1,7 +1,6 @@
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import type { SkippedMember, UndeliveredInvite } from '../api/nostr';
-import { showToast } from '../../stores/toast';
 import { profiles } from '../../stores/profiles';
 import { shortNpub } from './squad-bot-announce';
 
@@ -31,13 +30,6 @@ export function skippedMembersNotice(skipped: SkippedMember[]): string {
   if (!skipped.length) return '';
   const names = skipped.map((s) => skippedMemberName(s.npub)).join(', ');
   return get(t)('nav.navbar.organizeSquad.membersSkipped', { values: { names } });
-}
-
-/** Warn + toast convenience for callers with no competing toast in flight. */
-export function reportSkippedMembers(skipped: SkippedMember[]): void {
-  if (!skipped.length) return;
-  warnSkippedMembers(skipped);
-  showToast(skippedMembersNotice(skipped));
 }
 
 /**

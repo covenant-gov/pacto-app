@@ -361,11 +361,9 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
   });
 
   register(unsubs, 'mls_group_metadata', (event) => {
-    const payload = event.payload;
-    if (payload && typeof payload === 'object' && 'group_id' in payload) {
-      const gid = payload.group_id;
-      if (typeof gid === 'string' && gid) bumpMembershipVersion(gid);
-    }
+    const meta = (event.payload as { metadata?: { group_id?: string } } | undefined)?.metadata;
+    const gid = typeof meta?.group_id === 'string' ? meta.group_id.trim() : '';
+    if (gid) bumpMembershipVersion(gid);
   });
 
   register(unsubs, 'dashboard_poll_replica_updated', (event) => {

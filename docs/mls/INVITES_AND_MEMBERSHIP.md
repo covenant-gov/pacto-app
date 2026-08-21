@@ -48,9 +48,9 @@ Persist-before-delivery is deliberate: by the time `create_group` reaches the We
 
 **Resend mechanics:** a pending member already has an MLS leaf — the engine-side add succeeded, only delivery failed — so recovery is necessarily **remove-then-re-add**. `add_member_device` resolves this to `MembershipAction::Restore`, which mints a fresh Welcome at the group's **current** epoch. Replaying the original epoch-1 Welcome is deliberately not the mechanism: it would be unusable once the group has advanced past epoch 1, and persisting raw welcome rumors would add a new at-rest store of group secrets for no benefit.
 
-A resend skips the store-reset KeyPackage-freshness gate (`resolve_fresh_keypackage` / `keypackage_generation_advanced`) that a genuine "Restore access" call still applies. That gate exists to reject a stale, pre-reset KeyPackage after a member wiped and re-created their MLS store — but a pending member never reset anything; their already-recorded KeyPackage's private init key is still live. Gating a resend on rotation would reject it forever, since nothing about a pending member has actually rotated.
+A resend skips the store-reset KeyPackage-freshness gate (`resolve_fresh_keypackage` / `keypackage_generation_advanced`) that a genuine "Restore access" call still applies. That gate exists to reject a stale, pre-reset KeyPackage after a member wiped and re-created their MLS store — but a pending member never reset anything, so gating a resend on rotation would reject it forever. Resend still **fetches the latest** KeyPackage: the one recorded at create may already have been consumed.
 
-**Squad layer:** a pending npub gets no `squad_invite` DM until its resend succeeds — the invite card would otherwise advertise a Welcome that was never published. Squad/channel create flows exclude both skipped and pending npubs from the DM loop.
+**Squad layer:** squad-create flows exclude pending npubs from the `squad_invite` DM loop so the invite card does not advertise a Welcome that was never published. A successful **Resend invite** on the announcements group then sends that DM (`restoreMlsMemberAccess`). Channel create still sends the under-the-hood `channel_in_squad` notify to pending npubs — a missing welcome makes accept a no-op, and the cached DM names the channel once the resend lands.
 
 **Partial-failure state:** if a resend's remove commits but the re-add fails, the member ends up outside the group while still flagged pending in `pending_welcomes`; the panel keeps them visible so the admin can retry rather than silently dropping them.
 
@@ -60,7 +60,7 @@ A resend skips the store-reset KeyPackage-freshness gate (`resolve_fresh_keypack
 
 `src-tauri/src/mls_orphan_reaper.rs` deletes local MDK engine groups that have no matching `mls_groups` row — state a prior release's abort-on-delivery-failure path could leave behind (engine commit landed, metadata never did). `engine.delete_group` is local-only, so reaping has no protocol side effects.
 
-`MLS_GROUPS_ENGINE_CREATE_LOCK` serializes the reap sweep against `create_group`'s engine-commit-then-first-persist window, so a just-created group is never mistaken for an orphan mid-create. The reaper runs from `sync_mls_groups_now`'s sync-all branch (startup, relay reconnect) with a cooldown between passes, refuses to delete anything when the metadata table reads empty while the engine store is not (that's a broken read, not real orphans), and matches engine/metadata hex ids case-insensitively.
+`MLS_GROUPS_ENGINE_CREATE_LOCK` serializes the reap sweep against `create_group`'s engine-commit-then-first-persist window **and** `do_accept_mls_welcome`'s accept-then-persist window, so a just-created or just-joined group is never mistaken for an orphan mid-write. The reaper runs from `sync_mls_groups_now`'s sync-all branch (startup, relay reconnect) with a cooldown between passes, refuses to delete anything when the metadata table reads empty while the engine store is not (that's a broken read, not real orphans), and matches engine/metadata hex ids case-insensitively.
 
 ---
 
@@ -71,6 +71,7 @@ A resend skips the store-reset KeyPackage-freshness gate (`resolve_fresh_keypack
 | **`mls_invite_received`** | Refresh pending invites list |
 | **`mls_group_initial_sync`** | Creator after group create |
 | **`mls_group_updated`** | Member list / metadata changed |
+| **`mls_group_metadata`** | Group metadata (including `pending_welcomes`) changed; payload is `{ metadata: { group_id, ... } }` |
 
 **Squad / product layer:** Pacto may also send a **DM** with a structured **`squad_invite`** (or similar) payload so the UI can show an invite card; Accept should still call **`accept_mls_welcome`** with the pending welcome **`id`** matching the **`groupId`** in the card. Grep `squad_invite` / `formatSquadInvite` in `src/` for the current shape.
 

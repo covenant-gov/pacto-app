@@ -58,6 +58,7 @@ vi.mock('../../stores/navigation', () => ({
 
 import { createGroupChat, formatChannelInSquadMessage, sendDmMessage } from '../api/nostr';
 import { warnSkippedMembers, warnPendingInvites } from '../squad/skipped-members';
+import { showToast } from '../../stores/toast';
 import { getAnnouncementsChannel, loadMembersForParent } from '../parent-navbar';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
 import { persistSquadPatch } from '../squad/squad-catalog';
@@ -128,6 +129,7 @@ describe('runCreateChannelInParent', () => {
     vi.mocked(createGroupChat).mockReset().mockResolvedValue({ groupId: 'g-new-channel', skippedMembers: [], pendingInvites: [] });
     vi.mocked(warnSkippedMembers).mockReset();
     vi.mocked(warnPendingInvites).mockReset();
+    vi.mocked(showToast).mockReset();
     vi.mocked(formatChannelInSquadMessage).mockReset().mockReturnValue('channel-in-squad-payload');
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
     vi.mocked(publishSquadChannelsCatalog).mockReset().mockResolvedValue(true);
@@ -288,5 +290,8 @@ describe('runCreateChannelInParent', () => {
         { npub: 'npub-b', reason: 'relay unreachable' },
       ]);
     });
+    expect(showToast).toHaveBeenCalledWith('pending-notice');
+    expect(sendDmMessage).toHaveBeenCalledWith('npub-a', 'channel-in-squad-payload');
+    expect(sendDmMessage).toHaveBeenCalledWith('npub-b', 'channel-in-squad-payload');
   });
 });
