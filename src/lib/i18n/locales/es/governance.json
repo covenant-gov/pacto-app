@@ -355,7 +355,7 @@
 	"governance.deployWarGame.payFrom": "Pagar gas desde",
 	"governance.deployWarGame.depositLabel": "Depósito inicial (ETH)",
 	"governance.deployWarGame.depositPlaceholder": "0.01",
-	"governance.deployWarGame.depositHint": "Financia el patrocinador Sepolia del padre si este escuad aún no tiene; si no, financia el pool de la ronda de war-game.",
+	"governance.deployWarGame.depositHint": "Financia el pool de war-game de esta ronda en Sepolia.",
 	"governance.deployWarGame.customizeHint": "Los valores por defecto son 5 minutos de retraso de cambio de equipo, 5 minutos de caducidad de propuesta y Mayoría (51%). El mínimo es 1 minuto. El motín y la baja liderada por el equipo no se ven afectados.",
 	"governance.deployWarGame.redeployHint": "Una ronda nueva retira el stack Active anterior en cadena. Retira las participaciones restantes del clon retirado si depositaste.",
 	"governance.deployWarGame.retiredToast": "Ronda de war-game anterior retirada. Retira las participaciones restantes del clon retirado si depositaste.",

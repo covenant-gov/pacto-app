@@ -167,6 +167,7 @@ fn sponsor_preflight_decision(has_local_row: bool, registry_sponsor: Address) ->
 }
 
 /// Hats-deploy view of the parent factory slot. Unwired Ext is wired, not rejected.
+/// War-game-first leaves this Empty so Finish sponsor calls `createSquadSponsor`.
 #[derive(Debug, PartialEq, Eq)]
 enum HatsFactorySlot {
     Empty,
@@ -821,6 +822,7 @@ mod tests {
 
     #[test]
     fn hats_factory_slot_empty_wire_or_already() {
+        // Empty is the war-game-first Finish-sponsor path (`createSquadSponsor`).
         let sponsor = Address::repeat_byte(0x55);
         assert_eq!(
             hats_factory_slot(Address::ZERO, SquadVariant::NONE, false),

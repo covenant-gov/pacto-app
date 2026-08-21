@@ -1,4 +1,4 @@
-//! Sepolia war-game stack: parent Ext if missing, round Ext, Nave Pirata `WarGame`, persist `pacto_gov_wargame`.
+//! Sepolia war-game stack: Nave Pirata `WarGame`, hats-native round sponsor, persist `pacto_gov_wargame`.
 
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, B256, U256};
@@ -14,12 +14,8 @@ use crate::db;
 use super::access_control::with_gov_write_locks;
 use super::contracts::pacto_gov::read_bindings::IWarGameRegistry::WarGameRegistered;
 use super::contracts::pacto_gov::INavePirataFactory::{deployNavePirataCall, StackKind};
-use super::contracts::pacto_sponsor::ISquadSponsorExt::{
-    hatsWiredCall, permittedAddressCall, postInitializeCall, setPermittedAddressCall,
-};
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::{
-    createSquadSponsorExtCall, createWarGameSponsorExtCall, warGameRoundCountCall,
-    warGameSquadIdCall,
+    createWarGameSponsorCall, WarGameSponsorCreated,
 };
 use super::gov_read::rpc_urls_or_default;
 use super::nave_pirata_deploy::{
@@ -28,7 +24,6 @@ use super::nave_pirata_deploy::{
     validate_metadata_uri, SquadParamsDto,
 };
 use super::pacto_chain_config;
-use super::rpc::call::eth_call_decode;
 use super::rpc::signer::{
     load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
@@ -39,13 +34,12 @@ use super::rpc::{
 };
 use super::squad_sponsor_common::{
     parse_deposit_wei, parse_signer_wallet, read_squad_record_opt, require_parent_member,
-    squad_id_from_parent_id, squad_variant_label,
+    squad_id_from_parent_id,
 };
 use super::wallet_chain_config;
 use super::wallet_chain_config::WalletNetworkConfig;
 
 const SEPOLIA_KEY: &str = "sepolia";
-const MAX_PERMIT_MEMBERS: usize = 64;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -176,28 +170,21 @@ fn war_game_addresses_from_receipt(
     Err("no NavePirataDeployed or WarGameRegistered log in receipt".into())
 }
 
-fn roster_permit_addresses<'a>(
-    roster: impl Iterator<Item = &'a str>,
-    extra: Address,
-) -> Vec<Address> {
-    let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    let push =
-        |addr: Address, seen: &mut std::collections::HashSet<Address>, out: &mut Vec<Address>| {
-            if addr.is_zero() || !seen.insert(addr) {
-                return;
-            }
-            if out.len() < MAX_PERMIT_MEMBERS {
-                out.push(addr);
-            }
-        };
-    push(extra, &mut seen, &mut out);
-    for raw in roster {
-        if let Ok(addr) = parse_address(raw) {
-            push(addr, &mut seen, &mut out);
+fn war_game_sponsor_from_receipt(
+    receipt: &TransactionReceipt,
+    factory: Address,
+) -> Result<(Address, U256, B256), String> {
+    for log in receipt.logs() {
+        if log.address() != factory {
+            continue;
+        }
+        if let Ok(decoded) =
+            WarGameSponsorCreated::decode_raw_log(log.topics(), log.data().data.as_ref())
+        {
+            return Ok((decoded.sponsor, decoded.round, decoded.gameSquadId));
         }
     }
-    out
+    Err("no WarGameSponsorCreated log in receipt".into())
 }
 
 async fn send_value_call<P: Provider>(
@@ -209,48 +196,6 @@ async fn send_value_call<P: Provider>(
 ) -> Result<TransactionReceipt, String> {
     let tx = contract_call_request(to, calldata).with_value(value);
     send_and_confirm(provider, tx, timeout_msg).await
-}
-
-async fn permit_members_on_ext<P: Provider>(
-    urls: &[String],
-    signing: &P,
-    sponsor: Address,
-    members: &[Address],
-) -> Result<(), String> {
-    let hats_wired: bool = {
-        let read = connect_read_provider(urls).await?;
-        eth_call_decode(&read, sponsor, &hatsWiredCall {})
-            .await
-            .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?
-    };
-    if hats_wired {
-        return Ok(());
-    }
-
-    for member in members {
-        let already: bool = {
-            let read = connect_read_provider(urls).await?;
-            eth_call_decode(&read, sponsor, &permittedAddressCall { member: *member })
-                .await
-                .unwrap_or(false)
-        };
-        if already {
-            continue;
-        }
-        let calldata = setPermittedAddressCall {
-            member: *member,
-            permitted: true,
-        }
-        .abi_encode();
-        let tx = contract_call_request(sponsor, calldata);
-        let _receipt = send_and_confirm(
-            signing,
-            tx,
-            "Timed out waiting for setPermittedAddress confirmation.",
-        )
-        .await?;
-    }
-    Ok(())
 }
 
 #[tauri::command]
@@ -330,18 +275,13 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
         load_squad_roster_embedded_signer(app.clone(), signing_parent.as_str()).await?
     };
     require_roster_treasury_signing_allowed(app.clone(), signing_parent.as_str()).await?;
-    let (roster_signer, roster_wallet) =
+    let (roster_signer, _roster_wallet) =
         load_squad_roster_embedded_signer(app.clone(), signing_parent.as_str()).await?;
     let pay_addr = pay_signer.address();
-    let address_owner = roster_signer.address();
-    let _write_locks = with_gov_write_locks(pay_addr, address_owner).await;
+    let roster_addr = roster_signer.address();
+    let _write_locks = with_gov_write_locks(pay_addr, roster_addr).await;
 
     let pay_provider = connect_signing_provider(&urls, pay_wallet).await?;
-    let roster_provider = if pay_addr == address_owner {
-        pay_provider.clone()
-    } else {
-        connect_signing_provider(&urls, roster_wallet).await?
-    };
     let rpc_chain_id = pay_provider.get_chain_id().await.map_err(|e| {
         wallet_err_json(
             "RPC_CHAIN_ID",
@@ -362,153 +302,7 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
 
     let factory_sponsor = sponsor_addrs.squad_sponsor_factory;
     let factory_gov = gov_addrs.nave_pirata_factory;
-
     let read_provider = connect_read_provider(&urls).await?;
-    let parent_record = read_squad_record_opt(&read_provider, factory_sponsor, parent_squad_id)
-        .await
-        .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-
-    if parent_record.is_none() {
-        let calldata = createSquadSponsorExtCall {
-            squadId: parent_squad_id,
-            addressOwner: address_owner,
-        }
-        .abi_encode();
-        let receipt = send_value_call(
-            &pay_provider,
-            factory_sponsor,
-            calldata,
-            deposit,
-            "Timed out waiting for parent sponsor confirmation.",
-        )
-        .await?;
-        let created = read_squad_record_opt(&read_provider, factory_sponsor, parent_squad_id)
-            .await
-            .map_err(|e| {
-                wallet_err_json_with_tx_hash(
-                    "SPONSOR_READ",
-                    e,
-                    None,
-                    format!("0x{:x}", receipt.transaction_hash),
-                )
-            })?
-            .ok_or_else(|| {
-                wallet_err_json_with_tx_hash(
-                    "SPONSOR_READ",
-                    "parent Ext was not registered after createSquadSponsorExt",
-                    None,
-                    format!("0x{:x}", receipt.transaction_hash),
-                )
-            })?;
-        let (parent_sponsor, variant, _) = created;
-        let payload = json!({
-            "v": 1,
-            "parentId": pid,
-            "squadId": format!("{:#x}", parent_squad_id),
-            "sponsor": format!("{:#x}", parent_sponsor),
-            "paymaster": format!("{:#x}", sponsor_addrs.pacto_sponsor_paymaster),
-            "entryPoint": format!("{:#x}", sponsor_addrs.entry_point),
-            "variant": squad_variant_label(variant),
-            "addressOwner": format!("{:#x}", address_owner),
-            "txHash": format!("0x{:x}", receipt.transaction_hash),
-        })
-        .to_string();
-        db::persist_sponsor_infra(
-            &app,
-            pid,
-            net.key.as_str(),
-            format!("{:#x}", parent_sponsor).as_str(),
-            payload.as_str(),
-        )
-        .map_err(|e| wallet_err_json("PERSIST_SPONSOR", e, None))?;
-        let parent_members = {
-            let roster = db::list_squad_member_evm(
-                app.clone(),
-                pid.to_string(),
-                alt.map(|s| s.to_string()),
-            )?;
-            roster_permit_addresses(
-                roster.iter().map(|row| row.evm_address.as_str()),
-                address_owner,
-            )
-        };
-        permit_members_on_ext(&urls, &roster_provider, parent_sponsor, &parent_members).await?;
-    }
-
-    let round_deposit = if parent_record.is_none() {
-        U256::ZERO
-    } else {
-        deposit
-    };
-    let round_calldata = createWarGameSponsorExtCall {
-        parentSquadId: parent_squad_id,
-        addressOwner: address_owner,
-    }
-    .abi_encode();
-    let round_receipt = send_value_call(
-        &pay_provider,
-        factory_sponsor,
-        round_calldata,
-        round_deposit,
-        "Timed out waiting for war-game sponsor confirmation.",
-    )
-    .await?;
-    let round_tx = format!("0x{:x}", round_receipt.transaction_hash);
-
-    let round: U256 = eth_call_decode(
-        &read_provider,
-        factory_sponsor,
-        &warGameRoundCountCall {
-            parentSquadId: parent_squad_id,
-        },
-    )
-    .await
-    .map_err(|e| wallet_err_json_with_tx_hash("SPONSOR_READ", e, None, round_tx.clone()))?;
-    if round.is_zero() {
-        return Err(wallet_err_json_with_tx_hash(
-            "SPONSOR_READ",
-            "war-game round count is still zero after createWarGameSponsorExt",
-            None,
-            round_tx,
-        ));
-    }
-    let game_squad_id: B256 = eth_call_decode(
-        &read_provider,
-        factory_sponsor,
-        &warGameSquadIdCall {
-            parentSquadId: parent_squad_id,
-            round,
-        },
-    )
-    .await
-    .map_err(|e| wallet_err_json_with_tx_hash("SPONSOR_READ", e, None, round_tx.clone()))?;
-    let round_record = read_squad_record_opt(&read_provider, factory_sponsor, game_squad_id)
-        .await
-        .map_err(|e| wallet_err_json_with_tx_hash("SPONSOR_READ", e, None, round_tx.clone()))?
-        .ok_or_else(|| {
-            wallet_err_json_with_tx_hash(
-                "SPONSOR_READ",
-                "round Ext was not registered after createWarGameSponsorExt",
-                None,
-                round_tx.clone(),
-            )
-        })?;
-    let round_sponsor = round_record.0;
-    let round_sponsor_hex = format!("{:#x}", round_sponsor);
-
-    let prior_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
-        .ok()
-        .flatten();
-    let retired_sponsor =
-        retired_sponsor_from_prior_payload(prior_payload.as_deref(), round_sponsor_hex.as_str());
-
-    let roster =
-        db::list_squad_member_evm(app.clone(), pid.to_string(), alt.map(|s| s.to_string()))?;
-    let round_members = roster_permit_addresses(
-        roster.iter().map(|row| row.evm_address.as_str()),
-        address_owner,
-    );
-    permit_members_on_ext(&urls, &roster_provider, round_sponsor, &round_members).await?;
 
     let params = nave_pirata_deploy_params(
         captain_addr,
@@ -532,19 +326,52 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
             |e| wallet_err_json_with_tx_hash("PARSE_RECEIPT", e, None, deploy_tx.clone()),
         )?;
 
-    let post_calldata = postInitializeCall {
+    let round_calldata = createWarGameSponsorCall {
+        parentSquadId: parent_squad_id,
         topHatId: top_hat,
         registry: war_game_registry,
         customEligibleHats: vec![],
     }
     .abi_encode();
-    let post_receipt = send_and_confirm(
-        &roster_provider,
-        contract_call_request(round_sponsor, post_calldata),
-        "Timed out waiting for war-game sponsor postInitialize confirmation.",
+    let round_receipt = send_value_call(
+        &pay_provider,
+        factory_sponsor,
+        round_calldata,
+        deposit,
+        "Timed out waiting for war-game sponsor confirmation.",
     )
     .await?;
-    let tx_hash = format!("0x{:x}", post_receipt.transaction_hash);
+    let round_tx = format!("0x{:x}", round_receipt.transaction_hash);
+    let (round_sponsor, round, game_squad_id) =
+        war_game_sponsor_from_receipt(&round_receipt, factory_sponsor).map_err(|e| {
+            wallet_err_json_with_tx_hash("PARSE_RECEIPT", e, None, round_tx.clone())
+        })?;
+    if round.is_zero() {
+        return Err(wallet_err_json_with_tx_hash(
+            "SPONSOR_READ",
+            "war-game round is still zero after createWarGameSponsor",
+            None,
+            round_tx.clone(),
+        ));
+    }
+    let parent_still_empty = read_squad_record_opt(&read_provider, factory_sponsor, parent_squad_id)
+        .await
+        .map_err(|e| wallet_err_json_with_tx_hash("SPONSOR_READ", e, None, round_tx.clone()))?;
+    if parent_still_empty.is_some() {
+        return Err(wallet_err_json_with_tx_hash(
+            "SPONSOR_PARENT_SLOT",
+            "war-game create occupied the live parent sponsor slot",
+            None,
+            round_tx.clone(),
+        ));
+    }
+    let round_sponsor_hex = format!("{:#x}", round_sponsor);
+
+    let prior_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
+        .ok()
+        .flatten();
+    let retired_sponsor =
+        retired_sponsor_from_prior_payload(prior_payload.as_deref(), round_sponsor_hex.as_str());
 
     let top_hat_str = top_hat.to_string();
     let safe_hex = format!("{:#x}", safe_a);
@@ -554,7 +381,7 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
     let admin_hex = format!("{:#x}", admin_a);
     let payload = war_game_provider_payload(
         pid,
-        tx_hash.as_str(),
+        round_tx.as_str(),
         safe_hex.as_str(),
         qm_hex.as_str(),
         mm_hex.as_str(),
@@ -577,7 +404,7 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
     .map_err(|e| wallet_err_json("PERSIST_PACTO_GOV_WARGAME", e, None))?;
 
     Ok(WarGameDeployResult {
-        tx_hash,
+        tx_hash: round_tx,
         chain: net.key.clone(),
         chain_id: net.chain_id,
         top_hat_id: top_hat_str,
@@ -675,36 +502,42 @@ mod tests {
     }
 
     #[test]
-    fn encode_create_war_game_sponsor_ext_matches_selector() {
+    fn encode_create_war_game_sponsor_matches_hats_selector() {
         let parent = squad_id_from_parent_id("squad-alpha");
-        let owner = Address::repeat_byte(0x11);
-        let encoded = createWarGameSponsorExtCall {
+        let top_hat = U256::from(42u64);
+        let registry = Address::repeat_byte(0x22);
+        let encoded = createWarGameSponsorCall {
             parentSquadId: parent,
-            addressOwner: owner,
-        }
-        .abi_encode();
-        let mut expected = selector("createWarGameSponsorExt(bytes32,address)").to_vec();
-        expected.extend_from_slice(parent.as_slice());
-        expected.extend_from_slice(&[0u8; 12]);
-        expected.extend_from_slice(owner.as_slice());
-        assert_eq!(encoded, expected);
-    }
-
-    #[test]
-    fn encode_post_initialize_uses_empty_custom_hats() {
-        let encoded = postInitializeCall {
-            topHatId: U256::from(9u64),
-            registry: Address::repeat_byte(0x22),
+            topHatId: top_hat,
+            registry,
             customEligibleHats: vec![],
         }
         .abi_encode();
-        assert_eq!(
-            &encoded[..4],
-            &selector("postInitialize(uint256,address,uint256[])")
-        );
-        let decoded = postInitializeCall::abi_decode(&encoded).expect("decode");
-        assert_eq!(decoded.topHatId, U256::from(9u64));
+        let mut expected =
+            selector("createWarGameSponsor(bytes32,uint256,address,uint256[])").to_vec();
+        expected.extend_from_slice(parent.as_slice());
+        expected.extend_from_slice(&top_hat.to_be_bytes::<32>());
+        expected.extend_from_slice(&[0u8; 12]);
+        expected.extend_from_slice(registry.as_slice());
+        expected.extend_from_slice(&U256::from(128u64).to_be_bytes::<32>());
+        expected.extend_from_slice(&U256::ZERO.to_be_bytes::<32>());
+        assert_eq!(encoded, expected);
+
+        let decoded = createWarGameSponsorCall::abi_decode(&encoded).expect("decode");
+        assert_eq!(decoded.parentSquadId, parent);
+        assert_eq!(decoded.topHatId, top_hat);
+        assert_eq!(decoded.registry, registry);
         assert!(decoded.customEligibleHats.is_empty());
+    }
+
+    #[test]
+    fn war_game_deploy_does_not_create_or_persist_parent_ext() {
+        let src = include_str!("war_game_deploy.rs");
+        let prod = src.split_once("#[cfg(test)]").expect("tests").0;
+        assert!(!prod.contains("persist_sponsor_infra"));
+        assert!(!prod.contains("createSquadSponsorExt"));
+        assert!(!prod.contains("createWarGameSponsorExt"));
+        assert!(prod.contains("createWarGameSponsorCall"));
     }
 
     #[test]

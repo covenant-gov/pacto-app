@@ -35,10 +35,10 @@ Local infra type is `pacto_gov_wargame`. Do not dual-read it as `pacto_gov`.
 
 `deploy_war_game_for_parent` is member-gated, not captain-gated. It always uses Sepolia, even when the Status tab network is something else.
 
-Sequence: create/fund the parent Ext if `factory.squads(parentSquadId)` is empty; `createWarGameSponsorExt`; permit roster EVMs on the round clone; `deployNavePirata` with `stackKind = WarGame` and `squadId = keccak256(parentId)`; `postInitialize` the round Ext onto WarGameRegistry only.
+Sequence: `deployNavePirata` with `stackKind = WarGame` and `squadId = keccak256(parentId)`; then `createWarGameSponsor(parentSquadId, topHatId, WarGameRegistry, [])` with the wizard deposit. The factory does **not** register `parentSquadId`. Live `#dashboard` sponsor is a later Launchpad hats `createSquadSponsor` into that empty parent slot. Do not MLS-announce a parent Ext as live `sponsor`.
 
-War-game-first is intended. The factory has **one** parent slot (`squads(keccak256(parentId))`); creating that Ext is required so round clones can mint. Live Deploy Governance / Finish sponsor must **not** call `createSquadSponsor` on that same slot. It `postInitialize`s the **parent** Ext onto **NavePirataRegistry** with the live top hat. Round Exts stay on WarGameRegistry. Do not dual-read round clones as live `sponsor`.
+War-game-first is intended. Round clones live at `warGameSquadId(parent, round)` and are eligible as **war-game hat wearers** on `WarGameRegistry`. Finish sponsor / Deploy Governance after a war-game must **not** `postInitialize` a parent Ext — the parent slot is empty, so hats `createSquadSponsor` is the live path.
 
-The Active row payload includes `status`, `round`, `gameSquadId`, `sponsor`, and optional `retiredSponsor`. Redeploy upserts the same row. War-game UserOps encode `gameSquadId` (factory `warGameSquadId(parent, round)`), not `keccak256(parentId)`. Deploy, redeploy, and retire fan out on `#announcements` as `war_game_updated`. Wargame Treasury binds `payload.sponsor` (the round clone), never the parent Ext live `sponsor` row.
+The Active row payload includes `status`, `round`, `gameSquadId`, `sponsor`, and optional `retiredSponsor`. Redeploy upserts the same row. War-game UserOps encode `gameSquadId` (factory `warGameSquadId(parent, round)`), not `keccak256(parentId)`. Deploy, redeploy, and retire fan out on `#announcements` as `war_game_updated`. Wargame Treasury binds `payload.sponsor` (the round clone), never a live `sponsor` row.
 
 The Wargame hub reads role hat IDs from **WarGameRegistry**; live `#dashboard` stays on **NavePirataRegistry**.

@@ -355,7 +355,7 @@
 	"governance.deployWarGame.payFrom": "Pay gas from",
 	"governance.deployWarGame.depositLabel": "Initial deposit (ETH)",
 	"governance.deployWarGame.depositPlaceholder": "0.01",
-	"governance.deployWarGame.depositHint": "Funds the parent Sepolia sponsor if this squad has none yet; otherwise funds the war-game round pool.",
+	"governance.deployWarGame.depositHint": "Funds this round’s war-game pool on Sepolia.",
 	"governance.deployWarGame.customizeHint": "Defaults are 5-minute crew-change delay, 5-minute proposal expiry, and Majority (51%). Floor is 1 minute. Mutiny and crew-led offboard are not affected.",
 	"governance.deployWarGame.redeployHint": "A new round retires the previous Active stack on-chain. Withdraw leftover shares from the retired round clone if you deposited.",
 	"governance.deployWarGame.retiredToast": "Previous war-game round retired. Withdraw leftover shares from the retired clone if you deposited.",

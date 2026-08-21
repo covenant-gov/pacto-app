@@ -16,6 +16,7 @@ sol! {
             address sponsor;
             SquadVariant variant;
             uint256 topHatId;
+            address pool;
         }
 
         function createSquadSponsorExt(bytes32 squadId, address addressOwner)
@@ -29,6 +30,13 @@ sol! {
             address registry,
             uint256[] calldata customEligibleHats
         ) external payable returns (address sponsor);
+
+        function createWarGameSponsor(
+            bytes32 parentSquadId,
+            uint256 topHatId,
+            address registry,
+            uint256[] calldata customEligibleHats
+        ) external payable returns (address sponsor, uint256 round, bytes32 gameSquadId);
 
         function createWarGameSponsorExt(bytes32 parentSquadId, address addressOwner)
             external
@@ -48,6 +56,13 @@ sol! {
             address sponsor,
             SquadVariant variant,
             address indexed addressOwner
+        );
+
+        event WarGameSponsorCreated(
+            bytes32 indexed parentSquadId,
+            uint256 round,
+            bytes32 indexed gameSquadId,
+            address indexed sponsor
         );
     }
 

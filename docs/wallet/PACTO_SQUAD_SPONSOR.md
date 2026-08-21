@@ -18,11 +18,9 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 
 **On-chain squad key:** `squadId = keccak256(utf8(parent_id))` where `parent_id` is the squad or network root id in the app.
 
-**Default path:** Launchpad **Deploy Pacto Gov + squad sponsor** — Nave Pirata first, then `createSquadSponsor(squadId, topHatId, registry, [])` so eligibility is captain/crew hat wearers. Optional `bootstrapCrew` in the same wizard. If gov already exists and sponsor is missing, the same wizard finishes hats sponsor only.
+**Default path:** Launchpad **Deploy Pacto Gov + squad sponsor** — Nave Pirata first, then `createSquadSponsor(squadId, topHatId, registry, [])` so eligibility is captain/crew hat wearers. Optional `bootstrapCrew` in the same wizard. If gov already exists and sponsor is missing, the same wizard finishes hats sponsor only (empty parent slot → `createSquadSponsor`; already-wired Ext or a hats clone stays `ALREADY_DEPLOYED`).
 
-**War-game-first Ext → hats:** If `factory.squads(parentId)` already holds an Ext with `hatsWired() == false` (typical after war-game), Finish sponsor does **not** create again. Roster signs `postInitialize(topHatId, NavePirataRegistry, [])` on that parent clone; a wizard deposit uses clone `deposit()` because `postInitialize` is not payable. Already-wired Ext or a hats (`SPONSOR`) clone stays `ALREADY_DEPLOYED`. Round Exts remain on WarGameRegistry and are not live `sponsor`.
-
-**Advanced Ext:** Launchpad / Advanced **Deploy squad sponsor (Ext)** — `createSquadSponsorExt(squadId, addressOwner)` with `addressOwner` = roster EVM; gas/deposit may come from Default.
+**Advanced Ext:** Launchpad / Advanced **Deploy squad sponsor (Ext)** — `createSquadSponsorExt(squadId, addressOwner)` with `addressOwner` = roster EVM; gas/deposit may come from Default. An unwired Ext can later hats-wire via `postInitialize` onto NavePirataRegistry. War-game deploy does **not** create that parent Ext.
 
 ## Sponsored UserOps (gov writes)
 
