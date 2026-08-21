@@ -463,9 +463,13 @@
           },
         });
         const myNpub = get(currentUser)?.npub;
-        const invitedNpubs = memberNpubs.filter(
-          (npub) => !skippedMembers.some((skipped) => skipped.npub === npub)
-        );
+        // Pending npubs have no published Welcome yet, so the card can't be accepted; the
+        // creator's resend is the recovery path.
+        const excludedNpubs = new Set([
+          ...skippedMembers.map((skipped) => skipped.npub),
+          ...pendingInvites.map((pending) => pending.npub),
+        ]);
+        const invitedNpubs = memberNpubs.filter((npub) => !excludedNpubs.has(npub));
         for (const npub of invitedNpubs) {
           try {
             await sendSquadInviteDm(npub, { squadName: name, groupId, iconUrl: options.iconUrl }, myNpub);

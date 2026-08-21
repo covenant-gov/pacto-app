@@ -28,6 +28,13 @@
     !!currentUserNpub && admins.some((a) => a === currentUserNpub),
   );
 
+  // Union of engine members and pending-only npubs: a resend can remove the engine leaf before
+  // the re-add fails, dropping the npub from `members` while it's still in `pendingWelcomes`.
+  const renderNpubs = $derived([
+    ...members,
+    ...pendingWelcomes.filter((npub) => !members.includes(npub)),
+  ]);
+
   let confirmNpub = $state<string | null>(null);
   let restoringNpub = $state<string | null>(null);
   let resendingNpub = $state<string | null>(null);
@@ -63,7 +70,7 @@
     }
   }
 
-  /** Single-click resend for a never-joined pending-invite member: no confirm modal (low risk, no revocation). */
+  /** Resend for a pending-invite member: re-adds them at the current epoch so a fresh Welcome is minted and delivered. */
   async function resendInvite(npub: string): Promise<void> {
     if (!groupId || resendingNpub) return;
     resendingNpub = npub;
@@ -87,10 +94,10 @@
     <h3 class="members-panel-title">{$t('messaging.channel.membersPanelTitle')}</h3>
   </div>
   <div class="members-panel-list">
-    {#if loading && members.length === 0}
+    {#if loading && renderNpubs.length === 0}
       <p class="members-panel-loading">{$t('messaging.channel.membersPanelLoading')}</p>
     {:else}
-      {#each members as npub (npub)}
+      {#each renderNpubs as npub (npub)}
         {@const avatarSrc = getProfileAvatarSrc(profiles[npub])}
         {@const isPending = pendingWelcomes.includes(npub)}
         <div class="members-panel-member">

@@ -106,11 +106,9 @@ pub struct MlsGroupMetadata {
     // When true, we skip syncing this group (unless it's a new welcome/invite)
     #[serde(default)]
     pub evicted: bool,
-    /// Npubs the engine already added to this group (a real MLS leaf exists) whose welcome
-    /// gift-wrap has not yet been successfully delivered. Populated when `create_group` or
-    /// `add_member_device` fails to deliver a welcome instead of aborting; cleared entry-by-
-    /// entry when a later `add_member_device` resend (Restore path) succeeds for that npub.
-    /// `serde(default)` so rows persisted before this field existed deserialize to `[]`.
+    /// Npubs the engine already added to this group whose welcome gift-wrap has not yet been
+    /// delivered; cleared entry-by-entry when a later resend succeeds. `serde(default)` so
+    /// pre-existing rows deserialize to `[]`.
     #[serde(default)]
     pub pending_welcomes: Vec<String>,
 }
@@ -147,11 +145,9 @@ pub struct SkippedMember {
     pub transient: bool,
 }
 
-/// A member the engine already added to a group (a real MLS leaf exists) but whose welcome
-/// gift-wrap could not be delivered. Distinct from `SkippedMember`: that struct means the
-/// member was never added at all, while this one means the group-side membership succeeded and
-/// only delivery is outstanding — resendable via `add_member_device`, which takes the Restore
-/// path for an npub already present in the engine group.
+/// A member the engine already added (a real MLS leaf exists) but whose welcome gift-wrap
+/// failed to deliver — distinct from `SkippedMember`, which was never added at all. Resendable
+/// via `add_member_device`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UndeliveredInvite {
@@ -392,13 +388,8 @@ fn short_npub(npub: &str) -> String {
     format!("{}…", npub.chars().take(12).collect::<String>())
 }
 
-/// Reduces per-recipient MLS welcome delivery attempts into the members that must be tracked
-/// as pending invites: `create_group`'s engine scope already added every one of these to the
-/// group (a real MLS leaf exists), so a delivery failure is not a reason to discard the group,
-/// only to flag that member for a resend. A later `add_member_device` call for a pending npub
-/// takes the Restore path (the npub is already an engine member) and clears the flag on
-/// success. Applies the same reason redaction/length cap as `SkippedMember.reason`. Order is
-/// preserved; successful deliveries are dropped entirely.
+/// Reduces per-recipient welcome delivery outcomes into pending invites, redacting/capping the
+/// reason like `SkippedMember.reason`. Order preserved; successes dropped.
 fn pending_invites_from_delivery_outcomes(
     outcomes: Vec<(String, Result<(), String>)>,
 ) -> Vec<UndeliveredInvite> {
@@ -412,6 +403,38 @@ fn pending_invites_from_delivery_outcomes(
             }),
         })
         .collect()
+}
+
+/// Delivers one welcome per invited recipient via `send`; a recipient with no welcome rumor at
+/// its index — including the whole list being empty — is reported undelivered instead of being
+/// silently dropped. Order and recipient count (`invited_recipients.len()`) are preserved.
+async fn deliver_welcomes<F, Fut>(
+    welcome_rumors: &[nostr_sdk::UnsignedEvent],
+    invited_recipients: &[nostr_sdk::PublicKey],
+    mut send: F,
+) -> Vec<(String, Result<(), String>)>
+where
+    F: FnMut(nostr_sdk::PublicKey, nostr_sdk::UnsignedEvent) -> Fut,
+    Fut: Future<Output = Result<(), String>>,
+{
+    use nostr_sdk::prelude::*;
+    if !welcome_rumors.is_empty() && welcome_rumors.len() != invited_recipients.len() {
+        eprintln!(
+            "[MLS] welcome/member count mismatch: welcomes={}, invited={}",
+            welcome_rumors.len(),
+            invited_recipients.len()
+        );
+    }
+    let mut outcomes = Vec::with_capacity(invited_recipients.len());
+    for (i, target) in invited_recipients.iter().enumerate() {
+        let npub = target.to_bech32().unwrap_or_default();
+        let result = match welcome_rumors.get(i) {
+            Some(welcome) => send(*target, welcome.clone()).await,
+            None => Err("MLS group create returned no welcome for this member".to_string()),
+        };
+        outcomes.push((npub, result));
+    }
+    outcomes
 }
 
 #[cfg(test)]
@@ -473,6 +496,84 @@ mod pending_invites_from_delivery_outcomes_tests {
         let pending = pending_invites_from_delivery_outcomes(outcomes);
         assert_eq!(pending.len(), 1);
         assert!(!pending[0].reason.contains("SECRET"));
+    }
+}
+
+/// Defends `deliver_welcomes`'s contract: exactly one outcome per invited recipient, so a
+/// recipient without a matching welcome rumor is reported pending instead of silently dropped.
+#[cfg(test)]
+mod deliver_welcomes_tests {
+    use super::{deliver_welcomes, pending_invites_from_delivery_outcomes};
+    use nostr_sdk::prelude::*;
+
+    fn recipient() -> PublicKey {
+        Keys::generate().public_key()
+    }
+
+    fn rumor(pk: PublicKey) -> UnsignedEvent {
+        EventBuilder::new(Kind::Custom(9), "test-rumor").build(pk)
+    }
+
+    #[tokio::test]
+    async fn every_send_failing_marks_every_recipient_pending_in_order() {
+        let recipients = vec![recipient(), recipient(), recipient()];
+        let rumors: Vec<UnsignedEvent> = recipients.iter().map(|pk| rumor(*pk)).collect();
+        let outcomes = deliver_welcomes(&rumors, &recipients, |_, _| async {
+            Err("gift_wrap_to failed".to_string())
+        })
+        .await;
+        assert_eq!(outcomes.len(), recipients.len());
+        let pending = pending_invites_from_delivery_outcomes(outcomes);
+        assert_eq!(pending.len(), recipients.len());
+        for (p, expected) in pending.iter().zip(recipients.iter()) {
+            assert_eq!(p.npub, expected.to_bech32().unwrap_or_default());
+            assert_eq!(p.reason, "gift_wrap_to failed");
+        }
+    }
+
+    #[tokio::test]
+    async fn partial_failure_only_pends_the_failing_recipients() {
+        let ok_recipient = recipient();
+        let fail_recipient = recipient();
+        let recipients = vec![ok_recipient, fail_recipient];
+        let rumors: Vec<UnsignedEvent> = recipients.iter().map(|pk| rumor(*pk)).collect();
+        let outcomes = deliver_welcomes(&rumors, &recipients, move |target, _| async move {
+            if target == fail_recipient {
+                Err("delivery failed".to_string())
+            } else {
+                Ok(())
+            }
+        })
+        .await;
+        let pending = pending_invites_from_delivery_outcomes(outcomes);
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].npub, fail_recipient.to_bech32().unwrap_or_default());
+    }
+
+    #[tokio::test]
+    async fn fewer_welcome_rumors_than_recipients_pends_the_leftovers() {
+        // Regression: a zip-to-min-len loop silently drops any recipient past the shorter
+        // slice instead of reporting them as pending.
+        let recipients = vec![recipient(), recipient(), recipient()];
+        let rumors: Vec<UnsignedEvent> = recipients[..1].iter().map(|pk| rumor(*pk)).collect();
+        let outcomes = deliver_welcomes(&rumors, &recipients, |_, _| async { Ok(()) }).await;
+        assert_eq!(outcomes.len(), recipients.len());
+        let pending = pending_invites_from_delivery_outcomes(outcomes);
+        assert_eq!(pending.len(), 2);
+        assert_eq!(pending[0].npub, recipients[1].to_bech32().unwrap_or_default());
+        assert_eq!(pending[1].npub, recipients[2].to_bech32().unwrap_or_default());
+        assert!(pending
+            .iter()
+            .all(|p| p.reason == "MLS group create returned no welcome for this member"));
+    }
+
+    #[tokio::test]
+    async fn empty_welcome_rumors_with_recipients_pends_everyone() {
+        let recipients = vec![recipient(), recipient()];
+        let rumors: Vec<UnsignedEvent> = Vec::new();
+        let outcomes = deliver_welcomes(&rumors, &recipients, |_, _| async { Ok(()) }).await;
+        let pending = pending_invites_from_delivery_outcomes(outcomes);
+        assert_eq!(pending.len(), recipients.len());
     }
 }
 
@@ -668,17 +769,15 @@ impl MlsService {
          • Capture:
            - engine_group_id (internal engine id, hex) for local operations and send path.
            - wire group id used on relays (h tag). We derive a canonical 64-hex when possible; fallback to engine id.
-      4) Persist "mls_groups" metadata (plaintext columns) BEFORE attempting delivery below:
+      4) Persist "mls_groups" metadata (plaintext columns) BEFORE attempting delivery below
+         (see docs/mls/INVITES_AND_MEMBERSHIP.md for why):
          • group_id = wire id (relay filtering id, shown in UI)
          • engine_group_id = engine id (used by [rust.send_mls_group_message()](src-tauri/src/lib.rs:3144))
-         `engine.create_group()` above already committed the group locally, so persisting first
-         turns a welcome failure into a "pending invite" on an otherwise-real group instead of an
-         orphaned engine group with no metadata/chat/UI presence.
       5) Emit "mls_group_initial_sync" immediately so the frontend can refresh chat list without restart.
       6) Publish welcome(s) to invited recipients 1:1 via gift_wrap_to on the trusted relay set.
-      7) Partial delivery: any recipient whose welcome failed is recorded in
-         `GroupCreateOutcome.pending_invites` and re-persisted to `pending_welcomes`, resendable
-         later via `add_member_device` (Restore path, since the npub is already an engine member).
+      7) Partial delivery: any undelivered recipient lands in `GroupCreateOutcome.pending_invites`
+         and `pending_welcomes`, resendable via `add_member_device`
+         (see docs/mls/INVITES_AND_MEMBERSHIP.md for resend semantics).
 
     - Error mapping (propagated as strings to the UI):
       • MlsError::NotInitialized: Nostr client/app handle not ready.
@@ -874,10 +973,8 @@ impl MlsService {
             return Err(MlsError::NetworkError(format_transient_skip_error(&skipped)));
         }
 
-        // Serializes this call's engine-commit-then-first-metadata-persist window against
-        // `reap_orphaned_engine_groups`'s read-then-delete sweep — see `mls_orphan_reaper`'s
-        // module docs for why the lock must start here, before the engine mutation below, not
-        // after it.
+        // Serializes engine-commit-then-first-persist against the reaper's sweep; must start
+        // here, before the engine mutation below. See docs/mls/INVITES_AND_MEMBERSHIP.md.
         let _create_lock_guard = MLS_GROUPS_ENGINE_CREATE_LOCK.lock().await;
 
         // Perform engine operations without awaits in scope
@@ -976,12 +1073,9 @@ impl MlsService {
             );
         }
 
-        // Persist "mls_groups" metadata (plaintext columns), the STATE chat, and notify the UI
-        // BEFORE attempting welcome delivery below: `engine.create_group` above already
-        // committed the group (and its epoch-1 commit) into the local MDK store, so from this
-        // point on a real group exists whether or not every welcome is delivered. Persisting
-        // first turns a welcome failure into a "pending invite" on an otherwise-real group
-        // instead of leaving an orphaned engine group with zero metadata/chat/UI presence.
+        // Persist "mls_groups" metadata, the STATE chat, and notify the UI BEFORE attempting
+        // welcome delivery below: a delivery failure must land as a pending invite on an
+        // already-real group, not an orphaned engine group with no metadata/chat/UI presence.
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| MlsError::StorageError(format!("system time error: {}", e)))?
@@ -999,13 +1093,8 @@ impl MlsService {
             pending_welcomes: Vec::new(), // Populated below if any welcome delivery fails
         };
 
-        // Targeted single-row upsert, not the full-table `write_groups`: a concurrent
-        // create_group/add_member_device/leave_group call for a *different* group must never be
-        // able to lose this row (or vice versa) to a stale read-modify-write-the-whole-table
-        // race. `_create_lock_guard` (acquired above, before `engine.create_group()` ran) is
-        // released right after this call returns — the reap-consistency window it protects
-        // closes the moment this row exists, and holding it any longer would needlessly
-        // serialize the (network) welcome-delivery loop below against other create_group calls.
+        // Single-row upsert so a concurrent call for a *different* group can never lose this
+        // row (or vice versa). `_create_lock_guard` is released right after this returns.
         let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
         crate::db::save_mls_group(handle, &meta)
             .await
@@ -1054,25 +1143,21 @@ impl MlsService {
                 });
         }
 
-        // Publish welcomes (gift-wrapped) 1:1 with invited recipients where possible. A failed
-        // delivery no longer aborts the (already-persisted) group: the recipient is collected
-        // into `pending_invites` instead, resendable later via `add_member_device` — the npub
-        // is already an engine member, so that call naturally takes the Restore path.
-        let delivery_outcomes: Vec<(String, Result<(), String>)> = if !welcome_rumors.is_empty() {
-            if welcome_rumors.len() != invited_count {
-                eprintln!(
-                    "[MLS] welcome/member count mismatch: welcomes={}, invited={}",
-                    welcome_rumors.len(),
-                    invited_count
-                );
-            }
-            let min_len = std::cmp::min(welcome_rumors.len(), invited_recipients.len());
-            let mut outcomes = Vec::with_capacity(min_len);
-            for i in 0..min_len {
-                let welcome = welcome_rumors[i].clone(); // UnsignedEvent
-                let target = invited_recipients[i];
+        // A failed delivery no longer aborts the (already-persisted) group: the recipient lands
+        // in `pending_invites` instead, resendable later via `add_member_device` (Restore path,
+        // since the npub is already an engine member).
+        if welcome_rumors.is_empty() {
+            println!(
+                "[MLS] No welcome rumors (invited={}, self-only path likely)",
+                invited_count
+            );
+        }
+        let delivery_outcomes = deliver_welcomes(
+            &welcome_rumors,
+            &invited_recipients,
+            |target, welcome| async move {
                 let recipient = target.to_bech32().unwrap_or_default();
-                match get_nostr_client()
+                get_nostr_client()
                     .unwrap()
                     .gift_wrap_to(
                         crate::trusted_relays::trusted_relays().iter().cloned(),
@@ -1081,65 +1166,52 @@ impl MlsService {
                         [],
                     )
                     .await
-                {
-                    Ok(wrapper_id) => {
+                    .map(|wrapper_id| {
                         println!(
                             "[MLS][welcome][published] wrapper_id={}, recipient={}, relays={:?}",
                             wrapper_id.to_hex(),
                             recipient,
                             crate::trusted_relays::trusted_relays()
                         );
-                        outcomes.push((recipient, Ok(())));
-                    }
-                    Err(e) => {
+                    })
+                    .map_err(|e| {
                         eprintln!(
                             "[MLS][welcome][publish_error] recipient={}, relays={:?}, err={}",
                             recipient,
                             crate::trusted_relays::trusted_relays(),
                             e
                         );
-                        outcomes.push((recipient, Err(e.to_string())));
-                    }
-                }
-            }
-            outcomes
-        } else {
-            println!(
-                "[MLS] No welcome rumors (invited={}, self-only path likely)",
-                invited_count
-            );
-            invited_recipients
-                .iter()
-                .map(|target| {
-                    (
-                        target.to_bech32().unwrap_or_default(),
-                        Err("MLS group create returned no welcome for this member".to_string()),
-                    )
-                })
-                .collect()
-        };
+                        e.to_string()
+                    })
+            },
+        )
+        .await;
 
         let pending_invites = pending_invites_from_delivery_outcomes(delivery_outcomes);
 
-        // A welcome delivery failure leaves an already-persisted group: re-persist with the
-        // pending list so `add_member_device`'s resend has somewhere to record progress, and so
-        // an open UI picks up the pending state live (`mls_group_metadata` is subscribed in
-        // `tauri-subscriptions.ts`). Mutates the in-memory `meta` this call already built and
-        // upserts it directly — no read-modify-write of the whole table needed, since nothing
-        // else can be racing to mutate a group nobody outside this call knows about yet.
+        // Column-scoped write: only pending_welcomes changes here, so this can't clobber a
+        // concurrent writer's other columns on this row.
         if !pending_invites.is_empty() {
-            let mut updated_meta = meta.clone();
-            updated_meta.pending_welcomes =
+            let pending_npubs: Vec<String> =
                 pending_invites.iter().map(|p| p.npub.clone()).collect();
-            updated_meta.updated_at = std::time::SystemTime::now()
+            let updated_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| MlsError::StorageError(format!("system time error: {}", e)))?
                 .as_secs();
             let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
-            crate::db::save_mls_group(handle, &updated_meta)
-                .await
-                .map_err(|e| MlsError::StorageError(e))?;
-            emit_group_metadata_event(&updated_meta);
+            crate::db::set_mls_group_pending_welcomes(
+                handle,
+                &meta.group_id,
+                &pending_npubs,
+                updated_at,
+            )
+            .await
+            .map_err(|e| MlsError::StorageError(e))?;
+
+            let mut emitted_meta = meta.clone();
+            emitted_meta.pending_welcomes = pending_npubs;
+            emitted_meta.updated_at = updated_at;
+            emit_group_metadata_event(&emitted_meta);
         }
 
         println!(
@@ -1172,11 +1244,9 @@ impl MlsService {
     /// performs the restoration — an admin still on the pre-upgrade build restores access the
     /// old way and does not revoke.
     ///
-    /// `is_resend` marks a caller-initiated resend of an already-failed welcome (the "Resend
-    /// invite" UI action, distinct from "Restore access"): if a concurrent sibling call already
-    /// resolved it while this one waited on the membership lock below, this call becomes a
-    /// no-op instead of repeating a redundant remove-then-re-add. Always `false` for a genuine
-    /// restore or first-time invite — those are never short-circuited this way.
+    /// `is_resend` marks the "Resend invite" UI action, distinct from "Restore access": it
+    /// no-ops if a concurrent call already resolved the pending welcome, and skips the
+    /// post-reset freshness gate below since a resend targets a member who never reset.
     pub async fn add_member_device(
         &self,
         group_id: &str,
@@ -1281,12 +1351,10 @@ impl MlsService {
             .find(|entry| entry.owner_pubkey == member_pubkey && entry.device_id == device_id)
             .map(|entry| entry.keypackage_ref);
 
-        // Fetch member's keypackage. A restoration must resolve fresh from the network: a reset
-        // member republishes a new keypackage backed by their new store, and a keypackage
-        // reference this admin recorded before the reset still points at the pre-reset
-        // keypackage whose private init key only lives in the archived store — a welcome built
-        // against it would be openable only by the archive.
-        let kp_event = if action == MembershipAction::Restore {
+        // Fresh-resolve only for a genuine restore: a store-reset member's recorded KeyPackage's
+        // private init key lives only in their archived store. A resend targets a member who
+        // never reset, so gating it on rotation would reject it forever.
+        let kp_event = if action == MembershipAction::Restore && !is_resend {
             // Retry rather than trust the first response: the member's own post-reset
             // republish (triggered elsewhere, on their next decrypt/login, out of this call's
             // control) races this restore. A candidate identical to `recorded_ref` has not
@@ -1339,7 +1407,7 @@ impl MlsService {
         };
 
         let kp_event = kp_event.ok_or_else(|| {
-            if action == MembershipAction::Restore {
+            if action == MembershipAction::Restore && !is_resend {
                 MlsError::NetworkError(format!(
                     "No post-reset keypackage observed yet for {}:{}; ask them to reopen the app so it republishes, then retry the restore",
                     member_pubkey, device_id
@@ -1512,24 +1580,34 @@ impl MlsService {
             ));
         }
 
-        // Update group metadata timestamp, and clear this member's pending-welcome flag: a
-        // successful add (first-time invite or Restore-path resend) means the welcome that was
-        // previously undelivered (if any) has now gone out. No-op if the npub wasn't pending.
-        // Targeted single-row upsert, not the full-table `write_groups`, so a concurrent
-        // create_group/leave_group for a *different* group can never lose its row (or vice
-        // versa) to a stale snapshot.
+        // A successful add means any previously undelivered welcome for this member has now
+        // gone out; no-op if the npub wasn't pending.
         let groups = self.read_groups().await?;
-        if let Some(group) = groups.iter().find(|g| g.group_id == group_id) {
-            let mut updated_group = group.clone();
-            updated_group.updated_at = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            updated_group.pending_welcomes.retain(|n| n != member_pubkey);
-            let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
-            crate::db::save_mls_group(handle, &updated_group)
+        if let Some(group) = groups
+            .iter()
+            .find(|g| g.group_id == group_id || g.engine_group_id == group_id)
+        {
+            if group.pending_welcomes.iter().any(|n| n == member_pubkey) {
+                let remaining: Vec<String> = group
+                    .pending_welcomes
+                    .iter()
+                    .filter(|n| *n != member_pubkey)
+                    .cloned()
+                    .collect();
+                let updated_at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
+                crate::db::set_mls_group_pending_welcomes(
+                    handle,
+                    &group.group_id,
+                    &remaining,
+                    updated_at,
+                )
                 .await
                 .map_err(|e| MlsError::StorageError(e))?;
+            }
         }
 
         // Emit event to refresh UI
@@ -1634,9 +1712,8 @@ impl MlsService {
             crate::record_send_outcome(evolution_event, &send_output);
         }
 
-        // Remove the group from local metadata: targeted single-row delete, not the full-table
-        // `write_groups`, so a concurrent create_group/add_member_device for a *different*
-        // group can never lose its row to a stale snapshot here.
+        // Remove the group from local metadata: a concurrent create_group/add_member_device for
+        // a *different* group can never lose its row to a stale snapshot here.
         let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
         crate::db::delete_mls_group(handle, &group_meta.group_id)
             .await
@@ -1783,16 +1860,30 @@ impl MlsService {
             })?;
         }
 
-        // Clear this member from pending_welcomes, if present: they were never delivered a
-        // welcome and are now removed from the group entirely, so a stale "pending invite"
-        // badge/resend button must not survive the removal.
+        // Clear this member from pending_welcomes, if present: a removed member must not leave
+        // a stale "pending invite" badge/resend button behind.
         let groups_now = self.read_groups().await?;
         if let Some(group) = groups_now.iter().find(|g| g.group_id == group_meta.group_id) {
             if group.pending_welcomes.iter().any(|n| n == member_pubkey) {
-                let mut updated_group = group.clone();
-                updated_group.pending_welcomes.retain(|n| n != member_pubkey);
+                let remaining: Vec<String> = group
+                    .pending_welcomes
+                    .iter()
+                    .filter(|n| *n != member_pubkey)
+                    .cloned()
+                    .collect();
+                let updated_at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
                 let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
-                if let Err(e) = crate::db::save_mls_group(handle, &updated_group).await {
+                if let Err(e) = crate::db::set_mls_group_pending_welcomes(
+                    handle,
+                    &group.group_id,
+                    &remaining,
+                    updated_at,
+                )
+                .await
+                {
                     eprintln!(
                         "[MLS] Failed to clear pending_welcomes for removed member {}: {}",
                         member_pubkey, e
@@ -2928,14 +3019,6 @@ impl MlsService {
     pub async fn read_groups(&self) -> Result<Vec<MlsGroupMetadata>, MlsError> {
         let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
         crate::db::load_mls_groups(&handle)
-            .await
-            .map_err(|e| MlsError::StorageError(e))
-    }
-
-    /// Write encrypted group metadata to database
-    pub async fn write_groups(&self, groups: &[MlsGroupMetadata]) -> Result<(), MlsError> {
-        let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
-        crate::db::save_mls_groups(handle, groups)
             .await
             .map_err(|e| MlsError::StorageError(e))
     }

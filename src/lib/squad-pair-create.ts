@@ -230,10 +230,15 @@ export function runSquadPairCreateFlow(
             channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
         },
       });
-      const skippedNpubs = new Set(skippedMembers.map((s) => s.npub));
+      // Pending npubs have no published Welcome yet, so the card can't be accepted; the
+      // creator's resend is the recovery path.
+      const excludedNpubs = new Set([
+        ...skippedMembers.map((s) => s.npub),
+        ...pendingInvites.map((p) => p.npub),
+      ]);
       const myNpub = get(currentUser)?.npub;
       for (const npub of memberNpubs) {
-        if (skippedNpubs.has(npub)) continue;
+        if (excludedNpubs.has(npub)) continue;
         try {
           await sendSquadInviteDm(
             npub,
@@ -349,13 +354,18 @@ async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: strin
     delete next[parent.id];
     return next;
   });
-  const skippedNpubs = new Set(skippedMembers.map((s) => s.npub));
+  // Pending npubs have no published Welcome yet, so the card can't be accepted; the
+  // creator's resend is the recovery path.
+  const excludedNpubs = new Set([
+    ...skippedMembers.map((s) => s.npub),
+    ...pendingInvites.map((p) => p.npub),
+  ]);
   const pairing =
     parent.kind === 'squad-pair' && parent.pairedSquads
       ? { kind: 'squad-pair' as const, pairedSquads: parent.pairedSquads }
       : {};
   for (const npub of memberIds) {
-    if (skippedNpubs.has(npub)) continue;
+    if (excludedNpubs.has(npub)) continue;
     try {
       await sendSquadInviteDm(
         npub,

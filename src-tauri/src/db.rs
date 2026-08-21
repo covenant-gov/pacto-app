@@ -4601,80 +4601,6 @@ pub async fn save_chat_messages<R: Runtime>(
 // MLS Metadata SQL Functions
 // ============================================================================
 
-/// Replace the persisted `mls_groups` rows with exactly `groups`, deleting any
-/// existing row whose `group_id` is absent from it. `write_groups` callers
-/// always pass the complete current group list (see `MlsService::write_groups`),
-/// so a group missing here means it was removed (e.g. a voluntary leave) and
-/// must not survive as a stale, non-evicted row that sync would still pick up.
-fn replace_mls_groups_conn(
-    conn: &rusqlite::Connection,
-    groups: &[crate::mls::MlsGroupMetadata],
-) -> Result<(), String> {
-    let keep_ids: std::collections::HashSet<&str> =
-        groups.iter().map(|g| g.group_id.as_str()).collect();
-    let existing_ids: Vec<String> = conn
-        .prepare("SELECT group_id FROM mls_groups")
-        .and_then(|mut stmt| {
-            stmt.query_map([], |row| row.get::<_, String>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()
-        })
-        .map_err(|e| format!("Failed to list existing MLS groups: {}", e))?;
-    for id in existing_ids {
-        if !keep_ids.contains(id.as_str()) {
-            conn.execute(
-                "DELETE FROM mls_groups WHERE group_id = ?1",
-                rusqlite::params![id],
-            )
-            .map_err(|e| format!("Failed to remove stale MLS group {}: {}", id, e))?;
-        }
-    }
-
-    for group in groups {
-        let pending_welcomes_json = serde_json::to_string(&group.pending_welcomes)
-            .map_err(|e| format!("Failed to serialize pending_welcomes for {}: {}", group.group_id, e))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted, pending_welcomes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![
-                group.group_id,
-                group.engine_group_id,
-                group.creator_pubkey,
-                group.name,
-                group.avatar_ref,
-                group.created_at as i64,
-                group.updated_at as i64,
-                group.evicted as i32,
-                pending_welcomes_json,
-            ],
-        ).map_err(|e| format!("Failed to save MLS group {}: {}", group.group_id, e))?;
-    }
-
-    Ok(())
-}
-
-/// Save MLS groups to SQL database (plaintext columns). `groups` must be the
-/// complete current list; any existing row absent from it is deleted.
-pub async fn save_mls_groups<R: Runtime>(
-    handle: AppHandle<R>,
-    groups: &[crate::mls::MlsGroupMetadata],
-) -> Result<(), String> {
-    let mut conn = crate::account_manager::get_db_connection(&handle)?;
-
-    let tx = conn
-        .transaction()
-        .map_err(|e| format!("Failed to start mls_groups transaction: {}", e))?;
-    replace_mls_groups_conn(&tx, groups)?;
-    tx.commit()
-        .map_err(|e| format!("Failed to commit mls_groups transaction: {}", e))?;
-
-    println!(
-        "[SQL] Saved {} MLS groups to mls_groups table",
-        groups.len()
-    );
-    crate::account_manager::return_db_connection(conn);
-    Ok(())
-}
-
 /// Save a single MLS group to SQL database (plaintext columns) - more efficient for adding new groups
 pub async fn save_mls_group<R: Runtime>(
     handle: AppHandle<R>,
@@ -4706,9 +4632,8 @@ pub async fn save_mls_group<R: Runtime>(
     Ok(())
 }
 
-/// Delete a single MLS group row by `group_id` — targeted, unlike `save_mls_groups`'s
-/// implicit full-table-replace-from-snapshot, so a concurrent writer of a *different* group's
-/// row can never be lost to a stale read.
+/// Delete a single MLS group row by `group_id` — targeted, so a concurrent writer of a
+/// *different* group's row can never be lost to a stale read.
 pub async fn delete_mls_group<R: Runtime>(
     handle: AppHandle<R>,
     group_id: &str,
@@ -4722,6 +4647,32 @@ pub async fn delete_mls_group<R: Runtime>(
     println!("[SQL] Deleted MLS group {} from mls_groups table", group_id);
     crate::account_manager::return_db_connection(conn);
     Ok(())
+}
+
+/// Column-scoped update of one group's pending-welcome list, matched on either id alias
+/// (`group_id` or `engine_group_id`). Narrower than `save_mls_group`: it cannot clobber a
+/// concurrent writer's changes to the row's other columns. Returns rows affected.
+pub async fn set_mls_group_pending_welcomes<R: Runtime>(
+    handle: AppHandle<R>,
+    group_id: &str,
+    pending_welcomes: &[String],
+    updated_at: u64,
+) -> Result<usize, String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let pending_welcomes_json = serde_json::to_string(pending_welcomes)
+        .map_err(|e| format!("Failed to serialize pending_welcomes for {}: {}", group_id, e))?;
+    let rows_affected = conn
+        .execute(
+            "UPDATE mls_groups SET pending_welcomes = ?1, updated_at = ?2 WHERE group_id = ?3 OR engine_group_id = ?3",
+            rusqlite::params![pending_welcomes_json, updated_at as i64, group_id],
+        )
+        .map_err(|e| format!("Failed to update pending_welcomes for MLS group {}: {}", group_id, e))?;
+    println!(
+        "[SQL] Updated pending_welcomes for MLS group {} ({} row(s) affected)",
+        group_id, rows_affected
+    );
+    crate::account_manager::return_db_connection(conn);
+    Ok(rows_affected)
 }
 
 /// True when a non-evicted MLS group row matches the parent id (`group_id` or `engine_group_id`).
@@ -4765,9 +4716,19 @@ pub async fn load_mls_groups<R: Runtime>(
 
     let rows = stmt
         .query_map([], |row| {
+            let group_id: String = row.get(0)?;
             let pending_welcomes_json: String = row.get(8)?;
+            // A hard failure here would make the whole group list unreadable, so log loudly
+            // and degrade to "no pending welcomes" instead of losing the row entirely.
+            let pending_welcomes = serde_json::from_str(&pending_welcomes_json).unwrap_or_else(|e| {
+                eprintln!(
+                    "[SQL] Failed to parse pending_welcomes for MLS group {}: {}",
+                    group_id, e
+                );
+                Vec::new()
+            });
             Ok(crate::mls::MlsGroupMetadata {
-                group_id: row.get(0)?,
+                group_id,
                 engine_group_id: row.get(1)?,
                 creator_pubkey: row.get(2)?,
                 name: row.get(3)?,
@@ -4775,7 +4736,7 @@ pub async fn load_mls_groups<R: Runtime>(
                 created_at: row.get::<_, i64>(5)? as u64,
                 updated_at: row.get::<_, i64>(6)? as u64,
                 evicted: row.get::<_, i32>(7)? != 0,
-                pending_welcomes: serde_json::from_str(&pending_welcomes_json).unwrap_or_default(),
+                pending_welcomes,
             })
         })
         .map_err(|e| format!("Failed to query mls_groups: {}", e))?;
@@ -4791,13 +4752,12 @@ pub async fn load_mls_groups<R: Runtime>(
 
 #[cfg(test)]
 mod mls_group_metadata_persistence_tests {
-    //! Proves the two persistence steps `MlsService::create_group` actually depends on
-    //! (issue: a failed welcome delivery must leave the group persisted, not discarded) round-
-    //! trip through real SQL. `MlsService::read_groups`/`write_groups` hard-code the process
-    //! global `TAURI_APP` (bound to the real `Wry` runtime, which no test can populate with
-    //! `tauri::test::mock_app()`'s `MockRuntime` handle) — but `save_mls_group`/`load_mls_groups`/
-    //! `delete_mls_group` are the same generic-over-`Runtime` calls `create_group` makes, so this
-    //! covers the exact persistence contract the fix depends on.
+    //! Proves the two persistence steps `MlsService::create_group` depends on round-trip
+    //! through real SQL: a failed welcome delivery must leave the group persisted, not
+    //! discarded. `MlsService::read_groups` hard-codes the process global `TAURI_APP` (bound to
+    //! the real `Wry` runtime, which `tauri::test::mock_app()`'s `MockRuntime` handle cannot
+    //! populate) — but `save_mls_group`/`load_mls_groups`/`delete_mls_group` are the same
+    //! generic-over-`Runtime` calls `create_group` makes.
     use super::*;
     use crate::mls::MlsGroupMetadata;
 
@@ -4894,8 +4854,7 @@ mod mls_group_metadata_persistence_tests {
         assert!(g4.pending_welcomes.is_empty());
     }
 
-    /// `delete_mls_group` is targeted: removing one group must never take a sibling's row with
-    /// it, unlike `save_mls_groups`'s full-table-replace-from-snapshot.
+    /// `delete_mls_group` is targeted: removing one group must never take a sibling's row with it.
     #[tokio::test]
     async fn deleting_one_group_leaves_the_other_groups_row_intact() {
         let app = setup("npub1u4mlsgroupsroundtripdelete");
@@ -5241,69 +5200,6 @@ mod legacy_mls_store_harvest_tests {
 
         let removed = clear_discarded_giftwraps_conn(&conn, &[]).unwrap();
         assert_eq!(removed, 0);
-    }
-
-    #[test]
-    fn replace_mls_groups_conn_deletes_group_missing_from_new_list() {
-        let conn = in_memory_app_conn();
-        insert_mls_group(&conn, "group-a", "engine-a");
-        insert_mls_group(&conn, "group-b", "engine-b");
-
-        // Simulates `leave_group`: the caller re-passes its full list minus the left group.
-        let remaining = vec![crate::mls::MlsGroupMetadata {
-            group_id: "group-b".to_string(),
-            engine_group_id: "engine-b".to_string(),
-            creator_pubkey: "creator".to_string(),
-            name: "group".to_string(),
-            avatar_ref: None,
-            created_at: 1000,
-            updated_at: 2000,
-            evicted: false,
-            pending_welcomes: vec![],
-        }];
-        replace_mls_groups_conn(&conn, &remaining).expect("replace");
-
-        let remaining_ids: Vec<String> = conn
-            .prepare("SELECT group_id FROM mls_groups ORDER BY group_id")
-            .unwrap()
-            .query_map([], |row| row.get::<_, String>(0))
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        assert_eq!(
-            remaining_ids,
-            vec!["group-b".to_string()],
-            "leaving a group must delete its mls_groups row, not just skip re-upserting it"
-        );
-    }
-
-    #[test]
-    fn replace_mls_groups_conn_upserts_kept_group_fields() {
-        let conn = in_memory_app_conn();
-        insert_mls_group(&conn, "group-a", "engine-a");
-
-        let updated = vec![crate::mls::MlsGroupMetadata {
-            group_id: "group-a".to_string(),
-            engine_group_id: "engine-a".to_string(),
-            creator_pubkey: "creator".to_string(),
-            name: "renamed".to_string(),
-            avatar_ref: Some("avatar-ref".to_string()),
-            created_at: 1000,
-            updated_at: 9999,
-            evicted: false,
-            pending_welcomes: vec![],
-        }];
-        replace_mls_groups_conn(&conn, &updated).expect("replace");
-
-        let (name, updated_at): (String, i64) = conn
-            .query_row(
-                "SELECT name, updated_at FROM mls_groups WHERE group_id = 'group-a'",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(name, "renamed");
-        assert_eq!(updated_at, 9999);
     }
 }
 

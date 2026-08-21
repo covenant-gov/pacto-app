@@ -307,6 +307,24 @@ describe('runSquadPairCreateFlow', () => {
     ]);
   });
 
+  it('excludes pending-invite npubs from the invite DM, unlike a clean member', async () => {
+    vi.mocked(createDefaultParentChannels).mockResolvedValue({
+      parentId: 'group-5',
+      channels: [{ name: 'announcements', groupId: 'group-5', order: 0 }],
+      skippedMembers: [],
+      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
+    });
+
+    runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-pending'], anchor, partner);
+
+    await vi.waitFor(() => {
+      expect(get(pendingReadyToast)?.goTo?.id).toBe('group-5');
+    });
+
+    expect(sendSquadInviteDm).toHaveBeenCalledWith('npub-a', expect.anything(), 'me');
+    expect(sendSquadInviteDm).not.toHaveBeenCalledWith('npub-pending', expect.anything(), expect.anything());
+  });
+
   it('keeps both notices when members are skipped and pending, dropping neither', async () => {
     vi.mocked(createDefaultParentChannels).mockResolvedValue({
       parentId: 'group-4',
@@ -444,6 +462,21 @@ describe('retryParentAnnouncementsCreate', () => {
     expect(warnPendingInvites).toHaveBeenCalledWith([
       { npub: 'npub-pending', reason: 'Welcome delivery failed' },
     ]);
+  });
+
+  it('excludes pending-invite npubs from the retry invite DM, unlike a clean member', async () => {
+    parentPendingCreateMembers.set({ 'parent-1': ['npub-a', 'npub-pending'] });
+    vi.mocked(createDefaultParentChannels).mockResolvedValue({
+      parentId: 'group-3',
+      channels: retriedChannels,
+      skippedMembers: [],
+      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
+    });
+
+    await retryParentAnnouncementsCreate(retryParent);
+
+    expect(sendSquadInviteDm).toHaveBeenCalledWith('npub-a', expect.anything(), 'me');
+    expect(sendSquadInviteDm).not.toHaveBeenCalledWith('npub-pending', expect.anything(), expect.anything());
   });
 
   it('returns early when there is no pending member list', async () => {
