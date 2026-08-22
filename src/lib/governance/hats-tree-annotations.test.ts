@@ -8,7 +8,9 @@ import {
   protocolWearerLabelByAddress,
   roleLabelByHatIdFromNaveDeployment,
   wearerAddressesByHatIdFromAssignments,
+  wearersForRoleLabel,
 } from './hats-tree-annotations';
+import { hatIdToHex } from './pretty-hat-id';
 
 const deployment = {
   captainHatId: '100',
@@ -133,6 +135,49 @@ describe('formatWearerDisplayLabel', () => {
     expect(
       formatWearerDisplayLabel('0x9999999999999999999999999999999999999999', npubByAddress, () => ''),
     ).toBe('0x9999…9999');
+  });
+});
+
+describe('wearersForRoleLabel', () => {
+  const charlie = '0xcccccccccccccccccccccccccccccccccccccccc';
+  const bravo = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const alpha = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+  it('returns empty when maps are empty', () => {
+    expect(wearersForRoleLabel({}, {}, 'Crew')).toEqual([]);
+  });
+
+  it('lists crew-hat wearers from matching maps', () => {
+    expect(
+      wearersForRoleLabel(
+        { '3659.1.1': 'Captain', '3659.2.1': 'Crew' },
+        { '3659.1.1': [alpha], '3659.2.1': [charlie, bravo] },
+        'Crew',
+      ),
+    ).toEqual([charlie, bravo]);
+  });
+
+  it('joins pretty label ids to decimal or hex wearer keys', () => {
+    const pretty = '15.2.5.10.1';
+    const hex = hatIdToHex(pretty);
+    expect(hex).toBeTruthy();
+    const decimal = BigInt(hex as string).toString(10);
+    expect(
+      wearersForRoleLabel({ [pretty]: 'Crew' }, { [decimal]: [charlie] }, 'Crew'),
+    ).toEqual([charlie]);
+    expect(
+      wearersForRoleLabel({ [pretty]: 'Crew' }, { [hex as string]: [bravo] }, 'Crew'),
+    ).toEqual([bravo]);
+  });
+
+  it('concatenates wearers from every hat labeled Crew', () => {
+    expect(
+      wearersForRoleLabel(
+        { a: 'Crew', b: 'Captain', c: 'Crew' },
+        { a: [charlie], b: [alpha], c: [bravo, charlie] },
+        'Crew',
+      ),
+    ).toEqual([charlie, bravo]);
   });
 });
 

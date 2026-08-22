@@ -32,6 +32,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import {
     protocolWearerCandidateAddresses,
     protocolWearerLabelByAddress,
+    wearersForRoleLabel,
   } from '../../lib/governance/hats-tree-annotations';
   import { hasSquadAdminInfra, resolveSquadAdminContext, resolveWarGameSquadAdminContext } from '../../lib/governance/squad-admin-payload';
   import { resolveSquadSponsorVariant } from '../../lib/governance/squad-sponsor-variant';
@@ -356,14 +357,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     }
   }
 
-  function wearersForRoleLabel(label: string): string[] {
-    const hatId = Object.entries(roleLabelByHatId).find(([, l]) => l === label)?.[0];
-    if (!hatId) return [];
-    return wearerAddressesByHatId[hatId] ?? [];
-  }
-
-  $: captainWearers = wearersForRoleLabel('Captain');
-  $: crewWearers = wearersForRoleLabel('Crew');
+  $: captainWearers = wearersForRoleLabel(roleLabelByHatId, wearerAddressesByHatId, 'Captain');
+  $: crewWearers = wearersForRoleLabel(roleLabelByHatId, wearerAddressesByHatId, 'Crew');
   $: myGovernanceAddress = (() => {
     const npub = $currentUser?.npub;
     if (!npub) return '';
@@ -602,6 +597,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   $: if (dashboardView === 'governance' && pactoGovRow?.canonicalRef && parentId) {
+    void squadMemberEvmByNpub;
     void loadRolesTreeAnnotations();
   }
 
@@ -630,6 +626,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     pactoGovRow?.canonicalRef &&
     parentId
   ) {
+    void squadMemberEvmByNpub;
     void loadRolesTreeAnnotations();
   }
 
