@@ -6,13 +6,32 @@ const MAX_LEVELS = 14;
 const TOPHAT_SHIFT = 256n - TOPHAT_BITS; // 224
 const TOPHAT_DOMAIN_MASK = (1n << TOPHAT_BITS) - 1n;
 
+function parseDottedHatId(s: string): bigint | null {
+  const parts = s.split('.');
+  if (parts.length < 2 || parts.length > 1 + MAX_LEVELS) return null;
+  if (!parts.every((p) => /^\d+$/.test(p))) return null;
+  try {
+    const tree = BigInt(parts[0]);
+    if (tree > TOPHAT_DOMAIN_MASK) return null;
+    let packed = tree << TOPHAT_SHIFT;
+    for (let i = 1; i < parts.length; i++) {
+      const chunk = BigInt(parts[i]);
+      if (chunk >= 1n << LEVEL_BITS) return null;
+      packed |= chunk << (TOPHAT_SHIFT - LEVEL_BITS * BigInt(i));
+    }
+    return packed;
+  } catch {
+    return null;
+  }
+}
+
 function parseHatIdBigInt(raw: string): bigint | null {
   const s = raw.trim();
   if (!s) return null;
   try {
     if (/^0x[0-9a-fA-F]+$/.test(s)) return BigInt(s);
     if (/^[0-9]+$/.test(s)) return BigInt(s);
-    return null;
+    return parseDottedHatId(s);
   } catch {
     return null;
   }

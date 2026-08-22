@@ -1,12 +1,12 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { onMount } from 'svelte';
   import SquadSponsorTreasuryPanel from '../governance/SquadSponsorTreasuryPanel.svelte';
   import TreasurySafeModulePanel from '../governance/TreasurySafeModulePanel.svelte';
   import type { TreasurySafeEntry } from '../../../lib/treasury/treasury-safes';
   import { TREASURY_SAFE_UI_CAP } from '../../../lib/treasury/treasury-safes';
   import type { SquadInfraDto } from '../../../lib/governance/api';
   import { getSquadCapabilities } from '../../../lib/governance/api';
+  import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import {
     resolveGovernancePrivilege,
@@ -19,6 +19,7 @@
   import { refreshAllSafeStates } from '../../../lib/dashboard/batch-safe-state-refresh';
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
+  import { governanceProcessNonceByParentId } from '../../../stores/navigation';
 
   interface Props {
     parentId?: string;
@@ -35,6 +36,8 @@
     onOpenSponsorDeploy?: () => void;
     onOpenDeploySafe?: () => void;
     onOpenImportSafe?: () => void;
+    warGameStack?: boolean;
+    archiveView?: boolean;
   }
 
   let {
@@ -52,10 +55,13 @@
     onOpenSponsorDeploy = () => {},
     onOpenDeploySafe = () => {},
     onOpenImportSafe = () => {},
+    warGameStack = false,
+    archiveView = false,
   }: Props = $props();
 
   let capabilitiesLoadKey = $state('');
   let capabilities = $state<Awaited<ReturnType<typeof getSquadCapabilities>> | null>(null);
+  let processNonce = $derived($governanceProcessNonceByParentId[parentId.trim()] ?? 0);
 
   const privilege = $derived(
     resolveGovernancePrivilege({
@@ -69,17 +75,20 @@
 
   $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}`;
-    if (pid && key !== capabilitiesLoadKey) {
-      capabilitiesLoadKey = key;
-      void loadCapabilities(pid);
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}|${archiveView ? 'archive' : 'live'}`;
+    if (!pid || key === capabilitiesLoadKey) return;
+    capabilitiesLoadKey = key;
+    if (archiveView) {
+      capabilities = warGameArchiveCapabilities(pid);
+      return;
     }
+    capabilities = null;
+    void loadCapabilities(pid, key);
   });
 
-  async function loadCapabilities(pid: string) {
-    const key = `${pid}|${network}`;
+  async function loadCapabilities(pid: string, key: string) {
     try {
-      const snap = await getSquadCapabilities(pid, network);
+      const snap = await getSquadCapabilities(pid, network, { wargame: warGameStack });
       if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
     } catch {
@@ -87,14 +96,6 @@
       capabilities = null;
     }
   }
-
-  onMount(() => {
-    const pid = parentId.trim();
-    if (pid) {
-      capabilitiesLoadKey = `${pid}|${network}`;
-      void loadCapabilities(pid);
-    }
-  });
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -124,7 +125,11 @@
   const govSafeAppUrl = $derived(showGovTreasury ? safeAppHomeUrl(parseSupportedChainId(network), govSafeAddress) : null);
 </script>
 
-<SquadSponsorTreasuryPanel {parentId} {sponsorRow} onOpenDeploy={onOpenSponsorDeploy} />
+<SquadSponsorTreasuryPanel
+  {parentId}
+  {sponsorRow}
+  onOpenDeploy={warGameStack ? undefined : onOpenSponsorDeploy}
+/>
 
 {#if showGovTreasury}
   <section class="dashboard-section gov-treasury-section" aria-labelledby="gov-treasury-heading">

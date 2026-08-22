@@ -27,6 +27,7 @@
     /** EVM address → display label for executor picker. */
     memberEvmOptions?: { address: string; label: string }[];
     privilege?: GovernancePrivilege | null;
+    warGameStack?: boolean;
   }
 
   let {
@@ -37,6 +38,7 @@
     network = 'sepolia',
     memberEvmOptions = [],
     privilege = null,
+    warGameStack = false,
   }: Props = $props();
 
   const titleId = 'squad-roles-modal-title';
@@ -67,7 +69,7 @@
   $effect(() => {
     if (open && parentId.trim()) {
       const pid = parentId.trim();
-      const key = `${pid}|${network}`;
+      const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
       if (key !== privilegeLoadKey) {
         privilegeLoadKey = key;
         void loadPrivilege(pid);
@@ -76,9 +78,9 @@
   });
 
   async function loadPrivilege(pid: string) {
-    const key = `${pid}|${network}`;
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}`;
     try {
-      const snap = await getSquadCapabilities(pid, network);
+      const snap = await getSquadCapabilities(pid, network, { wargame: warGameStack });
       if (!open || key !== privilegeLoadKey) return;
       loadedPrivilege = resolveGovernancePrivilege({
         myAddress: snap.rosterAddress,

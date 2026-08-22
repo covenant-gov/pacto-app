@@ -15,10 +15,96 @@ use crate::evm::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     isExecutorFullPermissionCall, isExecutorPausedCall,
 };
 use crate::evm::gov_read::{connect_gov_read_provider, parse_top_hat_id};
-use crate::evm::nave_pirata_read::read_nave_pirata_deployment;
+use crate::evm::nave_pirata_read::{
+    deployment_mentions_module, read_nave_pirata_deployment, read_war_game_active_deployment,
+};
 use crate::evm::pacto_chain_config;
 use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::rpc::{parse_address, wallet_err_json};
+use crate::evm::sponsor_userop::parse_war_game_userop_context;
+use crate::evm::squad_sponsor_common::squad_id_from_parent_id;
+
+/// Live Nave Pirata vs throwaway WarGameRegistry stack. Never dual-read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GovStack {
+    #[default]
+    Live,
+    WarGame,
+}
+
+impl GovStack {
+    pub fn from_wargame(wargame: Option<bool>) -> Self {
+        if wargame.unwrap_or(false) {
+            Self::WarGame
+        } else {
+            Self::Live
+        }
+    }
+
+    pub fn infra_type(self) -> &'static str {
+        match self {
+            Self::Live => "pacto_gov",
+            Self::WarGame => "pacto_gov_wargame",
+        }
+    }
+
+    /// Combine local hint with `WarGameRegistry.active` membership.
+    pub fn stack_after_corroboration(local_targets: bool, on_chain_match: bool) -> Self {
+        if local_targets && on_chain_match {
+            Self::WarGame
+        } else {
+            Self::Live
+        }
+    }
+
+    /// MLS payload may hint war-game routing; WarGameRegistry is authoritative.
+    pub async fn for_wargame_target_corroborated<R: Runtime>(
+        app: &AppHandle<R>,
+        parent_id: &str,
+        to: Address,
+        rpc_urls: Option<Vec<String>>,
+    ) -> Result<Self, String> {
+        let payload = db::pacto_gov_wargame_payload_for_parent(app, parent_id)
+            .ok()
+            .flatten();
+        let Some(ctx) = payload.as_deref().and_then(parse_war_game_userop_context) else {
+            return Ok(Self::Live);
+        };
+        if !ctx.targets(to) {
+            return Ok(Self::Live);
+        }
+
+        let (network, _top_hat) = load_gov_infra_row(app, parent_id, Self::WarGame)?;
+        let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&network)
+            .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
+        let registry = addrs.war_game_registry.ok_or_else(|| {
+            wallet_err_json(
+                "REGISTRY_CONFIG",
+                "PACTO_WAR_GAME_REGISTRY is not configured for this network",
+                None,
+            )
+        })?;
+        let (provider, rpc_ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+        let on_chain = read_war_game_active_deployment(
+            &provider,
+            registry,
+            squad_id_from_parent_id(parent_id),
+            rpc_ctx.key.as_str(),
+            rpc_ctx.chain_id,
+        )
+        .await?;
+        let on_chain_match = on_chain
+            .as_ref()
+            .is_some_and(|d| deployment_mentions_module(d, to));
+        if !on_chain_match {
+            log::warn!(
+                target: "pacto_wallet",
+                "war-game payload claimed module {to:#x} but WarGameRegistry.active did not confirm"
+            );
+        }
+        Ok(Self::stack_after_corroboration(true, on_chain_match))
+    }
+}
 
 struct SquadAclChain {
     network: String,
@@ -29,27 +115,37 @@ struct SquadAclChain {
     squad_admin: Option<Address>,
 }
 
-fn load_pacto_gov_row<R: Runtime>(
+fn load_gov_infra_row<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
+    stack: GovStack,
 ) -> Result<(String, String), String> {
+    let want = stack.infra_type();
     let rows = db::list_squad_infra(app.clone(), parent_id.to_string())?;
     let row = rows
         .into_iter()
-        .find(|r| r.infra_type == "pacto_gov")
-        .ok_or_else(|| {
-            wallet_err_json(
+        .find(|r| r.infra_type == want)
+        .ok_or_else(|| match stack {
+            GovStack::Live => wallet_err_json(
                 "ACL_NO_GOV",
                 "Pacto Gov is not deployed for this parent",
                 None,
-            )
+            ),
+            GovStack::WarGame => wallet_err_json(
+                "ACL_NO_GOV",
+                "War-game stack is not deployed for this parent",
+                None,
+            ),
         })?;
     let chain = row.chain.trim().to_ascii_lowercase();
     let top_hat = row.canonical_ref.trim().to_string();
     if chain.is_empty() || top_hat.is_empty() {
         return Err(wallet_err_json(
             "ACL_GOV_INFRA",
-            "Pacto Gov infra row missing chain or top hat",
+            match stack {
+                GovStack::Live => "Pacto Gov infra row missing chain or top hat",
+                GovStack::WarGame => "War-game infra row missing chain or top hat",
+            },
             None,
         ));
     }
@@ -60,8 +156,9 @@ async fn load_chain_context<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
     rpc_urls: Option<Vec<String>>,
+    stack: GovStack,
 ) -> Result<SquadAclChain, String> {
-    let (network, top_hat_raw) = load_pacto_gov_row(app, parent_id)?;
+    let (network, top_hat_raw) = load_gov_infra_row(app, parent_id, stack)?;
     let top_hat = parse_top_hat_id(top_hat_raw.as_str())
         .map_err(|e| wallet_err_json("INVALID_TOP_HAT", e, None))?;
 
@@ -74,13 +171,22 @@ async fn load_chain_context<R: Runtime>(
             None,
         )
     })?;
-    let registry = addrs.nave_pirata_registry.ok_or_else(|| {
-        wallet_err_json(
-            "REGISTRY_CONFIG",
-            "PACTO_NAVE_PIRATA_REGISTRY is not configured for this network",
-            None,
-        )
-    })?;
+    let registry = match stack {
+        GovStack::Live => addrs.nave_pirata_registry.ok_or_else(|| {
+            wallet_err_json(
+                "REGISTRY_CONFIG",
+                "PACTO_NAVE_PIRATA_REGISTRY is not configured for this network",
+                None,
+            )
+        })?,
+        GovStack::WarGame => addrs.war_game_registry.ok_or_else(|| {
+            wallet_err_json(
+                "REGISTRY_CONFIG",
+                "PACTO_WAR_GAME_REGISTRY is not configured for this network",
+                None,
+            )
+        })?,
+    };
 
     let (provider, ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     let deployment =
@@ -180,6 +286,7 @@ pub async fn evaluate_squad_capabilities<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
     rpc_urls: Option<Vec<String>>,
+    stack: GovStack,
 ) -> Result<SquadCapabilitiesDto, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
@@ -197,7 +304,7 @@ pub async fn evaluate_squad_capabilities<R: Runtime>(
         }
     };
 
-    let chain = load_chain_context(app, pid, rpc_urls.clone()).await?;
+    let chain = load_chain_context(app, pid, rpc_urls.clone(), stack).await?;
     let (provider, _ctx) = connect_gov_read_provider(chain.network.as_str(), rpc_urls).await?;
 
     let wears_captain = is_wearer(&provider, chain.hats, roster, chain.captain_hat_id).await?;
@@ -243,8 +350,9 @@ pub async fn require_capability<R: Runtime>(
     parent_id: &str,
     capability: GovCapability,
     rpc_urls: Option<Vec<String>>,
+    stack: GovStack,
 ) -> Result<(), String> {
-    let snap = evaluate_squad_capabilities(app, parent_id.trim(), rpc_urls).await?;
+    let snap = evaluate_squad_capabilities(app, parent_id.trim(), rpc_urls, stack).await?;
     let key = capability.as_str();
     let flag = snap.capabilities.get(key);
     if flag.map(|f| f.allowed).unwrap_or(false) {
@@ -255,4 +363,42 @@ pub async fn require_capability<R: Runtime>(
         .filter(|s| !s.is_empty())
         .unwrap_or("Access denied");
     Err(wallet_err_json("ACL_DENIED", reason, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gov_stack_infra_type_does_not_dual_read() {
+        assert_eq!(GovStack::Live.infra_type(), "pacto_gov");
+        assert_eq!(GovStack::WarGame.infra_type(), "pacto_gov_wargame");
+    }
+
+    #[test]
+    fn gov_stack_from_wargame_flag() {
+        assert_eq!(GovStack::from_wargame(None), GovStack::Live);
+        assert_eq!(GovStack::from_wargame(Some(false)), GovStack::Live);
+        assert_eq!(GovStack::from_wargame(Some(true)), GovStack::WarGame);
+    }
+
+    #[test]
+    fn stack_after_corroboration_poisoned_payload_stays_live() {
+        assert_eq!(
+            GovStack::stack_after_corroboration(true, false),
+            GovStack::Live
+        );
+        assert_eq!(
+            GovStack::stack_after_corroboration(false, true),
+            GovStack::Live
+        );
+        assert_eq!(
+            GovStack::stack_after_corroboration(false, false),
+            GovStack::Live
+        );
+        assert_eq!(
+            GovStack::stack_after_corroboration(true, true),
+            GovStack::WarGame
+        );
+    }
 }

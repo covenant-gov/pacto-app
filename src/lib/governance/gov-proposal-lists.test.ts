@@ -5,6 +5,7 @@ import {
   executableTreasuryProposals,
   isMutinyActive,
   isMutinyExecutable,
+  isMutinyExpirable,
 } from './gov-proposal-lists';
 import type { MutinyStatusDto, TreasuryProposalDto } from './api';
 
@@ -55,6 +56,7 @@ describe('gov-proposal-lists', () => {
       activeMutinyId: '0',
       proposedNewCaptain: '',
       startedAt: 0,
+      deadline: 0,
       snapshot: 0,
       yeas: 0,
       executed: false,
@@ -69,5 +71,23 @@ describe('gov-proposal-lists', () => {
     expect(isMutinyActive(inactive)).toBe(false);
     expect(isMutinyActive(active)).toBe(true);
     expect(isMutinyExecutable(active)).toBe(true);
+  });
+
+  it('treats 51% snapshot as executable and past deadline as expire-only', () => {
+    const majority: MutinyStatusDto = {
+      activeMutinyId: '1',
+      proposedNewCaptain: '0x2',
+      startedAt: 1,
+      deadline: 500,
+      snapshot: 3,
+      yeas: 2,
+      executed: false,
+      captain: '0x1',
+    };
+    expect(isMutinyExecutable(majority, 100)).toBe(true);
+    expect(isMutinyExecutable({ ...majority, yeas: 1 }, 100)).toBe(false);
+    expect(isMutinyExecutable(majority, 500)).toBe(false);
+    expect(isMutinyExpirable(majority, 500)).toBe(true);
+    expect(isMutinyExpirable(majority, 499)).toBe(false);
   });
 });

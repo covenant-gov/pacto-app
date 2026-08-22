@@ -36,6 +36,11 @@ vi.mock('./unread', () => ({
   hydrateUnreadCounts: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../lib/squad/squad-catalog-recover', () => ({
+  enrichRecoveredSquadNamesFromInvites: vi.fn(async () => {}),
+  recoverMissingSquadCatalog: vi.fn(async () => 0),
+}));
+
 describe('profiles', () => {
   const npub = 'npub1alice';
   const baseProfile: NostrProfile = {

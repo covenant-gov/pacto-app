@@ -5,6 +5,7 @@ import { hydrateSquadMemberEvmCacheFromDisk } from '../lib/dashboard/squad-membe
 import { hydrateGovernanceSnapshotCacheFromDisk } from '../lib/dashboard/governance-snapshot-cache';
 import { hydrateSettingsChainCacheFromDisk } from '../lib/dashboard/settings-chain-cache';
 import { hydrateSafeStateCacheFromDisk } from '../lib/dashboard/safe-state-disk-cache';
+import { hydrateMutinyProcessTxFromDisk } from '../lib/governance/mutiny-process-tx';
 import { safeStateByTreasuryId } from './safe';
 import { loadDeferredSquadRosterKeyParentIds } from '../lib/squad/squad-roster-key-choice';
 import { getInviteDecisionLoadEntries } from './invite-decisions';
@@ -170,6 +171,7 @@ export function loadAccountState(npub: string): void {
   hydrateSquadMemberEvmCacheFromDisk(npub);
   hydrateGovernanceSnapshotCacheFromDisk(npub);
   hydrateSettingsChainCacheFromDisk(npub);
+  hydrateMutinyProcessTxFromDisk();
   hydrateSafeStateCacheFromDisk(npub, (rows) => {
     safeStateByTreasuryId.update((cur) => ({ ...cur, ...rows }));
   });

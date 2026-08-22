@@ -33,6 +33,15 @@ describe('summarizeStructuredMessageContent', () => {
     ).toBe('messaging.structuredNotice.contractAllowlistUpdated');
   });
 
+  it('summarizes war_game_updated', () => {
+    expect(
+      summarizeStructuredMessageContent(
+        JSON.stringify({ type: 'war_game_updated', payload: {} }),
+        tFn
+      )
+    ).toBe('messaging.structuredNotice.warGameUpdated');
+  });
+
   it('summarizes squad rpc update', () => {
     expect(
       summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_rpc_updated', payload: {} }), tFn)

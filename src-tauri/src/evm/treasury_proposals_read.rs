@@ -5,8 +5,9 @@ use alloy::providers::Provider;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
+use super::contracts::pacto_gov::read_bindings::CrewVoteMode;
 use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
-    hasVotedCall, nextProposalIdCall, proposalCall, Operation,
+    crewVoteModeCall, hasVotedCall, nextProposalIdCall, proposalCall, quorumBpsCall, Operation,
 };
 use super::gov_read::connect_gov_read_provider;
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
@@ -137,6 +138,43 @@ pub async fn list_treasury_proposals_on_chain<P: Provider>(
     Ok(out)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreasuryVoteConfigDto {
+    pub crew_vote_mode: String,
+    pub quorum_bps: u64,
+}
+
+pub(crate) fn crew_vote_mode_wire(mode: CrewVoteMode) -> &'static str {
+    match mode {
+        CrewVoteMode::QUORUM_OF_CAST => "quorum",
+        CrewVoteMode::MAJORITY_SNAPSHOT | CrewVoteMode::__Invalid => "majority",
+    }
+}
+
+#[tauri::command]
+pub async fn get_treasury_vote_config<R: Runtime>(
+    _app: AppHandle<R>,
+    network: String,
+    treasury_authority: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<TreasuryVoteConfigDto, String> {
+    let ta = parse_address(treasury_authority.trim())
+        .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+    let mode = eth_call_decode(&provider, ta, &crewVoteModeCall {})
+        .await
+        .map_err(|e| wallet_err_json("TA_READ", e, None))?;
+    let bps = eth_call_decode(&provider, ta, &quorumBpsCall {})
+        .await
+        .map_err(|e| wallet_err_json("TA_READ", e, None))?;
+    let quorum_bps = u64::try_from(bps).unwrap_or(u64::MAX);
+    Ok(TreasuryVoteConfigDto {
+        crew_vote_mode: crew_vote_mode_wire(mode).to_string(),
+        quorum_bps,
+    })
+}
+
 #[tauri::command]
 pub async fn list_treasury_proposals<R: Runtime>(
     _app: AppHandle<R>,
@@ -155,7 +193,8 @@ pub async fn list_treasury_proposals<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::proposal_scan_last_id;
+    use super::CrewVoteMode;
+    use super::{crew_vote_mode_wire, proposal_scan_last_id};
     use alloy::primitives::U256;
 
     #[test]
@@ -172,6 +211,15 @@ mod tests {
     #[test]
     fn runaway_next_clamps_to_hard_max() {
         assert_eq!(proposal_scan_last_id(U256::from(10_000u64), 256), 256);
+    }
+
+    #[test]
+    fn crew_vote_mode_wire_maps_quorum_and_majority() {
+        assert_eq!(crew_vote_mode_wire(CrewVoteMode::QUORUM_OF_CAST), "quorum");
+        assert_eq!(
+            crew_vote_mode_wire(CrewVoteMode::MAJORITY_SNAPSHOT),
+            "majority"
+        );
     }
 }
 

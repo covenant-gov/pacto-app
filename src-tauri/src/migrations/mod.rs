@@ -225,6 +225,98 @@ fn baseline_existing_account(conn: &mut rusqlite::Connection) -> Result<(), Stri
     Ok(())
 }
 
+/// Minimal V1–V27 tables for baseline tests. Real accounts had `mls_groups` from V1
+/// and `squad_infra` from V14.
+#[cfg(test)]
+pub(crate) fn seed_pre_v28_schema(conn: &rusqlite::Connection) {
+    conn.execute_batch(
+        "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            npub TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            display_name TEXT NOT NULL DEFAULT '',
+            nickname TEXT NOT NULL DEFAULT '',
+            lud06 TEXT NOT NULL DEFAULT '',
+            lud16 TEXT NOT NULL DEFAULT '',
+            banner TEXT NOT NULL DEFAULT '',
+            avatar TEXT NOT NULL DEFAULT '',
+            about TEXT NOT NULL DEFAULT '',
+            website TEXT NOT NULL DEFAULT '',
+            nip05 TEXT NOT NULL DEFAULT '',
+            status_content TEXT NOT NULL DEFAULT '',
+            status_url TEXT NOT NULL DEFAULT '',
+            muted INTEGER NOT NULL DEFAULT 0,
+            bot INTEGER NOT NULL DEFAULT 0,
+            avatar_cached TEXT NOT NULL DEFAULT '',
+            banner_cached TEXT NOT NULL DEFAULT '',
+            evm_address TEXT NOT NULL DEFAULT '',
+            blocked INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE chats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_identifier TEXT UNIQUE NOT NULL,
+            chat_type INTEGER NOT NULL,
+            participants TEXT NOT NULL,
+            last_read TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            metadata TEXT NOT NULL DEFAULT '{}',
+            muted INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE mls_keypackages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_pubkey TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            keypackage_ref TEXT NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX idx_keypackages_owner ON mls_keypackages(owner_pubkey);
+        CREATE TABLE events (
+            id TEXT PRIMARY KEY,
+            kind INTEGER NOT NULL,
+            chat_id INTEGER NOT NULL,
+            user_id INTEGER,
+            content TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT '[]',
+            reference_id TEXT,
+            created_at INTEGER NOT NULL,
+            received_at INTEGER NOT NULL,
+            mine INTEGER NOT NULL DEFAULT 0,
+            pending INTEGER NOT NULL DEFAULT 0,
+            failed INTEGER NOT NULL DEFAULT 0,
+            wrapper_event_id TEXT,
+            npub TEXT,
+            virtual_bucket TEXT
+        );
+        CREATE TABLE mls_groups (
+            group_id TEXT PRIMARY KEY,
+            engine_group_id TEXT NOT NULL DEFAULT '',
+            creator_pubkey TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            avatar_ref TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            evicted INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE squad_infra (
+            id TEXT PRIMARY KEY NOT NULL,
+            parent_id TEXT NOT NULL,
+            infra_type TEXT NOT NULL,
+            chain TEXT NOT NULL,
+            canonical_ref TEXT NOT NULL,
+            pacto_gov_revision TEXT,
+            provider_payload TEXT,
+            created_at_ms INTEGER NOT NULL,
+            updated_at_ms INTEGER NOT NULL
+        );
+        CREATE INDEX idx_squad_infra_parent ON squad_infra(parent_id, created_at_ms);
+        CREATE UNIQUE INDEX idx_squad_infra_pacto_gov_singleton
+            ON squad_infra(parent_id, infra_type) WHERE infra_type = 'pacto_gov';",
+    )
+    .expect("seed pre-V28 schema");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,85 +351,6 @@ mod tests {
             rusqlite::params![migration.version(), migration.name(), &applied_on, checksum],
         )
         .expect("stamp migration");
-    }
-
-    /// Seed the `chats`, `profiles`, `events`, and `mls_groups` tables as they
-    /// existed immediately before V28 (the first migration above
-    /// `PRE_REFINERY_CEILING`), so a baselined connection has real tables for
-    /// post-ceiling migrations to run against — matching a real existing account.
-    fn seed_pre_v28_schema(conn: &rusqlite::Connection) {
-        conn.execute_batch(
-            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            CREATE TABLE profiles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                npub TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL DEFAULT '',
-                display_name TEXT NOT NULL DEFAULT '',
-                nickname TEXT NOT NULL DEFAULT '',
-                lud06 TEXT NOT NULL DEFAULT '',
-                lud16 TEXT NOT NULL DEFAULT '',
-                banner TEXT NOT NULL DEFAULT '',
-                avatar TEXT NOT NULL DEFAULT '',
-                about TEXT NOT NULL DEFAULT '',
-                website TEXT NOT NULL DEFAULT '',
-                nip05 TEXT NOT NULL DEFAULT '',
-                status_content TEXT NOT NULL DEFAULT '',
-                status_url TEXT NOT NULL DEFAULT '',
-                muted INTEGER NOT NULL DEFAULT 0,
-                bot INTEGER NOT NULL DEFAULT 0,
-                avatar_cached TEXT NOT NULL DEFAULT '',
-                banner_cached TEXT NOT NULL DEFAULT '',
-                evm_address TEXT NOT NULL DEFAULT '',
-                blocked INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE chats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_identifier TEXT UNIQUE NOT NULL,
-                chat_type INTEGER NOT NULL,
-                participants TEXT NOT NULL,
-                last_read TEXT NOT NULL DEFAULT '',
-                created_at INTEGER NOT NULL,
-                metadata TEXT NOT NULL DEFAULT '{}',
-                muted INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE mls_keypackages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_pubkey TEXT NOT NULL,
-                device_id TEXT NOT NULL,
-                keypackage_ref TEXT NOT NULL,
-                fetched_at INTEGER NOT NULL,
-                expires_at INTEGER NOT NULL
-            );
-            CREATE INDEX idx_keypackages_owner ON mls_keypackages(owner_pubkey);
-            CREATE TABLE events (
-                id TEXT PRIMARY KEY,
-                kind INTEGER NOT NULL,
-                chat_id INTEGER NOT NULL,
-                user_id INTEGER,
-                content TEXT NOT NULL,
-                tags TEXT NOT NULL DEFAULT '[]',
-                reference_id TEXT,
-                created_at INTEGER NOT NULL,
-                received_at INTEGER NOT NULL,
-                mine INTEGER NOT NULL DEFAULT 0,
-                pending INTEGER NOT NULL DEFAULT 0,
-                failed INTEGER NOT NULL DEFAULT 0,
-                wrapper_event_id TEXT,
-                npub TEXT,
-                virtual_bucket TEXT
-            );
-            CREATE TABLE mls_groups (
-                group_id TEXT PRIMARY KEY,
-                engine_group_id TEXT NOT NULL DEFAULT '',
-                creator_pubkey TEXT NOT NULL,
-                name TEXT NOT NULL DEFAULT '',
-                avatar_ref TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                evicted INTEGER NOT NULL DEFAULT 0
-            );",
-        )
-        .expect("seed pre-V28 schema");
     }
 
     #[test]
@@ -696,7 +709,9 @@ mod tests {
             let legacy_checksum = crate::storage_format::legacy_i32_checksum(
                 migration.name(),
                 migration.version(),
-                migration.sql().expect("sample only has migrations with sql"),
+                migration
+                    .sql()
+                    .expect("sample only has migrations with sql"),
             )
             .to_string();
             conn.execute(

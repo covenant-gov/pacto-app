@@ -327,6 +327,7 @@
 	"messaging.structuredNotice.dashboardPollCreated": "Encuesta del panel creada",
 	"messaging.structuredNotice.dashboardPollUpdate": "Actualización de encuesta del panel",
 	"messaging.structuredNotice.governanceUpdated": "Gobernanza actualizada",
+	"messaging.structuredNotice.warGameUpdated": "War-game actualizado",
 	"messaging.structuredNotice.governanceProcessUpdated": "Proceso de gobernanza actualizado",
 	"messaging.structuredNotice.joinRequestAccepted": "La solicitud de unión a {squadName} fue aceptada",
 	"messaging.structuredNotice.joinRequestFor": "Solicitud de unión a {squadName}",

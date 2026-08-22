@@ -12,6 +12,8 @@ import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import { getAddress, isAddress } from 'viem';
 import { showToast } from '../../stores/toast';
 import type { PactoGovDeployComplete } from './start-pacto-gov-deploy';
+import type { SquadParamsInput } from './squad-params';
+import { validateSquadParams } from './squad-params';
 
 export type CombinedGovSponsorDeployComplete = {
   gov: PactoGovDeployComplete | null;
@@ -153,6 +155,7 @@ export function startPactoGovAndSponsorDeploy(params: {
   /** Payer-only Default (and similar) must not receive crew hats. */
   bootstrapExcludeAddresses?: string[];
   signerWallet?: SquadSponsorDeploySignerWallet;
+  squadParams?: SquadParamsInput | null;
   onProgress?: (step: 'gov' | 'sponsor' | 'bootstrap') => void;
   onComplete: (out: CombinedGovSponsorDeployComplete) => void | Promise<void>;
   onReject?: (message: string) => void;
@@ -194,6 +197,15 @@ export function startPactoGovAndSponsorDeploy(params: {
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
+  }
+
+  if (params.squadParams) {
+    const paramsErr = validateSquadParams(params.squadParams);
+    if (paramsErr) {
+      if (params.onReject) params.onReject(paramsErr);
+      else showToast(paramsErr);
+      return false;
+    }
   }
 
   const signerWallet = params.signerWallet ?? 'squad';
@@ -248,6 +260,7 @@ export function startPactoGovAndSponsorDeploy(params: {
         metadataUri: `pacto://squad/${parentId}`,
         signerWallet,
         altParentId,
+        squadParams: params.squadParams ?? null,
       });
 
       params.onProgress?.('sponsor');

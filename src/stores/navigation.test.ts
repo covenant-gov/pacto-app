@@ -29,6 +29,7 @@ import {
   squadAllowlistNonceByParentId,
   squadTrackedTokensNonceByParentId,
   governanceProcessNonceByParentId,
+  bumpGovernanceProcessNonce,
   squadBotMetaNonceBySquadId,
 } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
@@ -193,5 +194,13 @@ describe('navigation', () => {
     expect(get(squadSettingsNetworkFocusNonce)).toBe(1);
     focusSquadSettingsNetworkEditor();
     expect(get(squadSettingsNetworkFocusNonce)).toBe(2);
+  });
+
+  it('bumpGovernanceProcessNonce increments per parent and ignores blank ids', () => {
+    bumpGovernanceProcessNonce('  p1  ');
+    bumpGovernanceProcessNonce('p1');
+    bumpGovernanceProcessNonce('');
+    bumpGovernanceProcessNonce('   ');
+    expect(get(governanceProcessNonceByParentId)).toEqual({ p1: 2 });
   });
 });

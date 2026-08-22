@@ -1,5 +1,7 @@
 //! Shared squad sponsor helpers (squad id derivation, factory registry reads).
 
+use std::str::FromStr;
+
 use alloy::primitives::{keccak256, Address, B256, U256};
 use tauri::{AppHandle, Runtime};
 
@@ -115,9 +117,78 @@ pub fn parse_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
     }
 }
 
+/// Factory registry row for a parent (live slot or, when allowed, wargame round).
+pub struct ResolvedSponsor {
+    pub address: Address,
+    pub variant: SquadVariant,
+    pub top_hat_id: U256,
+    pub squad_id: B256,
+}
+
 /// Map a factory registry read failure to a retryable sponsor-lookup error.
 fn sponsor_lookup_err(e: String) -> String {
     wallet_err_json("SPONSOR_LOOKUP", e, None)
+}
+
+/// Active war-game `gameSquadId` from a provider payload (no module-address requirement).
+pub fn game_squad_id_from_wargame_payload(payload: &str) -> Option<B256> {
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let status = v
+        .get("status")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim();
+    if !status.eq_ignore_ascii_case("active") {
+        return None;
+    }
+    let id_raw = v.get("gameSquadId").and_then(|x| x.as_str())?;
+    B256::from_str(id_raw.trim()).ok()
+}
+
+/// Stored active war-game round id for this parent, if any.
+pub fn active_game_squad_id_for_parent<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+) -> Option<B256> {
+    crate::db::pacto_gov_wargame_payload_for_parent(app, parent_id)
+        .ok()
+        .flatten()
+        .as_deref()
+        .and_then(game_squad_id_from_wargame_payload)
+}
+
+/// Factory `squads` key: parent keccak unless an explicit clone misses the parent slot
+/// and an active war-game `gameSquadId` is available.
+pub fn pick_registry_squad_id(
+    parent_squad_id: B256,
+    game_squad_id: Option<B256>,
+    parent_sponsor: Option<Address>,
+    explicit: Option<Address>,
+) -> B256 {
+    let Some(explicit) = explicit else {
+        return parent_squad_id;
+    };
+    if parent_sponsor == Some(explicit) {
+        return parent_squad_id;
+    }
+    game_squad_id.unwrap_or(parent_squad_id)
+}
+
+fn require_explicit_matches(
+    registry: Address,
+    explicit: Option<Address>,
+) -> Result<Address, String> {
+    if let Some(addr) = explicit {
+        if registry != addr {
+            return Err(wallet_err_json(
+                "SPONSOR_REGISTRY",
+                "sponsor address does not match factory registry for parent id",
+                None,
+            ));
+        }
+        return Ok(addr);
+    }
+    Ok(registry)
 }
 
 pub fn squad_variant_label(v: SquadVariant) -> &'static str {
@@ -134,42 +205,80 @@ pub async fn read_squad_record<P: Provider>(
     factory: Address,
     squad_id: B256,
 ) -> Result<(Address, SquadVariant, U256), String> {
-    let call = squadsCall { squadId: squad_id };
-    let decoded = eth_call_decode(provider, factory, &call).await?;
-    let sponsor = decoded.sponsor;
-    if sponsor.is_zero() {
-        return Err("no sponsor clone registered for this squad id".to_string());
+    match read_squad_record_opt(provider, factory, squad_id).await? {
+        Some(record) => Ok(record),
+        None => Err("no sponsor clone registered for this squad id".to_string()),
     }
-    Ok((sponsor, decoded.variant, decoded.topHatId))
 }
 
-/// Sponsor clone address for a parent: an explicit address is validated against the factory
-/// registry; otherwise the registry-registered clone is returned.
+/// Factory `squads` row, or `None` when no clone is registered.
+pub async fn read_squad_record_opt<P: Provider>(
+    provider: &P,
+    factory: Address,
+    squad_id: B256,
+) -> Result<Option<(Address, SquadVariant, U256)>, String> {
+    let call = squadsCall { squadId: squad_id };
+    let decoded = eth_call_decode(provider, factory, &call).await?;
+    if decoded.sponsor.is_zero() {
+        return Ok(None);
+    }
+    Ok(Some((decoded.sponsor, decoded.variant, decoded.topHatId)))
+}
+
+/// Sponsor clone for a parent: live `squads(parentKeccak)` first; an explicit address that
+/// misses that slot may resolve via active `gameSquadId`.
+pub async fn resolve_sponsor_record_for_parent<P: Provider>(
+    provider: &P,
+    factory: Address,
+    parent_id: &str,
+    sponsor_address: Option<&str>,
+    game_squad_id: Option<B256>,
+) -> Result<ResolvedSponsor, String> {
+    let parent_squad_id = squad_id_from_parent_id(parent_id);
+    let parent_rec = read_squad_record_opt(provider, factory, parent_squad_id)
+        .await
+        .map_err(sponsor_lookup_err)?;
+    let parent_sponsor = parent_rec.as_ref().map(|(addr, _, _)| *addr);
+
+    let explicit = match sponsor_address.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(raw) => {
+            Some(parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?)
+        }
+        None => None,
+    };
+
+    let squad_id = pick_registry_squad_id(parent_squad_id, game_squad_id, parent_sponsor, explicit);
+
+    let (reg, variant, top_hat) = if squad_id == parent_squad_id {
+        parent_rec.ok_or_else(|| {
+            sponsor_lookup_err("no sponsor clone registered for this squad id".to_string())
+        })?
+    } else {
+        read_squad_record(provider, factory, squad_id)
+            .await
+            .map_err(sponsor_lookup_err)?
+    };
+
+    let address = require_explicit_matches(reg, explicit)?;
+    Ok(ResolvedSponsor {
+        address,
+        variant,
+        top_hat_id: top_hat,
+        squad_id,
+    })
+}
+
+/// Sponsor clone address for a parent (see [`resolve_sponsor_record_for_parent`]).
 pub async fn resolve_sponsor_for_parent<P: Provider>(
     provider: &P,
     factory: Address,
     parent_id: &str,
     sponsor_address: Option<&str>,
+    game_squad_id: Option<B256>,
 ) -> Result<Address, String> {
-    let squad_id = squad_id_from_parent_id(parent_id);
-    if let Some(raw) = sponsor_address.map(str::trim).filter(|s| !s.is_empty()) {
-        let addr = parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
-        let (reg, _, _) = read_squad_record(provider, factory, squad_id)
-            .await
-            .map_err(sponsor_lookup_err)?;
-        if reg != addr {
-            return Err(wallet_err_json(
-                "SPONSOR_REGISTRY",
-                "sponsor address does not match factory registry for parent id",
-                None,
-            ));
-        }
-        return Ok(addr);
-    }
-    read_squad_record(provider, factory, squad_id)
+    resolve_sponsor_record_for_parent(provider, factory, parent_id, sponsor_address, game_squad_id)
         .await
-        .map_err(sponsor_lookup_err)
-        .map(|(addr, _, _)| addr)
+        .map(|r| r.address)
 }
 
 #[cfg(test)]
@@ -271,5 +380,108 @@ mod tests {
             "squad"
         );
         assert!(parse_signer_wallet(Some("hardware"), "squad").is_err());
+    }
+
+    fn addr(n: u8) -> Address {
+        Address::repeat_byte(n)
+    }
+
+    fn id(n: u8) -> B256 {
+        B256::repeat_byte(n)
+    }
+
+    #[test]
+    fn pick_registry_squad_id_parent_hit_uses_parent_key() {
+        let parent = id(0x11);
+        let game = id(0x22);
+        let sponsor = addr(0xaa);
+        assert_eq!(
+            pick_registry_squad_id(parent, Some(game), Some(sponsor), Some(sponsor)),
+            parent
+        );
+    }
+
+    #[test]
+    fn pick_registry_squad_id_no_explicit_ignores_game_id() {
+        let parent = id(0x11);
+        let game = id(0x22);
+        assert_eq!(
+            pick_registry_squad_id(parent, Some(game), None, None),
+            parent
+        );
+        assert_eq!(
+            pick_registry_squad_id(parent, Some(game), Some(addr(0xaa)), None),
+            parent
+        );
+    }
+
+    #[test]
+    fn pick_registry_squad_id_parent_empty_explicit_uses_game_id() {
+        let parent = id(0x11);
+        let game = id(0x22);
+        assert_eq!(
+            pick_registry_squad_id(parent, Some(game), None, Some(addr(0xbb))),
+            game
+        );
+    }
+
+    #[test]
+    fn pick_registry_squad_id_explicit_mismatch_uses_game_id() {
+        let parent = id(0x11);
+        let game = id(0x22);
+        assert_eq!(
+            pick_registry_squad_id(parent, Some(game), Some(addr(0xaa)), Some(addr(0xbb)),),
+            game
+        );
+    }
+
+    #[test]
+    fn pick_registry_squad_id_explicit_mismatch_without_game_stays_parent() {
+        let parent = id(0x11);
+        assert_eq!(
+            pick_registry_squad_id(parent, None, None, Some(addr(0xbb))),
+            parent
+        );
+        assert_eq!(
+            pick_registry_squad_id(parent, None, Some(addr(0xaa)), Some(addr(0xbb))),
+            parent
+        );
+    }
+
+    #[test]
+    fn require_explicit_matches_accepts_none_and_equal() {
+        let reg = addr(0xaa);
+        assert_eq!(require_explicit_matches(reg, None).unwrap(), reg);
+        assert_eq!(require_explicit_matches(reg, Some(reg)).unwrap(), reg);
+    }
+
+    #[test]
+    fn require_explicit_matches_rejects_mismatch() {
+        let err = require_explicit_matches(addr(0xaa), Some(addr(0xbb))).unwrap_err();
+        assert_eq!(err_code(&err), "SPONSOR_REGISTRY");
+    }
+
+    #[test]
+    fn game_squad_id_from_wargame_payload_requires_active_and_id() {
+        let game = id(0xab);
+        let hex = format!("{game:#x}");
+        assert_eq!(
+            game_squad_id_from_wargame_payload(&format!(
+                r#"{{"status":"active","gameSquadId":"{hex}"}}"#
+            )),
+            Some(game)
+        );
+        assert_eq!(
+            game_squad_id_from_wargame_payload(&format!(
+                r#"{{"status":"ACTIVE","gameSquadId":"{hex}"}}"#
+            )),
+            Some(game)
+        );
+        assert!(game_squad_id_from_wargame_payload(&format!(
+            r#"{{"status":"retired","gameSquadId":"{hex}"}}"#
+        ))
+        .is_none());
+        assert!(game_squad_id_from_wargame_payload(r#"{"status":"active"}"#).is_none());
+        assert!(game_squad_id_from_wargame_payload("{").is_none());
     }
 }

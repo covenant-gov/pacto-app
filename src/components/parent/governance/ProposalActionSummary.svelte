@@ -6,6 +6,7 @@
     type ProposalActionInput,
     type ProposalActionSummary,
   } from '../../../lib/governance/proposal-action-summary';
+  import { quorumBpsToPercent } from '../../../lib/governance/crew-vote-mode';
 
   let { to, valueWei, dataHex, operation }: ProposalActionInput = $props();
 
@@ -81,6 +82,35 @@
     <p class="action-meta muted" title={summary.spender}>
       {$t('governance.proposal.action.spender')}
       <code class="action-ref">{summary.spender}</code>
+    </p>
+  {:else if summary.kind === 'set_crew_vote_mode'}
+    <p class="action-line">
+      {$t('governance.proposal.action.setCrewVoteMode', {
+        values: {
+          mode: $t(
+            summary.mode === 'quorum'
+              ? 'governance.squadParams.quorum'
+              : 'governance.squadParams.majority',
+          ),
+        },
+      })}
+    </p>
+    <p class="action-meta muted" title={summary.to}>
+      {$t('governance.proposal.target')}
+      <code class="action-ref">{summary.to}</code>
+    </p>
+  {:else if summary.kind === 'set_quorum_bps'}
+    <p class="action-line">
+      {$t('governance.proposal.action.setQuorumBps', {
+        values: {
+          percent: quorumBpsToPercent(summary.quorumBps),
+          bps: summary.quorumBps,
+        },
+      })}
+    </p>
+    <p class="action-meta muted" title={summary.to}>
+      {$t('governance.proposal.target')}
+      <code class="action-ref">{summary.to}</code>
     </p>
   {:else}
     <p class="action-line">

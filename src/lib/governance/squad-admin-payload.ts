@@ -29,7 +29,7 @@ export function parseSquadAdminProviderPayload(
 export interface ResolvedSquadAdminContext {
   proxy: string;
   chain: string;
-  source: 'pacto_gov' | 'squad_admin';
+  source: 'pacto_gov' | 'squad_admin' | 'pacto_gov_wargame';
   variant?: string;
 }
 
@@ -58,6 +58,22 @@ export function resolveSquadAdminContext(
     proxy,
     chain: pacto.chain?.trim() || 'sepolia',
     source: 'pacto_gov',
+    variant: 'nave_pirata',
+  };
+}
+
+/** Squad Admin on the war-game stack. Never dual-read as live `pacto_gov`. */
+export function resolveWarGameSquadAdminContext(
+  row: SquadInfraDto | null | undefined,
+): ResolvedSquadAdminContext | null {
+  if (!row || row.infraType !== 'pacto_gov_wargame') return null;
+  const payload = parsePactoGovProviderPayload(row.providerPayload);
+  const proxy = payload?.squadAdminProxy?.trim();
+  if (!proxy) return null;
+  return {
+    proxy,
+    chain: row.chain?.trim() || 'sepolia',
+    source: 'pacto_gov_wargame',
     variant: 'nave_pirata',
   };
 }

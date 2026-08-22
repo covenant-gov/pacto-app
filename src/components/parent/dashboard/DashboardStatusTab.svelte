@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadIdentitySection from './SquadIdentitySection.svelte';
   import type { Squad } from '../../../stores/squads';
@@ -17,6 +18,17 @@
     mintCrewHatsState,
     type ChecklistItemState,
   } from '../../../lib/governance/squad-sponsor-crew';
+  import { squadInfraByParentId } from '../../../stores/squads';
+  import { pactoGovInfraRow, pactoGovWargameInfraRow } from '../../../lib/governance/api';
+  import { hasSquadAdminInfra } from '../../../lib/governance/squad-admin-payload';
+  import { syncSquadInfraForParent } from '../../../lib/dashboard/dashboard-data-sync';
+  import { openSquadWargame } from '../../../lib/navigation/open-squad-dashboard';
+  import { isActiveWarGameStack } from '../../../lib/governance/war-game-payload';
+  import { WAR_GAME_PUBLIC_RULES_URL } from '../../../lib/governance/war-game-links';
+  import { openExternalUrl } from '../../../lib/utils/open-external';
+  import DeployWarGameModal from '../governance/DeployWarGameModal.svelte';
+  import { showToast } from '../../../stores/toast';
+  import type { WarGameDeployComplete } from '../../../lib/governance/start-war-game-deploy';
 
   let {
     squad,
@@ -26,7 +38,6 @@
     squadMemberEvmByNpub = {},
     squadNetwork = null,
     hasGovernance = false,
-    hasSquadAdmin = false,
     captainWearers = [],
     crewWearers = [],
     onOpenDeploy = () => {},
@@ -40,7 +51,6 @@
     squadMemberEvmByNpub?: Record<string, string>;
     squadNetwork?: SupportedChainId | null;
     hasGovernance?: boolean;
-    hasSquadAdmin?: boolean;
     captainWearers?: string[];
     crewWearers?: string[];
     onOpenDeploy?: () => void;
@@ -49,12 +59,29 @@
   } = $props();
 
   let rosterKeyNeeded = $state(false);
+  let showWarGameDeploy = $state(false);
 
   const myNpub = $derived($currentUser?.npub ?? '');
   const displayEvmByNpub = $derived(squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded));
   const shareEvmState = $derived(allMembersShareEvmState(channelMembers, displayEvmByNpub));
-  const govState = $derived(binaryInfraState(hasGovernance));
-  const adminState = $derived(binaryInfraState(hasSquadAdmin));
+  const infraRows = $derived($squadInfraByParentId[parentId]);
+  const productionGov = $derived(pactoGovInfraRow(infraRows) != null);
+  const productionAdmin = $derived(hasSquadAdminInfra(infraRows));
+  const govState = $derived(binaryInfraState(productionGov));
+  const adminState = $derived(binaryInfraState(productionAdmin));
+  const warGameRow = $derived(pactoGovWargameInfraRow(infraRows));
+  const hasWarGame = $derived(
+    warGameRow != null && isActiveWarGameStack(warGameRow.providerPayload),
+  );
+  const rosterMemberOptions = $derived(
+    channelMembers
+      .map((npub) => {
+        const address = displayEvmByNpub[npub]?.trim();
+        if (!address) return null;
+        return { address };
+      })
+      .filter((row): row is { address: string } => row != null),
+  );
   const crewMintState = $derived(
     mintCrewHatsState({
       hasGovernance,
@@ -75,6 +102,14 @@
     });
   });
 
+  async function handleWarGameComplete(out: WarGameDeployComplete): Promise<void> {
+    await syncSquadInfraForParent(parentId.trim());
+    if (out.retiredSponsor) {
+      showToast(get(t)('governance.deployWarGame.retiredToast'));
+    }
+    openSquadWargame(parentId);
+  }
+
   function glyphClass(state: ChecklistItemState): string {
     if (state === 'done') return 'check-mark';
     if (state === 'pending') return 'check-pending';
@@ -86,6 +121,16 @@
 
 <section class="status-checklist" aria-label={$t('governance.status.checklistAria')}>
   <span class="meta-label">{$t('governance.status.checklistTitle')}</span>
+  <p class="wargame-nudge">
+    {$t('governance.status.wargameNudge')}
+    <button
+      type="button"
+      class="checklist-action"
+      onclick={() => void openExternalUrl(WAR_GAME_PUBLIC_RULES_URL)}
+    >
+      {$t('governance.status.wargameRulesLink')}
+    </button>
+  </p>
   <ul class="checklist" role="list">
     <li class="checklist-item" class:done={!!squadNetwork}>
       <span class={glyphClass(squadNetwork ? 'done' : 'not_started')} aria-hidden="true"
@@ -103,9 +148,27 @@
       <span class={glyphClass(shareEvmState)} aria-hidden="true">{checklistGlyph(shareEvmState)}</span>
       <span>{$t('governance.status.allMembersShareEvm')}</span>
     </li>
+    <li class="checklist-item" class:done={hasWarGame}>
+      <span class={glyphClass(hasWarGame ? 'done' : 'not_started')} aria-hidden="true"
+        >{checklistGlyph(hasWarGame ? 'done' : 'not_started')}</span
+      >
+      {#if hasWarGame}
+        <span>{$t('governance.status.wargameDeployed')}</span>
+        <button type="button" class="checklist-action" onclick={() => openSquadWargame(parentId)}>
+          {$t('governance.status.openWargame')}
+        </button>
+        <button type="button" class="checklist-action" onclick={() => (showWarGameDeploy = true)}>
+          {$t('governance.status.redeployWargame')}
+        </button>
+      {:else}
+        <button type="button" class="checklist-action" onclick={() => (showWarGameDeploy = true)}>
+          {$t('governance.status.deployWargame')}
+        </button>
+      {/if}
+    </li>
     <li class="checklist-item" class:done={govState === 'done'}>
       <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
-      {#if hasGovernance}
+      {#if productionGov}
         <span>{$t('governance.status.squadGovernance')}</span>
       {:else}
         <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
@@ -113,7 +176,7 @@
     </li>
     <li class="checklist-item" class:done={adminState === 'done'}>
       <span class={glyphClass(adminState)} aria-hidden="true">{checklistGlyph(adminState)}</span>
-      {#if hasSquadAdmin}
+      {#if productionAdmin}
         <span>{$t('governance.status.squadAdmin')}</span>
       {:else}
         <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
@@ -136,6 +199,17 @@
 
 <SquadBroadcastSettingsSection {squad} />
 
+{#if showWarGameDeploy}
+  <DeployWarGameModal
+    {parentId}
+    {announcementsGroupId}
+    redeploy={hasWarGame}
+    memberOptions={rosterMemberOptions}
+    onClose={() => (showWarGameDeploy = false)}
+    onComplete={handleWarGameComplete}
+  />
+{/if}
+
 <style>
   .status-checklist {
     display: flex;
@@ -156,6 +230,13 @@
     min-width: 5.5rem;
   }
 
+  .wargame-nudge {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+
   .checklist {
     list-style: none;
     margin: 0;
@@ -168,6 +249,7 @@
   .checklist-item {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
   }
 

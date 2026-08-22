@@ -94,3 +94,21 @@ export function isHatsSponsoredAddress(
   );
   return covered.has(key);
 }
+
+export type CrewRosterEligibilityColumns = {
+  showHatsCol: boolean;
+  showSponsoredCol: boolean;
+};
+
+/** Hats wear XOR Ext permit list — never both columns. */
+export function crewRosterEligibilityColumns(params: {
+  hasSponsor: boolean;
+  sponsorHatsMode: boolean;
+  hatsWired: boolean;
+}): CrewRosterEligibilityColumns {
+  const hatsPath = params.sponsorHatsMode || params.hatsWired;
+  if (!params.hasSponsor || hatsPath) {
+    return { showHatsCol: true, showSponsoredCol: false };
+  }
+  return { showHatsCol: false, showSponsoredCol: true };
+}

@@ -6,7 +6,7 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 
 use super::config::{RECEIPT_WAIT_TIMEOUT, RPC_CONNECT_TIMEOUT};
-use super::errors::{wallet_err_json, wallet_err_json_with_tx_hash};
+use super::errors::{wallet_err_from_send_failure, wallet_err_json, wallet_err_json_with_tx_hash};
 use crate::evm::wallet_security;
 
 pub async fn connect_read_provider(urls: &[String]) -> Result<impl Provider + Clone, String> {
@@ -34,6 +34,7 @@ pub async fn connect_read_provider(urls: &[String]) -> Result<impl Provider + Cl
     ))
 }
 
+/// Signing provider: gas + blob-gas + **pending** nonce (not cached) + chain id.
 pub async fn connect_signing_provider(
     urls: &[String],
     wallet: EthereumWallet,
@@ -47,6 +48,11 @@ pub async fn connect_signing_provider(
         match tokio::time::timeout(
             RPC_CONNECT_TIMEOUT,
             ProviderBuilder::new()
+                .disable_recommended_fillers()
+                .with_gas_estimation()
+                .with_blob_gas_estimation()
+                .with_simple_nonce_management()
+                .fetch_chain_id()
                 .wallet(wallet.clone())
                 .connect(url_s.as_str()),
         )
@@ -64,31 +70,27 @@ pub async fn connect_signing_provider(
     ))
 }
 
+fn is_nonce_too_low(err: &str) -> bool {
+    err.to_ascii_lowercase().contains("nonce too low")
+}
+
 pub async fn send_transaction_only<P: Provider>(
     provider: &P,
     tx: TransactionRequest,
 ) -> Result<String, String> {
     let pending = provider.send_transaction(tx).await.map_err(|e| {
-        wallet_err_json(
-            "SEND_FAILED",
-            wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
+        wallet_err_from_send_failure(&wallet_security::redact_urls_in_text(&e.to_string()))
     })?;
     Ok(format!("0x{:x}", *pending.tx_hash()))
 }
 
-pub async fn send_and_confirm<P: Provider>(
+async fn send_and_confirm_once<P: Provider>(
     provider: &P,
     tx: TransactionRequest,
     receipt_timeout_message: &str,
 ) -> Result<TransactionReceipt, String> {
     let pending = provider.send_transaction(tx).await.map_err(|e| {
-        wallet_err_json(
-            "SEND_FAILED",
-            wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
+        wallet_err_from_send_failure(&wallet_security::redact_urls_in_text(&e.to_string()))
     })?;
 
     let submitted_tx_hash = format!("0x{:x}", *pending.tx_hash());
@@ -117,6 +119,20 @@ pub async fn send_and_confirm<P: Provider>(
     }
 
     Ok(receipt)
+}
+
+pub async fn send_and_confirm<P: Provider>(
+    provider: &P,
+    tx: TransactionRequest,
+    receipt_timeout_message: &str,
+) -> Result<TransactionReceipt, String> {
+    match send_and_confirm_once(provider, tx.clone(), receipt_timeout_message).await {
+        Ok(receipt) => Ok(receipt),
+        Err(e) if is_nonce_too_low(&e) => {
+            send_and_confirm_once(provider, tx, receipt_timeout_message).await
+        }
+        Err(e) => Err(e),
+    }
 }
 
 pub async fn wait_for_transaction_receipt<P: Provider>(
@@ -164,4 +180,21 @@ pub fn contract_call_request(to: Address, calldata: Vec<u8>) -> TransactionReque
     TransactionRequest::default()
         .with_to(to)
         .with_input(Bytes::from(calldata))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_nonce_too_low;
+
+    #[test]
+    fn nonce_too_low_matches_geth_and_wrapped_json() {
+        assert!(is_nonce_too_low(
+            "server returned an error response: error code -32000: nonce too low: next nonce 117, tx nonce 114"
+        ));
+        assert!(is_nonce_too_low(
+            r#"{"code":"SEND_FAILED","message":"Nonce too low"}"#
+        ));
+        assert!(!is_nonce_too_low("insufficient funds"));
+        assert!(!is_nonce_too_low("replacement transaction underpriced"));
+    }
 }

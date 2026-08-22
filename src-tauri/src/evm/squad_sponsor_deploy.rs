@@ -10,8 +10,8 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Runtime};
 
-use super::access_control::{require_capability, GovCapability};
-use super::contracts::pacto_sponsor::ISquadSponsorExt::addressOwnerCall;
+use super::access_control::{require_capability, GovCapability, GovStack};
+use super::contracts::pacto_sponsor::ISquadSponsorExt::{addressOwnerCall, hatsWiredCall};
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::{
     createSquadSponsorCall, createSquadSponsorExtCall, squadsCall,
 };
@@ -32,10 +32,11 @@ use super::squad_sponsor_common::{
     parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
     squad_id_from_parent_id, squad_variant_label,
 };
+use super::squad_sponsor_hats_wire::{hats_factory_slot, wire_parent_ext_hats, HatsFactorySlot};
 use super::wallet_chain_config;
 use crate::db;
 
-/// Both variants are captain-gated: an Ext sponsor blocks the hats-first path.
+/// Captain-gated. An unwired parent Ext is hats-wired via `postInitialize`, not a second create.
 const DEPLOY_REQUIRED_CAPABILITY: GovCapability = GovCapability::CaptainResign;
 
 pub(crate) fn parse_required_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
@@ -196,7 +197,7 @@ fn already_deployed_onchain_err(sponsor_hex: &str, variant: &str) -> String {
 }
 
 /// `squad_infra.provider_payload` JSON for a deployed sponsor clone.
-fn sponsor_provider_payload(
+pub(crate) fn sponsor_provider_payload(
     pid: &str,
     squad_id: B256,
     sponsor: Address,
@@ -226,6 +227,43 @@ fn sponsor_provider_payload(
     serde_json::Value::Object(map).to_string()
 }
 
+async fn return_already_deployed<R: Runtime>(
+    app: &AppHandle<R>,
+    pid: &str,
+    net_key: &str,
+    squad_id: B256,
+    sponsor: Address,
+    variant: SquadVariant,
+    top_hat: U256,
+    addrs: &pacto_chain_config::SquadSponsorDeployAddresses,
+    has_local_row: bool,
+) -> Result<SquadSponsorDeployResult, String> {
+    if has_local_row {
+        return Err(wallet_err_json(
+            "ALREADY_DEPLOYED",
+            "This parent already has squad sponsor infrastructure.",
+            None,
+        ));
+    }
+    let sponsor_hex = format!("{:#x}", sponsor);
+    let payload = sponsor_provider_payload(
+        pid,
+        squad_id,
+        sponsor,
+        addrs.pacto_sponsor_paymaster,
+        addrs.entry_point,
+        squad_variant_label(variant),
+        None,
+        &reconcile_payload_extras(variant, top_hat),
+    );
+    db::persist_sponsor_infra(app, pid, net_key, sponsor_hex.as_str(), payload.as_str())
+        .map_err(|e| wallet_err_json("PERSIST_SPONSOR", e, None))?;
+    Err(already_deployed_onchain_err(
+        &sponsor_hex,
+        onchain_variant_result_label(variant),
+    ))
+}
+
 async fn deploy_squad_sponsor_impl<R: Runtime>(
     app: AppHandle<R>,
     network: String,
@@ -245,7 +283,14 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
         ));
     }
     require_parent_member(&app, pid).await?;
-    require_capability(&app, pid, DEPLOY_REQUIRED_CAPABILITY, rpc_urls.clone()).await?;
+    require_capability(
+        &app,
+        pid,
+        DEPLOY_REQUIRED_CAPABILITY,
+        rpc_urls.clone(),
+        GovStack::Live,
+    )
+    .await?;
 
     // Hats inputs validate against the persisted gov infra before any network work.
     let hats_top_hat = match &variant {
@@ -298,43 +343,73 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
     let record = eth_call_decode(&read_provider, factory, &squadsCall { squadId: squad_id })
         .await
         .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-    match sponsor_preflight_decision(
-        db::parent_has_sponsor_infra(&app, pid).unwrap_or(false),
-        record.sponsor,
-    ) {
-        SponsorPreflight::Clear => {}
-        SponsorPreflight::AlreadyDeployedLocal => {
-            return Err(wallet_err_json(
-                "ALREADY_DEPLOYED",
-                "This parent already has squad sponsor infrastructure.",
-                None,
-            ));
+    let has_local_row = db::parent_has_sponsor_infra(&app, pid).unwrap_or(false);
+
+    if let VariantInputs::Hats { top_hat, registry } = &inputs {
+        let wired = if !record.sponsor.is_zero() && matches!(record.variant, SquadVariant::EXT) {
+            eth_call_decode(&read_provider, record.sponsor, &hatsWiredCall {})
+                .await
+                .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?
+        } else {
+            true
+        };
+        match hats_factory_slot(record.sponsor, record.variant, wired) {
+            HatsFactorySlot::Empty => {}
+            HatsFactorySlot::Wire => {
+                return wire_parent_ext_hats(
+                    app,
+                    pid,
+                    net,
+                    &addrs,
+                    &urls,
+                    squad_id,
+                    record.sponsor,
+                    *top_hat,
+                    *registry,
+                    deposit,
+                    signer_wallet.as_deref(),
+                )
+                .await;
+            }
+            HatsFactorySlot::Already => {
+                return return_already_deployed(
+                    &app,
+                    pid,
+                    net.key.as_str(),
+                    squad_id,
+                    record.sponsor,
+                    record.variant,
+                    record.topHatId,
+                    &addrs,
+                    has_local_row,
+                )
+                .await;
+            }
         }
-        SponsorPreflight::AlreadyDeployedOnChain => {
-            // Clone on-chain but no local row: reconcile so the UI routes to management.
-            let sponsor_hex = format!("{:#x}", record.sponsor);
-            let payload = sponsor_provider_payload(
-                pid,
-                squad_id,
-                record.sponsor,
-                addrs.pacto_sponsor_paymaster,
-                addrs.entry_point,
-                squad_variant_label(record.variant),
-                None,
-                &reconcile_payload_extras(record.variant, record.topHatId),
-            );
-            db::persist_sponsor_infra(
-                &app,
-                pid,
-                net.key.as_str(),
-                sponsor_hex.as_str(),
-                payload.as_str(),
-            )
-            .map_err(|e| wallet_err_json("PERSIST_SPONSOR", e, None))?;
-            return Err(already_deployed_onchain_err(
-                &sponsor_hex,
-                onchain_variant_result_label(record.variant),
-            ));
+    } else {
+        match sponsor_preflight_decision(has_local_row, record.sponsor) {
+            SponsorPreflight::Clear => {}
+            SponsorPreflight::AlreadyDeployedLocal => {
+                return Err(wallet_err_json(
+                    "ALREADY_DEPLOYED",
+                    "This parent already has squad sponsor infrastructure.",
+                    None,
+                ));
+            }
+            SponsorPreflight::AlreadyDeployedOnChain => {
+                return return_already_deployed(
+                    &app,
+                    pid,
+                    net.key.as_str(),
+                    squad_id,
+                    record.sponsor,
+                    record.variant,
+                    record.topHatId,
+                    &addrs,
+                    false,
+                )
+                .await;
+            }
         }
     }
 

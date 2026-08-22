@@ -9,17 +9,26 @@ use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::str::FromStr;
 use std::sync::LazyLock;
 use std::time::Duration;
 use tauri::{AppHandle, Runtime};
 
+use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
+    captainResignCall, executeMutinyCall,
+};
+use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
+    bootstrapCrewCall, executeAddCrewCall, executeOffboardCall, executeRemoveCrewCall,
+};
+use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::executeCall as treasuryExecuteCall;
 use super::contracts::pacto_sponsor::ISquadSponsorBase::{
     isEligibleCall, paymasterCall, spendablePoolWeiCall,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::load_squad_roster_embedded_signer;
-use super::rpc::{connect_read_provider, wallet_err_json};
+use super::rpc::{classify_gov_call_revert, connect_read_provider, parse_address, wallet_err_json};
 use super::sponsor_paymaster::{
     encode_paymaster_and_data, required_pool_balance, DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
     DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
@@ -250,15 +259,76 @@ pub async fn roster_native_balance_wei<P: Provider>(
     })
 }
 
+const WAR_GAME_MODULE_KEYS: [&str; 5] = [
+    "safe",
+    "quartermaster",
+    "mutinyModule",
+    "treasuryAuthority",
+    "squadAdminProxy",
+];
+
+/// Active war-game stack: UserOps must encode `gameSquadId`, not parent keccak.
+#[derive(Clone, Debug)]
+pub struct WarGameUserOpContext {
+    pub game_squad_id: B256,
+    modules: Vec<Address>,
+}
+
+impl WarGameUserOpContext {
+    pub fn targets(&self, to: Address) -> bool {
+        self.modules.iter().any(|a| *a == to)
+    }
+}
+
+pub fn parse_war_game_userop_context(payload: &str) -> Option<WarGameUserOpContext> {
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let status = v
+        .get("status")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim();
+    if !status.eq_ignore_ascii_case("active") {
+        return None;
+    }
+    let id_raw = v.get("gameSquadId").and_then(|x| x.as_str())?;
+    let game_squad_id = B256::from_str(id_raw.trim()).ok()?;
+    let mut modules = Vec::with_capacity(WAR_GAME_MODULE_KEYS.len());
+    for key in WAR_GAME_MODULE_KEYS {
+        let raw = v.get(key).and_then(|x| x.as_str())?;
+        let addr = parse_address(raw).ok()?;
+        if addr.is_zero() {
+            return None;
+        }
+        modules.push(addr);
+    }
+    Some(WarGameUserOpContext {
+        game_squad_id,
+        modules,
+    })
+}
+
+/// Paymaster `squadId`: war-game module writes use the round id; production stays parent keccak.
+pub fn resolve_sponsored_squad_id(
+    parent_id: &str,
+    to: Address,
+    wargame_payload: Option<&str>,
+) -> B256 {
+    if let Some(ctx) = wargame_payload.and_then(parse_war_game_userop_context) {
+        if ctx.targets(to) {
+            return ctx.game_squad_id;
+        }
+    }
+    squad_id_from_parent_id(parent_id)
+}
+
 pub async fn sponsor_eligibility_preflight<P: Provider>(
     provider: &P,
     factory: Address,
     expected_paymaster: Address,
-    parent_id: &str,
+    squad_id: B256,
     member: Address,
     estimated_max_cost_wei: U256,
 ) -> Result<(Address, B256), String> {
-    let squad_id = squad_id_from_parent_id(parent_id);
     let (sponsor, _variant, _hat) = read_squad_record(provider, factory, squad_id)
         .await
         .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
@@ -312,6 +382,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     parent_id: &str,
     to: Address,
     calldata: Vec<u8>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SponsoredUserOpSend, String> {
     let net_key = network.to_lowercase();
     let stored_key = load_stored_pimlico_key(&app);
@@ -337,17 +408,33 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
             None,
         ));
     };
-    if !db::parent_has_sponsor_infra(&app, parent_id).unwrap_or(false) {
+    let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, parent_id)
+        .ok()
+        .flatten();
+    let stack = crate::evm::access_control::GovStack::for_wargame_target_corroborated(
+        &app,
+        parent_id,
+        to,
+        rpc_urls.clone(),
+    )
+    .await?;
+    let is_wargame_op = stack == crate::evm::access_control::GovStack::WarGame;
+    if !db::parent_has_sponsor_infra(&app, parent_id).unwrap_or(false) && !is_wargame_op {
         return Err(wallet_err_json(
             "SPONSOR_REQUIRED",
             "Deploy squad sponsor before sponsored governance writes.",
             None,
         ));
     }
+    let squad_id = if is_wargame_op {
+        resolve_sponsored_squad_id(parent_id, to, wargame_payload.as_deref())
+    } else {
+        squad_id_from_parent_id(parent_id)
+    };
 
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls);
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
@@ -364,7 +451,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         }
     };
 
-    let placeholders = placeholder_gas_ceilings();
+    let placeholders = placeholder_gas_ceilings(&calldata);
     let placeholder_max_cost = userop_max_cost_wei(
         placeholders.call,
         placeholders.verification,
@@ -384,7 +471,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         &read_provider,
         addrs.squad_sponsor_factory,
         addrs.pacto_sponsor_paymaster,
-        parent_id,
+        squad_id,
         member,
         placeholder_max_cost,
     )
@@ -437,7 +524,6 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         factory: addrs.squad_sponsor_factory,
         sponsor,
         squad_id,
-        parent_id: parent_id.to_string(),
         member,
         nonce,
         execute_calldata,
@@ -446,7 +532,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         eip7702_auth,
     };
 
-    let estimated = estimate_sponsored_gas(&bundler, &ctx, placeholder_gas_ceilings()).await?;
+    let estimated = estimate_sponsored_gas(&bundler, &ctx, placeholders).await?;
     let limits = FinalGasLimits {
         call_gas_limit: apply_userop_gas_margin(estimated.call_gas_limit),
         verification_gas_limit: apply_verification_gas_margin(estimated.verification_gas_limit),
@@ -470,7 +556,6 @@ struct SponsoredSendParts {
     factory: Address,
     sponsor: Address,
     squad_id: B256,
-    parent_id: String,
     member: Address,
     nonce: U256,
     execute_calldata: Vec<u8>,
@@ -488,13 +573,37 @@ struct GasCeilings {
     pm_post: u128,
 }
 
-fn placeholder_gas_ceilings() -> GasCeilings {
+fn placeholder_gas_ceilings(calldata: &[u8]) -> GasCeilings {
     GasCeilings {
-        call: FALLBACK_CALL_GAS_LIMIT,
+        call: call_gas_ceiling_for_calldata(calldata),
         verification: DEFAULT_VERIFICATION_GAS_LIMIT,
         pre_verification: 80_000,
         pm_verification: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
         pm_post: DEFAULT_POST_OP_GAS_LIMIT,
+    }
+}
+
+/// Hats / Safe execute paths need a higher estimate ceiling than vote/start.
+fn is_heavy_gov_calldata(calldata: &[u8]) -> bool {
+    if calldata.len() < 4 {
+        return false;
+    }
+    let sel: [u8; 4] = calldata[..4].try_into().unwrap();
+    sel == executeMutinyCall::SELECTOR
+        || sel == captainResignCall::SELECTOR
+        || sel == treasuryExecuteCall::SELECTOR
+        || sel == bootstrapCrewCall::SELECTOR
+        || sel == executeAddCrewCall::SELECTOR
+        || sel == executeRemoveCrewCall::SELECTOR
+        || sel == executeOffboardCall::SELECTOR
+}
+
+/// UserOp / EOA fallback call-gas ceiling for this inner gov selector.
+pub(crate) fn call_gas_ceiling_for_calldata(calldata: &[u8]) -> u128 {
+    if is_heavy_gov_calldata(calldata) {
+        HEAVY_CALL_GAS_LIMIT
+    } else {
+        FALLBACK_CALL_GAS_LIMIT
     }
 }
 
@@ -508,6 +617,34 @@ struct FinalGasLimits {
 }
 
 async fn estimate_sponsored_gas(
+    bundler_url: &str,
+    ctx: &SponsoredSendParts,
+    ceilings: GasCeilings,
+) -> Result<EstimatedUserOpGas, String> {
+    match estimate_sponsored_gas_with_ceilings(bundler_url, ctx, ceilings).await {
+        Ok(estimated) => Ok(estimated),
+        Err(e) if ceilings.call < HEAVY_CALL_GAS_LIMIT && is_userop_call_gas_error(&e) => {
+            log::warn!(
+                target: "pacto_wallet",
+                "sponsored estimate OOG at {} call gas; retrying at {HEAVY_CALL_GAS_LIMIT}",
+                ceilings.call
+            );
+            let mut heavy = ceilings;
+            heavy.call = HEAVY_CALL_GAS_LIMIT;
+            estimate_sponsored_gas_with_ceilings(bundler_url, ctx, heavy).await
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn is_userop_call_gas_error(err: &str) -> bool {
+    serde_json::from_str::<Value>(err)
+        .ok()
+        .and_then(|v| v.get("code")?.as_str().map(|s| s == "USEROP_CALL_GAS"))
+        .unwrap_or(false)
+}
+
+async fn estimate_sponsored_gas_with_ceilings(
     bundler_url: &str,
     ctx: &SponsoredSendParts,
     ceilings: GasCeilings,
@@ -600,7 +737,7 @@ async fn sign_and_send_user_op<P: Provider, S: Signer + Sync>(
         provider,
         ctx.factory,
         ctx.paymaster,
-        &ctx.parent_id,
+        ctx.squad_id,
         ctx.member,
         final_max_cost,
     )
@@ -725,6 +862,8 @@ fn pack_u128s(hi: u128, lo: u128) -> B256 {
 
 /// Fallback gas values when RPC estimation is unavailable.
 pub(crate) const FALLBACK_CALL_GAS_LIMIT: u128 = 500_000;
+/// Hats / Safe execute estimate ceiling (captain transfer + crew handoff).
+pub(crate) const HEAVY_CALL_GAS_LIMIT: u128 = 1_500_000;
 /// Floor tip so common bundler prechecks do not reject near-zero RPC estimates.
 pub(crate) const FALLBACK_MAX_PRIORITY_FEE: u128 = 1_000_000_000; // 1 gwei
 pub(crate) const FALLBACK_MAX_FEE: u128 = 30_000_000_000; // 30 gwei
@@ -1085,6 +1224,15 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
             "PAYMASTER_VERIFICATION_GAS",
             "Bundler paymaster simulation ran out of gas. Client paymasterVerificationGasLimit may be too low for Hats/registry validation.".into(),
         )
+    } else if lower.contains("ran out of gas for entity: account")
+        || lower.contains("out of gas for entity: account")
+    {
+        (
+            "USEROP_CALL_GAS",
+            format!(
+                "Bundler account call simulation ran out of gas. Hats/Safe execute may need the heavy call-gas ceiling. Detail: {raw}"
+            ),
+        )
     } else if lower.contains("verification gas limit efficiency")
         || lower.contains("gas limit efficiency too low")
     {
@@ -1119,6 +1267,24 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
             "ACCOUNT_SIGNATURE",
             "Account signature invalid (-32507). PactoSimple7702Account expects bare ECDSA over the EntryPoint userOpHash (sign_hash), not personal_sign or MAv2 packing.".into(),
         )
+    } else if lower.contains("aa33") {
+        (
+            "PAYMASTER_VALIDATION",
+            format!("Paymaster validateUserOp reverted (AA33). Detail: {raw}"),
+        )
+    } else if lower.contains("useroperation reverted during simulation")
+        || lower.contains("user operation reverted during simulation")
+        || lower.contains("execution reverted")
+        || lower.contains("aa40")
+    {
+        if let Some((code, msg)) = classify_gov_call_revert(raw) {
+            (code, msg.to_string())
+        } else {
+            (
+                "GOV_CALL_REVERTED",
+                "Sponsored UserOp call reverted during simulation.".into(),
+            )
+        }
     } else {
         ("PAYMASTER_REJECTED", raw.to_string())
     }
@@ -1406,17 +1572,20 @@ mod tests {
     use super::{
         apply_userop_gas_margin, apply_verification_gas_margin, bundler_retry_delay,
         bundler_rpc_url, bundler_rpc_url_with_stored, bundler_status_source,
-        bundler_status_source_with_stored, call_gas_with_margin, clamp_userop_eip1559_fees,
-        classify_bundler_userop_reject, dummy_userop_signature, eip7702_auth_json,
-        encode_eip7702_authorization, explicit_bundler_rpc_url, host_is_alchemy, pack_u128s,
-        parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
-        parse_sponsored_user_op_receipt, paymaster_data, pimlico_bundler_rpc_url,
-        pimlico_chain_id_for_network, receipt_transaction_hash, retriable_bundler_status,
-        user_op_json, userop_max_cost_wei, validate_pimlico_api_key, SponsoredUserOpReceipt,
-        UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
+        bundler_status_source_with_stored, call_gas_ceiling_for_calldata, call_gas_with_margin,
+        clamp_userop_eip1559_fees, classify_bundler_userop_reject, dummy_userop_signature,
+        eip7702_auth_json, encode_eip7702_authorization, explicit_bundler_rpc_url, host_is_alchemy,
+        is_userop_call_gas_error, pack_u128s, parse_estimate_user_op_gas_response, parse_hex_u128,
+        parse_send_user_op_response, parse_sponsored_user_op_receipt,
+        parse_war_game_userop_context, paymaster_data, pimlico_bundler_rpc_url,
+        pimlico_chain_id_for_network, receipt_transaction_hash, resolve_sponsored_squad_id,
+        retriable_bundler_status, user_op_json, userop_max_cost_wei, validate_pimlico_api_key,
+        SponsoredUserOpReceipt, UserOpParams, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_PRIORITY_FEE,
+        HEAVY_CALL_GAS_LIMIT,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
+    use crate::evm::squad_sponsor_common::squad_id_from_parent_id;
     use alloy::primitives::{address, b256, B256, U256};
     use reqwest::StatusCode;
     use serde_json::json;
@@ -1429,6 +1598,82 @@ mod tests {
         expected[..16].copy_from_slice(&100_000u128.to_be_bytes());
         expected[16..].copy_from_slice(&500_000u128.to_be_bytes());
         assert_eq!(packed, B256::from(expected));
+    }
+
+    fn war_game_payload(ta: &str, game_squad_id: B256, status: &str) -> String {
+        json!({
+            "v": 1,
+            "status": status,
+            "gameSquadId": format!("{game_squad_id:#x}"),
+            "safe": "0x1111111111111111111111111111111111111111",
+            "quartermaster": "0x2222222222222222222222222222222222222222",
+            "mutinyModule": "0x3333333333333333333333333333333333333333",
+            "treasuryAuthority": ta,
+            "squadAdminProxy": "0x4444444444444444444444444444444444444444",
+            "sponsor": "0x5555555555555555555555555555555555555555",
+            "round": "1",
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn war_game_userop_encodes_game_squad_id_not_parent_keccak() {
+        let parent = "parent-1";
+        let game_squad_id =
+            b256!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let ta = address!("0x5412b91D05101D3BD802E4E8D4c576f0e525AeDa");
+        let payload = war_game_payload(&format!("{ta:#x}"), game_squad_id, "active");
+        let resolved = resolve_sponsored_squad_id(parent, ta, Some(&payload));
+        assert_eq!(resolved, game_squad_id);
+        assert_ne!(resolved, squad_id_from_parent_id(parent));
+        let encoded = encode_paymaster_and_data(
+            address!("0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A"),
+            resolved,
+            address!("0x2222222222222222222222222222222222222222"),
+            address!("0x3333333333333333333333333333333333333333"),
+            500_000,
+            50_000,
+        );
+        let parent_encoded = encode_paymaster_and_data(
+            address!("0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A"),
+            squad_id_from_parent_id(parent),
+            address!("0x2222222222222222222222222222222222222222"),
+            address!("0x3333333333333333333333333333333333333333"),
+            500_000,
+            50_000,
+        );
+        assert_ne!(encoded, parent_encoded);
+        assert_eq!(
+            &encoded[PAYMASTER_DATA_OFFSET + 32..PAYMASTER_DATA_OFFSET + 64],
+            game_squad_id.as_slice()
+        );
+    }
+
+    #[test]
+    fn production_module_write_keeps_parent_keccak_when_war_game_exists() {
+        let parent = "parent-1";
+        let game_squad_id =
+            b256!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let production_ta = address!("0x9999999999999999999999999999999999999999");
+        let payload = war_game_payload(
+            "0x5412b91D05101D3BD802E4E8D4c576f0e525AeDa",
+            game_squad_id,
+            "active",
+        );
+        let resolved = resolve_sponsored_squad_id(parent, production_ta, Some(&payload));
+        assert_eq!(resolved, squad_id_from_parent_id(parent));
+    }
+
+    #[test]
+    fn retired_war_game_payload_does_not_route_userops() {
+        let parent = "parent-1";
+        let game_squad_id =
+            b256!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let ta = address!("0x5412b91D05101D3BD802E4E8D4c576f0e525AeDa");
+        let payload = war_game_payload(&format!("{ta:#x}"), game_squad_id, "retired");
+        assert!(parse_war_game_userop_context(&payload).is_none());
+        let resolved = resolve_sponsored_squad_id(parent, ta, Some(&payload));
+        assert_eq!(resolved, squad_id_from_parent_id(parent));
     }
 
     #[test]
@@ -1473,7 +1718,7 @@ mod tests {
     #[test]
     fn user_op_json_serializes_erc4337_fields() {
         let member = address!("0x3333333333333333333333333333333333333333");
-        let paymaster = address!("0x065dA13369604291E628DD8022E0e504dc62Da12");
+        let paymaster = address!("0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A");
         let squad_id = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let sponsor = address!("0x2222222222222222222222222222222222222222");
         let paymaster_and_data =
@@ -1670,7 +1915,7 @@ mod tests {
         assert!(msg.contains("bare ECDSA") || msg.contains("userOpHash"));
 
         let (code, msg) = classify_bundler_userop_reject(
-            r#"{"code":-32502,"message":"Simulation ran out of gas for entity: paymaster:\"0x065dA13369604291E628DD8022E0e504dc62Da12\""}"#,
+            r#"{"code":-32502,"message":"Simulation ran out of gas for entity: paymaster:\"0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A\""}"#,
         );
         assert_eq!(code, "PAYMASTER_VERIFICATION_GAS");
         assert!(msg.contains("paymasterVerificationGasLimit") || msg.contains("out of gas"));
@@ -1691,6 +1936,116 @@ mod tests {
         let (code, msg) = classify_bundler_userop_reject("something else");
         assert_eq!(code, "PAYMASTER_REJECTED");
         assert_eq!(msg, "something else");
+
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32502,"message":"Simulation ran out of gas for entity: account"}"#,
+        );
+        assert_eq!(code, "USEROP_CALL_GAS");
+        assert!(msg.contains("entity: account"));
+
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32500,"data":{"reason":"AA33 reverted"},"message":"paymaster validation"}"#,
+        );
+        assert_eq!(code, "PAYMASTER_VALIDATION");
+        assert!(msg.contains("AA33"));
+
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32521,"message":"UserOperation reverted during simulation with reason: MutinyModule_Expired"}"#,
+        );
+        assert_eq!(code, "MUTINY_EXPIRED");
+        assert!(msg.contains("deadline") || msg.contains("expired"));
+
+        let (code, _) = classify_bundler_userop_reject(
+            "server returned an error response: error code 3: execution reverted, data: '0xc4aedfdd'",
+        );
+        assert_eq!(code, "MUTINY_NOT_ACTIVE");
+    }
+
+    #[test]
+    fn call_gas_ceiling_is_heavy_for_hats_execute_selectors() {
+        use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::{
+            captainResignCall, castVoteCall, executeMutinyCall,
+        };
+        use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::{
+            bootstrapCrewCall, executeAddCrewCall, executeOffboardCall, executeRemoveCrewCall,
+        };
+        use crate::evm::contracts::pacto_gov::read_bindings::ITreasuryAuthority::executeCall;
+        use alloy::sol_types::SolCall;
+
+        let exec = executeMutinyCall {
+            _mutinyId: U256::from(1u64),
+        }
+        .abi_encode();
+        assert_eq!(call_gas_ceiling_for_calldata(&exec), HEAVY_CALL_GAS_LIMIT);
+
+        let resign = captainResignCall {
+            _newCaptain: address!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        }
+        .abi_encode();
+        assert_eq!(call_gas_ceiling_for_calldata(&resign), HEAVY_CALL_GAS_LIMIT);
+
+        let treasury = executeCall {
+            _proposalId: U256::from(1u64),
+        }
+        .abi_encode();
+        assert_eq!(
+            call_gas_ceiling_for_calldata(&treasury),
+            HEAVY_CALL_GAS_LIMIT
+        );
+
+        let boot = bootstrapCrewCall {
+            _candidates: vec![],
+        }
+        .abi_encode();
+        assert_eq!(call_gas_ceiling_for_calldata(&boot), HEAVY_CALL_GAS_LIMIT);
+        assert_eq!(
+            call_gas_ceiling_for_calldata(
+                &executeAddCrewCall {
+                    _candidate: address!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                }
+                .abi_encode()
+            ),
+            HEAVY_CALL_GAS_LIMIT
+        );
+        assert_eq!(
+            call_gas_ceiling_for_calldata(
+                &executeRemoveCrewCall {
+                    _crew: address!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                }
+                .abi_encode()
+            ),
+            HEAVY_CALL_GAS_LIMIT
+        );
+        assert_eq!(
+            call_gas_ceiling_for_calldata(
+                &executeOffboardCall {
+                    _offboardId: U256::from(1u64),
+                }
+                .abi_encode()
+            ),
+            HEAVY_CALL_GAS_LIMIT
+        );
+
+        let vote = castVoteCall {
+            _mutinyId: U256::from(1u64),
+        }
+        .abi_encode();
+        assert_eq!(
+            call_gas_ceiling_for_calldata(&vote),
+            FALLBACK_CALL_GAS_LIMIT
+        );
+        assert_eq!(call_gas_ceiling_for_calldata(&[]), FALLBACK_CALL_GAS_LIMIT);
+    }
+
+    #[test]
+    fn userop_call_gas_error_reads_structured_code() {
+        assert!(is_userop_call_gas_error(
+            r#"{"code":"USEROP_CALL_GAS","message":"ran out of gas for entity: account"}"#
+        ));
+        assert!(!is_userop_call_gas_error(
+            r#"{"code":"PAYMASTER_REJECTED","message":"ran out of gas for entity: account"}"#
+        ));
+        assert!(!is_userop_call_gas_error("USEROP_CALL_GAS as plain text"));
     }
 
     #[test]

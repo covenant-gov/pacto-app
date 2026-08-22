@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => {
     handleChannelAddedToSquad: vi.fn(),
     notifyPendingInviteWelcome: vi.fn(),
     updateChannelNameIfPlaceholder: vi.fn(),
+    enrichRecoveredSquadNamesFromInvites: vi.fn(),
     listPendingMlsWelcomes: vi.fn(),
     fetchMessages: vi.fn(),
     parseSquadInviteMessage: vi.fn(),
@@ -109,6 +110,7 @@ vi.mock('../announcements', () => ({
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED: 'governance_updated',
   ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED: 'governance_process_updated',
   ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE: 'squad_member_evm_share',
+  ANNOUNCE_TYPE_WAR_GAME_UPDATED: 'war_game_updated',
 }));
 
 vi.mock('../wallet/dm-messages', () => ({
@@ -146,6 +148,11 @@ vi.mock('../squad/squad-outbound-invite', async (importOriginal) => {
 vi.mock('../squad/squad-catalog', () => ({
   updateChannelNameIfPlaceholder: (...args: unknown[]) =>
     mocks.mockFunctions.updateChannelNameIfPlaceholder(...args),
+}));
+
+vi.mock('../squad/squad-catalog-recover', () => ({
+  enrichRecoveredSquadNamesFromInvites: (...args: unknown[]) =>
+    mocks.mockFunctions.enrichRecoveredSquadNamesFromInvites(...args),
 }));
 
 vi.mock('../utils/dm-debug', () => ({

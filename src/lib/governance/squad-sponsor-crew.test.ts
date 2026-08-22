@@ -3,6 +3,7 @@ import {
   allMembersShareEvmAddress,
   allMembersShareEvmState,
   checklistGlyph,
+  crewRosterEligibilityColumns,
   isHatsSponsoredAddress,
   mintCrewHatsState,
   permittedByAddressFromExtStatus,
@@ -94,6 +95,32 @@ describe('isHatsSponsoredAddress', () => {
     expect(isHatsSponsoredAddress('0xAaA', ['0xaaa'], [])).toBe(true);
     expect(isHatsSponsoredAddress('0xbbb', [], ['0xBBB'])).toBe(true);
     expect(isHatsSponsoredAddress('0xccc', ['0xaaa'], ['0xbbb'])).toBe(false);
+  });
+});
+
+describe('crewRosterEligibilityColumns', () => {
+  it('shows Hats and hides Sponsored with no sponsor', () => {
+    expect(
+      crewRosterEligibilityColumns({ hasSponsor: false, sponsorHatsMode: false, hatsWired: false }),
+    ).toEqual({ showHatsCol: true, showSponsoredCol: false });
+  });
+
+  it('shows Hats and hides Sponsored on hats-linked sponsor', () => {
+    expect(
+      crewRosterEligibilityColumns({ hasSponsor: true, sponsorHatsMode: true, hatsWired: false }),
+    ).toEqual({ showHatsCol: true, showSponsoredCol: false });
+  });
+
+  it('shows Hats and hides Sponsored when Ext has hats wired', () => {
+    expect(
+      crewRosterEligibilityColumns({ hasSponsor: true, sponsorHatsMode: false, hatsWired: true }),
+    ).toEqual({ showHatsCol: true, showSponsoredCol: false });
+  });
+
+  it('shows Sponsored and hides Hats on Ext address permits', () => {
+    expect(
+      crewRosterEligibilityColumns({ hasSponsor: true, sponsorHatsMode: false, hatsWired: false }),
+    ).toEqual({ showHatsCol: false, showSponsoredCol: true });
   });
 });
 

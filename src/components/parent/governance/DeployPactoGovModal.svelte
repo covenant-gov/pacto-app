@@ -8,6 +8,12 @@
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { startPactoGovDeploy, type PactoGovDeployComplete } from '../../../lib/governance/start-pacto-gov-deploy';
   import type { PactoGovCaptainOption } from '../../../lib/governance/start-pacto-gov-deploy';
+  import {
+    PRODUCTION_SQUAD_PARAMS,
+    squadParamsIfCustomized,
+    validateSquadParams,
+  } from '../../../lib/governance/squad-params';
+  import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
   import { getAddress, isAddress } from 'viem';
 
   let {
@@ -33,6 +39,21 @@
   let captainAddress = $state('');
   let resolvingDeployer = $state(true);
   let deployError = $state('');
+  let customizeParams = $state(false);
+  let crewChangeDelaySecs = $state(PRODUCTION_SQUAD_PARAMS.crewChangeDelaySecs);
+  let proposalExpirySecs = $state(PRODUCTION_SQUAD_PARAMS.proposalExpirySecs);
+  let crewVoteMode = $state(PRODUCTION_SQUAD_PARAMS.crewVoteMode);
+  let quorumBps = $state(PRODUCTION_SQUAD_PARAMS.quorumBps);
+
+  const customizeInvalid = $derived(
+    customizeParams &&
+      !!validateSquadParams({
+        crewChangeDelaySecs,
+        proposalExpirySecs,
+        crewVoteMode,
+        quorumBps,
+      }),
+  );
 
   function shortAddress(addr: string): string {
     if (addr.length < 18) return addr;
@@ -68,10 +89,21 @@
       deployError = tFn('governance.deployPactoGov.error.noBoundEvm');
       return;
     }
+    const squadParams = squadParamsIfCustomized(customizeParams, {
+      crewChangeDelaySecs,
+      proposalExpirySecs,
+      crewVoteMode,
+      quorumBps,
+    });
+    if (squadParams && validateSquadParams(squadParams)) {
+      deployError = tFn('governance.squadParams.error.invalid');
+      return;
+    }
     startPactoGovDeploy({
       parentId: parentId.trim(),
       squadNetwork,
       captain: captainAddress,
+      squadParams,
       onReject: (message) => {
         deployError = message;
       },
@@ -125,6 +157,14 @@
     {/if}
   </div>
 
+  <SquadParamsCustomizeFields
+    bind:customizing={customizeParams}
+    bind:crewChangeDelaySecs
+    bind:proposalExpirySecs
+    bind:crewVoteMode
+    bind:quorumBps
+  />
+
   {#if deployError}
     <p class="input-error" role="alert">{deployError}</p>
   {/if}
@@ -134,7 +174,7 @@
     <button
       type="button"
       class="btn-primary"
-      disabled={!squadNetwork || resolvingDeployer || !captainAddress}
+      disabled={!squadNetwork || resolvingDeployer || !captainAddress || customizeInvalid}
       onclick={executeDeploy}
     >
       {$t('governance.common.execute')}

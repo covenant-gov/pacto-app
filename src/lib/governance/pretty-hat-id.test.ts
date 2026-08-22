@@ -71,6 +71,13 @@ describe('prettyHatId', () => {
     expect(prettyHatId(decimal)).toBe('15.2.5.10.1');
   });
 
+  it('round-trips a dotted pretty id', () => {
+    expect(prettyHatId('15.2.5.10.1')).toBe('15.2.5.10.1');
+    expect(hatIdToHex('15.2.5.10.1')).toBe(
+      '0x0000000f00020005000a00010000000000000000000000000000000000000000',
+    );
+  });
+
   it('returns null for empty or invalid input', () => {
     expect(prettyHatId('')).toBeNull();
     expect(prettyHatId('  ')).toBeNull();

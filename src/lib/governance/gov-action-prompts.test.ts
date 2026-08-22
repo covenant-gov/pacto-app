@@ -39,6 +39,7 @@ function mutiny(overrides: Partial<MutinyStatusDto> = {}): MutinyStatusDto {
     activeMutinyId: '9',
     proposedNewCaptain: '0xnew',
     startedAt: 1,
+    deadline: 0,
     snapshot: 3,
     yeas: 1,
     executed: false,
@@ -190,6 +191,72 @@ describe('deriveGovActionPrompts', () => {
       mutinyHasVoted: false,
     });
     expect(prompts.some((p) => p.sourceEventId === 'gov-vote:mutiny:squad-1:9')).toBe(true);
+  });
+
+  it('skips mutiny vote after deadline and emits offboard vote when open', () => {
+    const expired = deriveGovActionPrompts({
+      parentId: 'squad-1',
+      proposals: [],
+      mutinyStatus: mutiny({ yeas: 1, snapshot: 3, deadline: 100 }),
+      qmPending: [],
+      privilege: privilege(),
+      mutinyMode: true,
+      treasuryVoteMap: {},
+      mutinyHasVoted: false,
+      nowSec: 100,
+    });
+    expect(expired.some((p) => p.sourceEventId === 'gov-vote:mutiny:squad-1:9')).toBe(false);
+
+    const offboard = deriveGovActionPrompts({
+      parentId: 'squad-1',
+      proposals: [],
+      mutinyStatus: null,
+      qmPending: [],
+      privilege: privilege(),
+      mutinyMode: true,
+      treasuryVoteMap: {},
+      mutinyHasVoted: false,
+      crewOffboard: {
+        offboardId: '4',
+        target: '0xabc',
+        proposer: '0xdef',
+        deadline: 400,
+        snapshot: 10,
+        yeas: 1,
+        nays: 0,
+        executed: false,
+      },
+      crewOffboardQuorumBps: 3000,
+      offboardHasVoted: false,
+      nowSec: 100,
+    });
+    expect(offboard.some((p) => p.sourceEventId === 'gov-vote:crew-offboard:squad-1:4')).toBe(true);
+  });
+
+  it('suppresses quartermaster execute prompts while crew offboard freezes the roster', () => {
+    const prompts = deriveGovActionPrompts({
+      parentId: 'squad-1',
+      proposals: [],
+      mutinyStatus: null,
+      qmPending: [{ kind: 'add', address: '0xA1', executableAt: '50' }],
+      privilege: privilege({ wearsCaptain: true }),
+      mutinyMode: false,
+      treasuryVoteMap: {},
+      mutinyHasVoted: false,
+      crewOffboard: {
+        offboardId: '4',
+        target: '0xabc',
+        proposer: '0xdef',
+        deadline: 400,
+        snapshot: 10,
+        yeas: 1,
+        nays: 0,
+        executed: false,
+      },
+      crewOffboardQuorumBps: 3000,
+      nowSec: 100,
+    });
+    expect(prompts.some((p) => p.sourceEventId.startsWith('gov-execute:crew_add'))).toBe(false);
   });
 
   it('caps prompts and sorts execute before vote before delay', () => {

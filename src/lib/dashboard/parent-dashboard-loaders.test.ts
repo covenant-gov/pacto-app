@@ -16,6 +16,7 @@ import {
   getHatsTree,
   getMemberHatWearers,
   getNavePirataDeployment,
+  getWarGameDeployment,
   getSquadAdminExecutorRoles,
   listQuartermasterPending,
   listTreasuryProposals,
@@ -38,6 +39,7 @@ const mockedListQuartermasterPending = vi.mocked(listQuartermasterPending);
 const mockedTreasuryProposalHasVoted = vi.mocked(treasuryProposalHasVoted);
 const mockedGetHatsTree = vi.mocked(getHatsTree);
 const mockedGetNavePirataDeployment = vi.mocked(getNavePirataDeployment);
+const mockedGetWarGameDeployment = vi.mocked(getWarGameDeployment);
 const mockedGetMemberHatWearers = vi.mocked(getMemberHatWearers);
 const mockedGetSquadAdminExecutorRoles = vi.mocked(getSquadAdminExecutorRoles);
 const mockedWithReadPlaneLimit = vi.mocked(withReadPlaneLimit);
@@ -311,7 +313,11 @@ describe('fetchSettingsChainMemberMaps', () => {
       squadMemberEvmByNpub: { npub1: '0xABC' },
     });
 
-    expect(mockedGetNavePirataDeployment).toHaveBeenCalledWith({ network: 'sepolia', topHatId: '0xTop' });
+    expect(mockedGetNavePirataDeployment).toHaveBeenCalledWith({
+      network: 'sepolia',
+      topHatId: '0xTop',
+      parentId: undefined,
+    });
     expect(result.memberHatByAddress).toEqual({ '0xabc': 'Captain' });
     expect(result.memberRolesByAddress).toEqual({});
     expect(result.error).toBe('');
@@ -365,6 +371,31 @@ describe('fetchSettingsChainMemberMaps', () => {
 
     expect(result.memberHatByAddress).toEqual({ '0xabc': 'Crew' });
     expect(result.memberRolesByAddress).toEqual({ '0xabc': 'Treasurer' });
+  });
+
+  it('loads hats from WarGameRegistry when stack is wargame', async () => {
+    mockedGetWarGameDeployment.mockResolvedValueOnce(naveDeployment);
+    mockedGetMemberHatWearers.mockResolvedValueOnce([
+      { address: '0xabc', hats: [{ hatId: '0xCaptainHat', label: 'Captain' }] },
+    ]);
+
+    const result = await fetchSettingsChainMemberMaps({
+      network: 'sepolia',
+      topHatId: '0xTop',
+      squadAdminProxy: null,
+      squadAdminChain: null,
+      squadMemberEvmByNpub: { npub1: '0xABC' },
+      stack: 'wargame',
+    });
+
+    expect(mockedGetWarGameDeployment).toHaveBeenCalledWith({
+      network: 'sepolia',
+      topHatId: '0xTop',
+      parentId: undefined,
+    });
+    expect(mockedGetNavePirataDeployment).not.toHaveBeenCalled();
+    expect(result.memberHatByAddress).toEqual({ '0xabc': 'Captain' });
+    expect(result.error).toBe('');
   });
 
   it('returns an error message when the on-chain calls fail', async () => {
@@ -447,9 +478,33 @@ describe('fetchRolesTreeAnnotations', () => {
     ]);
     expect(result.wearerAddressesByHatId[rolesTreeDeployment.crewHatId]).toEqual([crewAddress.toLowerCase()]);
     expect(result.executorRolesByAddress[captainAddress.toLowerCase()]).toBe('Treasury');
-    expect(mockedGetNavePirataDeployment).toHaveBeenCalledWith({ network: 'sepolia', topHatId: '3519' });
+    expect(mockedGetNavePirataDeployment).toHaveBeenCalledWith({
+      network: 'sepolia',
+      topHatId: '3519',
+      parentId: undefined,
+    });
     expect(mockedGetMemberHatWearers).toHaveBeenCalled();
     expect(mockedGetSquadAdminExecutorRoles).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads annotations from WarGameRegistry when stack is wargame', async () => {
+    mockedGetWarGameDeployment.mockResolvedValueOnce(rolesTreeDeployment);
+    const result = await fetchRolesTreeAnnotations({
+      network: 'sepolia',
+      topHatId: '3519',
+      squadMemberEvmByNpub: {
+        'npub-captain': captainAddress,
+      },
+      stack: 'wargame',
+    });
+    expect(result.error).toBe('');
+    expect(mockedGetWarGameDeployment).toHaveBeenCalledWith({
+      network: 'sepolia',
+      topHatId: '3519',
+      parentId: undefined,
+    });
+    expect(mockedGetNavePirataDeployment).not.toHaveBeenCalled();
+    expect(result.roleLabelByHatId[rolesTreeDeployment.captainHatId]).toBe('Captain');
   });
 
   it('returns empty maps when no squad member EVM addresses are shared', async () => {

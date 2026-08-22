@@ -2,11 +2,16 @@ import { invoke } from '@tauri-apps/api/core';
 import type { GovernanceProcessKind } from '../announcements';
 import { withPactoGovProviderPayloadTxHash } from './pacto-gov-payload';
 import { announceGovernanceProcessUpdated } from './governance-process-announce';
+import { recordMutinyProcessTx } from './mutiny-process-tx';
+import { bumpGovernanceProcessNonce } from '../../stores/navigation';
 import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
+import type { SquadParamsInput } from './squad-params';
+import { squadParamsToInvoke } from './squad-params';
 
 export {
   pactoGovInfraId,
   pactoGovTreasuryEntryId,
+  pactoGovWargameInfraId,
   squadAdminInfraId,
   squadSponsorInfraId,
 } from './squad-infra-row-id';
@@ -45,8 +50,8 @@ export function primaryGovernanceView(
   const row =
     rows.find((r) => r.infraType === 'pacto_gov') ??
     rows.find((r) => r.infraType === 'standalone_safe') ??
-    rows[0];
-  return withLegacyProvider(row);
+    rows.find((r) => r.infraType !== 'pacto_gov_wargame');
+  return row ? withLegacyProvider(row) : null;
 }
 
 /** Backend: `list_squad_infra`. */
@@ -470,6 +475,25 @@ export interface NavePirataDeployResultDto {
   infraRowId: string;
 }
 
+/** Mirrors `WarGameDeployResult` from Tauri (`serde(rename_all = "camelCase")`). */
+export interface WarGameDeployResultDto {
+  txHash: string;
+  chain: string;
+  chainId: number;
+  topHatId: string;
+  safeAddress: string;
+  quartermaster: string;
+  mutinyModule: string;
+  treasuryAuthority: string;
+  squadAdminProxy: string;
+  round: string;
+  gameSquadId: string;
+  sponsorAddress: string;
+  retiredSponsor: string | null;
+  providerPayload: string;
+  infraRowId: string;
+}
+
 /** Backend: `deploy_nave_pirata_for_parent`. */
 export async function deployNavePirataForParent(params: {
   network: string;
@@ -480,6 +504,7 @@ export async function deployNavePirataForParent(params: {
   signerWallet?: SquadSponsorDeploySignerWallet;
   /** When UI parent id differs from #announcements MLS id, roster rows may live under this key. */
   altParentId?: string | null;
+  squadParams?: SquadParamsInput | null;
 }): Promise<NavePirataDeployResultDto> {
   return (await invoke('deploy_nave_pirata_for_parent', {
     network: params.network,
@@ -489,8 +514,34 @@ export async function deployNavePirataForParent(params: {
     saltNonce: params.saltNonce?.trim() ? params.saltNonce.trim() : null,
     signerWallet: params.signerWallet ?? 'squad',
     altParentId: params.altParentId?.trim() ? params.altParentId.trim() : null,
+    squadParams: params.squadParams ? squadParamsToInvoke(params.squadParams) : null,
     rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as NavePirataDeployResultDto;
+}
+
+/** Backend: `deploy_war_game_for_parent`. Always Sepolia. */
+export async function deployWarGameForParent(params: {
+  parentId: string;
+  captain: string;
+  metadataUri?: string | null;
+  saltNonce?: string | null;
+  signerWallet?: SquadSponsorDeploySignerWallet;
+  altParentId?: string | null;
+  squadParams?: SquadParamsInput | null;
+  initialDepositWei?: string | null;
+}): Promise<WarGameDeployResultDto> {
+  return (await invoke('deploy_war_game_for_parent', {
+    network: 'sepolia',
+    parentId: params.parentId,
+    captain: params.captain,
+    metadataUri: params.metadataUri?.trim() ?? '',
+    saltNonce: params.saltNonce?.trim() ? params.saltNonce.trim() : null,
+    signerWallet: params.signerWallet ?? 'default',
+    altParentId: params.altParentId?.trim() ? params.altParentId.trim() : null,
+    squadParams: params.squadParams ? squadParamsToInvoke(params.squadParams) : null,
+    initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, 'sepolia'),
+  })) as WarGameDeployResultDto;
 }
 
 /** Mirrors `NavePirataDeploymentDto` from Tauri (`serde(rename_all = "camelCase")`). */
@@ -519,6 +570,19 @@ export async function getNavePirataDeployment(params: {
   parentId?: string | null;
 }): Promise<NavePirataDeploymentDto> {
   return (await invoke('get_nave_pirata_deployment', {
+    network: params.network,
+    topHatId: params.topHatId.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as NavePirataDeploymentDto;
+}
+
+/** Backend: `get_war_game_deployment`. Same DTO as Nave Pirata; WarGameRegistry only. */
+export async function getWarGameDeployment(params: {
+  network: string;
+  topHatId: string;
+  parentId?: string | null;
+}): Promise<NavePirataDeploymentDto> {
+  return (await invoke('get_war_game_deployment', {
     network: params.network,
     topHatId: params.topHatId.trim(),
     rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
@@ -557,6 +621,24 @@ export async function listTreasuryProposals(params: {
   })) as TreasuryProposalDto[];
 }
 
+export interface TreasuryVoteConfigDto {
+  crewVoteMode: string;
+  quorumBps: number;
+}
+
+/** Backend: `get_treasury_vote_config`. */
+export async function getTreasuryVoteConfig(params: {
+  network: string;
+  treasuryAuthority: string;
+  parentId?: string | null;
+}): Promise<TreasuryVoteConfigDto> {
+  return (await invoke('get_treasury_vote_config', {
+    network: params.network,
+    treasuryAuthority: params.treasuryAuthority.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as TreasuryVoteConfigDto;
+}
+
 export async function treasuryProposalHasVoted(params: {
   network: string;
   treasuryAuthority: string;
@@ -585,16 +667,25 @@ export interface GovernanceWriteResultDto {
   fundedBy?: 'sponsored' | 'self_funded';
 }
 
-function afterGovWrite(
-  result: GovernanceWriteResultDto,
+async function afterGovWrite<T extends { txHash?: string }>(
+  result: T,
   hint: {
     parentId: string;
     kind: GovernanceProcessKind;
     address?: string;
     proposalId?: string;
+    mutinyStart?: boolean;
   },
-): GovernanceWriteResultDto {
-  void announceGovernanceProcessUpdated({
+): Promise<T> {
+  if (hint.kind === 'mutiny' && result.txHash?.trim()) {
+    recordMutinyProcessTx({
+      parentId: hint.parentId,
+      txHash: result.txHash,
+      isStart: hint.mutinyStart === true,
+    });
+  }
+  bumpGovernanceProcessNonce(hint.parentId);
+  await announceGovernanceProcessUpdated({
     parentId: hint.parentId,
     kind: hint.kind,
     address: hint.address,
@@ -689,7 +780,9 @@ export async function treasuryAuthorityExecute(params: {
 export interface MutinyStatusDto {
   activeMutinyId: string;
   proposedNewCaptain: string;
+  fromCaptain?: string;
   startedAt: number;
+  deadline: number;
   snapshot: number;
   yeas: number;
   executed: boolean;
@@ -738,7 +831,7 @@ export async function mutinyStartToCrewMember(params: {
       proposed: params.proposed.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny', address: params.proposed },
+    { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
   );
 }
 
@@ -756,7 +849,7 @@ export async function mutinyStartToCommittee(params: {
       proposed: params.proposed.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny', address: params.proposed },
+    { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
   );
 }
 
@@ -774,7 +867,7 @@ export async function mutinyStartToArbitraryEoa(params: {
       proposed: params.proposed.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny', address: params.proposed },
+    { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
   );
 }
 
@@ -792,7 +885,7 @@ export async function mutinyStartToArbitraryContract(params: {
       proposed: params.proposed.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny', address: params.proposed },
+    { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
   );
 }
 
@@ -808,7 +901,7 @@ export async function mutinyStartToPauseCaptain(params: {
       mutinyModule: params.mutinyModule.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny' },
+    { parentId: params.parentId, kind: 'mutiny', mutinyStart: true },
   );
 }
 
@@ -848,6 +941,24 @@ export async function mutinyExecute(params: {
   );
 }
 
+export async function mutinyExpire(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+  mutinyId: string;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('mutiny_expire', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      mutinyModule: params.mutinyModule.trim(),
+      mutinyId: params.mutinyId.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'mutiny' },
+  );
+}
+
 export async function mutinyCaptainResign(params: {
   network: string;
   parentId: string;
@@ -866,11 +977,26 @@ export async function mutinyCaptainResign(params: {
   );
 }
 
+export interface CrewOffboardDto {
+  offboardId: string;
+  target: string;
+  proposer: string;
+  deadline: number;
+  snapshot: number;
+  yeas: number;
+  nays: number;
+  executed: boolean;
+}
+
 export interface QuartermasterStatusDto {
   crewChangeDelaySecs: string;
   mutinyActive: boolean;
   crewHatSupply?: number;
   bootstrapAvailable?: boolean;
+  activeCrewOffboardId: string;
+  crewOffboardExpirySecs: string;
+  crewOffboardQuorumBps: string;
+  offboard?: CrewOffboardDto | null;
 }
 
 export interface QuartermasterPendingDto {
@@ -985,13 +1111,16 @@ export async function quartermasterBootstrapCrew(params: {
   quartermaster: string;
   candidates: string[];
 }): Promise<GovernanceWriteResultDto> {
-  return (await invoke('quartermaster_bootstrap_crew', {
-    network: params.network,
-    parentId: params.parentId.trim(),
-    quartermaster: params.quartermaster.trim(),
-    candidates: params.candidates.map((c) => c.trim()).filter(Boolean),
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
-  })) as GovernanceWriteResultDto;
+  return afterGovWrite(
+    (await invoke('quartermaster_bootstrap_crew', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      candidates: params.candidates.map((c) => c.trim()).filter(Boolean),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'hats' },
+  );
 }
 
 export async function quartermasterRequestRemoveCrew(params: {
@@ -1045,6 +1174,96 @@ export async function quartermasterExecuteRemoveCrew(params: {
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
     { parentId: params.parentId, kind: 'qm_pending', address: params.crew },
+  );
+}
+
+export async function crewOffboardHasVoted(params: {
+  network: string;
+  quartermaster: string;
+  offboardId: string;
+  voter: string;
+  parentId?: string | null;
+}): Promise<boolean> {
+  return (await invoke('crew_offboard_has_voted', {
+    network: params.network,
+    quartermaster: params.quartermaster.trim(),
+    offboardId: params.offboardId.trim(),
+    voter: params.voter.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as boolean;
+}
+
+export async function quartermasterProposeOffboard(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  target: string;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('quartermaster_propose_offboard', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      target: params.target.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'crew_offboard', address: params.target },
+  );
+}
+
+export async function quartermasterCrewOffboardVote(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  offboardId: string;
+  support: boolean;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('quartermaster_crew_offboard_vote', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      offboardId: params.offboardId.trim(),
+      support: params.support,
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'crew_offboard' },
+  );
+}
+
+export async function quartermasterExecuteOffboard(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  offboardId: string;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('quartermaster_execute_offboard', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      offboardId: params.offboardId.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'crew_offboard' },
+  );
+}
+
+export async function quartermasterExpireOffboard(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  offboardId: string;
+}): Promise<GovernanceWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('quartermaster_expire_offboard', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      quartermaster: params.quartermaster.trim(),
+      offboardId: params.offboardId.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as GovernanceWriteResultDto,
+    { parentId: params.parentId, kind: 'crew_offboard' },
   );
 }
 
@@ -1192,13 +1411,16 @@ export async function squadAdminCreateRole(params: {
   squadAdminProxy: string;
   roleLabel: string;
 }): Promise<SquadAdminWriteResultDto> {
-  return (await invoke('squad_admin_create_role', {
-    network: params.network,
-    parentId: params.parentId.trim(),
-    squadAdminProxy: params.squadAdminProxy.trim(),
-    roleLabel: params.roleLabel.trim(),
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
-  })) as SquadAdminWriteResultDto;
+  return afterGovWrite(
+    (await invoke('squad_admin_create_role', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      squadAdminProxy: params.squadAdminProxy.trim(),
+      roleLabel: params.roleLabel.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as SquadAdminWriteResultDto,
+    { parentId: params.parentId, kind: 'hats', address: params.squadAdminProxy },
+  );
 }
 
 export async function squadAdminEnableExecutor(params: {
@@ -1208,14 +1430,17 @@ export async function squadAdminEnableExecutor(params: {
   executorAddress: string;
   roleLabel: string;
 }): Promise<SquadAdminWriteResultDto> {
-  return (await invoke('squad_admin_enable_executor', {
-    network: params.network,
-    parentId: params.parentId.trim(),
-    squadAdminProxy: params.squadAdminProxy.trim(),
-    executorAddress: params.executorAddress.trim(),
-    roleLabel: params.roleLabel.trim(),
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
-  })) as SquadAdminWriteResultDto;
+  return afterGovWrite(
+    (await invoke('squad_admin_enable_executor', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      squadAdminProxy: params.squadAdminProxy.trim(),
+      executorAddress: params.executorAddress.trim(),
+      roleLabel: params.roleLabel.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as SquadAdminWriteResultDto,
+    { parentId: params.parentId, kind: 'hats', address: params.executorAddress },
+  );
 }
 
 export async function squadAdminEnableFullPermission(params: {
@@ -1225,14 +1450,17 @@ export async function squadAdminEnableFullPermission(params: {
   executorAddress: string;
   enable: boolean;
 }): Promise<SquadAdminWriteResultDto> {
-  return (await invoke('squad_admin_enable_full_permission', {
-    network: params.network,
-    parentId: params.parentId.trim(),
-    squadAdminProxy: params.squadAdminProxy.trim(),
-    executorAddress: params.executorAddress.trim(),
-    enable: params.enable,
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
-  })) as SquadAdminWriteResultDto;
+  return afterGovWrite(
+    (await invoke('squad_admin_enable_full_permission', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      squadAdminProxy: params.squadAdminProxy.trim(),
+      executorAddress: params.executorAddress.trim(),
+      enable: params.enable,
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as SquadAdminWriteResultDto,
+    { parentId: params.parentId, kind: 'hats', address: params.executorAddress },
+  );
 }
 
 export interface CapabilityFlagDto {
@@ -1256,16 +1484,23 @@ export interface SquadCapabilitiesDto {
 export async function getSquadCapabilities(
   parentId: string,
   network?: string | null,
+  opts?: { wargame?: boolean },
 ): Promise<SquadCapabilitiesDto> {
   return (await invoke('get_squad_capabilities', {
     parentId: parentId.trim(),
     rpcUrls: squadRpcUrlsForInvoke(parentId, network),
+    wargame: opts?.wargame === true,
   })) as SquadCapabilitiesDto;
 }
 
-/** Pacto-gov infra row for a parent, if any. */
+/** Pacto-gov infra row for a parent, if any. Never matches `pacto_gov_wargame`. */
 export function pactoGovInfraRow(rows: SquadInfraDto[] | undefined): SquadInfraDto | null {
   return rows?.find((r) => r.infraType === 'pacto_gov') ?? null;
+}
+
+/** War-game stack row for a parent, if any. */
+export function pactoGovWargameInfraRow(rows: SquadInfraDto[] | undefined): SquadInfraDto | null {
+  return rows?.find((r) => r.infraType === 'pacto_gov_wargame') ?? null;
 }
 
 /** Squad-admin infra row for a parent (standalone deploy), if any. */

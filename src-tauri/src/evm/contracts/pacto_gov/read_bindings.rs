@@ -35,6 +35,37 @@ sol! {
         );
     }
 
+    interface IWarGameRegistry {
+        struct Deployment {
+            address safe;
+            address quartermaster;
+            address mutinyModule;
+            address treasuryAuthority;
+            address squadAdminProxy;
+            uint256 topHatId;
+            uint256 captainHatId;
+            uint256 crewHatId;
+            uint256 squadAdminHatId;
+            uint256 mutinyRoleHatId;
+            uint256 quartermasterRoleHatId;
+            uint256 treasuryAuthorityRoleHatId;
+            uint64 deployedAt;
+            address deployer;
+        }
+
+        function deployment(uint256 _topHatId) external view returns (Deployment memory _deployment);
+
+        function active(bytes32 squadId) external view returns (Deployment memory _deployment);
+
+        event WarGameRegistered(
+            bytes32 indexed _squadId,
+            uint256 indexed _topHatId,
+            Deployment _deployment
+        );
+
+        event WarGameRetired(bytes32 indexed _squadId, uint256 indexed _topHatId);
+    }
+
     interface ITreasuryAuthority {
         enum Operation {
             CALL,
@@ -74,6 +105,14 @@ sol! {
         function captainVote(uint256 _proposalId, bool _support) external;
 
         function execute(uint256 _proposalId) external;
+
+        function crewVoteMode() external view returns (CrewVoteMode _mode);
+
+        function quorumBps() external view returns (uint256 _quorumBps);
+
+        function setCrewVoteMode(CrewVoteMode _mode) external;
+
+        function setQuorumBps(uint256 _quorumBps) external;
     }
 
     interface IMutinyModule {
@@ -84,6 +123,7 @@ sol! {
         function startMutinyToPauseCaptain() external;
         function castVote(uint256 _mutinyId) external;
         function executeMutiny(uint256 _mutinyId) external;
+        function expireMutiny(uint256 _mutinyId) external;
         function captainResign(address _newCaptain) external;
         function activeMutinyId() external view returns (uint256 _id);
         function mutiny(uint256 _id)
@@ -91,7 +131,9 @@ sol! {
             view
             returns (
                 address _proposedNewCaptain,
+                address _fromCaptain,
                 uint64 _startedAt,
+                uint64 _deadline,
                 uint64 _snapshot,
                 uint64 _yeas,
                 bool _executed
@@ -109,8 +151,28 @@ sol! {
         function requestRemoveCrew(address _crew) external;
         function cancelRemoveCrew(address _crew) external;
         function executeRemoveCrew(address _crew) external;
+        function proposeOffboard(address _target) external returns (uint256 _offboardId);
+        function crewOffboardVote(uint256 _offboardId, bool _support) external;
+        function executeOffboard(uint256 _offboardId) external;
+        function expireOffboard(uint256 _offboardId) external;
         function crewChangeDelay() external view returns (uint256 _delay);
+        function crewOffboardExpiry() external view returns (uint256 _expiry);
+        function crewOffboardQuorumBps() external view returns (uint256 _bps);
+        function activeCrewOffboardId() external view returns (uint256 _id);
         function mutinyActive() external view returns (bool _active);
+        function crewOffboard(uint256 _id)
+            external
+            view
+            returns (
+                address _target,
+                address _proposer,
+                uint64 _deadline,
+                uint64 _snapshot,
+                uint64 _yeas,
+                uint64 _nays,
+                bool _executed
+            );
+        function hasCrewOffboardVote(uint256 _offboardId, address _voter) external view returns (bool _voted);
         function pendingCrewAddAt(address _candidate) external view returns (uint256 _executableAt);
         function pendingCrewRemoveAt(address _crew) external view returns (uint256 _executableAt);
         function pendingAdds()

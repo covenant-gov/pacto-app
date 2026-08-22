@@ -495,6 +495,9 @@ fn normalize_infra_type(raw: &str) -> Result<String, String> {
     match s.as_str() {
         "sponsor" | "squad_sponsor" => Ok("sponsor".to_string()),
         "pacto_gov" | "pacto-gov" => Ok("pacto_gov".to_string()),
+        "pacto_gov_wargame" | "pacto-gov-wargame" | "pacto-gov_wargame" => {
+            Ok("pacto_gov_wargame".to_string())
+        }
         "squad_admin" | "squad-admin" => Ok("squad_admin".to_string()),
         "standalone_safe" | "gnosis_safe" | "gnosis-safe" | "safe" => {
             Ok("standalone_safe".to_string())
@@ -1514,6 +1517,7 @@ pub async fn upsert_squad_tracked_token<R: Runtime>(
         pid.as_str(),
         crate::evm::access_control::GovCapability::MutateTrackedTokens,
         rpc_urls,
+        crate::evm::access_control::GovStack::Live,
     )
     .await?;
     let added_by = crate::account_manager::get_current_account()?;
@@ -1579,6 +1583,7 @@ pub async fn remove_squad_tracked_token<R: Runtime>(
         pid,
         crate::evm::access_control::GovCapability::MutateTrackedTokens,
         rpc_urls,
+        crate::evm::access_control::GovStack::Live,
     )
     .await?;
     let conn = crate::account_manager::get_db_connection(&handle)?;
@@ -2171,6 +2176,19 @@ mod tracked_token_tests {
     }
 
     #[test]
+    fn wargame_infra_does_not_satisfy_pacto_gov_gate() {
+        let conn = rusqlite::Connection::open_in_memory().expect("db");
+        tracked_schema(&conn);
+        conn.execute(
+            "INSERT INTO squad_infra (id, parent_id, infra_type, chain, canonical_ref, created_at_ms, updated_at_ms)
+             VALUES ('pgw-1', 'parent-1', 'pacto_gov_wargame', 'sepolia', '1', 1, 1)",
+            [],
+        )
+        .expect("insert");
+        assert!(!parent_has_pacto_gov_infra(&conn, "parent-1"));
+    }
+
+    #[test]
     fn upsert_list_remove_tracked_token_round_trip() {
         let conn = rusqlite::Connection::open_in_memory().expect("db");
         tracked_schema(&conn);
@@ -2277,8 +2295,8 @@ mod tracked_token_tests {
 #[cfg(test)]
 mod squad_infra_row_id_tests {
     use super::{
-        pacto_gov_infra_row_id, pacto_gov_treasury_row_id, squad_admin_infra_row_id,
-        squad_sponsor_infra_row_id, SQUAD_INFRA_ID_MAX,
+        pacto_gov_infra_row_id, pacto_gov_treasury_row_id, pacto_gov_wargame_infra_row_id,
+        squad_admin_infra_row_id, squad_sponsor_infra_row_id, SQUAD_INFRA_ID_MAX,
     };
 
     const LONG_PARENT: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
@@ -2299,12 +2317,14 @@ mod squad_infra_row_id_tests {
         let treasury = pacto_gov_treasury_row_id(LONG_PARENT);
         let sponsor = squad_sponsor_infra_row_id(LONG_PARENT);
         let admin = squad_admin_infra_row_id(LONG_PARENT);
+        let wargame = pacto_gov_wargame_infra_row_id(LONG_PARENT);
 
-        for id in [&gov, &treasury, &sponsor, &admin] {
+        for id in [&gov, &treasury, &sponsor, &admin, &wargame] {
             assert!(id.len() <= SQUAD_INFRA_ID_MAX);
         }
         assert!(gov.starts_with("pg-"));
         assert!(treasury.starts_with("pgt-"));
+        assert!(wargame.starts_with("pgw-"));
         assert_eq!(
             gov,
             "pg-68025c1968089de1fee3538c1da6fb961996d68a176ad60013a5d8bba755508f"
@@ -2418,7 +2438,8 @@ pub struct StickerPackRow {
     pub deleted: bool,
 }
 
-const STICKER_PACK_COLUMNS: &str = "squad_id, pack_id, name, entries, updated_at, updated_by, deleted";
+const STICKER_PACK_COLUMNS: &str =
+    "squad_id, pack_id, name, entries, updated_at, updated_by, deleted";
 
 /// Persist a local sticker-pack edit (create, rename, re-order, or `deleted: true` tombstone)
 /// and stamp `updated_at` from the system clock. The caller sends the MLS announce using the
@@ -2484,7 +2505,9 @@ pub fn upsert_sticker_pack_inner<R: Runtime>(
 
 /// Every non-deleted sticker pack in this account's database — i.e. every squad the account
 /// belongs to, since only squads it has synced announcements for have rows here.
-pub fn load_sticker_packs<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<StickerPackRow>, String> {
+pub fn load_sticker_packs<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<Vec<StickerPackRow>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
     let mut stmt = conn
         .prepare(&format!(
@@ -2541,7 +2564,10 @@ mod sticker_pack_local_storage_tests {
             "updated_by",
             "deleted",
         ] {
-            assert!(cols.contains(&expected.to_string()), "missing column {expected}");
+            assert!(
+                cols.contains(&expected.to_string()),
+                "missing column {expected}"
+            );
         }
     }
 }
@@ -2610,6 +2636,20 @@ pub fn pacto_gov_infra_row_id(parent_id: &str) -> String {
     }
 }
 
+/// Stable SQLite row id for the war-game stack entry for this parent.
+pub fn pacto_gov_wargame_infra_row_id(parent_id: &str) -> String {
+    let pid = parent_id.trim();
+    let direct = format!("pacto-gov-wargame-{pid}");
+    if direct.len() <= SQUAD_INFRA_ID_MAX {
+        direct
+    } else {
+        format!(
+            "pgw-{}",
+            hex::encode(alloy::primitives::keccak256(pid.as_bytes()).as_slice())
+        )
+    }
+}
+
 /// Stable SQLite row id for the pacto-gov treasury entry for this parent.
 pub fn pacto_gov_treasury_row_id(parent_id: &str) -> String {
     let pid = parent_id.trim();
@@ -2667,6 +2707,54 @@ pub fn persist_pacto_gov_infra<R: Runtime>(
         pacto_gov_infra_row_id(parent_id).as_str(),
         parent_id,
         "pacto_gov",
+        Some(chain),
+        hat,
+        None,
+        Some(provider_payload),
+    )
+}
+
+/// Stored war-game provider payload for this parent, if any.
+pub fn pacto_gov_wargame_payload_for_parent<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<Option<String>, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(None);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT provider_payload FROM squad_infra \
+             WHERE parent_id = ?1 AND infra_type = 'pacto_gov_wargame' \
+             ORDER BY updated_at_ms DESC LIMIT 1",
+            rusqlite::params![pid],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("pacto_gov_wargame payload lookup: {e}"))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(row.filter(|s| !s.trim().is_empty()))
+}
+
+/// Persist or refresh the war-game infra row after deploy. Never writes `pacto_gov`.
+pub fn persist_pacto_gov_wargame_infra<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    top_hat_id: &str,
+    provider_payload: &str,
+) -> Result<(), String> {
+    let hat = top_hat_id.trim();
+    if hat.is_empty() {
+        return Err("top_hat_id must be non-empty".to_string());
+    }
+    upsert_squad_infra_inner(
+        handle,
+        pacto_gov_wargame_infra_row_id(parent_id).as_str(),
+        parent_id,
+        "pacto_gov_wargame",
         Some(chain),
         hat,
         None,
@@ -2829,6 +2917,9 @@ pub fn maybe_upsert_governance_from_announce<R: Runtime>(
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return,
     };
+    if normalize_infra_type(provider).ok().as_deref() == Some("pacto_gov_wargame") {
+        return;
+    }
     let canonical_ref = match p.get("canonical_ref").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return,
@@ -2875,6 +2966,259 @@ pub fn maybe_upsert_governance_from_announce<R: Runtime>(
         pacto_rev,
         provider_payload_str,
     );
+}
+
+fn json_nonempty_str<'a>(p: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    p.get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn json_round_u64(v: &serde_json::Value) -> Option<u64> {
+    if let Some(s) = v.get("round").and_then(|x| x.as_str()) {
+        return s.trim().parse().ok().filter(|n| *n > 0);
+    }
+    if let Some(n) = v.get("round").and_then(|x| x.as_u64()) {
+        return (n > 0).then_some(n);
+    }
+    v.get("round")
+        .and_then(|x| x.as_i64())
+        .and_then(|n| u64::try_from(n).ok())
+        .filter(|n| *n > 0)
+}
+
+fn war_game_round_snapshot(payload: &serde_json::Value) -> serde_json::Value {
+    let mut obj = payload.as_object().cloned().unwrap_or_default();
+    obj.remove("priorRounds");
+    obj.remove("pendingNext");
+    obj.insert("status".into(), serde_json::json!("retired"));
+    serde_json::Value::Object(obj)
+}
+
+fn prior_round_number(v: &serde_json::Value) -> Option<u64> {
+    json_round_u64(v)
+}
+
+fn push_unique_prior_round(priors: &mut Vec<serde_json::Value>, snap: serde_json::Value) {
+    let Some(round) = prior_round_number(&snap) else {
+        return;
+    };
+    if priors.iter().any(|p| prior_round_number(p) == Some(round)) {
+        return;
+    }
+    priors.push(snap);
+}
+
+fn union_prior_rounds(
+    stored: Option<&serde_json::Value>,
+    incoming: Option<&serde_json::Value>,
+) -> Vec<serde_json::Value> {
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    if let Some(arr) = stored.and_then(|v| v.as_array()) {
+        for item in arr {
+            push_unique_prior_round(&mut out, item.clone());
+        }
+    }
+    if let Some(arr) = incoming.and_then(|v| v.as_array()) {
+        for item in arr {
+            push_unique_prior_round(&mut out, item.clone());
+        }
+    }
+    out.sort_by_key(|p| prior_round_number(p).unwrap_or(0));
+    const WAR_GAME_PRIOR_ROUNDS_MAX: usize = 300;
+    const WAR_GAME_PRIOR_ROUNDS_MAX_BYTES: usize = 128 * 1024;
+    if out.len() > WAR_GAME_PRIOR_ROUNDS_MAX {
+        out.drain(0..out.len() - WAR_GAME_PRIOR_ROUNDS_MAX);
+    }
+    while !out.is_empty() {
+        let bytes = serde_json::to_vec(&out).map(|b| b.len()).unwrap_or(0);
+        if bytes <= WAR_GAME_PRIOR_ROUNDS_MAX_BYTES {
+            break;
+        }
+        out.remove(0);
+    }
+    out
+}
+
+fn cap_prior_rounds_in_place(v: &mut serde_json::Value) {
+    let merged = union_prior_rounds(None, v.get("priorRounds"));
+    if let Some(obj) = v.as_object_mut() {
+        if merged.is_empty() {
+            obj.remove("priorRounds");
+        } else {
+            obj.insert("priorRounds".into(), serde_json::Value::Array(merged));
+        }
+    }
+}
+
+fn strip_incoming_pending_next(mut v: serde_json::Value) -> serde_json::Value {
+    if let Some(obj) = v.as_object_mut() {
+        obj.remove("pendingNext");
+    }
+    v
+}
+
+/// Merge an incoming war-game payload with the stored singleton.
+/// Lower rounds never replace Active; they only append to `priorRounds`.
+/// `pendingNext` is local-only and never accepted from an MLS announce.
+pub fn merge_war_game_provider_payloads(stored: Option<&str>, incoming: &str) -> String {
+    let Ok(incoming_raw) = serde_json::from_str::<serde_json::Value>(incoming) else {
+        return incoming.to_string();
+    };
+    let mut incoming_v = strip_incoming_pending_next(incoming_raw);
+    cap_prior_rounds_in_place(&mut incoming_v);
+    let Some(incoming_round) = json_round_u64(&incoming_v) else {
+        return incoming_v.to_string();
+    };
+    let Some(stored_s) = stored.map(str::trim).filter(|s| !s.is_empty()) else {
+        return incoming_v.to_string();
+    };
+    let Ok(stored_v) = serde_json::from_str::<serde_json::Value>(stored_s) else {
+        return incoming_v.to_string();
+    };
+    let stored_round = json_round_u64(&stored_v).unwrap_or(0);
+
+    if incoming_round < stored_round {
+        let mut kept = stored_v;
+        let snap = war_game_round_snapshot(&incoming_v);
+        let merged = union_prior_rounds(kept.get("priorRounds"), Some(&serde_json::json!([snap])));
+        if let Some(obj) = kept.as_object_mut() {
+            obj.insert("priorRounds".into(), serde_json::Value::Array(merged));
+        }
+        return kept.to_string();
+    }
+
+    if incoming_round > stored_round {
+        let mut out = incoming_v;
+        let snap = war_game_round_snapshot(&stored_v);
+        let merged = union_prior_rounds(
+            stored_v.get("priorRounds"),
+            Some(&serde_json::json!([snap])),
+        );
+        if let Some(obj) = out.as_object_mut() {
+            obj.insert("priorRounds".into(), serde_json::Value::Array(merged));
+        }
+        return out.to_string();
+    }
+
+    let mut out = incoming_v;
+    let merged = union_prior_rounds(stored_v.get("priorRounds"), out.get("priorRounds"));
+    let local_pending = stored_v.get("pendingNext").cloned();
+    if let Some(obj) = out.as_object_mut() {
+        if merged.is_empty() {
+            obj.remove("priorRounds");
+        } else {
+            obj.insert("priorRounds".into(), serde_json::Value::Array(merged));
+        }
+        if let Some(pending) = local_pending {
+            obj.insert("pendingNext".into(), pending);
+        }
+    }
+    out.to_string()
+}
+
+fn pacto_gov_wargame_stored_row<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Option<(String, String)> {
+    let conn = crate::account_manager::get_db_connection(handle).ok()?;
+    let row = conn
+        .query_row(
+            "SELECT canonical_ref, provider_payload FROM squad_infra \
+             WHERE parent_id = ?1 AND infra_type = 'pacto_gov_wargame' \
+             ORDER BY updated_at_ms DESC LIMIT 1",
+            rusqlite::params![parent_id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    crate::account_manager::return_db_connection(conn);
+    row.filter(|(hat, payload)| !hat.trim().is_empty() && !payload.trim().is_empty())
+}
+
+/// If content is a `war_game_updated` announce JSON, upsert `pacto_gov_wargame` (never `pacto_gov`).
+pub fn maybe_upsert_war_game_from_announce<R: Runtime>(
+    handle: &AppHandle<R>,
+    content: &str,
+    chat_id: &str,
+    author_npub: Option<&str>,
+) {
+    let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("war_game_updated") {
+        return;
+    }
+    let p = match parsed.get("payload") {
+        Some(v) => v,
+        None => return,
+    };
+    let parent_id = match json_nonempty_str(p, "parent_id") {
+        Some(s) => s,
+        _ => return,
+    };
+    if !side_effect_parent_matches_chat(chat_id, parent_id) {
+        return;
+    }
+    if !is_author_mls_member_for_chat(handle, chat_id, author) {
+        return;
+    }
+    if !matches!(
+        json_nonempty_str(p, "action"),
+        Some("deploy" | "redeploy" | "retire")
+    ) {
+        return;
+    }
+    let Some(canonical_ref) = json_nonempty_str(p, "canonical_ref") else {
+        return;
+    };
+    if json_nonempty_str(p, "round").is_none()
+        || json_nonempty_str(p, "game_squad_id").is_none()
+        || json_nonempty_str(p, "sponsor").is_none()
+    {
+        return;
+    }
+    let Some(provider_payload) = json_nonempty_str(p, "provider_payload") else {
+        return;
+    };
+    let incoming_v = match serde_json::from_str::<serde_json::Value>(provider_payload) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if json_nonempty_str(&incoming_v, "gameSquadId").is_none()
+        || json_round_u64(&incoming_v).is_none()
+        || json_nonempty_str(&incoming_v, "sponsor").is_none()
+    {
+        return;
+    }
+    let incoming_round = json_round_u64(&incoming_v).unwrap_or(0);
+    let stored = pacto_gov_wargame_stored_row(handle, parent_id);
+    let stored_round = stored
+        .as_ref()
+        .and_then(|(_, payload)| serde_json::from_str::<serde_json::Value>(payload).ok())
+        .and_then(|v| json_round_u64(&v))
+        .unwrap_or(0);
+    let merged = merge_war_game_provider_payloads(
+        stored.as_ref().map(|(_, payload)| payload.as_str()),
+        provider_payload,
+    );
+    let hat = if incoming_round < stored_round {
+        stored
+            .as_ref()
+            .map(|(h, _)| h.as_str())
+            .filter(|h| !h.is_empty())
+            .unwrap_or(canonical_ref)
+    } else {
+        canonical_ref
+    };
+    let chain = json_nonempty_str(p, "chain").unwrap_or("sepolia");
+    let _ = persist_pacto_gov_wargame_infra(handle, parent_id, chain, hat, merged.as_str());
 }
 
 /// Max sticker entries a single pack announce may declare, and the max serialized
@@ -2993,7 +3337,10 @@ pub fn emit_sticker_packs_updated<R: Runtime>(handle: &AppHandle<R>) {
             })
         })
         .collect();
-    let _ = handle.emit("sticker_packs_updated", serde_json::json!({ "packs": packs }));
+    let _ = handle.emit(
+        "sticker_packs_updated",
+        serde_json::json!({ "packs": packs }),
+    );
 }
 
 #[cfg(test)]
@@ -3091,7 +3438,12 @@ mod sticker_pack_announce_tests {
             1000,
             false,
         );
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-1", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-1",
+            Some("npub1author"),
+        );
         let row = stored_row(app.handle(), "squad-1", "pack-1").expect("row");
         assert_eq!(row.name, "Pack One");
         assert_eq!(row.updated_at, 1000);
@@ -3104,7 +3456,12 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickernonmember");
         insert_chat_with_participants(app.handle(), "squad-2", &["npub1someoneelse"]);
         let content = announce("squad-2", "pack-1", "Pack One", "[]", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-2", Some("npub1stranger"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-2",
+            Some("npub1stranger"),
+        );
         assert!(stored_row(app.handle(), "squad-2", "pack-1").is_none());
     }
 
@@ -3113,7 +3470,12 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickermismatch");
         insert_chat_with_participants(app.handle(), "squad-3", &["npub1author"]);
         let content = announce("other-squad", "pack-1", "Pack One", "[]", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-3", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-3",
+            Some("npub1author"),
+        );
         assert!(stored_row(app.handle(), "squad-3", "pack-1").is_none());
         assert!(stored_row(app.handle(), "other-squad", "pack-1").is_none());
     }
@@ -3123,11 +3485,26 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickerolderequal");
         insert_chat_with_participants(app.handle(), "squad-4", &["npub1author"]);
         let first = announce("squad-4", "pack-1", "Original", "[]", 2000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &first, "squad-4", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &first,
+            "squad-4",
+            Some("npub1author"),
+        );
         let equal = announce("squad-4", "pack-1", "Equal Attempt", "[]", 2000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &equal, "squad-4", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &equal,
+            "squad-4",
+            Some("npub1author"),
+        );
         let older = announce("squad-4", "pack-1", "Older Attempt", "[]", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &older, "squad-4", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &older,
+            "squad-4",
+            Some("npub1author"),
+        );
         let row = stored_row(app.handle(), "squad-4", "pack-1").unwrap();
         assert_eq!(row.name, "Original");
         assert_eq!(row.updated_at, 2000);
@@ -3145,7 +3522,12 @@ mod sticker_pack_announce_tests {
             1000,
             false,
         );
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &first, "squad-5", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &first,
+            "squad-5",
+            Some("npub1author"),
+        );
         let second = announce(
             "squad-5",
             "pack-1",
@@ -3154,7 +3536,12 @@ mod sticker_pack_announce_tests {
             2000,
             false,
         );
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &second, "squad-5", Some("npub1author2"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &second,
+            "squad-5",
+            Some("npub1author2"),
+        );
         let row = stored_row(app.handle(), "squad-5", "pack-1").unwrap();
         assert_eq!(row.name, "Renamed");
         assert_eq!(row.updated_at, 2000);
@@ -3170,8 +3557,18 @@ mod sticker_pack_announce_tests {
         // Newer arrives first; a stale older one arrives late and must not win.
         let newer = announce("squad-6", "pack-1", "Newer", "[]", 5000, false);
         let older = announce("squad-6", "pack-1", "Older", "[]", 3000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &newer, "squad-6", Some("npub1author"));
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &older, "squad-6", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &newer,
+            "squad-6",
+            Some("npub1author"),
+        );
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &older,
+            "squad-6",
+            Some("npub1author"),
+        );
         let row = stored_row(app.handle(), "squad-6", "pack-1").unwrap();
         assert_eq!(row.name, "Newer");
         assert_eq!(row.updated_at, 5000);
@@ -3179,8 +3576,18 @@ mod sticker_pack_announce_tests {
         // Reverse order on a fresh pack in the same squad: older first, then a genuinely newer one.
         let older2 = announce("squad-6", "pack-2", "Older2", "[]", 3000, false);
         let newer2 = announce("squad-6", "pack-2", "Newer2", "[]", 5000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &older2, "squad-6", Some("npub1author"));
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &newer2, "squad-6", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &older2,
+            "squad-6",
+            Some("npub1author"),
+        );
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &newer2,
+            "squad-6",
+            Some("npub1author"),
+        );
         let row2 = stored_row(app.handle(), "squad-6", "pack-2").unwrap();
         assert_eq!(row2.name, "Newer2");
         assert_eq!(row2.updated_at, 5000);
@@ -3191,17 +3598,35 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickertombstone");
         insert_chat_with_participants(app.handle(), "squad-7", &["npub1author"]);
         let live = announce("squad-7", "pack-1", "Alive", "[]", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &live, "squad-7", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &live,
+            "squad-7",
+            Some("npub1author"),
+        );
         let tombstone = announce("squad-7", "pack-1", "Alive", "[]", 2000, true);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &tombstone, "squad-7", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &tombstone,
+            "squad-7",
+            Some("npub1author"),
+        );
         let row = stored_row(app.handle(), "squad-7", "pack-1").unwrap();
         assert!(row.deleted, "row should be tombstoned");
 
         // A late-arriving, older, non-deleted announce must not resurrect it.
         let resurrect_attempt = announce("squad-7", "pack-1", "Resurrected", "[]", 1500, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &resurrect_attempt, "squad-7", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &resurrect_attempt,
+            "squad-7",
+            Some("npub1author"),
+        );
         let row2 = stored_row(app.handle(), "squad-7", "pack-1").unwrap();
-        assert!(row2.deleted, "tombstone must survive a stale older announce");
+        assert!(
+            row2.deleted,
+            "tombstone must survive a stale older announce"
+        );
         assert_eq!(row2.name, "Alive");
     }
 
@@ -3210,15 +3635,32 @@ mod sticker_pack_announce_tests {
         let app = setup("npub1stickermalformed");
         insert_chat_with_participants(app.handle(), "squad-8", &["npub1author"]);
 
-        maybe_upsert_sticker_pack_from_announce(app.handle(), "not json", "squad-8", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            "not json",
+            "squad-8",
+            Some("npub1author"),
+        );
         maybe_upsert_sticker_pack_from_announce(
             app.handle(),
             r#"{"type":"sticker_pack_updated"}"#,
             "squad-8",
             Some("npub1author"),
         );
-        let bad_entries = announce("squad-8", "pack-1", "Bad Entries", "\"not-an-array\"", 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &bad_entries, "squad-8", Some("npub1author"));
+        let bad_entries = announce(
+            "squad-8",
+            "pack-1",
+            "Bad Entries",
+            "\"not-an-array\"",
+            1000,
+            false,
+        );
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &bad_entries,
+            "squad-8",
+            Some("npub1author"),
+        );
 
         assert!(stored_row(app.handle(), "squad-8", "pack-1").is_none());
     }
@@ -3241,7 +3683,12 @@ mod sticker_pack_announce_tests {
             .collect();
         let entries_json = serde_json::to_string(&entries).unwrap();
         let content = announce("squad-9", "pack-1", "Too Many", &entries_json, 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-9", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-9",
+            Some("npub1author"),
+        );
         assert!(stored_row(app.handle(), "squad-9", "pack-1").is_none());
     }
 
@@ -3260,8 +3707,381 @@ mod sticker_pack_announce_tests {
         }]))
         .unwrap();
         let content = announce("squad-10", "pack-1", "Too Big", &entries_json, 1000, false);
-        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-10", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            &content,
+            "squad-10",
+            Some("npub1author"),
+        );
         assert!(stored_row(app.handle(), "squad-10", "pack-1").is_none());
+    }
+}
+
+#[cfg(test)]
+mod war_game_announce_tests {
+    use super::*;
+
+    fn setup(test_npub: &str) -> tauri::App<tauri::test::MockRuntime> {
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+        let app = tauri::test::mock_app();
+        let profile_dir =
+            crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+        app
+    }
+
+    fn insert_chat_with_participants<R: Runtime>(
+        handle: &AppHandle<R>,
+        chat_id: &str,
+        participants: &[&str],
+    ) {
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        let json = serde_json::to_string(participants).unwrap();
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata) \
+             VALUES (?1, 0, ?2, '', 1000, '{}')",
+            rusqlite::params![chat_id, json],
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+    }
+
+    fn stored_wargame<R: Runtime>(
+        handle: &AppHandle<R>,
+        parent_id: &str,
+    ) -> Option<(String, String, String)> {
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        let row = conn
+            .query_row(
+                "SELECT id, infra_type, provider_payload FROM squad_infra \
+                 WHERE parent_id = ?1 AND infra_type = 'pacto_gov_wargame'",
+                rusqlite::params![parent_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .unwrap();
+        crate::account_manager::return_db_connection(conn);
+        row
+    }
+
+    fn pacto_gov_count<R: Runtime>(handle: &AppHandle<R>, parent_id: &str) -> i64 {
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM squad_infra WHERE parent_id = ?1 AND infra_type = 'pacto_gov'",
+                rusqlite::params![parent_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        crate::account_manager::return_db_connection(conn);
+        n
+    }
+
+    fn announce_round(
+        parent_id: &str,
+        action: &str,
+        round: &str,
+        sponsor: &str,
+        hat: &str,
+    ) -> String {
+        let payload = serde_json::json!({
+            "v": 1,
+            "status": "active",
+            "round": round,
+            "gameSquadId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sponsor": sponsor,
+        })
+        .to_string();
+        serde_json::json!({
+            "pacto_virtual_bucket": "announcements",
+            "type": "war_game_updated",
+            "payload": {
+                "parent_id": parent_id,
+                "action": action,
+                "canonical_ref": hat,
+                "chain": "sepolia",
+                "entry_id": pacto_gov_wargame_infra_row_id(parent_id),
+                "round": round,
+                "game_squad_id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sponsor": sponsor,
+                "provider_payload": payload,
+            }
+        })
+        .to_string()
+    }
+
+    fn announce(parent_id: &str, action: &str) -> String {
+        announce_round(
+            parent_id,
+            action,
+            "1",
+            "0x5555555555555555555555555555555555555555",
+            "42",
+        )
+    }
+
+    #[test]
+    fn merge_older_round_keeps_active_and_archives_incoming() {
+        let stored = r#"{"round":"3","status":"active","sponsor":"0x3"}"#;
+        let incoming = r#"{"round":"1","status":"active","sponsor":"0x1"}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(Some(stored), incoming))
+                .unwrap();
+        assert_eq!(v["round"], "3");
+        assert_eq!(v["sponsor"], "0x3");
+        assert_eq!(v["priorRounds"][0]["round"], "1");
+        assert_eq!(v["priorRounds"][0]["status"], "retired");
+    }
+
+    #[test]
+    fn merge_newer_round_archives_stored_active() {
+        let stored = r#"{"round":"1","status":"active","sponsor":"0x1"}"#;
+        let incoming = r#"{"round":"2","status":"active","sponsor":"0x2"}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(Some(stored), incoming))
+                .unwrap();
+        assert_eq!(v["round"], "2");
+        assert_eq!(v["sponsor"], "0x2");
+        assert_eq!(v["priorRounds"][0]["round"], "1");
+        assert_eq!(v["priorRounds"][0]["status"], "retired");
+    }
+
+    #[test]
+    fn merge_strips_incoming_pending_next() {
+        let incoming = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"99","deployTxHash":"0xevil"}}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(None, incoming)).unwrap();
+        assert_eq!(v["round"], "1");
+        assert!(v.get("pendingNext").is_none());
+    }
+
+    #[test]
+    fn merge_same_round_keeps_stored_pending_next() {
+        let stored = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"99","deployTxHash":"0xabc"}}"#;
+        let incoming = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"1","deployTxHash":"0xevil"}}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(Some(stored), incoming))
+                .unwrap();
+        assert_eq!(v["pendingNext"]["topHatId"], "99");
+        assert_eq!(v["pendingNext"]["deployTxHash"], "0xabc");
+    }
+
+    #[test]
+    fn merge_newer_round_drops_stored_pending_next() {
+        let stored =
+            r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"99"}}"#;
+        let incoming = r#"{"round":"2","status":"active","sponsor":"0x2"}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(Some(stored), incoming))
+                .unwrap();
+        assert_eq!(v["round"], "2");
+        assert!(v.get("pendingNext").is_none());
+    }
+
+    #[test]
+    fn merge_pass_through_without_round_strips_pending_next() {
+        let incoming = r#"{"status":"pending_sponsor","pendingNext":{"topHatId":"99"}}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(None, incoming)).unwrap();
+        assert_eq!(v["status"], "pending_sponsor");
+        assert!(v.get("pendingNext").is_none());
+    }
+
+    #[test]
+    fn merge_prior_rounds_keeps_newest_300() {
+        let priors: Vec<serde_json::Value> = (1..=300)
+            .map(|i| serde_json::json!({"round": i.to_string(), "status": "retired"}))
+            .collect();
+        let stored = serde_json::json!({
+            "status": "active",
+            "round": "301",
+            "priorRounds": priors,
+        })
+        .to_string();
+        let incoming = serde_json::json!({
+            "status": "active",
+            "round": "302",
+        })
+        .to_string();
+        let v: serde_json::Value = serde_json::from_str(&merge_war_game_provider_payloads(
+            Some(stored.as_str()),
+            incoming.as_str(),
+        ))
+        .unwrap();
+        let arr = v["priorRounds"].as_array().expect("priorRounds");
+        assert_eq!(arr.len(), 300);
+        assert_eq!(arr[0]["round"], "2");
+        assert_eq!(arr[299]["round"], "301");
+    }
+
+    #[test]
+    fn merge_pass_through_caps_prior_rounds() {
+        let priors: Vec<serde_json::Value> = (1..=301)
+            .map(|i| serde_json::json!({"round": i.to_string(), "status": "retired"}))
+            .collect();
+        let incoming = serde_json::json!({
+            "status": "pending_sponsor",
+            "priorRounds": priors,
+        })
+        .to_string();
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(None, incoming.as_str()))
+                .unwrap();
+        let arr = v["priorRounds"].as_array().expect("priorRounds");
+        assert_eq!(arr.len(), 300);
+        assert_eq!(arr[0]["round"], "2");
+        assert_eq!(arr[299]["round"], "301");
+    }
+
+    #[test]
+    fn merge_prior_rounds_evicts_oldest_to_stay_under_byte_cap() {
+        let bulky = "x".repeat(20_000);
+        let priors: Vec<serde_json::Value> = (1..=10)
+            .map(|i| {
+                serde_json::json!({
+                    "round": i.to_string(),
+                    "status": "retired",
+                    "blob": bulky,
+                })
+            })
+            .collect();
+        let incoming = serde_json::json!({
+            "status": "active",
+            "round": "11",
+            "priorRounds": priors,
+        })
+        .to_string();
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(None, incoming.as_str()))
+                .unwrap();
+        let arr = v["priorRounds"].as_array().expect("priorRounds");
+        let bytes = serde_json::to_vec(arr).unwrap().len();
+        assert!(bytes <= 128 * 1024, "bytes={bytes}");
+        assert!(arr.len() < 10);
+        assert_eq!(arr.last().unwrap()["round"], "10");
+    }
+
+    #[test]
+    fn member_announce_upserts_wargame_not_pacto_gov() {
+        let app = setup("npub1wargameannounceupsert");
+        insert_chat_with_participants(app.handle(), "squad-wg", &["npub1author"]);
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce("squad-wg", "deploy"),
+            "squad-wg",
+            Some("npub1author"),
+        );
+        let row = stored_wargame(app.handle(), "squad-wg").expect("wargame row");
+        assert_eq!(row.0, pacto_gov_wargame_infra_row_id("squad-wg"));
+        assert_eq!(row.1, "pacto_gov_wargame");
+        assert!(row.2.contains("gameSquadId"));
+        assert_eq!(pacto_gov_count(app.handle(), "squad-wg"), 0);
+    }
+
+    #[test]
+    fn wargame_announce_is_monotonic_on_round() {
+        let app = setup("npub1wargamemonotonic");
+        insert_chat_with_participants(app.handle(), "squad-wg-mono", &["npub1author"]);
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce_round(
+                "squad-wg-mono",
+                "deploy",
+                "1",
+                "0x1111111111111111111111111111111111111111",
+                "42",
+            ),
+            "squad-wg-mono",
+            Some("npub1author"),
+        );
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce_round(
+                "squad-wg-mono",
+                "redeploy",
+                "2",
+                "0x2222222222222222222222222222222222222222",
+                "99",
+            ),
+            "squad-wg-mono",
+            Some("npub1author"),
+        );
+        let after_newer = stored_wargame(app.handle(), "squad-wg-mono").expect("wargame row");
+        let newer: serde_json::Value = serde_json::from_str(&after_newer.2).unwrap();
+        assert_eq!(newer["round"], "2");
+        assert_eq!(
+            newer["sponsor"],
+            "0x2222222222222222222222222222222222222222"
+        );
+        let priors = newer["priorRounds"].as_array().expect("priorRounds");
+        assert_eq!(priors.len(), 1);
+        assert_eq!(priors[0]["round"], "1");
+        assert_eq!(priors[0]["status"], "retired");
+
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce_round(
+                "squad-wg-mono",
+                "deploy",
+                "1",
+                "0x1111111111111111111111111111111111111111",
+                "42",
+            ),
+            "squad-wg-mono",
+            Some("npub1author"),
+        );
+        let after_older = stored_wargame(app.handle(), "squad-wg-mono").expect("wargame row");
+        let kept: serde_json::Value = serde_json::from_str(&after_older.2).unwrap();
+        assert_eq!(kept["round"], "2");
+        assert_eq!(
+            kept["sponsor"],
+            "0x2222222222222222222222222222222222222222"
+        );
+        let priors = kept["priorRounds"].as_array().expect("priorRounds");
+        assert_eq!(priors.len(), 1);
+        assert_eq!(priors[0]["round"], "1");
+        assert_eq!(priors[0]["status"], "retired");
+    }
+
+    #[test]
+    fn governance_updated_wargame_provider_does_not_upsert() {
+        let app = setup("npub1wargamegovskip");
+        insert_chat_with_participants(app.handle(), "squad-wg", &["npub1author"]);
+        let content = serde_json::json!({
+            "type": "governance_updated",
+            "payload": {
+                "parent_id": "squad-wg",
+                "provider": "pacto_gov_wargame",
+                "canonical_ref": "42",
+            }
+        })
+        .to_string();
+        maybe_upsert_governance_from_announce(
+            app.handle(),
+            &content,
+            "squad-wg",
+            Some("npub1author"),
+        );
+        assert!(stored_wargame(app.handle(), "squad-wg").is_none());
+        assert_eq!(pacto_gov_count(app.handle(), "squad-wg"), 0);
+    }
+
+    #[test]
+    fn non_member_announce_is_noop() {
+        let app = setup("npub1wargamenonmember");
+        insert_chat_with_participants(app.handle(), "squad-wg", &["npub1author"]);
+        maybe_upsert_war_game_from_announce(
+            app.handle(),
+            &announce("squad-wg", "deploy"),
+            "squad-wg",
+            Some("npub1stranger"),
+        );
+        assert!(stored_wargame(app.handle(), "squad-wg").is_none());
     }
 }
 
@@ -3711,6 +4531,7 @@ pub fn apply_mls_virtual_bucket_side_effects<R: Runtime>(
     if is_announcements_governance_announce_content(content) {
         maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
     }
+    maybe_upsert_war_game_from_announce(handle, content, chat_id, author_npub);
 
     // Sticker pack announces are always announcements-bucket traffic; ingest unconditionally,
     // same as governance above, so sync works even if bucket derivation was skipped upstream.
@@ -4609,8 +5430,12 @@ pub async fn save_mls_group<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     // Insert or replace a single group
-    let pending_welcomes_json = serde_json::to_string(&group.pending_welcomes)
-        .map_err(|e| format!("Failed to serialize pending_welcomes for {}: {}", group.group_id, e))?;
+    let pending_welcomes_json = serde_json::to_string(&group.pending_welcomes).map_err(|e| {
+        format!(
+            "Failed to serialize pending_welcomes for {}: {}",
+            group.group_id, e
+        )
+    })?;
     conn.execute(
         "INSERT OR REPLACE INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted, pending_welcomes)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -4759,13 +5584,14 @@ pub async fn load_mls_groups<R: Runtime>(
             let pending_welcomes_json: String = row.get(8)?;
             // A hard failure here would make the whole group list unreadable, so log loudly
             // and degrade to "no pending welcomes" instead of losing the row entirely.
-            let pending_welcomes = serde_json::from_str(&pending_welcomes_json).unwrap_or_else(|e| {
-                eprintln!(
-                    "[SQL] Failed to parse pending_welcomes for MLS group {}: {}",
-                    group_id, e
-                );
-                Vec::new()
-            });
+            let pending_welcomes =
+                serde_json::from_str(&pending_welcomes_json).unwrap_or_else(|e| {
+                    eprintln!(
+                        "[SQL] Failed to parse pending_welcomes for MLS group {}: {}",
+                        group_id, e
+                    );
+                    Vec::new()
+                });
             Ok(crate::mls::MlsGroupMetadata {
                 group_id,
                 engine_group_id: row.get(1)?,
@@ -4833,7 +5659,9 @@ mod mls_group_metadata_persistence_tests {
         let app = setup("npub1u4mlsgroupsroundtripfresh");
         let handle = app.handle().clone();
 
-        save_mls_group(handle.clone(), &fresh_group("g1")).await.unwrap();
+        save_mls_group(handle.clone(), &fresh_group("g1"))
+            .await
+            .unwrap();
 
         let groups = load_mls_groups(&handle).await.unwrap();
         assert_eq!(groups.len(), 1);
@@ -4866,7 +5694,10 @@ mod mls_group_metadata_persistence_tests {
             "a welcome delivery failure must leave exactly one row, not discard or duplicate the group"
         );
         assert_eq!(groups[0].group_id, "g2");
-        assert_eq!(groups[0].pending_welcomes, vec!["npub1undelivered".to_string()]);
+        assert_eq!(
+            groups[0].pending_welcomes,
+            vec!["npub1undelivered".to_string()]
+        );
         assert_eq!(groups[0].updated_at, 2_000);
     }
 
@@ -5019,8 +5850,12 @@ mod mls_group_metadata_persistence_tests {
         let app = setup("npub1u4mlsgroupsroundtripdelete");
         let handle = app.handle().clone();
 
-        save_mls_group(handle.clone(), &fresh_group("g5")).await.unwrap();
-        save_mls_group(handle.clone(), &fresh_group("g6")).await.unwrap();
+        save_mls_group(handle.clone(), &fresh_group("g5"))
+            .await
+            .unwrap();
+        save_mls_group(handle.clone(), &fresh_group("g6"))
+            .await
+            .unwrap();
 
         delete_mls_group(handle.clone(), "g5").await.unwrap();
 
@@ -5155,78 +5990,7 @@ mod legacy_mls_store_harvest_tests {
     #[test]
     fn v30_migration_creates_mls_legacy_admins_table_on_baselined_db() {
         let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
-        conn.execute_batch(
-            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            CREATE TABLE profiles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                npub TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL DEFAULT '',
-                display_name TEXT NOT NULL DEFAULT '',
-                nickname TEXT NOT NULL DEFAULT '',
-                lud06 TEXT NOT NULL DEFAULT '',
-                lud16 TEXT NOT NULL DEFAULT '',
-                banner TEXT NOT NULL DEFAULT '',
-                avatar TEXT NOT NULL DEFAULT '',
-                about TEXT NOT NULL DEFAULT '',
-                website TEXT NOT NULL DEFAULT '',
-                nip05 TEXT NOT NULL DEFAULT '',
-                status_content TEXT NOT NULL DEFAULT '',
-                status_url TEXT NOT NULL DEFAULT '',
-                muted INTEGER NOT NULL DEFAULT 0,
-                bot INTEGER NOT NULL DEFAULT 0,
-                avatar_cached TEXT NOT NULL DEFAULT '',
-                banner_cached TEXT NOT NULL DEFAULT '',
-                evm_address TEXT NOT NULL DEFAULT '',
-                blocked INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE chats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_identifier TEXT UNIQUE NOT NULL,
-                chat_type INTEGER NOT NULL,
-                participants TEXT NOT NULL,
-                last_read TEXT NOT NULL DEFAULT '',
-                created_at INTEGER NOT NULL,
-                metadata TEXT NOT NULL DEFAULT '{}',
-                muted INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE mls_keypackages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_pubkey TEXT NOT NULL,
-                device_id TEXT NOT NULL,
-                keypackage_ref TEXT NOT NULL,
-                fetched_at INTEGER NOT NULL,
-                expires_at INTEGER NOT NULL
-            );
-            CREATE INDEX idx_keypackages_owner ON mls_keypackages(owner_pubkey);
-            CREATE TABLE events (
-                id TEXT PRIMARY KEY,
-                kind INTEGER NOT NULL,
-                chat_id INTEGER NOT NULL,
-                user_id INTEGER,
-                content TEXT NOT NULL,
-                tags TEXT NOT NULL DEFAULT '[]',
-                reference_id TEXT,
-                created_at INTEGER NOT NULL,
-                received_at INTEGER NOT NULL,
-                mine INTEGER NOT NULL DEFAULT 0,
-                pending INTEGER NOT NULL DEFAULT 0,
-                failed INTEGER NOT NULL DEFAULT 0,
-                wrapper_event_id TEXT,
-                npub TEXT,
-                virtual_bucket TEXT
-            );
-            CREATE TABLE mls_groups (
-                group_id TEXT PRIMARY KEY,
-                engine_group_id TEXT NOT NULL DEFAULT '',
-                creator_pubkey TEXT NOT NULL,
-                name TEXT NOT NULL DEFAULT '',
-                avatar_ref TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                evicted INTEGER NOT NULL DEFAULT 0
-            );"
-        )
-        .expect("seed pre-V28 schema (mirrors migrations::tests::seed_pre_v28_schema)");
+        crate::migrations::seed_pre_v28_schema(&conn);
 
         crate::migrations::run_migrations(&mut conn).expect("baseline should run");
 

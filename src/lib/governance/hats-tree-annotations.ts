@@ -3,6 +3,7 @@ import {
   hatChecksFromNaveDeployment,
   type PactoGovProviderPayloadV1,
 } from './pacto-gov-payload';
+import { hatIdToHex, prettyHatId } from './pretty-hat-id';
 
 export function shortEvmAddress(addr: string): string {
   const a = addr.trim();
@@ -98,6 +99,64 @@ export function formatWearerDisplayLabel(
   const known = knownLabels?.[key]?.trim();
   if (known) return known;
   return shortEvmAddress(address);
+}
+
+function hatIdLookupKeys(raw: string): string[] {
+  const t = raw.trim();
+  if (!t) return [];
+  const keys = new Set<string>([t]);
+  const hex = hatIdToHex(t);
+  if (hex) keys.add(hex);
+  const pretty = prettyHatId(t);
+  if (pretty) keys.add(pretty);
+  return [...keys];
+}
+
+function indexWearerAddressesByHatAlias(
+  wearerAddressesByHatId: Record<string, string[]>,
+): Map<string, string[]> {
+  const index = new Map<string, string[]>();
+  for (const [hatId, addrs] of Object.entries(wearerAddressesByHatId)) {
+    const normalized = addrs.map((a) => a.trim().toLowerCase()).filter(Boolean);
+    if (normalized.length === 0) continue;
+    for (const alias of hatIdLookupKeys(hatId)) {
+      const existing = index.get(alias);
+      if (!existing) {
+        index.set(alias, [...normalized]);
+        continue;
+      }
+      for (const addr of normalized) {
+        if (!existing.includes(addr)) existing.push(addr);
+      }
+    }
+  }
+  return index;
+}
+
+/** On-chain wearers for every hat labeled `label` (pretty / hex / decimal ids join). */
+export function wearersForRoleLabel(
+  roleLabelByHatId: Record<string, string>,
+  wearerAddressesByHatId: Record<string, string[]>,
+  label: string,
+): string[] {
+  const want = label.trim();
+  if (!want) return [];
+  const byAlias = indexWearerAddressesByHatAlias(wearerAddressesByHatId);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const [hatId, role] of Object.entries(roleLabelByHatId)) {
+    if (role !== want) continue;
+    for (const alias of hatIdLookupKeys(hatId)) {
+      const hit = byAlias.get(alias);
+      if (!hit) continue;
+      for (const addr of hit) {
+        if (seen.has(addr)) continue;
+        seen.add(addr);
+        out.push(addr);
+      }
+    }
+  }
+  return out;
 }
 
 /** Invert member hat assignments to hat id → wearer addresses (lowercase). */

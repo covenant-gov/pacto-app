@@ -11,6 +11,24 @@ export const SQUAD_DASHBOARD_CHANNEL_NAME = 'squad-dashboard';
 export const MY_DASHBOARD_CHANNEL_ID = '__my_dashboard__';
 export const MY_DASHBOARD_CHANNEL_NAME = 'my-dashboard';
 
+/** Virtual war-game hub (not an MLS group). Shown after a completed war-game deploy. */
+export const SQUAD_WARGAME_CHANNEL_ID = '__squad_wargame__';
+export const SQUAD_WARGAME_CHANNEL_NAME = 'squad-wargame';
+
+/** Virtual hub rows: not MLS groups and not chat `VirtualBucket`s. */
+export function isVirtualHubChannelId(id: string | null | undefined): boolean {
+  return (
+    id === SQUAD_DASHBOARD_CHANNEL_ID ||
+    id === MY_DASHBOARD_CHANNEL_ID ||
+    id === SQUAD_WARGAME_CHANNEL_ID
+  );
+}
+
+/** Squad-wide dashboard chrome (`squad-dashboard` or `squad-wargame`). */
+export function isSquadDashboardChromeChannelId(id: string | null | undefined): boolean {
+  return id === SQUAD_DASHBOARD_CHANNEL_ID || id === SQUAD_WARGAME_CHANNEL_ID;
+}
+
 /** Normalize persisted hub channel names. */
 export function normalizeHubChannelName(name: string | null | undefined): string | null {
   const trimmed = name?.trim();

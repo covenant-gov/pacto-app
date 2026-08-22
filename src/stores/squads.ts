@@ -10,6 +10,10 @@ import {
   POLLS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_NAME,
+  SQUAD_WARGAME_CHANNEL_ID,
+  SQUAD_WARGAME_CHANNEL_NAME,
+  isSquadDashboardChromeChannelId,
+  isVirtualHubChannelId,
   normalizeHubChannelName,
 } from '../lib/squad/hub-channel-names';
 import {
@@ -28,6 +32,10 @@ export {
   POLLS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_NAME,
+  SQUAD_WARGAME_CHANNEL_ID,
+  SQUAD_WARGAME_CHANNEL_NAME,
+  isSquadDashboardChromeChannelId,
+  isVirtualHubChannelId,
   normalizeHubChannelName,
 };
 

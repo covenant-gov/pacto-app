@@ -1,0 +1,33 @@
+---
+description: GitHub closing keywords need one issue per keyword; use when writing PR bodies, gh pr create, or notes that close issues
+alwaysApply: false
+---
+
+# GitHub PR: one `closes` per issue
+
+GitHub auto-close only binds **one issue number per keyword**. Extra `#n` tokens after a single `closes` / `fixes` / `resolves` are ignored, so those issues stay open.
+
+When a PR (or GitHub note/body) closes more than one issue, repeat the keyword.
+
+correct:
+
+```text
+closes #n0
+closes #n1
+```
+
+or:
+
+```text
+closes #n0 , closes #n1
+```
+
+incorrect:
+
+```text
+closes #n0 #n1
+```
+
+`#n1` will not get closed.
+
+Same rule for `close`/`closed`, `fix`/`fixes`/`fixed`, `resolve`/`resolves`/`resolved`. Put this in the **PR description**, not a review comment.

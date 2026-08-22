@@ -8,6 +8,7 @@ import {
   ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
   ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+  ANNOUNCE_TYPE_WAR_GAME_UPDATED,
   ANNOUNCE_TYPE_STICKER_PACK_UPDATED,
   type AnnounceMessage,
 } from '../../lib/announcements';
@@ -76,6 +77,26 @@ describe('AnnounceCard routing', () => {
     };
     render(AnnounceCard, { props: { announce, authorName: 'Dana', timestamp: '' } });
     expect(screen.getByText('Dana linked a treasury Safe')).toBeTruthy();
+  });
+
+  it('routes war_game_updated to the war-game body', () => {
+    const announce: AnnounceMessage = {
+      type: ANNOUNCE_TYPE_WAR_GAME_UPDATED,
+      payload: {
+        parent_id: 'squad-1',
+        action: 'deploy',
+        canonical_ref: '0xhat',
+        chain: 'sepolia',
+        entry_id: 'entry-1',
+        round: '1',
+        game_squad_id: '0xgame',
+        sponsor: '0xsponsor',
+        provider_payload: '{}',
+      },
+    };
+    render(AnnounceCard, { props: { announce, authorName: 'Eve', timestamp: '' } });
+    expect(screen.getByText('Eve started a war-game round')).toBeTruthy();
+    expect(screen.getByText('Round 1')).toBeTruthy();
   });
 
   it('falls back to the generic body for an announce type it does not special-case', () => {

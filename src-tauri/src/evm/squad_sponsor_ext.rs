@@ -18,7 +18,9 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
     send_and_confirm, wallet_err_json,
 };
-use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
+use super::squad_sponsor_common::{
+    active_game_squad_id_for_parent, require_parent_member, resolve_sponsor_for_parent,
+};
 use super::squad_sponsor_deposit::{require_network_config, require_non_empty_parent_id};
 
 /// Ext exposes only a single-address `permittedAddress` view, so each member costs one
@@ -148,11 +150,13 @@ pub async fn get_squad_sponsor_ext_status<R: Runtime>(
     }
 
     let provider = connect_read_provider(&urls).await?;
+    let game_squad_id = active_game_squad_id_for_parent(&app, pid);
     let sponsor = resolve_sponsor_for_parent(
         &provider,
         addrs.squad_sponsor_factory,
         pid,
         sponsor_address.as_deref(),
+        game_squad_id,
     )
     .await?;
 
@@ -221,11 +225,13 @@ pub async fn squad_sponsor_set_permitted_address<R: Runtime>(
     }
 
     let read_provider = connect_read_provider(&urls).await?;
+    let game_squad_id = active_game_squad_id_for_parent(&app, pid);
     let sponsor = resolve_sponsor_for_parent(
         &read_provider,
         addrs.squad_sponsor_factory,
         pid,
         sponsor_address.as_deref(),
+        game_squad_id,
     )
     .await?;
 

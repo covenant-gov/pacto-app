@@ -68,6 +68,17 @@ describe('resolveDashboardStructureSummary', () => {
     ).toBe(null);
   });
 
+  it('returns summary for pacto_gov_wargame', () => {
+    const s = resolveDashboardStructureSummary({
+      ...pactoGovRow,
+      infraType: 'pacto_gov_wargame',
+      chain: 'sepolia',
+    });
+    expect(s?.treeIdRaw).toBe('298');
+    expect(s?.chainKey).toBe('sepolia');
+    expect(s?.chainIdNumeric).toBe(11155111);
+  });
+
   it('returns summary for pacto_gov', () => {
     const s = resolveDashboardStructureSummary(pactoGovRow);
     expect(s?.treeIdRaw).toBe('298');

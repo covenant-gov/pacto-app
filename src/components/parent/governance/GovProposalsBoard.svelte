@@ -5,10 +5,13 @@
   import GovProcessCardView from './GovProcessCard.svelte';
   import {
     quartermasterExecuteAddCrew,
+    quartermasterExecuteOffboard,
     quartermasterExecuteRemoveCrew,
+    quartermasterExpireOffboard,
     treasuryAuthorityExecute,
     type MutinyStatusDto,
     type QuartermasterPendingActionDto,
+    type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
   import {
@@ -24,11 +27,16 @@
     type GovProcessCard,
   } from '../../../lib/governance/gov-process';
   import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
+  import { parseQuorumBps } from '../../../lib/governance/crew-offboard';
   import {
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
-  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import {
+    mutinyProcessTxByParentId,
+    mutinyTxHashForCard,
+  } from '../../../lib/governance/mutiny-process-tx';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -44,12 +52,15 @@
     proposalsError?: string;
     mutinyStatus?: MutinyStatusDto | null;
     mutinyLoading?: boolean;
+    qmStatus?: QuartermasterStatusDto | null;
     qmPending?: QuartermasterPendingActionDto[];
     qmPendingLoading?: boolean;
     qmPendingError?: string;
     mutinyMode?: boolean;
+    rosterFreezeReason?: string;
     onRefreshProposals?: () => void;
     onExecuteMutiny?: () => void | Promise<void>;
+    onExpireMutiny?: () => void | Promise<void>;
     fundingHint?: string;
     /** True while capability preflight is still loading; forces every gate closed. */
     capabilitiesPending?: boolean;
@@ -66,12 +77,15 @@
     proposalsError = '',
     mutinyStatus = null,
     mutinyLoading = false,
+    qmStatus = null,
     qmPending = [],
     qmPendingLoading = false,
     qmPendingError = '',
     mutinyMode = false,
+    rosterFreezeReason = 'governance.gate.quartermasterLocked',
     onRefreshProposals = () => {},
     onExecuteMutiny = () => {},
+    onExpireMutiny = () => {},
     fundingHint = '',
     capabilitiesPending = false,
   }: Props = $props();
@@ -83,16 +97,19 @@
 
   let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
   let qmExecGate = $derived(
-    capabilitiesPending ? PENDING_GATE : gateQuartermasterExecute(privilege, mutinyMode),
+    capabilitiesPending ? PENDING_GATE : gateQuartermasterExecute(privilege, mutinyMode, rosterFreezeReason),
   );
   let processCards = $derived(
     buildGovProcessCards({
       treasuryProposals: proposals,
       mutinyStatus,
       qmPending,
+      crewOffboard: qmStatus?.offboard ?? null,
+      crewOffboardQuorumBps: parseQuorumBps(qmStatus?.crewOffboardQuorumBps),
     }),
   );
   let openCount = $derived(countOpenGovProcesses(processCards));
+  let mutinyTxHash = $derived(mutinyTxHashForCard($mutinyProcessTxByParentId, parentId));
   let boardLoading = $derived(
     (proposalsLoading && proposals.length === 0) ||
       (mutinyLoading && !mutinyStatus) ||
@@ -115,7 +132,7 @@
       showToast(govWriteSubmittedToast(tFn('governance.action.execute'), fundedByFromWriteResult(result)));
       onRefreshProposals();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.execute')));
+      showGovWriteErrorToast(e, tFn('governance.action.execute'));
     } finally {
       acting = false;
     }
@@ -148,7 +165,7 @@
       }
       onRefreshProposals();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.execute')));
+      showGovWriteErrorToast(e, tFn('governance.action.execute'));
     } finally {
       acting = false;
     }
@@ -164,13 +181,75 @@
     }
   }
 
+  async function runMutinyExpire() {
+    if (acting) return;
+    acting = true;
+    try {
+      await onExpireMutiny();
+    } finally {
+      acting = false;
+    }
+  }
+
+  async function runOffboardExecute(offboardId: string) {
+    if (acting || !execGate.enabled || !quartermaster.trim()) return;
+    acting = true;
+    try {
+      const result = await quartermasterExecuteOffboard({
+        network,
+        parentId,
+        quartermaster,
+        offboardId,
+      });
+      showToast(
+        govWriteSubmittedToast(tFn('governance.action.executeOffboard'), fundedByFromWriteResult(result)),
+      );
+      onRefreshProposals();
+    } catch (e) {
+      showGovWriteErrorToast(e, tFn('governance.action.executeOffboard'));
+    } finally {
+      acting = false;
+    }
+  }
+
+  async function runOffboardExpire(offboardId: string) {
+    if (acting || !execGate.enabled || !quartermaster.trim()) return;
+    acting = true;
+    try {
+      const result = await quartermasterExpireOffboard({
+        network,
+        parentId,
+        quartermaster,
+        offboardId,
+      });
+      showToast(
+        govWriteSubmittedToast(tFn('governance.action.expireOffboard'), fundedByFromWriteResult(result)),
+      );
+      onRefreshProposals();
+    } catch (e) {
+      showGovWriteErrorToast(e, tFn('governance.action.expireOffboard'));
+    } finally {
+      acting = false;
+    }
+  }
+
   function executeForCard(card: GovProcessCard) {
     if (card.kind === 'treasury') {
       void runTreasuryExecute(card.proposal.proposalId);
     } else if (card.kind === 'mutiny') {
       void runMutinyExecute();
+    } else if (card.kind === 'crew_offboard') {
+      void runOffboardExecute(card.status.offboardId);
     } else {
       void runCrewExecute(card);
+    }
+  }
+
+  function expireForCard(card: GovProcessCard) {
+    if (card.kind === 'mutiny') {
+      void runMutinyExpire();
+    } else if (card.kind === 'crew_offboard') {
+      void runOffboardExpire(card.status.offboardId);
     }
   }
 
@@ -222,10 +301,13 @@
       {#each processCards as card (govProcessCardKey(card))}
         <GovProcessCardView
           {card}
+          {network}
+          txHash={card.kind === 'mutiny' ? mutinyTxHash : ''}
           showExecute
           executePending={acting}
           privilegeReasonKey={privilegeReasonKeyFor(card)}
           onExecute={() => executeForCard(card)}
+          onExpire={() => expireForCard(card)}
         />
       {/each}
     </ul>

@@ -4,10 +4,19 @@ import { getSquadSponsorVariant, type SquadSponsorVariant } from './api';
  * Sponsor variant for dashboard surfaces. Deploy results carry top-level `'ext' | 'hats'`,
  * but persisted `providerPayload.variant` keeps the on-chain label: `'ext'` for the Ext
  * clone, `'sponsor'` for the hats-linked clone. Resolves both onto the typed variant.
+ * Wargame round clones (`infraType: pacto_gov_wargame`) are always hats-native.
  */
 export function resolveSquadSponsorVariant(
-  source: { variant?: string | null; providerPayload?: string | null } | null | undefined,
+  source:
+    | {
+        variant?: string | null;
+        providerPayload?: string | null;
+        infraType?: string | null;
+      }
+    | null
+    | undefined,
 ): SquadSponsorVariant | null {
+  if (source?.infraType?.trim() === 'pacto_gov_wargame') return 'hats';
   const variant = getSquadSponsorVariant(source);
   if (variant) return variant;
   const raw = source?.providerPayload?.trim();

@@ -37,6 +37,10 @@ describe('governance-process-announce', () => {
       parent_id: 'p',
       kind: 'mutiny',
     });
+    expect(buildGovernanceProcessUpdatedPayload({ parentId: 'p', kind: 'hats' })).toEqual({
+      parent_id: 'p',
+      kind: 'hats',
+    });
   });
 
   it('skips send when the parent has no announcements group', async () => {

@@ -11,11 +11,14 @@ import {
   type GovActionPrompt,
 } from '../lib/governance/gov-action-prompts';
 import {
+  crewOffboardHasVoted,
   getMutinyStatus,
+  getQuartermasterStatus,
   getSquadCapabilities,
   mutinyHasVoted,
   pactoGovInfraRow,
 } from '../lib/governance/api';
+import { isCrewOffboardActive, parseQuorumBps } from '../lib/governance/crew-offboard';
 import { resolveGovernancePrivilege } from '../lib/governance/governance-privilege';
 import { isMutinyActive } from '../lib/governance/gov-proposal-lists';
 import { parsePactoGovProviderPayload } from '../lib/governance/pacto-gov-payload';
@@ -162,7 +165,7 @@ export async function refreshGovActionPromptsForSquad(squad: Squad): Promise<voi
     const { proposals } = treasuryResult;
     const mutinyStatus = mutinyResult.status;
 
-    const qmResult =
+    const qmPendingResult =
       quartermaster.trim().length > 0
         ? await fetchQuartermasterPendingActions({
             network,
@@ -170,9 +173,17 @@ export async function refreshGovActionPromptsForSquad(squad: Squad): Promise<voi
             parentId: id,
           })
         : { pending: [], error: '' };
+    const qmStatusResult =
+      quartermaster.trim().length > 0
+        ? await getQuartermasterStatus({ network, quartermaster, parentId: id }).then(
+            (status) => ({ status, error: '' as const }),
+            (e: unknown) => ({ status: null, error: String(e) }),
+          )
+        : { status: null, error: '' as const };
     if (refreshGenBySquadId.get(id) !== gen) return;
-    if (qmResult.error) return;
-    const qmPending = qmResult.pending;
+    if (qmPendingResult.error || qmStatusResult.error) return;
+    const qmPending = qmPendingResult.pending;
+    const qmStatus = qmStatusResult.status;
 
     const voter = privilege.myAddress?.trim() ?? '';
     const treasuryVoteMap =
@@ -203,16 +214,37 @@ export async function refreshGovActionPromptsForSquad(squad: Squad): Promise<voi
     }
     if (refreshGenBySquadId.get(id) !== gen) return;
 
+    let offboardVoted = false;
+    let offboardVoteKnown = true;
+    if (voter && quartermaster && qmStatus && isCrewOffboardActive(qmStatus)) {
+      try {
+        offboardVoted = await crewOffboardHasVoted({
+          network,
+          quartermaster,
+          offboardId: qmStatus.activeCrewOffboardId,
+          voter,
+          parentId: id,
+        });
+      } catch {
+        offboardVoteKnown = false;
+      }
+    }
+    if (refreshGenBySquadId.get(id) !== gen) return;
+
     const prompts = deriveGovActionPrompts({
       parentId: id,
       proposals,
       mutinyStatus,
       qmPending,
       privilege,
-      mutinyMode: isMutinyActive(mutinyStatus),
+      mutinyMode: isMutinyActive(mutinyStatus) || isCrewOffboardActive(qmStatus),
       treasuryVoteMap,
       mutinyHasVoted: mutinyVoted,
       mutinyVoteKnown,
+      crewOffboard: qmStatus?.offboard ?? null,
+      crewOffboardQuorumBps: parseQuorumBps(qmStatus?.crewOffboardQuorumBps),
+      offboardHasVoted: offboardVoted,
+      offboardVoteKnown,
     });
 
     govActionPromptsBySquadId.update((m) => ({ ...m, [id]: prompts }));

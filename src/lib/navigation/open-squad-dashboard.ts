@@ -11,7 +11,8 @@ import {
   lastOpenedSquadId,
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
-  MY_DASHBOARD_CHANNEL_ID,
+  SQUAD_WARGAME_CHANNEL_ID,
+  isVirtualHubChannelId,
   type Squad,
 } from '../../stores/app';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
@@ -41,7 +42,7 @@ function navigateToSquadChannel(squadId: string, channelId: string, preferredHub
   lastChannelBySquadId.update((m) => ({ ...m, [squadId]: channelId }));
 
   const squad = get(squads).find((s) => s.id === squadId);
-  const isVirtual = channelId === SQUAD_DASHBOARD_CHANNEL_ID || channelId === MY_DASHBOARD_CHANNEL_ID;
+  const isVirtual = isVirtualHubChannelId(channelId);
   const hub = isVirtual
     ? null
     : resolveHubChannelNameForGroupSelection(squad?.channels ?? [], channelId, preferredHubChannelName ?? null);
@@ -54,6 +55,13 @@ export function openSquadDashboard(parentId: string): void {
   const id = parentId.trim();
   if (!id) return;
   navigateToSquadChannel(id, SQUAD_DASHBOARD_CHANNEL_ID);
+}
+
+/** Open a squad's squad-wargame hub from Status or other non-hub views. */
+export function openSquadWargame(parentId: string): void {
+  const id = parentId.trim();
+  if (!id) return;
+  navigateToSquadChannel(id, SQUAD_WARGAME_CHANNEL_ID);
 }
 
 /** Full navigation state change for landing on a DM peer's thread. */

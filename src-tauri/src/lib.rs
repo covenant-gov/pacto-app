@@ -9069,7 +9069,8 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         let cached_entry: Option<serde_json::Value> = {
             let index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
             index.into_iter().find(|entry| {
-                entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner_pubkey_b32.as_str())
+                entry.get("owner_pubkey").and_then(|v| v.as_str())
+                    == Some(owner_pubkey_b32.as_str())
                     && entry.get("device_id").and_then(|v| v.as_str()) == Some(device_id.as_str())
             })
         };
@@ -9188,7 +9189,10 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     // independently verify, so caching an id no relay holds would just force every future
     // call to republish anyway, without ever telling the caller why.
     let send_output_30443 = client
-        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event_30443)
+        .send_event_to(
+            trusted_relays::trusted_relays().iter().cloned(),
+            &kp_event_30443,
+        )
         .await
         .map_err(|e| e.to_string())?;
     record_send_outcome(&kp_event_30443, &send_output_30443);
@@ -9199,7 +9203,10 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         ));
     }
     let send_output_443 = client
-        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event_443)
+        .send_event_to(
+            trusted_relays::trusted_relays().iter().cloned(),
+            &kp_event_443,
+        )
         .await
         .map_err(|e| e.to_string())?;
     record_send_outcome(&kp_event_443, &send_output_443);
@@ -9281,8 +9288,8 @@ async fn keypackage_ref_still_usable(
         .next()
         .await
         .ok_or_else(|| "not found on the trusted relays".to_string())?;
-    let mls_service = MlsService::new_persistent_for_keypackage_refresh(handle)
-        .map_err(|e| e.to_string())?;
+    let mls_service =
+        MlsService::new_persistent_for_keypackage_refresh(handle).map_err(|e| e.to_string())?;
     mls_service.key_package_event_usable(&event)
 }
 
@@ -9497,10 +9504,7 @@ async fn create_group_chat(
 
     let skipped_members = merge_skipped_members(preflight_skipped, outcome.skipped);
     for s in &skipped_members {
-        eprintln!(
-            "[MLS][create_group_chat] skipped {}: {}",
-            s.npub, s.reason
-        );
+        eprintln!("[MLS][create_group_chat] skipped {}: {}", s.npub, s.reason);
     }
 
     let pending_invites = outcome.pending_invites;
@@ -10237,10 +10241,11 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
             // Map wire-id/engine-id using encrypted metadata
             let meta_groups = mls.read_groups().await.unwrap_or_default();
-            let (wire_id, engine_id, pending_welcomes) = if let Some(m) = meta_groups.iter().find(|g| {
-                g.group_id == group_id
-                    || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id)
-            }) {
+            let (wire_id, engine_id, pending_welcomes) = if let Some(m) =
+                meta_groups.iter().find(|g| {
+                    g.group_id == group_id
+                        || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id)
+                }) {
                 (
                     m.group_id.clone(),
                     if !m.engine_group_id.is_empty() {
@@ -10890,6 +10895,7 @@ pub fn run() {
             evm::squad_allowlist::evm_send_squad_allowlisted_contract_call,
             evm::safe_deploy::safe_deploy_proxy,
             evm::nave_pirata_deploy::deploy_nave_pirata_for_parent,
+            evm::war_game_deploy::deploy_war_game_for_parent,
             evm::squad_sponsor_deploy::deploy_squad_sponsor_for_parent,
             evm::squad_sponsor_deploy::deploy_squad_sponsor_hats_for_parent,
             evm::squad_sponsor_deposit::deposit_squad_sponsor,
@@ -10906,11 +10912,13 @@ pub fn run() {
             evm::squad_admin_write::squad_admin_enable_executor,
             evm::squad_admin_write::squad_admin_enable_full_permission,
             evm::nave_pirata_read::get_nave_pirata_deployment,
+            evm::nave_pirata_read::get_war_game_deployment,
             evm::treasury_authority_write::treasury_authority_propose,
             evm::treasury_authority_write::treasury_authority_crew_vote,
             evm::treasury_authority_write::treasury_authority_captain_vote,
             evm::treasury_authority_write::treasury_authority_execute,
             evm::treasury_proposals_read::list_treasury_proposals,
+            evm::treasury_proposals_read::get_treasury_vote_config,
             evm::treasury_proposals_read::treasury_proposal_has_voted,
             evm::mutiny_ops::get_mutiny_status,
             evm::mutiny_ops::mutiny_has_voted,
@@ -10921,6 +10929,7 @@ pub fn run() {
             evm::mutiny_ops::mutiny_start_to_pause_captain,
             evm::mutiny_ops::mutiny_cast_vote,
             evm::mutiny_ops::mutiny_execute,
+            evm::mutiny_ops::mutiny_expire,
             evm::mutiny_ops::mutiny_captain_resign,
             evm::quartermaster_ops::get_quartermaster_status,
             evm::quartermaster_ops::get_quartermaster_pending,
@@ -10932,6 +10941,11 @@ pub fn run() {
             evm::quartermaster_ops::quartermaster_request_remove_crew,
             evm::quartermaster_ops::quartermaster_cancel_remove_crew,
             evm::quartermaster_ops::quartermaster_execute_remove_crew,
+            evm::quartermaster_ops::crew_offboard_has_voted,
+            evm::quartermaster_ops::quartermaster_propose_offboard,
+            evm::quartermaster_ops::quartermaster_crew_offboard_vote,
+            evm::quartermaster_ops::quartermaster_execute_offboard,
+            evm::quartermaster_ops::quartermaster_expire_offboard,
             evm::hats_read::get_hats_tree,
             evm::member_governance_read::get_member_hat_wearers,
             evm::member_governance_read::get_squad_admin_executor_roles,

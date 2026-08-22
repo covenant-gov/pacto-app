@@ -6,7 +6,9 @@
     getMutinyStatus,
     getQuartermasterStatus,
     mutinyExecute,
+    mutinyExpire,
     mutinyHasVoted,
+    crewOffboardHasVoted,
     getSquadCapabilities,
     type SquadCapabilitiesDto,
     type MutinyStatusDto,
@@ -14,7 +16,9 @@
     type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
+  import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
   import {
+    clearGovModuleReadsForParent,
     fetchGovModuleReadCached,
     isGovModuleReadStale,
     mutinyReadCacheKey,
@@ -30,11 +34,14 @@
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
-  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
+  import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
+  import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
+  import { labeledWearerOptions } from '../../../lib/governance/war-game-captain';
   import { showToast } from '../../../stores/toast';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
   import { get } from 'svelte/store';
@@ -53,6 +60,8 @@
     treasuryProposalsError?: string;
     onRefreshProposals?: () => void;
     hasSponsor?: boolean;
+    warGameStack?: boolean;
+    archiveView?: boolean;
   }
 
   let {
@@ -68,6 +77,8 @@
     treasuryProposalsError = '',
     onRefreshProposals = () => {},
     hasSponsor = false,
+    warGameStack = false,
+    archiveView = false,
   }: Props = $props();
 
   type GovSubMode = 'proposals' | 'crew' | 'captain';
@@ -90,6 +101,7 @@
 
   let qmStatus: QuartermasterStatusDto | null = $state(null);
   let qmHydrateKey = $state('');
+  let offboardHasVoted = $state(false);
 
   let qmPending: QuartermasterPendingActionDto[] = $state([]);
   let qmPendingLoading = $state(false);
@@ -102,6 +114,13 @@
   let fundingBalanceKey = $state('');
 
   let processNonce = $derived($governanceProcessNonceByParentId[parentId.trim()] ?? 0);
+  let rosterFrozen = $derived(isMutinyActive(mutinyStatus) || isCrewOffboardActive(qmStatus));
+  let rosterFreezeReason = $derived(
+    isMutinyActive(mutinyStatus)
+      ? 'governance.gate.quartermasterLocked'
+      : 'governance.gate.rosterFrozenOffboard',
+  );
+  let crewMemberOptions = $derived(labeledWearerOptions(crewWearers, memberEvmOptions));
 
   $effect(() => {
     if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
@@ -152,12 +171,16 @@
 
   $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}`;
-    if (pid && key !== capabilitiesLoadKey) {
-      capabilitiesLoadKey = key;
-      capabilitiesStatus = 'unresolved';
-      void loadCapabilities(pid);
+    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}|${archiveView ? 'archive' : 'live'}`;
+    if (!pid || key === capabilitiesLoadKey) return;
+    capabilitiesLoadKey = key;
+    if (archiveView) {
+      capabilities = warGameArchiveCapabilities(pid);
+      capabilitiesStatus = 'ready';
+      return;
     }
+    capabilitiesStatus = 'unresolved';
+    void loadCapabilities(pid, key);
   });
 
   $effect(() => {
@@ -169,7 +192,7 @@
   });
 
   $effect(() => {
-    const key = `${parentId}|${network}|${payload.quartermaster ?? ''}`;
+    const key = `${parentId}|${network}|${payload.quartermaster ?? ''}|${privilege.myAddress}`;
     if (key !== qmHydrateKey && parentId.trim() && payload.quartermaster?.trim()) {
       qmHydrateKey = key;
       void reloadQm(false);
@@ -184,10 +207,9 @@
     }
   });
 
-  async function loadCapabilities(pid: string) {
-    const key = `${pid}|${network}`;
+  async function loadCapabilities(pid: string, key: string) {
     try {
-      const snap = await getSquadCapabilities(pid, network);
+      const snap = await getSquadCapabilities(pid, network, { wargame: warGameStack });
       if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
       capabilitiesStatus = 'ready';
@@ -226,7 +248,7 @@
     const hydrateKey = `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`;
     const key = mutinyReadCacheKey(network, mutinyModule, privilege.myAddress);
     const peeked = peekGovModuleRead<MutinySnapshot>(key);
-    if (peeked) applyMutinySnapshot(peeked);
+    if (peeked && !force) applyMutinySnapshot(peeked);
 
     const needFetch = force || !peeked || isGovModuleReadStale(key);
     if (!needFetch) {
@@ -273,13 +295,16 @@
   async function reloadQm(force = false) {
     const quartermaster = payload.quartermaster?.trim();
     if (!quartermaster) return;
-    const hydrateKey = `${parentId}|${network}|${quartermaster}`;
+    const hydrateKey = `${parentId}|${network}|${quartermaster}|${privilege.myAddress}`;
     const key = quartermasterReadCacheKey(network, quartermaster);
     const peeked = peekGovModuleRead<QuartermasterStatusDto>(key);
     if (peeked) qmStatus = peeked;
 
     const needFetch = force || !peeked || isGovModuleReadStale(key);
     if (!needFetch) {
+      if (peeked && isCrewOffboardActive(peeked) && privilege.myAddress) {
+        void loadOffboardVote(quartermaster, peeked, privilege.myAddress);
+      }
       return;
     }
 
@@ -290,11 +315,39 @@
         () => getQuartermasterStatus({ network, quartermaster, parentId }),
         { force: force || !!peeked },
       );
-      if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
+      if (hydrateKey !== `${parentId}|${network}|${quartermaster}|${privilege.myAddress}`) return;
       qmStatus = next;
+      if (isCrewOffboardActive(next) && privilege.myAddress) {
+        await loadOffboardVote(quartermaster, next, privilege.myAddress);
+      } else {
+        offboardHasVoted = false;
+      }
     } catch {
-      if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
+      if (hydrateKey !== `${parentId}|${network}|${quartermaster}|${privilege.myAddress}`) return;
       if (!peeked) qmStatus = null;
+    }
+  }
+
+  async function loadOffboardVote(
+    quartermaster: string,
+    status: QuartermasterStatusDto,
+    voter: string,
+  ) {
+    const id = status.activeCrewOffboardId?.trim();
+    if (!id || id === '0') {
+      offboardHasVoted = false;
+      return;
+    }
+    try {
+      offboardHasVoted = await crewOffboardHasVoted({
+        network,
+        quartermaster,
+        offboardId: id,
+        voter,
+        parentId,
+      });
+    } catch {
+      offboardHasVoted = false;
     }
   }
 
@@ -334,7 +387,28 @@
       showToast(govWriteSubmittedToast(tFn('governance.action.executeMutiny'), fundedByFromWriteResult(result)));
       await reloadMutiny(true);
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.executeMutiny')));
+      showGovWriteErrorToast(e, tFn('governance.action.executeMutiny'));
+      clearGovModuleReadsForParent(parentId);
+      await reloadMutiny(true);
+    }
+  }
+
+  async function expireMutinyFromBoard() {
+    const mutinyModule = payload.mutinyModule?.trim();
+    if (!mutinyModule || !mutinyStatus) return;
+    try {
+      const result = await mutinyExpire({
+        network,
+        parentId,
+        mutinyModule,
+        mutinyId: mutinyStatus.activeMutinyId,
+      });
+      showToast(govWriteSubmittedToast(tFn('governance.action.expireMutiny'), fundedByFromWriteResult(result)));
+      await reloadMutiny(true);
+    } catch (e) {
+      showGovWriteErrorToast(e, tFn('governance.action.expireMutiny'));
+      clearGovModuleReadsForParent(parentId);
+      await reloadMutiny(true);
     }
   }
 
@@ -387,12 +461,15 @@
         proposalsError={treasuryProposalsError}
         {mutinyStatus}
         {mutinyLoading}
+        {qmStatus}
         {qmPending}
         {qmPendingLoading}
         {qmPendingError}
-        mutinyMode={!!qmStatus?.mutinyActive || !!(mutinyStatus && mutinyStatus.activeMutinyId !== '0' && !mutinyStatus.executed)}
+        mutinyMode={rosterFrozen}
+        rosterFreezeReason={rosterFreezeReason}
         onRefreshProposals={refreshAllProposals}
         onExecuteMutiny={executeMutinyFromBoard}
+        onExpireMutiny={expireMutinyFromBoard}
         {fundingHint}
         {capabilitiesPending}
       />
@@ -402,12 +479,21 @@
         {parentId}
         treasuryAuthority={payload.treasuryAuthority ?? ''}
         mutinyModule={payload.mutinyModule ?? ''}
+        quartermaster={payload.quartermaster ?? ''}
         {privilege}
         proposals={treasuryProposals}
         {mutinyStatus}
         mutinyHasVotedFlag={mutinyHasVotedFlag}
+        {qmStatus}
+        memberEvmOptions={crewMemberOptions}
+        squadMemberOptions={memberEvmOptions}
+        {offboardHasVoted}
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
+        onRefreshQm={() => {
+          void reloadQm(true);
+          void reloadQmPending();
+        }}
         {fundingHint}
         {capabilitiesPending}
       />
@@ -424,6 +510,8 @@
         {qmStatus}
         {memberEvmOptions}
         {captainWearers}
+        {crewWearers}
+        {warGameStack}
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         onRefreshQm={() => {

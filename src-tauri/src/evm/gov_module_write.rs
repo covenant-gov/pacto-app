@@ -7,7 +7,7 @@ use alloy::sol_types::SolCall;
 use serde_json::Value;
 use tauri::{AppHandle, Runtime};
 
-use super::access_control::{require_capability, with_gov_write_lock, GovCapability};
+use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
 use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
     captainResignCall, castVoteCall, executeMutinyCall, startMutinyToArbitraryContractCall,
     startMutinyToArbitraryEoaCall, startMutinyToCommitteeCall, startMutinyToCrewMemberCall,
@@ -29,8 +29,9 @@ use super::rpc::{
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::sponsor_userop::{
-    call_gas_with_margin, estimate_call_gas, roster_native_balance_wei, send_sponsored_gov_userop,
-    wait_for_user_operation_receipt, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
+    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
+    roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
+    FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -67,7 +68,10 @@ pub async fn send_gov_module_call<R: Runtime>(
         ));
     }
 
-    require_capability(&app, pid, capability, rpc_urls_override).await?;
+    let stack =
+        GovStack::for_wargame_target_corroborated(&app, pid, to, rpc_urls_override.clone()).await?;
+    let wargame_write = stack == GovStack::WarGame;
+    require_capability(&app, pid, capability, rpc_urls_override.clone(), stack).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
     let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
@@ -76,7 +80,8 @@ pub async fn send_gov_module_call<R: Runtime>(
 
     // Route the write: EOA when the roster key can afford the gas, sponsored when it can't.
     let read_provider = connect_read_provider(&urls).await?;
-    let has_sponsor_infra = db::parent_has_sponsor_infra(&app, pid).unwrap_or(false);
+    let has_sponsor_infra =
+        db::parent_has_sponsor_infra(&app, pid).unwrap_or(false) || wargame_write;
     // A failed balance lookup must not block writes: the sponsored path needs no roster
     // balance, but without sponsor infra there is no route for the write at all.
     let balance = match roster_native_balance_wei(&read_provider, signer.address()).await {
@@ -96,7 +101,15 @@ pub async fn send_gov_module_call<R: Runtime>(
     let required = estimate_eoa_cost_wei(&read_provider, signer.address(), to, &calldata).await;
     match select_write_path(balance, required, has_sponsor_infra) {
         WritePath::Sponsored => {
-            match send_sponsored_gov_userop(app.clone(), &net.key, pid, to, calldata.clone()).await
+            match send_sponsored_gov_userop(
+                app.clone(),
+                &net.key,
+                pid,
+                to,
+                calldata.clone(),
+                rpc_urls_override.clone(),
+            )
+            .await
             {
                 Ok(send) => {
                     // The write guard must stay held through inclusion: returning now would let
@@ -219,7 +232,7 @@ async fn estimate_eoa_cost_wei<P: Provider>(
     let gas = estimate_call_gas(provider, from, to, calldata)
         .await
         .map(call_gas_with_margin)
-        .unwrap_or(FALLBACK_CALL_GAS_LIMIT);
+        .unwrap_or_else(|| call_gas_ceiling_for_calldata(calldata));
     let max_fee = provider
         .estimate_eip1559_fees()
         .await

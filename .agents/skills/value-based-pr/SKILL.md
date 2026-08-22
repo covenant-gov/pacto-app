@@ -80,6 +80,31 @@ Ask whether to capture evidence only when the change has observable behavior (UI
 
 When capturing evidence, use `ce-demo-reel` and splice the resulting URL or path into a `## Demo` section above the badge.
 
+## Closing multiple GitHub issues
+
+GitHub binds **one issue per keyword**. Repeat `closes` (or `fixes` / `resolves`) for each issue. Do not stack numbers after a single keyword.
+
+correct:
+
+```text
+closes #n0
+closes #n1
+```
+
+or:
+
+```text
+closes #n0 , closes #n1
+```
+
+incorrect:
+
+```text
+closes #n0 #n1
+```
+
+`#n1` will not get closed. Put this in the PR description, not a review comment. See `github-pr-closes-issues`.
+
 ## Badge
 
 End every PR body with:

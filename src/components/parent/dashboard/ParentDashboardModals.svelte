@@ -22,6 +22,7 @@
     hasSponsor?: boolean;
     hasPactoGov?: boolean;
     hasSquadAdmin?: boolean;
+    warGameStack?: boolean;
     squadAdminProxy?: string;
     squadAdminNetwork?: SupportedChainId;
     /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
@@ -95,6 +96,7 @@
     hasSponsor = false,
     hasPactoGov = false,
     hasSquadAdmin = false,
+    warGameStack = false,
     squadAdminProxy = '',
     squadAdminNetwork = DEFAULT_CHAIN_ID,
     squadNetwork = null,
@@ -331,6 +333,7 @@
   {squadAdminProxy}
   network={squadAdminNetwork}
   {memberEvmOptions}
+  {warGameStack}
 />
 
 <style>

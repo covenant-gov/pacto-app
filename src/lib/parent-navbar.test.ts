@@ -21,6 +21,8 @@ import {
   MY_DASHBOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_NAME,
+  SQUAD_WARGAME_CHANNEL_ID,
+  SQUAD_WARGAME_CHANNEL_NAME,
 } from '../stores/app';
 
 describe('partitionHubSidebarChannels', () => {
@@ -41,6 +43,15 @@ describe('partitionHubSidebarChannels', () => {
     ]);
     expect(customChannels.map((c) => c.name)).toEqual(['c1']);
   });
+
+  it('treats squad-wargame as a built-in hub row', () => {
+    const { defaultHubChannels, customChannels } = partitionHubSidebarChannels([
+      { name: SQUAD_WARGAME_CHANNEL_NAME, groupId: SQUAD_WARGAME_CHANNEL_ID, order: -2 },
+      { name: 'ops', groupId: 'g-ops', order: 2 },
+    ]);
+    expect(defaultHubChannels.map((c) => c.name)).toEqual([SQUAD_WARGAME_CHANNEL_NAME]);
+    expect(customChannels.map((c) => c.name)).toEqual(['ops']);
+  });
 });
 
 describe('buildHubSidebarChannels', () => {
@@ -58,6 +69,26 @@ describe('buildHubSidebarChannels', () => {
       POLLS_CHANNEL_NAME,
       'c1',
     ]);
+  });
+
+  it('omits squad-wargame unless includeWarGame', () => {
+    const built = buildHubSidebarChannels(defaultChannelRowsForGroupId('g'));
+    expect(built.map((c) => c.name)).not.toContain(SQUAD_WARGAME_CHANNEL_NAME);
+  });
+
+  it('pins squad-wargame immediately after squad-dashboard when includeWarGame', () => {
+    const built = buildHubSidebarChannels(defaultChannelRowsForGroupId('g'), { includeWarGame: true });
+    expect(built.map((c) => c.name)).toEqual([
+      SQUAD_DASHBOARD_CHANNEL_NAME,
+      SQUAD_WARGAME_CHANNEL_NAME,
+      MY_DASHBOARD_CHANNEL_NAME,
+      ANNOUNCEMENTS_CHANNEL_NAME,
+      POLLS_CHANNEL_NAME,
+    ]);
+    expect(built[1]).toMatchObject({
+      name: SQUAD_WARGAME_CHANNEL_NAME,
+      groupId: SQUAD_WARGAME_CHANNEL_ID,
+    });
   });
 });
 

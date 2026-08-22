@@ -8,8 +8,9 @@ use tauri::{AppHandle, Runtime};
 use super::access_control::GovCapability;
 use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
     activeMutinyIdCall, captainCall, captainResignCall, castVoteCall, executeMutinyCall,
-    hasVotedCall, mutinyCall, startMutinyToArbitraryContractCall, startMutinyToArbitraryEoaCall,
-    startMutinyToCommitteeCall, startMutinyToCrewMemberCall, startMutinyToPauseCaptainCall,
+    expireMutinyCall, hasVotedCall, mutinyCall, startMutinyToArbitraryContractCall,
+    startMutinyToArbitraryEoaCall, startMutinyToCommitteeCall, startMutinyToCrewMemberCall,
+    startMutinyToPauseCaptainCall,
 };
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
 use super::gov_read::connect_gov_read_provider;
@@ -47,6 +48,84 @@ fn encode_execute_mutiny(mutiny_id: &str) -> Result<Vec<u8>, String> {
     Ok(executeMutinyCall { _mutinyId: mid }.abi_encode())
 }
 
+fn encode_expire_mutiny(mutiny_id: &str) -> Result<Vec<u8>, String> {
+    let mid = parse_mutiny_id(mutiny_id)?;
+    Ok(expireMutinyCall { _mutinyId: mid }.abi_encode())
+}
+
+#[derive(Clone, Copy)]
+enum MutinyWriteKind {
+    Expire,
+    Execute,
+}
+
+fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Chain snapshot vs submitted id. `None` means the write may proceed.
+fn classify_mutiny_round_preflight(
+    submitted: U256,
+    active: U256,
+    executed: bool,
+    deadline: u64,
+    now_secs: u64,
+    kind: MutinyWriteKind,
+) -> Option<(&'static str, &'static str)> {
+    if active.is_zero() || active != submitted || executed {
+        return Some(("MUTINY_NOT_ACTIVE", "no active mutiny matching this id"));
+    }
+    match kind {
+        MutinyWriteKind::Expire if now_secs < deadline => {
+            Some(("MUTINY_NOT_EXPIRED", "mutiny voting window is still open"))
+        }
+        MutinyWriteKind::Execute if deadline > 0 && now_secs >= deadline => {
+            Some(("MUTINY_EXPIRED", "mutiny deadline has passed"))
+        }
+        _ => None,
+    }
+}
+
+async fn preflight_mutiny_write(
+    network: &str,
+    mutiny_module: &str,
+    mutiny_id: &str,
+    kind: MutinyWriteKind,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<(), String> {
+    let submitted = parse_mutiny_id(mutiny_id)?;
+    let module = parse_address(mutiny_module.trim())
+        .map_err(|e| wallet_err_json("INVALID_MUTINY", e, None))?;
+    let (provider, _ctx) = connect_gov_read_provider(network, rpc_urls).await?;
+    let active: U256 = eth_call_decode(&provider, module, &activeMutinyIdCall {})
+        .await
+        .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
+    if active.is_zero() || active != submitted {
+        return Err(wallet_err_json(
+            "MUTINY_NOT_ACTIVE",
+            "no active mutiny matching this id",
+            None,
+        ));
+    }
+    let m = eth_call_decode(&provider, module, &mutinyCall { _id: active })
+        .await
+        .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
+    if let Some((code, msg)) = classify_mutiny_round_preflight(
+        submitted,
+        active,
+        m._executed,
+        m._deadline,
+        unix_now_secs(),
+        kind,
+    ) {
+        return Err(wallet_err_json(code, msg, None));
+    }
+    Ok(())
+}
+
 fn encode_captain_resign(new_captain: &str) -> Result<Vec<u8>, String> {
     let addr = parse_address(new_captain.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
@@ -58,7 +137,9 @@ fn encode_captain_resign(new_captain: &str) -> Result<Vec<u8>, String> {
 pub struct MutinyStatusDto {
     pub active_mutiny_id: String,
     pub proposed_new_captain: String,
+    pub from_captain: String,
     pub started_at: u64,
+    pub deadline: u64,
     pub snapshot: u64,
     pub yeas: u64,
     pub executed: bool,
@@ -97,7 +178,9 @@ pub async fn get_mutiny_status<R: Runtime>(
         return Ok(MutinyStatusDto {
             active_mutiny_id: "0".into(),
             proposed_new_captain: String::new(),
+            from_captain: String::new(),
             started_at: 0,
+            deadline: 0,
             snapshot: 0,
             yeas: 0,
             executed: false,
@@ -112,7 +195,9 @@ pub async fn get_mutiny_status<R: Runtime>(
     Ok(MutinyStatusDto {
         active_mutiny_id: active_id.to_string(),
         proposed_new_captain: format!("{:#x}", m._proposedNewCaptain),
+        from_captain: format!("{:#x}", m._fromCaptain),
         started_at: m._startedAt,
+        deadline: m._deadline,
         snapshot: m._snapshot,
         yeas: m._yeas,
         executed: m._executed,
@@ -327,6 +412,44 @@ pub async fn mutiny_execute<R: Runtime>(
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let calldata = encode_execute_mutiny(&mutiny_id)?;
+    preflight_mutiny_write(
+        network.as_str(),
+        mutiny_module.as_str(),
+        mutiny_id.as_str(),
+        MutinyWriteKind::Execute,
+        rpc_urls.clone(),
+    )
+    .await?;
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::ExecuteMutiny,
+        rpc_urls,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn mutiny_expire<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    parent_id: String,
+    mutiny_module: String,
+    mutiny_id: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<MutinyWriteResult, String> {
+    let calldata = encode_expire_mutiny(&mutiny_id)?;
+    preflight_mutiny_write(
+        network.as_str(),
+        mutiny_module.as_str(),
+        mutiny_id.as_str(),
+        MutinyWriteKind::Expire,
+        rpc_urls.clone(),
+    )
+    .await?;
     mutiny_write(
         app,
         network,
@@ -364,11 +487,13 @@ pub async fn mutiny_captain_resign<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        encode_captain_resign, encode_cast_vote, encode_execute_mutiny,
-        encode_start_to_crew_member, parse_mutiny_id,
+        classify_mutiny_round_preflight, encode_captain_resign, encode_cast_vote,
+        encode_execute_mutiny, encode_expire_mutiny, encode_start_to_crew_member, parse_mutiny_id,
+        MutinyWriteKind,
     };
     use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::{
-        captainResignCall, castVoteCall, executeMutinyCall, startMutinyToCrewMemberCall,
+        captainResignCall, castVoteCall, executeMutinyCall, expireMutinyCall,
+        startMutinyToCrewMemberCall,
     };
     use crate::evm::rpc::parse_address;
     use alloy::primitives::U256;
@@ -414,6 +539,79 @@ mod tests {
             }
             .abi_encode()
         );
+
+        let expire = encode_expire_mutiny("9").expect("expire");
+        assert_eq!(
+            expire,
+            expireMutinyCall {
+                _mutinyId: U256::from(9u64),
+            }
+            .abi_encode()
+        );
+        assert_ne!(expire, exec);
+        assert!(encode_expire_mutiny("nope").is_err());
+    }
+
+    #[test]
+    fn preflight_rejects_cleared_or_mismatched_round() {
+        let nine = U256::from(9u64);
+        assert_eq!(
+            classify_mutiny_round_preflight(
+                nine,
+                U256::ZERO,
+                false,
+                100,
+                200,
+                MutinyWriteKind::Expire
+            )
+            .map(|p| p.0),
+            Some("MUTINY_NOT_ACTIVE")
+        );
+        assert_eq!(
+            classify_mutiny_round_preflight(
+                nine,
+                U256::from(3u64),
+                false,
+                100,
+                200,
+                MutinyWriteKind::Expire
+            )
+            .map(|p| p.0),
+            Some("MUTINY_NOT_ACTIVE")
+        );
+        assert_eq!(
+            classify_mutiny_round_preflight(nine, nine, true, 100, 200, MutinyWriteKind::Expire)
+                .map(|p| p.0),
+            Some("MUTINY_NOT_ACTIVE")
+        );
+        assert_eq!(
+            classify_mutiny_round_preflight(nine, nine, false, 200, 100, MutinyWriteKind::Expire)
+                .map(|p| p.0),
+            Some("MUTINY_NOT_EXPIRED")
+        );
+        assert_eq!(
+            classify_mutiny_round_preflight(nine, nine, false, 100, 200, MutinyWriteKind::Execute)
+                .map(|p| p.0),
+            Some("MUTINY_EXPIRED")
+        );
+        assert!(classify_mutiny_round_preflight(
+            nine,
+            nine,
+            false,
+            100,
+            200,
+            MutinyWriteKind::Expire
+        )
+        .is_none());
+        assert!(classify_mutiny_round_preflight(
+            nine,
+            nine,
+            false,
+            200,
+            100,
+            MutinyWriteKind::Execute
+        )
+        .is_none());
     }
 
     #[test]

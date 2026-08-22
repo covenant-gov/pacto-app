@@ -1,0 +1,90 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/svelte';
+import GovCrewOffboardPanel from './GovCrewOffboardPanel.svelte';
+import type { QuartermasterStatusDto } from '../../../lib/governance/api';
+import type { GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+
+afterEach(() => cleanup());
+
+const CREW_ADDR = '0x1111111111111111111111111111111111111111';
+const OTHER_CREW = '0x2222222222222222222222222222222222222222';
+
+const CREW: GovernancePrivilege = {
+  myAddress: CREW_ADDR,
+  wearsCaptain: false,
+  wearsCrew: true,
+  captainIsSafe: false,
+  roleLabel: 'Crew',
+};
+
+const CREW_HAT_OPTIONS = [
+  { address: CREW_ADDR, label: 'charlie-test' },
+  { address: OTHER_CREW, label: 'bravo-test' },
+];
+
+function qm(overrides: Partial<QuartermasterStatusDto> = {}): QuartermasterStatusDto {
+  return {
+    crewChangeDelaySecs: '60',
+    mutinyActive: false,
+    activeCrewOffboardId: '0',
+    crewOffboardExpirySecs: '300',
+    crewOffboardQuorumBps: '3000',
+    offboard: null,
+    ...overrides,
+  };
+}
+
+function offboardProps(overrides: Record<string, unknown> = {}) {
+  return {
+    network: 'sepolia',
+    parentId: 'parent-1',
+    quartermaster: '0xqm',
+    privilege: CREW,
+    memberEvmOptions: CREW_HAT_OPTIONS,
+    ...overrides,
+  };
+}
+
+describe('GovCrewOffboardPanel target picker', () => {
+  it('rehydrates target options after offboard clears', async () => {
+    const { rerender } = render(GovCrewOffboardPanel, {
+      props: offboardProps({
+        qmStatus: qm({
+          activeCrewOffboardId: '4',
+          offboard: {
+            offboardId: '4',
+            target: OTHER_CREW,
+            proposer: CREW_ADDR,
+            deadline: 0,
+            snapshot: 3,
+            yeas: 1,
+            nays: 0,
+            executed: false,
+          },
+        }),
+      }),
+    });
+    expect(screen.queryByRole('combobox', { name: 'Target member' })).toBeNull();
+
+    await rerender(offboardProps({ qmStatus: qm({ activeCrewOffboardId: '0', offboard: null }) }));
+
+    const target = screen.getByRole('combobox', { name: 'Target member' }) as HTMLSelectElement;
+    expect(target.options).toHaveLength(2);
+    expect(screen.getByRole('option', { name: /charlie-test/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /bravo-test/ })).toBeTruthy();
+  });
+
+  it('clears leftover target when member options are empty', async () => {
+    const { rerender } = render(GovCrewOffboardPanel, { props: offboardProps() });
+    expect(screen.getByRole('option', { name: /bravo-test/ })).toBeTruthy();
+
+    await rerender(offboardProps({ memberEvmOptions: [] }));
+
+    expect(screen.queryByRole('combobox', { name: 'Target member' })).toBeNull();
+    expect(screen.queryByRole('option', { name: /bravo-test/ })).toBeNull();
+    expect(screen.getByPlaceholderText('0x… (share EVM on Status first)')).toBeTruthy();
+  });
+});

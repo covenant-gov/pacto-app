@@ -19,8 +19,8 @@ afterEach(() => {
 
 describe('gov-module-read-cache', () => {
   it('builds stable keys', () => {
-    expect(mutinyReadCacheKey('SEPOLIA', '0xAbC', '0xDeF')).toBe('mutiny:sepolia:0xabc:0xdef');
-    expect(quartermasterReadCacheKey('sepolia', '0xQm')).toBe('qm:v2:sepolia:0xqm');
+    expect(mutinyReadCacheKey('SEPOLIA', '0xAbC', '0xDeF')).toBe('mutiny:v2:sepolia:0xabc:0xdef');
+    expect(quartermasterReadCacheKey('sepolia', '0xQm')).toBe('qm:v3:sepolia:0xqm');
     expect(safeBalancesCacheKey('p1', 'SEPOLIA', '0xSafe')).toBe('safe:p1:sepolia:0xsafe');
   });
 

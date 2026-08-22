@@ -1,4 +1,4 @@
-//! Withdraw pro-rata ETH from a squad sponsor clone via `ISquadSponsorBase.withdraw()`.
+//! Withdraw pro-rata ETH from the parent sponsor pool via `ISquadSponsorBase.withdraw()`.
 //! Caller picks which local EVM account holds shares (msg.sender).
 
 use alloy::network::TransactionBuilder;
@@ -16,9 +16,11 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
     send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
+use super::squad_sponsor_common::{
+    active_game_squad_id_for_parent, require_parent_member, resolve_sponsor_for_parent,
+};
 use super::squad_sponsor_deposit::{require_network_config, require_non_empty_parent_id};
-use super::squad_sponsor_read::read_sponsor_pool;
+use super::squad_sponsor_read::{read_clone_pool, read_sponsor_pool};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,17 +73,21 @@ pub async fn get_squad_sponsor_withdrawable<R: Runtime>(
     }
 
     let read_provider = connect_read_provider(&urls).await?;
+    let game_squad_id = active_game_squad_id_for_parent(&app, pid);
     let sponsor = resolve_sponsor_for_parent(
         &read_provider,
         addrs.squad_sponsor_factory,
         pid,
         sponsor_address.as_deref(),
+        game_squad_id,
     )
     .await?;
 
+    let pool = read_clone_pool(&read_provider, sponsor).await?;
+
     let amount: U256 = eth_call_decode(
         &read_provider,
-        sponsor,
+        pool,
         &withdrawableCall { sponsor: depositor },
     )
     .await
@@ -114,17 +120,21 @@ pub async fn withdraw_squad_sponsor<R: Runtime>(
     let signer_addr = signer.address();
 
     let read_provider = connect_read_provider(&urls).await?;
+    let game_squad_id = active_game_squad_id_for_parent(&app, pid);
     let sponsor = resolve_sponsor_for_parent(
         &read_provider,
         addrs.squad_sponsor_factory,
         pid,
         sponsor_address.as_deref(),
+        game_squad_id,
     )
     .await?;
 
+    let pool = read_clone_pool(&read_provider, sponsor).await?;
+
     let withdrawable: U256 = eth_call_decode(
         &read_provider,
-        sponsor,
+        pool,
         &withdrawableCall {
             sponsor: signer_addr,
         },
@@ -135,7 +145,7 @@ pub async fn withdraw_squad_sponsor<R: Runtime>(
 
     let provider = connect_signing_provider(&urls, wallet).await?;
     let calldata = withdrawCall {}.abi_encode();
-    let tx = contract_call_request(sponsor, calldata).with_chain_id(net.chain_id);
+    let tx = contract_call_request(pool, calldata).with_chain_id(net.chain_id);
     let receipt = send_and_confirm(
         &provider,
         tx,

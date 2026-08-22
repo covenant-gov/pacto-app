@@ -38,6 +38,7 @@ const TYPE_KEYS: Record<string, string> = {
   squad_network_updated: 'messaging.structuredNotice.squadNetworkUpdated',
   squad_rpc_updated: 'messaging.structuredNotice.squadRpcUpdated',
   governance_updated: 'messaging.structuredNotice.governanceUpdated',
+  war_game_updated: 'messaging.structuredNotice.warGameUpdated',
   governance_process_updated: 'messaging.structuredNotice.governanceProcessUpdated',
   squad_safe_updated: 'messaging.structuredNotice.treasurySafeUpdated',
   safe_proposal: 'messaging.structuredNotice.safeProposal',

@@ -36,6 +36,7 @@ function mutiny(overrides: Partial<MutinyStatusDto> = {}): MutinyStatusDto {
     activeMutinyId: '2',
     proposedNewCaptain: '0xabc',
     startedAt: 1,
+    deadline: 0,
     snapshot: 3,
     yeas: 1,
     executed: false,
@@ -96,6 +97,29 @@ describe('gov-process helpers', () => {
     expect(cards).toHaveLength(1);
     expect(govProcessToolLabel(cards[0])).toBe('governance.title.treasuryAuthority');
     expect(govProcessCardKey(cards[0])).toBe('treasury:1');
+  });
+
+  it('includes an active crew offboard on the board', () => {
+    const cards = buildGovProcessCards({
+      treasuryProposals: [],
+      mutinyStatus: null,
+      qmPending: [],
+      crewOffboard: {
+        offboardId: '4',
+        target: '0xabc',
+        proposer: '0xdef',
+        deadline: 400,
+        snapshot: 10,
+        yeas: 2,
+        nays: 1,
+        executed: false,
+      },
+      crewOffboardQuorumBps: 3000,
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ kind: 'crew_offboard', sortKey: 4, quorumBps: 3000 });
+    expect(govProcessToolLabel(cards[0])).toBe('governance.title.crewOffboard');
+    expect(govProcessCardKey(cards[0])).toBe('crew_offboard:4');
   });
 
   it('skips unknown quartermaster pending kinds', () => {

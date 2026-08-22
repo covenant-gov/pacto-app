@@ -22,12 +22,12 @@
 //! This allows protocol-agnostic message handling across DMs and MLS groups.
 
 use crate::db::{save_chat, save_chat_messages};
+use crate::mls_orphan_reaper::MLS_GROUPS_ENGINE_CREATE_LOCK;
 use crate::nostr_tags;
 use crate::rumor::{
     process_rumor, ConversationType, RumorContext, RumorEvent, RumorProcessingResult,
 };
 use crate::{get_nostr_client, STATE, TAURI_APP};
-use crate::mls_orphan_reaper::MLS_GROUPS_ENGINE_CREATE_LOCK;
 use mdk_core::prelude::*;
 use mdk_sqlite_storage::{EncryptionConfig, MdkSqliteStorage};
 use nostr_sdk::PublicKey;
@@ -105,7 +105,9 @@ pub(crate) fn mls_key_package_kinds() -> [nostr_sdk::Kind; 2] {
 
 /// Sort KeyPackage candidates newest-first; ties (e.g. a simultaneous dual publish) prefer
 /// the spec kind (30443) over the legacy one.
-pub(crate) fn sort_keypackage_candidates(mut events: Vec<nostr_sdk::Event>) -> Vec<nostr_sdk::Event> {
+pub(crate) fn sort_keypackage_candidates(
+    mut events: Vec<nostr_sdk::Event>,
+) -> Vec<nostr_sdk::Event> {
     events.sort_by(|a, b| {
         b.created_at.cmp(&a.created_at).then_with(|| {
             let a_is_30443 = a.kind == MLS_KEY_PACKAGE_KIND_30443;
@@ -585,7 +587,10 @@ mod deliver_welcomes_tests {
         .await;
         let pending = pending_invites_from_delivery_outcomes(outcomes);
         assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].npub, fail_recipient.to_bech32().unwrap_or_default());
+        assert_eq!(
+            pending[0].npub,
+            fail_recipient.to_bech32().unwrap_or_default()
+        );
     }
 
     #[tokio::test]
@@ -598,8 +603,14 @@ mod deliver_welcomes_tests {
         assert_eq!(outcomes.len(), recipients.len());
         let pending = pending_invites_from_delivery_outcomes(outcomes);
         assert_eq!(pending.len(), 2);
-        assert_eq!(pending[0].npub, recipients[1].to_bech32().unwrap_or_default());
-        assert_eq!(pending[1].npub, recipients[2].to_bech32().unwrap_or_default());
+        assert_eq!(
+            pending[0].npub,
+            recipients[1].to_bech32().unwrap_or_default()
+        );
+        assert_eq!(
+            pending[1].npub,
+            recipients[2].to_bech32().unwrap_or_default()
+        );
         assert!(pending
             .iter()
             .all(|p| p.reason == "MLS group create returned no welcome for this member"));
@@ -756,7 +767,10 @@ impl MlsService {
     /// missing the MIP-00/02 encoding tag) must be treated as a cache miss, not reused.
     pub fn key_package_event_usable(&self, event: &nostr_sdk::Event) -> Result<(), String> {
         let engine = self.engine().map_err(|e| e.to_string())?;
-        engine.parse_key_package(event).map(|_| ()).map_err(|e| e.to_string())
+        engine
+            .parse_key_package(event)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// Publish the device's keypackage to enable others to add this device to groups
@@ -1017,7 +1031,9 @@ impl MlsService {
         // retry path only recovers a create that failed before anything was created, so a member
         // dropped only because a relay was unreachable must not be baked into a partial group.
         if skipped.iter().any(|s| s.transient) {
-            return Err(MlsError::NetworkError(format_transient_skip_error(&skipped)));
+            return Err(MlsError::NetworkError(format_transient_skip_error(
+                &skipped,
+            )));
         }
 
         // Serializes engine-commit-then-first-persist against the reaper's sweep; must start
@@ -1033,7 +1049,10 @@ impl MlsService {
             // first so a stale/legacy key package only drops that member.
             let mut valid_events: Vec<Event> = Vec::with_capacity(member_kp_events.len());
             let mut valid_recipients: Vec<PublicKey> = Vec::with_capacity(invited_recipients.len());
-            for (event, recipient) in member_kp_events.into_iter().zip(invited_recipients.into_iter()) {
+            for (event, recipient) in member_kp_events
+                .into_iter()
+                .zip(invited_recipients.into_iter())
+            {
                 match engine.parse_key_package(&event) {
                     Ok(_) => {
                         valid_events.push(event);
@@ -1136,7 +1155,7 @@ impl MlsService {
             avatar_ref: avatar_ref.map(|s| s.to_string()),
             created_at: now_secs,
             updated_at: now_secs,
-            evicted: false,          // New groups are not evicted
+            evicted: false,               // New groups are not evicted
             pending_welcomes: Vec::new(), // Populated below if any welcome delivery fails
         };
 
@@ -3652,7 +3671,10 @@ mod mls_group_metadata_serde_tests {
         };
         let json = serde_json::to_value(&meta).unwrap();
         let round_tripped: MlsGroupMetadata = serde_json::from_value(json).unwrap();
-        assert_eq!(round_tripped.pending_welcomes, vec!["npub1pending".to_string()]);
+        assert_eq!(
+            round_tripped.pending_welcomes,
+            vec!["npub1pending".to_string()]
+        );
     }
 }
 
@@ -4475,7 +4497,9 @@ mod mls_key_package_validity_tests {
     #[test]
     fn key_package_filter_matches_both_kinds() {
         let keys = Keys::generate();
-        let filter = Filter::new().author(keys.public_key()).kinds(mls_key_package_kinds());
+        let filter = Filter::new()
+            .author(keys.public_key())
+            .kinds(mls_key_package_kinds());
 
         let event_30443 = EventBuilder::new(MLS_KEY_PACKAGE_KIND_30443, "content")
             .sign_with_keys(&keys)
@@ -4573,7 +4597,10 @@ mod sanitize_skip_reason_tests {
 
     #[test]
     fn leaves_a_short_plain_reason_untouched() {
-        assert_eq!(sanitize_skip_reason("no key package published"), "no key package published");
+        assert_eq!(
+            sanitize_skip_reason("no key package published"),
+            "no key package published"
+        );
     }
 }
 
@@ -4621,7 +4648,10 @@ mod format_transient_skip_error_tests {
     #[test]
     fn carries_the_marker_the_frontend_matches() {
         let msg = format_transient_skip_error(&[transient("npub1abc")]);
-        assert!(msg.starts_with(super::RELAY_KEYPACKAGE_UNREACHABLE), "{msg}");
+        assert!(
+            msg.starts_with(super::RELAY_KEYPACKAGE_UNREACHABLE),
+            "{msg}"
+        );
     }
 
     #[test]

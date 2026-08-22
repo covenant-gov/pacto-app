@@ -24,6 +24,8 @@
     onRefreshProposals?: () => void;
     onOpenLaunchpad?: () => void;
     hasSponsor?: boolean;
+    warGameStack?: boolean;
+    archiveView?: boolean;
   }
 
   let {
@@ -42,9 +44,15 @@
     onRefreshProposals = () => {},
     onOpenLaunchpad = () => {},
     hasSponsor = false,
+    warGameStack = false,
+    archiveView = false,
   }: Props = $props();
 
-  const provider = $derived(resolveGovernanceProvider(squadInfraRows));
+  const liveProvider = $derived(resolveGovernanceProvider(squadInfraRows));
+  const showPactoGovShell = $derived(
+    Boolean(pactoPayload?.treasuryAuthority?.trim()) && (warGameStack || liveProvider === 'pacto_gov'),
+  );
+  const showAbiModules = $derived(!warGameStack && liveProvider === 'abi_modules');
   const network = $derived(pactoGovChain ?? 'sepolia');
   const openCount = $derived(treasuryProposals.filter((p) => isTreasuryProposalActive(p.status)).length);
 </script>
@@ -52,20 +60,18 @@
 <section class="governance-section" aria-labelledby="governance-heading">
   <div class="governance-heading-row">
     <h3 id="governance-heading" class="section-heading">{$t('governance.governance.title')}</h3>
-    <button type="button" class="btn-primary governance-deploy-btn" onclick={onOpenLaunchpad}>
-      {$t('governance.governance.deploy')}
-    </button>
+    {#if !archiveView}
+      <button type="button" class="btn-primary governance-deploy-btn" onclick={onOpenLaunchpad}>
+        {$t('governance.governance.deploy')}
+      </button>
+    {/if}
   </div>
 
-  {#if provider === 'none'}
-    <p class="dashboard-placeholder-text muted">
-      {$t('governance.governance.placeholder')}
-    </p>
-  {:else if provider === 'abi_modules'}
+  {#if showAbiModules}
     <p class="dashboard-placeholder-text muted">
       {$t('governance.governance.abiModules')}
     </p>
-  {:else if pactoPayload?.treasuryAuthority}
+  {:else if showPactoGovShell && pactoPayload}
     <p class="gov-network muted">
       {$t('governance.governance.pactoGovOn', { values: { network: getWalletNetworkDisplayName(parseSupportedChainId(network)) } })}
       {#if openCount}
@@ -88,6 +94,8 @@
       {treasuryProposalsError}
       {onRefreshProposals}
       {hasSponsor}
+      {warGameStack}
+      {archiveView}
     />
   {:else}
     <p class="dashboard-placeholder-text muted">

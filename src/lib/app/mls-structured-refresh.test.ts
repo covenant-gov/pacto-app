@@ -66,6 +66,12 @@ import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
 import { formatSquadStateSyncRequest } from '../squad/squad-state-sync';
 import { formatSquadNetworkUpdated } from '../squad/squad-network-share';
 import { loadSquadNetworkOverride, SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
+import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
+import {
+  mutinyProcessTxByParentId,
+  mutinyTxHashForCard,
+  resetMutinyProcessTxStore,
+} from '../governance/mutiny-process-tx';
 
 describe('onMlsStructuredMessage', () => {
   const store = new Map<string, string>();
@@ -79,6 +85,8 @@ describe('onMlsStructuredMessage', () => {
     respondToSquadStateSyncRequest.mockClear();
     applySquadIdentityUpdated.mockClear();
     currentUser.set({ npub: 'npub1alice' });
+    setCurrentNpubForPersistence('npub1alice');
+    resetMutinyProcessTxStore();
     store.clear();
     (globalThis as unknown as { localStorage: Storage }).localStorage = {
       getItem: (k: string) => store.get(k) ?? null,
@@ -109,6 +117,33 @@ describe('onMlsStructuredMessage', () => {
           parent_id: 'g1',
           provider: 'pacto_gov',
           canonical_ref: '1',
+        },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(handlers.mergeSquadInfraForParent).toHaveBeenCalledWith('g1');
+  });
+
+  it('refreshes infra from war_game_updated', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'war_game_updated',
+        payload: {
+          parent_id: 'g1',
+          action: 'deploy',
+          canonical_ref: '1',
+          chain: 'sepolia',
+          entry_id: 'pacto-gov-wargame-g1',
+          round: '1',
+          game_squad_id: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sponsor: '0x5555555555555555555555555555555555555555',
+          provider_payload: '{"status":"active"}',
         },
       }),
       'g1',
@@ -206,6 +241,51 @@ describe('onMlsStructuredMessage', () => {
     );
     expect(get(governanceProcessNonceByParentId).g1).toBe(1);
     expect(handlers.mergeSquadInfraForParent).not.toHaveBeenCalled();
+  });
+
+  it('bumps governance process nonce for hats kind', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'governance_process_updated',
+        payload: { parent_id: 'g1', kind: 'hats' },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(get(governanceProcessNonceByParentId).g1).toBe(1);
+  });
+
+  it('records mutiny tx hash from governance_process_updated without overwriting start', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    const start = `0x${'aa'.repeat(32)}`;
+    const vote = `0x${'bb'.repeat(32)}`;
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'governance_process_updated',
+        payload: { parent_id: 'g1', kind: 'mutiny', tx_hash: start },
+      }),
+      'g1',
+      handlers,
+    );
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'governance_process_updated',
+        payload: { parent_id: 'g1', kind: 'mutiny', tx_hash: vote },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(mutinyTxHashForCard(get(mutinyProcessTxByParentId), 'g1')).toBe(start);
+    expect(get(mutinyProcessTxByParentId).g1.lastTxHash).toBe(vote);
   });
 
   it('syncs join requests for join schema', () => {

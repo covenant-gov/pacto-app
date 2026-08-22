@@ -16,6 +16,7 @@ sol! {
             address sponsor;
             SquadVariant variant;
             uint256 topHatId;
+            address pool;
         }
 
         function createSquadSponsorExt(bytes32 squadId, address addressOwner)
@@ -30,6 +31,22 @@ sol! {
             uint256[] calldata customEligibleHats
         ) external payable returns (address sponsor);
 
+        function createWarGameSponsor(
+            bytes32 parentSquadId,
+            uint256 topHatId,
+            address registry,
+            uint256[] calldata customEligibleHats
+        ) external payable returns (address sponsor, uint256 round, bytes32 gameSquadId);
+
+        function createWarGameSponsorExt(bytes32 parentSquadId, address addressOwner)
+            external
+            payable
+            returns (address sponsor, uint256 round, bytes32 gameSquadId);
+
+        function warGameRoundCount(bytes32 parentSquadId) external view returns (uint256);
+
+        function warGameSquadId(bytes32 parentSquadId, uint256 round) external view returns (bytes32);
+
         function PAYMASTER() external view returns (address paymaster);
 
         function squads(bytes32 squadId) external view returns (SquadRecord memory record);
@@ -39,6 +56,13 @@ sol! {
             address sponsor,
             SquadVariant variant,
             address indexed addressOwner
+        );
+
+        event WarGameSponsorCreated(
+            bytes32 indexed parentSquadId,
+            uint256 round,
+            bytes32 indexed gameSquadId,
+            address indexed sponsor
         );
     }
 
@@ -54,6 +78,8 @@ sol! {
         function paymaster() external view returns (address paymaster);
 
         function factory() external view returns (address factory);
+
+        function pool() external view returns (address pool);
 
         function totalShares() external view returns (uint256 totalShares);
 
@@ -77,5 +103,8 @@ sol! {
         function setPermittedAddress(address member, bool permitted) external;
 
         function transferAddressOwner(address newOwner) external;
+
+        function postInitialize(uint256 topHatId, address registry, uint256[] calldata customEligibleHats)
+            external;
     }
 }

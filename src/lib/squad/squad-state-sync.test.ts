@@ -326,6 +326,21 @@ describe('squad-state-sync', () => {
         createdAtMs: 1,
         updatedAtMs: 1,
       },
+      {
+        id: 'pacto-gov-wargame-ann-gid',
+        parentId: 'ann-gid',
+        infraType: 'pacto_gov_wargame',
+        chain: 'sepolia',
+        canonicalRef: '99',
+        providerPayload: JSON.stringify({
+          status: 'active',
+          round: '1',
+          gameSquadId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sponsor: '0x5555555555555555555555555555555555555555',
+        }),
+        createdAtMs: 1,
+        updatedAtMs: 1,
+      },
     ]);
     const raw = formatSquadStateSyncRequest({
       parentId: 'ann-gid',
@@ -344,6 +359,12 @@ describe('squad-state-sync', () => {
     expect(govCalls).toHaveLength(1);
     expect(String(govCalls[0][1])).toContain('pacto_gov');
     expect(String(govCalls[0][1])).not.toContain('gnosis_safe');
+    const warCalls = sendDmMessage.mock.calls.filter((c) =>
+      String(c[1]).includes('war_game_updated'),
+    );
+    expect(warCalls).toHaveLength(1);
+    expect(String(warCalls[0][1])).toContain('game_squad_id');
+    expect(String(warCalls[0][1])).not.toContain('"provider":"pacto_gov"');
   });
 
   it('skips EVM republish when unbound but still syncs network', async () => {

@@ -29,6 +29,14 @@ describe('getInvokeErrorMessage', () => {
     ).toBe('Requires Captain hat.');
   });
 
+  it('unwraps nested wallet_err_json message payloads', () => {
+    expect(
+      getInvokeErrorMessage(
+        '{"code":"SPONSOR_READ","message":"{\\"code\\":\\"ETH_CALL_FAILED\\",\\"message\\":\\"execution reverted\\"}"}'
+      )
+    ).toBe('execution reverted');
+  });
+
   it('falls back when string error is empty/whitespace', () => {
     expect(getInvokeErrorMessage('   ', 'fallback')).toBe('fallback');
     expect(getInvokeErrorMessage('')).toBe('Something went wrong');
@@ -94,5 +102,16 @@ describe('friendlyMessage', () => {
     expect(friendlyMessage(raw)).toBe(
       "Couldn't reach the relays to check whether npub1qqqqqqq…, npub1zzzzzzz… can be added. Nothing was created — try again."
     );
+  });
+
+  it('maps reverted sponsor eth_call errors to the balance-load copy', () => {
+    expect(
+      friendlyMessage(
+        '{"code":"ETH_CALL_FAILED","message":"server returned an error response: error code 3: execution reverted"}',
+        'sponsor'
+      )
+    ).toBe('Could not load sponsor balance.');
+    expect(friendlyMessage('execution reverted', 'sponsor')).toBe('Could not load sponsor balance.');
+    expect(friendlyMessage('execution reverted')).toBe('execution reverted');
   });
 });

@@ -1,9 +1,12 @@
 import type {
+  CrewOffboardDto,
   MutinyStatusDto,
   QuartermasterPendingActionDto,
   TreasuryProposalDto,
 } from './api';
+import { isCrewOffboardActive } from './crew-offboard';
 import { isMutinyActive } from './gov-proposal-lists';
+import { PRODUCTION_QUORUM_BPS } from './squad-params';
 import { isTreasuryProposalActive } from './treasury-proposal-ui';
 
 export type CrewPendingKind = 'crew_add' | 'crew_remove';
@@ -11,6 +14,7 @@ export type CrewPendingKind = 'crew_add' | 'crew_remove';
 export type GovProcessCard =
   | { kind: 'treasury'; proposal: TreasuryProposalDto; sortKey: number }
   | { kind: 'mutiny'; status: MutinyStatusDto; sortKey: number }
+  | { kind: 'crew_offboard'; status: CrewOffboardDto; quorumBps: number; sortKey: number }
   | {
       kind: CrewPendingKind;
       address: string;
@@ -35,6 +39,8 @@ export function buildGovProcessCards(params: {
   treasuryProposals: TreasuryProposalDto[];
   mutinyStatus: MutinyStatusDto | null | undefined;
   qmPending: QuartermasterPendingActionDto[];
+  crewOffboard?: CrewOffboardDto | null;
+  crewOffboardQuorumBps?: number;
   nowSec?: number;
 }): GovProcessCard[] {
   const now = params.nowSec ?? Math.floor(Date.now() / 1000);
@@ -53,6 +59,15 @@ export function buildGovProcessCards(params: {
       kind: 'mutiny',
       status: params.mutinyStatus,
       sortKey: Number(params.mutinyStatus.activeMutinyId) || 0,
+    });
+  }
+
+  if (params.crewOffboard && isCrewOffboardActive(params.crewOffboard)) {
+    out.push({
+      kind: 'crew_offboard',
+      status: params.crewOffboard,
+      quorumBps: params.crewOffboardQuorumBps ?? PRODUCTION_QUORUM_BPS,
+      sortKey: Number(params.crewOffboard.offboardId) || 0,
     });
   }
 
@@ -89,6 +104,8 @@ export function isGovProcessActive(card: GovProcessCard): boolean {
       return isTreasuryProposalActive(card.proposal.status);
     case 'mutiny':
       return isMutinyActive(card.status);
+    case 'crew_offboard':
+      return isCrewOffboardActive(card.status);
     case 'crew_add':
     case 'crew_remove':
       return true;
@@ -106,6 +123,8 @@ export function govProcessToolLabel(card: GovProcessCard): string {
       return 'governance.title.treasuryAuthority';
     case 'mutiny':
       return 'governance.title.mutiny';
+    case 'crew_offboard':
+      return 'governance.title.crewOffboard';
     case 'crew_add':
     case 'crew_remove':
       return 'governance.title.quartermaster';
@@ -118,6 +137,8 @@ export function govProcessCardKey(card: GovProcessCard): string {
       return `treasury:${card.proposal.proposalId}`;
     case 'mutiny':
       return `mutiny:${card.status.activeMutinyId}`;
+    case 'crew_offboard':
+      return `crew_offboard:${card.status.offboardId}`;
     case 'crew_add':
       return `crew_add:${card.address.toLowerCase()}`;
     case 'crew_remove':

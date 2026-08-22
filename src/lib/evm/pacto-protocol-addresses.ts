@@ -13,6 +13,7 @@ export type SquadSponsorProtocolAddresses = {
 export type PactoGovProtocolAddresses = {
   navePirataFactory: string;
   navePirataRegistry?: string;
+  warGameRegistry?: string;
   masterQuartermaster: string;
   masterMutiny: string;
   masterTreasuryAuthority: string;

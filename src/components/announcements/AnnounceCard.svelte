@@ -8,6 +8,7 @@
     ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
     ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
     ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+    ANNOUNCE_TYPE_WAR_GAME_UPDATED,
     type AnnounceMessage,
   } from '../../lib/announcements';
   import SafeAnnounceBody from './Safe/SafeAnnounceBody.svelte';
@@ -15,6 +16,7 @@
   import DashboardPollCreatedAnnounceBody from './DashboardPollCreatedAnnounceBody.svelte';
   import GovernanceUpdatedAnnounceBody from './GovernanceUpdatedAnnounceBody.svelte';
   import PactoGovDeployedAnnounceBody from './PactoGovDeployedAnnounceBody.svelte';
+  import WarGameUpdatedAnnounceBody from './WarGameUpdatedAnnounceBody.svelte';
   import { isPactoGovGovernanceProvider } from '../../lib/announcements';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
@@ -56,6 +58,10 @@
   const governanceUpdatedPayload = $derived(
     announce.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED ? announce.payload : null
   );
+
+  const warGameUpdatedPayload = $derived(
+    announce.type === ANNOUNCE_TYPE_WAR_GAME_UPDATED ? announce.payload : null
+  );
 </script>
 
 <div class="announce-card" id={id ? `msg-${id}` : undefined} data-announce-type={announce.type}>
@@ -74,6 +80,13 @@
     />
   {:else if safeAnnounceOnly}
     <SafeAnnounceBody announce={safeAnnounceOnly} {authorName} {timestamp} />
+  {:else if warGameUpdatedPayload}
+    <WarGameUpdatedAnnounceBody
+      payload={warGameUpdatedPayload}
+      {authorName}
+      {authorNpub}
+      {timestamp}
+    />
   {:else if governanceUpdatedPayload}
     {#if isPactoGovGovernanceProvider(governanceUpdatedPayload.provider)}
       <PactoGovDeployedAnnounceBody

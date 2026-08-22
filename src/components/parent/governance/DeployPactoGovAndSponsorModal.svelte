@@ -26,6 +26,12 @@
     startPactoGovAndSponsorDeploy,
     type CombinedGovSponsorDeployComplete,
   } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
+  import {
+    PRODUCTION_SQUAD_PARAMS,
+    squadParamsIfCustomized,
+    validateSquadParams,
+  } from '../../../lib/governance/squad-params';
+  import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
   import { walletBuildAndSendTransaction } from '../../../lib/wallet/backend-wallet';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
@@ -76,6 +82,11 @@
   let preferredPayerOnce = false;
   let deploying = $state(false);
   let closed = false;
+  let customizeParams = $state(false);
+  let crewChangeDelaySecs = $state(PRODUCTION_SQUAD_PARAMS.crewChangeDelaySecs);
+  let proposalExpirySecs = $state(PRODUCTION_SQUAD_PARAMS.proposalExpirySecs);
+  let crewVoteMode = $state(PRODUCTION_SQUAD_PARAMS.crewVoteMode);
+  let quorumBps = $state(PRODUCTION_SQUAD_PARAMS.quorumBps);
 
   const sponsorOnly = $derived(!!existingTopHatId.trim());
 
@@ -262,6 +273,19 @@
       return;
     }
 
+    const squadParams = sponsorOnly
+      ? null
+      : squadParamsIfCustomized(customizeParams, {
+          crewChangeDelaySecs,
+          proposalExpirySecs,
+          crewVoteMode,
+          quorumBps,
+        });
+    if (squadParams && validateSquadParams(squadParams)) {
+      deployError = tFn('governance.squadParams.error.invalid');
+      return;
+    }
+
     let transferWei: bigint | null = null;
     if (needsFundTransfer) {
       if (!defaultCanonical) {
@@ -385,6 +409,7 @@
           memberOptions: captainMemberOptions,
           bootstrapExcludeAddresses,
           signerWallet: payFrom,
+          squadParams,
           onProgress,
           onReject,
           onError,
@@ -396,6 +421,17 @@
     }
   }
 
+  const customizeInvalid = $derived(
+    !sponsorOnly &&
+      customizeParams &&
+      !!validateSquadParams({
+        crewChangeDelaySecs,
+        proposalExpirySecs,
+        crewVoteMode,
+        quorumBps,
+      }),
+  );
+
   const deployDisabled = $derived(
     deploying ||
       !squadNetwork ||
@@ -404,6 +440,7 @@
       transferExceedsDefault ||
       !squadCanonical ||
       !captainAddress ||
+      customizeInvalid ||
       (needsFundTransfer && (!transferTrimmed || !defaultCanonical)) ||
       (signersAreSame ? !squadCanonical : signerWallet === 'default' ? !defaultCanonical : !squadCanonical),
   );
@@ -578,6 +615,17 @@
       </p>
     {/if}
   </div>
+
+  {#if !sponsorOnly}
+    <SquadParamsCustomizeFields
+      bind:customizing={customizeParams}
+      bind:crewChangeDelaySecs
+      bind:proposalExpirySecs
+      bind:crewVoteMode
+      bind:quorumBps
+      disabled={deploying}
+    />
+  {/if}
 
   <div class="field bootstrap-field">
     <label class="bootstrap-label" class:bootstrap-disabled={!bootstrapAllowed}>

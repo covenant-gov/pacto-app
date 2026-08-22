@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import book from '../pacto-protocol-addresses.json';
 import {
   encodePaymasterAndData,
   encodePaymasterPayload,
@@ -36,6 +37,9 @@ const vectors = JSON.parse(
   sepolia: {
     squadSponsorFactory: string;
     pactoSponsorPaymaster: string;
+  };
+  fixtureAddresses: {
+    paymaster: Address;
   };
 };
 
@@ -109,11 +113,12 @@ describe('encodePaymasterAndData (golden vectors)', () => {
   });
 
   it('Sepolia addresses match the protocol address book redeploy', () => {
-    expect(vectors.sepolia.squadSponsorFactory.toLowerCase()).toBe(
-      '0x12883924e71Df814ff1E198E5C16CEFd251BC308'.toLowerCase(),
-    );
+    const sepolia = book.networks.sepolia.squadSponsor;
+    expect(vectors.sepolia.squadSponsorFactory.toLowerCase()).toBe(sepolia.factory.toLowerCase());
     expect(vectors.sepolia.pactoSponsorPaymaster.toLowerCase()).toBe(
-      '0x065dA13369604291E628DD8022E0e504dc62Da12'.toLowerCase(),
+      sepolia.paymaster.toLowerCase(),
     );
+    expect(vectors.encoding.inputs.paymaster.toLowerCase()).toBe(sepolia.paymaster.toLowerCase());
+    expect(vectors.fixtureAddresses.paymaster.toLowerCase()).toBe(sepolia.paymaster.toLowerCase());
   });
 });

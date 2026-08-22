@@ -1,5 +1,5 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/full-system.json (5bcee21). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor deployments/11155111/full-system.json (1ef93bf); navePirataRegistry matches pacto-gov.",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/full-system.json (de1e0c0). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor deployments/11155111/full-system.json (34518d4); navePirataRegistry matches pacto-gov (not the sponsor artifact’s registry). EIP-7702: eip7702-account.json (0x33F920B5…, unchanged).",
   "version": 1,
   "networks": {
     "sepolia": {
@@ -8,22 +8,23 @@
         "deployer": "0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38"
       },
       "squadSponsor": {
-        "factory": "0x12883924e71Df814ff1E198E5C16CEFd251BC308",
-        "paymaster": "0x065dA13369604291E628DD8022E0e504dc62Da12",
+        "factory": "0xD8bdc2e5Ca92e129E84207380076c1F18AA3aA95",
+        "paymaster": "0xc7c3Ea95734CcCa62C7FFf4d12Be2B5b8cC92BA1",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-        "navePirataRegistry": "0x50F7759F65b1a25B1a827D6c97A5dD61f0036278"
+        "navePirataRegistry": "0xf6747bE3425139FCe92B67fA482331D7435bd483"
       },
       "pactoGov": {
-        "navePirataFactory": "0x6E835c103F4719Fd84EAB57d256132007310B230",
-        "navePirataRegistry": "0x50F7759F65b1a25B1a827D6c97A5dD61f0036278",
-        "masterQuartermaster": "0x44bBAD7b0e2df484Daf0c5288B0FaDB75Feb5284",
-        "masterMutiny": "0x9Fbc55f557Af0a333228Ca7D4A8c03A1E1E2C07B",
-        "masterTreasuryAuthority": "0xbc2c571D18a8e91d23392Fc0C6b74520585F6F40",
-        "masterSquadAdminImpl": "0x2DF698267bE07536C49400B39192989CeDB74030",
-        "masterSquadAdminExtImpl": "0x7a7037Aa2B48Bf15C4458B146B1AC0Fe7f2fa661",
+        "navePirataFactory": "0xba54955cF9eab7F546c3a1c1fCE2584996626ef0",
+        "navePirataRegistry": "0xf6747bE3425139FCe92B67fA482331D7435bd483",
+        "warGameRegistry": "0xE415A9290964ce40f58c6f1B15183cAE565471e7",
+        "masterQuartermaster": "0xFDA42686358503Cf89Bc94f6BD108CB4Af274d74",
+        "masterMutiny": "0x65Cd5237C3D53F18596c42c0a0EAFf5ee8C02De9",
+        "masterTreasuryAuthority": "0xC99D96a139FB041A225430079f4B7b0DfF2969E5",
+        "masterSquadAdminImpl": "0xDa0623659Ab5BE47F3b0b4Fa3E5831Ee4Bf81d88",
+        "masterSquadAdminExtImpl": "0x16951FF10742E378041021A60307C50CDC6Ad328",
         "hats": "0x3bc1A0Ad72417f2d411118085256fC53CBdDd137",
-        "roleHatClonesFactory": "0x52Ddd57B8DC3A3c4dd57E42575D0A10C5BAAa5a3",
-        "roleHatUpgrader": "0x9784D4ebb9eB71982d84456cd1b764d055B259aF"
+        "roleHatClonesFactory": "0x7155dcAbDB0a78D33dA900506bca749FcD993a89",
+        "roleHatUpgrader": "0x87bFdcd00D38b5c4F7847EEfB6D555eDd3cD2508"
       },
       "safe": {
         "proxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",

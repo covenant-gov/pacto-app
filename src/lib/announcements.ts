@@ -23,13 +23,20 @@ export const ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED = 'dashboard_poll_created';
 
 /** Squad/network deployed infra sync (`squad_infra` SQLite rows). Wire: `governance_updated`. */
 export const ANNOUNCE_TYPE_GOVERNANCE_UPDATED = 'governance_updated';
+/** War-game deploy / retire / redeploy. Sibling of `governance_updated`; never `pacto_gov`. */
+export const ANNOUNCE_TYPE_WAR_GAME_UPDATED = 'war_game_updated';
 /** Squad sticker pack sync (`sticker_packs` table), mirrors `governance_updated`. Wire: `sticker_pack_updated`. */
 export const ANNOUNCE_TYPE_STICKER_PACK_UPDATED = 'sticker_pack_updated';
 
-/** Notify-only: QM / TA / mutiny process changed. Revalidate from chain. */
+/** Notify-only: QM / TA / mutiny / hats process changed. Revalidate from chain. */
 export const ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED = 'governance_process_updated';
 
-export type GovernanceProcessKind = 'qm_pending' | 'ta_proposal' | 'mutiny';
+export type GovernanceProcessKind =
+  | 'qm_pending'
+  | 'ta_proposal'
+  | 'mutiny'
+  | 'crew_offboard'
+  | 'hats';
 
 export interface GovernanceProcessUpdatedPayload {
   parent_id: string;
@@ -54,6 +61,22 @@ export interface GovernanceUpdatedPayload {
   pacto_gov_revision?: string;
   /** JSON string metadata (tx hash, addresses map, etc.). */
   provider_payload?: string;
+}
+
+export type WarGameUpdatedAction = 'deploy' | 'redeploy' | 'retire';
+
+/** Payload for `war_game_updated`. Never dual-read as `pacto_gov`. */
+export interface WarGameUpdatedPayload {
+  parent_id: string;
+  action: WarGameUpdatedAction;
+  canonical_ref: string;
+  chain: string;
+  entry_id: string;
+  round: string;
+  game_squad_id: string;
+  sponsor: string;
+  retired_sponsor?: string | null;
+  provider_payload: string;
 }
 /** Payload for `sticker_pack_updated`. `squad_id` is the MLS group id of the squad's announcements chat. */
 export interface StickerPackUpdatedPayload {
@@ -129,6 +152,7 @@ export type AnnouncePayload =
   | SquadMemberEvmSharePayload
   | DashboardPollCreatedPayload
   | GovernanceUpdatedPayload
+  | WarGameUpdatedPayload
   | GovernanceProcessUpdatedPayload
   | StickerPackUpdatedPayload;
 
@@ -139,6 +163,7 @@ export type AnnounceMessage =
   | { type: typeof ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE; payload: SquadMemberEvmSharePayload }
   | { type: typeof ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED; payload: DashboardPollCreatedPayload }
   | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_UPDATED; payload: GovernanceUpdatedPayload }
+  | { type: typeof ANNOUNCE_TYPE_WAR_GAME_UPDATED; payload: WarGameUpdatedPayload }
   | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED; payload: GovernanceProcessUpdatedPayload }
   | { type: typeof ANNOUNCE_TYPE_STICKER_PACK_UPDATED; payload: StickerPackUpdatedPayload };
 
@@ -171,10 +196,15 @@ export function isPactoGovGovernanceAnnounce(msg: AnnounceMessage): boolean {
 }
 
 export function isAnnouncementsGovernanceAnnounce(msg: AnnounceMessage): boolean {
+  if (msg.type === ANNOUNCE_TYPE_WAR_GAME_UPDATED) return true;
   return (
     msg.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED &&
     isAnnouncementsGovernanceProvider(msg.payload.provider)
   );
+}
+
+export function isWarGameUpdatedAnnounce(msg: AnnounceMessage): boolean {
+  return msg.type === ANNOUNCE_TYPE_WAR_GAME_UPDATED;
 }
 
 function isSquadSafeUpdatedPayload(p: unknown): p is SquadSafeUpdatedPayload {
@@ -234,7 +264,13 @@ function isDashboardPollCreatedPayload(p: unknown): p is DashboardPollCreatedPay
 }
 
 function isGovernanceProcessKind(v: unknown): v is GovernanceProcessKind {
-  return v === 'qm_pending' || v === 'ta_proposal' || v === 'mutiny';
+  return (
+    v === 'qm_pending' ||
+    v === 'ta_proposal' ||
+    v === 'mutiny' ||
+    v === 'crew_offboard' ||
+    v === 'hats'
+  );
 }
 
 function isGovernanceProcessUpdatedPayload(p: unknown): p is GovernanceProcessUpdatedPayload {
@@ -247,6 +283,31 @@ function isGovernanceProcessUpdatedPayload(p: unknown): p is GovernanceProcessUp
   if (q.proposal_id !== undefined && typeof q.proposal_id !== 'string') return false;
   if (q.tx_hash !== undefined && typeof q.tx_hash !== 'string') return false;
   return true;
+}
+
+function isWarGameUpdatedPayload(p: unknown): p is WarGameUpdatedPayload {
+  if (!p || typeof p !== 'object') return false;
+  const q = p as Record<string, unknown>;
+  const action = q.action;
+  if (action !== 'deploy' && action !== 'redeploy' && action !== 'retire') return false;
+  return (
+    typeof q.parent_id === 'string' &&
+    q.parent_id.trim().length > 0 &&
+    typeof q.canonical_ref === 'string' &&
+    q.canonical_ref.trim().length > 0 &&
+    typeof q.chain === 'string' &&
+    q.chain.trim().length > 0 &&
+    typeof q.entry_id === 'string' &&
+    q.entry_id.trim().length > 0 &&
+    typeof q.round === 'string' &&
+    q.round.trim().length > 0 &&
+    typeof q.game_squad_id === 'string' &&
+    q.game_squad_id.trim().length > 0 &&
+    typeof q.sponsor === 'string' &&
+    q.sponsor.trim().length > 0 &&
+    typeof q.provider_payload === 'string' &&
+    q.provider_payload.trim().length > 0
+  );
 }
 
 function isGovernanceUpdatedPayload(p: unknown): p is GovernanceUpdatedPayload {
@@ -308,6 +369,9 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
   if (type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED && isGovernanceUpdatedPayload(payload)) {
     return { type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED, payload };
   }
+  if (type === ANNOUNCE_TYPE_WAR_GAME_UPDATED && isWarGameUpdatedPayload(payload)) {
+    return { type: ANNOUNCE_TYPE_WAR_GAME_UPDATED, payload };
+  }
   if (
     type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED &&
     isGovernanceProcessUpdatedPayload(payload)
@@ -330,10 +394,11 @@ export function buildAnnounceContent<T extends AnnounceMessage>(
 ): string {
   const pacto_virtual_bucket =
     options?.virtualBucket ??
-    (msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ||
+    (    msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ||
     msg.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE ||
     msg.type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED ||
-    msg.type === ANNOUNCE_TYPE_STICKER_PACK_UPDATED
+    msg.type === ANNOUNCE_TYPE_STICKER_PACK_UPDATED ||
+    msg.type === ANNOUNCE_TYPE_WAR_GAME_UPDATED
       ? 'announcements'
       : isAnnouncementsGovernanceAnnounce(msg)
         ? 'announcements'

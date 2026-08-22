@@ -16,6 +16,16 @@ Per-account squad and squad-pair rows live in **`squads`** (`pacto.db`), not `lo
 | `icon_url` | Optional Blossom HTTPS avatar. Set via the shared image picker at Organize Squad / pair create, or Dashboard → Status. Members sync through MLS `squad_identity_updated` on `#announcements` (last received wins) and optional `iconUrl` on `squad_invite`. Received values are stored only when they are `https://`. Blank on an intentional publish clears. |
 | `created_at_ms` / `updated_at_ms` | Unix ms |
 
+## Hydrate
+
+`list_squads` is the Squads rail source of truth. On login, `hydrateSquadsFromDb`:
+
+1. Lists catalog rows (skips a malformed row instead of emptying the rail).
+2. Rebuilds **missing** rows from live, non-evicted MLS groups whose name is `announcements`.
+3. Uses local `squad_invite` DMs only for name / kind / icon. An invite card alone never inserts a squad.
+
+Voluntary leave and eviction remove MLS membership, so those parents are not rebuilt.
+
 ## Tauri commands
 
 | Command | Role |

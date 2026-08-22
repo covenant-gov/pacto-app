@@ -23,7 +23,7 @@ src/stores/app.ts                 thin re-export barrel (navigation, dm, squads,
 
 Pinned system channels stay **above** a thin gray divider; member-created MLS channels stay **below**.
 
-**Pinned order:** `squad-dashboard` → `my-dashboard` → `announcements` → `polls`
+**Pinned order:** `squad-dashboard` → `squad-wargame` (when Active) → `my-dashboard` → `announcements` → `polls`
 
 `personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **My Dashboard → Alerts** and **Squad Dashboard → Crew**.
 

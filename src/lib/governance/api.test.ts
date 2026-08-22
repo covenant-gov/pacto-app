@@ -6,6 +6,7 @@ import {
   buildSponsorGovernanceAnnouncePayload,
   buildStandaloneSafeGovernanceAnnouncePayload,
   deployNavePirataForParent,
+  deployWarGameForParent,
   deploySquadAdminForParent,
   deploySquadSponsorForParent,
   deploySquadSponsorHatsForParent,
@@ -15,6 +16,8 @@ import {
   getHatsTree,
   getMemberHatWearers,
   getNavePirataDeployment,
+  getWarGameDeployment,
+  getSquadCapabilities,
   getSquadAdminExecutorRoles,
   getSquadSponsorExtStatus,
   getSquadSponsorSummary,
@@ -24,10 +27,21 @@ import {
   listSquadInfra,
   listQuartermasterPending,
   listTreasuryProposals,
+  getTreasuryVoteConfig,
   pactoGovInfraId,
   pactoGovInfraRow,
   pactoGovTreasuryEntryId,
+  pactoGovWargameInfraId,
+  pactoGovWargameInfraRow,
   primaryGovernanceView,
+  mutinyExpire,
+  mutinyExecute,
+  quartermasterBootstrapCrew,
+  quartermasterProposeOffboard,
+  quartermasterCrewOffboardVote,
+  quartermasterExecuteOffboard,
+  quartermasterExpireOffboard,
+  crewOffboardHasVoted,
   squadAdminCreateRole,
   squadSponsorSetPermittedAddress,
   squadAdminEnableExecutor,
@@ -42,10 +56,20 @@ import {
   withLegacyProvider,
 } from './api';
 import type { SquadInfraDto } from './api';
+import { sendDmMessage } from '../api/nostr';
+import { squads } from '../../stores/squads';
+import { governanceProcessNonceByParentId } from '../../stores/navigation';
+import { ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED } from '../announcements';
+import { resetMutinyProcessTxStore } from './mutiny-process-tx';
+import { get } from 'svelte/store';
 
 vi.mock('@tauri-apps/api/core');
+vi.mock('../api/nostr', () => ({
+  sendDmMessage: vi.fn().mockResolvedValue(true),
+}));
 
 const mockedInvoke = vi.mocked(invoke);
+const mockedSendDm = vi.mocked(sendDmMessage);
 const PARENT = 'test-parent';
 const NETWORK = 'sepolia';
 
@@ -64,6 +88,11 @@ function makeSquadInfra(overrides: Partial<SquadInfraDto> = {}): SquadInfraDto {
 
 beforeEach(() => {
   mockedInvoke.mockReset();
+  mockedSendDm.mockReset();
+  mockedSendDm.mockResolvedValue(true);
+  governanceProcessNonceByParentId.set({});
+  squads.set([]);
+  resetMutinyProcessTxStore();
 });
 
 afterEach(() => {
@@ -99,6 +128,13 @@ describe('squad infra helpers', () => {
     expect(primaryGovernanceView([sponsor])?.infraType).toBe('sponsor');
   });
 
+  it('primaryGovernanceView ignores pacto_gov_wargame', () => {
+    const wargame = makeSquadInfra({ infraType: 'pacto_gov_wargame' });
+    const sponsor = makeSquadInfra({ infraType: 'sponsor' });
+    expect(primaryGovernanceView([wargame])).toBeNull();
+    expect(primaryGovernanceView([wargame, sponsor])?.infraType).toBe('sponsor');
+  });
+
   it('infraTypeFromLegacyProvider normalizes aliases', () => {
     expect(infraTypeFromLegacyProvider('gnosis_safe')).toBe('standalone_safe');
     expect(infraTypeFromLegacyProvider('gnosis-safe')).toBe('standalone_safe');
@@ -113,6 +149,7 @@ describe('squad infra helpers', () => {
   it('id builders return stable parent-scoped ids', () => {
     expect(pactoGovInfraId(PARENT)).toBe(`pacto-gov-${PARENT}`);
     expect(pactoGovTreasuryEntryId(PARENT)).toBe(`pacto-gov-treasury-${PARENT}`);
+    expect(pactoGovWargameInfraId(PARENT)).toBe(`pacto-gov-wargame-${PARENT}`);
     expect(squadSponsorInfraId(PARENT)).toBe(`sponsor-${PARENT}`);
     expect(squadAdminInfraId(PARENT)).toBe(`squad-admin-${PARENT}`);
   });
@@ -121,7 +158,10 @@ describe('squad infra helpers', () => {
     const pacto = makeSquadInfra({ infraType: 'pacto_gov' });
     const sponsor = makeSquadInfra({ infraType: 'sponsor' });
     const admin = makeSquadInfra({ infraType: 'squad_admin' });
-    expect(pactoGovInfraRow([pacto, sponsor, admin])).toEqual(pacto);
+    const wargame = makeSquadInfra({ infraType: 'pacto_gov_wargame' });
+    expect(pactoGovInfraRow([pacto, sponsor, admin, wargame])).toEqual(pacto);
+    expect(pactoGovWargameInfraRow([pacto, sponsor, admin, wargame])).toEqual(wargame);
+    expect(pactoGovInfraRow([wargame])).toBeNull();
     expect(sponsorInfraRow([pacto, sponsor, admin])).toEqual(sponsor);
     expect(squadAdminInfraRow([pacto, sponsor, admin])).toEqual(admin);
     expect(hasSponsorInfra([pacto, sponsor])).toBe(true);
@@ -388,6 +428,7 @@ describe('api command wrappers', () => {
       saltNonce: null,
       signerWallet: 'squad',
       altParentId: null,
+      squadParams: null,
       rpcUrls: expect.any(Array),
     });
   });
@@ -409,6 +450,55 @@ describe('api command wrappers', () => {
       saltNonce: null,
       signerWallet: 'default',
       altParentId: null,
+      squadParams: null,
+      rpcUrls: expect.any(Array),
+    });
+  });
+
+  it('deployNavePirataForParent passes squadParams when provided', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await deployNavePirataForParent({
+      network: NETWORK,
+      parentId: PARENT,
+      captain: '0xabc',
+      squadParams: {
+        crewChangeDelaySecs: 300,
+        proposalExpirySecs: 300,
+        crewVoteMode: 'quorum',
+        quorumBps: 2500,
+      },
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'deploy_nave_pirata_for_parent',
+      expect.objectContaining({
+        squadParams: {
+          crewChangeDelaySecs: 300,
+          proposalExpirySecs: 300,
+          crewVoteMode: 'quorum',
+          quorumBps: 2500,
+        },
+      }),
+    );
+  });
+
+  it('deployWarGameForParent sends deploy_war_game_for_parent on sepolia', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await deployWarGameForParent({
+      parentId: PARENT,
+      captain: ' 0xabc ',
+      metadataUri: ' pacto://squad/x/wargame ',
+      initialDepositWei: ' 1000 ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('deploy_war_game_for_parent', {
+      network: 'sepolia',
+      parentId: PARENT,
+      captain: ' 0xabc ',
+      metadataUri: 'pacto://squad/x/wargame',
+      saltNonce: null,
+      signerWallet: 'default',
+      altParentId: null,
+      squadParams: null,
+      initialDepositWei: '1000',
       rpcUrls: expect.any(Array),
     });
   });
@@ -421,6 +511,30 @@ describe('api command wrappers', () => {
       topHatId: '42',
       rpcUrls: null,
     });
+  });
+
+  it('getWarGameDeployment sends get_war_game_deployment with trimmed topHatId', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await getWarGameDeployment({ network: NETWORK, topHatId: ' 3655 ' });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_war_game_deployment', {
+      network: NETWORK,
+      topHatId: '3655',
+      rpcUrls: null,
+    });
+  });
+
+  it('getSquadCapabilities sends wargame false by default and true when requested', async () => {
+    mockedInvoke.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+    await getSquadCapabilities(PARENT, NETWORK);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'get_squad_capabilities',
+      expect.objectContaining({ parentId: PARENT, wargame: false }),
+    );
+    await getSquadCapabilities(PARENT, NETWORK, { wargame: true });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'get_squad_capabilities',
+      expect.objectContaining({ parentId: PARENT, wargame: true }),
+    );
   });
 
   it('listTreasuryProposals sends list_treasury_proposals', async () => {
@@ -445,6 +559,16 @@ describe('api command wrappers', () => {
     });
   });
 
+  it('getTreasuryVoteConfig sends get_treasury_vote_config', async () => {
+    mockedInvoke.mockResolvedValueOnce({ crewVoteMode: 'majority', quorumBps: 3000 });
+    await getTreasuryVoteConfig({ network: NETWORK, treasuryAuthority: '0xabc' });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_treasury_vote_config', {
+      network: NETWORK,
+      treasuryAuthority: '0xabc',
+      rpcUrls: null,
+    });
+  });
+
   it('listQuartermasterPending sends list_quartermaster_pending', async () => {
     mockedInvoke.mockResolvedValueOnce([]);
     await listQuartermasterPending({
@@ -458,6 +582,93 @@ describe('api command wrappers', () => {
       quartermaster: '0xqm',
       rpcUrls: expect.any(Array),
     });
+  });
+
+  it('mutinyExpire and offboard writes send trimmed ids', async () => {
+    mockedInvoke.mockResolvedValue({ txHash: '0x1', chain: 'sepolia', chainId: 11155111 });
+    await mutinyExpire({
+      network: NETWORK,
+      parentId: ' parent1 ',
+      mutinyModule: ' 0xmu ',
+      mutinyId: ' 9 ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'mutiny_expire',
+      expect.objectContaining({
+        parentId: 'parent1',
+        mutinyModule: '0xmu',
+        mutinyId: '9',
+      }),
+    );
+
+    mockedInvoke.mockResolvedValue({ txHash: '0x2', chain: 'sepolia', chainId: 11155111 });
+    await quartermasterProposeOffboard({
+      network: NETWORK,
+      parentId: ' parent1 ',
+      quartermaster: ' 0xqm ',
+      target: ' 0xabc ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'quartermaster_propose_offboard',
+      expect.objectContaining({
+        parentId: 'parent1',
+        quartermaster: '0xqm',
+        target: '0xabc',
+      }),
+    );
+
+    mockedInvoke.mockResolvedValue({ txHash: '0x3', chain: 'sepolia', chainId: 11155111 });
+    await quartermasterCrewOffboardVote({
+      network: NETWORK,
+      parentId: 'parent1',
+      quartermaster: '0xqm',
+      offboardId: ' 2 ',
+      support: true,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'quartermaster_crew_offboard_vote',
+      expect.objectContaining({ offboardId: '2', support: true }),
+    );
+
+    mockedInvoke.mockResolvedValue({ txHash: '0x4', chain: 'sepolia', chainId: 11155111 });
+    await quartermasterExecuteOffboard({
+      network: NETWORK,
+      parentId: 'parent1',
+      quartermaster: '0xqm',
+      offboardId: '2',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'quartermaster_execute_offboard',
+      expect.objectContaining({ offboardId: '2' }),
+    );
+
+    mockedInvoke.mockResolvedValue({ txHash: '0x5', chain: 'sepolia', chainId: 11155111 });
+    await quartermasterExpireOffboard({
+      network: NETWORK,
+      parentId: 'parent1',
+      quartermaster: '0xqm',
+      offboardId: '2',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'quartermaster_expire_offboard',
+      expect.objectContaining({ offboardId: '2' }),
+    );
+
+    mockedInvoke.mockResolvedValueOnce(true);
+    await crewOffboardHasVoted({
+      network: NETWORK,
+      quartermaster: ' 0xqm ',
+      offboardId: ' 2 ',
+      voter: ' 0xabc ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'crew_offboard_has_voted',
+      expect.objectContaining({
+        quartermaster: '0xqm',
+        offboardId: '2',
+        voter: '0xabc',
+      }),
+    );
   });
 
   it('treasuryProposalHasVoted sends treasury_proposal_has_voted with trimmed inputs', async () => {
@@ -639,6 +850,64 @@ describe('api command wrappers', () => {
       enable: true,
       rpcUrls: expect.any(Array),
     });
+  });
+});
+
+describe('governance process gossip after writes', () => {
+  const writeResult = { txHash: '0xabc', chain: 'sepolia', chainId: 11155111 };
+
+  function withAnnouncementsSquad() {
+    squads.set([
+      {
+        id: PARENT,
+        channels: [{ name: 'announcements', groupId: 'gid-1', order: 0 }],
+      } as never,
+    ]);
+  }
+
+  it('mutinyExecute bumps the process nonce even if the MLS announce fails', async () => {
+    withAnnouncementsSquad();
+    mockedSendDm.mockRejectedValueOnce(new Error('offline'));
+    mockedInvoke.mockResolvedValueOnce(writeResult);
+    await mutinyExecute({
+      network: NETWORK,
+      parentId: PARENT,
+      mutinyModule: '0xmutiny',
+      mutinyId: '1',
+    });
+    expect(get(governanceProcessNonceByParentId)[PARENT]).toBe(1);
+  });
+
+  it('quartermasterBootstrapCrew announces hats process updates', async () => {
+    withAnnouncementsSquad();
+    mockedInvoke.mockResolvedValueOnce(writeResult);
+    await quartermasterBootstrapCrew({
+      network: NETWORK,
+      parentId: PARENT,
+      quartermaster: '0xqm',
+      candidates: ['0x1'],
+    });
+    expect(mockedSendDm).toHaveBeenCalledWith(
+      'gid-1',
+      expect.stringContaining(ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED),
+      '',
+      { virtualBucket: 'announcements' },
+    );
+    expect(JSON.parse(String(mockedSendDm.mock.calls[0]?.[1])).payload.kind).toBe('hats');
+    expect(get(governanceProcessNonceByParentId)[PARENT]).toBe(1);
+  });
+
+  it('squadAdminCreateRole announces hats process updates', async () => {
+    withAnnouncementsSquad();
+    mockedInvoke.mockResolvedValueOnce(writeResult);
+    await squadAdminCreateRole({
+      network: NETWORK,
+      parentId: PARENT,
+      squadAdminProxy: '0xadmin',
+      roleLabel: 'Treasurer',
+    });
+    expect(JSON.parse(String(mockedSendDm.mock.calls[0]?.[1])).payload.kind).toBe('hats');
+    expect(get(governanceProcessNonceByParentId)[PARENT]).toBe(1);
   });
 });
 

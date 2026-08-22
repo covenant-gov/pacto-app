@@ -349,8 +349,8 @@ pub(crate) fn list_squads_inner(conn: &rusqlite::Connection) -> Result<Vec<Squad
             created,
             updated,
         ) = row.map_err(|e| format!("Failed to read squad row: {e}"))?;
-        out.push(row_from_query(
-            id,
+        match row_from_query(
+            id.clone(),
             name,
             icon_url,
             kind,
@@ -360,7 +360,12 @@ pub(crate) fn list_squads_inner(conn: &rusqlite::Connection) -> Result<Vec<Squad
             channels,
             created,
             updated,
-        )?);
+        ) {
+            Ok(parsed) => out.push(parsed),
+            Err(e) => {
+                eprintln!("[squads] Skipping malformed catalog row {id}: {e}");
+            }
+        }
     }
     Ok(out)
 }
@@ -871,6 +876,25 @@ mod tests {
             2,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_squads_inner_skips_malformed_channels_json() {
+        let conn = test_conn();
+        let good_a = prepare_row(sample_upsert("s-a", "Alpha")).expect("prepare a");
+        let good_b = prepare_row(sample_upsert("s-b", "Beta")).expect("prepare b");
+        upsert_squad_inner(&conn, &good_a).expect("upsert a");
+        upsert_squad_inner(&conn, &good_b).expect("upsert b");
+        conn.execute(
+            "INSERT INTO squads (id, name, kind, visibility, channels, created_at_ms, updated_at_ms)
+             VALUES ('s-bad', 'Broken', 'squad', 'private', 'not-json', 3000, 3000)",
+            [],
+        )
+        .expect("bad row");
+        let listed = list_squads_inner(&conn).expect("list");
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].id, "s-a");
+        assert_eq!(listed[1].id, "s-b");
     }
 
     #[test]

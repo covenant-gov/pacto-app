@@ -20,6 +20,7 @@ import {
   tryCompletePendingApprovedJoins,
 } from '../squad/join-request-finalize';
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
+import { enrichRecoveredSquadNamesFromInvites } from '../squad/squad-catalog-recover';
 import { dmLog, dmError } from '../utils/dm-debug';
 import { dropSessionState, initSessionFocusChecks, showMigrationCompleteToast } from '../../stores/auth';
 import { installWakeSyncHandlers } from './wake-sync';
@@ -172,13 +173,14 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       };
       return { ...map, [chat_id]: next };
     });
-    if (!m.mine) {
-      const invite = parseSquadInviteMessage(content);
-      if (invite?.groupId) {
+    const invite = parseSquadInviteMessage(content);
+    if (invite?.groupId) {
+      if (!m.mine) {
         void syncMlsGroupsNow(invite.groupId).catch((e) =>
           dmError('syncMlsGroupsNow after squad invite DM', e)
         );
       }
+      void enrichRecoveredSquadNamesFromInvites();
     }
     const clearTimeoutId = typingClearTimeouts.get(chat_id);
     if (clearTimeoutId) {
@@ -219,6 +221,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
           void syncMlsGroupsNow(invite.groupId).catch((e) =>
             dmError('syncMlsGroupsNow after squad invite DM update', e)
           );
+          void enrichRecoveredSquadNamesFromInvites();
         }
       }
     } else {

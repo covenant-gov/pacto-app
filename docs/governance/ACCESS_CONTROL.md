@@ -40,7 +40,7 @@ flowchart TD
 | Layer | Role |
 |-------|------|
 | Rust `require_capability` | Source of truth before gov / Squad Admin / tracked-token mutations |
-| UI gates | Advisory; same predicates via `get_squad_capabilities` snapshot |
+| UI gates | Advisory; same predicates via `get_squad_capabilities` snapshot. Revalidate on MLS `governance_process_updated` (and the local write nonce bump) so hat transfers such as mutiny execute do not leave stale enabled CTAs. |
 | Contracts | Final reject / accept |
 
 Tauri IPC is not a security boundary if only the UI gates.
@@ -57,7 +57,9 @@ Tauri IPC is not a security boundary if only the UI gates.
 
 Member-facing disable/fail copy is i18n’d (`governance.gate.*`, `govWriteErrorMessage` for `ACL_*` / sponsor codes). This doc stays the operator source for hat/ACL mechanics — not a UI copy catalog.
 
-Hat IDs and Safe / Squad Admin addresses come from the Nave Pirata registry deployment for the parent’s `pacto_gov` infra row (`chain` + `canonical_ref` top hat).
+Hat IDs and Safe / Squad Admin addresses come from the registry deployment for the parent’s infra row (`chain` + `canonical_ref` top hat): live `#dashboard` uses `pacto_gov` + NavePirataRegistry; the Wargame hub uses `pacto_gov_wargame` + WarGameRegistry.
+
+Write routing to `GovStack::WarGame` does **not** trust MLS `war_game_updated` JSON. A local `pacto_gov_wargame` payload may hint that `to` is a war-game module; `require_capability` and sponsored UserOps only follow that hint after a fresh `WarGameRegistry.active(keccak256(parentId))` read lists `to`. A mismatch (including a poisoned production address in the payload) stays on the live stack. RPC failure while the payload claims a war-game target fails the write closed.
 
 ## Capabilities
 
@@ -93,13 +95,13 @@ Plain rule: **roster can pay gas → EOA tx; roster cannot → sponsored UserOp*
 
 Signer is always the embedded **roster EOA** — not an external smart-contract wallet. EIP-7702 only applies on the sponsored path when that EOA has empty code (temporary set-code to the shared account impl). Details: [PACTO_SQUAD_SPONSOR.md](../wallet/PACTO_SQUAD_SPONSOR.md).
 
-Operator env: `ALCHEMY_RPC_KEY` for chain RPC. Sponsored writes use an in-app Pimlico key (Status → Sponsored gas), then **`PIMLICO_API_KEY`**, then optional `BUNDLER_RPC_URL` (EntryPoint v0.7 — Pimlico-first; do not use Alchemy as bundler). Debug builds load repo-root `.env` into Rust at startup. EIP-7702 impl defaults from `networks.sepolia.erc4337.accountImplementation` (`PactoSimple7702Account`); optional `PACTO_ERC4337_ACCOUNT_IMPL` override. Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `SPONSOR_PAYMASTER_MISMATCH`, `PAYMASTER_DEPOSIT_LOW`, `PAYMASTER_STAKE_LOW`, `PAYMASTER_VERIFICATION_GAS`, `PAYMASTER_GAS_EFFICIENCY`, `BUNDLER_ESTIMATE`, `PAYMASTER_VALIDATION`, `BUNDLER_FEE`, `ACCOUNT_SIGNATURE`, `ACCOUNT_VALIDATION`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`. Shared paymaster EntryPoint deposit and factory stake (protocol ops) are separate from per-squad sponsor pool deposits.
+Operator env: `ALCHEMY_RPC_KEY` for chain RPC. Sponsored writes use an in-app Pimlico key (Status → Sponsored gas), then **`PIMLICO_API_KEY`**, then optional `BUNDLER_RPC_URL` (EntryPoint v0.7 — Pimlico-first; do not use Alchemy as bundler). Debug builds load repo-root `.env` into Rust at startup. EIP-7702 impl defaults from `networks.sepolia.erc4337.accountImplementation` (`PactoSimple7702Account`); optional `PACTO_ERC4337_ACCOUNT_IMPL` override. Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `SPONSOR_PAYMASTER_MISMATCH`, `PAYMASTER_DEPOSIT_LOW`, `PAYMASTER_STAKE_LOW`, `PAYMASTER_VERIFICATION_GAS`, `PAYMASTER_GAS_EFFICIENCY`, `BUNDLER_ESTIMATE`, `PAYMASTER_VALIDATION`, `BUNDLER_FEE`, `ACCOUNT_SIGNATURE`, `ACCOUNT_VALIDATION`, `USEROP_CALL_GAS`, `USEROP_CALL_REVERTED`, `GOV_CALL_REVERTED`, `MUTINY_NOT_ACTIVE`, `MUTINY_NOT_EXPIRED`, `MUTINY_EXPIRED`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`. EOA `eth_estimateGas` reverts classify to those codes (never raw RPC). Shared paymaster EntryPoint deposit and factory stake (protocol ops) are separate from per-squad sponsor pool deposits.
 
 Deploy/deposit themselves are **not** sponsored in v1 — only post-deploy gov module writes (bootstrap crew, treasury authority, quartermaster, mutiny, etc.).
 
 ## Write reliability (adjacent)
 
-- Concurrent gov / Squad Admin sends that share a roster signer EOA share a write lock (nonce safety under rapid clicks / cross-squad).
+- Concurrent gov / Squad Admin / war-game deploy sends that share a signer EOA share a write lock (nonce safety under rapid clicks / cross-squad).
 - Transaction requests set an explicit `chain_id`.
 - `RECEIPT_TIMEOUT` surfaces the submitted hash and warns against blind resubmit of the same calldata.
 

@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED, ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE } from '../announcements';
+import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED, ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE, ANNOUNCE_TYPE_WAR_GAME_UPDATED } from '../announcements';
 import { SQUAD_CONTRACT_ALLOWLIST_ANNOUNCE_TYPE } from '../governance/squad-allowlist';
 import { SQUAD_TRACKED_TOKENS_ANNOUNCE_TYPE } from '../governance/squad-tracked-tokens';
 import {
@@ -29,13 +29,14 @@ import {
 } from '../squad/squad-identity-announce';
 import { currentUser } from '../../stores/auth';
 import {
-  governanceProcessNonceByParentId,
+  bumpGovernanceProcessNonce,
   squadAllowlistNonceByParentId,
   squadBotMetaNonceBySquadId,
   squadTrackedTokensNonceByParentId,
 } from '../../stores/navigation';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
 import { drainPendingAdmitQueue } from '../parent/pending-admit';
+import { ingestMutinyProcessTxFromAnnounce } from '../governance/mutiny-process-tx';
 
 export interface MlsStructuredRefreshHandlers {
   mergeTreasurySafesForParent: (parentId: string) => void;
@@ -83,8 +84,12 @@ export function onMlsStructuredMessage(
   if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
     handlers.mergeSquadInfraForParent(announce.payload.parent_id);
   }
+  if (announce?.type === ANNOUNCE_TYPE_WAR_GAME_UPDATED) {
+    handlers.mergeSquadInfraForParent(announce.payload.parent_id);
+  }
   if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED) {
-    bumpNonce(governanceProcessNonceByParentId, announce.payload.parent_id);
+    bumpGovernanceProcessNonce(announce.payload.parent_id);
+    ingestMutinyProcessTxFromAnnounce(announce.payload);
   }
   if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
     handlers.mergeSquadMemberEvmForAnnouncementsGroup(announce.payload.parent_id || gid);

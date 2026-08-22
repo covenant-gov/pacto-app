@@ -124,7 +124,9 @@ fn reconcile_mls_store_legacy_checksums(
     if let Ok(conn) = Connection::open(store_path) {
         if history_table_readable(&conn, table) {
             return crate::migrations::reconcile_legacy_checksums_for_table(
-                &conn, table, &migrations,
+                &conn,
+                table,
+                &migrations,
             );
         }
     }
