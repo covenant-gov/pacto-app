@@ -82,7 +82,7 @@ export interface Squad {
 
 | Location | Purpose |
 |----------|---------|
-| **`squads` (SQLite)** | Squad catalog: name, channels, kind, visibility, commons tags, squad-pair metadata — [`SQUAD_CATALOG.md`](./SQUAD_CATALOG.md) |
+| **`squads` (SQLite)** | Squad catalog: name, channels, kind, visibility, commons tags, squad-pair metadata — [`SQUAD_CATALOG.md`](./SQUAD_CATALOG.md). Login hydrates this table, then fills gaps from live announcements MLS groups (invite DMs are names only; exited/evicted groups are not rebuilt). |
 | **`pacto_last_squad_id_<npub>`** | Last opened squad / squad-pair (`localStorage`) |
 | **`pacto_last_channel_by_squad_<npub>`** | Per-parent last channel (`localStorage`) |
 

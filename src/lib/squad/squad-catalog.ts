@@ -11,6 +11,7 @@ import type { PairedSquads, SquadKind, SquadVisibility } from '../squad-pair';
 import { restoreSquadsHubSelection } from '../squad-hub-nav';
 import { squadNavOrder } from '../../stores/navigation';
 import { reconcileSquadNavOrder, replaceSquadNavId, appendSquadNavId } from './squad-nav-order';
+import { dmError } from '../utils/dm-debug';
 
 interface SquadChannelWire {
   name: string;
@@ -113,16 +114,35 @@ export async function deleteSquad(id: string): Promise<void> {
   await invoke('delete_squad', { parentId: id });
 }
 
+async function listSquadsWithRetry(): Promise<Squad[] | null> {
+  try {
+    return await listSquads();
+  } catch (e) {
+    dmError('list_squads failed', e);
+    try {
+      return await listSquads();
+    } catch (e2) {
+      dmError('list_squads retry failed', e2);
+      return null;
+    }
+  }
+}
+
 /** Load squads from SQLite into the store; restores hub selection after prefs are loaded. */
 export async function hydrateSquadsFromDb(): Promise<void> {
-  try {
-    const listed = await listSquads();
+  const listed = await listSquadsWithRetry();
+  if (listed) {
     squads.set(listed);
     squadNavOrder.update((order) => reconcileSquadNavOrder(order, listed));
-  } catch {
+  } else {
     squads.set([]);
     squadNavOrder.update((order) => reconcileSquadNavOrder(order, []));
   }
+  const { recoverMissingSquadCatalog, enrichRecoveredSquadNamesFromInvites } = await import(
+    './squad-catalog-recover'
+  );
+  await recoverMissingSquadCatalog();
+  void enrichRecoveredSquadNamesFromInvites();
   restoreSquadsHubSelection();
 }
 
@@ -140,11 +160,12 @@ export async function persistSquad(squad: Squad): Promise<Squad> {
   return saved;
 }
 
-/** Swap a temp creating id in the store, then persist the finalized squad. */
+/** Persist the finalized squad, then swap the temp creating id in the store. */
 export async function persistCreatedSquad(tempId: string, squad: Squad): Promise<Squad> {
-  squads.update((list) => list.map((s) => (s.id !== tempId ? s : squad)));
-  squadNavOrder.update((order) => replaceSquadNavId(order, tempId, squad.id));
-  return persistSquad(squad);
+  const saved = await persistSquad(squad);
+  squads.update((list) => list.filter((s) => s.id !== tempId));
+  squadNavOrder.update((order) => replaceSquadNavId(order, tempId, saved.id));
+  return saved;
 }
 
 const squadPatchQueue = new Map<string, Promise<unknown>>();

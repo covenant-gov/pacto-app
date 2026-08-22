@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => {
     handleChannelAddedToSquad: vi.fn(),
     notifyPendingInviteWelcome: vi.fn(),
     updateChannelNameIfPlaceholder: vi.fn(),
+    enrichRecoveredSquadNamesFromInvites: vi.fn(),
     listPendingMlsWelcomes: vi.fn(),
     fetchMessages: vi.fn(),
     parseSquadInviteMessage: vi.fn(),
@@ -147,6 +148,11 @@ vi.mock('../squad/squad-outbound-invite', async (importOriginal) => {
 vi.mock('../squad/squad-catalog', () => ({
   updateChannelNameIfPlaceholder: (...args: unknown[]) =>
     mocks.mockFunctions.updateChannelNameIfPlaceholder(...args),
+}));
+
+vi.mock('../squad/squad-catalog-recover', () => ({
+  enrichRecoveredSquadNamesFromInvites: (...args: unknown[]) =>
+    mocks.mockFunctions.enrichRecoveredSquadNamesFromInvites(...args),
 }));
 
 vi.mock('../utils/dm-debug', () => ({

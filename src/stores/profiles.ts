@@ -136,6 +136,9 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
       dmSyncStatus.set('finished');
       lastCatchUpSuccess.set(Date.now());
       setTimeout(() => dmSyncStatus.set('idle'), 2500);
+      void import('../lib/squad/squad-catalog-recover').then(({ enrichRecoveredSquadNamesFromInvites }) => {
+        void enrichRecoveredSquadNamesFromInvites();
+      });
     });
 
     if (typeof window !== 'undefined') {

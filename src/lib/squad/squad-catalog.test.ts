@@ -9,6 +9,17 @@ vi.mock('../squad-hub-nav', () => ({
   restoreSquadsHubSelection: vi.fn(),
 }));
 
+const recoverMocks = vi.hoisted(() => ({
+  recoverMissingSquadCatalog: vi.fn(async () => 0),
+  enrichRecoveredSquadNamesFromInvites: vi.fn(async () => {}),
+}));
+
+vi.mock('./squad-catalog-recover', () => ({
+  recoverMissingSquadCatalog: (...args: unknown[]) => recoverMocks.recoverMissingSquadCatalog(...args),
+  enrichRecoveredSquadNamesFromInvites: (...args: unknown[]) =>
+    recoverMocks.enrichRecoveredSquadNamesFromInvites(...args),
+}));
+
 import { invoke } from '@tauri-apps/api/core';
 import { restoreSquadsHubSelection } from '../squad-hub-nav';
 import { squads } from '../../stores/squads';
@@ -16,6 +27,7 @@ import { squadNavOrder } from '../../stores/navigation';
 import {
   hydrateSquadsFromDb,
   listSquads,
+  persistCreatedSquad,
   persistSquad,
   persistSquadPatch,
   upsertSquad,
@@ -35,6 +47,8 @@ describe('squad-catalog', () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
     vi.mocked(restoreSquadsHubSelection).mockReset();
+    recoverMocks.recoverMissingSquadCatalog.mockReset().mockResolvedValue(0);
+    recoverMocks.enrichRecoveredSquadNamesFromInvites.mockReset().mockResolvedValue(undefined);
     squads.set([]);
     squadNavOrder.set([]);
   });
@@ -203,7 +217,8 @@ describe('squad-catalog', () => {
     expect(get(squads)[0]?.name).toBe('One-Two');
   });
 
-  it('hydrateSquadsFromDb clears squads on invoke failure', async () => {
+  it('hydrateSquadsFromDb logs and clears when list_squads fails and recovery finds nothing', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     squads.set([
       {
         id: 'stale',
@@ -217,5 +232,87 @@ describe('squad-catalog', () => {
     vi.mocked(invoke).mockRejectedValue(new Error('db locked'));
     await hydrateSquadsFromDb();
     expect(get(squads)).toEqual([]);
+    expect(errSpy).toHaveBeenCalled();
+    expect(recoverMocks.recoverMissingSquadCatalog).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('hydrateSquadsFromDb keeps recovered squads when list_squads fails', async () => {
+    vi.mocked(invoke).mockRejectedValue(new Error('db locked'));
+    recoverMocks.recoverMissingSquadCatalog.mockImplementation(async () => {
+      squads.set([
+        {
+          id: 'grp-ann',
+          name: 'Alpha',
+          channels: [{ name: 'announcements', groupId: 'grp-ann', order: 0 }],
+          kind: 'squad',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]);
+      return 1;
+    });
+    await hydrateSquadsFromDb();
+    expect(get(squads)).toHaveLength(1);
+    expect(get(squads)[0]?.id).toBe('grp-ann');
+  });
+
+  it('persistCreatedSquad keeps the temp id when upsert rejects', async () => {
+    squads.set([
+      {
+        id: 'creating-squad-1',
+        name: 'Alpha',
+        channels: [],
+        kind: 'squad',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    squadNavOrder.set(['creating-squad-1']);
+    vi.mocked(invoke).mockRejectedValue(new Error('persist-failed'));
+    await expect(
+      persistCreatedSquad('creating-squad-1', {
+        id: 'grp-real',
+        name: 'Alpha',
+        channels: [{ name: 'announcements', groupId: 'grp-real', order: 0 }],
+        kind: 'squad',
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    ).rejects.toThrow('persist-failed');
+    expect(get(squads).map((s) => s.id)).toEqual(['creating-squad-1']);
+    expect(get(squadNavOrder)).toEqual(['creating-squad-1']);
+  });
+
+  it('persistCreatedSquad swaps the temp id after upsert succeeds', async () => {
+    squads.set([
+      {
+        id: 'creating-squad-1',
+        name: 'Alpha',
+        channels: [],
+        kind: 'squad',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    squadNavOrder.set(['creating-squad-1']);
+    vi.mocked(invoke).mockResolvedValue({
+      ...sampleRow,
+      id: 'grp-real',
+      channels: [
+        { name: 'announcements', groupId: 'grp-real', order: 0 },
+        { name: 'polls', groupId: 'grp-real', order: 1 },
+      ],
+    });
+    await persistCreatedSquad('creating-squad-1', {
+      id: 'grp-real',
+      name: 'Alpha',
+      channels: [{ name: 'announcements', groupId: 'grp-real', order: 0 }],
+      kind: 'squad',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    expect(get(squads).map((s) => s.id)).toEqual(['grp-real']);
+    expect(get(squadNavOrder)).toEqual(['grp-real']);
   });
 });

@@ -184,9 +184,11 @@ export function runSquadPairCreateFlow(
   activeTopNavTab.set('squads');
 
   void (async () => {
+    let createdGroupId: string | null = null;
     try {
       const { parentId, channels, skippedMembers, pendingInvites } = await createDefaultParentChannels(memberNpubs);
       const groupId = parentId;
+      createdGroupId = groupId;
       const paired = buildPairedSquads(anchor, partner);
       const finalized: Squad = {
         id: groupId,
@@ -254,7 +256,11 @@ export function runSquadPairCreateFlow(
       const message = friendlyMessage(
         getInvokeErrorMessage(e, get(t)('nav.navbar.organizeSquad.createAnnouncementsError'))
       );
-      parentCreateErrorById.update((m) => ({ ...m, [tempId]: message }));
+      parentCreateErrorById.update((m) => {
+        const next = { ...m, [tempId]: message };
+        if (createdGroupId) next[createdGroupId] = message;
+        return next;
+      });
       showCreateFailureToast(squadPair, message);
     }
   })();
