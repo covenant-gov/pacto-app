@@ -25,6 +25,7 @@ use super::sponsor_paymaster::{
     encode_paymaster_and_data, required_pool_balance, DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
     DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id};
 use super::wallet_chain_config;
 use crate::db;
@@ -374,6 +375,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     parent_id: &str,
     to: Address,
     calldata: Vec<u8>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SponsoredUserOpSend, String> {
     let net_key = network.to_lowercase();
     let stored_key = load_stored_pimlico_key(&app);
@@ -403,7 +405,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         .ok()
         .flatten();
     let stack = crate::evm::access_control::GovStack::for_wargame_target_corroborated(
-        &app, parent_id, to, None,
+        &app, parent_id, to, rpc_urls.clone(),
     )
     .await?;
     let is_wargame_op = stack == crate::evm::access_control::GovStack::WarGame;
@@ -422,7 +424,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
 
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls);
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }

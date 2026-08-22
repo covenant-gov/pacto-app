@@ -23,6 +23,7 @@
   import { hasSquadAdminInfra } from '../../../lib/governance/squad-admin-payload';
   import { syncSquadInfraForParent } from '../../../lib/dashboard/dashboard-data-sync';
   import { openSquadWargame } from '../../../lib/navigation/open-squad-dashboard';
+  import { isActiveWarGameStack } from '../../../lib/governance/war-game-payload';
   import { WAR_GAME_PUBLIC_RULES_URL } from '../../../lib/governance/war-game-links';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import DeployWarGameModal from '../governance/DeployWarGameModal.svelte';
@@ -69,7 +70,9 @@
   const govState = $derived(binaryInfraState(productionGov));
   const adminState = $derived(binaryInfraState(productionAdmin));
   const warGameRow = $derived(pactoGovWargameInfraRow(infraRows));
-  const hasWarGame = $derived(warGameRow != null);
+  const hasWarGame = $derived(
+    warGameRow != null && isActiveWarGameStack(warGameRow.providerPayload),
+  );
   const rosterMemberOptions = $derived(
     channelMembers
       .map((npub) => {

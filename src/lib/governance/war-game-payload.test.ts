@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isWarGameArchiveView,
+  isActiveWarGameStack,
   parseWarGameDelaySecs,
   parseWarGamePriorRounds,
   parseWarGameRoundNumber,
@@ -53,6 +54,12 @@ describe('parseWarGameStackMeta', () => {
       status: 'pending_sponsor',
       round: '',
     });
+  });
+
+  it('treats only active status as a deployed stack', () => {
+    expect(isActiveWarGameStack(JSON.stringify({ status: 'active' }))).toBe(true);
+    expect(isActiveWarGameStack(JSON.stringify({ status: 'pending_sponsor' }))).toBe(false);
+    expect(isActiveWarGameStack(JSON.stringify({ status: 'retired' }))).toBe(false);
   });
 });
 

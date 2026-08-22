@@ -66,6 +66,10 @@ export function parseWarGameStackMeta(raw: string | null | undefined): {
   return { status, round };
 }
 
+export function isActiveWarGameStack(raw: string | null | undefined): boolean {
+  return parseWarGameStackMeta(raw).status === 'active';
+}
+
 export function parseWarGameRoundNumber(raw: string | null | undefined): number {
   const n = Number.parseInt(parseWarGameStackMeta(raw).round, 10);
   return Number.isFinite(n) && n > 0 ? n : 0;

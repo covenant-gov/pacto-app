@@ -70,7 +70,7 @@ pub async fn send_gov_module_call<R: Runtime>(
     let stack =
         GovStack::for_wargame_target_corroborated(&app, pid, to, rpc_urls_override.clone()).await?;
     let wargame_write = stack == GovStack::WarGame;
-    require_capability(&app, pid, capability, rpc_urls_override, stack).await?;
+    require_capability(&app, pid, capability, rpc_urls_override.clone(), stack).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
     let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
@@ -100,7 +100,15 @@ pub async fn send_gov_module_call<R: Runtime>(
     let required = estimate_eoa_cost_wei(&read_provider, signer.address(), to, &calldata).await;
     match select_write_path(balance, required, has_sponsor_infra) {
         WritePath::Sponsored => {
-            match send_sponsored_gov_userop(app.clone(), &net.key, pid, to, calldata.clone()).await
+            match send_sponsored_gov_userop(
+                app.clone(),
+                &net.key,
+                pid,
+                to,
+                calldata.clone(),
+                rpc_urls_override.clone(),
+            )
+            .await
             {
                 Ok(send) => {
                     // The write guard must stay held through inclusion: returning now would let

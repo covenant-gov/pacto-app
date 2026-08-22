@@ -114,7 +114,13 @@ pub(crate) async fn wire_parent_ext_hats<R: Runtime>(
     if !deposit.is_zero() {
         let spendable = match read_sponsor_pool(&roster_provider, sponsor).await {
             Ok((spendable, _, _, _)) => spendable,
-            Err(_) => U256::ZERO,
+            Err(e) => {
+                return Err(wallet_err_json(
+                    "SPONSOR_POOL_READ",
+                    format!("sponsor pool read failed; refusing to deposit again: {e}"),
+                    None,
+                ));
+            }
         };
         if !should_skip_clone_deposit(spendable, deposit) {
             let deposit_calldata = depositCall {}.abi_encode();

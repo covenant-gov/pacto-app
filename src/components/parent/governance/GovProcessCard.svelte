@@ -39,9 +39,7 @@
     txHash = '',
   }: Props = $props();
 
-  let delayElapsed = $state(false);
-
-  const nowSec = $derived(delayElapsed ? Math.floor(Date.now() / 1000) : 0);
+  let nowSec = $state(0);
   let tool = $derived($t(govProcessToolLabel(card)));
   let isActive = $derived(card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true);
   let isPast = $derived(card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false);
@@ -126,10 +124,10 @@
   $effect(() => {
     const unlockAt = cardUnlockAtSec;
     const alreadyOpen = unlockAt == null || unlockAt <= Math.floor(Date.now() / 1000);
-    delayElapsed = alreadyOpen;
+    nowSec = alreadyOpen ? Math.floor(Date.now() / 1000) : 0;
     if (!alreadyOpen && unlockAt != null) {
       return scheduleDeadlineTimeout(unlockAt, () => {
-        delayElapsed = true;
+        nowSec = Math.floor(Date.now() / 1000);
       });
     }
     return undefined;

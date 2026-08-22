@@ -121,11 +121,11 @@ fn war_game_deployment_to_dto(
     })
 }
 
-/// Fresh `WarGameRegistry.active(gameSquadId)`. `None` when the registry has no active stack.
+/// Fresh `WarGameRegistry.active(squadId)`. Key is `keccak256(parentId)`, not `gameSquadId`.
 pub async fn read_war_game_active_deployment<P: Provider>(
     provider: &P,
     registry: Address,
-    game_squad_id: B256,
+    squad_id: B256,
     chain: &str,
     chain_id: u64,
 ) -> Result<Option<NavePirataDeploymentDto>, String> {
@@ -133,7 +133,7 @@ pub async fn read_war_game_active_deployment<P: Provider>(
         provider,
         registry,
         &activeCall {
-            squadId: game_squad_id,
+            squadId: squad_id,
         },
     )
     .await

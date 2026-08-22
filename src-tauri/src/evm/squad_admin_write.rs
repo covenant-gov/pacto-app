@@ -21,6 +21,7 @@ use super::rpc::{
     wallet_err_json,
 };
 use super::sponsor_userop::parse_war_game_userop_context;
+use super::squad_sponsor_common::squad_id_from_parent_id;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -197,11 +198,11 @@ async fn parent_mentions_squad_admin_on_chain<R: Runtime>(
         if let (Some(registry), Some(payload)) =
             (addrs.war_game_registry, row.provider_payload.as_deref())
         {
-            if let Some(ctx) = parse_war_game_userop_context(payload) {
+            if parse_war_game_userop_context(payload).is_some() {
                 match read_war_game_active_deployment(
                     &provider,
                     registry,
-                    ctx.game_squad_id,
+                    squad_id_from_parent_id(parent_id),
                     rpc_ctx.key.as_str(),
                     rpc_ctx.chain_id,
                 )

@@ -3027,26 +3027,55 @@ fn union_prior_rounds(
     }
     out.sort_by_key(|p| prior_round_number(p).unwrap_or(0));
     const WAR_GAME_PRIOR_ROUNDS_MAX: usize = 300;
+    const WAR_GAME_PRIOR_ROUNDS_MAX_BYTES: usize = 128 * 1024;
     if out.len() > WAR_GAME_PRIOR_ROUNDS_MAX {
         out.drain(0..out.len() - WAR_GAME_PRIOR_ROUNDS_MAX);
+    }
+    while !out.is_empty() {
+        let bytes = serde_json::to_vec(&out).map(|b| b.len()).unwrap_or(0);
+        if bytes <= WAR_GAME_PRIOR_ROUNDS_MAX_BYTES {
+            break;
+        }
+        out.remove(0);
     }
     out
 }
 
+fn cap_prior_rounds_in_place(v: &mut serde_json::Value) {
+    let merged = union_prior_rounds(None, v.get("priorRounds"));
+    if let Some(obj) = v.as_object_mut() {
+        if merged.is_empty() {
+            obj.remove("priorRounds");
+        } else {
+            obj.insert("priorRounds".into(), serde_json::Value::Array(merged));
+        }
+    }
+}
+
+fn strip_incoming_pending_next(mut v: serde_json::Value) -> serde_json::Value {
+    if let Some(obj) = v.as_object_mut() {
+        obj.remove("pendingNext");
+    }
+    v
+}
+
 /// Merge an incoming war-game payload with the stored singleton.
 /// Lower rounds never replace Active; they only append to `priorRounds`.
+/// `pendingNext` is local-only and never accepted from an MLS announce.
 pub fn merge_war_game_provider_payloads(stored: Option<&str>, incoming: &str) -> String {
-    let Ok(incoming_v) = serde_json::from_str::<serde_json::Value>(incoming) else {
+    let Ok(incoming_raw) = serde_json::from_str::<serde_json::Value>(incoming) else {
         return incoming.to_string();
     };
+    let mut incoming_v = strip_incoming_pending_next(incoming_raw);
+    cap_prior_rounds_in_place(&mut incoming_v);
     let Some(incoming_round) = json_round_u64(&incoming_v) else {
-        return incoming.to_string();
+        return incoming_v.to_string();
     };
     let Some(stored_s) = stored.map(str::trim).filter(|s| !s.is_empty()) else {
-        return incoming.to_string();
+        return incoming_v.to_string();
     };
     let Ok(stored_v) = serde_json::from_str::<serde_json::Value>(stored_s) else {
-        return incoming.to_string();
+        return incoming_v.to_string();
     };
     let stored_round = json_round_u64(&stored_v).unwrap_or(0);
 
@@ -3075,11 +3104,15 @@ pub fn merge_war_game_provider_payloads(stored: Option<&str>, incoming: &str) ->
 
     let mut out = incoming_v;
     let merged = union_prior_rounds(stored_v.get("priorRounds"), out.get("priorRounds"));
+    let local_pending = stored_v.get("pendingNext").cloned();
     if let Some(obj) = out.as_object_mut() {
         if merged.is_empty() {
             obj.remove("priorRounds");
         } else {
             obj.insert("priorRounds".into(), serde_json::Value::Array(merged));
+        }
+        if let Some(pending) = local_pending {
+            obj.insert("pendingNext".into(), pending);
         }
     }
     out.to_string()
@@ -3819,6 +3852,50 @@ mod war_game_announce_tests {
     }
 
     #[test]
+    fn merge_strips_incoming_pending_next() {
+        let incoming = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"99","deployTxHash":"0xevil"}}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(None, incoming)).unwrap();
+        assert_eq!(v["round"], "1");
+        assert!(v.get("pendingNext").is_none());
+    }
+
+    #[test]
+    fn merge_same_round_keeps_stored_pending_next() {
+        let stored = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"99","deployTxHash":"0xabc"}}"#;
+        let incoming = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"1","deployTxHash":"0xevil"}}"#;
+        let v: serde_json::Value = serde_json::from_str(&merge_war_game_provider_payloads(
+            Some(stored),
+            incoming,
+        ))
+        .unwrap();
+        assert_eq!(v["pendingNext"]["topHatId"], "99");
+        assert_eq!(v["pendingNext"]["deployTxHash"], "0xabc");
+    }
+
+    #[test]
+    fn merge_newer_round_drops_stored_pending_next() {
+        let stored = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"99"}}"#;
+        let incoming = r#"{"round":"2","status":"active","sponsor":"0x2"}"#;
+        let v: serde_json::Value = serde_json::from_str(&merge_war_game_provider_payloads(
+            Some(stored),
+            incoming,
+        ))
+        .unwrap();
+        assert_eq!(v["round"], "2");
+        assert!(v.get("pendingNext").is_none());
+    }
+
+    #[test]
+    fn merge_pass_through_without_round_strips_pending_next() {
+        let incoming = r#"{"status":"pending_sponsor","pendingNext":{"topHatId":"99"}}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(None, incoming)).unwrap();
+        assert_eq!(v["status"], "pending_sponsor");
+        assert!(v.get("pendingNext").is_none());
+    }
+
+    #[test]
     fn merge_prior_rounds_keeps_newest_300() {
         let priors: Vec<serde_json::Value> = (1..=300)
             .map(|i| serde_json::json!({"round": i.to_string(), "status": "retired"}))
@@ -3843,6 +3920,53 @@ mod war_game_announce_tests {
         assert_eq!(arr.len(), 300);
         assert_eq!(arr[0]["round"], "2");
         assert_eq!(arr[299]["round"], "301");
+    }
+
+    #[test]
+    fn merge_pass_through_caps_prior_rounds() {
+        let priors: Vec<serde_json::Value> = (1..=301)
+            .map(|i| serde_json::json!({"round": i.to_string(), "status": "retired"}))
+            .collect();
+        let incoming = serde_json::json!({
+            "status": "pending_sponsor",
+            "priorRounds": priors,
+        })
+        .to_string();
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(None, incoming.as_str()))
+                .unwrap();
+        let arr = v["priorRounds"].as_array().expect("priorRounds");
+        assert_eq!(arr.len(), 300);
+        assert_eq!(arr[0]["round"], "2");
+        assert_eq!(arr[299]["round"], "301");
+    }
+
+    #[test]
+    fn merge_prior_rounds_evicts_oldest_to_stay_under_byte_cap() {
+        let bulky = "x".repeat(20_000);
+        let priors: Vec<serde_json::Value> = (1..=10)
+            .map(|i| {
+                serde_json::json!({
+                    "round": i.to_string(),
+                    "status": "retired",
+                    "blob": bulky,
+                })
+            })
+            .collect();
+        let incoming = serde_json::json!({
+            "status": "active",
+            "round": "11",
+            "priorRounds": priors,
+        })
+        .to_string();
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(None, incoming.as_str()))
+                .unwrap();
+        let arr = v["priorRounds"].as_array().expect("priorRounds");
+        let bytes = serde_json::to_vec(arr).unwrap().len();
+        assert!(bytes <= 128 * 1024, "bytes={bytes}");
+        assert!(arr.len() < 10);
+        assert_eq!(arr.last().unwrap()["round"], "10");
     }
 
     #[test]

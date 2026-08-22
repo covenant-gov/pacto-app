@@ -22,6 +22,7 @@ use crate::evm::pacto_chain_config;
 use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::rpc::{parse_address, wallet_err_json};
 use crate::evm::sponsor_userop::parse_war_game_userop_context;
+use crate::evm::squad_sponsor_common::squad_id_from_parent_id;
 
 /// Live Nave Pirata vs throwaway WarGameRegistry stack. Never dual-read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -44,18 +45,6 @@ impl GovStack {
         match self {
             Self::Live => "pacto_gov",
             Self::WarGame => "pacto_gov_wargame",
-        }
-    }
-
-    /// Local payload hint only. Write paths must use `for_wargame_target_corroborated`.
-    pub fn for_wargame_target(wargame_payload: Option<&str>, to: Address) -> Self {
-        if wargame_payload
-            .and_then(parse_war_game_userop_context)
-            .is_some_and(|c| c.targets(to))
-        {
-            Self::WarGame
-        } else {
-            Self::Live
         }
     }
 
@@ -99,7 +88,7 @@ impl GovStack {
         let on_chain = read_war_game_active_deployment(
             &provider,
             registry,
-            ctx.game_squad_id,
+            squad_id_from_parent_id(parent_id),
             rpc_ctx.key.as_str(),
             rpc_ctx.chain_id,
         )
@@ -379,8 +368,6 @@ pub async fn require_capability<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::address;
-    use serde_json::json;
 
     #[test]
     fn gov_stack_infra_type_does_not_dual_read() {
@@ -393,34 +380,6 @@ mod tests {
         assert_eq!(GovStack::from_wargame(None), GovStack::Live);
         assert_eq!(GovStack::from_wargame(Some(false)), GovStack::Live);
         assert_eq!(GovStack::from_wargame(Some(true)), GovStack::WarGame);
-    }
-
-    #[test]
-    fn gov_stack_for_wargame_target_only_when_active_module() {
-        let ta = address!("0x5412b91d05101d3bd802e4e8d4c576f0e525aeda");
-        let other = address!("0x9999999999999999999999999999999999999999");
-        let payload = json!({
-            "v": 1,
-            "status": "active",
-            "gameSquadId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "safe": "0x1111111111111111111111111111111111111111",
-            "quartermaster": "0x2222222222222222222222222222222222222222",
-            "mutinyModule": "0x3333333333333333333333333333333333333333",
-            "treasuryAuthority": format!("{ta:#x}"),
-            "squadAdminProxy": "0x4444444444444444444444444444444444444444",
-            "sponsor": "0x5555555555555555555555555555555555555555",
-            "round": "1",
-        })
-        .to_string();
-        assert_eq!(
-            GovStack::for_wargame_target(Some(payload.as_str()), ta),
-            GovStack::WarGame
-        );
-        assert_eq!(
-            GovStack::for_wargame_target(Some(payload.as_str()), other),
-            GovStack::Live
-        );
-        assert_eq!(GovStack::for_wargame_target(None, ta), GovStack::Live);
     }
 
     #[test]

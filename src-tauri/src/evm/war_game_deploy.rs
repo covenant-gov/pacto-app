@@ -23,6 +23,7 @@ use super::nave_pirata_deploy::{
     nave_pirata_deploy_params, resolve_war_game_squad_params, roster_signing_parent_id,
     validate_metadata_uri, SquadParamsDto,
 };
+use super::nave_pirata_read::{read_nave_pirata_deployment, NavePirataDeploymentDto};
 use super::pacto_chain_config;
 use super::rpc::signer::{
     load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
@@ -221,6 +222,74 @@ fn parse_pending_next(payload: Option<&str>) -> Option<PendingNextStack> {
     })
 }
 
+fn pending_matches_on_chain(
+    pending: &PendingNextStack,
+    d: &NavePirataDeploymentDto,
+    pay_addr: Address,
+) -> bool {
+    let parse = |s: &str| parse_address(s).ok();
+    parse(d.deployer.as_str()) == Some(pay_addr)
+        && parse(d.safe.as_str()) == Some(pending.safe)
+        && parse(d.quartermaster.as_str()) == Some(pending.quartermaster)
+        && parse(d.mutiny_module.as_str()) == Some(pending.mutiny)
+        && parse(d.treasury_authority.as_str()) == Some(pending.treasury)
+        && parse(d.squad_admin_proxy.as_str()) == Some(pending.squad_admin)
+}
+
+fn strip_pending_next_payload(payload: &str) -> String {
+    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return payload.to_string();
+    };
+    if let Some(obj) = v.as_object_mut() {
+        obj.remove("pendingNext");
+    }
+    v.to_string()
+}
+
+fn is_pending_next_untrusted(err: &str) -> bool {
+    err.contains("PENDING_NEXT_MISMATCH") || err.contains("DEPLOYMENT_NOT_FOUND")
+}
+
+fn drop_pending_next_checkpoint<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    payload: Option<&str>,
+) -> Result<(), String> {
+    let Some(raw) = payload.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(());
+    };
+    let Some(hat) = existing_wargame_canonical_ref(app, parent_id) else {
+        return Ok(());
+    };
+    db::persist_pacto_gov_wargame_infra(
+        app,
+        parent_id,
+        chain,
+        hat.as_str(),
+        strip_pending_next_payload(raw).as_str(),
+    )
+}
+
+async fn corroborate_pending_next<P: Provider>(
+    provider: &P,
+    registry: Address,
+    pending: &PendingNextStack,
+    pay_addr: Address,
+    chain: &str,
+    chain_id: u64,
+) -> Result<(), String> {
+    let d = read_nave_pirata_deployment(provider, registry, pending.top_hat, chain, chain_id).await?;
+    if !pending_matches_on_chain(pending, &d, pay_addr) {
+        return Err(wallet_err_json(
+            "PENDING_NEXT_MISMATCH",
+            "war-game checkpoint does not match WarGameRegistry.deployment",
+            None,
+        ));
+    }
+    Ok(())
+}
+
 fn existing_wargame_canonical_ref<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
@@ -411,6 +480,26 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
 
     let (top_hat, _captain_out, safe_a, qm_a, mm_a, ta_a, admin_a) = if let Some(pending) = pending
     {
+        if let Err(e) = corroborate_pending_next(
+            &read_provider,
+            war_game_registry,
+            &pending,
+            pay_addr,
+            net.key.as_str(),
+            net.chain_id,
+        )
+        .await
+        {
+            if is_pending_next_untrusted(&e) {
+                let _ = drop_pending_next_checkpoint(
+                    &app,
+                    pid,
+                    net.key.as_str(),
+                    prior_payload.as_deref(),
+                );
+            }
+            return Err(e);
+        }
         (
             pending.top_hat,
             Address::ZERO,
@@ -832,5 +921,60 @@ mod tests {
             mv.get("priorRounds").is_none() || mv["priorRounds"].as_array().unwrap().is_empty()
         );
         assert!(mv.get("pendingNext").is_none());
+    }
+
+    fn fixture_deployment(pay: Address, pending: &PendingNextStack) -> NavePirataDeploymentDto {
+        NavePirataDeploymentDto {
+            chain: "sepolia".into(),
+            chain_id: 11155111,
+            top_hat_id: pending.top_hat.to_string(),
+            safe: format!("{:#x}", pending.safe),
+            quartermaster: format!("{:#x}", pending.quartermaster),
+            mutiny_module: format!("{:#x}", pending.mutiny),
+            treasury_authority: format!("{:#x}", pending.treasury),
+            squad_admin_proxy: format!("{:#x}", pending.squad_admin),
+            captain_hat_id: "1".into(),
+            crew_hat_id: "2".into(),
+            squad_admin_hat_id: "3".into(),
+            mutiny_role_hat_id: "4".into(),
+            quartermaster_role_hat_id: "5".into(),
+            treasury_authority_role_hat_id: "6".into(),
+            deployed_at: 0,
+            deployer: format!("{pay:#x}"),
+        }
+    }
+
+    #[test]
+    fn pending_matches_on_chain_requires_deployer_and_modules() {
+        let pay = Address::repeat_byte(0x77);
+        let pending = PendingNextStack {
+            deploy_tx: "0xdeploy".into(),
+            top_hat: U256::from(9u64),
+            salt_nonce: U256::from(1u64),
+            safe: Address::repeat_byte(0x11),
+            quartermaster: Address::repeat_byte(0x22),
+            mutiny: Address::repeat_byte(0x33),
+            treasury: Address::repeat_byte(0x44),
+            squad_admin: Address::repeat_byte(0x55),
+        };
+        let d = fixture_deployment(pay, &pending);
+        assert!(pending_matches_on_chain(&pending, &d, pay));
+        assert!(!pending_matches_on_chain(
+            &pending,
+            &d,
+            Address::repeat_byte(0x88)
+        ));
+        let mut poisoned = d;
+        poisoned.treasury_authority = format!("{:#x}", Address::repeat_byte(0x99));
+        assert!(!pending_matches_on_chain(&pending, &poisoned, pay));
+    }
+
+    #[test]
+    fn strip_pending_next_payload_drops_checkpoint() {
+        let raw = r#"{"status":"active","round":"1","pendingNext":{"topHatId":"9"}}"#;
+        let v: serde_json::Value =
+            serde_json::from_str(&strip_pending_next_payload(raw)).unwrap();
+        assert_eq!(v["status"], "active");
+        assert!(v.get("pendingNext").is_none());
     }
 }
