@@ -28,7 +28,7 @@ use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::load_squad_roster_embedded_signer;
-use super::rpc::{connect_read_provider, parse_address, wallet_err_json};
+use super::rpc::{classify_gov_call_revert, connect_read_provider, parse_address, wallet_err_json};
 use super::sponsor_paymaster::{
     encode_paymaster_and_data, required_pool_balance, DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
     DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
@@ -1277,10 +1277,14 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
         || lower.contains("execution reverted")
         || lower.contains("aa40")
     {
-        (
-            "USEROP_CALL_REVERTED",
-            format!("Sponsored UserOp call reverted during simulation. Detail: {raw}"),
-        )
+        if let Some((code, msg)) = classify_gov_call_revert(raw) {
+            (code, msg.to_string())
+        } else {
+            (
+                "GOV_CALL_REVERTED",
+                "Sponsored UserOp call reverted during simulation.".into(),
+            )
+        }
     } else {
         ("PAYMASTER_REJECTED", raw.to_string())
     }
@@ -1948,8 +1952,13 @@ mod tests {
         let (code, msg) = classify_bundler_userop_reject(
             r#"{"code":-32521,"message":"UserOperation reverted during simulation with reason: MutinyModule_Expired"}"#,
         );
-        assert_eq!(code, "USEROP_CALL_REVERTED");
-        assert!(msg.contains("MutinyModule_Expired"));
+        assert_eq!(code, "MUTINY_EXPIRED");
+        assert!(msg.contains("deadline") || msg.contains("expired"));
+
+        let (code, _) = classify_bundler_userop_reject(
+            "server returned an error response: error code 3: execution reverted, data: '0xc4aedfdd'",
+        );
+        assert_eq!(code, "MUTINY_NOT_ACTIVE");
     }
 
     #[test]

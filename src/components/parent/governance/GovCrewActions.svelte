@@ -36,6 +36,7 @@
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
   import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import { clearGovModuleReadsForParent } from '../../../lib/governance/gov-module-read-cache';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import { showToast } from '../../../stores/toast';
@@ -180,6 +181,7 @@
     label: string,
     fn: () => Promise<unknown>,
     refresh: () => void | Promise<void>,
+    refreshOnError = false,
   ) {
     if (acting) return;
     acting = true;
@@ -189,6 +191,10 @@
       await Promise.resolve(refresh());
     } catch (e) {
       showGovWriteErrorToast(e, label);
+      if (refreshOnError) {
+        clearGovModuleReadsForParent(parentId);
+        await Promise.resolve(refresh());
+      }
     } finally {
       acting = false;
     }
@@ -378,7 +384,8 @@
                     mutinyModule,
                     mutinyId: mutinyStatus.activeMutinyId,
                   }),
-                onRefreshMutiny)}
+                onRefreshMutiny,
+                true)}
             />
             {#if mutinyExpired}
               <GovCtaButton
@@ -393,7 +400,8 @@
                       mutinyModule,
                       mutinyId: mutinyStatus.activeMutinyId,
                     }),
-                  onRefreshMutiny)}
+                  onRefreshMutiny,
+                  true)}
               />
             {/if}
           </div>

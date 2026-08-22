@@ -18,6 +18,7 @@
   } from '../../../lib/governance/api';
   import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
   import {
+    clearGovModuleReadsForParent,
     fetchGovModuleReadCached,
     isGovModuleReadStale,
     mutinyReadCacheKey,
@@ -247,7 +248,7 @@
     const hydrateKey = `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`;
     const key = mutinyReadCacheKey(network, mutinyModule, privilege.myAddress);
     const peeked = peekGovModuleRead<MutinySnapshot>(key);
-    if (peeked) applyMutinySnapshot(peeked);
+    if (peeked && !force) applyMutinySnapshot(peeked);
 
     const needFetch = force || !peeked || isGovModuleReadStale(key);
     if (!needFetch) {
@@ -387,6 +388,8 @@
       await reloadMutiny(true);
     } catch (e) {
       showGovWriteErrorToast(e, tFn('governance.action.executeMutiny'));
+      clearGovModuleReadsForParent(parentId);
+      await reloadMutiny(true);
     }
   }
 
@@ -404,6 +407,8 @@
       await reloadMutiny(true);
     } catch (e) {
       showGovWriteErrorToast(e, tFn('governance.action.expireMutiny'));
+      clearGovModuleReadsForParent(parentId);
+      await reloadMutiny(true);
     }
   }
 

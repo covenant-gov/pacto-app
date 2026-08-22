@@ -13,7 +13,12 @@ vi.mock('svelte-i18n', () => ({
 
 vi.mock('../../stores/toast', () => ({ showToast }));
 
-import { govWriteErrorMessage, parseWalletErrorCode, showGovWriteErrorToast } from './gov-write-errors';
+import {
+  govWriteErrorMessage,
+  parseWalletErrorCode,
+  revertCodeFromError,
+  showGovWriteErrorToast,
+} from './gov-write-errors';
 
 describe('parseWalletErrorCode', () => {
   it('reads code from stringified wallet_err_json', () => {
@@ -72,6 +77,31 @@ describe('govWriteErrorMessage', () => {
   it('falls back for unknown codes', () => {
     expect(govWriteErrorMessage('{"code":"OTHER","message":"backend said this"}', 'Vote')).toBe(
       'backend said this',
+    );
+  });
+
+  it('maps mutiny revert selectors and does not leak raw RPC', () => {
+    const raw =
+      '{"code":"SEND_FAILED","message":"server returned an error response: error code 3: execution reverted, data: \'0xc4aedfdd\'"}';
+    expect(revertCodeFromError(raw)).toBe('MUTINY_NOT_ACTIVE');
+    const msg = govWriteErrorMessage(raw, 'Expire mutiny');
+    expect(msg).toBe('governance.error.mutinyNotActive');
+    expect(msg).not.toContain('0xc4aedfdd');
+    expect(msg).not.toContain('execution reverted');
+    expect(govWriteErrorMessage('{"code":"MUTINY_NOT_EXPIRED","message":"x"}', 'Expire mutiny')).toBe(
+      'governance.error.mutinyNotExpired',
+    );
+    expect(govWriteErrorMessage('{"code":"MUTINY_EXPIRED","message":"x"}', 'Execute mutiny')).toBe(
+      'governance.error.mutinyExpired',
+    );
+    expect(govWriteErrorMessage('{"code":"GOV_CALL_REVERTED","message":"x"}', 'Vote')).toBe(
+      'governance.error.govCallReverted',
+    );
+    expect(govWriteErrorMessage('{"code":"SEND_FAILED","message":"nonce too low"}', 'Vote')).toBe(
+      'governance.error.govCallReverted',
+    );
+    expect(govWriteErrorMessage('{"code":"TX_REVERTED","message":"mined but reverted"}', 'Vote')).toBe(
+      'governance.error.govCallReverted',
     );
   });
 });

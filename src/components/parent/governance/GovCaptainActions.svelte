@@ -41,6 +41,7 @@
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
   import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import { clearGovModuleReadsForParent } from '../../../lib/governance/gov-module-read-cache';
   import {
     pickRandomRosterCaptain,
     randomizeCaptainCandidates,
@@ -181,15 +182,24 @@
     }
   });
 
-  async function run(label: string, fn: () => Promise<unknown>, refresh: () => void) {
+  async function run(
+    label: string,
+    fn: () => Promise<unknown>,
+    refresh: () => void | Promise<void>,
+    refreshOnError = false,
+  ) {
     if (acting) return;
     acting = true;
     try {
       const result = await fn();
       showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      refresh();
+      await Promise.resolve(refresh());
     } catch (e) {
       showGovWriteErrorToast(e, label);
+      if (refreshOnError) {
+        clearGovModuleReadsForParent(parentId);
+        await Promise.resolve(refresh());
+      }
     } finally {
       acting = false;
     }
@@ -538,7 +548,8 @@
                   mutinyModule,
                   mutinyId: mutinyStatus.activeMutinyId,
                 }),
-              onRefreshMutiny)}
+              onRefreshMutiny,
+              true)}
           />
           {#if mutinyExpired}
             <GovCtaButton
@@ -553,7 +564,8 @@
                     mutinyModule,
                     mutinyId: mutinyStatus.activeMutinyId,
                   }),
-                onRefreshMutiny)}
+                onRefreshMutiny,
+                true)}
             />
           {/if}
         {:else}

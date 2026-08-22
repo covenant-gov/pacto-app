@@ -6,7 +6,7 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 
 use super::config::{RECEIPT_WAIT_TIMEOUT, RPC_CONNECT_TIMEOUT};
-use super::errors::{wallet_err_json, wallet_err_json_with_tx_hash};
+use super::errors::{wallet_err_from_send_failure, wallet_err_json, wallet_err_json_with_tx_hash};
 use crate::evm::wallet_security;
 
 pub async fn connect_read_provider(urls: &[String]) -> Result<impl Provider + Clone, String> {
@@ -79,11 +79,7 @@ pub async fn send_transaction_only<P: Provider>(
     tx: TransactionRequest,
 ) -> Result<String, String> {
     let pending = provider.send_transaction(tx).await.map_err(|e| {
-        wallet_err_json(
-            "SEND_FAILED",
-            wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
+        wallet_err_from_send_failure(&wallet_security::redact_urls_in_text(&e.to_string()))
     })?;
     Ok(format!("0x{:x}", *pending.tx_hash()))
 }
@@ -94,11 +90,7 @@ async fn send_and_confirm_once<P: Provider>(
     receipt_timeout_message: &str,
 ) -> Result<TransactionReceipt, String> {
     let pending = provider.send_transaction(tx).await.map_err(|e| {
-        wallet_err_json(
-            "SEND_FAILED",
-            wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
+        wallet_err_from_send_failure(&wallet_security::redact_urls_in_text(&e.to_string()))
     })?;
 
     let submitted_tx_hash = format!("0x{:x}", *pending.tx_hash());
