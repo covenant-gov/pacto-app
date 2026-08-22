@@ -68,6 +68,13 @@
   const quorumBps = $derived(parseQuorumBps(qmStatus?.crewOffboardQuorumBps));
   const expired = $derived(isCrewOffboardExpirable(offboard, nowSec));
   const executable = $derived(isCrewOffboardExecutable(offboard, quorumBps, nowSec));
+  const targetOptions = $derived.by(() => {
+    void memberEvmOptions.length;
+    return memberEvmOptions.map((o) => ({ address: o.address, label: o.label }));
+  });
+  const targetFormKey = $derived(
+    `${qmStatus?.activeCrewOffboardId ?? '0'}|${targetOptions.map((o) => o.address).join(',')}`,
+  );
 
   $effect(() => {
     const deadline = offboard?.deadline ?? 0;
@@ -79,11 +86,15 @@
   });
 
   $effect(() => {
-    const opts = memberEvmOptions;
+    const opts = targetOptions;
+    if (opts.length === 0) {
+      if (target) target = '';
+      return;
+    }
     const hit = opts.some(
       (o) => o.address.trim().toLowerCase() === target.trim().toLowerCase(),
     );
-    if (opts.length > 0 && (!target.trim() || !hit)) {
+    if (!target.trim() || !hit) {
       target = opts[0].address;
     }
   });
@@ -130,7 +141,7 @@
     try {
       const result = await fn();
       showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      onRefresh();
+      await Promise.resolve(onRefresh());
     } catch (e) {
       showGovWriteErrorToast(e, label);
     } finally {
@@ -242,15 +253,17 @@
     <div class="section">
       <label class="field-label">
         {$t('governance.field.targetMember')}
-        {#if memberEvmOptions.length > 0}
-          <select bind:value={target} disabled={acting || !proposeGate.enabled} aria-label={$t('governance.field.targetMemberAriaLabel')}>
-            {#each memberEvmOptions as opt (opt.address)}
-              <option value={opt.address}>{opt.label} — {shortEvm(opt.address)}</option>
-            {/each}
-          </select>
-        {:else}
-          <input bind:value={target} placeholder={$t('governance.field.targetMemberPlaceholder')} disabled={acting || !proposeGate.enabled} />
-        {/if}
+        {#key targetFormKey}
+          {#if targetOptions.length > 0}
+            <select bind:value={target} disabled={acting || !proposeGate.enabled} aria-label={$t('governance.field.targetMemberAriaLabel')}>
+              {#each targetOptions as opt (opt.address)}
+                <option value={opt.address}>{opt.label} — {shortEvm(opt.address)}</option>
+              {/each}
+            </select>
+          {:else}
+            <input bind:value={target} placeholder={$t('governance.field.targetMemberPlaceholder')} disabled={acting || !proposeGate.enabled} />
+          {/if}
+        {/key}
       </label>
       <GovCtaButton
         label={tFn('governance.action.proposeOffboard')}
