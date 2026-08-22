@@ -15,9 +15,8 @@ const recoverMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('./squad-catalog-recover', () => ({
-  recoverMissingSquadCatalog: (...args: unknown[]) => recoverMocks.recoverMissingSquadCatalog(...args),
-  enrichRecoveredSquadNamesFromInvites: (...args: unknown[]) =>
-    recoverMocks.enrichRecoveredSquadNamesFromInvites(...args),
+  recoverMissingSquadCatalog: recoverMocks.recoverMissingSquadCatalog,
+  enrichRecoveredSquadNamesFromInvites: recoverMocks.enrichRecoveredSquadNamesFromInvites,
 }));
 
 import { invoke } from '@tauri-apps/api/core';

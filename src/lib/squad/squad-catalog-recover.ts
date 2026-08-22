@@ -119,7 +119,7 @@ export function planSquadCatalogRecovery(opts: {
 
 /** Insert catalog rows for live announcements MLS groups missing from `squads`. */
 export async function recoverMissingSquadCatalog(): Promise<number> {
-  let meta: MlsGroupMetadataItem[] = [];
+  let meta: MlsGroupMetadataItem[];
   try {
     meta = await getMlsGroupMetadata();
   } catch (e) {
