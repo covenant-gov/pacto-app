@@ -3864,24 +3864,21 @@ mod war_game_announce_tests {
     fn merge_same_round_keeps_stored_pending_next() {
         let stored = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"99","deployTxHash":"0xabc"}}"#;
         let incoming = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"1","deployTxHash":"0xevil"}}"#;
-        let v: serde_json::Value = serde_json::from_str(&merge_war_game_provider_payloads(
-            Some(stored),
-            incoming,
-        ))
-        .unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(Some(stored), incoming))
+                .unwrap();
         assert_eq!(v["pendingNext"]["topHatId"], "99");
         assert_eq!(v["pendingNext"]["deployTxHash"], "0xabc");
     }
 
     #[test]
     fn merge_newer_round_drops_stored_pending_next() {
-        let stored = r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"99"}}"#;
+        let stored =
+            r#"{"round":"1","status":"active","sponsor":"0x1","pendingNext":{"topHatId":"99"}}"#;
         let incoming = r#"{"round":"2","status":"active","sponsor":"0x2"}"#;
-        let v: serde_json::Value = serde_json::from_str(&merge_war_game_provider_payloads(
-            Some(stored),
-            incoming,
-        ))
-        .unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&merge_war_game_provider_payloads(Some(stored), incoming))
+                .unwrap();
         assert_eq!(v["round"], "2");
         assert!(v.get("pendingNext").is_none());
     }

@@ -33,7 +33,7 @@
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
-  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
@@ -386,7 +386,7 @@
       showToast(govWriteSubmittedToast(tFn('governance.action.executeMutiny'), fundedByFromWriteResult(result)));
       await reloadMutiny(true);
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.executeMutiny')));
+      showGovWriteErrorToast(e, tFn('governance.action.executeMutiny'));
     }
   }
 
@@ -403,7 +403,7 @@
       showToast(govWriteSubmittedToast(tFn('governance.action.expireMutiny'), fundedByFromWriteResult(result)));
       await reloadMutiny(true);
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.expireMutiny')));
+      showGovWriteErrorToast(e, tFn('governance.action.expireMutiny'));
     }
   }
 

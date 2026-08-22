@@ -129,15 +129,9 @@ pub async fn read_war_game_active_deployment<P: Provider>(
     chain: &str,
     chain_id: u64,
 ) -> Result<Option<NavePirataDeploymentDto>, String> {
-    let d = eth_call_decode(
-        provider,
-        registry,
-        &activeCall {
-            squadId: squad_id,
-        },
-    )
-    .await
-    .map_err(|e| wallet_err_json("REGISTRY_READ", e, None))?;
+    let d = eth_call_decode(provider, registry, &activeCall { squadId: squad_id })
+        .await
+        .map_err(|e| wallet_err_json("REGISTRY_READ", e, None))?;
     Ok(war_game_deployment_to_dto(chain, chain_id, d))
 }
 

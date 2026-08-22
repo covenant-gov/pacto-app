@@ -27,7 +27,7 @@
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
-  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
 
@@ -154,7 +154,7 @@
       onSubmitted();
       await loadConfig();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.submitProposal')));
+      showGovWriteErrorToast(e, tFn('governance.action.submitProposal'));
       onSubmitted();
     } finally {
       acting = false;

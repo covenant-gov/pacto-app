@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
+
 vi.mock('svelte-i18n', () => ({
   t: {
     subscribe: (fn: (v: (k: string, opts?: { values?: Record<string, string> }) => string) => void) => {
@@ -9,7 +11,9 @@ vi.mock('svelte-i18n', () => ({
   },
 }));
 
-import { govWriteErrorMessage, parseWalletErrorCode } from './gov-write-errors';
+vi.mock('../../stores/toast', () => ({ showToast }));
+
+import { govWriteErrorMessage, parseWalletErrorCode, showGovWriteErrorToast } from './gov-write-errors';
 
 describe('parseWalletErrorCode', () => {
   it('reads code from stringified wallet_err_json', () => {
@@ -43,6 +47,25 @@ describe('govWriteErrorMessage', () => {
     );
     expect(govWriteErrorMessage('{"code":"ACL_DENIED","message":"x"}', 'Vote')).toBe(
       'governance.error.aclDenied',
+    );
+    expect(govWriteErrorMessage('{"code":"USEROP_CALL_GAS","message":"x"}', 'Vote')).toBe(
+      'governance.error.useropCallGas',
+    );
+    expect(govWriteErrorMessage('{"code":"USEROP_CALL_REVERTED","message":"x"}', 'Vote')).toBe(
+      'governance.error.useropCallReverted',
+    );
+    expect(govWriteErrorMessage('{"code":"PAYMASTER_VALIDATION","message":"x"}', 'Vote')).toBe(
+      'governance.error.paymasterValidation',
+    );
+  });
+
+  it('shows mapped errors with error toast styling', () => {
+    showGovWriteErrorToast('{"code":"USEROP_CALL_GAS","message":"x"}', 'Execute mutiny');
+    expect(showToast).toHaveBeenCalledWith(
+      'governance.error.useropCallGas',
+      undefined,
+      undefined,
+      { error: true },
     );
   });
 

@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
+import { showToast } from '../../stores/toast';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 
 const CODE_TO_I18N: Record<string, string> = {
@@ -22,6 +23,8 @@ const CODE_TO_I18N: Record<string, string> = {
   PAYMASTER_VERIFICATION_GAS: 'governance.error.paymasterOperator',
   PAYMASTER_GAS_EFFICIENCY: 'governance.error.paymasterOperator',
   PAYMASTER_DATA: 'governance.error.paymasterOperator',
+  USEROP_CALL_GAS: 'governance.error.useropCallGas',
+  USEROP_CALL_REVERTED: 'governance.error.useropCallReverted',
   ACL_UNBOUND: 'governance.error.aclUnbound',
   ACL_DENIED: 'governance.error.aclDenied',
 };
@@ -61,4 +64,9 @@ export function govWriteErrorMessage(e: unknown, fallbackLabel: string): string 
     if (key) return get(t)(key);
   }
   return getInvokeErrorMessage(e, get(t)('governance.toast.failed', { values: { label: fallbackLabel } }));
+}
+
+/** Gov-write failure toast; always uses error styling. */
+export function showGovWriteErrorToast(e: unknown, fallbackLabel: string): void {
+  showToast(govWriteErrorMessage(e, fallbackLabel), undefined, undefined, { error: true });
 }

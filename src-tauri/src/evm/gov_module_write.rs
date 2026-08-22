@@ -29,8 +29,9 @@ use super::rpc::{
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::sponsor_userop::{
-    call_gas_with_margin, estimate_call_gas, roster_native_balance_wei, send_sponsored_gov_userop,
-    wait_for_user_operation_receipt, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
+    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
+    roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
+    FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -231,7 +232,7 @@ async fn estimate_eoa_cost_wei<P: Provider>(
     let gas = estimate_call_gas(provider, from, to, calldata)
         .await
         .map(call_gas_with_margin)
-        .unwrap_or(FALLBACK_CALL_GAS_LIMIT);
+        .unwrap_or_else(|| call_gas_ceiling_for_calldata(calldata));
     let max_fee = provider
         .estimate_eip1559_fees()
         .await

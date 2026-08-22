@@ -279,7 +279,8 @@ async fn corroborate_pending_next<P: Provider>(
     chain: &str,
     chain_id: u64,
 ) -> Result<(), String> {
-    let d = read_nave_pirata_deployment(provider, registry, pending.top_hat, chain, chain_id).await?;
+    let d =
+        read_nave_pirata_deployment(provider, registry, pending.top_hat, chain, chain_id).await?;
     if !pending_matches_on_chain(pending, &d, pay_addr) {
         return Err(wallet_err_json(
             "PENDING_NEXT_MISMATCH",
@@ -972,8 +973,7 @@ mod tests {
     #[test]
     fn strip_pending_next_payload_drops_checkpoint() {
         let raw = r#"{"status":"active","round":"1","pendingNext":{"topHatId":"9"}}"#;
-        let v: serde_json::Value =
-            serde_json::from_str(&strip_pending_next_payload(raw)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&strip_pending_next_payload(raw)).unwrap();
         assert_eq!(v["status"], "active");
         assert!(v.get("pendingNext").is_none());
     }

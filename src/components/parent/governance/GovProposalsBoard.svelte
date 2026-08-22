@@ -32,7 +32,7 @@
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
-  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
   import {
     mutinyProcessTxByParentId,
     mutinyTxHashForCard,
@@ -132,7 +132,7 @@
       showToast(govWriteSubmittedToast(tFn('governance.action.execute'), fundedByFromWriteResult(result)));
       onRefreshProposals();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.execute')));
+      showGovWriteErrorToast(e, tFn('governance.action.execute'));
     } finally {
       acting = false;
     }
@@ -165,7 +165,7 @@
       }
       onRefreshProposals();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.execute')));
+      showGovWriteErrorToast(e, tFn('governance.action.execute'));
     } finally {
       acting = false;
     }
@@ -206,7 +206,7 @@
       );
       onRefreshProposals();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.executeOffboard')));
+      showGovWriteErrorToast(e, tFn('governance.action.executeOffboard'));
     } finally {
       acting = false;
     }
@@ -227,7 +227,7 @@
       );
       onRefreshProposals();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, tFn('governance.action.expireOffboard')));
+      showGovWriteErrorToast(e, tFn('governance.action.expireOffboard'));
     } finally {
       acting = false;
     }

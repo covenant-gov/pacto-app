@@ -27,7 +27,7 @@
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
-  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
 
@@ -132,7 +132,7 @@
       showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
       onRefresh();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, label));
+      showGovWriteErrorToast(e, label);
     } finally {
       acting = false;
     }

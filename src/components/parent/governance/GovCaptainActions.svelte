@@ -40,7 +40,7 @@
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
-  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
   import {
     pickRandomRosterCaptain,
     randomizeCaptainCandidates,
@@ -189,7 +189,7 @@
       showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
       refresh();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, label));
+      showGovWriteErrorToast(e, label);
     } finally {
       acting = false;
     }

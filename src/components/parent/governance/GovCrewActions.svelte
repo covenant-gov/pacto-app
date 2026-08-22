@@ -35,7 +35,7 @@
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
-  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import { showToast } from '../../../stores/toast';
@@ -175,7 +175,7 @@
       showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
       refresh();
     } catch (e) {
-      showToast(govWriteErrorMessage(e, label));
+      showGovWriteErrorToast(e, label);
     } finally {
       acting = false;
     }
