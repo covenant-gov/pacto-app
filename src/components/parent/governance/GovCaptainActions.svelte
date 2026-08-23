@@ -133,11 +133,13 @@
     {#if quartermaster}
       <GovCtaButton
         label={tFn('governance.shell.addCrew')}
+        variant="primary"
         gate={qmGate}
         onClick={() => (showAddCrew = true)}
       />
       <GovCtaButton
         label={tFn('governance.shell.removeCrew')}
+        variant="primary"
         gate={qmGate}
         onClick={() => (showRemoveCrew = true)}
       />
@@ -154,6 +156,7 @@
     {#if mutinyModule}
       <GovCtaButton
         label={tFn('governance.action.resignCaptain')}
+        variant="primary"
         gate={resignGate}
         onClick={() => (showResign = true)}
       />
