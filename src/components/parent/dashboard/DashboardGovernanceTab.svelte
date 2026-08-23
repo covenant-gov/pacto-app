@@ -114,10 +114,6 @@
       {archiveView}
       surface="commands"
     />
-  {:else}
-    <p class="dashboard-placeholder-text muted">
-      {$t('governance.governance.placeholder')}
-    </p>
   {/if}
 
   <DashboardRolesTreeTab

@@ -676,7 +676,7 @@
 	"governance.governance.abiModules": "Los módulos de gobernanza con ABI personalizada están reservados para una vía futura. Por ahora usa Gobierno Pacto.",
 	"governance.governance.openProposals": "{count, plural, =0 {0 propuestas abiertas} one {1 propuesta abierta} other {# propuestas abiertas}}",
 	"governance.governance.refreshing": "Actualizando propuestas…",
-	"governance.roles.empty": "Despliega Gobierno Pacto + patrocinador del escuad desde el Launchpad para obtener un árbol de hats.",
+	"governance.roles.empty": "Desplegar Gobierno Pacto + Patrocinador del escuad",
 	"governance.roles.openDeploy": "Abrir despliegue",
 	"governance.roles.title": "Árbol en cadena",
 	"governance.roles.refreshing": "Actualizando árbol de roles",
