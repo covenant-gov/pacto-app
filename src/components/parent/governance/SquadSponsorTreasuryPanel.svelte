@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import DashboardAssetCard from '../dashboard/DashboardAssetCard.svelte';
   import SquadSponsorWithdrawModal from './SquadSponsorWithdrawModal.svelte';
   import SquadSponsoredFeeUsagePanel from './SquadSponsoredFeeUsagePanel.svelte';
   import type { SquadInfraDto } from '../../../lib/governance/api';
@@ -320,12 +321,15 @@
   }
 </script>
 
-<section class="dashboard-section sponsor-treasury-section" aria-labelledby="sponsor-heading">
-  <div class="treasury-section-head">
-    <h3 id="sponsor-heading" class="section-heading">{$t('governance.title.squadSponsor')}</h3>
+<DashboardAssetCard
+  class="sponsor-treasury-section"
+  headingId="sponsor-heading"
+  heading={$t('governance.title.squadSponsor')}
+  showFooter={!!sponsorRow}
+>
+  {#snippet headerAction()}
     {#if sponsorRow}
       <RefreshIconButton
-        className="sponsor-refresh-btn"
         disabled={loading}
         spinning={loading}
         ariaLabel={loading ? $t('governance.aria.refreshingSponsorBalance') : $t('governance.aria.refreshSponsorBalance')}
@@ -334,7 +338,7 @@
     {:else if onOpenDeploy}
       <button type="button" class="btn-primary sponsor-deploy-btn" onclick={onOpenDeploy}>{tFn('governance.action.deploySponsor')}</button>
     {/if}
-  </div>
+  {/snippet}
 
   {#if !sponsorRow}
     <p class="sponsor-empty-lead">{$t('governance.empty.noSponsorDeployed')}</p>
@@ -344,7 +348,7 @@
     <p class="sponsor-error" role="alert">{friendlyMessage(loadError, 'sponsor')}</p>
     <button type="button" class="btn-secondary" onclick={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
-    <dl class="sponsor-dl">
+    <dl class="asset-dl">
       <dt>{$t('governance.info.sponsorEth')}</dt>
       <dd>
         <strong>{formatEther(BigInt(summary.poolBalanceWei))}</strong>
@@ -354,7 +358,7 @@
       </dd>
       {#if hatsLinked}
         <dt>{$t('governance.info.sponsorEligible')}</dt>
-        <dd class="sponsor-eligible">
+        <dd class="asset-dd-inline">
           <span>{$t('governance.crew.sponsorEligibleRoles')}</span>
           {#if hatsId}
             <span class="hats-id-chip" title={$t('governance.crew.hatsIdTitle', { values: { id: hatsId } })}>
@@ -504,14 +508,16 @@
     {/if}
   {/if}
 
-  {#if sponsorRow}
-    <SquadSponsoredFeeUsagePanel
-      parentId={parentId}
-      chain={sponsorRow.chain || summary?.chain || network}
-      refreshToken={feeUsageRefreshToken}
-    />
-  {/if}
-</section>
+  {#snippet footer()}
+    {#if sponsorRow}
+      <SquadSponsoredFeeUsagePanel
+        parentId={parentId}
+        chain={sponsorRow.chain || summary?.chain || network}
+        refreshToken={feeUsageRefreshToken}
+      />
+    {/if}
+  {/snippet}
+</DashboardAssetCard>
 
 <SquadSponsorWithdrawModal
   open={showWithdrawModal}
@@ -525,38 +531,11 @@
 />
 
 <style>
-  .dashboard-section {
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 16px;
-  }
-
-  .sponsor-treasury-section {
+  :global(.sponsor-treasury-section) {
     margin-bottom: 16px;
   }
 
-  .section-heading {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0;
-  }
-
-  .treasury-section-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .treasury-section-head .section-heading {
-    margin: 0;
-  }
-
-  .sponsor-deploy-btn,
-  :global(.sponsor-refresh-btn) {
+  .sponsor-deploy-btn {
     flex-shrink: 0;
   }
 
@@ -593,35 +572,8 @@
     font-size: 0.875rem;
   }
 
-  .sponsor-dl {
-    margin: 0 0 14px;
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 8px 14px;
-    font-size: 0.875rem;
-  }
-
-  .sponsor-dl dt {
-    margin: 0;
-    color: var(--text-muted);
-    font-weight: 500;
-  }
-
-  .sponsor-dl dd {
-    margin: 0;
-    word-break: break-all;
-  }
-
   .sponsor-mono {
     font-size: 0.8125rem;
-  }
-
-  .sponsor-eligible {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    word-break: normal;
   }
 
   .hats-id-chip {

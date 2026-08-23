@@ -1,6 +1,7 @@
 <script lang="ts">
   import { isAddress } from 'viem';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import DashboardAssetCard from '../dashboard/DashboardAssetCard.svelte';
   import {
     buildTrackedTokenAnnouncePayload,
     getEvmErc20Balance,
@@ -26,7 +27,8 @@
   import { squadTrackedTokensNonceByParentId } from '../../../stores/navigation';
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
-  import { parseSupportedChainId } from '../../../lib/wallet/chains';
+  import { explorerAddressUrl, parseSupportedChainId, safeAppHomeUrl } from '../../../lib/wallet/chains';
+  import { openExternalUrl } from '../../../lib/utils/open-external';
   import { withReadPlaneLimit } from '../../../lib/evm/read-plane-limiter';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import { get } from 'svelte/store';
@@ -68,6 +70,11 @@
     (parseSupportedChainId(network) ?? network.trim().toLowerCase()) as SupportedChainId,
   );
   const safe = $derived(safeAddress.trim());
+  const explorerUrl = $derived(safe ? explorerAddressUrl(parseSupportedChainId(network), safe) : null);
+  const safeAppUrl = $derived(safe ? safeAppHomeUrl(parseSupportedChainId(network), safe) : null);
+  const trackedOnChain = $derived(
+    rows.filter((r) => r.chain.trim().toLowerCase() === String(chainKey).toLowerCase()),
+  );
 
   function applySnapshot(snap: SafeBalancesSnapshot) {
     nativeDecimal = snap.nativeDecimal;
@@ -243,71 +250,94 @@
 
 </script>
 
-<div class="safe-balances">
-  <div class="balances-head">
+<DashboardAssetCard
+  class="gov-treasury-section"
+  headingId="gov-treasury-heading"
+  heading={$t('governance.treasury.govHeading')}
+>
+  {#snippet headerAction()}
     <RefreshIconButton
       spinning={refreshing}
       disabled={loading || refreshing}
       ariaLabel={refreshing ? $t('governance.aria.refreshingSafeBalances') : $t('governance.aria.refreshSafeBalances')}
       onclick={() => void refreshAll(true)}
     />
-  </div>
+  {/snippet}
 
   {#if loading && !nativeDecimal && rows.length === 0}
     <p class="muted" role="status">{$t('governance.status.loadingBalances')}</p>
   {:else if loadError && !nativeDecimal}
     <p class="error" role="alert">{loadError}</p>
   {:else}
-    <ul class="bal-list">
-      <li class="bal-row">
-        <span class="bal-sym">{nativeSymbol || tFn('governance.fallback.native')}</span>
-        <span class="bal-amt">{nativeDecimal || '—'}</span>
-      </li>
-      {#each rows.filter((r) => r.chain.trim().toLowerCase() === String(chainKey).toLowerCase()) as row (row.id)}
-        <li class="bal-row">
-          <span class="bal-sym" title={row.tokenAddress}>{row.symbol}</span>
-          <span class="bal-amt">{tokenBalances[row.id] ?? '…'}</span>
+    <dl class="asset-dl">
+      <dt>{nativeSymbol || tFn('governance.fallback.native')}</dt>
+      <dd><strong>{nativeDecimal || '—'}</strong></dd>
+      {#each trackedOnChain as row (row.id)}
+        <dt title={row.tokenAddress}>{row.symbol}</dt>
+        <dd class="asset-dd-inline">
+          <strong>{tokenBalances[row.id] ?? '…'}</strong>
           <code class="bal-addr">{shortEvmAddress(row.tokenAddress) || '—'}</code>
           {#if manageGate.enabled}
             <button type="button" class="btn-link" onclick={() => void removeToken(row)}>{tFn('governance.action.remove')}</button>
           {/if}
-        </li>
+        </dd>
       {/each}
-    </ul>
+      <dt>{$t('governance.treasury.safe')}</dt>
+      <dd class="asset-dd-inline">
+        {#if explorerUrl}
+          <button
+            type="button"
+            class="btn-link treasury-addr-link"
+            title={safe}
+            aria-label={$t('governance.hats.wearerExplorerTitle', { values: { address: safe } })}
+            onclick={() => openExternalUrl(explorerUrl)}
+          >
+            {shortEvmAddress(safe)}
+          </button>
+        {:else}
+          <code class="treasury-addr" title={safe}>{shortEvmAddress(safe)}</code>
+        {/if}
+        {#if safeAppUrl}
+          <button type="button" class="btn-link" onclick={() => openExternalUrl(safeAppUrl)}>
+            {$t('governance.treasury.openSafe')}
+          </button>
+        {/if}
+      </dd>
+    </dl>
   {/if}
 
-  <div class="add-block">
-    <label class="add-label" for="safe-tracked-token">{$t('governance.field.addTrackedToken')}</label>
-    <div class="add-row">
-      <input
-        id="safe-tracked-token"
-        class="add-input"
-        type="text"
-        placeholder={$t('governance.field.trackedTokenPlaceholder')}
-        bind:value={addAddress}
-        disabled={!manageGate.enabled || addBusy}
-      />
-      <button
-        type="button"
-        class="btn-primary"
-        disabled={!manageGate.enabled || addBusy || !addAddress.trim()}
-        title={manageGate.enabled ? undefined : $t(manageGate.reason)}
-        onclick={() => void addToken()}
-      >
-        {addBusy ? tFn('governance.trackedToken.adding') : tFn('governance.action.add')}
-      </button>
+  {#snippet footer()}
+    <div class="add-block">
+      <label class="add-label" for="safe-tracked-token">{$t('governance.field.addTrackedToken')}</label>
+      <div class="add-row">
+        <input
+          id="safe-tracked-token"
+          class="add-input"
+          type="text"
+          placeholder={$t('governance.field.trackedTokenPlaceholder')}
+          bind:value={addAddress}
+          disabled={!manageGate.enabled || addBusy}
+        />
+        <button
+          type="button"
+          class="btn-primary"
+          disabled={!manageGate.enabled || addBusy || !addAddress.trim()}
+          title={manageGate.enabled ? undefined : $t(manageGate.reason)}
+          onclick={() => void addToken()}
+        >
+          {addBusy ? tFn('governance.trackedToken.adding') : tFn('governance.action.add')}
+        </button>
+      </div>
+      {#if !manageGate.enabled}
+        <p class="hint muted">{$t(manageGate.reason)}</p>
+      {/if}
     </div>
-    {#if !manageGate.enabled}
-      <p class="hint muted">{$t(manageGate.reason)}</p>
-    {/if}
-  </div>
-</div>
+  {/snippet}
+</DashboardAssetCard>
 
 <style>
-  .safe-balances {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  :global(.gov-treasury-section) {
+    margin-top: 16px;
   }
   .muted {
     margin: 0;
@@ -319,46 +349,21 @@
     font-size: 0.8125rem;
     color: var(--danger, #c44);
   }
-  .balances-head {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-  .bal-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .bal-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 8px 12px;
-    font-size: 0.875rem;
-  }
-  .bal-sym {
-    font-weight: 600;
-    min-width: 4rem;
-    color: var(--text-primary);
-  }
-  .bal-amt {
-    font-variant-numeric: tabular-nums;
-    color: var(--text-secondary);
-  }
-  .bal-addr {
+  .bal-addr,
+  .treasury-addr {
     font-size: 0.75rem;
     color: var(--text-muted);
+  }
+  .treasury-addr-link {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8125rem;
+    margin: 0;
+    padding: 0;
   }
   .add-block {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding-top: 4px;
-    border-top: 1px solid var(--border-subtle);
   }
   .add-label {
     font-size: 0.8125rem;

@@ -83,9 +83,6 @@
     <span aria-hidden="true">·</span>
     <span>{$t('governance.warGameHub.mode')}</span>
   </p>
-  {#if archiveView}
-    <p class="war-game-hub-facts">{$t('governance.warGameHub.archiveNotice')}</p>
-  {/if}
 </div>
 
 <style>
