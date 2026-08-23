@@ -595,7 +595,7 @@
 	"governance.polls.ariaLabel": "Polls",
 	"governance.polls.loading": "Loading…",
 	"governance.polls.signInHint": "Sign in to vote or create polls.",
-	"governance.polls.empty": "No polls yet. Create one with the button below.",
+	"governance.polls.empty": "No polls yet. Create one with the button above.",
 	"governance.polls.pollId": "Poll ID",
 	"governance.polls.copyId": "Copy ID",
 	"governance.polls.copyChatRef": "Copy chat ref",

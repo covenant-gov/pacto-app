@@ -595,7 +595,7 @@
 	"governance.polls.ariaLabel": "Encuestas",
 	"governance.polls.loading": "Cargando…",
 	"governance.polls.signInHint": "Inicia sesión para votar o crear encuestas.",
-	"governance.polls.empty": "Aún no hay encuestas. Crea una con el botón de abajo.",
+	"governance.polls.empty": "Aún no hay encuestas. Crea una con el botón de arriba.",
 	"governance.polls.pollId": "ID de encuesta",
 	"governance.polls.copyId": "Copiar ID",
 	"governance.polls.copyChatRef": "Copiar referencia de chat",
