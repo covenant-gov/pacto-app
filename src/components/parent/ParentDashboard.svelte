@@ -925,7 +925,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
           {#await loadDashboardSettingsTab() then SettingsTab}
             <SettingsTab
               squad={parent}
-              {permissionsCtx}
               {squadAdminCtx}
               {announcementsGroupId}
               parentId={parentId ?? ''}

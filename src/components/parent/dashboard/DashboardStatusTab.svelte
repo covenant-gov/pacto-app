@@ -1,7 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
-  import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadIdentitySection from './SquadIdentitySection.svelte';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
@@ -196,8 +195,6 @@
     </li>
   </ul>
 </section>
-
-<SquadBroadcastSettingsSection {squad} />
 
 {#if showWarGameDeploy}
   <DeployWarGameModal

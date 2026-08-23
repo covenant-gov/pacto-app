@@ -673,7 +673,7 @@
 	"governance.governance.title": "Gobernanza",
 	"governance.governance.deploy": "Desplegar",
 	"governance.governance.placeholder": "Despliega Gobierno Pacto desde el launchpad para habilitar propuestas de tesorería y acciones de gobernanza.",
-	"governance.governance.abiModules": "Los módulos de gobernanza con ABI personalizada están reservados para una vía futura. Por ahora usa Gobierno Pacto o la lista de permisos de contratos (Estado).",
+	"governance.governance.abiModules": "Los módulos de gobernanza con ABI personalizada están reservados para una vía futura. Por ahora usa Gobierno Pacto.",
 	"governance.governance.pactoGovOn": "Gobierno Pacto en {network}",
 	"governance.governance.openProposals": "{count, plural, =0 {0 propuestas abiertas} one {1 propuesta abierta} other {# propuestas abiertas}}",
 	"governance.governance.refreshing": "Actualizando propuestas…",

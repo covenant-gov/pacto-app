@@ -1,10 +1,9 @@
 <script lang="ts">
-  import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
   import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
+  import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadEndpointsPanel from './SquadEndpointsPanel.svelte';
   import SquadNetworkSection from './SquadNetworkSection.svelte';
   import SquadStickersSection from './SquadStickersSection.svelte';
-  import type { DashboardPermissionsContext } from '../../../lib/dashboard/permissions-panel';
   import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import type { SquadRpcConfig } from '../../../lib/squad/squad-rpc';
@@ -17,7 +16,6 @@
 
   let {
     squad,
-    permissionsCtx,
     squadAdminCtx = null,
     announcementsGroupId = null,
     parentId = '',
@@ -33,7 +31,6 @@
     onClearSquadRpcPrimary = () => {},
   }: {
     squad: Squad;
-    permissionsCtx: DashboardPermissionsContext;
     squadAdminCtx?: ResolvedSquadAdminContext | null;
     announcementsGroupId?: string | null;
     parentId?: string;
@@ -67,6 +64,8 @@
 </script>
 
 <div class="settings-stack">
+  <SquadBroadcastSettingsSection {squad} />
+
   <SquadStickersSection {squad} {announcementsGroupId} />
 
   <SquadNetworkSection {squadNetwork} {squadNetworkFromInfra} {onSetSquadNetwork} />
@@ -87,15 +86,6 @@
       ? memberRolesByAddress[myRosterEvm.trim().toLowerCase()] ?? ''
       : ''}
   />
-
-  {#if parentId}
-    <SmartContractSecuritySection
-      {parentId}
-      announcementsGroupId={announcementsGroupId ?? ''}
-      canManage={permissionsCtx.phase === 'pacto_gov'}
-      compact
-    />
-  {/if}
 </div>
 
 <style>

@@ -2,6 +2,8 @@
 
 Polls for a squad/network parent are **replicated across members** via the parent’s **`#announcements` MLS group**. Each device reads SQLite through Tauri (`list_dashboard_polls`); `localStorage` only caches the signed-in user’s last selected option per poll.
 
+`#polls` shows **Create Poll** and vote cards only — no chat timeline or composer.
+
 ## Wire
 
 - **Kind 30078** rumor with **`d` tag** `pacto_dashboard_poll` and JSON schema **`pacto.dashboard_poll.v1`**.
@@ -15,12 +17,12 @@ Polls for a squad/network parent are **replicated across members** via the paren
 | Parse / DB / commands | `src-tauri/src/dashboard_poll.rs` |
 | Rumor ingest | `src-tauri/src/rumor.rs` (`process_dashboard_poll_rumor`) |
 | Virtual bucket | `src-tauri/src/virtual_channel_bucket.rs`, `src/lib/mls/virtual-channel-bucket.ts` |
-| UI | `src/components/parent/DashboardPollsPanel.svelte`, `DashboardPollCreatedAnnounceBody.svelte`; dashboard tab shell in `src/components/parent/dashboard/` |
+| UI | `#polls` channel: `DashboardPollsPanel` (Create Poll + vote cards only; no chat). Announce cards: `DashboardPollCreatedAnnounceBody.svelte` |
 | Send helpers | `src/lib/api/nostr.ts` (`sendDashboardPollCreate`, vote) |
 
 ## Manual smoke
 
-Two clients on the same announcements group: create → both see announcement + Polls tab; A votes → B tally updates without new feed lines; A revotes → B sees updated count.
+Two clients on the same announcements group: create → both see announcement + `#polls` cards; A votes → B tally updates without new feed lines; A revotes → B sees updated count.
 
 ## Related
 
