@@ -31,6 +31,7 @@
     onOpenLaunchpad?: () => void;
     /** Lowercase address → protocol module label for wearer chips. */
     knownWearerLabels?: Record<string, string>;
+    viewerAddress?: string;
   }
 
   let {
@@ -50,6 +51,7 @@
     onRefreshRolesTree = () => {},
     onOpenLaunchpad = () => {},
     knownWearerLabels = {},
+    viewerAddress = '',
   }: Props = $props();
 
   const rolesTreeRefreshing = $derived(hatsTreeRefreshing || rolesTreeAnnotationsRefreshing);
@@ -125,6 +127,7 @@
         {squadMemberEvmByNpub}
         {knownWearerLabels}
         {chainKey}
+        {viewerAddress}
       />
     {/if}
   {/if}

@@ -2,6 +2,7 @@
   import type { HatTreeNodeDto } from '../../../lib/governance/api';
   import {
     formatWearerDisplayLabel,
+    isAddressWearingHat,
     npubByEvmAddressFromSquadRoster,
   } from '../../../lib/governance/hats-tree-annotations';
   import { prettyHatId } from '../../../lib/governance/pretty-hat-id';
@@ -23,6 +24,7 @@
     /** Known protocol module labels keyed by lowercase address. */
     knownWearerLabels?: Record<string, string>;
     chainKey?: SupportedChainId | null;
+    viewerAddress?: string;
   }
 
   let {
@@ -33,6 +35,7 @@
     squadMemberEvmByNpub = {},
     knownWearerLabels = {},
     chainKey = null,
+    viewerAddress = '',
   }: Props = $props();
 
   const tFn = get(t);
@@ -45,6 +48,9 @@
   /** Extra line only when role label and a distinct human details string both exist. */
   const detailsSubtitle = $derived(
     roleLabel && humanDetails && humanDetails !== roleLabel ? humanDetails : '',
+  );
+  const wornByViewer = $derived(
+    isAddressWearingHat(wearerAddressesByHatId, node.hatId, viewerAddress),
   );
   const hasWearers = $derived(wearerAddresses.length > 0 || node.supply > 0);
   const children = $derived(node.children ?? []);
@@ -93,8 +99,15 @@
   }
 </script>
 
-<div class="hats-tree-node" role="treeitem" aria-expanded={childCount > 0 ? 'true' : undefined} aria-selected="false">
-  <div class="hats-tree-node-card" class:has-wearers={hasWearers} class:inactive={!node.active}>
+<div class="hats-tree-node" role="treeitem" aria-expanded={childCount > 0 ? 'true' : undefined} aria-selected={wornByViewer}>
+  <div
+    class="hats-tree-node-card"
+    class:has-wearers={hasWearers}
+    class:inactive={!node.active}
+    class:worn-by-viewer={wornByViewer}
+    title={wornByViewer ? $t('governance.hats.youWearThis') : undefined}
+    aria-label={wornByViewer ? $t('governance.hats.youWearThis') : undefined}
+  >
     <div class="hats-tree-node-body">
       <code class="hats-tree-node-id" title={node.hatId}>{prettyId}</code>
       <span class="hats-tree-node-title">{$t(localizeRoleLabel(roleLabel)) || humanDetails || $t('governance.hats.untitled')}</span>
@@ -158,6 +171,7 @@
             {squadMemberEvmByNpub}
             {knownWearerLabels}
             {chainKey}
+            {viewerAddress}
           />
         </div>
       {/each}
@@ -186,6 +200,11 @@
 
   .hats-tree-node-card.inactive {
     opacity: 0.72;
+  }
+
+  .hats-tree-node-card.worn-by-viewer {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
   }
 
   .hats-tree-node-body {

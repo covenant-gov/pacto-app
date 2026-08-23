@@ -133,6 +133,24 @@ function indexWearerAddressesByHatAlias(
   return index;
 }
 
+/** True when `address` wears `hatId` (pretty / hex / decimal ids join). */
+export function isAddressWearingHat(
+  wearerAddressesByHatId: Record<string, string[]>,
+  hatId: string,
+  address: string,
+): boolean {
+  const want = address.trim().toLowerCase();
+  if (!want) return false;
+  const aliases = hatIdLookupKeys(hatId);
+  if (aliases.length === 0) return false;
+  const byAlias = indexWearerAddressesByHatAlias(wearerAddressesByHatId);
+  for (const alias of aliases) {
+    const hit = byAlias.get(alias);
+    if (hit?.includes(want)) return true;
+  }
+  return false;
+}
+
 /** On-chain wearers for every hat labeled `label` (pretty / hex / decimal ids join). */
 export function wearersForRoleLabel(
   roleLabelByHatId: Record<string, string>,

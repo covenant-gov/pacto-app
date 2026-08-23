@@ -12,6 +12,7 @@
     squadMemberEvmByNpub?: Record<string, string>;
     knownWearerLabels?: Record<string, string>;
     chainKey?: SupportedChainId | null;
+    viewerAddress?: string;
   }
 
   let {
@@ -22,6 +23,7 @@
     squadMemberEvmByNpub = {},
     knownWearerLabels = {},
     chainKey = null,
+    viewerAddress = '',
   }: Props = $props();
 </script>
 
@@ -34,6 +36,7 @@
     {squadMemberEvmByNpub}
     {knownWearerLabels}
     {chainKey}
+    {viewerAddress}
   />
 </div>
 
@@ -43,7 +46,7 @@
     min-width: 0;
     overflow-x: auto;
     overflow-y: visible;
-    padding: 8px 0 16px;
+    padding: 8px 6px 16px;
     /* Keep horizontal scroll within the mode body, not a nested card. */
     box-sizing: border-box;
   }

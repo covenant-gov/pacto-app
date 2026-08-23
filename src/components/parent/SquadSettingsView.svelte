@@ -170,7 +170,6 @@
     </div>
   </div>
   <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.settingsChannelMode.section')}>
-    <span class="dashboard-view-nav-label" aria-hidden="true">{$t('governance.mode')}</span>
     <div class="dashboard-mode-switcher" role="group">
       <button
         type="button"
@@ -293,13 +292,6 @@
     border-bottom: 1px solid var(--border-subtle);
     background: var(--bg-elevated);
     flex-shrink: 0;
-  }
-  .dashboard-view-nav-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
   .dashboard-mode-switcher {
     display: inline-flex;

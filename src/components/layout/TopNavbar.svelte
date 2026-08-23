@@ -55,7 +55,6 @@
 </script>
 
 <div class="top-navbar" role="tablist" aria-label={$t('nav.topNavbar.mainViewAria')}>
-  <span class="top-navbar-label" aria-hidden="true">{$t('nav.topNavbar.viewLabel')}</span>
   <div class="mode-switcher" role="group" aria-label={$t('nav.topNavbar.mainViewsAria')}>
     {#each tabs as tab (tab)}
       <button
@@ -90,14 +89,6 @@
     gap: 12px;
     padding: 0 16px;
     flex-shrink: 0;
-  }
-
-  .top-navbar-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
 
   .mode-switcher {

@@ -137,6 +137,7 @@
     {onRefreshRolesTree}
     {onOpenLaunchpad}
     {knownWearerLabels}
+    viewerAddress={myAddress}
   />
 </section>
 
