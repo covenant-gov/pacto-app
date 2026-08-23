@@ -4,6 +4,7 @@
   import SquadEndpointsPanel from './SquadEndpointsPanel.svelte';
   import SquadIdentitySection from './SquadIdentitySection.svelte';
   import SquadNetworkSection from './SquadNetworkSection.svelte';
+  import SquadPrivilegesSection from './SquadPrivilegesSection.svelte';
   import SquadStickersSection from './SquadStickersSection.svelte';
   import SquadJoinRequestsPanel from '../../squad/SquadJoinRequestsPanel.svelte';
   import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
@@ -32,6 +33,9 @@
     onSetSquadRpcPrimary = () => {},
     onSetSquadRpcBackup = () => {},
     onClearSquadRpcPrimary = () => {},
+    privilegesAdmin = null,
+    pactoGovRevision = '',
+    memberEvmOptions = [],
   }: {
     squad: Squad;
     squadAdminCtx?: ResolvedSquadAdminContext | null;
@@ -48,6 +52,9 @@
     onSetSquadRpcPrimary?: (url: string) => string | void | Promise<string | void>;
     onSetSquadRpcBackup?: (url: string) => string | void | Promise<string | void>;
     onClearSquadRpcPrimary?: () => void | Promise<void>;
+    privilegesAdmin?: ResolvedSquadAdminContext | null;
+    pactoGovRevision?: string;
+    memberEvmOptions?: { address: string; label: string }[];
   } = $props();
 
   let rosterKeyNeeded = $state(false);
@@ -73,6 +80,13 @@
   <SquadJoinRequestsPanel {squad} />
 
   <SquadBroadcastSettingsSection {squad} />
+
+  <SquadPrivilegesSection
+    {parentId}
+    {privilegesAdmin}
+    {pactoGovRevision}
+    {memberEvmOptions}
+  />
 
   <SquadStickersSection {squad} {announcementsGroupId} />
 

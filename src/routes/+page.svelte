@@ -127,7 +127,6 @@
     buildSquadAdminGovernanceAnnouncePayload,
     squadAdminInfraId,
     pactoGovTreasuryEntryId,
-    primaryGovernanceView,
   } from '../lib/governance/api';
   import { withPactoGovProviderPayloadTxHash } from '../lib/governance/pacto-gov-payload';
   import {
@@ -1104,13 +1103,6 @@
               parent={openHubParent}
               warGameStack={effectiveHubChannel.channelId === SQUAD_WARGAME_CHANNEL_ID}
               treasurySafes={$treasurySafesByParentId[openHubParent.id] ?? []}
-              governanceConfig={(() => {
-                const id = openHubParent.id;
-                const rows = $squadInfraByParentId[id];
-                return Object.prototype.hasOwnProperty.call($squadInfraByParentId, id)
-                  ? primaryGovernanceView(rows)
-                  : undefined;
-              })()}
               squadInfraRows={(() => {
                 const id = openHubParent.id;
                 return Object.prototype.hasOwnProperty.call($squadInfraByParentId, id)

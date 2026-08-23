@@ -65,6 +65,13 @@ export function openSquadWargame(parentId: string): void {
   navigateToSquadChannel(id, SQUAD_WARGAME_CHANNEL_ID);
 }
 
+/** Open a squad's #settings channel in Squad mode. */
+export function openSquadSettings(parentId: string): void {
+  const id = parentId.trim();
+  if (!id) return;
+  navigateToTarget({ kind: 'squad-channel', squadId: id, channelId: SETTINGS_CHANNEL_ID });
+}
+
 /** Full navigation state change for landing on a DM peer's thread. */
 function navigateToDm(npub: string): void {
   activeDmId.set(npub);

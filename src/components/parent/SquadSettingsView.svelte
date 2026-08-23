@@ -23,7 +23,11 @@
   import { fetchSquadMemberEvmByNpub } from '../../lib/dashboard/parent-dashboard-loaders';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
   import { ensureMlsGroupMembers, membersByGroupId } from '../../stores/mls-group-members';
-  import { resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
+  import {
+    resolveSettingsPrivilegesAdmin,
+    resolveSquadAdminContext,
+    settingsPrivilegesRevision,
+  } from '../../lib/governance/squad-admin-payload';
   import { pactoGovInfraRow, pactoGovWargameInfraRow, sponsorInfraRow } from '../../lib/governance/api';
   import {
     loadSquadNetworkPair,
@@ -54,8 +58,20 @@
   );
   const infraRows = $derived($squadInfraByParentId[parentId] ?? []);
   const squadAdminCtx = $derived(resolveSquadAdminContext(infraRows));
+  const privilegesAdmin = $derived(resolveSettingsPrivilegesAdmin(infraRows));
+  const pactoGovRevision = $derived(settingsPrivilegesRevision(infraRows, privilegesAdmin));
   const channelMembers = $derived(announcementsGroupId ? ($membersByGroupId[announcementsGroupId] ?? []) : []);
   const squadMemberEvmByNpub = $derived(parentId ? ($squadMemberEvmByParentId[parentId] ?? {}) : {});
+  const memberEvmOptions = $derived(
+    channelMembers
+      .map((npub) => {
+        const addr = squadMemberEvmByNpub[npub]?.trim();
+        if (!addr) return null;
+        const name = getProfileDisplayName($profiles[npub]) || npub.slice(0, 12);
+        return { address: addr, label: name };
+      })
+      .filter((row): row is { address: string; label: string } => row != null),
+  );
   const settingsMode = $derived($settingsChannelMode);
   const usernameLabel = $derived(getProfileDisplayName($profiles[$currentUser?.npub ?? '']));
 
@@ -226,6 +242,9 @@
             onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
             onSetSquadRpcBackup={handleSetSquadRpcBackup}
             onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
+            {privilegesAdmin}
+            {pactoGovRevision}
+            {memberEvmOptions}
           />
         {:catch}
           <p class="tab-error" role="alert">{$t('governance.tabLoadError.settings')}</p>

@@ -13,6 +13,7 @@
     PactoGovDeployComplete,
   } from '../../../lib/governance/start-pacto-gov-deploy';
   import type { CombinedGovSponsorDeployComplete } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
+  import { openSquadSettings } from '../../../lib/navigation/open-squad-dashboard';
   import ParentDashboardModals from './ParentDashboardModals.svelte';
 
   interface Props {
@@ -181,15 +182,10 @@
   export function openSquadAdminDeploy(): void {
     if (!requireBackupVerified()) return;
     if (hasSquadAdmin) {
-      onNavigate('crew');
-      showSquadRolesModal = true;
+      openSquadSettings(parentId);
       return;
     }
     if (parentId?.trim()) showSquadAdminDeploy = true;
-  }
-
-  export function openSquadRolesModal(): void {
-    showSquadRolesModal = true;
   }
 
   function closeSetSafeModal(): void {
@@ -352,7 +348,7 @@
       infraRowId: out.infraRowId,
     });
     showToast(tFn('governance.squadAdmin.toastDeployed'));
-    onNavigate('crew');
+    openSquadSettings(parentId);
   }
 </script>
 

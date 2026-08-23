@@ -15,14 +15,13 @@ import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
 import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
-  import type { ParentGovernanceDto, SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto, SquadSponsorExtStatusDto } from '../../lib/governance/api';
+  import type { SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto, SquadSponsorExtStatusDto } from '../../lib/governance/api';
   import {
     getSquadSponsorExtStatus,
     pactoGovInfraRow,
     pactoGovTreasuryEntryId,
     pactoGovWargameInfraRow,
     sponsorInfraRow,
-    withLegacyProvider,
   } from '../../lib/governance/api';
   import { resolveHubSponsorRow } from '../../lib/governance/hub-sponsor';
   import { isWarGameArchiveView, parseWarGameRoundNumber } from '../../lib/governance/war-game-payload';
@@ -54,7 +53,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     loadDashboardTreasuryTab,
   } from '../../lib/dashboard/dashboard-tab-components';
   import { resolveDashboardStructureSummary } from '../../lib/dashboard/structure-summary';
-  import { resolveDashboardPermissionsContext } from '../../lib/dashboard/permissions-panel';
   import {
     fetchHatsTree,
     fetchRolesTreeAnnotations,
@@ -101,7 +99,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   export let parent: Squad;
   export let warGameStack = false;
   export let treasurySafes: TreasurySafeEntry[] = [];
-  export let governanceConfig: ParentGovernanceDto | null | undefined = undefined;
   export let squadInfraRows: SquadInfraDto[] | undefined = undefined;
   export let onSponsorDeployComplete:
     | ((params: {
@@ -237,9 +234,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   $: structureSummary = resolveDashboardStructureSummary(
     squadInfraRows === undefined ? undefined : pactoGovRow,
   );
-
-  $: permissionsGov = pactoGovRow != null ? withLegacyProvider(pactoGovRow) : governanceConfig;
-  $: permissionsCtx = resolveDashboardPermissionsContext(permissionsGov);
 
   let treasuryProposals: TreasuryProposalDto[] = [];
   let treasuryProposalsLoading = false;
@@ -849,9 +843,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {squadMemberEvmByNpub}
               {memberHatByAddress}
               {memberRolesByAddress}
-              showManagePrivileges={!!squadAdminCtx && !warGameArchiveView}
-              pactoGovRevision={permissionsCtx.pactoGovRevision ?? ''}
-              onOpenSquadRolesModal={warGameArchiveView ? () => {} : () => deployCoordinator?.openSquadRolesModal()}
               {sponsorExtStatus}
               {sponsorExtLoading}
               {sponsorExtError}

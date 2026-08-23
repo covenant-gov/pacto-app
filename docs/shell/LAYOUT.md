@@ -66,11 +66,11 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 |------|------|
 | `components/dm/DmMessageRouter.svelte` | Invite cards, wallet cards, plain `Message` |
 | `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + live Proposals board |
-| `components/parent/dashboard/DashboardSettingsTab.svelte` | Squad photo, Join requests, Broadcast, Stickers, Primary/Practice networks, Chain RPC / Pimlico, Join-inbox holders — mounted from `#settings` |
+| `components/parent/dashboard/DashboardSettingsTab.svelte` | Squad photo, Join requests, Broadcast, Privileges (ACL / Squad Admin), Stickers, Primary/Practice networks, Chain RPC / Pimlico, Join-inbox holders — mounted from `#settings` |
 | `components/parent/dashboard/DashboardGovernanceTab.svelte` | All / Crew / Captain commands + Hats tree |
 | `components/parent/dashboard/DashboardRolesTreeTab.svelte` | Hats tree (mounted at the bottom of Governance) |
 | `components/parent/dashboard/DashboardTreasuryTab.svelte` | Sponsor + governance treasury Safe + other vaults |
-| `components/parent/dashboard/DashboardCrewTab.svelte` | MLS member roster (EVM / Hats / Privileges) |
+| `components/parent/dashboard/DashboardCrewTab.svelte` | MLS member roster (EVM / Hats / role labels) |
 | `components/parent/dashboard/MyDashboardStatusTab.svelte` | Member checklist + roster EVM |
 | `components/parent/dashboard/MyDashboardAlertsTab.svelte` | Roster-key prompts (former personal-alerts) |
 | `components/parent/dashboard/ParentDashboardModals.svelte` | Deploy/import Safe + privilege modals |
@@ -78,7 +78,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 
 Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `crew`). `#settings` uses `settingsChannelMode` (`personal` \| `squad`): username mode is checklist, Alerts, roster EVM, then squad sync; Squad mode is the config stack. Unknown persisted settings modes reset to `personal`.
 
-**Status vs Settings.** Status is for frequently needed operational info: Checklist, live Proposals. Settings is for one-time or occasional config: squad photo, Join requests, Squad Broadcast, sticker packs, network, Chain RPC, Pimlico key, Join-inbox holders. Network retargeting for future deploys lives in Settings ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` and `roles` slugs) reset to `status`. Arbitrary contract allowlist / call UI is not on Settings.
+**Status vs Settings.** Status is for frequently needed operational info: Checklist, live Proposals. Settings is for one-time or occasional config: squad photo, Join requests, Squad Broadcast, Privileges (Squad Admin roles), sticker packs, network, Chain RPC, Pimlico key, Join-inbox holders. Network retargeting for future deploys lives in Settings ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` and `roles` slugs) reset to `status`. Arbitrary contract allowlist / call UI is not on Settings.
 
 **Invariant:** do not add a new `#squad-dashboard` segmented mode for a single feature. Occasional config goes in a Settings **section**. A new tab is only for a frequently used operational domain with its own data (Governance, Treasury, Crew). Hats tree lives under Governance, not its own tab. Stickers as its own tab is the anti-pattern.
 

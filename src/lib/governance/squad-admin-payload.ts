@@ -1,5 +1,5 @@
 import type { SquadInfraDto } from './api';
-import { pactoGovInfraRow, squadAdminInfraRow } from './api';
+import { pactoGovInfraRow, pactoGovWargameInfraRow, squadAdminInfraRow } from './api';
 import { parsePactoGovProviderPayload } from './pacto-gov-payload';
 
 /** Parsed `provider_payload` v1 from a squad-admin infra row. */
@@ -80,4 +80,31 @@ export function resolveWarGameSquadAdminContext(
 
 export function hasSquadAdminInfra(rows: SquadInfraDto[] | undefined): boolean {
   return resolveSquadAdminContext(rows) != null;
+}
+
+/** Settings is stack-agnostic: live Squad Admin first, then war-game fallback. */
+export function resolveSettingsPrivilegesAdmin(
+  rows: SquadInfraDto[] | undefined,
+): ResolvedSquadAdminContext | null {
+  return (
+    resolveSquadAdminContext(rows) ??
+    resolveWarGameSquadAdminContext(pactoGovWargameInfraRow(rows))
+  );
+}
+
+/** Revision on the Settings Privileges card; follows the resolved admin stack. */
+export function settingsPrivilegesRevision(
+  rows: SquadInfraDto[] | undefined,
+  ctx: ResolvedSquadAdminContext | null = resolveSettingsPrivilegesAdmin(rows),
+): string {
+  if (ctx?.source === 'pacto_gov_wargame') {
+    return pactoGovWargameInfraRow(rows)?.pactoGovRevision?.trim() ?? '';
+  }
+  const live =
+    pactoGovInfraRow(rows)?.pactoGovRevision?.trim() ||
+    squadAdminInfraRow(rows)?.pactoGovRevision?.trim() ||
+    '';
+  if (live) return live;
+  if (ctx) return '';
+  return pactoGovWargameInfraRow(rows)?.pactoGovRevision?.trim() ?? '';
 }

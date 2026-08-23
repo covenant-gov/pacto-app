@@ -35,9 +35,6 @@
     squadMemberEvmByNpub = {},
     memberHatByAddress = {},
     memberRolesByAddress = {},
-    onOpenSquadRolesModal = () => {},
-    showManagePrivileges = false,
-    pactoGovRevision = '',
     sponsorExtStatus = null,
     sponsorExtLoading = false,
     sponsorExtError = '',
@@ -56,9 +53,6 @@
     squadMemberEvmByNpub?: Record<string, string>;
     memberHatByAddress?: Record<string, string>;
     memberRolesByAddress?: Record<string, string>;
-    onOpenSquadRolesModal?: () => void;
-    showManagePrivileges?: boolean;
-    pactoGovRevision?: string;
     /** Sponsor Ext eligibility (null when no Ext sponsor / not loaded). */
     sponsorExtStatus?: SquadSponsorExtStatusDto | null;
     sponsorExtLoading?: boolean;
@@ -301,18 +295,6 @@
   {/if}
 </section>
 
-{#if showManagePrivileges || pactoGovRevision}
-  <div class="privileges-row">
-    <span class="meta-label">{$t('governance.crew.privilegesLabel')}</span>
-    {#if pactoGovRevision}
-      <code class="rev">{pactoGovRevision}</code>
-    {/if}
-    {#if showManagePrivileges}
-      <button type="button" class="btn-text" onclick={onOpenSquadRolesModal}>{$t('governance.crew.manage')}</button>
-    {/if}
-  </div>
-{/if}
-
 <style>
   .sponsor-owner-banner {
     display: flex;
@@ -461,16 +443,6 @@
     opacity: 0.45;
     cursor: not-allowed;
   }
-  .privileges-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 12px;
-    padding: 8px 0 12px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--border-subtle);
-    font-size: 0.875rem;
-  }
   .meta-label {
     font-size: 0.7rem;
     font-weight: 600;
@@ -478,21 +450,5 @@
     letter-spacing: 0.04em;
     color: var(--text-muted);
     min-width: 5.5rem;
-  }
-  .rev {
-    font-family: ui-monospace, monospace;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-  .btn-text {
-    padding: 4px 8px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    font: inherit;
-    font-size: 0.8125rem;
-    cursor: pointer;
-    text-decoration: underline;
-    text-underline-offset: 2px;
   }
 </style>

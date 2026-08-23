@@ -668,7 +668,7 @@
 	"governance.squadSponsor.alreadyDeployed": "Squad sponsor is already deployed for this parent.",
 	"governance.squadSponsor.missingTopHat": "Missing Pacto Gov top hat id — cannot finish hats sponsor.",
 	"governance.squadSponsor.toastDeployed": "Squad sponsor Ext deployed — manage allowlist from Treasury.",
-	"governance.squadAdmin.toastDeployed": "Squad Admin deployed — open Crew to manage privileges.",
+	"governance.squadAdmin.toastDeployed": "Squad Admin deployed — open Settings to manage privileges.",
 	"governance.governance.title": "Governance",
 	"governance.governance.deploy": "Deploy",
 	"governance.governance.placeholder": "Deploy Pacto Gov from the launchpad to enable treasury proposals and governance actions.",

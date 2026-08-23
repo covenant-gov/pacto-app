@@ -18,7 +18,13 @@ import {
   SETTINGS_CHANNEL_ID,
   type Squad,
 } from '../../stores/app';
-import { openSquadDashboard, openSquadWargame, navigateToTarget, resolveCatchUpTarget } from './open-squad-dashboard';
+import {
+  openSquadDashboard,
+  openSquadSettings,
+  openSquadWargame,
+  navigateToTarget,
+  resolveCatchUpTarget,
+} from './open-squad-dashboard';
 
 function squad(id: string, channels: { name: string; groupId: string }[]): Squad {
   return {
@@ -99,6 +105,38 @@ describe('openSquadWargame', () => {
     openSquadWargame('   ');
     expect(get(activeTopNavTab)).toBe('commons');
     expect(get(activeSquadId)).toBeNull();
+  });
+});
+
+describe('openSquadSettings', () => {
+  beforeEach(() => {
+    activeTopNavTab.set('commons');
+    activeSquadId.set(null);
+    activeChannelId.set(null);
+    activeHubChannelName.set(null);
+    activeView.set('hub');
+    lastOpenedSquadId.set(null);
+    lastOpenedChannelId.set(null);
+    lastChannelBySquadId.set({});
+    lastHubChannelNameBySquadId.set({});
+    settingsChannelMode.set('personal');
+    squads.set([]);
+  });
+
+  it('opens #settings in squad mode', () => {
+    openSquadSettings('squad-123');
+    expect(get(activeTopNavTab)).toBe('squads');
+    expect(get(activeSquadId)).toBe('squad-123');
+    expect(get(activeChannelId)).toBe(SETTINGS_CHANNEL_ID);
+    expect(get(settingsChannelMode)).toBe('squad');
+    expect(get(activeView)).toBe('hub');
+  });
+
+  it('does nothing when id is empty', () => {
+    openSquadSettings('   ');
+    expect(get(activeTopNavTab)).toBe('commons');
+    expect(get(activeSquadId)).toBeNull();
+    expect(get(settingsChannelMode)).toBe('personal');
   });
 });
 

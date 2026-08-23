@@ -668,7 +668,7 @@
 	"governance.squadSponsor.alreadyDeployed": "El patrocinador del escuad ya está desplegado para este parent.",
 	"governance.squadSponsor.missingTopHat": "Falta el id del top hat de Gobierno Pacto — no se puede completar el patrocinador.",
 	"governance.squadSponsor.toastDeployed": "Patrocinador Ext del escuad desplegado — gestiona la lista de permisos desde Tesorería.",
-	"governance.squadAdmin.toastDeployed": "Administrador del escuad desplegado — abre Equipo para gestionar privilegios.",
+	"governance.squadAdmin.toastDeployed": "Administrador del escuad desplegado — abre Ajustes para gestionar privilegios.",
 	"governance.governance.title": "Gobernanza",
 	"governance.governance.deploy": "Desplegar",
 	"governance.governance.placeholder": "Despliega Gobierno Pacto desde el launchpad para habilitar propuestas de tesorería y acciones de gobernanza.",
