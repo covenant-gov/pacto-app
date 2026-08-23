@@ -6,8 +6,6 @@
   import type { HatTreeNodeDto, TreasuryProposalDto, SquadInfraDto } from '../../../lib/governance/api';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import type { DashboardStructureSummary } from '../../../lib/dashboard/structure-summary';
-  import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
-  import { parseSupportedChainId } from '../../../lib/wallet/chains';
 
   interface Props {
     squadInfraRows?: SquadInfraDto[];
@@ -85,24 +83,20 @@
   const network = $derived(pactoGovChain ?? 'sepolia');
 </script>
 
-<section class="governance-section" aria-labelledby="governance-heading">
-  <div class="governance-heading-row">
-    <h3 id="governance-heading" class="section-heading">{$t('governance.governance.title')}</h3>
-    {#if !archiveView}
+<section class="governance-section" aria-label={$t('governance.governance.title')}>
+  {#if !archiveView && !showPactoGovShell && !showAbiModules}
+    <div class="governance-heading-row">
       <button type="button" class="btn-primary governance-deploy-btn" onclick={onOpenLaunchpad}>
         {$t('governance.governance.deploy')}
       </button>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   {#if showAbiModules}
     <p class="dashboard-placeholder-text muted">
       {$t('governance.governance.abiModules')}
     </p>
   {:else if showPactoGovShell && pactoPayload}
-    <p class="gov-network muted">
-      {$t('governance.governance.pactoGovOn', { values: { network: getWalletNetworkDisplayName(parseSupportedChainId(network)) } })}
-    </p>
     {#if treasuryProposalsRefreshing}
       <p class="dashboard-refresh-note muted" role="status">{$t('governance.governance.refreshing')}</p>
     {/if}
@@ -161,23 +155,14 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .section-heading {
-    margin: 0;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
   }
 
   .governance-deploy-btn {
     flex-shrink: 0;
   }
 
-  .gov-network,
   .dashboard-placeholder-text,
   .dashboard-refresh-note,
   .muted {

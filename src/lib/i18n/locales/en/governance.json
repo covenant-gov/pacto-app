@@ -677,7 +677,6 @@
 	"governance.governance.deploy": "Deploy",
 	"governance.governance.placeholder": "Deploy Pacto Gov from the launchpad to enable treasury proposals and governance actions.",
 	"governance.governance.abiModules": "Custom ABI governance modules are reserved for a future pathway. Use Pacto Gov for now.",
-	"governance.governance.pactoGovOn": "Pacto Gov on {network}",
 	"governance.governance.openProposals": "{count, plural, =0 {0 open proposals} one {1 open proposal} other {# open proposals}}",
 	"governance.governance.refreshing": "Refreshing proposals…",
 	"governance.roles.empty": "Deploy Pacto Gov + squad sponsor from Launchpad for a hats tree.",
