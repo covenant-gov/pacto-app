@@ -192,22 +192,24 @@
         </button>
       {/if}
     </li>
-    <li class="checklist-item" class:done={govState === 'done'}>
-      <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
-      {#if productionGov}
-        <span>{$t('governance.status.squadGovernance')}</span>
-      {:else}
-        <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
-      {/if}
-    </li>
-    <li class="checklist-item" class:done={adminState === 'done'}>
-      <span class={glyphClass(adminState)} aria-hidden="true">{checklistGlyph(adminState)}</span>
-      {#if productionAdmin}
-        <span>{$t('governance.status.squadAdmin')}</span>
-      {:else}
-        <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
-      {/if}
-    </li>
+    {#if !warGameStack}
+      <li class="checklist-item" class:done={govState === 'done'}>
+        <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
+        {#if productionGov}
+          <span>{$t('governance.status.squadGovernance')}</span>
+        {:else}
+          <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
+        {/if}
+      </li>
+      <li class="checklist-item" class:done={adminState === 'done'}>
+        <span class={glyphClass(adminState)} aria-hidden="true">{checklistGlyph(adminState)}</span>
+        {#if productionAdmin}
+          <span>{$t('governance.status.squadAdmin')}</span>
+        {:else}
+          <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
+        {/if}
+      </li>
+    {/if}
     <li class="checklist-item" class:done={crewMintState === 'done'}>
       <span class={glyphClass(crewMintState)} aria-hidden="true">{checklistGlyph(crewMintState)}</span>
       {#if crewMintState === 'done'}
