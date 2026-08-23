@@ -563,6 +563,7 @@
 	"governance.dashboardView.alerts": "Alertas",
 	"governance.dashboardView.settings": "Ajustes",
 	"governance.settingsChannelMode.section": "Sección de ajustes",
+	"governance.settingsChannelMode.personal": "Personal",
 	"governance.settingsChannelMode.squad": "Escuad",
 	"governance.members.title": "Miembros",
 	"governance.members.close": "Cerrar miembros del canal",

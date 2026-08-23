@@ -73,7 +73,6 @@
       .filter((row): row is { address: string; label: string } => row != null),
   );
   const settingsMode = $derived($settingsChannelMode);
-  const usernameLabel = $derived(getProfileDisplayName($profiles[$currentUser?.npub ?? '']));
 
   let visitedSettingsModes = $state(new Set<SettingsChannelMode>([$settingsChannelMode]));
   $effect(() => {
@@ -174,12 +173,12 @@
       <button
         type="button"
         role="tab"
-        class="dashboard-mode-segment dashboard-mode-segment-username"
+        class="dashboard-mode-segment"
         class:active={settingsMode === 'personal'}
         aria-selected={settingsMode === 'personal'}
         onclick={() => selectSettingsMode('personal')}
       >
-        {usernameLabel}
+        {$t('governance.settingsChannelMode.personal')}
       </button>
       <button
         type="button"
@@ -312,12 +311,6 @@
     border-radius: 8px;
     cursor: pointer;
     transition: color 0.15s, background-color 0.15s;
-  }
-  .dashboard-mode-segment-username {
-    max-width: 12rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .dashboard-mode-segment:hover:not(.active) {
     color: var(--text-secondary);
