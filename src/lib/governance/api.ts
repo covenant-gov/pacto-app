@@ -1322,6 +1322,27 @@ export async function getMemberHatWearers(params: {
   })) as MemberHatAssignmentDto[];
 }
 
+export interface HatWearersDto {
+  hatId: string;
+  addresses: string[];
+}
+
+export async function getHatWearersForIds(params: {
+  network: string;
+  hatIds: string[];
+  fromTxHash?: string | null;
+  hatsContract?: string | null;
+  parentId?: string | null;
+}): Promise<HatWearersDto[]> {
+  return (await invoke('get_hat_wearers_for_ids', {
+    network: params.network,
+    hatIds: params.hatIds,
+    fromTxHash: params.fromTxHash?.trim() ? params.fromTxHash.trim() : null,
+    hatsContract: params.hatsContract?.trim() ? params.hatsContract.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as HatWearersDto[];
+}
+
 export interface SquadAdminExecutorRolesDto {
   address: string;
   fullPermission: boolean;

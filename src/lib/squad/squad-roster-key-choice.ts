@@ -84,6 +84,20 @@ export function squadMemberEvmForDisplay(
   return next;
 }
 
+/** Address used for Crew HATS lookup: raw roster, then the viewer's local bind. */
+export function crewHatLookupAddress(params: {
+  npub: string;
+  rawRosterEvmByNpub: Record<string, string>;
+  viewerNpub?: string | null;
+  viewerBindAddress?: string | null;
+}): string {
+  const fromRoster = params.rawRosterEvmByNpub[params.npub]?.trim() ?? '';
+  if (fromRoster) return fromRoster;
+  const me = params.viewerNpub?.trim();
+  if (me && params.npub === me) return params.viewerBindAddress?.trim() ?? '';
+  return '';
+}
+
 /** True when the current user still needs to pick a roster key for this parent. */
 export async function needsSquadRosterKeyChoice(
   parentId: string,

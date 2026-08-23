@@ -100,6 +100,7 @@ fn retired_sponsor_from_prior_payload(payload: Option<&str>, new_sponsor: &str) 
 fn war_game_provider_payload(
     parent_id: &str,
     tx_hash: &str,
+    top_hat_id: &str,
     safe: &str,
     quartermaster: &str,
     mutiny: &str,
@@ -115,6 +116,7 @@ fn war_game_provider_payload(
     map.insert("parentId".to_string(), json!(parent_id));
     map.insert("status".to_string(), json!("active"));
     map.insert("txHash".to_string(), json!(tx_hash));
+    map.insert("topHatId".to_string(), json!(top_hat_id));
     map.insert("safe".to_string(), json!(safe));
     map.insert("quartermaster".to_string(), json!(quartermaster));
     map.insert("mutinyModule".to_string(), json!(mutiny));
@@ -614,6 +616,7 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
     let payload = war_game_provider_payload(
         pid,
         round_tx.as_str(),
+        top_hat_str.as_str(),
         safe_hex.as_str(),
         qm_hex.as_str(),
         mm_hex.as_str(),
@@ -714,6 +717,7 @@ mod tests {
         let payload = war_game_provider_payload(
             "parent-1",
             "0xabc",
+            "42",
             "0xsafe",
             "0xqm",
             "0xmm",
@@ -732,6 +736,7 @@ mod tests {
         assert_eq!(v["sponsor"], "0xsponsor");
         assert_eq!(v["variant"], "sponsor");
         assert_eq!(v["retiredSponsor"], "0xold");
+        assert_eq!(v["topHatId"], "42");
         assert!(v["gameSquadId"].as_str().unwrap().starts_with("0x"));
     }
 
@@ -740,6 +745,7 @@ mod tests {
         let prior = war_game_provider_payload(
             "parent-1",
             "0xoldtx",
+            "11",
             "0xsafe",
             "0xqm",
             "0xmm",
@@ -753,6 +759,7 @@ mod tests {
         let next = war_game_provider_payload(
             "parent-1",
             "0xnewtx",
+            "22",
             "0xsafe2",
             "0xqm2",
             "0xmm2",
@@ -773,6 +780,7 @@ mod tests {
         assert_eq!(priors[0]["round"], "1");
         assert_eq!(priors[0]["status"], "retired");
         assert_eq!(priors[0]["sponsor"], "0xoldsponsor");
+        assert_eq!(priors[0]["topHatId"], "11");
     }
 
     #[test]
@@ -851,6 +859,7 @@ mod tests {
         let active = war_game_provider_payload(
             "parent-1",
             "0xoldtx",
+            "1",
             "0x1111111111111111111111111111111111111111",
             "0x2222222222222222222222222222222222222222",
             "0x3333333333333333333333333333333333333333",
@@ -903,6 +912,7 @@ mod tests {
         let next = war_game_provider_payload(
             "parent-1",
             "0xround",
+            "1",
             "0x1111111111111111111111111111111111111111",
             "0x2222222222222222222222222222222222222222",
             "0x3333333333333333333333333333333333333333",

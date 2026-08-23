@@ -7,6 +7,8 @@ import {
   parseWarGameRoundNumber,
   parseWarGameSponsorAddress,
   parseWarGameStackMeta,
+  viewedWarGameTopHatId,
+  viewedWarGameTxHash,
   warGameDelayMinutes,
   warGameRoundSponsorRow,
   warGameStatusAction,
@@ -96,15 +98,55 @@ describe('round history helpers', () => {
         JSON.stringify({
           round: '3',
           priorRounds: [
-            { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa' },
+            { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa', topHatId: '11', txHash: '0xold' },
             { round: 2 },
           ],
         }),
       ),
     ).toEqual([
-      { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa' },
+      { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa', topHatId: '11', txHash: '0xold' },
       { round: '2' },
     ]);
+  });
+
+  it('resolves the viewed top hat and does not fall back to Active on missing history', () => {
+    const payload = JSON.stringify({
+      round: '2',
+      txHash: '0xnew',
+      priorRounds: [{ round: '1', topHatId: '11', txHash: '0xold' }],
+    });
+    expect(
+      viewedWarGameTopHatId({
+        viewedRound: 2,
+        activeRound: 2,
+        activeTopHatId: '22',
+        providerPayload: payload,
+      }),
+    ).toBe('22');
+    expect(
+      viewedWarGameTopHatId({
+        viewedRound: 1,
+        activeRound: 2,
+        activeTopHatId: '22',
+        providerPayload: payload,
+      }),
+    ).toBe('11');
+    expect(
+      viewedWarGameTopHatId({
+        viewedRound: 1,
+        activeRound: 2,
+        activeTopHatId: '22',
+        providerPayload: JSON.stringify({ round: '2', priorRounds: [{ round: '1' }] }),
+      }),
+    ).toBeNull();
+    expect(
+      viewedWarGameTxHash({
+        viewedRound: 1,
+        activeRound: 2,
+        activeTxHash: '0xnew',
+        providerPayload: payload,
+      }),
+    ).toBe('0xold');
   });
 
   it('uses payload delay when present, otherwise the wargame default', () => {

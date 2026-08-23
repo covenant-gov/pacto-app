@@ -14,6 +14,7 @@ import {
   getSquadSponsorWithdrawable,
   withdrawSquadSponsor,
   getHatsTree,
+  getHatWearersForIds,
   getMemberHatWearers,
   getNavePirataDeployment,
   getWarGameDeployment,
@@ -725,6 +726,22 @@ describe('api command wrappers', () => {
       hatsContract: null,
       memberAddresses: ['0xabc'],
       hatChecks,
+      rpcUrls: null,
+    });
+  });
+
+  it('getHatWearersForIds sends get_hat_wearers_for_ids', async () => {
+    mockedInvoke.mockResolvedValueOnce([]);
+    await getHatWearersForIds({
+      network: NETWORK,
+      hatIds: ['1', '2'],
+      fromTxHash: ' 0xabc ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_hat_wearers_for_ids', {
+      network: NETWORK,
+      hatIds: ['1', '2'],
+      fromTxHash: '0xabc',
+      hatsContract: null,
       rpcUrls: null,
     });
   });

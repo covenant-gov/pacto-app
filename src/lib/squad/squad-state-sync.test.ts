@@ -367,6 +367,22 @@ describe('squad-state-sync', () => {
     expect(String(warCalls[0][1])).not.toContain('"provider":"pacto_gov"');
   });
 
+  it('looks up the bind with the catalog parent id when it differs from announcements', async () => {
+    mockParent.id = 'squad-catalog';
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-catalog-bind',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(getBoundSquadEvmAddressForParent).toHaveBeenCalledWith('ann-gid', 'squad-catalog');
+    expect(publishSquadMemberEvmShare).toHaveBeenCalledWith('ann-gid', {
+      evmAddress: '0xbound',
+      altParentId: 'squad-catalog',
+    });
+    mockParent.id = 'ann-gid';
+  });
+
   it('skips EVM republish when unbound but still syncs network', async () => {
     getBoundSquadEvmAddressForParent.mockResolvedValueOnce(null);
     const raw = formatSquadStateSyncRequest({

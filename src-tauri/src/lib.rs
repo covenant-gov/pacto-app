@@ -10948,6 +10948,7 @@ pub fn run() {
             evm::quartermaster_ops::quartermaster_expire_offboard,
             evm::hats_read::get_hats_tree,
             evm::member_governance_read::get_member_hat_wearers,
+            evm::member_governance_read::get_hat_wearers_for_ids,
             evm::member_governance_read::get_squad_admin_executor_roles,
             evm::access_control::get_squad_capabilities,
             regenerate_device_keypackage,

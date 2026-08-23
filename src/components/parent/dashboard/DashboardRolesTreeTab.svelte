@@ -32,6 +32,7 @@
     /** Lowercase address → protocol module label for wearer chips. */
     knownWearerLabels?: Record<string, string>;
     viewerAddress?: string;
+    hatsHistoryUnavailable?: boolean;
   }
 
   let {
@@ -52,6 +53,7 @@
     onOpenLaunchpad = () => {},
     knownWearerLabels = {},
     viewerAddress = '',
+    hatsHistoryUnavailable = false,
   }: Props = $props();
 
   const rolesTreeRefreshing = $derived(hatsTreeRefreshing || rolesTreeAnnotationsRefreshing);
@@ -103,7 +105,9 @@
         <p class="chain-read-error" role="alert">{rolesTreeAnnotationsError}</p>
       {/if}
     {/if}
-    {#if hatsTreeLoading && !hatsTree}
+    {#if hatsHistoryUnavailable}
+      <p class="dashboard-placeholder-text muted" role="status">{$t('governance.roles.hatsHistoryUnavailable')}</p>
+    {:else if hatsTreeLoading && !hatsTree}
       <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingTree')}</p>
     {:else if rolesTreeAnnotationsLoading && !hatsTree}
       <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingLabels')}</p>

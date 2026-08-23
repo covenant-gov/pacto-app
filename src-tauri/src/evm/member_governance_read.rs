@@ -1,15 +1,20 @@
 //! Hat wearer and Squad Admin executor reads for Settings tab columns.
 
-use alloy::primitives::{Address, B256, U256};
+use std::collections::{HashMap, HashSet};
+
+use alloy::eips::BlockNumberOrTag;
+use alloy::primitives::{Address, B256, TxHash, U256};
 use alloy::providers::Provider;
+use alloy::rpc::types::Filter;
+use alloy::sol_types::SolEvent;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Runtime};
 
-use super::contracts::hats::IHats::isWearerOfHatCall;
+use super::contracts::hats::IHats::{isWearerOfHatCall, TransferHat};
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     hasExecutorRoleCall, isExecutorFullPermissionCall, isExecutorPausedCall,
 };
-use super::gov_read::connect_gov_read_provider;
+use super::gov_read::{connect_gov_read_provider, parse_top_hat_id};
 use super::pacto_chain_config;
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
 
@@ -193,4 +198,182 @@ pub async fn get_squad_admin_executor_roles<R: Runtime>(
         paused,
         roles,
     })
+}
+
+const HAT_LOG_BLOCK_CHUNK: u64 = 2_000;
+const HAT_LOG_MAX_CHUNKS: u64 = 24;
+const HAT_LOG_DEFAULT_LOOKBACK: u64 = 10_000;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HatWearersDto {
+    pub hat_id: String,
+    pub addresses: Vec<String>,
+}
+
+pub(crate) fn apply_transfer_hat(
+    wearers: &mut HashMap<U256, HashSet<Address>>,
+    hat_id: U256,
+    from: Address,
+    to: Address,
+) {
+    let set = wearers.entry(hat_id).or_default();
+    if !from.is_zero() {
+        set.remove(&from);
+    }
+    if !to.is_zero() {
+        set.insert(to);
+    }
+}
+
+fn parse_tx_hash(raw: &str) -> Result<TxHash, String> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return Err(wallet_err_json("INVALID_TX", "from_tx_hash is empty", None));
+    }
+    s.parse::<TxHash>()
+        .map_err(|e| wallet_err_json("INVALID_TX", e.to_string(), None))
+}
+
+fn hats_logs_err(e: impl std::fmt::Display) -> String {
+    wallet_err_json(
+        "HATS_LOGS",
+        crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
+        None,
+    )
+}
+
+/// Current wearers for role hats from bounded Hats `TransferHat` logs.
+#[tauri::command]
+pub async fn get_hat_wearers_for_ids<R: Runtime>(
+    _app: AppHandle<R>,
+    network: String,
+    hat_ids: Vec<String>,
+    from_tx_hash: Option<String>,
+    hats_contract: Option<String>,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<Vec<HatWearersDto>, String> {
+    let wanted: Vec<U256> = hat_ids
+        .iter()
+        .filter_map(|raw| parse_top_hat_id(raw.trim()).ok())
+        .collect();
+    if wanted.is_empty() {
+        return Ok(Vec::new());
+    }
+    let wanted_set: HashSet<U256> = wanted.iter().copied().collect();
+
+    let net_key = network.to_lowercase();
+    let hats = if let Some(raw) = hats_contract
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        parse_address(raw).map_err(|e| wallet_err_json("INVALID_HATS", e, None))?
+    } else {
+        let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&net_key)
+            .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
+        addrs.hats.ok_or_else(|| {
+            wallet_err_json(
+                "HATS_CONFIG",
+                "PACTO_HATS is not configured for this network",
+                None,
+            )
+        })?
+    };
+
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+    let latest = provider
+        .get_block_number()
+        .await
+        .map_err(hats_logs_err)?;
+
+    let mut from_block = latest.saturating_sub(HAT_LOG_DEFAULT_LOOKBACK);
+    if let Some(raw) = from_tx_hash.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let hash = parse_tx_hash(raw)?;
+        if let Some(receipt) = provider
+            .get_transaction_receipt(hash)
+            .await
+            .map_err(hats_logs_err)?
+        {
+            if let Some(block) = receipt.block_number {
+                from_block = block;
+            }
+        }
+    }
+
+    let span = latest.saturating_sub(from_block).saturating_add(1);
+    let max_span = HAT_LOG_BLOCK_CHUNK.saturating_mul(HAT_LOG_MAX_CHUNKS);
+    if span > max_span {
+        from_block = latest.saturating_sub(max_span.saturating_sub(1));
+    }
+
+    let mut logs = Vec::new();
+    let mut cursor = from_block;
+    let mut chunks = 0u64;
+    while cursor <= latest && chunks < HAT_LOG_MAX_CHUNKS {
+        let end = cursor.saturating_add(HAT_LOG_BLOCK_CHUNK.saturating_sub(1)).min(latest);
+        let filter = Filter::new()
+            .address(hats)
+            .event_signature(TransferHat::SIGNATURE_HASH)
+            .from_block(BlockNumberOrTag::Number(cursor))
+            .to_block(BlockNumberOrTag::Number(end));
+        let chunk = provider
+            .get_logs(&filter)
+            .await
+            .map_err(hats_logs_err)?;
+        logs.extend(chunk);
+        chunks += 1;
+        if end == latest {
+            break;
+        }
+        cursor = end.saturating_add(1);
+    }
+
+    logs.sort_by_key(|l| (l.block_number.unwrap_or(0), l.log_index.unwrap_or(0)));
+
+    let mut wearers: HashMap<U256, HashSet<Address>> = HashMap::new();
+    for log in logs {
+        let decoded = match TransferHat::decode_raw_log(log.topics(), log.data().data.as_ref()) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        if !wanted_set.contains(&decoded.id) {
+            continue;
+        }
+        apply_transfer_hat(&mut wearers, decoded.id, decoded.from, decoded.to);
+    }
+
+    Ok(wanted
+        .into_iter()
+        .map(|hat_id| {
+            let mut addresses: Vec<String> = wearers
+                .get(&hat_id)
+                .map(|set| set.iter().map(|a| format!("{:#x}", a)).collect())
+                .unwrap_or_default();
+            addresses.sort();
+            HatWearersDto {
+                hat_id: hat_id.to_string(),
+                addresses,
+            }
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transfer_hat_tracks_mint_move_and_burn() {
+        let mut wearers = HashMap::new();
+        let hat = U256::from(7u64);
+        let a = Address::repeat_byte(0x11);
+        let b = Address::repeat_byte(0x22);
+        apply_transfer_hat(&mut wearers, hat, Address::ZERO, a);
+        apply_transfer_hat(&mut wearers, hat, a, b);
+        assert_eq!(wearers.get(&hat).map(|s| s.len()), Some(1));
+        assert!(wearers.get(&hat).unwrap().contains(&b));
+        apply_transfer_hat(&mut wearers, hat, b, Address::ZERO);
+        assert!(wearers.get(&hat).unwrap().is_empty());
+    }
 }

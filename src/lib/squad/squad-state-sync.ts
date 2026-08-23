@@ -275,9 +275,13 @@ export async function respondToSquadStateSyncRequest(
 
   if (wantEvm) {
     try {
-      const bound = await getBoundSquadEvmAddressForParent(parentId);
+      const catalogId = parent?.id?.trim() && parent.id.trim() !== parentId ? parent.id.trim() : null;
+      const bound = await getBoundSquadEvmAddressForParent(parentId, catalogId);
       if (bound) {
-        const ok = await publishSquadMemberEvmShare(parentId, { evmAddress: bound });
+        const ok = await publishSquadMemberEvmShare(parentId, {
+          evmAddress: bound,
+          ...(catalogId ? { altParentId: catalogId } : {}),
+        });
         if (ok) anyOk = true;
       }
       /* unbound: omit EVM; still help with infra/network/channels */

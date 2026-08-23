@@ -7,6 +7,8 @@ export type WarGamePriorRound = {
   round: string;
   gameSquadId?: string;
   sponsor?: string;
+  topHatId?: string;
+  txHash?: string;
 };
 
 const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
@@ -97,10 +99,14 @@ export function parseWarGamePriorRounds(raw: string | null | undefined): WarGame
     if (!round) continue;
     const gameSquadId = typeof rec.gameSquadId === 'string' ? rec.gameSquadId.trim() : '';
     const sponsor = typeof rec.sponsor === 'string' ? rec.sponsor.trim() : '';
+    const topHatId = typeof rec.topHatId === 'string' ? rec.topHatId.trim() : '';
+    const txHash = typeof rec.txHash === 'string' ? rec.txHash.trim() : '';
     out.push({
       round,
       ...(gameSquadId ? { gameSquadId } : {}),
       ...(sponsor ? { sponsor } : {}),
+      ...(topHatId ? { topHatId } : {}),
+      ...(txHash ? { txHash } : {}),
     });
   }
   return out;
@@ -114,6 +120,44 @@ export function warGameVisibleRounds(raw: string | null | undefined): number[] {
 
 export function isWarGameArchiveView(viewedRound: number, activeRound: number): boolean {
   return viewedRound > 0 && activeRound > 0 && viewedRound !== activeRound;
+}
+
+/** Top hat for the pager's viewed round. Archive with no stored id is null — never the Active hat. */
+export function viewedWarGameTopHatId(params: {
+  viewedRound: number;
+  activeRound: number;
+  activeTopHatId: string | null | undefined;
+  providerPayload: string | null | undefined;
+}): string | null {
+  const active = params.activeTopHatId?.trim() ?? '';
+  if (!params.viewedRound || !params.activeRound || params.viewedRound === params.activeRound) {
+    return active || null;
+  }
+  const prior = parseWarGamePriorRounds(params.providerPayload).find((row) => {
+    const n = Number.parseInt(row.round, 10);
+    return Number.isFinite(n) && n === params.viewedRound;
+  });
+  const hat = prior?.topHatId?.trim() ?? '';
+  return hat || null;
+}
+
+/** Deploy tx for the viewed round's hat log window. */
+export function viewedWarGameTxHash(params: {
+  viewedRound: number;
+  activeRound: number;
+  activeTxHash: string | null | undefined;
+  providerPayload: string | null | undefined;
+}): string | null {
+  const active = params.activeTxHash?.trim() ?? '';
+  if (!params.viewedRound || !params.activeRound || params.viewedRound === params.activeRound) {
+    return active || null;
+  }
+  const prior = parseWarGamePriorRounds(params.providerPayload).find((row) => {
+    const n = Number.parseInt(row.round, 10);
+    return Number.isFinite(n) && n === params.viewedRound;
+  });
+  const hash = prior?.txHash?.trim() ?? '';
+  return hash || null;
 }
 
 export function parseWarGameDelaySecs(raw: string | null | undefined): number {

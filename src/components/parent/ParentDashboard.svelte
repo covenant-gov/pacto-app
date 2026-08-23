@@ -24,7 +24,12 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     sponsorInfraRow,
   } from '../../lib/governance/api';
   import { resolveHubSponsorRow } from '../../lib/governance/hub-sponsor';
-  import { isWarGameArchiveView, parseWarGameRoundNumber } from '../../lib/governance/war-game-payload';
+  import {
+    isWarGameArchiveView,
+    parseWarGameRoundNumber,
+    viewedWarGameTopHatId,
+    viewedWarGameTxHash,
+  } from '../../lib/governance/war-game-payload';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';  import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
   import {
@@ -170,6 +175,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     warGameViewedRound = warGameActiveRound;
   }
   $: warGameArchiveView = warGameStack && isWarGameArchiveView(warGameViewedRound, warGameActiveRound);
+  $: viewedTopHatId = warGameStack
+    ? viewedWarGameTopHatId({
+        viewedRound: warGameViewedRound,
+        activeRound: warGameActiveRound,
+        activeTopHatId: pactoGovRow?.canonicalRef,
+        providerPayload: pactoGovRow?.providerPayload,
+      })
+    : pactoGovRow?.canonicalRef?.trim() || null;
+  $: hatsHistoryUnavailable = Boolean(warGameArchiveView && !viewedTopHatId);
   $: sponsorRow = resolveHubSponsorRow({
     warGameStack,
     rows: squadInfraRows,
@@ -183,6 +197,12 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     : resolveSquadAdminContext(squadInfraRows);
   $: hasSquadAdmin = warGameStack && pactoGovRow != null ? true : hasSquadAdminInfra(squadInfraRows);
   $: pactoPayload = parsePactoGovProviderPayload(pactoGovRow?.providerPayload);
+  $: viewedTxHash = viewedWarGameTxHash({
+    viewedRound: warGameStack ? warGameViewedRound : warGameActiveRound,
+    activeRound: warGameStack ? warGameActiveRound : 0,
+    activeTxHash: pactoPayload?.txHash,
+    providerPayload: pactoGovRow?.providerPayload,
+  });
   $: knownWearerLabels = protocolWearerLabelByAddress(pactoPayload);
   $: pactoNetwork = parseSupportedChainId(
     pactoGovRow?.chain?.trim() || squadAdminCtx?.chain || DEFAULT_CHAIN_ID,
@@ -350,7 +370,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   });
 
   async function loadHatsTree() {
-    const topHat = pactoGovRow?.canonicalRef?.trim();
+    if (hatsHistoryUnavailable) {
+      hatsTree = null;
+      hatsTreeError = '';
+      hatsTreeLoading = false;
+      hatsTreeRefreshing = false;
+      hatsTreeKey = `${pactoNetwork}:unavailable`;
+      return;
+    }
+    const topHat = viewedTopHatId?.trim();
     const key = `${pactoNetwork}:${topHat ?? ''}`;
     if (!topHat || hatsTreeKey === key) return;
     hatsTreeKey = key;
@@ -385,7 +413,17 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   async function loadRolesTreeAnnotations() {
-    const topHat = pactoGovRow?.canonicalRef?.trim();
+    if (hatsHistoryUnavailable) {
+      roleLabelByHatId = {};
+      wearerAddressesByHatId = {};
+      executorRolesByAddress = {};
+      rolesTreeAnnotationsError = '';
+      rolesTreeAnnotationsLoading = false;
+      rolesTreeAnnotationsRefreshing = false;
+      rolesTreeAnnotationsKey = `${pactoNetwork}:unavailable`;
+      return;
+    }
+    const topHat = viewedTopHatId?.trim();
     const evmKey = Object.values(squadMemberEvmByNpub)
       .map((a) => a.trim().toLowerCase())
       .filter(Boolean)
@@ -419,6 +457,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       parentId,
       protocolWearerCandidates: protocolCandidates,
       stack,
+      fromTxHash: viewedTxHash,
     });
     if (isSupersededLoaderKey(rolesTreeAnnotationsKey, key)) return;
     rolesTreeAnnotationsLoading = false;
@@ -430,7 +469,16 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   async function loadSettingsChainContext() {
-    const topHat = pactoGovRow?.canonicalRef?.trim() ?? null;
+    if (hatsHistoryUnavailable) {
+      memberHatByAddress = {};
+      memberRolesByAddress = {};
+      settingsChainError = '';
+      settingsChainLoading = false;
+      settingsChainRefreshing = false;
+      settingsChainKey = `${pactoNetwork}:unavailable`;
+      return;
+    }
+    const topHat = viewedTopHatId?.trim() ?? null;
     const squadAdmin = squadAdminCtx?.proxy?.trim() ?? null;
     const cacheKey = settingsChainCacheKey({
       network: pactoNetwork,
@@ -464,6 +512,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       squadMemberEvmByNpub,
       parentId,
       stack: warGameStack ? 'wargame' : 'nave',
+      fromTxHash: viewedTxHash,
     });
     if (isSupersededLoaderKey(settingsChainKey, cacheKey)) return;
     settingsChainLoading = false;
@@ -544,28 +593,33 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     void loadSquadMemberEvm();
   }
 
-  $: if (dashboardView === 'governance' && pactoGovRow?.canonicalRef && parentId) {
+  $: if (dashboardView === 'governance' && (viewedTopHatId || hatsHistoryUnavailable) && parentId) {
     void squadMemberEvmByNpub;
+    void viewedTopHatId;
     void loadRolesTreeAnnotations();
   }
 
-  $: if (dashboardView === 'governance' && pactoGovRow?.canonicalRef) {
+  $: if (dashboardView === 'governance' && (viewedTopHatId || hatsHistoryUnavailable)) {
+    void viewedTopHatId;
     void loadHatsTree();
   }
 
   $: if (
     (dashboardView === 'status' || dashboardView === 'crew') &&
-    (pactoGovRow?.canonicalRef || squadAdminCtx?.proxy)
+    (viewedTopHatId || hatsHistoryUnavailable || squadAdminCtx?.proxy)
   ) {
+    void squadMemberEvmByNpub;
+    void viewedTopHatId;
     void loadSettingsChainContext();
   }
 
   $: if (
     (dashboardView === 'status' || dashboardView === 'crew') &&
-    pactoGovRow?.canonicalRef &&
+    (viewedTopHatId || hatsHistoryUnavailable) &&
     parentId
   ) {
     void squadMemberEvmByNpub;
+    void viewedTopHatId;
     void loadRolesTreeAnnotations();
   }
 
@@ -606,7 +660,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     } else if (id === 'governance') {
       if (pactoPayload?.treasuryAuthority) void loadTreasuryProposals();
       void loadSquadMemberEvm();
-      if (pactoGovRow?.canonicalRef) {
+      if (viewedTopHatId || hatsHistoryUnavailable) {
         void loadHatsTree();
         void loadRolesTreeAnnotations();
       }
@@ -796,6 +850,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {rolesTreeAnnotationsError}
               onRefreshRolesTree={refreshRolesTree}
               {knownWearerLabels}
+              {hatsHistoryUnavailable}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.governance')}</p>
@@ -850,6 +905,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onRefreshSponsorExt={refreshSponsorExtStatus}
               hasSponsor={hasSponsor}
               sponsorHatsMode={sponsorVariant === 'hats'}
+              {hatsHistoryUnavailable}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.crew')}</p>

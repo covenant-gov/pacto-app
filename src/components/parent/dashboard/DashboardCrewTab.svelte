@@ -6,9 +6,14 @@
   import { profiles } from '../../../stores/profiles';
   import { currentUser } from '../../../stores/auth';
   import {
+    crewHatLookupAddress,
     needsSquadRosterKeyChoice,
     squadMemberEvmForDisplay,
   } from '../../../lib/squad/squad-roster-key-choice';
+  import {
+    getBoundSquadEvmAddressForParent,
+    listSquadMemberEvmInvokeArgs,
+  } from '../../../lib/squad/squad-member-evm-share';
   import { npubByEvmAddressFromSquadRoster, shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
   import {
     crewRosterEligibilityColumns,
@@ -43,6 +48,7 @@
     onRefreshSponsorExt = () => {},
     sponsorHatsMode = false,
     hasSponsor = false,
+    hatsHistoryUnavailable = false,
   }: {
     announcementsGroupId?: string | null;
     channelMembers?: string[];
@@ -63,10 +69,13 @@
     /** Hats-linked sponsor: eligibility from captain/crew wear. */
     sponsorHatsMode?: boolean;
     hasSponsor?: boolean;
+    /** Archive round with no stored top hat — do not reuse the Active tree. */
+    hatsHistoryUnavailable?: boolean;
   } = $props();
 
   let sponsoringAddress = $state('');
   let rosterKeyNeeded = $state(false);
+  let viewerBindAddress = $state('');
 
   const myNpub = $derived($currentUser?.npub ?? '');
   const displayEvmByNpub = $derived(squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded));
@@ -93,6 +102,12 @@
     void needsSquadRosterKeyChoice(parentId, announcementsGroupId).then((needed) => {
       rosterKeyNeeded = needed;
     });
+    const rosterArgs = listSquadMemberEvmInvokeArgs(parentId, announcementsGroupId);
+    void getBoundSquadEvmAddressForParent(rosterArgs.parentId, rosterArgs.altParentId).then(
+      (addr) => {
+        viewerBindAddress = addr?.trim() ?? '';
+      },
+    );
   });
 
   async function copyEvmAddress(address: string) {
@@ -161,6 +176,9 @@
 <section class="dashboard-section" aria-labelledby="crew-roster-heading">
   <h3 id="crew-roster-heading" class="section-heading">{$t('governance.crew.sectionCrew')}</h3>
 
+  {#if hatsHistoryUnavailable}
+    <p class="muted" role="status">{$t('governance.crew.hatsHistoryUnavailable')}</p>
+  {/if}
   {#if settingsChainRefreshing}
     <p class="muted" role="status">{$t('governance.crew.refreshing')}</p>
   {/if}
@@ -180,6 +198,13 @@
         {#each channelMembers as memberNpub (memberNpub)}
           {@const npub = memberNpub as string}
           {@const rosterEvm = displayEvmByNpub[npub]}
+          {@const hatLookupEvm = crewHatLookupAddress({
+            npub,
+            rawRosterEvmByNpub: squadMemberEvmByNpub,
+            viewerNpub: myNpub,
+            viewerBindAddress,
+          })}
+          {@const hatLookupKey = hatLookupEvm.trim().toLowerCase()}
           {@const rosterKey = rosterEvm?.trim().toLowerCase() ?? ''}
           {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
           {@const isExtSponsored = rosterKey ? permittedByAddress[rosterKey] === true : false}
@@ -236,12 +261,14 @@
                 <span class="roles-col-label">{$t('governance.crew.colHats')}</span>
                 <span
                   class="roles-col-value"
-                  class:muted={!rosterEvm || !memberHatByAddress[rosterEvm.toLowerCase()]}
-                  >{settingsChainLoading && !memberHatByAddress[rosterEvm?.toLowerCase() ?? '']
-                    ? $t('governance.crew.loadingShort')
-                    : rosterEvm
-                      ? memberHatByAddress[rosterEvm.toLowerCase()] || $t('governance.crew.dash')
-                      : $t('governance.crew.notShared')}
+                  class:muted={!hatLookupKey || !memberHatByAddress[hatLookupKey]}
+                  >{hatsHistoryUnavailable
+                    ? $t('governance.crew.dash')
+                    : settingsChainLoading && !memberHatByAddress[hatLookupKey]
+                      ? $t('governance.crew.loadingShort')
+                      : hatLookupKey
+                        ? memberHatByAddress[hatLookupKey] || $t('governance.crew.dash')
+                        : $t('governance.crew.notShared')}
                 </span>
               {/if}
               <span class="roles-col-label">{$t('governance.crew.colPrivileges')}</span>

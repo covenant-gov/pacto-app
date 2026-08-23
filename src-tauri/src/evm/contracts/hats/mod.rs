@@ -28,5 +28,7 @@ sol! {
         function isWearerOfHat(address _user, uint256 _hatId) external view returns (bool isWearer);
 
         function hatSupply(uint256 _hatId) external view returns (uint32 supply);
+
+        event TransferHat(uint256 id, address from, address to);
     }
 }

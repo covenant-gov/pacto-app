@@ -38,6 +38,7 @@
     rolesTreeAnnotationsError?: string;
     onRefreshRolesTree?: () => void;
     knownWearerLabels?: Record<string, string>;
+    hatsHistoryUnavailable?: boolean;
   }
 
   let {
@@ -71,6 +72,7 @@
     rolesTreeAnnotationsError = '',
     onRefreshRolesTree = () => {},
     knownWearerLabels = {},
+    hatsHistoryUnavailable = false,
   }: Props = $props();
 
   const liveProvider = $derived(resolveGovernanceProvider(squadInfraRows));
@@ -126,6 +128,7 @@
     {onOpenLaunchpad}
     {knownWearerLabels}
     viewerAddress={myAddress}
+    {hatsHistoryUnavailable}
   />
 </section>
 
