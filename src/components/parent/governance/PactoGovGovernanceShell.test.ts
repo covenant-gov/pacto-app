@@ -136,7 +136,14 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
   });
 
   it('shows a disabled propose action with a reason for a member without a captain or crew hat', async () => {
-    mockedGetSquadCapabilities.mockRejectedValue(new Error('network unreachable'));
+    mockedGetSquadCapabilities.mockResolvedValue(
+      capabilitiesSnapshot({
+        rosterAddress: '0xmember000000000000000000000000000000009',
+        wearsCaptain: false,
+        wearsCrew: false,
+        roleLabel: 'No on-chain hat',
+      }),
+    );
 
     render(PactoGovGovernanceShell, {
       props: {
@@ -160,7 +167,14 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
   });
 
   it('shows one hat-required alert on All instead of per-button copy', async () => {
-    mockedGetSquadCapabilities.mockRejectedValue(new Error('network unreachable'));
+    mockedGetSquadCapabilities.mockResolvedValue(
+      capabilitiesSnapshot({
+        rosterAddress: '0xmember000000000000000000000000000000009',
+        wearsCaptain: false,
+        wearsCrew: false,
+        roleLabel: 'No on-chain hat',
+      }),
+    );
 
     render(PactoGovGovernanceShell, {
       props: {
@@ -178,6 +192,35 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     );
     expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.queryAllByText('Crew/Captain hat required')).toHaveLength(1);
+  });
+
+  it('keeps Submit proposal disabled when ACL fetch rejects for a captain wearer', async () => {
+    vi.useFakeTimers();
+    mockedGetSquadCapabilities.mockRejectedValue(new Error('network unreachable'));
+
+    render(PactoGovGovernanceShell, {
+      props: {
+        payload: basePayload(),
+        network: 'sepolia',
+        parentId: 'parent1',
+        myAddress: CAPTAIN_ADDRESS,
+        captainWearers: [CAPTAIN_ADDRESS],
+        crewWearers: [],
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    const submitButton = screen.getByRole('button', {
+      name: 'Submit proposal',
+    }) as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(true);
+    expect(submitButton.title).toBe('Loading…');
+    expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(ACL_SNAPSHOT_RETRY_MS);
+    expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(2);
+    expect(submitButton.disabled).toBe(true);
+    expect(submitButton.title).toBe('Loading…');
   });
 
   it('reloads capabilities and keeps CTAs pending when the process nonce bumps', async () => {

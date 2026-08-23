@@ -138,8 +138,10 @@
     return [...set];
   });
 
-  /** Destructive captain/crew CTAs must stay closed until the ACL preflight resolves. */
-  let capabilitiesPending = $derived(capabilitiesStatus === 'unresolved');
+  /** Destructive captain/crew CTAs stay closed until ACL preflight is ready (error is fail-closed). */
+  let capabilitiesPending = $derived(
+    capabilitiesStatus === 'unresolved' || capabilitiesStatus === 'error',
+  );
 
   let privilege = $derived(
     resolveGovernancePrivilege({
@@ -244,6 +246,7 @@
       if (key !== capabilitiesLoadKey) return;
       capabilities = null;
       capabilitiesStatus = 'error';
+      scheduleCapabilitiesRetry(pid, key);
     }
   }
 

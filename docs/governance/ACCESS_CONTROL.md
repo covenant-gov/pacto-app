@@ -40,7 +40,7 @@ flowchart TD
 | Layer | Role |
 |-------|------|
 | Rust `require_capability` | Source of truth before gov / Squad Admin / tracked-token mutations |
-| UI gates | Advisory; same predicates via `get_squad_capabilities` snapshot. Revalidate on MLS `governance_process_updated` (and the local write nonce bump), when wearer lists or the displayed squad EVM change, and once more after a short delay if those lists disagree with the snapshot so post-bootstrap hat mints do not leave stale CTAs. |
+| UI gates | Advisory; same predicates via `get_squad_capabilities` snapshot. Revalidate on MLS `governance_process_updated` (and the local write nonce bump), when wearer lists or the displayed squad EVM change, and once more after a short delay if those lists disagree with the snapshot so post-bootstrap hat mints do not leave stale CTAs. Snapshot fetch `error` is fail-closed for CTAs (same one-shot retry). |
 | Contracts | Final reject / accept |
 
 Tauri IPC is not a security boundary if only the UI gates.

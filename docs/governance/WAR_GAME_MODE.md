@@ -33,7 +33,7 @@ Local infra type is `pacto_gov_wargame`. Do not dual-read it as `pacto_gov`.
 
 ## Deploy (Sepolia)
 
-`deploy_war_game_for_parent` is member-gated, not captain-gated. It always uses Sepolia, even when the Status tab network is something else.
+`deploy_war_game_for_parent` is member-gated, not captain-gated. It always uses Sepolia, even when the Status tab network is something else. MLS `squad_network_updated` practice is applied only when it matches the operator default or on-chain `pacto_gov_wargame`.
 
 Sequence: `deployNavePirata` with `stackKind = WarGame` and `squadId = keccak256(parentId)`; then `createWarGameSponsor(parentSquadId, topHatId, WarGameRegistry, [])` with the wizard deposit. The factory does **not** register `parentSquadId`. Live `#dashboard` sponsor is a later Launchpad hats `createSquadSponsor` into that empty parent slot. Do not MLS-announce a parent Ext as live `sponsor`.
 
