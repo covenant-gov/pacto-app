@@ -21,6 +21,7 @@
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
+  import { shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
 
   interface Props {
     parentId?: string;
@@ -107,11 +108,6 @@
       if (key !== capabilitiesLoadKey) return;
       capabilities = null;
     }
-  }
-
-  function shortAddress(addr: string): string {
-    if (!addr || addr.length < 12) return addr;
-    return addr.slice(0, 6) + '…' + addr.slice(-4);
   }
 
   function openTreasuryExplorer(entry: TreasurySafeEntry) {

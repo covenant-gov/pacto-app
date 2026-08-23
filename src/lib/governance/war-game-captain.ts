@@ -1,4 +1,5 @@
 import { getAddress, isAddress } from 'viem';
+import { shortEvmAddress } from './hats-tree-annotations';
 
 function checksumAddress(raw: string): string | null {
   const t = raw.trim();
@@ -37,11 +38,6 @@ export function uniqueRosterAddresses(addresses: string[]): string[] {
 
 export type MemberEvmOption = { address: string; label: string };
 
-function shortEvmLabel(addr: string): string {
-  if (addr.length < 12) return addr;
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
-
 /** Label on-chain wearers from known roster options; checksum + short address fallback. */
 export function labeledWearerOptions(
   wearerAddresses: string[],
@@ -62,7 +58,7 @@ export function labeledWearerOptions(
     const key = addr.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ address: addr, label: labelByKey.get(key) || shortEvmLabel(addr) });
+    out.push({ address: addr, label: labelByKey.get(key) || shortEvmAddress(addr) });
   }
   return out;
 }

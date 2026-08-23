@@ -28,6 +28,7 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { withReadPlaneLimit } from '../../../lib/evm/read-plane-limiter';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
@@ -240,11 +241,6 @@
     }
   }
 
-  function shortAddr(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 14) return a || '—';
-    return `${a.slice(0, 8)}…${a.slice(-6)}`;
-  }
 </script>
 
 <div class="safe-balances">
@@ -271,7 +267,7 @@
         <li class="bal-row">
           <span class="bal-sym" title={row.tokenAddress}>{row.symbol}</span>
           <span class="bal-amt">{tokenBalances[row.id] ?? '…'}</span>
-          <code class="bal-addr">{shortAddr(row.tokenAddress)}</code>
+          <code class="bal-addr">{shortEvmAddress(row.tokenAddress) || '—'}</code>
           {#if manageGate.enabled}
             <button type="button" class="btn-link" onclick={() => void removeToken(row)}>{tFn('governance.action.remove')}</button>
           {/if}

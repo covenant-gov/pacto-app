@@ -46,6 +46,7 @@
     aclSnapshotShouldRetry,
   } from '../../../lib/governance/acl-snapshot-key';
   import { showToast } from '../../../stores/toast';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -422,12 +423,6 @@
     }
   }
 
-  function shortAddr(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 14) return a || '—';
-    return `${a.slice(0, 8)}…${a.slice(-6)}`;
-  }
-
   const subModes: { id: GovSubMode; label: string }[] = [
     { id: 'all', label: tFn('governance.shell.tab.all') },
     { id: 'crew', label: tFn('governance.shell.tab.crew') },
@@ -439,7 +434,7 @@
   <div class="role-chip" role="status">
     {$t('governance.shell.you')} · <strong>{$t(privilege.roleLabel)}</strong>
     {#if privilege.myAddress}
-      <code class="role-addr">{shortAddr(privilege.myAddress)}</code>
+      <code class="role-addr">{shortEvmAddress(privilege.myAddress) || '—'}</code>
     {/if}
   </div>
 

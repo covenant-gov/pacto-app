@@ -14,6 +14,7 @@
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { showToast } from '../../../stores/toast';
   import { formatMessageTimestamp } from '../../../lib/utils/message-formatting';
+  import { shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
 
   /** Safe-related announcement (address updated or proposal). */
   let {
@@ -29,11 +30,6 @@
   } = $props();
 
   const tFn = get(t);
-
-  function shortAddress(addr: string): string {
-    if (!addr || addr.length < 12) return addr;
-    return addr.slice(0, 6) + '…' + addr.slice(-4);
-  }
 
   const safePayload = $derived(announce.type === ANNOUNCE_TYPE_SAFE_UPDATED ? announce.payload : null);
   const chainId = $derived(

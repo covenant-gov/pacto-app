@@ -22,6 +22,7 @@
   } from '../../../lib/governance/gov-write-funding';
   import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
 
   let {
     open = false,
@@ -58,12 +59,6 @@
   let qmPending: QuartermasterPendingDto | null = $state(null);
 
   let offboardActive = $derived(isCrewOffboardActive(qmStatus));
-
-  function shortEvm(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 12) return a;
-    return `${a.slice(0, 6)}…${a.slice(-4)}`;
-  }
 
   $effect(() => {
     if (memberEvmOptions.length > 0) {
@@ -119,7 +114,7 @@
       {#if memberEvmOptions.length > 0}
         <select bind:value={qmAddress} disabled={acting} aria-label={$t('governance.field.targetMemberAriaLabel')}>
           {#each memberEvmOptions as opt (opt.address)}
-            <option value={opt.address}>{opt.label} — {shortEvm(opt.address)}</option>
+            <option value={opt.address}>{opt.label} — {shortEvmAddress(opt.address)}</option>
           {/each}
         </select>
       {:else}

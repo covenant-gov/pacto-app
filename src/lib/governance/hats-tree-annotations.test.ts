@@ -134,7 +134,7 @@ describe('formatWearerDisplayLabel', () => {
   it('falls back to short address when no roster match', () => {
     expect(
       formatWearerDisplayLabel('0x9999999999999999999999999999999999999999', npubByAddress, () => ''),
-    ).toBe('0x9999…9999');
+    ).toBe('0x999999…999999');
   });
 });
 

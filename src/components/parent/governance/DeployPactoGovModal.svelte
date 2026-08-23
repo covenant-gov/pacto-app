@@ -15,6 +15,7 @@
   } from '../../../lib/governance/squad-params';
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
   import { getAddress, isAddress } from 'viem';
+  import { shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
 
   let {
     parentId,
@@ -54,11 +55,6 @@
         quorumBps,
       }),
   );
-
-  function shortAddress(addr: string): string {
-    if (addr.length < 18) return addr;
-    return `${addr.slice(0, 10)}…${addr.slice(-8)}`;
-  }
 
   onMount(async () => {
     resolvingDeployer = true;

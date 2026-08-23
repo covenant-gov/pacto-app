@@ -21,6 +21,7 @@
   import { appConfig } from '../../stores/app-config';
   import { listSquadMemberEvmInvokeArgs } from '../../lib/squad/squad-member-evm-share';
   import { runOnChainInBackground } from '../../lib/evm/on-chain-background';
+  import { shortEvmAddress as shortAddress } from '../../lib/governance/hats-tree-annotations';
 
   let {
     parentId,
@@ -60,11 +61,6 @@
   let deployLabel = $state('');
   let thresholdInput = $state('1');
   let deployError = $state('');
-
-  function shortAddress(addr: string): string {
-    if (!addr || addr.length < 12) return addr;
-    return addr.slice(0, 6) + '…' + addr.slice(-4);
-  }
 
   function rosterEvm(npub: string): string | undefined {
     return roster[npub];

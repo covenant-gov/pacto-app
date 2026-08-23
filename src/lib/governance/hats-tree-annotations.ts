@@ -7,8 +7,8 @@ import { hatIdToHex, prettyHatId } from './pretty-hat-id';
 
 export function shortEvmAddress(addr: string): string {
   const a = addr.trim();
-  if (a.length < 10) return a;
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+  if (a.length < 16) return a;
+  return `${a.slice(0, 8)}…${a.slice(-6)}`;
 }
 
 /** Pacto Gov module addresses that may wear role hats (not just squad roster EOAs). */

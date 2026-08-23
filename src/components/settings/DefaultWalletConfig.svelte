@@ -21,6 +21,7 @@
   import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
   import { showToast } from '../../stores/toast';
   import EditIconButton from '../ui/EditIconButton.svelte';
+  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   interface Props {
     accountNpub: string;
@@ -66,9 +67,7 @@
 
   function shortAddr(a: string | null): string {
     if (!a) return tFn('wallet.notSet');
-    const t = a.trim();
-    if (t.length < 18) return t;
-    return `${t.slice(0, 10)}…${t.slice(-8)}`;
+    return shortEvmAddress(a);
   }
 
   function openEdit() {

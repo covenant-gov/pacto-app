@@ -11,7 +11,7 @@
     needsSquadRosterKeyChoice,
     squadMemberEvmForDisplay,
   } from '../../../lib/squad/squad-roster-key-choice';
-  import { npubByEvmAddressFromSquadRoster } from '../../../lib/governance/hats-tree-annotations';
+  import { npubByEvmAddressFromSquadRoster, shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
   import {
     crewRosterEligibilityColumns,
     permittedByAddressFromExtStatus,
@@ -104,11 +104,6 @@
       rosterKeyNeeded = needed;
     });
   });
-
-  function shortAddress(addr: string): string {
-    if (!addr || addr.length < 12) return addr;
-    return addr.slice(0, 6) + '…' + addr.slice(-4);
-  }
 
   async function copyEvmAddress(address: string) {
     const t = address.trim();

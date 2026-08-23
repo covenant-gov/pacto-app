@@ -7,18 +7,13 @@
     type ProposalActionSummary,
   } from '../../../lib/governance/proposal-action-summary';
   import { quorumBpsToPercent } from '../../../lib/governance/crew-vote-mode';
+  import { shortEvmAddress as shortAddr } from '../../../lib/governance/hats-tree-annotations';
 
   let { to, valueWei, dataHex, operation }: ProposalActionInput = $props();
 
   let summary: ProposalActionSummary = $derived(
     summarizeTreasuryProposalAction({ to, valueWei, dataHex, operation }),
   );
-
-  function shortAddr(addr: string): string {
-    const trimmed = addr.trim();
-    if (trimmed.length < 12) return trimmed;
-    return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
-  }
 
   function extraNativeAmount(valueWei: string): string | null {
     try {

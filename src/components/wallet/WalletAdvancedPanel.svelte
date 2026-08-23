@@ -33,6 +33,7 @@
     toastOnChainSubmitted,
     waitForOnChainConfirmationInBackground,
   } from '../../lib/evm/on-chain-background';
+  import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
 
   const tFn = get(t);
 
@@ -105,12 +106,6 @@
     void accountNpub;
     void refreshAdvancedState();
   });
-
-  function shortAddr(a: string): string {
-    const t = a.trim();
-    if (t.length < 18) return t;
-    return `${t.slice(0, 10)}…${t.slice(-8)}`;
-  }
 
   function rebuildCalldataPreview() {
     simulateOk = null;

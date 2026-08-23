@@ -20,8 +20,8 @@ describe('uniqueRosterAddresses', () => {
 describe('labeledWearerOptions', () => {
   it('keeps on-chain wearers missing from the MLS options list', () => {
     expect(labeledWearerOptions([B, C], [{ address: A, label: 'Captain' }])).toEqual([
-      { address: B, label: `${B.slice(0, 6)}…${B.slice(-4)}` },
-      { address: C, label: `${C.slice(0, 6)}…${C.slice(-4)}` },
+      { address: B, label: `${B.slice(0, 8)}…${B.slice(-6)}` },
+      { address: C, label: `${C.slice(0, 8)}…${C.slice(-6)}` },
     ]);
   });
 
@@ -30,13 +30,13 @@ describe('labeledWearerOptions', () => {
       labeledWearerOptions([B.toLowerCase(), C], [{ address: B.toLowerCase(), label: 'bravo-test' }]),
     ).toEqual([
       { address: B, label: 'bravo-test' },
-      { address: C, label: `${C.slice(0, 6)}…${C.slice(-4)}` },
+      { address: C, label: `${C.slice(0, 8)}…${C.slice(-6)}` },
     ]);
   });
 
   it('skips junk and dedupes', () => {
     expect(labeledWearerOptions(['', 'nope', B, B.toLowerCase()])).toEqual([
-      { address: B, label: `${B.slice(0, 6)}…${B.slice(-4)}` },
+      { address: B, label: `${B.slice(0, 8)}…${B.slice(-6)}` },
     ]);
   });
 });

@@ -21,6 +21,7 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { DEFAULT_SQUAD_PRACTICE_NETWORK } from '../../../lib/squad/squad-network';
+  import { shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
 
   let {
     parentId,
@@ -74,11 +75,6 @@
       return null;
     }
   });
-
-  function shortAddress(addr: string): string {
-    if (addr.length < 18) return addr;
-    return `${addr.slice(0, 10)}…${addr.slice(-8)}`;
-  }
 
   $effect(() => {
     const pid = parentId.trim();

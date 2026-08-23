@@ -16,6 +16,7 @@
   import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
   import { showToast } from '../../../stores/toast';
   import { formatEther } from 'viem';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
 
   interface Props {
     open?: boolean;
@@ -123,7 +124,7 @@
 
   function optionLabel(acc: EvmAccountRow): string {
     const name = acc.label?.trim() || (acc.isDefaultShared ? tFn('governance.withdraw.accountDefault') : tFn('governance.withdraw.accountUnnamed'));
-    const short = `${acc.address.slice(0, 6)}…${acc.address.slice(-4)}`;
+    const short = shortEvmAddress(acc.address);
     return `${name} · ${short} (${tFn(evmAccountPurposeLabel(acc.purpose))}, ${tFn(evmAccountSchemeLabel(acc.scheme))})`;
   }
 

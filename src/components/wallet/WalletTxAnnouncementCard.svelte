@@ -8,6 +8,7 @@
   } from '../../lib/wallet/assets';
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import { showToast } from '../../stores/toast';
+  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   interface Props {
     payload: WalletTxAnnouncementPayload;
@@ -29,9 +30,7 @@
   );
   const iconGlyph = $derived(failed ? '!' : pending ? '…' : '✓');
   const fromAddr = $derived(payload.from_evm_address.trim());
-  const fromAddrShort = $derived(
-    fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr
-  );
+  const fromAddrShort = $derived(shortEvmAddress(fromAddr));
   const explorerUrl = $derived(getExplorerTxUrl(payload.network, payload.tx_hash));
   const explorerLabel = $derived(explorerTxLinkLabel(payload.network));
 

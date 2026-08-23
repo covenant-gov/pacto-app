@@ -30,6 +30,7 @@
   import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
 
   let {
     network,
@@ -126,12 +127,6 @@
     if (!expired) return { enabled: false, reason: 'governance.offboard.none' };
     return execGate;
   });
-
-  function shortEvm(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 12) return a;
-    return `${a.slice(0, 6)}…${a.slice(-4)}`;
-  }
 
   async function run(label: string, fn: () => Promise<unknown>) {
     if (acting) return;
@@ -252,7 +247,7 @@
           {#if targetOptions.length > 0}
             <select bind:value={target} disabled={acting || !proposeGate.enabled} aria-label={$t('governance.field.targetMemberAriaLabel')}>
               {#each targetOptions as opt (opt.address)}
-                <option value={opt.address}>{opt.label} — {shortEvm(opt.address)}</option>
+                <option value={opt.address}>{opt.label} — {shortEvmAddress(opt.address)}</option>
               {/each}
             </select>
           {:else}

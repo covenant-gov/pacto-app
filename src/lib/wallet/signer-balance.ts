@@ -33,8 +33,8 @@ export function canonicalAddress(addr: string | null | undefined): string | null
 export function shortAddress(addr: string | null | undefined): string {
   if (!addr) return 'Not set';
   const t = addr.trim();
-  if (t.length < 18) return t;
-  return `${t.slice(0, 10)}…${t.slice(-8)}`;
+  if (t.length < 16) return t;
+  return `${t.slice(0, 8)}…${t.slice(-6)}`;
 }
 
 /** True when the ETH amount leaves no room for gas against the wei balance. */

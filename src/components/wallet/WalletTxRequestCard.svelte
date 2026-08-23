@@ -2,6 +2,7 @@
   import { t } from 'svelte-i18n';
   import type { WalletTxRequestPayload } from '../../lib/wallet/dm-messages';
   import { getWalletNetworkDisplayName } from '../../lib/wallet/assets';
+  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   interface Props {
     payload: WalletTxRequestPayload;
@@ -19,9 +20,7 @@
   const networkLabel = $derived(getWalletNetworkDisplayName(payload.network));
   const title = $derived(`${payload.amount} ${payload.asset}`);
   const fromAddr = $derived(payload.from_evm_address.trim());
-  const fromAddrShort = $derived(
-    fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr
-  );
+  const fromAddrShort = $derived(shortEvmAddress(fromAddr));
   const subtitle = $derived(`${networkLabel} · ${fromAddrShort}`);
   const bodyText = $derived(
     isMine
