@@ -82,14 +82,6 @@
 </script>
 
 <section class="governance-section" aria-label={$t('governance.governance.title')}>
-  {#if !archiveView && !showPactoGovShell && !showAbiModules}
-    <div class="governance-heading-row">
-      <button type="button" class="btn-primary governance-deploy-btn" onclick={onOpenLaunchpad}>
-        {$t('governance.governance.deploy')}
-      </button>
-    </div>
-  {/if}
-
   {#if showAbiModules}
     <p class="dashboard-placeholder-text muted">
       {$t('governance.governance.abiModules')}
@@ -145,33 +137,11 @@
     gap: 20px;
   }
 
-  .governance-heading-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
-  }
-
-  .governance-deploy-btn {
-    flex-shrink: 0;
-  }
-
   .dashboard-placeholder-text,
   .dashboard-refresh-note,
   .muted {
     margin: 0 0 12px;
     font-size: 0.875rem;
     color: var(--text-muted);
-  }
-
-  .btn-primary {
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    cursor: pointer;
-    background: var(--brand);
-    color: var(--on-brand);
-    border: none;
   }
 </style>

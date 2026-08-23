@@ -64,7 +64,7 @@
 {#if squadInfraRows !== undefined && !structureSummary}
   <div class="sponsor-empty-banner" role="status">
     <p class="sponsor-empty-banner-text">{$t('governance.roles.empty')}</p>
-    <button type="button" class="btn-primary" onclick={onOpenLaunchpad}>{$t('governance.roles.openDeploy')}</button>
+    <button type="button" class="btn-primary" onclick={onOpenLaunchpad}>{$t('governance.governance.deploy')}</button>
   </div>
 {/if}
 
