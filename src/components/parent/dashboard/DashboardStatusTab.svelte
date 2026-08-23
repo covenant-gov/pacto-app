@@ -1,8 +1,10 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
-  import SquadIdentitySection from './SquadIdentitySection.svelte';
-  import type { Squad } from '../../../stores/squads';
+  import PactoGovGovernanceShell from '../governance/PactoGovGovernanceShell.svelte';
+  import { resolveGovernanceProvider } from '../../../lib/governance/governance-provider';
+  import type { SquadInfraDto, TreasuryProposalDto } from '../../../lib/governance/api';
+  import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { currentUser } from '../../../stores/auth';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
@@ -30,7 +32,6 @@
   import type { WarGameDeployComplete } from '../../../lib/governance/start-war-game-deploy';
 
   let {
-    squad,
     announcementsGroupId = null,
     parentId = '',
     channelMembers = [],
@@ -42,8 +43,19 @@
     onOpenDeploy = () => {},
     onOpenCrewBootstrap = () => {},
     onSelectNetwork = () => {},
+    squadInfraRows = undefined,
+    pactoPayload = null,
+    pactoGovChain = undefined,
+    myAddress = '',
+    memberEvmOptions = [],
+    treasuryProposals = [],
+    treasuryProposalsLoading = false,
+    treasuryProposalsError = '',
+    onRefreshProposals = () => {},
+    hasSponsor = false,
+    warGameStack = false,
+    archiveView = false,
   }: {
-    squad: Squad;
     announcementsGroupId?: string | null;
     parentId?: string;
     channelMembers?: string[];
@@ -55,6 +67,18 @@
     onOpenDeploy?: () => void;
     onOpenCrewBootstrap?: () => void;
     onSelectNetwork?: () => void;
+    squadInfraRows?: SquadInfraDto[];
+    pactoPayload?: PactoGovProviderPayloadV1 | null;
+    pactoGovChain?: string;
+    myAddress?: string;
+    memberEvmOptions?: { address: string; label: string }[];
+    treasuryProposals?: TreasuryProposalDto[];
+    treasuryProposalsLoading?: boolean;
+    treasuryProposalsError?: string;
+    onRefreshProposals?: () => void;
+    hasSponsor?: boolean;
+    warGameStack?: boolean;
+    archiveView?: boolean;
   } = $props();
 
   let rosterKeyNeeded = $state(false);
@@ -90,6 +114,11 @@
       crewWearers,
     }),
   );
+  const liveProvider = $derived(resolveGovernanceProvider(squadInfraRows));
+  const showPactoGovShell = $derived(
+    Boolean(pactoPayload?.treasuryAuthority?.trim()) && (warGameStack || liveProvider === 'pacto_gov'),
+  );
+  const govNetwork = $derived(pactoGovChain ?? 'sepolia');
 
   $effect(() => {
     const pid = parentId;
@@ -115,8 +144,6 @@
     return 'check-todo';
   }
 </script>
-
-<SquadIdentitySection {squad} />
 
 <section class="status-checklist" aria-label={$t('governance.status.checklistAria')}>
   <span class="meta-label">{$t('governance.status.checklistTitle')}</span>
@@ -195,6 +222,26 @@
     </li>
   </ul>
 </section>
+
+{#if showPactoGovShell && pactoPayload}
+  <PactoGovGovernanceShell
+    payload={pactoPayload}
+    network={govNetwork}
+    {parentId}
+    {myAddress}
+    {captainWearers}
+    {crewWearers}
+    {memberEvmOptions}
+    {treasuryProposals}
+    {treasuryProposalsLoading}
+    {treasuryProposalsError}
+    {onRefreshProposals}
+    {hasSponsor}
+    {warGameStack}
+    {archiveView}
+    surface="proposals"
+  />
+{/if}
 
 {#if showWarGameDeploy}
   <DeployWarGameModal

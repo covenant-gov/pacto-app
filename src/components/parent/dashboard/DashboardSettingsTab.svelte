@@ -2,6 +2,7 @@
   import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadEndpointsPanel from './SquadEndpointsPanel.svelte';
+  import SquadIdentitySection from './SquadIdentitySection.svelte';
   import SquadNetworkSection from './SquadNetworkSection.svelte';
   import SquadStickersSection from './SquadStickersSection.svelte';
   import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
@@ -64,6 +65,8 @@
 </script>
 
 <div class="settings-stack">
+  <SquadIdentitySection {squad} />
+
   <SquadBroadcastSettingsSection {squad} />
 
   <SquadStickersSection {squad} {announcementsGroupId} />

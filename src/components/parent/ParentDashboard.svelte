@@ -61,7 +61,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import {
     loadDashboardCrewTab,
     loadDashboardGovernanceTab,
-    loadDashboardRolesTreeTab,
     loadDashboardSettingsTab,
     loadDashboardStatusTab,
     loadDashboardTreasuryTab,
@@ -102,7 +101,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     'status',
     'governance',
     'treasury',
-    'roles',
     'crew',
     'settings',
   ];
@@ -588,7 +586,10 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     void loadSponsorExtStatus();
   }
 
-  $: if (dashboardView === 'governance' && pactoPayload?.treasuryAuthority) {
+  $: if (
+    (dashboardView === 'status' || dashboardView === 'governance') &&
+    pactoPayload?.treasuryAuthority
+  ) {
     void loadTreasuryProposals();
   }
 
@@ -601,17 +602,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     void loadRolesTreeAnnotations();
   }
 
-  $: if (dashboardView === 'roles' && pactoGovRow?.canonicalRef) {
+  $: if (dashboardView === 'governance' && pactoGovRow?.canonicalRef) {
     void loadHatsTree();
-  }
-
-  $: if (dashboardView === 'roles' && pactoGovRow?.canonicalRef && parentId) {
-    void squadMemberEvmByNpub;
-    void loadRolesTreeAnnotations();
-  }
-
-  $: if (dashboardView === 'roles' && parentId) {
-    void loadSquadMemberEvm();
   }
 
   $: if (
@@ -662,13 +654,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   function prefetchDashboardTabIntent(id: ParentDashboardView) {
-    if (id === 'governance') {
+    if (id === 'status') {
+      if (pactoPayload?.treasuryAuthority) void loadTreasuryProposals();
+    } else if (id === 'governance') {
       if (pactoPayload?.treasuryAuthority) void loadTreasuryProposals();
       void loadSquadMemberEvm();
-    } else if (id === 'roles' && pactoGovRow?.canonicalRef) {
-      void loadHatsTree();
-      void loadRolesTreeAnnotations();
-      void loadSquadMemberEvm();
+      if (pactoGovRow?.canonicalRef) {
+        void loadHatsTree();
+        void loadRolesTreeAnnotations();
+      }
     }
   }
 
@@ -779,7 +773,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       </div>
     </div>
     <div class="parent-dashboard-body">
-      <div class="parent-dashboard" class:parent-dashboard-wide={dashboardView === 'roles' || dashboardView === 'governance'}>
+      <div class="parent-dashboard" class:parent-dashboard-wide={dashboardView === 'governance'}>
         {#if parent.kind === 'squad-pair' && parent.pairedSquads?.length}
           <div class="dashboard-header">
             <p class="dashboard-subtitle">
@@ -792,7 +786,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
           <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'status'} hidden={dashboardView !== 'status'}>
           {#await loadDashboardStatusTab() then StatusTab}
             <StatusTab
-              squad={parent}
               {announcementsGroupId}
               parentId={parentId ?? ''}
               {channelMembers}
@@ -804,6 +797,18 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenDeploy={openLaunchpad}
               onOpenCrewBootstrap={() => selectDashboardView('governance')}
               onSelectNetwork={focusSquadSettingsNetworkEditor}
+              {squadInfraRows}
+              {pactoPayload}
+              pactoGovChain={pactoGovRow?.chain}
+              myAddress={myGovernanceAddress}
+              memberEvmOptions={memberEvmOptionsForRoles}
+              {treasuryProposals}
+              {treasuryProposalsLoading}
+              {treasuryProposalsError}
+              onRefreshProposals={refreshTreasuryProposals}
+              {hasSponsor}
+              {warGameStack}
+              archiveView={warGameArchiveView}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.status')}</p>
@@ -831,35 +836,23 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {hasSponsor}
               {warGameStack}
               archiveView={warGameArchiveView}
-            />
-          {:catch}
-            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.governance')}</p>
-          {/await}
-          </div>
-        {/if}
-        {#if visitedDashboardViews.has('roles')}
-          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'roles'} hidden={dashboardView !== 'roles'}>
-          {#await loadDashboardRolesTreeTab() then RolesTreeTab}
-            <RolesTreeTab
-              {squadInfraRows}
               {structureSummary}
               {hatsTree}
               {hatsTreeLoading}
-              hatsTreeRefreshing={hatsTreeRefreshing}
+              {hatsTreeRefreshing}
               {hatsTreeError}
               {roleLabelByHatId}
               {wearerAddressesByHatId}
               {executorRolesByAddress}
               {squadMemberEvmByNpub}
-              {knownWearerLabels}
-              rolesTreeAnnotationsLoading={rolesTreeAnnotationsLoading}
-              rolesTreeAnnotationsRefreshing={rolesTreeAnnotationsRefreshing}
+              {rolesTreeAnnotationsLoading}
+              {rolesTreeAnnotationsRefreshing}
               {rolesTreeAnnotationsError}
               onRefreshRolesTree={refreshRolesTree}
-              onOpenLaunchpad={openLaunchpad}
+              {knownWearerLabels}
             />
           {:catch}
-            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.roles')}</p>
+            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.governance')}</p>
           {/await}
           </div>
         {/if}

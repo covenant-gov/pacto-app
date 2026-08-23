@@ -311,4 +311,24 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(2);
   });
+
+  it('renders the proposals board without Crew or Captain tabs on the proposals surface', async () => {
+    mockedGetSquadCapabilities.mockResolvedValue(capabilitiesSnapshot());
+
+    render(PactoGovGovernanceShell, {
+      props: {
+        payload: basePayload(),
+        network: 'sepolia',
+        parentId: 'parent1',
+        myAddress: CAPTAIN_ADDRESS,
+        captainWearers: [CAPTAIN_ADDRESS],
+        crewWearers: [],
+        surface: 'proposals',
+      },
+    });
+
+    expect(await screen.findByRole('heading', { name: /Proposals/i })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'Crew' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Captain' })).toBeNull();
+  });
 });

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import PactoGovGovernanceShell from '../governance/PactoGovGovernanceShell.svelte';
+  import DashboardRolesTreeTab from './DashboardRolesTreeTab.svelte';
   import { resolveGovernanceProvider } from '../../../lib/governance/governance-provider';
-  import type { TreasuryProposalDto, SquadInfraDto } from '../../../lib/governance/api';
+  import type { HatTreeNodeDto, TreasuryProposalDto, SquadInfraDto } from '../../../lib/governance/api';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
+  import type { DashboardStructureSummary } from '../../../lib/dashboard/structure-summary';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
-  import { isTreasuryProposalActive } from '../../../lib/governance/treasury-proposal-ui';
 
   interface Props {
     squadInfraRows?: SquadInfraDto[];
@@ -26,6 +27,20 @@
     hasSponsor?: boolean;
     warGameStack?: boolean;
     archiveView?: boolean;
+    structureSummary?: DashboardStructureSummary | null;
+    hatsTree?: HatTreeNodeDto | null;
+    hatsTreeLoading?: boolean;
+    hatsTreeRefreshing?: boolean;
+    hatsTreeError?: string;
+    roleLabelByHatId?: Record<string, string>;
+    wearerAddressesByHatId?: Record<string, string[]>;
+    executorRolesByAddress?: Record<string, string>;
+    squadMemberEvmByNpub?: Record<string, string>;
+    rolesTreeAnnotationsLoading?: boolean;
+    rolesTreeAnnotationsRefreshing?: boolean;
+    rolesTreeAnnotationsError?: string;
+    onRefreshRolesTree?: () => void;
+    knownWearerLabels?: Record<string, string>;
   }
 
   let {
@@ -46,6 +61,20 @@
     hasSponsor = false,
     warGameStack = false,
     archiveView = false,
+    structureSummary = undefined,
+    hatsTree = null,
+    hatsTreeLoading = false,
+    hatsTreeRefreshing = false,
+    hatsTreeError = '',
+    roleLabelByHatId = {},
+    wearerAddressesByHatId = {},
+    executorRolesByAddress = {},
+    squadMemberEvmByNpub = {},
+    rolesTreeAnnotationsLoading = false,
+    rolesTreeAnnotationsRefreshing = false,
+    rolesTreeAnnotationsError = '',
+    onRefreshRolesTree = () => {},
+    knownWearerLabels = {},
   }: Props = $props();
 
   const liveProvider = $derived(resolveGovernanceProvider(squadInfraRows));
@@ -54,7 +83,6 @@
   );
   const showAbiModules = $derived(!warGameStack && liveProvider === 'abi_modules');
   const network = $derived(pactoGovChain ?? 'sepolia');
-  const openCount = $derived(treasuryProposals.filter((p) => isTreasuryProposalActive(p.status)).length);
 </script>
 
 <section class="governance-section" aria-labelledby="governance-heading">
@@ -74,9 +102,6 @@
   {:else if showPactoGovShell && pactoPayload}
     <p class="gov-network muted">
       {$t('governance.governance.pactoGovOn', { values: { network: getWalletNetworkDisplayName(parseSupportedChainId(network)) } })}
-      {#if openCount}
-        · {$t('governance.governance.openProposals', { values: { count: openCount } })}
-      {/if}
     </p>
     {#if treasuryProposalsRefreshing}
       <p class="dashboard-refresh-note muted" role="status">{$t('governance.governance.refreshing')}</p>
@@ -96,17 +121,40 @@
       {hasSponsor}
       {warGameStack}
       {archiveView}
+      surface="commands"
     />
   {:else}
     <p class="dashboard-placeholder-text muted">
       {$t('governance.governance.placeholder')}
     </p>
   {/if}
+
+  <DashboardRolesTreeTab
+    {squadInfraRows}
+    {structureSummary}
+    {hatsTree}
+    {hatsTreeLoading}
+    {hatsTreeRefreshing}
+    {hatsTreeError}
+    {roleLabelByHatId}
+    {wearerAddressesByHatId}
+    {executorRolesByAddress}
+    {squadMemberEvmByNpub}
+    {rolesTreeAnnotationsLoading}
+    {rolesTreeAnnotationsRefreshing}
+    {rolesTreeAnnotationsError}
+    {onRefreshRolesTree}
+    {onOpenLaunchpad}
+    {knownWearerLabels}
+  />
 </section>
 
 <style>
   .governance-section {
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
   }
 
   .governance-heading-row {

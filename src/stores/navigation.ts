@@ -18,7 +18,6 @@ export type SquadDashboardChannelMode =
   | 'status'
   | 'governance'
   | 'treasury'
-  | 'roles'
   | 'crew'
   | 'settings';
 
@@ -30,7 +29,6 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
     v === 'status' ||
     v === 'governance' ||
     v === 'treasury' ||
-    v === 'roles' ||
     v === 'crew' ||
     v === 'settings'
   ) {

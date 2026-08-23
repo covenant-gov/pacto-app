@@ -9,7 +9,6 @@ describe('parseSquadDashboardChannelMode', () => {
     expect(parseSquadDashboardChannelMode('status')).toBe('status');
     expect(parseSquadDashboardChannelMode('governance')).toBe('governance');
     expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
-    expect(parseSquadDashboardChannelMode('roles')).toBe('roles');
     expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
     expect(parseSquadDashboardChannelMode('settings')).toBe('settings');
   });
@@ -18,6 +17,7 @@ describe('parseSquadDashboardChannelMode', () => {
     expect(parseSquadDashboardChannelMode(null)).toBe('status');
     expect(parseSquadDashboardChannelMode('')).toBe('status');
     expect(parseSquadDashboardChannelMode('stickers')).toBe('status');
+    expect(parseSquadDashboardChannelMode('roles')).toBe('status');
     expect(parseSquadDashboardChannelMode('roles_tree')).toBe('status');
   });
 });

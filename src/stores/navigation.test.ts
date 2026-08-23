@@ -94,7 +94,6 @@ describe('navigation', () => {
   it('parses known squad dashboard channel modes', () => {
     expect(parseSquadDashboardChannelMode('status')).toBe('status');
     expect(parseSquadDashboardChannelMode('governance')).toBe('governance');
-    expect(parseSquadDashboardChannelMode('roles')).toBe('roles');
     expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
     expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
     expect(parseSquadDashboardChannelMode('settings')).toBe('settings');
@@ -107,6 +106,7 @@ describe('navigation', () => {
     expect(parseSquadDashboardChannelMode('polls')).toBe('status');
     expect(parseSquadDashboardChannelMode('modules')).toBe('status');
     expect(parseSquadDashboardChannelMode('stickers')).toBe('status');
+    expect(parseSquadDashboardChannelMode('roles')).toBe('status');
   });
 
   it('persists squad dashboard channel mode under an npub-scoped key', () => {

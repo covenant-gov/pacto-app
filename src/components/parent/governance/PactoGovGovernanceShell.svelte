@@ -67,6 +67,8 @@
     hasSponsor?: boolean;
     warGameStack?: boolean;
     archiveView?: boolean;
+    /** Proposals board (Status) vs Crew/Captain commands (Governance). */
+    surface?: 'proposals' | 'commands';
   }
 
   let {
@@ -84,16 +86,17 @@
     hasSponsor = false,
     warGameStack = false,
     archiveView = false,
+    surface = 'commands',
   }: Props = $props();
 
-  type GovSubMode = 'proposals' | 'crew' | 'captain';
+  type GovSubMode = 'crew' | 'captain';
   type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
   /** Capability-preflight state: `unresolved` must never render a gated action as available. */
   type CapabilitiesStatus = 'unresolved' | 'ready' | 'error';
 
   const tFn = get(t);
 
-  let govSubMode: GovSubMode = $state('proposals');
+  let govSubMode: GovSubMode = $state('crew');
   let mutinyCaptain = $state('');
   let capabilities: SquadCapabilitiesDto | null = $state(null);
   let capabilitiesStatus: CapabilitiesStatus = $state('unresolved');
@@ -471,7 +474,6 @@
   }
 
   const subModes: { id: GovSubMode; label: string }[] = [
-    { id: 'proposals', label: tFn('governance.shell.tab.proposals') },
     { id: 'crew', label: tFn('governance.shell.tab.crew') },
     { id: 'captain', label: tFn('governance.shell.tab.captain') },
   ];
@@ -485,6 +487,31 @@
     {/if}
   </div>
 
+  {#if surface === 'proposals'}
+    <GovProposalsBoard
+      {network}
+      {parentId}
+      treasuryAuthority={payload.treasuryAuthority ?? ''}
+      quartermaster={payload.quartermaster ?? ''}
+      {privilege}
+      proposals={treasuryProposals}
+      proposalsLoading={treasuryProposalsLoading}
+      proposalsError={treasuryProposalsError}
+      {mutinyStatus}
+      {mutinyLoading}
+      {qmStatus}
+      {qmPending}
+      {qmPendingLoading}
+      {qmPendingError}
+      mutinyMode={rosterFrozen}
+      rosterFreezeReason={rosterFreezeReason}
+      onRefreshProposals={refreshAllProposals}
+      onExecuteMutiny={executeMutinyFromBoard}
+      onExpireMutiny={expireMutinyFromBoard}
+      {fundingHint}
+      {capabilitiesPending}
+    />
+  {:else}
   <div class="submode-tabs" role="tablist" aria-label={$t('governance.shell.subModesAria')}>
     {#each subModes as mode (mode.id)}
       <button
@@ -501,31 +528,7 @@
   </div>
 
   <div class="submode-panel" role="tabpanel" tabindex="0" aria-label={subModes.find((m) => m.id === govSubMode)?.label ?? govSubMode}>
-    {#if govSubMode === 'proposals'}
-      <GovProposalsBoard
-        {network}
-        {parentId}
-        treasuryAuthority={payload.treasuryAuthority ?? ''}
-        quartermaster={payload.quartermaster ?? ''}
-        {privilege}
-        proposals={treasuryProposals}
-        proposalsLoading={treasuryProposalsLoading}
-        proposalsError={treasuryProposalsError}
-        {mutinyStatus}
-        {mutinyLoading}
-        {qmStatus}
-        {qmPending}
-        {qmPendingLoading}
-        {qmPendingError}
-        mutinyMode={rosterFrozen}
-        rosterFreezeReason={rosterFreezeReason}
-        onRefreshProposals={refreshAllProposals}
-        onExecuteMutiny={executeMutinyFromBoard}
-        onExpireMutiny={expireMutinyFromBoard}
-        {fundingHint}
-        {capabilitiesPending}
-      />
-    {:else if govSubMode === 'crew'}
+    {#if govSubMode === 'crew'}
       <GovCrewActions
         {network}
         {parentId}
@@ -575,6 +578,7 @@
       />
     {/if}
   </div>
+  {/if}
 </div>
 
 <style>
