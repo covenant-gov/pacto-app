@@ -6,6 +6,7 @@
   import { TREASURY_SAFE_UI_CAP } from '../../../lib/treasury/treasury-safes';
   import type { SquadInfraDto } from '../../../lib/governance/api';
   import { getSquadCapabilities } from '../../../lib/governance/api';
+  import { aclSnapshotLoadKey } from '../../../lib/governance/acl-snapshot-key';
   import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import {
@@ -75,7 +76,16 @@
 
   $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}|${archiveView ? 'archive' : 'live'}`;
+    const key = aclSnapshotLoadKey({
+      parentId: pid,
+      network,
+      warGameStack,
+      processNonce,
+      archiveView,
+      myAddress,
+      captainWearers,
+      crewWearers,
+    });
     if (!pid || key === capabilitiesLoadKey) return;
     capabilitiesLoadKey = key;
     if (archiveView) {

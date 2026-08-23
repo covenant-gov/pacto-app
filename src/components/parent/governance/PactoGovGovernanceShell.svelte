@@ -42,6 +42,11 @@
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
   import { labeledWearerOptions } from '../../../lib/governance/war-game-captain';
+  import {
+    ACL_SNAPSHOT_RETRY_MS,
+    aclSnapshotLoadKey,
+    aclSnapshotShouldRetry,
+  } from '../../../lib/governance/acl-snapshot-key';
   import { showToast } from '../../../stores/toast';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
   import { get } from 'svelte/store';
@@ -93,6 +98,8 @@
   let capabilities: SquadCapabilitiesDto | null = $state(null);
   let capabilitiesStatus: CapabilitiesStatus = $state('unresolved');
   let capabilitiesLoadKey = $state('');
+  let capabilitiesRetryKey = $state('');
+  let capabilitiesRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   let mutinyStatus: MutinyStatusDto | null = $state(null);
   let mutinyHasVotedFlag = $state(false);
@@ -171,9 +178,23 @@
 
   $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}|${archiveView ? 'archive' : 'live'}`;
+    const key = aclSnapshotLoadKey({
+      parentId: pid,
+      network,
+      warGameStack,
+      processNonce,
+      archiveView,
+      myAddress,
+      captainWearers,
+      crewWearers,
+    });
     if (!pid || key === capabilitiesLoadKey) return;
     capabilitiesLoadKey = key;
+    capabilitiesRetryKey = '';
+    if (capabilitiesRetryTimer) {
+      clearTimeout(capabilitiesRetryTimer);
+      capabilitiesRetryTimer = null;
+    }
     if (archiveView) {
       capabilities = warGameArchiveCapabilities(pid);
       capabilitiesStatus = 'ready';
@@ -181,6 +202,15 @@
     }
     capabilitiesStatus = 'unresolved';
     void loadCapabilities(pid, key);
+  });
+
+  $effect(() => {
+    return () => {
+      if (capabilitiesRetryTimer) {
+        clearTimeout(capabilitiesRetryTimer);
+        capabilitiesRetryTimer = null;
+      }
+    };
   });
 
   $effect(() => {
@@ -207,12 +237,34 @@
     }
   });
 
+  function scheduleCapabilitiesRetry(pid: string, key: string) {
+    if (capabilitiesRetryKey === key) return;
+    capabilitiesRetryKey = key;
+    if (capabilitiesRetryTimer) clearTimeout(capabilitiesRetryTimer);
+    capabilitiesRetryTimer = setTimeout(() => {
+      capabilitiesRetryTimer = null;
+      if (key !== capabilitiesLoadKey) return;
+      capabilitiesStatus = 'unresolved';
+      void loadCapabilities(pid, key);
+    }, ACL_SNAPSHOT_RETRY_MS);
+  }
+
   async function loadCapabilities(pid: string, key: string) {
     try {
       const snap = await getSquadCapabilities(pid, network, { wargame: warGameStack });
       if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
       capabilitiesStatus = 'ready';
+      if (
+        aclSnapshotShouldRetry({
+          snapshot: snap,
+          myAddress,
+          captainWearers,
+          crewWearers,
+        })
+      ) {
+        scheduleCapabilitiesRetry(pid, key);
+      }
     } catch {
       if (key !== capabilitiesLoadKey) return;
       capabilities = null;

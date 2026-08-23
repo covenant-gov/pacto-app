@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import PactoGovGovernanceShell from './PactoGovGovernanceShell.svelte';
 import { getSquadCapabilities } from '../../../lib/governance/api';
 import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
 import type { SquadCapabilitiesDto } from '../../../lib/governance/api';
 import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
 import { bumpGovernanceProcessNonce, governanceProcessNonceByParentId } from '../../../stores/navigation';
+import { ACL_SNAPSHOT_RETRY_MS } from '../../../lib/governance/acl-snapshot-key';
 
 vi.mock('../../../lib/governance/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../lib/governance/api')>();
@@ -22,6 +23,7 @@ const mockedGetSquadCapabilities = vi.mocked(getSquadCapabilities);
 const mockedFetchEvmBalance = vi.mocked(fetchEvmBalance);
 
 const CAPTAIN_ADDRESS = '0xcaptain0000000000000000000000000000001';
+const CREW_ADDRESS = '0xcrew00000000000000000000000000000000001';
 
 function basePayload(): PactoGovProviderPayloadV1 {
   return {
@@ -62,7 +64,9 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
   });
 
   afterEach(() => {
+    cleanup();
     governanceProcessNonceByParentId.set({});
+    vi.useRealTimers();
   });
 
   it('keeps the propose action unavailable while capabilities are unresolved, then enables it once resolved', async () => {
@@ -211,5 +215,100 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
       ),
     );
     expect(submitButton.disabled).toBe(true);
+  });
+
+  it('reloads capabilities when crew wearers start including the current address', async () => {
+    const first = Promise.withResolvers<SquadCapabilitiesDto>();
+    const second = Promise.withResolvers<SquadCapabilitiesDto>();
+    mockedGetSquadCapabilities.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    const props = {
+      payload: basePayload(),
+      network: 'sepolia',
+      parentId: 'parent1',
+      myAddress: CREW_ADDRESS,
+      captainWearers: [CAPTAIN_ADDRESS],
+      crewWearers: [] as string[],
+    };
+
+    const { rerender } = render(PactoGovGovernanceShell, { props });
+
+    await fireEvent.click(await screen.findByRole('tab', { name: 'Crew' }));
+    const submitButton = (await screen.findByRole('button', {
+      name: 'Submit proposal',
+    })) as HTMLButtonElement;
+
+    first.resolve(
+      capabilitiesSnapshot({
+        rosterAddress: CREW_ADDRESS,
+        wearsCaptain: false,
+        wearsCrew: false,
+        roleLabel: 'No on-chain hat',
+      }),
+    );
+    await waitFor(() =>
+      expect(submitButton.title).toBe(
+        'You need a Captain or Crew hat. Ask a captain or crew member for a hat.',
+      ),
+    );
+    expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(1);
+
+    await rerender({ ...props, crewWearers: [CREW_ADDRESS] });
+    await waitFor(() => {
+      expect(submitButton.disabled).toBe(true);
+      expect(submitButton.title).toBe('Loading…');
+    });
+    expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(2);
+
+    second.resolve(
+      capabilitiesSnapshot({
+        rosterAddress: CREW_ADDRESS,
+        wearsCaptain: false,
+        wearsCrew: true,
+        roleLabel: 'Crew',
+      }),
+    );
+    await waitFor(() => expect(submitButton.disabled).toBe(false));
+  });
+
+  it('retries capabilities once when wearer lists disagree with the snapshot', async () => {
+    vi.useFakeTimers();
+    mockedGetSquadCapabilities
+      .mockResolvedValueOnce(
+        capabilitiesSnapshot({
+          rosterAddress: CREW_ADDRESS,
+          wearsCaptain: false,
+          wearsCrew: false,
+          roleLabel: 'No on-chain hat',
+        }),
+      )
+      .mockResolvedValueOnce(
+        capabilitiesSnapshot({
+          rosterAddress: CREW_ADDRESS,
+          wearsCaptain: false,
+          wearsCrew: true,
+          roleLabel: 'Crew',
+        }),
+      );
+
+    render(PactoGovGovernanceShell, {
+      props: {
+        payload: basePayload(),
+        network: 'sepolia',
+        parentId: 'parent1',
+        myAddress: CREW_ADDRESS,
+        captainWearers: [CAPTAIN_ADDRESS],
+        crewWearers: [CREW_ADDRESS],
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(ACL_SNAPSHOT_RETRY_MS - 1);
+    expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(2);
   });
 });
