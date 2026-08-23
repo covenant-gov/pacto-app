@@ -70,6 +70,17 @@ export function isActiveWarGameStack(raw: string | null | undefined): boolean {
   return parseWarGameStackMeta(raw).status === 'active';
 }
 
+export type WarGameStatusAction = 'deploy' | 'open' | 'redeploy';
+
+/** One Status CTA: deploy first, then open from #dashboard or redeploy on squad-wargame. */
+export function warGameStatusAction(
+  hasActiveWarGame: boolean,
+  onWarGameHub: boolean,
+): WarGameStatusAction {
+  if (!hasActiveWarGame) return 'deploy';
+  return onWarGameHub ? 'redeploy' : 'open';
+}
+
 export function parseWarGameRoundNumber(raw: string | null | undefined): number {
   const n = Number.parseInt(parseWarGameStackMeta(raw).round, 10);
   return Number.isFinite(n) && n > 0 ? n : 0;

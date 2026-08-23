@@ -37,6 +37,7 @@
     onOpenSponsorDeploy?: () => void;
     onOpenDeploySafe?: () => void;
     onOpenImportSafe?: () => void;
+    topHatId?: string;
     warGameStack?: boolean;
     archiveView?: boolean;
   }
@@ -56,6 +57,7 @@
     onOpenSponsorDeploy = () => {},
     onOpenDeploySafe = () => {},
     onOpenImportSafe = () => {},
+    topHatId = '',
     warGameStack = false,
     archiveView = false,
   }: Props = $props();
@@ -138,27 +140,33 @@
 <SquadSponsorTreasuryPanel
   {parentId}
   {sponsorRow}
+  {topHatId}
   onOpenDeploy={warGameStack ? undefined : onOpenSponsorDeploy}
 />
 
 {#if showGovTreasury}
   <section class="dashboard-section gov-treasury-section" aria-labelledby="gov-treasury-heading">
     <h3 id="gov-treasury-heading" class="section-heading">{$t('governance.treasury.govHeading')}</h3>
-    <code class="treasury-card-address">{govSafeAddress}</code>
-    {#if govExUrl || govSafeAppUrl}
-      <div class="treasury-card-links">
-        {#if govExUrl}
-          <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(govExUrl)}>
-            {$t('governance.treasury.viewExplorer')}
-          </button>
-        {/if}
-        {#if govSafeAppUrl}
-          <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(govSafeAppUrl)}>
-            {$t('governance.treasury.openSafe')}
-          </button>
-        {/if}
-      </div>
-    {/if}
+    <div class="treasury-card-links">
+      {#if govExUrl}
+        <button
+          type="button"
+          class="btn-link treasury-addr-link"
+          title={govSafeAddress}
+          aria-label={$t('governance.hats.wearerExplorerTitle', { values: { address: govSafeAddress } })}
+          onclick={() => openExternalUrl(govExUrl)}
+        >
+          {shortAddress(govSafeAddress)}
+        </button>
+      {:else}
+        <code class="treasury-card-address">{shortAddress(govSafeAddress)}</code>
+      {/if}
+      {#if govSafeAppUrl}
+        <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(govSafeAppUrl)}>
+          {$t('governance.treasury.openSafe')}
+        </button>
+      {/if}
+    </div>
     <TreasurySafeModulePanel
       {network}
       {parentId}
@@ -378,8 +386,13 @@
     margin-bottom: 8px;
   }
 
-  .treasury-explorer-link {
+  .treasury-explorer-link,
+  .treasury-addr-link {
     margin: 0;
+  }
+
+  .treasury-addr-link {
+    font-family: ui-monospace, monospace;
   }
 
   .treasury-card-dl {

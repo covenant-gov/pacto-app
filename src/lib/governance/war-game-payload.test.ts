@@ -9,6 +9,7 @@ import {
   parseWarGameStackMeta,
   warGameDelayMinutes,
   warGameRoundSponsorRow,
+  warGameStatusAction,
   warGameVisibleRounds,
 } from './war-game-payload';
 import type { SquadInfraDto } from './api';
@@ -60,6 +61,18 @@ describe('parseWarGameStackMeta', () => {
     expect(isActiveWarGameStack(JSON.stringify({ status: 'active' }))).toBe(true);
     expect(isActiveWarGameStack(JSON.stringify({ status: 'pending_sponsor' }))).toBe(false);
     expect(isActiveWarGameStack(JSON.stringify({ status: 'retired' }))).toBe(false);
+  });
+});
+
+describe('warGameStatusAction', () => {
+  it('offers deploy until an active stack exists', () => {
+    expect(warGameStatusAction(false, false)).toBe('deploy');
+    expect(warGameStatusAction(false, true)).toBe('deploy');
+  });
+
+  it('opens from #dashboard and redeploys from squad-wargame', () => {
+    expect(warGameStatusAction(true, false)).toBe('open');
+    expect(warGameStatusAction(true, true)).toBe('redeploy');
   });
 });
 

@@ -249,7 +249,6 @@
 
 <div class="safe-balances">
   <div class="balances-head">
-    <h5 class="balances-title">{$t('governance.title.balances')}</h5>
     <RefreshIconButton
       spinning={refreshing}
       disabled={loading || refreshing}
@@ -327,14 +326,8 @@
   .balances-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 8px;
-  }
-  .balances-title {
-    margin: 0;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-secondary);
   }
   .bal-list {
     list-style: none;

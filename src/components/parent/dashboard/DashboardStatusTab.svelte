@@ -24,7 +24,7 @@
   import { hasSquadAdminInfra } from '../../../lib/governance/squad-admin-payload';
   import { syncSquadInfraForParent } from '../../../lib/dashboard/dashboard-data-sync';
   import { openSquadWargame } from '../../../lib/navigation/open-squad-dashboard';
-  import { isActiveWarGameStack } from '../../../lib/governance/war-game-payload';
+  import { isActiveWarGameStack, warGameStatusAction } from '../../../lib/governance/war-game-payload';
   import { WAR_GAME_PUBLIC_RULES_URL } from '../../../lib/governance/war-game-links';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import DeployWarGameModal from '../governance/DeployWarGameModal.svelte';
@@ -96,6 +96,7 @@
   const hasWarGame = $derived(
     warGameRow != null && isActiveWarGameStack(warGameRow.providerPayload),
   );
+  const warGameAction = $derived(warGameStatusAction(hasWarGame, warGameStack));
   const rosterMemberOptions = $derived(
     channelMembers
       .map((npub) => {
@@ -177,11 +178,13 @@
       <span class={glyphClass(hasWarGame ? 'done' : 'not_started')} aria-hidden="true"
         >{checklistGlyph(hasWarGame ? 'done' : 'not_started')}</span
       >
-      {#if hasWarGame}
+      {#if warGameAction === 'open'}
         <span>{$t('governance.status.wargameDeployed')}</span>
         <button type="button" class="checklist-action" onclick={() => openSquadWargame(parentId)}>
           {$t('governance.status.openWargame')}
         </button>
+      {:else if warGameAction === 'redeploy'}
+        <span>{$t('governance.status.wargameDeployed')}</span>
         <button type="button" class="checklist-action" onclick={() => (showWarGameDeploy = true)}>
           {$t('governance.status.redeployWargame')}
         </button>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hatsTreeDomain, hatIdToHex, prettyHatId } from './pretty-hat-id';
+import { displayHatsTreeId, hatsTreeDomain, hatIdToHex, prettyHatId } from './pretty-hat-id';
 
 describe('hatsTreeDomain', () => {
   it('passes through bare tree domains', () => {
@@ -20,6 +20,18 @@ describe('hatsTreeDomain', () => {
   it('returns null for invalid input', () => {
     expect(hatsTreeDomain('')).toBeNull();
     expect(hatsTreeDomain('nope')).toBeNull();
+  });
+});
+
+describe('displayHatsTreeId', () => {
+  it('prefers the tree domain for labels', () => {
+    expect(displayHatsTreeId('3660')).toBe('3660');
+    expect(displayHatsTreeId((BigInt(3660) << 224n).toString(10))).toBe('3660');
+  });
+
+  it('returns empty for missing or invalid ids', () => {
+    expect(displayHatsTreeId('')).toBe('');
+    expect(displayHatsTreeId('nope')).toBe('nope');
   });
 });
 

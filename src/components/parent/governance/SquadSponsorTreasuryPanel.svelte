@@ -39,14 +39,17 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { resolveSquadSponsorVariant } from '../../../lib/governance/squad-sponsor-variant';
+  import { displayHatsTreeId } from '../../../lib/governance/pretty-hat-id';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
 
   interface Props {
     parentId: string;
     sponsorRow?: SquadInfraDto | null;
+    topHatId?: string;
     onOpenDeploy?: () => void;
   }
 
-  let { parentId, sponsorRow = null, onOpenDeploy = undefined }: Props = $props();
+  let { parentId, sponsorRow = null, topHatId = '', onOpenDeploy = undefined }: Props = $props();
 
   const tFn = get(t);
 
@@ -74,6 +77,7 @@
   const poolBalanceWei = $derived(summary ? BigInt(summary.poolBalanceWei) : null);
   const lowBalance = $derived(poolBalanceWei != null && poolBalanceWei < SPONSOR_LOW_BALANCE_WEI);
   const hatsLinked = $derived(resolveSquadSponsorVariant(sponsorRow) === 'hats');
+  const hatsId = $derived(hatsLinked ? displayHatsTreeId(topHatId) : '');
   const explorerUrl = $derived(
     summary?.sponsorAddress &&
       explorerAddressUrl(parseSupportedChainId(summary.chain), summary.sponsorAddress),
@@ -340,28 +344,40 @@
     <p class="sponsor-error" role="alert">{friendlyMessage(loadError, 'sponsor')}</p>
     <button type="button" class="btn-secondary" onclick={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
-    {#if hatsLinked}
-      <p class="sponsor-lead">
-        <span class="sponsor-lead-kicker">{$t('governance.crew.sponsorLabel')}</span>
-        <span>{$t('governance.crew.sponsorHatsLinked')}</span>
-        <span class="muted">{$t('governance.crew.sponsorHatsHint')}</span>
-      </p>
-    {/if}
     <dl class="sponsor-dl">
-      <dt>{$t('governance.info.sponsorPoolBalance')}</dt>
+      <dt>{$t('governance.info.sponsorEth')}</dt>
       <dd>
-        <strong>{$t('governance.treasury.balanceEth', { values: { balance: formatEther(BigInt(summary.poolBalanceWei)) } })}</strong>
+        <strong>{formatEther(BigInt(summary.poolBalanceWei))}</strong>
         {#if lowBalance}
           <span class="sponsor-low-badge" role="status">{$t('governance.info.sponsorLowBalance')}</span>
         {/if}
       </dd>
-      <dt>{$t('governance.info.sponsorClone')}</dt>
+      {#if hatsLinked}
+        <dt>{$t('governance.info.sponsorEligible')}</dt>
+        <dd class="sponsor-eligible">
+          <span>{$t('governance.crew.sponsorEligibleRoles')}</span>
+          {#if hatsId}
+            <span class="hats-id-chip" title={$t('governance.crew.hatsIdTitle', { values: { id: hatsId } })}>
+              <span class="hats-id-label">{$t('governance.crew.hatsIdLabel')}</span>
+              <code>{hatsId}</code>
+            </span>
+          {/if}
+        </dd>
+      {/if}
+      <dt>{$t('governance.info.sponsor')}</dt>
       <dd>
-        <code class="sponsor-mono">{summary.sponsorAddress}</code>
         {#if explorerUrl}
-          <button type="button" class="btn-link sponsor-explorer-link" onclick={() => openExternalUrl(explorerUrl)}>
-            {tFn('governance.action.viewOnExplorer')}
+          <button
+            type="button"
+            class="btn-link sponsor-addr-link"
+            title={summary.sponsorAddress}
+            aria-label={$t('governance.hats.wearerExplorerTitle', { values: { address: summary.sponsorAddress } })}
+            onclick={() => openExternalUrl(explorerUrl)}
+          >
+            {shortEvmAddress(summary.sponsorAddress)}
           </button>
+        {:else}
+          <code class="sponsor-mono" title={summary.sponsorAddress}>{shortEvmAddress(summary.sponsorAddress)}</code>
         {/if}
       </dd>
     </dl>
@@ -577,23 +593,6 @@
     font-size: 0.875rem;
   }
 
-  .sponsor-lead {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 6px 10px;
-    margin: 0 0 12px;
-    font-size: 0.875rem;
-  }
-
-  .sponsor-lead-kicker {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-muted);
-  }
-
   .sponsor-dl {
     margin: 0 0 14px;
     display: grid;
@@ -615,6 +614,43 @@
 
   .sponsor-mono {
     font-size: 0.8125rem;
+  }
+
+  .sponsor-eligible {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    word-break: normal;
+  }
+
+  .hats-id-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .hats-id-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+  }
+
+  .hats-id-chip code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .sponsor-addr-link {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8125rem;
+    margin: 0;
+    padding: 0;
   }
 
   .sponsor-low-badge {
@@ -642,13 +678,6 @@
     color: var(--brand);
     cursor: pointer;
     text-decoration: underline;
-  }
-
-  .sponsor-explorer-link {
-    display: inline-block;
-    margin-left: 8px;
-    padding: 0;
-    font-size: inherit;
   }
 
   .sponsor-deposit-form {

@@ -84,3 +84,10 @@ export function prettyHatId(raw: string): string | null {
   }
   return parts.join('.');
 }
+
+/** Tree domain for Hats labels (e.g. `3660`), then pretty / raw. */
+export function displayHatsTreeId(raw: string | null | undefined): string {
+  const t = raw?.trim() ?? '';
+  if (!t) return '';
+  return hatsTreeDomain(t) ?? prettyHatId(t) ?? t;
+}

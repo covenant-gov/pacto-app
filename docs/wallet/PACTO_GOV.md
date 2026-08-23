@@ -40,7 +40,7 @@ Other governance systems should enter through `abi_modules` (dynamic ABI forms +
 
 ## Treasury Safe balances
 
-**Treasury** mode → **Squad governance treasury (Pacto Gov Safe)** shows native coin balance for the deployed Safe and a squad-tracked ERC-20 list (paste contract address → `symbol`/`decimals` on-chain → SQLite + MLS `squad_tracked_tokens_updated` so peers see the same list). Reads only; add/remove requires Captain or Crew via **ACL** (`mutateTrackedTokens`) and MLS-admin announce for cross-device sync (same pattern as contract allowlist). Standalone deploy/import Safes appear under **Other vaults**. Do not drop `squad_tracked_tokens` on rollback while upgraded clients run.
+**Treasury** mode → **Treasury** shows native coin balance for the deployed Safe and a squad-tracked ERC-20 list (paste contract address → `symbol`/`decimals` on-chain → SQLite + MLS `squad_tracked_tokens_updated` so peers see the same list). Reads only; add/remove requires Captain or Crew via **ACL** (`mutateTrackedTokens`) and MLS-admin announce for cross-device sync (same pattern as contract allowlist). Standalone deploy/import Safes appear under **Other vaults**. Do not drop `squad_tracked_tokens` on rollback while upgraded clients run.
 
 ## Related
 

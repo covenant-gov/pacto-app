@@ -827,6 +827,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenSponsorDeploy={warGameStack ? undefined : openLaunchpad}
               onOpenDeploySafe={openDeploySafe}
               onOpenImportSafe={openSetSafe}
+              topHatId={pactoGovRow?.canonicalRef ?? ''}
               {warGameStack}
               archiveView={warGameArchiveView}
             />

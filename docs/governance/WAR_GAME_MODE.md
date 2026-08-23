@@ -24,7 +24,7 @@ These close the research questions in GitHub #138. Do not re-open them as “fir
 
 | Surface | Role |
 |---------|------|
-| Status checklist | Encourage “Deploy wargame” before real gov; not a hard gate. Production “Deploy Squad governance” / “Deploy Squad admin” rows live on `#squad-dashboard` only |
+| Status checklist | Encourage “Deploy wargame” before real gov; not a hard gate. After deploy, `#dashboard` shows “Open squad-wargame” and `squad-wargame` shows “Redeploy wargame” — never both. Production “Deploy Squad governance” / “Deploy Squad admin” rows live on `#squad-dashboard` only |
 | `squad-wargame` | Virtual hub row (not an MLS group); Sepolia + Active game infra |
 | `#announcements` | Deploy / retire / redeploy fan-out so all members sync the row |
 | Launchpad | Unchanged production singleton |
