@@ -338,7 +338,10 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     expect(await screen.findByRole('tab', { name: 'All' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Crew' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Captain' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Submit proposal' })).toBeTruthy();
+    const submit = screen.getByRole('button', { name: 'Submit proposal' });
+    const voteMode = screen.getByRole('button', { name: 'Vote mode' });
+    expect(submit.classList.contains('primary')).toBe(true);
+    expect(voteMode.classList.contains('primary')).toBe(true);
   });
 
   it('renders the proposals board without All, Crew, or Captain tabs on the proposals surface', async () => {

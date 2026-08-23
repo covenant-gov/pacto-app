@@ -52,6 +52,7 @@
       />
       <GovCtaButton
         label={tFn('governance.shell.openVoteMode')}
+        variant="primary"
         gate={sharedGate}
         onClick={() => (showVoteMode = true)}
       />

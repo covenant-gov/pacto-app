@@ -84,6 +84,7 @@
     {#if quartermaster}
       <GovCtaButton
         label={tFn('governance.action.proposeOffboard')}
+        variant="primary"
         gate={proposeOffboardGate}
         onClick={() => (showOffboard = true)}
       />

@@ -65,6 +65,16 @@ async function openStartMutiny() {
   await fireEvent.click(screen.getByRole('button', { name: 'Start mutiny' }));
 }
 
+describe('GovCrewActions command row', () => {
+  it('styles Start mutiny and Propose offboard as the same primary CTAs', () => {
+    renderCrewMutiny({ quartermaster: '0xqm' });
+    const startMutiny = screen.getByRole('button', { name: 'Start mutiny' });
+    const proposeOffboard = screen.getByRole('button', { name: 'Propose offboard' });
+    expect(startMutiny.classList.contains('primary')).toBe(true);
+    expect(proposeOffboard.classList.contains('primary')).toBe(true);
+  });
+});
+
 describe('GovCrewActions mutiny start pickers', () => {
   it('lists crew-hat wearers for To crew member', async () => {
     renderCrewMutiny();
