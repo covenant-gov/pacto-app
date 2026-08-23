@@ -71,7 +71,6 @@
     onRefreshProposals?: () => void;
     onExecuteMutiny?: () => void | Promise<void>;
     onExpireMutiny?: () => void | Promise<void>;
-    fundingHint?: string;
     /** True while capability preflight is still loading; forces every gate closed. */
     capabilitiesPending?: boolean;
   }
@@ -99,7 +98,6 @@
     onRefreshProposals = () => {},
     onExecuteMutiny = () => {},
     onExpireMutiny = () => {},
-    fundingHint = '',
     capabilitiesPending = false,
   }: Props = $props();
 
@@ -368,9 +366,6 @@
       onclick={onRefreshProposals}
     />
   </div>
-  {#if fundingHint}
-    <p class="muted funding-hint">{fundingHint}</p>
-  {/if}
 
   {#if boardLoading}
     <p class="muted">{$t('governance.status.loadingProposals')}</p>
@@ -455,8 +450,5 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
-  }
-  .funding-hint {
-    margin: 0 0 4px;
   }
 </style>

@@ -114,6 +114,17 @@ export function isHatRequiredReason(reason: string): boolean {
   return HAT_REQUIRED_REASONS.has(reason);
 }
 
+const SUPPRESSED_INLINE_REASONS = new Set([
+  ...HAT_REQUIRED_REASONS,
+  'governance.gate.linkSquadEvmAddressToAct',
+  'governance.gate.linkSquadEvmAddressToSign',
+]);
+
+/** Hat-required and bind-EVM copy live on the pane, not under every CTA. */
+export function hideCtaInlineReason(reason: string): boolean {
+  return SUPPRESSED_INLINE_REASONS.has(reason);
+}
+
 /** Map backend ACL reason strings to i18n keys. Unknown reasons fail closed to accessDenied. */
 export function localizeAclReason(reason: string): string {
   const trimmed = reason.trim();

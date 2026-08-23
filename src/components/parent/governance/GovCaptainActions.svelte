@@ -141,9 +141,6 @@
 </script>
 
 <div class="captain-actions">
-  {#if fundingHint}
-    <p class="muted funding-hint">{fundingHint}</p>
-  {/if}
   {#if !captainGate.enabled && isHatRequiredReason(captainGate.reason)}
     <GovHatRequiredBanner reason={captainGate.reason} />
   {/if}
@@ -244,13 +241,5 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-  }
-  .muted {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-  .funding-hint {
-    margin: 0 0 4px;
   }
 </style>

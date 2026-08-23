@@ -69,9 +69,6 @@
 </script>
 
 <div class="crew-actions">
-  {#if fundingHint}
-    <p class="muted funding-hint">{fundingHint}</p>
-  {/if}
   {#if !crewGate.enabled && isHatRequiredReason(crewGate.reason)}
     <GovHatRequiredBanner reason={crewGate.reason} />
   {/if}
@@ -131,13 +128,5 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-  }
-  .muted {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-  .funding-hint {
-    margin: 0 0 4px;
   }
 </style>

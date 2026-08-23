@@ -513,7 +513,6 @@
       onRefreshProposals={refreshAllProposals}
       onExecuteMutiny={executeMutinyFromBoard}
       onExpireMutiny={expireMutinyFromBoard}
-      {fundingHint}
       {capabilitiesPending}
     />
   {:else}
