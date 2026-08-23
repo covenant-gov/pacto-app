@@ -66,19 +66,6 @@ export function focusSquadSettingsNetworkEditor(slot: SquadNetworkSlot = 'primar
   squadSettingsNetworkFocusNonce.update((n) => n + 1);
 }
 
-/** #my-dashboard segmented mode; unknown persisted values reset to `status`. */
-export type MyDashboardChannelMode = 'status' | 'alerts';
-
-export const MY_DASHBOARD_MODE_PREFIX = 'pacto_my_dashboard_mode';
-
-export function parseMyDashboardChannelMode(raw: string | null): MyDashboardChannelMode {
-  const v = raw?.trim();
-  if (v === 'status' || v === 'alerts') return v;
-  return 'status';
-}
-
-export const myDashboardChannelMode = writable<MyDashboardChannelMode>('status');
-
 /** Bumped when the Rust SQLite poll replica changes for a parent (local or remote MLS ingest). */
 export const dashboardPollReplicaNonceByParentId = writable<Record<string, number>>({});
 
@@ -104,17 +91,6 @@ export const squadBotMetaNonceBySquadId = writable<Record<string, number>>({});
 squadDashboardChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
   const key = persistenceKey(SQUAD_DASHBOARD_MODE_PREFIX);
-  if (!key) return;
-  try {
-    localStorage.setItem(key, mode);
-  } catch {
-    // ignore quota
-  }
-});
-
-myDashboardChannelMode.subscribe((mode) => {
-  if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(MY_DASHBOARD_MODE_PREFIX);
   if (!key) return;
   try {
     localStorage.setItem(key, mode);

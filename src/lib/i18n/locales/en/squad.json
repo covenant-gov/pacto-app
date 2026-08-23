@@ -39,7 +39,6 @@
 	"squad.joinRequests.daysAgo": "{days}d ago",
 	"squad.rpc.label": "RPC",
 	"squad.rpc.chainTitle": "Chain RPC",
-	"squad.rpc.chainHint": "Used for reads (balances, Hats, proposals). Alchemy and Pocket work here.",
 	"squad.rpc.urlLabel": "RPC URL",
 	"squad.rpc.primaryAria": "Primary squad RPC URL",
 	"squad.rpc.backupAria": "Backup squad RPC URL",

@@ -2,18 +2,22 @@
   import type { Snippet } from 'svelte';
 
   let {
+    id = undefined,
     headingId,
     heading,
     headingLevel = 3,
+    hint = '',
     class: className = '',
     headerAction,
     children,
     footer,
     showFooter = true,
   }: {
+    id?: string;
     headingId: string;
     heading: string;
     headingLevel?: 3 | 4;
+    hint?: string;
     class?: string;
     headerAction?: Snippet;
     children: Snippet;
@@ -22,7 +26,7 @@
   } = $props();
 </script>
 
-<section class="dashboard-asset-card {className}" aria-labelledby={headingId}>
+<section {id} class="dashboard-asset-card {className}" aria-labelledby={headingId}>
   <div class="asset-card-head">
     <svelte:element this={`h${headingLevel}`} id={headingId} class="asset-card-heading">
       {heading}
@@ -31,6 +35,9 @@
       {@render headerAction()}
     {/if}
   </div>
+  {#if hint}
+    <p class="asset-card-hint">{hint}</p>
+  {/if}
   {@render children()}
   {#if footer && showFooter}
     <div class="asset-card-footer">
@@ -60,6 +67,13 @@
     font-weight: 600;
     color: var(--text-secondary);
     margin: 0;
+  }
+
+  .asset-card-hint {
+    margin: -4px 0 12px;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: var(--text-muted);
   }
 
   .asset-card-footer {

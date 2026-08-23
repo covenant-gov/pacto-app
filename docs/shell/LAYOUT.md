@@ -10,7 +10,7 @@ How the logged-in app shell is split after the SM refactor: **Svelte orchestrate
 src/routes/+page.svelte           layout, tab routing, DM send/typing; mounts app event bridge
 src/components/layout/ParentNavbar.svelte   sidebar + modals → lib/parent/* flows
 src/components/parent/ParentDashboard.svelte   #squad-dashboard tab shell (Status→Governance→Treasury→Crew)
-src/components/parent/MyDashboard.svelte       #my-dashboard tab shell (Status→Alerts)
+src/components/parent/MyDashboard.svelte       #my-dashboard stacked page (status + Alerts)
 src/components/parent/SquadSettingsView.svelte #settings virtual channel (squad settings stack)
 src/components/dm/DmThread.svelte             header/input/options + DmMessageRouter
 src/stores/app.ts                 thin re-export barrel (navigation, dm, squads, mls-chat, persistence)
@@ -34,7 +34,7 @@ Pinned system channels stay **above** a thin gray divider; member-created MLS ch
 
 | Module | Owns |
 |--------|------|
-| `navigation.ts` | Top nav, squad/channel selection, squad/my dashboard modes, last-opened maps |
+| `navigation.ts` | Top nav, squad/channel selection, squad dashboard modes, last-opened maps |
 | `dm.ts` | DMs, inbox, sync, typing, wallet sidebar, `DmMessage` |
 | `squads.ts` | `Squad`, channels, treasury/infra maps, parent create state |
 | `mls-chat.ts` | Group messages, welcomes, membership version |
@@ -78,7 +78,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/parent/dashboard/ParentDashboardMembersPanel.svelte` | Members aside |
 
 Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `crew`). Squad settings live on the pinned `#settings` channel.
-My dashboard modes: `myDashboardChannelMode` (`status` \| `alerts`).
+`#my-dashboard` is a single stacked page: checklist, roster EVM, squad sync, then Alerts.
 
 **Status vs Settings.** Status is for frequently needed operational info: Checklist, live Proposals. Settings is for one-time or occasional config: squad photo, Squad Broadcast, sticker packs, network, Chain RPC, Pimlico key, Join-inbox holders. Network retargeting for future deploys lives in Settings ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` and `roles` slugs) reset to `status`. Arbitrary contract allowlist / call UI is not on Settings.
 

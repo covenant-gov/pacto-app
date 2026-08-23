@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import DashboardAssetCard from './DashboardAssetCard.svelte';
   import { get } from 'svelte/store';
   const tFn = get(t);
   import BroadcastSquadModal from '../../commons/BroadcastSquadModal.svelte';
@@ -157,13 +158,11 @@
   }
 </script>
 
-<section
+<DashboardAssetCard
   id="settings-squad-broadcast"
-  class="dashboard-section squad-broadcast-section"
-  aria-labelledby="settings-squad-broadcast-heading"
+  headingId="settings-squad-broadcast-heading"
+  heading={$t('governance.broadcast.title')}
 >
-  <h3 id="settings-squad-broadcast-heading" class="section-heading">{$t('governance.broadcast.title')}</h3>
-
   <div class="squad-broadcast-mode" role="radiogroup" aria-label={$t('governance.broadcast.aria')}>
     <label class="squad-broadcast-mode-option">
       <input
@@ -261,7 +260,7 @@
   {:else}
     <p class="squad-broadcast-hint muted">{$t('governance.broadcast.disabledHint')}</p>
   {/if}
-</section>
+</DashboardAssetCard>
 
 {#if showBroadcastModal && broadcastEnabled}
   <BroadcastSquadModal
@@ -273,20 +272,6 @@
 {/if}
 
 <style>
-  .squad-broadcast-section {
-    margin-bottom: 16px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 16px;
-  }
-
-  .section-heading {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0 0 12px;
-  }
-
   .squad-broadcast-mode {
     display: inline-flex;
     align-items: stretch;

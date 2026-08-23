@@ -48,29 +48,44 @@
   });
 </script>
 
-{#if loading && !showRosterCard && !hasGovPrompts}
-  <p class="muted">{$t('governance.alerts.loading')}</p>
-{:else}
-  {#if showRosterCard && announcementsGroupId}
-    <SquadRosterKeyInboxCard
-      {parentId}
-      announcementsGroupId={announcementsGroupId}
-      onComplete={() => {
-        showRosterCard = false;
-      }}
-    />
-  {/if}
+<section class="dashboard-section" aria-labelledby="my-alerts-heading">
+  <h3 id="my-alerts-heading" class="section-heading">{$t('governance.dashboardView.alerts')}</h3>
+  {#if loading && !showRosterCard && !hasGovPrompts}
+    <p class="muted">{$t('governance.alerts.loading')}</p>
+  {:else}
+    {#if showRosterCard && announcementsGroupId}
+      <SquadRosterKeyInboxCard
+        {parentId}
+        announcementsGroupId={announcementsGroupId}
+        onComplete={() => {
+          showRosterCard = false;
+        }}
+      />
+    {/if}
 
-  {#each prompts as prompt (prompt.sourceEventId)}
-    <GovActionPromptCard {prompt} />
-  {/each}
+    {#each prompts as prompt (prompt.sourceEventId)}
+      <GovActionPromptCard {prompt} />
+    {/each}
 
-  {#if !showRosterCard && !hasGovPrompts}
-    <p class="muted">{$t('governance.alerts.empty')}</p>
+    {#if !showRosterCard && !hasGovPrompts}
+      <p class="muted">{$t('governance.alerts.empty')}</p>
+    {/if}
   {/if}
-{/if}
+</section>
 
 <style>
+  .dashboard-section {
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .section-heading {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 12px;
+  }
   .muted {
     color: var(--text-muted);
     font-size: 0.875rem;

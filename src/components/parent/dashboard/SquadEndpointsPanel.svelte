@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import EditIconButton from '../../ui/EditIconButton.svelte';
+  import DashboardAssetCard from './DashboardAssetCard.svelte';
   import {
     classifyPimlicoApiKey,
     clearPimlicoApiKey,
@@ -218,12 +219,12 @@
 </script>
 
 <div class="endpoints">
-  <section class="endpoint-card" id="squad-settings-rpc" aria-labelledby="squad-chain-rpc-heading">
-    <div class="card-head">
-      <div class="card-titles">
-        <h3 id="squad-chain-rpc-heading" class="card-title">{$t('squad.rpc.chainTitle')}</h3>
-        <p class="card-hint">{$t('squad.rpc.chainHint')}</p>
-      </div>
+  <DashboardAssetCard
+    id="squad-settings-rpc"
+    headingId="squad-chain-rpc-heading"
+    heading={$t('squad.rpc.chainTitle')}
+  >
+    {#snippet headerAction()}
       {#if !editingRpc}
         <EditIconButton
           ariaLabel={$t('squad.rpc.editAria')}
@@ -231,7 +232,7 @@
           onclick={() => openRpcEdit('primary')}
         />
       {/if}
-    </div>
+    {/snippet}
 
     {#if editingRpc}
       <label class="field-label" for="squad-rpc-url-input">{$t('squad.rpc.urlLabel')}</label>
@@ -261,12 +262,15 @@
         </button>
       </div>
     {:else}
-      <div class="status-row">
-        <span class="status-value">{rpcLabel}</span>
-        {#if rpcHasBackup}
-          <span class="muted backup-hint">{$t('squad.rpc.backupHint')}</span>
-        {/if}
-      </div>
+      <dl class="asset-dl">
+        <dt>{$t('squad.rpc.label')}</dt>
+        <dd class="asset-dd-inline">
+          <strong>{rpcLabel}</strong>
+          {#if rpcPrimaryIsCustom && rpcHasBackup}
+            <span class="muted backup-hint">{$t('squad.rpc.backupHint')}</span>
+          {/if}
+        </dd>
+      </dl>
       <div class="card-actions">
         <button type="button" class="btn-secondary" disabled={rpcPublishing} onclick={() => openRpcEdit('primary')}>
           {$t('squad.rpc.addCustom')}
@@ -282,25 +286,27 @@
       </div>
     {/if}
 
-    <p class="providers-label">{$t('squad.rpc.providersHint')}</p>
-    <div class="provider-links">
-      <button type="button" class="link-btn" onclick={() => void openExternalUrl(ALCHEMY_SIGNUP_URL)}>
-        {$t('squad.rpc.providerAlchemy')}
-      </button>
-      <span class="sep" aria-hidden="true">·</span>
-      <button type="button" class="link-btn" onclick={() => void openExternalUrl(POCKET_SIGNUP_URL)}>
-        {$t('squad.rpc.providerPocket')}
-      </button>
-    </div>
-    <p class="muted share-note">{$t('squad.rpc.shareNote')}</p>
-  </section>
-
-  <section class="endpoint-card" aria-labelledby="squad-bundler-heading">
-    <div class="card-head">
-      <div class="card-titles">
-        <h3 id="squad-bundler-heading" class="card-title">{$t('squad.bundler.title')}</h3>
-        <p class="card-hint">{$t(bundlerHintKey)}</p>
+    {#snippet footer()}
+      <p class="providers-label">{$t('squad.rpc.providersHint')}</p>
+      <div class="provider-links">
+        <button type="button" class="link-btn" onclick={() => void openExternalUrl(ALCHEMY_SIGNUP_URL)}>
+          {$t('squad.rpc.providerAlchemy')}
+        </button>
+        <span class="sep" aria-hidden="true">·</span>
+        <button type="button" class="link-btn" onclick={() => void openExternalUrl(POCKET_SIGNUP_URL)}>
+          {$t('squad.rpc.providerPocket')}
+        </button>
       </div>
+      <p class="muted share-note">{$t('squad.rpc.shareNote')}</p>
+    {/snippet}
+  </DashboardAssetCard>
+
+  <DashboardAssetCard
+    headingId="squad-bundler-heading"
+    heading={$t('squad.bundler.title')}
+    hint={$t(bundlerHintKey)}
+  >
+    {#snippet headerAction()}
       {#if !editingBundler}
         <EditIconButton
           ariaLabel={$t('squad.bundler.editAria')}
@@ -308,7 +314,7 @@
           onclick={openBundlerEdit}
         />
       {/if}
-    </div>
+    {/snippet}
 
     {#if editingBundler}
       <label class="field-label" for="squad-bundler-key-input">{$t('squad.bundler.keyLabel')}</label>
@@ -352,10 +358,12 @@
       </p>
     {/if}
 
-    <button type="button" class="link-btn" onclick={() => void openExternalUrl(PIMLICO_DASHBOARD_URL)}>
-      {$t('squad.bundler.getKey')}
-    </button>
-  </section>
+    {#snippet footer()}
+      <button type="button" class="link-btn" onclick={() => void openExternalUrl(PIMLICO_DASHBOARD_URL)}>
+        {$t('squad.bundler.getKey')}
+      </button>
+    {/snippet}
+  </DashboardAssetCard>
 </div>
 
 <style>
@@ -366,38 +374,6 @@
     margin: 0;
   }
 
-  .endpoint-card {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px 16px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-  }
-
-  .card-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-  }
-
-  .card-titles {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-  }
-
-  .card-title {
-    margin: 0;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .card-hint,
   .share-note,
   .providers-label {
     margin: 0;
@@ -406,11 +382,8 @@
     color: var(--text-muted);
   }
 
-  .status-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 8px;
+  .share-note {
+    margin-top: 8px;
   }
 
   .status-value {

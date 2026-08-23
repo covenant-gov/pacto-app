@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import EditIconButton from '../../ui/EditIconButton.svelte';
+  import DashboardAssetCard from './DashboardAssetCard.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { listSquadDeployNetworkOptions, type SquadNetworkSlot } from '../../../lib/squad/squad-network';
@@ -84,82 +85,50 @@
   }
 </script>
 
-<section class="network-card" id="squad-settings-network" aria-labelledby="squad-settings-network-heading">
-  <h3 id="squad-settings-network-heading" class="card-title">{$t('governance.status.networkLabel')}</h3>
-  {#each rows as row (row.slot)}
-    <div class="status-fact-row">
-      <span class="slot-label">{$t(row.labelKey)}</span>
-      {#if editingSlot === row.slot}
-        <select
-          class="network-select"
-          bind:value={slotChoice}
-          aria-label={$t(row.labelKey)}
-        >
-          {#each squadNetworkOptions as opt (opt.id)}
-            <option value={opt.id}>{opt.label}</option>
-          {/each}
-        </select>
-        <button
-          type="button"
-          class="btn-text"
-          disabled={!slotChoice || slotChoice === row.value}
-          onclick={applySlot}
-        >
-          {$t('governance.common.save')}
-        </button>
-        <button type="button" class="btn-text muted" onclick={cancelEdit}>
-          {$t('governance.common.cancel')}
-        </button>
-      {:else}
-        <span class="network-value">{getWalletNetworkDisplayName(row.value)}</span>
-        <EditIconButton
-          ariaLabel={$t(row.editKey)}
-          title={$t(row.editKey)}
-          onclick={() => startEdit(row.slot, row.value)}
-        />
-      {/if}
-    </div>
-  {/each}
-</section>
+<DashboardAssetCard
+  id="squad-settings-network"
+  headingId="squad-settings-network-heading"
+  heading={$t('governance.status.networkLabel')}
+>
+  <dl class="asset-dl">
+    {#each rows as row (row.slot)}
+      <dt>{$t(row.labelKey)}</dt>
+      <dd class="asset-dd-inline">
+        {#if editingSlot === row.slot}
+          <select
+            class="network-select"
+            bind:value={slotChoice}
+            aria-label={$t(row.labelKey)}
+          >
+            {#each squadNetworkOptions as opt (opt.id)}
+              <option value={opt.id}>{opt.label}</option>
+            {/each}
+          </select>
+          <button
+            type="button"
+            class="btn-text"
+            disabled={!slotChoice || slotChoice === row.value}
+            onclick={applySlot}
+          >
+            {$t('governance.common.save')}
+          </button>
+          <button type="button" class="btn-text muted" onclick={cancelEdit}>
+            {$t('governance.common.cancel')}
+          </button>
+        {:else}
+          <strong>{getWalletNetworkDisplayName(row.value)}</strong>
+          <EditIconButton
+            ariaLabel={$t(row.editKey)}
+            title={$t(row.editKey)}
+            onclick={() => startEdit(row.slot, row.value)}
+          />
+        {/if}
+      </dd>
+    {/each}
+  </dl>
+</DashboardAssetCard>
 
 <style>
-  .network-card {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px 16px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-  }
-
-  .card-title {
-    margin: 0;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .status-fact-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 12px;
-    margin: 0;
-    font-size: 0.875rem;
-  }
-
-  .slot-label {
-    font-weight: 500;
-    color: var(--text-secondary);
-    min-width: 8.5rem;
-  }
-
-  .network-value {
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-
   .muted {
     color: var(--text-muted);
   }

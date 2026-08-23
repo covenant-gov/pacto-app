@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import DashboardAssetCard from './DashboardAssetCard.svelte';
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
   import { readFile } from '@tauri-apps/plugin-fs';
   import type { Squad } from '../../../stores/squads';
@@ -189,13 +190,12 @@
   }
 </script>
 
-<section class="stickers-section" aria-labelledby={stickersHeadingId}>
-  <h3 id={stickersHeadingId} class="stickers-title">{$t('squad.stickers.sectionTitle')}</h3>
+<DashboardAssetCard headingId={stickersHeadingId} heading={$t('squad.stickers.sectionTitle')}>
   {#if !squadId}
     <p class="stickers-empty-state">{$t('squad.stickers.emptyState')}</p>
     <p class="muted stickers-empty-hint">{$t('squad.stickers.emptyStateHint')}</p>
   {:else}
-
+    <div class="stickers-body">
     <div class="stickers-field-row">
       <label class="meta-label" for="sticker-pack-name">{$t('squad.stickers.packNameLabel')}</label>
       <input
@@ -298,26 +298,15 @@
         <span class="stickers-save-success" role="status">{$t('squad.stickers.saveSuccess')}</span>
       {/if}
     </div>
+    </div>
   {/if}
-</section>
+</DashboardAssetCard>
 
 <style>
-  .stickers-section {
+  .stickers-body {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 14px 16px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    font-size: 0.875rem;
-  }
-
-  .stickers-title {
-    margin: 0;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-primary);
   }
 
   .muted {
@@ -331,7 +320,7 @@
   }
 
   .stickers-empty-hint {
-    margin: 0;
+    margin: 8px 0 0;
     font-size: 0.8125rem;
   }
 
