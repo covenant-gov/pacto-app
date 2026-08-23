@@ -186,7 +186,7 @@
 	"messaging.inviteCard.partnerSquadInviteThem": "{inviterName} te invitó a unirte a este escuad aliado.",
 	"messaging.inviteCard.partnerSquadInviteYou": "Invitaste a {inviterName} a este escuad aliado.",
 	"messaging.inviteCard.partnerSquadsLabel": "Escuads aliados: {squads}",
-	"messaging.inviteCard.setRosterSignerCaption": "Configura tu firmante del escuad en #my-dashboard → Alertas cuando lo abras.",
+	"messaging.inviteCard.setRosterSignerCaption": "Configura tu firmante del escuad en #settings → Alertas cuando lo abras.",
 	"messaging.inviteCard.squadInitial": "E",
 	"messaging.inviteCard.squadInviteThem": "{inviterName} te invitó a unirte a este escuad.",
 	"messaging.inviteCard.squadInviteYou": "Invitaste a {inviterName} a este escuad.",

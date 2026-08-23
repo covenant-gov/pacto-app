@@ -10,8 +10,7 @@
   import UpdateAvailableModal from '../components/updater/UpdateAvailableModal.svelte';
   import ParentNavbar from '../components/layout/ParentNavbar.svelte';
   import ParentDashboard from '../components/parent/ParentDashboard.svelte';
-import MyDashboard from '../components/parent/MyDashboard.svelte';
-import SquadSettingsView from '../components/parent/SquadSettingsView.svelte';
+  import SquadSettingsView from '../components/parent/SquadSettingsView.svelte';
     import Profile from '../components/profile/Profile.svelte';
   import MessengerNavbar from '../components/dm/MessengerNavbar.svelte';
   import MessengerChatView from '../components/dm/MessengerChatView.svelte';
@@ -96,7 +95,6 @@ import SquadSettingsView from '../components/parent/SquadSettingsView.svelte';
     blockedDmNpubs,
     dmSendError,
     SQUAD_DASHBOARD_CHANNEL_ID,
-    MY_DASHBOARD_CHANNEL_ID,
     SETTINGS_CHANNEL_ID,
     SQUAD_WARGAME_CHANNEL_ID,
     isVirtualHubChannelId,
@@ -185,8 +183,6 @@ import SquadSettingsView from '../components/parent/SquadSettingsView.svelte';
     openHubParent != null &&
     (!effectiveHubChannel.channelId ||
       isSquadDashboardChromeChannelId(effectiveHubChannel.channelId));
-  $: showMyDashboard =
-    openHubParent != null && effectiveHubChannel.channelId === MY_DASHBOARD_CHANNEL_ID;
   $: showSquadSettings =
     openHubParent != null && effectiveHubChannel.channelId === SETTINGS_CHANNEL_ID;
   $: showMlsChatView =
@@ -1180,10 +1176,6 @@ import SquadSettingsView from '../components/parent/SquadSettingsView.svelte';
           {:else if showSquadSettings && openHubParent}
             {#key `${openHubParent.id}:${SETTINGS_CHANNEL_ID}`}
               <SquadSettingsView parent={openHubParent} />
-            {/key}
-          {:else if showMyDashboard && openHubParent}
-            {#key `${openHubParent.id}:${MY_DASHBOARD_CHANNEL_ID}`}
-              <MyDashboard parent={openHubParent} />
             {/key}
           {:else if showMlsChatView}
             {#if ChatViewComponent}

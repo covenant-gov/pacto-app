@@ -186,7 +186,7 @@
 	"messaging.inviteCard.partnerSquadInviteThem": "{inviterName} invited you to join this partner squad.",
 	"messaging.inviteCard.partnerSquadInviteYou": "You invited {inviterName} to this partner squad.",
 	"messaging.inviteCard.partnerSquadsLabel": "Partner squads: {squads}",
-	"messaging.inviteCard.setRosterSignerCaption": "Set your squad signer in #my-dashboard → Alerts when you open it.",
+	"messaging.inviteCard.setRosterSignerCaption": "Set your squad signer in #settings → Alerts when you open it.",
 	"messaging.inviteCard.squadInitial": "S",
 	"messaging.inviteCard.squadInviteThem": "{inviterName} invited you to join this squad.",
 	"messaging.inviteCard.squadInviteYou": "You invited {inviterName} to this squad.",

@@ -9,6 +9,7 @@ import {
   lastHubChannelNameBySquadId,
   lastOpenedChannelId,
   lastOpenedSquadId,
+  settingsChannelMode,
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
@@ -80,6 +81,9 @@ export function navigateToTarget(target: NavigationTarget): void {
   if (target.kind === 'squad-dashboard') {
     navigateToSquadChannel(target.squadId, SQUAD_DASHBOARD_CHANNEL_ID);
     return;
+  }
+  if (target.channelId === SETTINGS_CHANNEL_ID) {
+    settingsChannelMode.set('squad');
   }
   navigateToSquadChannel(target.squadId, target.channelId, target.hubChannelName);
 }

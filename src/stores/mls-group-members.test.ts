@@ -78,7 +78,7 @@ describe('mls group members store', () => {
 
   it('skips virtual hub ids', async () => {
     const spy = vi.spyOn(nostrApi, 'getMlsGroupMembers');
-    await ensureMlsGroupMembers('__my_dashboard__');
+    await ensureMlsGroupMembers('__squad_settings__');
     await ensureMlsGroupMembers('__squad_dashboard__');
     expect(spy).not.toHaveBeenCalled();
   });

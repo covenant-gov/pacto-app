@@ -4,8 +4,6 @@
 import type { Channel } from '../stores/squads';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  MY_DASHBOARD_CHANNEL_ID,
-  MY_DASHBOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_ID,
   SETTINGS_CHANNEL_NAME,
@@ -29,6 +27,7 @@ export interface ParentWithChannels {
 
 const OBSOLETE_HUB_SIDEBAR_NAMES = new Set([
   'dashboard',
+  'my-dashboard',
   'personal-alerts',
   'monitor',
   'inbox',
@@ -40,7 +39,6 @@ export function isDefaultHubSidebarChannel(name: string): boolean {
   return (
     name === SQUAD_DASHBOARD_CHANNEL_NAME ||
     name === SQUAD_WARGAME_CHANNEL_NAME ||
-    name === MY_DASHBOARD_CHANNEL_NAME ||
     name === ANNOUNCEMENTS_CHANNEL_NAME ||
     name === POLLS_CHANNEL_NAME ||
     name === SETTINGS_CHANNEL_NAME
@@ -49,7 +47,7 @@ export function isDefaultHubSidebarChannel(name: string): boolean {
 
 /**
  * Virtual + MLS rows for the squad hub sidebar.
- * Pinned order: squad-dashboard → squad-wargame (when present) → my-dashboard → announcements → polls → settings → (custom below divider).
+ * Pinned order: squad-dashboard → squad-wargame (when present) → announcements → polls → settings → (custom below divider).
  */
 export function buildHubSidebarChannels<T extends { name: string; groupId: string; order: number }>(
   rawChannels: T[],
@@ -81,7 +79,6 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
       order: -2,
     });
   }
-  out.push({ name: MY_DASHBOARD_CHANNEL_NAME, groupId: MY_DASHBOARD_CHANNEL_ID, order: -1 });
   if (announcements) out.push(announcements);
   if (polls) out.push(polls);
   out.push({ name: SETTINGS_CHANNEL_NAME, groupId: SETTINGS_CHANNEL_ID, order: 2 });

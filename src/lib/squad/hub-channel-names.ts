@@ -7,10 +7,6 @@ export const POLLS_CHANNEL_NAME = 'polls';
 export const SQUAD_DASHBOARD_CHANNEL_ID = '__squad_dashboard__';
 export const SQUAD_DASHBOARD_CHANNEL_NAME = 'squad-dashboard';
 
-/** Virtual member dashboard (not an MLS group). Alerts read the MLS `inbox` bucket. */
-export const MY_DASHBOARD_CHANNEL_ID = '__my_dashboard__';
-export const MY_DASHBOARD_CHANNEL_NAME = 'my-dashboard';
-
 /** Virtual war-game hub (not an MLS group). Shown after a completed war-game deploy. */
 export const SQUAD_WARGAME_CHANNEL_ID = '__squad_wargame__';
 export const SQUAD_WARGAME_CHANNEL_NAME = 'squad-wargame';
@@ -23,10 +19,14 @@ export const SETTINGS_CHANNEL_NAME = 'settings';
 export function isVirtualHubChannelId(id: string | null | undefined): boolean {
   return (
     id === SQUAD_DASHBOARD_CHANNEL_ID ||
-    id === MY_DASHBOARD_CHANNEL_ID ||
     id === SQUAD_WARGAME_CHANNEL_ID ||
     id === SETTINGS_CHANNEL_ID
   );
+}
+
+/** Obsolete `#my-dashboard` virtual id remaps to `#settings`. */
+export function remapObsoleteHubChannelId(id: string | null | undefined): string | null | undefined {
+  return id === '__my_dashboard__' ? SETTINGS_CHANNEL_ID : id;
 }
 
 /** Squad-wide dashboard chrome (`squad-dashboard` or `squad-wargame`). */

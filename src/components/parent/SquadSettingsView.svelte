@@ -9,7 +9,17 @@
     squadMemberEvmByParentId,
   } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
-  import { loadDashboardSettingsTab } from '../../lib/dashboard/dashboard-tab-components';
+  import { profiles } from '../../stores/profiles';
+  import {
+    settingsChannelMode,
+    type SettingsChannelMode,
+  } from '../../stores/navigation';
+  import { getProfileDisplayName } from '../../lib/utils/profile';
+  import {
+    loadDashboardSettingsTab,
+    loadMyDashboardAlertsTab,
+    loadMyDashboardStatusTab,
+  } from '../../lib/dashboard/dashboard-tab-components';
   import { fetchSquadMemberEvmByNpub } from '../../lib/dashboard/parent-dashboard-loaders';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
   import { ensureMlsGroupMembers, membersByGroupId } from '../../stores/mls-group-members';
@@ -46,6 +56,15 @@
   const squadAdminCtx = $derived(resolveSquadAdminContext(infraRows));
   const channelMembers = $derived(announcementsGroupId ? ($membersByGroupId[announcementsGroupId] ?? []) : []);
   const squadMemberEvmByNpub = $derived(parentId ? ($squadMemberEvmByParentId[parentId] ?? {}) : {});
+  const settingsMode = $derived($settingsChannelMode);
+  const usernameLabel = $derived(getProfileDisplayName($profiles[$currentUser?.npub ?? '']));
+
+  let visitedSettingsModes = $state(new Set<SettingsChannelMode>([$settingsChannelMode]));
+  $effect(() => {
+    const mode = settingsMode;
+    if (visitedSettingsModes.has(mode)) return;
+    visitedSettingsModes = new Set([...visitedSettingsModes, mode]);
+  });
 
   const productionInfraChain = $derived(
     pactoGovInfraRow(infraRows)?.chain?.trim() ||
@@ -87,6 +106,10 @@
       if (npub) persistSquadMemberEvmForParent(npub, pid, rows);
     });
   });
+
+  function selectSettingsMode(mode: SettingsChannelMode) {
+    settingsChannelMode.set(mode);
+  }
 
   function setSlot(slot: SquadNetworkSlot, chain: typeof primaryNetwork) {
     const npub = $currentUser?.npub;
@@ -130,27 +153,85 @@
       <h3 class="dashboard-channel-name">{SETTINGS_CHANNEL_NAME}</h3>
     </div>
   </div>
+  <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.settingsChannelMode.section')}>
+    <span class="dashboard-view-nav-label" aria-hidden="true">{$t('governance.mode')}</span>
+    <div class="dashboard-mode-switcher" role="group">
+      <button
+        type="button"
+        role="tab"
+        class="dashboard-mode-segment dashboard-mode-segment-username"
+        class:active={settingsMode === 'personal'}
+        aria-selected={settingsMode === 'personal'}
+        onclick={() => selectSettingsMode('personal')}
+      >
+        {usernameLabel}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="dashboard-mode-segment"
+        class:active={settingsMode === 'squad'}
+        aria-selected={settingsMode === 'squad'}
+        onclick={() => selectSettingsMode('squad')}
+      >
+        {$t('governance.settingsChannelMode.squad')}
+      </button>
+    </div>
+  </div>
   <div class="squad-settings-body">
-    {#await loadDashboardSettingsTab() then SettingsTab}
-      <SettingsTab
-        squad={parent}
-        {squadAdminCtx}
-        {announcementsGroupId}
-        parentId={parentId ?? ''}
-        {channelMembers}
-        {squadMemberEvmByNpub}
-        {primaryNetwork}
-        {practiceNetwork}
-        onSetPrimaryNetwork={(chain) => setSlot('primary', chain)}
-        onSetPracticeNetwork={(chain) => setSlot('practice', chain)}
-        {squadRpcConfig}
-        onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
-        onSetSquadRpcBackup={handleSetSquadRpcBackup}
-        onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
-      />
-    {:catch}
-      <p class="tab-error" role="alert">{$t('governance.tabLoadError.settings')}</p>
-    {/await}
+    {#if visitedSettingsModes.has('personal')}
+      <div
+        class="dashboard-tab-pane"
+        class:dashboard-tab-pane-active={settingsMode === 'personal'}
+        hidden={settingsMode !== 'personal'}
+      >
+        {#await loadMyDashboardStatusTab() then StatusTab}
+          <StatusTab
+            {announcementsGroupId}
+            parentId={parentId ?? ''}
+            {squadMemberEvmByNpub}
+          >
+            {#snippet afterChecklist()}
+              {#await loadMyDashboardAlertsTab() then AlertsTab}
+                <AlertsTab {parentId} {announcementsGroupId} />
+              {:catch}
+                <p class="tab-error" role="alert">{$t('governance.tabLoadError.alerts')}</p>
+              {/await}
+            {/snippet}
+          </StatusTab>
+        {:catch}
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.statusShort')}</p>
+        {/await}
+      </div>
+    {/if}
+    {#if visitedSettingsModes.has('squad')}
+      <div
+        class="dashboard-tab-pane"
+        class:dashboard-tab-pane-active={settingsMode === 'squad'}
+        hidden={settingsMode !== 'squad'}
+      >
+        {#await loadDashboardSettingsTab() then SettingsTab}
+          <SettingsTab
+            squad={parent}
+            {squadAdminCtx}
+            {announcementsGroupId}
+            parentId={parentId ?? ''}
+            {channelMembers}
+            {squadMemberEvmByNpub}
+            {primaryNetwork}
+            {practiceNetwork}
+            onSetPrimaryNetwork={(chain) => setSlot('primary', chain)}
+            onSetPracticeNetwork={(chain) => setSlot('practice', chain)}
+            {squadRpcConfig}
+            onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
+            onSetSquadRpcBackup={handleSetSquadRpcBackup}
+            onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
+          />
+        {:catch}
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.settings')}</p>
+        {/await}
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -183,11 +264,71 @@
     font-size: 1rem;
     font-weight: 600;
   }
+  .dashboard-view-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 48px;
+    min-height: 48px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    flex-shrink: 0;
+  }
+  .dashboard-view-nav-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .dashboard-mode-switcher {
+    display: inline-flex;
+    align-items: stretch;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  .dashboard-mode-segment {
+    padding: 0 14px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color 0.15s, background-color 0.15s;
+  }
+  .dashboard-mode-segment-username {
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dashboard-mode-segment:hover:not(.active) {
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+  }
+  .dashboard-mode-segment:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+  .dashboard-mode-segment.active {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
   .squad-settings-body {
     flex: 1;
     min-height: 0;
     overflow: auto;
     padding: 16px;
+  }
+  .dashboard-tab-pane[hidden] {
+    display: none !important;
   }
   .tab-error {
     color: var(--danger, #c44);

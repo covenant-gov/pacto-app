@@ -18,7 +18,6 @@ import {
 } from './parent-navbar';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  MY_DASHBOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_NAME,
@@ -30,7 +29,6 @@ describe('partitionHubSidebarChannels', () => {
   it('splits built-in hub rows from user-created channels', () => {
     const channels = [
       { name: SQUAD_DASHBOARD_CHANNEL_NAME, groupId: '__squad_dashboard__', order: -2 },
-      { name: MY_DASHBOARD_CHANNEL_NAME, groupId: '__my_dashboard__', order: -1 },
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
       { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 1 },
       { name: 'c1', groupId: 'c1g', order: 2 },
@@ -38,7 +36,6 @@ describe('partitionHubSidebarChannels', () => {
     const { defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels);
     expect(defaultHubChannels.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
-      MY_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
     ]);
@@ -59,13 +56,13 @@ describe('buildHubSidebarChannels', () => {
   it('pins dashboards then announcements and polls; strips obsolete rows', () => {
     const raw = [
       ...defaultChannelRowsForGroupId('g'),
+      { name: 'my-dashboard', groupId: '__my_dashboard__', order: 8 },
       { name: 'personal-alerts', groupId: 'g', order: 9 },
       { name: 'c1', groupId: 'c1g', order: 10 },
     ];
     const built = buildHubSidebarChannels(raw);
     expect(built.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
-      MY_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
@@ -83,7 +80,6 @@ describe('buildHubSidebarChannels', () => {
     expect(built.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
       SQUAD_WARGAME_CHANNEL_NAME,
-      MY_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,

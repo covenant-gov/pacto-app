@@ -16,19 +16,18 @@ import {
 import {
   squads,
   squadInfraByParentId,
-  MY_DASHBOARD_CHANNEL_ID,
   SETTINGS_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   isVirtualHubChannelId,
   type Squad,
 } from '../stores/squads';
+import { remapObsoleteHubChannelId } from './squad/hub-channel-names';
 import { resolveHubChannelNameForGroupSelection } from './mls/virtual-channel-bucket';
 import { pactoGovWargameInfraRow } from './governance/api';
 
 const VIRTUAL_HUB_CHANNEL_IDS = new Set([
   SQUAD_DASHBOARD_CHANNEL_ID,
-  MY_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   SETTINGS_CHANNEL_ID,
 ]);
@@ -69,7 +68,7 @@ export function resolveHubChannelForSquad(
 ): { channelId: string | null; hubChannelName: string | null } {
   const sorted = [...squad.channels].sort((a, b) => a.order - b.order);
   const firstCh = sorted[0];
-  const lastForSquad = lastChannelBySquad[squad.id];
+  const lastForSquad = remapObsoleteHubChannelId(lastChannelBySquad[squad.id]) ?? undefined;
   const lastValid =
     !!lastForSquad &&
     (sorted.some((c) => c.groupId === lastForSquad) ||
@@ -99,10 +98,11 @@ export function resolveHubChannelForSquad(
 }
 
 function isActiveChannelValidForSquad(squad: Squad, channelId: string | null): boolean {
-  if (!channelId || channelId.startsWith('creating-')) return false;
-  if (channelId === SQUAD_WARGAME_CHANNEL_ID) return isWarGameHubAvailable(squad.id);
-  if (VIRTUAL_HUB_CHANNEL_IDS.has(channelId)) return true;
-  return squad.channels.some((c) => c.groupId === channelId);
+  const id = remapObsoleteHubChannelId(channelId) ?? null;
+  if (!id || id.startsWith('creating-')) return false;
+  if (id === SQUAD_WARGAME_CHANNEL_ID) return isWarGameHubAvailable(squad.id);
+  if (VIRTUAL_HUB_CHANNEL_IDS.has(id)) return true;
+  return squad.channels.some((c) => c.groupId === id);
 }
 
 /** Resolved channel for the open squad — used for hub routing before store sync catches up. */
@@ -113,16 +113,17 @@ export function resolveEffectiveHubChannel(
   lastHubChannelNameBySquad: Record<string, string>,
 ): { channelId: string | null; hubChannelName: string | null } {
   if (!squad) return { channelId: activeChannelId, hubChannelName: null };
-  if (isActiveChannelValidForSquad(squad, activeChannelId)) {
+  const remappedActive = remapObsoleteHubChannelId(activeChannelId) ?? null;
+  if (isActiveChannelValidForSquad(squad, remappedActive)) {
     const hub =
-      activeChannelId && !VIRTUAL_HUB_CHANNEL_IDS.has(activeChannelId)
+      remappedActive && !VIRTUAL_HUB_CHANNEL_IDS.has(remappedActive)
         ? resolveHubChannelNameForGroupSelection(
             squad.channels,
-            activeChannelId,
+            remappedActive,
             lastHubChannelNameBySquad[squad.id] ?? null,
           )
         : null;
-    return { channelId: activeChannelId, hubChannelName: hub };
+    return { channelId: remappedActive, hubChannelName: hub };
   }
   const resolved = resolveHubChannelForSquad(squad, lastChannelBySquad, lastHubChannelNameBySquad);
   if (!resolved.channelId) {

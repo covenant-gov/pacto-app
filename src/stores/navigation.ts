@@ -34,11 +34,25 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
 
 export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
 
-function openSquadSettingsChannel() {
+/** #settings segmented mode; unknown persisted values reset to `personal`. */
+export type SettingsChannelMode = 'personal' | 'squad';
+
+export const SETTINGS_CHANNEL_MODE_PREFIX = 'pacto_settings_channel_mode';
+
+export function parseSettingsChannelMode(raw: string | null): SettingsChannelMode {
+  const v = raw?.trim();
+  if (v === 'personal' || v === 'squad') return v;
+  return 'personal';
+}
+
+export const settingsChannelMode = writable<SettingsChannelMode>('personal');
+
+function openSquadSettingsChannel(mode?: SettingsChannelMode) {
   const squadId = get(activeSquadId);
   activeChannelId.set(SETTINGS_CHANNEL_ID);
   activeHubChannelName.set(null);
   activeView.set('hub');
+  if (mode) settingsChannelMode.set(mode);
   if (!squadId) return;
   lastChannelBySquadId.update((m) => ({ ...m, [squadId]: SETTINGS_CHANNEL_ID }));
   lastHubChannelNameBySquadId.update((m) => {
@@ -52,7 +66,7 @@ function openSquadSettingsChannel() {
 export const squadSettingsRpcFocusNonce = writable(0);
 
 export function focusSquadSettingsRpcEditor() {
-  openSquadSettingsChannel();
+  openSquadSettingsChannel('squad');
   squadSettingsRpcFocusNonce.update((n) => n + 1);
 }
 
@@ -61,7 +75,7 @@ export const squadSettingsNetworkFocusNonce = writable(0);
 export const squadSettingsNetworkFocusSlot = writable<SquadNetworkSlot>('primary');
 
 export function focusSquadSettingsNetworkEditor(slot: SquadNetworkSlot = 'primary') {
-  openSquadSettingsChannel();
+  openSquadSettingsChannel('squad');
   squadSettingsNetworkFocusSlot.set(slot);
   squadSettingsNetworkFocusNonce.update((n) => n + 1);
 }
@@ -91,6 +105,17 @@ export const squadBotMetaNonceBySquadId = writable<Record<string, number>>({});
 squadDashboardChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
   const key = persistenceKey(SQUAD_DASHBOARD_MODE_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, mode);
+  } catch {
+    // ignore quota
+  }
+});
+
+settingsChannelMode.subscribe((mode) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(SETTINGS_CHANNEL_MODE_PREFIX);
   if (!key) return;
   try {
     localStorage.setItem(key, mode);

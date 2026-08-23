@@ -11,6 +11,7 @@ import {
   lastOpenedChannelId,
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
+  settingsChannelMode,
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
@@ -113,6 +114,7 @@ describe('navigateToTarget', () => {
     lastOpenedChannelId.set(null);
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
+    settingsChannelMode.set('personal');
     squads.set([squad('squad-1', [{ name: 'announcements', groupId: 'grp-announce' }, { name: 'polls', groupId: 'grp-polls' }])]);
   });
 
@@ -140,6 +142,12 @@ describe('navigateToTarget', () => {
     expect(get(activeDmId)).toBe('npub1peer');
     expect(get(activeTopNavTab)).toBe('dms');
     expect(get(activeView)).toBe('hub');
+  });
+
+  it('a #settings channel target opens squad mode', () => {
+    navigateToTarget({ kind: 'squad-channel', squadId: 'squad-1', channelId: SETTINGS_CHANNEL_ID });
+    expect(get(activeChannelId)).toBe(SETTINGS_CHANNEL_ID);
+    expect(get(settingsChannelMode)).toBe('squad');
   });
 });
 

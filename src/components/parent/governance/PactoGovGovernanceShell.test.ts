@@ -128,7 +128,7 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
 
     await waitFor(() =>
       expect(submitButton.title).toBe(
-        'Not allowed for your role. Check your hats or bind a squad EVM in My Dashboard → Alerts.',
+        'Not allowed for your role. Check your hats or bind a squad EVM in #settings → Alerts.',
       ),
     );
     // Went straight from "loading" to "denied" — it was never briefly enabled.
@@ -223,7 +223,7 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     );
     await waitFor(() =>
       expect(submitButton.title).toBe(
-        'Not allowed for your role. Check your hats or bind a squad EVM in My Dashboard → Alerts.',
+        'Not allowed for your role. Check your hats or bind a squad EVM in #settings → Alerts.',
       ),
     );
     expect(submitButton.disabled).toBe(true);

@@ -116,7 +116,7 @@ Apply **first matching rule** (implementations walk top-to-bottom):
 
 **Rationale for default `announcements`:** safest UX default for unknown content (human-readable traffic); automation paths should **always** set tag or field once virtual routing lands.
 
-**Single MLS stream:** default squad/network traffic uses **one** physical `group_id`. Sidebar UI rows are `#squad-dashboard`, `#my-dashboard`, `#announcements`, and `#polls` (dashboards are virtual; announcements/polls share the MLS stream). Buckets `inbox` and `join_requests` remain for transport and are surfaced inside dashboards (Alerts / Crew), not as dedicated channels.
+**Single MLS stream:** default squad/network traffic uses **one** physical `group_id`. Sidebar UI rows are `#squad-dashboard`, `#announcements`, `#polls`, and `#settings` (dashboards and settings are virtual; announcements/polls share the MLS stream). Buckets `inbox` and `join_requests` remain for transport and are surfaced inside `#settings` (username-mode Alerts / Squad-mode Join requests), not as dedicated channels.
 
 ---
 
