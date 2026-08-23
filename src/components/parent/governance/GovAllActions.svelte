@@ -2,10 +2,12 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import GovCtaButton from './GovCtaButton.svelte';
+  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
   import GovSubmitProposalModal from './GovSubmitProposalModal.svelte';
   import GovVoteModeModal from './GovVoteModeModal.svelte';
   import {
     gateRequiresCaptainOrCrew,
+    isHatRequiredReason,
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
@@ -41,6 +43,9 @@
     <p class="muted funding-hint">{fundingHint}</p>
   {/if}
   {#if treasuryAuthority}
+    {#if !sharedGate.enabled && isHatRequiredReason(sharedGate.reason)}
+      <GovHatRequiredBanner reason={sharedGate.reason} />
+    {/if}
     <div class="row">
       <GovCtaButton
         label={tFn('governance.action.submitProposal')}

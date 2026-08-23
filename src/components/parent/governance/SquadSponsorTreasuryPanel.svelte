@@ -38,6 +38,7 @@
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import { resolveSquadSponsorVariant } from '../../../lib/governance/squad-sponsor-variant';
 
   interface Props {
     parentId: string;
@@ -72,6 +73,7 @@
   const network = $derived(parseSupportedChainId(sponsorRow?.chain));
   const poolBalanceWei = $derived(summary ? BigInt(summary.poolBalanceWei) : null);
   const lowBalance = $derived(poolBalanceWei != null && poolBalanceWei < SPONSOR_LOW_BALANCE_WEI);
+  const hatsLinked = $derived(resolveSquadSponsorVariant(sponsorRow) === 'hats');
   const explorerUrl = $derived(
     summary?.sponsorAddress &&
       explorerAddressUrl(parseSupportedChainId(summary.chain), summary.sponsorAddress),
@@ -338,7 +340,15 @@
     <p class="sponsor-error" role="alert">{friendlyMessage(loadError, 'sponsor')}</p>
     <button type="button" class="btn-secondary" onclick={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
-    <p class="sponsor-lead muted">{$t('governance.info.sponsorLead', { values: { chain: summary.chain } })}</p>
+    {#if hatsLinked}
+      <p class="sponsor-lead">
+        <span class="sponsor-lead-kicker">{$t('governance.crew.sponsorLabel')}</span>
+        <span>{$t('governance.crew.sponsorHatsLinked')}</span>
+        <span class="muted">{$t('governance.crew.sponsorHatsHint')}</span>
+      </p>
+    {:else}
+      <p class="sponsor-lead muted">{$t('governance.info.sponsorLead', { values: { chain: summary.chain } })}</p>
+    {/if}
     <dl class="sponsor-dl">
       <dt>{$t('governance.info.sponsorPoolBalance')}</dt>
       <dd>
@@ -570,8 +580,20 @@
   }
 
   .sponsor-lead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
     margin: 0 0 12px;
     font-size: 0.875rem;
+  }
+
+  .sponsor-lead-kicker {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
   }
 
   .sponsor-dl {

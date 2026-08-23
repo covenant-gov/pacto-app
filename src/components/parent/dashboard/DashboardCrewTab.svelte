@@ -147,13 +147,7 @@
   }
 </script>
 
-{#if sponsorHatsMode && hasSponsor}
-  <section class="sponsor-owner-banner" aria-label={$t('governance.crew.sponsorAriaLabel')}>
-    <span class="meta-label">{$t('governance.crew.sponsorLabel')}</span>
-    <span class="sponsor-owner-value">{$t('governance.crew.sponsorHatsLinked')}</span>
-    <span class="muted sponsor-owner-hint">{$t('governance.crew.sponsorHatsHint')}</span>
-  </section>
-{:else if sponsorExtStatus || sponsorExtLoading || sponsorExtError}
+{#if sponsorExtStatus || sponsorExtLoading || sponsorExtError}
   <section class="sponsor-owner-banner" aria-label={$t('governance.crew.sponsorOwnerAriaLabel')}>
     <span class="meta-label">{$t('governance.crew.sponsorOwnerLabel')}</span>
     {#if sponsorExtLoading && !sponsorExtStatus}
@@ -181,7 +175,6 @@
 
 <section class="dashboard-section" aria-labelledby="crew-roster-heading">
   <h3 id="crew-roster-heading" class="section-heading">{$t('governance.crew.sectionCrew')}</h3>
-  <p class="caption muted">{$t('governance.crew.membershipCaption')}</p>
 
   {#if settingsChainRefreshing}
     <p class="muted" role="status">{$t('governance.crew.refreshing')}</p>
@@ -364,10 +357,6 @@
     font-weight: 600;
     color: var(--text-secondary);
     margin: 0 0 8px;
-  }
-  .caption {
-    font-size: 0.8125rem;
-    margin: 0 0 12px;
   }
   .muted {
     color: var(--text-muted);

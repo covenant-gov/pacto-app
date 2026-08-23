@@ -148,7 +148,6 @@
 <section class="status-checklist" aria-label={$t('governance.status.checklistAria')}>
   <span class="meta-label">{$t('governance.status.checklistTitle')}</span>
   <p class="wargame-nudge">
-    {$t('governance.status.wargameNudge')}
     <button
       type="button"
       class="checklist-action"

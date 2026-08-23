@@ -154,11 +154,30 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     })) as HTMLButtonElement;
 
     await waitFor(() =>
-      expect(submitButton.title).toBe(
-        'You need a Captain or Crew hat. Ask a captain or crew member for a hat.',
-      ),
+      expect(submitButton.title).toBe('Crew/Captain hat required'),
     );
     expect(submitButton.disabled).toBe(true);
+  });
+
+  it('shows one hat-required alert on All instead of per-button copy', async () => {
+    mockedGetSquadCapabilities.mockRejectedValue(new Error('network unreachable'));
+
+    render(PactoGovGovernanceShell, {
+      props: {
+        payload: basePayload(),
+        network: 'sepolia',
+        parentId: 'parent1',
+        myAddress: '0xmember000000000000000000000000000000009',
+        captainWearers: [CAPTAIN_ADDRESS],
+        crewWearers: [],
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe('Crew/Captain hat required'),
+    );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.queryAllByText('Crew/Captain hat required')).toHaveLength(1);
   });
 
   it('reloads capabilities and keeps CTAs pending when the process nonce bumps', async () => {
@@ -239,9 +258,7 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
       }),
     );
     await waitFor(() =>
-      expect(submitButton.title).toBe(
-        'You need a Captain or Crew hat. Ask a captain or crew member for a hat.',
-      ),
+      expect(submitButton.title).toBe('Crew/Captain hat required'),
     );
     expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(1);
 

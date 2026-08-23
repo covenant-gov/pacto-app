@@ -104,6 +104,16 @@ export type CtaGate =
   | { enabled: true; reason: '' }
   | { enabled: false; reason: string };
 
+const HAT_REQUIRED_REASONS = new Set([
+  'governance.gate.requiresCrew',
+  'governance.gate.requiresCaptain',
+  'governance.gate.requiresCaptainOrCrew',
+]);
+
+export function isHatRequiredReason(reason: string): boolean {
+  return HAT_REQUIRED_REASONS.has(reason);
+}
+
 /** Map backend ACL reason strings to i18n keys. Unknown reasons fail closed to accessDenied. */
 export function localizeAclReason(reason: string): string {
   const trimmed = reason.trim();

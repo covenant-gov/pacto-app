@@ -88,16 +88,6 @@
       {$t('governance.roles.leadSuffix')}
     </p>
   {:else}
-    <p class="structure-summary-lead dashboard-placeholder-text">
-      {$t('governance.roles.topHatOn')}
-      <strong>{structureSummary.chainDisplayName}</strong>
-      {$t('governance.roles.chainIdStart')}
-      <code class="structure-mono">{structureSummary.chainIdNumeric}</code>
-      {$t('governance.roles.hatTreeIdStart')}
-      <code class="structure-mono" title={structureSummary.treeIdRaw}
-        >{structureSummary.treeDomain ?? structureSummary.treeIdRaw}</code
-      >.
-    </p>
     {#if structureSummary.hatsExplorerUrl}
       {@const hatsUrl = structureSummary.hatsExplorerUrl}
       <p class="structure-actions">
@@ -221,16 +211,6 @@
   .dashboard-placeholder-text.muted,
   .muted {
     color: var(--text-muted);
-  }
-
-  .structure-summary-lead {
-    margin-top: 0;
-  }
-
-  .structure-mono {
-    font-size: 0.8125rem;
-    color: var(--text-primary);
-    font-family: ui-monospace, monospace;
   }
 
   .structure-actions {

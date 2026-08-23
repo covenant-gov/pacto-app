@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import type { CtaGate } from '../../../lib/governance/governance-privilege';
+  import { isHatRequiredReason, type CtaGate } from '../../../lib/governance/governance-privilege';
 
   interface Props {
     label: string;
@@ -32,7 +32,7 @@
   >
     {label}
   </button>
-  {#if !gate.enabled && gate.reason}
+  {#if !gate.enabled && gate.reason && !isHatRequiredReason(gate.reason)}
     <p class="gov-cta-reason muted">{$t(gate.reason)}</p>
   {/if}
 </div>

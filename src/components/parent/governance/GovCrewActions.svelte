@@ -2,12 +2,14 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import GovCtaButton from './GovCtaButton.svelte';
+  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
   import GovStartMutinyModal from './GovStartMutinyModal.svelte';
   import GovProposeOffboardModal from './GovProposeOffboardModal.svelte';
   import type { MutinyStatusDto, QuartermasterStatusDto } from '../../../lib/governance/api';
   import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
   import {
     gateRequiresCrew,
+    isHatRequiredReason,
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
@@ -69,6 +71,9 @@
 <div class="crew-actions">
   {#if fundingHint}
     <p class="muted funding-hint">{fundingHint}</p>
+  {/if}
+  {#if !crewGate.enabled && isHatRequiredReason(crewGate.reason)}
+    <GovHatRequiredBanner reason={crewGate.reason} />
   {/if}
   <div class="row">
     {#if mutinyModule}
