@@ -11,7 +11,6 @@
     parentId,
     treasuryAuthority,
     privilege,
-    fundingHint = '',
     onSubmitted = () => {},
   }: {
     open?: boolean;
@@ -20,7 +19,6 @@
     parentId: string;
     treasuryAuthority: string;
     privilege: GovernancePrivilege;
-    fundingHint?: string;
     onSubmitted?: () => void;
   } = $props();
 
@@ -35,7 +33,6 @@
       {parentId}
       {treasuryAuthority}
       {privilege}
-      {fundingHint}
       onSubmitted={() => {
         onSubmitted();
         onClose();

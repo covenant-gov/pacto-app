@@ -31,7 +31,6 @@
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import {
-    displayGovWriteFundingHint,
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
@@ -40,8 +39,6 @@
   import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
-  import { parseSupportedChainId } from '../../../lib/wallet/chains';
-  import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
   import { labeledWearerOptions } from '../../../lib/governance/war-game-captain';
   import {
     ACL_SNAPSHOT_RETRY_MS,
@@ -65,7 +62,6 @@
     treasuryProposalsLoading?: boolean;
     treasuryProposalsError?: string;
     onRefreshProposals?: () => void;
-    hasSponsor?: boolean;
     warGameStack?: boolean;
     archiveView?: boolean;
     /** Proposals board (Status) vs All/Crew/Captain commands (Governance). */
@@ -84,7 +80,6 @@
     treasuryProposalsLoading = false,
     treasuryProposalsError = '',
     onRefreshProposals = () => {},
-    hasSponsor = false,
     warGameStack = false,
     archiveView = false,
     surface = 'commands',
@@ -120,10 +115,6 @@
   let qmPendingHydrateKey = $state('');
   let lastSeenProcessNonce = $state(0);
 
-  let rosterBalanceRaw = $state('0');
-  let rosterBalanceKnown = $state(false);
-  let fundingBalanceKey = $state('');
-
   let processNonce = $derived($governanceProcessNonceByParentId[parentId.trim()] ?? 0);
   let rosterFrozen = $derived(isMutinyActive(mutinyStatus) || isCrewOffboardActive(qmStatus));
   let rosterFreezeReason = $derived(
@@ -157,27 +148,6 @@
       crewWearers,
       capabilities,
     }) as GovernancePrivilege,
-  );
-
-  $effect(() => {
-    const addr = (privilege.myAddress || myAddress).trim();
-    const key = `${network}|${addr}|${hasSponsor}`;
-    if (key !== fundingBalanceKey) {
-      fundingBalanceKey = key;
-      if (addr) {
-        void loadRosterFundingBalance(network, addr);
-      } else {
-        rosterBalanceKnown = false;
-      }
-    }
-  });
-
-  let fundingHint = $derived(
-    displayGovWriteFundingHint({
-      balanceRaw: rosterBalanceRaw,
-      balanceKnown: rosterBalanceKnown,
-      hasSponsorInfra: hasSponsor,
-    }),
   );
 
   $effect(() => {
@@ -274,22 +244,6 @@
       capabilities = null;
       capabilitiesStatus = 'error';
     }
-  }
-
-  async function loadRosterFundingBalance(net: string, addr: string) {
-    const chain = parseSupportedChainId(net);
-    if (!chain) {
-      rosterBalanceKnown = false;
-      return;
-    }
-    const bal = await fetchEvmBalance(chain, addr, { timeoutMs: 12_000 });
-    if (`${net}|${addr}|${hasSponsor}` !== fundingBalanceKey) return;
-    if (bal.error) {
-      rosterBalanceKnown = false;
-      return;
-    }
-    rosterBalanceRaw = bal.balanceRaw;
-    rosterBalanceKnown = true;
   }
 
   function applyMutinySnapshot(snap: MutinySnapshot) {
@@ -538,7 +492,6 @@
         {parentId}
         treasuryAuthority={payload.treasuryAuthority ?? ''}
         {privilege}
-        {fundingHint}
         {capabilitiesPending}
         onSubmitted={refreshAllProposals}
       />
@@ -558,7 +511,6 @@
           void reloadQm(true);
           void reloadQmPending();
         }}
-        {fundingHint}
         {capabilitiesPending}
       />
     {:else}
@@ -579,7 +531,6 @@
           void reloadQm(true);
           void reloadQmPending();
         }}
-        {fundingHint}
         {capabilitiesPending}
       />
     {/if}

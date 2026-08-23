@@ -16,7 +16,6 @@
   let { open, parentId, onClose, onCreate }: Props = $props();
 
   const titleId = 'create-poll-title';
-  const descId = 'create-poll-desc';
 
   let title = $state('');
   let description = $state('');
@@ -92,9 +91,8 @@
 </script>
 
 {#if open}
-  <Modal {titleId} descriptionId={descId} onClose={() => (!saving ? onClose() : undefined)} dismissible={!saving}>
+  <Modal {titleId} onClose={() => (!saving ? onClose() : undefined)} dismissible={!saving}>
     <h2 id={titleId}>{$t('governance.createPoll.title')}</h2>
-    <p id={descId} class="create-poll-lead">{$t('governance.createPoll.lead')}</p>
 
     <label class="modal-field-label" for="poll-title">{$t('governance.createPoll.titleLabel')}</label>
     <input
@@ -162,13 +160,6 @@
 {/if}
 
 <style>
-  .create-poll-lead {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin: 0 0 16px 0;
-    line-height: 1.45;
-  }
-
   .modal-field-label {
     display: block;
     font-size: 0.75rem;

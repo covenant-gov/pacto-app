@@ -52,7 +52,6 @@
     treasuryProposalsLoading = false,
     treasuryProposalsError = '',
     onRefreshProposals = () => {},
-    hasSponsor = false,
     warGameStack = false,
     archiveView = false,
   }: {
@@ -76,7 +75,6 @@
     treasuryProposalsLoading?: boolean;
     treasuryProposalsError?: string;
     onRefreshProposals?: () => void;
-    hasSponsor?: boolean;
     warGameStack?: boolean;
     archiveView?: boolean;
   } = $props();
@@ -237,7 +235,6 @@
     {treasuryProposalsLoading}
     {treasuryProposalsError}
     {onRefreshProposals}
-    {hasSponsor}
     {warGameStack}
     {archiveView}
     surface="proposals"

@@ -248,10 +248,6 @@
 </script>
 
 <div class="safe-balances">
-  <p class="muted">
-    {$t('governance.info.safeVaultDescription')}
-  </p>
-
   <div class="balances-head">
     <h5 class="balances-title">{$t('governance.title.balances')}</h5>
     <RefreshIconButton

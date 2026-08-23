@@ -11,7 +11,6 @@
     parentId,
     treasuryAuthority,
     privilege,
-    fundingHint = '',
     capabilitiesPending = false,
     onSubmitted = () => {},
   }: {
@@ -21,7 +20,6 @@
     parentId: string;
     treasuryAuthority: string;
     privilege: GovernancePrivilege;
-    fundingHint?: string;
     capabilitiesPending?: boolean;
     onSubmitted?: () => void;
   } = $props();
@@ -37,7 +35,6 @@
       {parentId}
       {treasuryAuthority}
       {privilege}
-      {fundingHint}
       {capabilitiesPending}
       onSubmitted={() => {
         onSubmitted();

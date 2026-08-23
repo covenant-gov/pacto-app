@@ -15,7 +15,6 @@
     mutinyActive = false,
     qmStatus = null,
     memberEvmOptions = [],
-    fundingHint = '',
     onSubmitted = () => {},
   }: {
     open?: boolean;
@@ -27,7 +26,6 @@
     mutinyActive?: boolean;
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
-    fundingHint?: string;
     onSubmitted?: () => void;
   } = $props();
 
@@ -45,7 +43,6 @@
       {mutinyActive}
       {qmStatus}
       {memberEvmOptions}
-      {fundingHint}
       onRefresh={() => {
         onSubmitted();
         onClose();

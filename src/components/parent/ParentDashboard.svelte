@@ -806,7 +806,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {treasuryProposalsLoading}
               {treasuryProposalsError}
               onRefreshProposals={refreshTreasuryProposals}
-              {hasSponsor}
               {warGameStack}
               archiveView={warGameArchiveView}
             />
@@ -833,7 +832,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {treasuryProposalsError}
               onRefreshProposals={refreshTreasuryProposals}
               onOpenLaunchpad={openLaunchpad}
-              {hasSponsor}
               {warGameStack}
               archiveView={warGameArchiveView}
               {structureSummary}

@@ -346,8 +346,6 @@
         <span>{$t('governance.crew.sponsorHatsLinked')}</span>
         <span class="muted">{$t('governance.crew.sponsorHatsHint')}</span>
       </p>
-    {:else}
-      <p class="sponsor-lead muted">{$t('governance.info.sponsorLead', { values: { chain: summary.chain } })}</p>
     {/if}
     <dl class="sponsor-dl">
       <dt>{$t('governance.info.sponsorPoolBalance')}</dt>

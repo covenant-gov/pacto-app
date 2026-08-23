@@ -27,7 +27,6 @@
     squadMemberOptions?: { address: string; label: string }[];
     onRefreshMutiny?: () => void;
     onRefreshQm?: () => void;
-    fundingHint?: string;
     capabilitiesPending?: boolean;
   }
 
@@ -43,7 +42,6 @@
     squadMemberOptions = [],
     onRefreshMutiny = () => {},
     onRefreshQm = () => {},
-    fundingHint = '',
     capabilitiesPending = false,
   }: Props = $props();
 
@@ -115,7 +113,6 @@
   {mutinyActive}
   {qmStatus}
   {memberEvmOptions}
-  {fundingHint}
   onSubmitted={onRefreshQm}
 />
 

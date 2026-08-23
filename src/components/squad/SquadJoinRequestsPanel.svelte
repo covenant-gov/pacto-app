@@ -177,9 +177,6 @@
 <section class="join-requests-panel" aria-label={$t('squad.joinRequests.ariaLabel')}>
   <header class="join-requests-header">
     <h2 class="join-requests-title">{$t('squad.joinRequests.title')}</h2>
-    <p class="join-requests-lead">
-      {$t('squad.joinRequests.lead', { values: { squadName: squad.name } })}
-    </p>
     {#if !loading && !canAct}
       <p class="join-requests-muted" role="status">{$t('squad.joinRequests.holdersOnlyHint')}</p>
     {/if}
@@ -275,12 +272,6 @@
     margin: 0 0 4px 0;
     font-size: 1.125rem;
     color: var(--text-primary);
-  }
-
-  .join-requests-lead {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.875rem;
   }
 
   .join-requests-list {

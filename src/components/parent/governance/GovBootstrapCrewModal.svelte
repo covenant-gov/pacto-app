@@ -3,10 +3,7 @@
   import { get } from 'svelte/store';
   import Modal from '../../ui/Modal.svelte';
   import { quartermasterBootstrapCrew } from '../../../lib/governance/api';
-  import {
-    fundedByFromWriteResult,
-    govWriteFundingFallbackHint,
-  } from '../../../lib/governance/gov-write-funding';
+  import { fundedByFromWriteResult } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { gateRequiresCaptain, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
   import { showToast } from '../../../stores/toast';
@@ -21,7 +18,6 @@
     memberOptions = [],
     captainAddresses = [],
     onSubmitted = () => {},
-    fundingHint = '',
   }: {
     open?: boolean;
     onClose?: () => void;
@@ -32,7 +28,6 @@
     memberOptions?: { address: string; label: string }[];
     captainAddresses?: string[];
     onSubmitted?: () => void;
-    fundingHint?: string;
   } = $props();
 
   const titleId = 'gov-bootstrap-crew-title';
@@ -44,8 +39,6 @@
   let acting = $state(false);
   let error = $state('');
   let wasOpen = false;
-
-  const gasLine = $derived(fundingHint.trim() || govWriteFundingFallbackHint());
 
   const captainSet = $derived(
     new Set(
@@ -132,7 +125,7 @@
   <Modal {titleId} descriptionId={descId} onClose={onClose} dismissible={!acting} contentClass="bootstrap-crew-modal">
     <h2 id={titleId} class="modal-title">{$t('governance.bootstrapCrew.title')}</h2>
     <p id={descId} class="modal-lead muted">
-      {$t('governance.bootstrapCrew.description', { values: { gasLine } })}
+      {$t('governance.bootstrapCrew.description')}
     </p>
 
     {#if eligible.length === 0}

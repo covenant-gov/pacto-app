@@ -43,7 +43,6 @@
     warGameStack?: boolean;
     onRefreshMutiny?: () => void;
     onRefreshQm?: () => void;
-    fundingHint?: string;
     capabilitiesPending?: boolean;
   }
 
@@ -61,7 +60,6 @@
     warGameStack = false,
     onRefreshMutiny = () => {},
     onRefreshQm = () => {},
-    fundingHint = '',
     capabilitiesPending = false,
   }: Props = $props();
 
@@ -104,20 +102,7 @@
     return captainGate;
   });
   let bootstrapAvailable = $derived(qmStatus?.bootstrapAvailable === true);
-  let bootstrapGate = $derived.by((): CtaGate => {
-    if (capabilitiesPending) return PENDING_GATE;
-    if (!bootstrapAvailable) {
-      return {
-        enabled: false,
-        reason: qmStatus?.mutinyActive
-          ? 'governance.gate.cannotBootstrapMutiny'
-          : offboardActive
-            ? 'governance.gate.rosterFrozenOffboard'
-            : 'governance.gate.bootstrapOnlyEmptyRoster',
-      };
-    }
-    return captainGate;
-  });
+  let bootstrapGate = $derived(capabilitiesPending ? PENDING_GATE : captainGate);
 
   function randomizeCaptain() {
     const picked = pickRandomRosterCaptain(randomizePool, randomizeExclude);
@@ -156,13 +141,15 @@
         gate={qmGate}
         onClick={() => (showRemoveCrew = true)}
       />
-      <GovCtaButton
-        label={tFn('governance.action.bootstrapCrew')}
-        variant="primary"
-        gate={bootstrapGate}
-        {acting}
-        onClick={() => (showBootstrapModal = true)}
-      />
+      {#if bootstrapAvailable}
+        <GovCtaButton
+          label={tFn('governance.action.bootstrapCrew')}
+          variant="primary"
+          gate={bootstrapGate}
+          {acting}
+          onClick={() => (showBootstrapModal = true)}
+        />
+      {/if}
     {/if}
     {#if mutinyModule}
       <GovCtaButton
@@ -212,7 +199,6 @@
   memberOptions={memberEvmOptions}
   captainAddresses={captainWearers}
   onSubmitted={onRefreshQm}
-  {fundingHint}
 />
 
 <GovCaptainResignModal

@@ -20,7 +20,6 @@
     parentId: string;
     treasuryAuthority: string;
     privilege: GovernancePrivilege;
-    fundingHint?: string;
     /** True while capability preflight is still loading; forces the gate closed. */
     capabilitiesPending?: boolean;
     onSubmitted?: () => void;
@@ -31,7 +30,6 @@
     parentId,
     treasuryAuthority,
     privilege,
-    fundingHint = '',
     capabilitiesPending = false,
     onSubmitted = () => {},
   }: Props = $props();
@@ -73,9 +71,6 @@
 
 <div class="propose-section">
   <h6 class="section-label">{$t('governance.section.submitProposal')}</h6>
-  {#if fundingHint}
-    <p class="muted funding-hint">{fundingHint}</p>
-  {/if}
   <div class="form-grid">
     <label>{$t('governance.field.to')}<input bind:value={proposeTo} placeholder={$t('governance.field.toPlaceholder')} disabled={!proposeGate.enabled || acting} /></label>
     <label>{$t('governance.field.valueWei')}<input bind:value={proposeValue} disabled={!proposeGate.enabled || acting} /></label>
@@ -96,14 +91,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-  .muted {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-  .funding-hint {
-    margin: 0 0 4px;
   }
   .section-label {
     margin: 0;

@@ -13,7 +13,6 @@
 	"squad.pair.creating": "Creating…",
 	"squad.joinRequests.ariaLabel": "Commons join requests",
 	"squad.joinRequests.title": "Join requests",
-	"squad.joinRequests.lead": "People who requested to join {squadName} via the Join inbox.",
 	"squad.joinRequests.loading": "Loading join requests…",
 	"squad.joinRequests.empty": "No pending join requests.",
 	"squad.joinRequests.badge": "Commons join request",

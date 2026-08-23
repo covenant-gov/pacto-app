@@ -1,7 +1,6 @@
 {
 	"announcements.fallback.title": "Announcement",
 	"announcements.pollCreated.badge": "New poll",
-	"announcements.pollCreated.hint": "Open Dashboard → Polls for this squad or network to cast your vote. Tallies sync for everyone in #announcements.",
 	"announcements.governanceUpdated.aMember": "A member",
 	"announcements.governanceUpdated.sponsor": "{who} deployed the squad sponsor",
 	"announcements.governanceUpdated.pactoGov": "{who} deployed Pacto Gov",

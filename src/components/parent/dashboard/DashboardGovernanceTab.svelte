@@ -22,7 +22,6 @@
     treasuryProposalsError?: string;
     onRefreshProposals?: () => void;
     onOpenLaunchpad?: () => void;
-    hasSponsor?: boolean;
     warGameStack?: boolean;
     archiveView?: boolean;
     structureSummary?: DashboardStructureSummary | null;
@@ -56,7 +55,6 @@
     treasuryProposalsError = '',
     onRefreshProposals = () => {},
     onOpenLaunchpad = () => {},
-    hasSponsor = false,
     warGameStack = false,
     archiveView = false,
     structureSummary = undefined,
@@ -112,7 +110,6 @@
       {treasuryProposalsLoading}
       {treasuryProposalsError}
       {onRefreshProposals}
-      {hasSponsor}
       {warGameStack}
       {archiveView}
       surface="commands"

@@ -1,7 +1,6 @@
 {
 	"announcements.fallback.title": "Anuncio",
 	"announcements.pollCreated.badge": "Nueva encuesta",
-	"announcements.pollCreated.hint": "Abre Panel → Encuestas de este escuad o red para votar. Los recuentos se sincronizan para todos en #announcements.",
 	"announcements.governanceUpdated.aMember": "Un miembro",
 	"announcements.governanceUpdated.sponsor": "{who} desplegó el patrocinador del escuad",
 	"announcements.governanceUpdated.pactoGov": "{who} desplegó Gobierno Pacto",

@@ -138,7 +138,6 @@
 {#if announcementsGroupId && parentId}
   <section class="dashboard-section sync-section" aria-labelledby="my-status-sync-heading">
     <h3 id="my-status-sync-heading" class="section-heading">{$t('governance.myStatus.squadSync')}</h3>
-    <p class="muted sync-hint">{$t('governance.myStatus.syncHint')}</p>
     <button
       type="button"
       class="btn-secondary"
@@ -216,9 +215,8 @@
   .sync-section {
     margin-top: 8px;
   }
-  .sync-hint {
-    margin: 0 0 12px;
-    line-height: 1.4;
+  .sync-section .btn-secondary {
+    margin-top: 12px;
   }
   .btn-secondary {
     padding: 8px 14px;

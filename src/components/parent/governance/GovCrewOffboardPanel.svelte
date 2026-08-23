@@ -40,7 +40,6 @@
     qmStatus = null,
     memberEvmOptions = [],
     hasVoted = false,
-    fundingHint = '',
     onRefresh = () => {},
   }: {
     network: string;
@@ -51,7 +50,6 @@
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
     hasVoted?: boolean;
-    fundingHint?: string;
     onRefresh?: () => void;
   } = $props();
 
@@ -152,9 +150,6 @@
 
 <section class="contract-box" aria-labelledby="crew-offboard-heading">
   <h5 id="crew-offboard-heading" class="contract-title">{$t('governance.title.crewOffboard')}</h5>
-  {#if fundingHint}
-    <p class="muted funding-hint">{fundingHint}</p>
-  {/if}
   <p class="muted">{$t('governance.offboard.hint')}</p>
   <p class="muted">
     {$t('governance.offboard.quorum', { values: { percent: quorumBpsToPercent(quorumBps) } })}
@@ -330,9 +325,6 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
-  }
-  .funding-hint {
-    margin: 0 0 4px;
   }
   input,
   select {

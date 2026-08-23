@@ -192,11 +192,6 @@
     showToast(ok ? tFn('governance.polls.copiedChatRef') : tFn('governance.polls.copyFailed'));
   }
 
-  const tallyHint = $derived(
-    variant === 'channel'
-      ? $t('governance.polls.tallyChannelHint')
-      : $t('governance.polls.tallyDashboardHint'),
-  );
 </script>
 
 <div
@@ -211,7 +206,7 @@
       {:else}
         {#if !viewerNpub?.trim()}
           <p class="dashboard-placeholder-text muted dashboard-polls-feed-msg">
-            {$t('governance.polls.signInHint', { values: { tallyHint } })}
+            {$t('governance.polls.signInHint')}{#if variant === 'channel'} {$t('governance.polls.tallyChannelHint')}{/if}
           </p>
         {/if}
         {#if parentPollsList.length === 0}

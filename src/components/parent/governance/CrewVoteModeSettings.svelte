@@ -36,14 +36,12 @@
     parentId,
     treasuryAuthority,
     privilege,
-    fundingHint = '',
     onSubmitted = () => {},
   }: {
     network: string;
     parentId: string;
     treasuryAuthority: string;
     privilege: GovernancePrivilege;
-    fundingHint?: string;
     onSubmitted?: () => void;
   } = $props();
 
@@ -174,9 +172,6 @@
       onclick={() => void loadConfig()}
     />
   </div>
-  {#if fundingHint}
-    <p class="muted funding-hint">{fundingHint}</p>
-  {/if}
   {#if loadError}
     <p class="error" role="alert">{loadError}</p>
   {:else if hydrated}
@@ -247,9 +242,6 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
-  }
-  .funding-hint {
-    margin: 0 0 4px;
   }
   .current {
     margin: 0;

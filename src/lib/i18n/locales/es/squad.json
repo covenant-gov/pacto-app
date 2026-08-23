@@ -13,7 +13,6 @@
 	"squad.pair.creating": "Creando…",
 	"squad.joinRequests.ariaLabel": "Solicitudes de unión a Comunes",
 	"squad.joinRequests.title": "Solicitudes de unión",
-	"squad.joinRequests.lead": "Personas que solicitaron unirse a {squadName} a través de la bandeja de entrada.",
 	"squad.joinRequests.loading": "Cargando solicitudes de unión…",
 	"squad.joinRequests.empty": "No hay solicitudes de unión pendientes.",
 	"squad.joinRequests.badge": "Solicitud de unión a Comunes",
