@@ -13,6 +13,7 @@ import {
   squadSettingsRpcFocusNonce,
   focusSquadSettingsRpcEditor,
   squadSettingsNetworkFocusNonce,
+  squadSettingsNetworkFocusSlot,
   focusSquadSettingsNetworkEditor,
   showMembersPanel,
   lastOpenedSquadId,
@@ -66,6 +67,7 @@ describe('navigation', () => {
     squadDashboardChannelMode.set('status');
     squadSettingsRpcFocusNonce.set(0);
     squadSettingsNetworkFocusNonce.set(0);
+    squadSettingsNetworkFocusSlot.set('primary');
     showMembersPanel.set(false);
     lastOpenedSquadId.set(null);
     lastOpenedChannelId.set(null);
@@ -96,7 +98,7 @@ describe('navigation', () => {
     expect(parseSquadDashboardChannelMode('governance')).toBe('governance');
     expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
     expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
-    expect(parseSquadDashboardChannelMode('settings')).toBe('settings');
+    expect(parseSquadDashboardChannelMode('settings')).toBe('status');
   });
 
   it('resets unknown squad dashboard modes to status', () => {
@@ -176,21 +178,24 @@ describe('navigation', () => {
     expect(get(dashboardPollReplicaNonceByParentId)).toEqual({ p1: 1 });
   });
 
-  it('focusSquadSettingsRpcEditor switches to settings and bumps the RPC focus nonce', () => {
+  it('focusSquadSettingsRpcEditor opens #settings and bumps the RPC focus nonce', () => {
     squadDashboardChannelMode.set('governance');
     expect(get(squadSettingsRpcFocusNonce)).toBe(0);
     focusSquadSettingsRpcEditor();
-    expect(get(squadDashboardChannelMode)).toBe('settings');
+    expect(get(activeChannelId)).toBe('__squad_settings__');
+    expect(get(squadDashboardChannelMode)).toBe('governance');
     expect(get(squadSettingsRpcFocusNonce)).toBe(1);
     focusSquadSettingsRpcEditor();
     expect(get(squadSettingsRpcFocusNonce)).toBe(2);
   });
 
-  it('focusSquadSettingsNetworkEditor switches to settings and bumps the network focus nonce', () => {
+  it('focusSquadSettingsNetworkEditor opens #settings and bumps the network focus nonce', () => {
     squadDashboardChannelMode.set('governance');
     expect(get(squadSettingsNetworkFocusNonce)).toBe(0);
-    focusSquadSettingsNetworkEditor();
-    expect(get(squadDashboardChannelMode)).toBe('settings');
+    focusSquadSettingsNetworkEditor('practice');
+    expect(get(activeChannelId)).toBe('__squad_settings__');
+    expect(get(squadSettingsNetworkFocusSlot)).toBe('practice');
+    expect(get(squadDashboardChannelMode)).toBe('governance');
     expect(get(squadSettingsNetworkFocusNonce)).toBe(1);
     focusSquadSettingsNetworkEditor();
     expect(get(squadSettingsNetworkFocusNonce)).toBe(2);

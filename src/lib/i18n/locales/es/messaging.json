@@ -343,6 +343,7 @@
 	"messaging.structuredNotice.squadMemberLeft": "Un miembro dejó el escuad",
 	"messaging.structuredNotice.squadNetworkUpdated": "Red del escuad actualizada",
 	"messaging.structuredNotice.squadNetworkUpdatedTo": "Red del escuad actualizada a {network}",
+	"messaging.structuredNotice.squadNetworkUpdatedToSlots": "Red del escuad actualizada — Principal: {primary} · Práctica: {practice}",
 	"messaging.structuredNotice.squadRpcUpdated": "RPC del escuad actualizado",
 	"messaging.structuredNotice.squadSyncRequest": "Solicitud de sincronización de escuad",
 	"messaging.structuredNotice.squadUpdate": "Actualización del escuad",

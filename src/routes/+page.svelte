@@ -11,6 +11,7 @@
   import ParentNavbar from '../components/layout/ParentNavbar.svelte';
   import ParentDashboard from '../components/parent/ParentDashboard.svelte';
 import MyDashboard from '../components/parent/MyDashboard.svelte';
+import SquadSettingsView from '../components/parent/SquadSettingsView.svelte';
     import Profile from '../components/profile/Profile.svelte';
   import MessengerNavbar from '../components/dm/MessengerNavbar.svelte';
   import MessengerChatView from '../components/dm/MessengerChatView.svelte';
@@ -96,6 +97,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     dmSendError,
     SQUAD_DASHBOARD_CHANNEL_ID,
     MY_DASHBOARD_CHANNEL_ID,
+    SETTINGS_CHANNEL_ID,
     SQUAD_WARGAME_CHANNEL_ID,
     isVirtualHubChannelId,
     isSquadDashboardChromeChannelId,
@@ -185,6 +187,8 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
       isSquadDashboardChromeChannelId(effectiveHubChannel.channelId));
   $: showMyDashboard =
     openHubParent != null && effectiveHubChannel.channelId === MY_DASHBOARD_CHANNEL_ID;
+  $: showSquadSettings =
+    openHubParent != null && effectiveHubChannel.channelId === SETTINGS_CHANNEL_ID;
   $: showMlsChatView =
     openHubParent != null &&
     !!effectiveHubChannel.channelId &&
@@ -1172,6 +1176,10 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
               onSponsorDeployComplete={finalizeSponsorDeploy}
               onSquadAdminDeployComplete={finalizeSquadAdminDeploy}
             />
+            {/key}
+          {:else if showSquadSettings && openHubParent}
+            {#key `${openHubParent.id}:${SETTINGS_CHANNEL_ID}`}
+              <SquadSettingsView parent={openHubParent} />
             {/key}
           {:else if showMyDashboard && openHubParent}
             {#key `${openHubParent.id}:${MY_DASHBOARD_CHANNEL_ID}`}

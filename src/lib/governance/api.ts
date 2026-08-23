@@ -5,6 +5,7 @@ import { announceGovernanceProcessUpdated } from './governance-process-announce'
 import { recordMutinyProcessTx } from './mutiny-process-tx';
 import { bumpGovernanceProcessNonce } from '../../stores/navigation';
 import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
+import { DEFAULT_SQUAD_PRACTICE_NETWORK } from '../squad/squad-network';
 import type { SquadParamsInput } from './squad-params';
 import { squadParamsToInvoke } from './squad-params';
 
@@ -523,6 +524,7 @@ export async function deployNavePirataForParent(params: {
 export async function deployWarGameForParent(params: {
   parentId: string;
   captain: string;
+  network?: string | null;
   metadataUri?: string | null;
   saltNonce?: string | null;
   signerWallet?: SquadSponsorDeploySignerWallet;
@@ -530,8 +532,9 @@ export async function deployWarGameForParent(params: {
   squadParams?: SquadParamsInput | null;
   initialDepositWei?: string | null;
 }): Promise<WarGameDeployResultDto> {
+  const network = params.network?.trim() || DEFAULT_SQUAD_PRACTICE_NETWORK;
   return (await invoke('deploy_war_game_for_parent', {
-    network: 'sepolia',
+    network,
     parentId: params.parentId,
     captain: params.captain,
     metadataUri: params.metadataUri?.trim() ?? '',
@@ -540,7 +543,7 @@ export async function deployWarGameForParent(params: {
     altParentId: params.altParentId?.trim() ? params.altParentId.trim() : null,
     squadParams: params.squadParams ? squadParamsToInvoke(params.squadParams) : null,
     initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, 'sepolia'),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, network),
   })) as WarGameDeployResultDto;
 }
 

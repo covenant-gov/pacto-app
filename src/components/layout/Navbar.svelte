@@ -60,8 +60,6 @@
   import { persistCreatedSquad } from '../../lib/squad/squad-catalog';
   import { appendSquadNavId, moveSquadNavIdToGapIndex, orderSquads } from '../../lib/squad/squad-nav-order';
   import { initSquadBot } from '../../lib/squad/squad-bot';
-  import { DEFAULT_CHAIN_ID, type SupportedChainId } from '../../lib/wallet/chains';
-  import { listSquadDeployNetworkOptions } from '../../lib/squad/squad-network';
   import { applySquadCreateNetwork } from '../../lib/squad/squad-create-network';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { portal } from '../../lib/utils/portal';
@@ -316,10 +314,7 @@
   let organizeSquadVisibility = $state<SquadVisibility>('private');
   let organizeSquadTags: string[] = $state([]);
   let organizeSquadTagError = $state('');
-  let organizeSquadNetwork = $state<SupportedChainId | ''>(DEFAULT_CHAIN_ID);
   let commonsFields: SquadCommonsVisibilityFields | undefined = $state();
-
-  const squadNetworkOptions = listSquadDeployNetworkOptions();
 
   function openOrganizeSquadModal() {
     if (!requireBackupVerified()) return;
@@ -331,7 +326,6 @@
     organizeSquadVisibility = 'private';
     organizeSquadTags = [];
     organizeSquadTagError = '';
-    organizeSquadNetwork = DEFAULT_CHAIN_ID;
     commonsFields?.resetCommonsFields();
     setTimeout(() => document.getElementById('squad-name')?.focus(), 0);
   }
@@ -368,7 +362,6 @@
       iconUrl?: string;
       visibility?: SquadVisibility;
       commonsTags?: string[];
-      network?: SupportedChainId;
     } = {}
   ) {
     const now = Date.now();
@@ -387,7 +380,7 @@
     };
     addParentCreatingAnnouncements(squad.id);
     parentPendingCreateMembers.update((m) => ({ ...m, [squad.id]: memberNpubs }));
-    parentPendingCreateOptions.update((m) => ({ ...m, [squad.id]: { network: options.network } }));
+    parentPendingCreateOptions.update((m) => ({ ...m, [squad.id]: {} }));
     squads.update((list) => [...list, squad]);
     squadNavOrder.update((order) => appendSquadNavId(order, squad.id));
     activeSquadId.set(squad.id);
@@ -415,7 +408,7 @@
         await persistCreatedSquad(tempId, finalized);
         void initSquadBot(groupId);
         const creatorNpub = get(currentUser)?.npub;
-        applySquadCreateNetwork(creatorNpub, groupId, options.network);
+        applySquadCreateNetwork(creatorNpub, groupId);
         removeParentCreatingAnnouncements(tempId);
         parentCreateErrorById.update((m) => {
           const next = { ...m };
@@ -542,7 +535,6 @@
       iconUrl: organizeSquadIconUrl.trim() || undefined,
       visibility: commons.visibility,
       commonsTags: commons.commonsTags,
-      network: organizeSquadNetwork || undefined,
     });
   }
 
@@ -564,8 +556,6 @@
   let iconUrlLabel = $derived($t('nav.navbar.organizeSquad.iconLabel'));
   let organizeMembersLabel = $derived($t('nav.navbar.organizeSquad.membersLabel'));
   let organizeMembersEmpty = $derived($t('nav.navbar.organizeSquad.membersEmpty'));
-  let organizeNetworkLabel = $derived($t('nav.navbar.organizeSquad.networkLabel'));
-  let organizeNetworkNone = $derived($t('nav.navbar.organizeSquad.networkNone'));
   let organizeCancel = $derived($t('nav.navbar.organizeSquad.cancel'));
   let organizeCreate = $derived($t('nav.navbar.organizeSquad.create'));
   let organizeCreateAria = $derived($t('nav.navbar.organizeSquad.createAria'));
@@ -765,20 +755,6 @@
       {#if organizeMemberList.length === 0}
         <p class="organize-members-empty">{organizeMembersEmpty}</p>
       {/if}
-      <label class="organize-label" for="squad-network">{organizeNetworkLabel}</label>
-      <select id="squad-network" class="organize-input organize-select" bind:value={organizeSquadNetwork}>
-        {#each squadNetworkOptions as opt (opt.id)}
-          <option value={opt.id}>{opt.label}</option>
-        {/each}
-        <option value="">{organizeNetworkNone}</option>
-      </select>
-      <p class="organize-network-hint">
-        {#if organizeSquadNetwork}
-          {$t('nav.navbar.organizeSquad.networkHint.withNetwork', { values: { network: squadNetworkOptions.find((o) => o.id === organizeSquadNetwork)?.label ?? '' } })}
-        {:else}
-          {$t('nav.navbar.organizeSquad.networkHint.noNetwork')}
-        {/if}
-      </p>
       <SquadCommonsVisibilityFields
         bind:this={commonsFields}
         bind:visibility={organizeSquadVisibility}
@@ -881,17 +857,6 @@
     text-align: right;
   }
 
-  .organize-select {
-    margin-bottom: 6px;
-    cursor: pointer;
-  }
-
-  .organize-network-hint {
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-    line-height: 1.4;
-    margin: 0 0 16px 0;
-  }
 
   .organize-members {
     max-height: 180px;

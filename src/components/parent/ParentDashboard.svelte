@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { get } from 'svelte/store';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
@@ -38,21 +37,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import { resolveSquadSponsorVariant } from '../../lib/governance/squad-sponsor-variant';
   import { DEFAULT_CHAIN_ID, parseSupportedChainId, type SupportedChainId } from '../../lib/wallet/chains';
   import {
-    loadSquadNetworkOverride,
-    resolveSquadNetwork,
-    saveSquadNetworkOverride,
+    loadSquadNetworkPair,
+    resolvePracticeSquadNetwork,
+    resolvePrimarySquadNetwork,
     squadNetworkTick,
   } from '../../lib/squad/squad-network';
-  import { publishSquadNetworkUpdated } from '../../lib/squad/squad-network-share';
-  import {
-    clearSquadRpcPrimary,
-    effectiveSquadRpcConfig,
-    setSquadRpcBackup,
-    setSquadRpcPrimary,
-    squadRpcTick,
-    type SquadRpcConfig,
-  } from '../../lib/squad/squad-rpc';
-  import { publishSquadRpcUpdated } from '../../lib/squad/squad-rpc-share';
   import { currentUser } from '../../stores/auth';
   import friendsIcon from '../../icons/friends.svg';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
@@ -61,7 +50,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import {
     loadDashboardCrewTab,
     loadDashboardGovernanceTab,
-    loadDashboardSettingsTab,
     loadDashboardStatusTab,
     loadDashboardTreasuryTab,
   } from '../../lib/dashboard/dashboard-tab-components';
@@ -102,7 +90,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     'governance',
     'treasury',
     'crew',
-    'settings',
   ];
 
   $: dashboardView = $squadDashboardChannelMode;
@@ -208,20 +195,20 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   /** Chain of any already-deployed infra; seeds the squad network before an override is set. */
   $: infraSquadChain =
     pactoGovRow?.chain?.trim() || squadAdminCtx?.chain?.trim() || sponsorRow?.chain?.trim() || null;
-  let squadNetworkOverride: SupportedChainId | null = null;
+  let storedNetworkPair: { primary: SupportedChainId; practice: SupportedChainId } | null = null;
   $: {
     void $squadNetworkTick;
-    squadNetworkOverride = loadSquadNetworkOverride($currentUser?.npub, parentId);
+    storedNetworkPair = loadSquadNetworkPair($currentUser?.npub, parentId);
   }
-  /** Established squad network (override → infra chain), or null until the first deploy picks one. War-game hub is always Sepolia. */
-  $: squadNetwork = warGameStack
-    ? 'sepolia'
-    : resolveSquadNetwork({ override: squadNetworkOverride, infraChain: infraSquadChain });
-  let squadRpcConfig: SquadRpcConfig | null = null;
-  $: {
-    void $squadRpcTick;
-    squadRpcConfig = effectiveSquadRpcConfig($currentUser?.npub, parentId, squadNetwork);
-  }
+  $: primaryNetwork = resolvePrimarySquadNetwork({
+    override: storedNetworkPair?.primary,
+    infraChain: warGameStack ? null : infraSquadChain,
+  });
+  $: practiceNetwork = resolvePracticeSquadNetwork({
+    override: storedNetworkPair?.practice,
+    infraChain: warGameStack ? infraSquadChain : pactoGovWargameInfraRow(squadInfraRows)?.chain,
+  });
+  $: squadNetwork = warGameStack ? practiceNetwork : primaryNetwork;
   $: governanceTreasurySafe = governanceTreasurySafeForParent(
     treasurySafes ?? [],
     parentId ?? '',
@@ -232,40 +219,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     },
   );
 
-  function setSquadNetwork(chain: SupportedChainId): void {
-    const npub = $currentUser?.npub;
-    if (!npub || !parentId?.trim()) return;
-    const gid = parentId.trim();
-    saveSquadNetworkOverride(npub, gid, chain);
-    void publishSquadNetworkUpdated(gid);
-  }
-
-  async function handleSetSquadRpcPrimary(url: string): Promise<string | void> {
-    const tFn = get(t);
-    const npub = $currentUser?.npub;
-    if (!npub || !parentId?.trim() || !squadNetwork) return tFn('squad.rpc.error.selectNetworkFirst');
-    const res = setSquadRpcPrimary(npub, parentId.trim(), squadNetwork, url);
-    if (!res.ok) return tFn(res.error);
-    const published = await publishSquadRpcUpdated(parentId.trim());
-    if (!published) return tFn('squad.rpc.error.publishFailed');
-  }
-
-  async function handleSetSquadRpcBackup(url: string): Promise<string | void> {
-    const tFn = get(t);
-    const npub = $currentUser?.npub;
-    if (!npub || !parentId?.trim() || !squadNetwork) return tFn('squad.rpc.error.selectNetworkFirst');
-    const res = setSquadRpcBackup(npub, parentId.trim(), squadNetwork, url);
-    if (!res.ok) return tFn(res.error);
-    const published = await publishSquadRpcUpdated(parentId.trim());
-    if (!published) return tFn('squad.rpc.error.publishFailed');
-  }
-
-  async function handleClearSquadRpcPrimary(): Promise<void> {
-    const npub = $currentUser?.npub;
-    if (!npub || !parentId?.trim() || !squadNetwork) return;
-    clearSquadRpcPrimary(npub, parentId.trim(), squadNetwork);
-    await publishSquadRpcUpdated(parentId.trim());
-  }
   $: memberEvmOptionsForRoles = channelMembers
     .map((npub) => {
       const addr = squadMemberEvmByNpub[npub]?.trim();
@@ -607,14 +560,14 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   $: if (
-    (dashboardView === 'status' || dashboardView === 'crew' || dashboardView === 'settings') &&
+    (dashboardView === 'status' || dashboardView === 'crew') &&
     (pactoGovRow?.canonicalRef || squadAdminCtx?.proxy)
   ) {
     void loadSettingsChainContext();
   }
 
   $: if (
-    (dashboardView === 'status' || dashboardView === 'crew' || dashboardView === 'settings') &&
+    (dashboardView === 'status' || dashboardView === 'crew') &&
     pactoGovRow?.canonicalRef &&
     parentId
   ) {
@@ -648,7 +601,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 
   function selectDashboardView(id: ParentDashboardView) {
     squadDashboardChannelMode.set(id);
-    if ((id === 'status' || id === 'crew' || id === 'settings') && announcementsGroupId) {
+    if ((id === 'status' || id === 'crew') && announcementsGroupId) {
       void ensureMlsGroupMembers(announcementsGroupId);
     }
   }
@@ -666,7 +619,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     }
   }
 
-  $: if ((dashboardView === 'status' || dashboardView === 'crew' || dashboardView === 'settings') && parentId) {
+  $: if ((dashboardView === 'status' || dashboardView === 'crew') && parentId) {
     loadSquadMemberEvm();
   }
 
@@ -796,7 +749,9 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {crewWearers}
               onOpenDeploy={openLaunchpad}
               onOpenCrewBootstrap={() => selectDashboardView('governance')}
-              onSelectNetwork={focusSquadSettingsNetworkEditor}
+              onSelectNetwork={() =>
+                focusSquadSettingsNetworkEditor(warGameStack ? 'practice' : 'primary')}
+              {practiceNetwork}
               {squadInfraRows}
               {pactoPayload}
               pactoGovChain={pactoGovRow?.chain}
@@ -908,30 +863,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.crew')}</p>
-          {/await}
-          </div>
-        {/if}
-        {#if visitedDashboardViews.has('settings')}
-          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'settings'} hidden={dashboardView !== 'settings'}>
-          {#await loadDashboardSettingsTab() then SettingsTab}
-            <SettingsTab
-              squad={parent}
-              {squadAdminCtx}
-              {announcementsGroupId}
-              parentId={parentId ?? ''}
-              {channelMembers}
-              {squadMemberEvmByNpub}
-              {memberRolesByAddress}
-              {squadNetwork}
-              squadNetworkFromInfra={infraSquadChain != null}
-              onSetSquadNetwork={setSquadNetwork}
-              {squadRpcConfig}
-              onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
-              onSetSquadRpcBackup={handleSetSquadRpcBackup}
-              onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
-            />
-          {:catch}
-            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.settings')}</p>
           {/await}
           </div>
         {/if}

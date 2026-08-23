@@ -3,33 +3,53 @@
   import EditIconButton from '../../ui/EditIconButton.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
-  import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
-  import { squadSettingsNetworkFocusNonce } from '../../../stores/navigation';
+  import { listSquadDeployNetworkOptions, type SquadNetworkSlot } from '../../../lib/squad/squad-network';
+  import { squadSettingsNetworkFocusNonce, squadSettingsNetworkFocusSlot } from '../../../stores/navigation';
 
   let {
-    squadNetwork = null,
-    squadNetworkFromInfra = false,
-    onSetSquadNetwork = () => {},
+    primaryNetwork,
+    practiceNetwork,
+    onSetPrimaryNetwork = () => {},
+    onSetPracticeNetwork = () => {},
   }: {
-    squadNetwork?: SupportedChainId | null;
-    squadNetworkFromInfra?: boolean;
-    onSetSquadNetwork?: (chain: SupportedChainId) => void;
+    primaryNetwork: SupportedChainId;
+    practiceNetwork: SupportedChainId;
+    onSetPrimaryNetwork?: (chain: SupportedChainId) => void;
+    onSetPracticeNetwork?: (chain: SupportedChainId) => void;
   } = $props();
 
   const squadNetworkOptions = listSquadDeployNetworkOptions();
-  let editingNetwork = $state(false);
-  let squadNetworkChoice = $state<SupportedChainId | ''>('');
+  let editingSlot = $state<SquadNetworkSlot | null>(null);
+  let slotChoice = $state<SupportedChainId | ''>('');
   let lastNetworkFocusNonce = $state(0);
 
+  const rows = $derived(
+    [
+      {
+        slot: 'primary' as const,
+        value: primaryNetwork,
+        labelKey: 'governance.status.networkPrimary',
+        editKey: 'governance.status.editPrimaryNetwork',
+      },
+      {
+        slot: 'practice' as const,
+        value: practiceNetwork,
+        labelKey: 'governance.status.networkPractice',
+        editKey: 'governance.status.editPracticeNetwork',
+      },
+    ] as const,
+  );
+
   $effect(() => {
-    if (!editingNetwork) squadNetworkChoice = squadNetwork ?? '';
+    if (!editingSlot) slotChoice = '';
   });
 
   $effect(() => {
     const nonce = $squadSettingsNetworkFocusNonce;
     if (nonce <= lastNetworkFocusNonce) return;
     lastNetworkFocusNonce = nonce;
-    editingNetwork = true;
+    editingSlot = $squadSettingsNetworkFocusSlot;
+    slotChoice = editingSlot === 'practice' ? practiceNetwork : primaryNetwork;
     if (typeof document !== 'undefined') {
       queueMicrotask(() => {
         document.getElementById('squad-settings-network')?.scrollIntoView({
@@ -40,55 +60,66 @@
     }
   });
 
-  const networkLabel = $derived(
-    squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : $t('governance.status.networkNotSet'),
-  );
-  const networkHint = $derived(squadNetworkFromInfra ? $t('governance.status.networkLocked') : '');
-
-  function applySquadNetwork() {
-    if (squadNetworkChoice && squadNetworkChoice !== squadNetwork) {
-      onSetSquadNetwork(squadNetworkChoice);
-    }
-    editingNetwork = false;
+  function startEdit(slot: SquadNetworkSlot, current: SupportedChainId) {
+    editingSlot = slot;
+    slotChoice = current;
   }
 
-  function cancelNetworkEdit() {
-    squadNetworkChoice = squadNetwork ?? '';
-    editingNetwork = false;
+  function applySlot() {
+    if (!editingSlot || !slotChoice) {
+      editingSlot = null;
+      return;
+    }
+    const current = editingSlot === 'primary' ? primaryNetwork : practiceNetwork;
+    if (slotChoice !== current) {
+      if (editingSlot === 'primary') onSetPrimaryNetwork(slotChoice);
+      else onSetPracticeNetwork(slotChoice);
+    }
+    editingSlot = null;
+  }
+
+  function cancelEdit() {
+    editingSlot = null;
+    slotChoice = '';
   }
 </script>
 
 <section class="network-card" id="squad-settings-network" aria-labelledby="squad-settings-network-heading">
   <h3 id="squad-settings-network-heading" class="card-title">{$t('governance.status.networkLabel')}</h3>
-  <div class="status-fact-row">
-    {#if editingNetwork}
-    <select class="network-select" bind:value={squadNetworkChoice} aria-label={$t('governance.status.squadNetworkLabel')}>
-      <option value="" disabled>{$t('governance.status.selectPlaceholder')}</option>
-      {#each squadNetworkOptions as opt (opt.id)}
-        <option value={opt.id}>{opt.label}</option>
-      {/each}
-    </select>
-    <button
-      type="button"
-      class="btn-text"
-      disabled={!squadNetworkChoice || squadNetworkChoice === squadNetwork}
-      onclick={applySquadNetwork}
-    >
-      {$t('governance.common.save')}
-    </button>
-    <button type="button" class="btn-text muted" onclick={cancelNetworkEdit}>{$t('governance.common.cancel')}</button>
-  {:else}
-    <span class="network-value">{networkLabel}</span>
-    {#if networkHint}
-      <span class="muted network-hint">{networkHint}</span>
-    {/if}
-    <EditIconButton
-      ariaLabel={$t('governance.status.editNetwork')}
-      title={$t('governance.status.editNetworkTitle')}
-      onclick={() => (editingNetwork = true)}
-    />
-    {/if}
-  </div>
+  {#each rows as row (row.slot)}
+    <div class="status-fact-row">
+      <span class="slot-label">{$t(row.labelKey)}</span>
+      {#if editingSlot === row.slot}
+        <select
+          class="network-select"
+          bind:value={slotChoice}
+          aria-label={$t(row.labelKey)}
+        >
+          {#each squadNetworkOptions as opt (opt.id)}
+            <option value={opt.id}>{opt.label}</option>
+          {/each}
+        </select>
+        <button
+          type="button"
+          class="btn-text"
+          disabled={!slotChoice || slotChoice === row.value}
+          onclick={applySlot}
+        >
+          {$t('governance.common.save')}
+        </button>
+        <button type="button" class="btn-text muted" onclick={cancelEdit}>
+          {$t('governance.common.cancel')}
+        </button>
+      {:else}
+        <span class="network-value">{getWalletNetworkDisplayName(row.value)}</span>
+        <EditIconButton
+          ariaLabel={$t(row.editKey)}
+          title={$t(row.editKey)}
+          onclick={() => startEdit(row.slot, row.value)}
+        />
+      {/if}
+    </div>
+  {/each}
 </section>
 
 <style>
@@ -118,13 +149,15 @@
     font-size: 0.875rem;
   }
 
+  .slot-label {
+    font-weight: 500;
+    color: var(--text-secondary);
+    min-width: 8.5rem;
+  }
+
   .network-value {
     font-weight: 500;
     color: var(--text-primary);
-  }
-
-  .network-hint {
-    font-size: 0.75rem;
   }
 
   .muted {

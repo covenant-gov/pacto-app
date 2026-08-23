@@ -43,6 +43,7 @@
     onOpenDeploy = () => {},
     onOpenCrewBootstrap = () => {},
     onSelectNetwork = () => {},
+    practiceNetwork = null,
     squadInfraRows = undefined,
     pactoPayload = null,
     pactoGovChain = undefined,
@@ -66,6 +67,7 @@
     onOpenDeploy?: () => void;
     onOpenCrewBootstrap?: () => void;
     onSelectNetwork?: () => void;
+    practiceNetwork?: SupportedChainId | null;
     squadInfraRows?: SquadInfraDto[];
     pactoPayload?: PactoGovProviderPayloadV1 | null;
     pactoGovChain?: string;
@@ -245,6 +247,7 @@
   <DeployWarGameModal
     {parentId}
     {announcementsGroupId}
+    practiceNetwork={practiceNetwork ?? undefined}
     redeploy={hasWarGame}
     memberOptions={rosterMemberOptions}
     onClose={() => (showWarGameDeploy = false)}

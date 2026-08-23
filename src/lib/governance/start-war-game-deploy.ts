@@ -13,6 +13,8 @@ import { getAddress, isAddress } from 'viem';
 import { showToast } from '../../stores/toast';
 import type { SquadParamsInput } from './squad-params';
 import { validateSquadParams } from './squad-params';
+import type { SupportedChainId } from '../wallet/chains';
+import { DEFAULT_SQUAD_PRACTICE_NETWORK, isSquadDeployableChain } from '../squad/squad-network';
 
 export type WarGameDeployComplete = WarGameDeployResultDto;
 
@@ -32,6 +34,7 @@ export async function maybeBootstrapWarGameCrew(params: {
   captain: string;
   quartermaster: string;
   memberOptions: { address: string; label?: string }[];
+  network?: SupportedChainId;
 }): Promise<'bootstrapped' | 'skipped' | 'failed'> {
   const qm = params.quartermaster.trim();
   if (!qm) return 'skipped';
@@ -42,7 +45,7 @@ export async function maybeBootstrapWarGameCrew(params: {
   if (!myRoster || !captain || myRoster.toLowerCase() !== captain.toLowerCase()) return 'skipped';
   try {
     await quartermasterBootstrapCrew({
-      network: 'sepolia',
+      network: params.network ?? DEFAULT_SQUAD_PRACTICE_NETWORK,
       parentId: params.parentId,
       quartermaster: qm,
       candidates,
@@ -54,10 +57,11 @@ export async function maybeBootstrapWarGameCrew(params: {
   }
 }
 
-/** Submit Sepolia war-game deploy. Returns false when validation fails. */
+/** Submit Practice/Wargame-stack deploy. Returns false when validation fails. */
 export function startWarGameDeploy(params: {
   parentId: string;
   announcementsGroupId?: string | null;
+  network?: SupportedChainId;
   captain: string;
   initialDepositWei: string;
   signerWallet?: SquadSponsorDeploySignerWallet;
@@ -100,6 +104,9 @@ export function startWarGameDeploy(params: {
   const altParentId = announcements && announcements !== parentId ? announcements : null;
   const memberOptions = params.memberOptions ?? [];
   const bootstrapCrew = params.bootstrapCrew !== false;
+  const network = isSquadDeployableChain(params.network)
+    ? params.network
+    : DEFAULT_SQUAD_PRACTICE_NETWORK;
 
   runOnChainInBackground({
     startedToast: 'War-game deploy submitted. Confirmation continues in the background.',
@@ -107,6 +114,7 @@ export function startWarGameDeploy(params: {
     job: () =>
       deployWarGameForParent({
         parentId,
+        network,
         captain,
         metadataUri: `pacto://squad/${parentId}/wargame`,
         altParentId,
@@ -126,6 +134,7 @@ export function startWarGameDeploy(params: {
           captain,
           quartermaster: result.quartermaster,
           memberOptions,
+          network,
         });
       }
       await params.onComplete(result);

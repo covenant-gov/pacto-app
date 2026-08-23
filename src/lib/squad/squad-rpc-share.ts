@@ -8,7 +8,11 @@ import { sendDmMessage } from '../api/nostr';
 import { currentUser } from '../../stores/auth';
 import type { SupportedChainId } from '../wallet/chains';
 import { dmWarn } from '../utils/dm-debug';
-import { isSquadDeployableChain, loadSquadNetworkOverride } from './squad-network';
+import {
+  DEFAULT_SQUAD_PRIMARY_NETWORK,
+  isSquadDeployableChain,
+  loadSquadNetworkSlot,
+} from './squad-network';
 import {
   effectiveSquadRpcConfig,
   loadSquadRpcConfig,
@@ -88,8 +92,8 @@ export async function publishSquadRpcUpdated(announcementsGroupId: string): Prom
   if (!me) return false;
 
   const stored = loadSquadRpcConfig(me, gid);
-  const chain = stored?.chain ?? loadSquadNetworkOverride(me, gid);
-  const config = effectiveSquadRpcConfig(me, gid, chain ?? null);
+  const chain = stored?.chain ?? loadSquadNetworkSlot(me, gid, 'primary') ?? DEFAULT_SQUAD_PRIMARY_NETWORK;
+  const config = effectiveSquadRpcConfig(me, gid, chain);
   if (!config) return false;
 
   const json = formatSquadRpcUpdated({ parentId: gid, config });

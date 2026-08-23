@@ -7,6 +7,8 @@ import {
   MY_DASHBOARD_CHANNEL_ID,
   MY_DASHBOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
+  SETTINGS_CHANNEL_ID,
+  SETTINGS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_NAME,
   SQUAD_WARGAME_CHANNEL_ID,
@@ -40,13 +42,14 @@ export function isDefaultHubSidebarChannel(name: string): boolean {
     name === SQUAD_WARGAME_CHANNEL_NAME ||
     name === MY_DASHBOARD_CHANNEL_NAME ||
     name === ANNOUNCEMENTS_CHANNEL_NAME ||
-    name === POLLS_CHANNEL_NAME
+    name === POLLS_CHANNEL_NAME ||
+    name === SETTINGS_CHANNEL_NAME
   );
 }
 
 /**
  * Virtual + MLS rows for the squad hub sidebar.
- * Pinned order: squad-dashboard → squad-wargame (when present) → my-dashboard → announcements → polls → (custom below divider).
+ * Pinned order: squad-dashboard → squad-wargame (when present) → my-dashboard → announcements → polls → settings → (custom below divider).
  */
 export function buildHubSidebarChannels<T extends { name: string; groupId: string; order: number }>(
   rawChannels: T[],
@@ -58,7 +61,10 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
   const announcements = sorted.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
   const polls = sorted.find((c) => c.name === POLLS_CHANNEL_NAME);
   const rest = sorted.filter(
-    (c) => c.name !== ANNOUNCEMENTS_CHANNEL_NAME && c.name !== POLLS_CHANNEL_NAME
+    (c) =>
+      c.name !== ANNOUNCEMENTS_CHANNEL_NAME &&
+      c.name !== POLLS_CHANNEL_NAME &&
+      c.name !== SETTINGS_CHANNEL_NAME
   );
   const includeWarGame = options?.includeWarGame === true;
   const out: Array<T | { name: string; groupId: string; order: number }> = [
@@ -78,6 +84,7 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
   out.push({ name: MY_DASHBOARD_CHANNEL_NAME, groupId: MY_DASHBOARD_CHANNEL_ID, order: -1 });
   if (announcements) out.push(announcements);
   if (polls) out.push(polls);
+  out.push({ name: SETTINGS_CHANNEL_NAME, groupId: SETTINGS_CHANNEL_ID, order: 2 });
   out.push(...rest);
   return out;
 }

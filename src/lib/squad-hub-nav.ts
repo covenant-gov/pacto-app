@@ -17,6 +17,7 @@ import {
   squads,
   squadInfraByParentId,
   MY_DASHBOARD_CHANNEL_ID,
+  SETTINGS_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   isVirtualHubChannelId,
@@ -29,6 +30,7 @@ const VIRTUAL_HUB_CHANNEL_IDS = new Set([
   SQUAD_DASHBOARD_CHANNEL_ID,
   MY_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
+  SETTINGS_CHANNEL_ID,
 ]);
 
 /** True when a war-game hub row exists, or infra for this parent has not hydrated yet. */

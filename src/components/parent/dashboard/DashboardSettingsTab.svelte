@@ -23,9 +23,10 @@
     channelMembers = [],
     squadMemberEvmByNpub = {},
     memberRolesByAddress = {},
-    squadNetwork = null,
-    squadNetworkFromInfra = false,
-    onSetSquadNetwork = () => {},
+    primaryNetwork,
+    practiceNetwork,
+    onSetPrimaryNetwork = () => {},
+    onSetPracticeNetwork = () => {},
     squadRpcConfig = null,
     onSetSquadRpcPrimary = () => {},
     onSetSquadRpcBackup = () => {},
@@ -38,9 +39,10 @@
     channelMembers?: string[];
     squadMemberEvmByNpub?: Record<string, string>;
     memberRolesByAddress?: Record<string, string>;
-    squadNetwork?: SupportedChainId | null;
-    squadNetworkFromInfra?: boolean;
-    onSetSquadNetwork?: (chain: SupportedChainId) => void;
+    primaryNetwork: SupportedChainId;
+    practiceNetwork: SupportedChainId;
+    onSetPrimaryNetwork?: (chain: SupportedChainId) => void;
+    onSetPracticeNetwork?: (chain: SupportedChainId) => void;
     squadRpcConfig?: SquadRpcConfig | null;
     onSetSquadRpcPrimary?: (url: string) => string | void | Promise<string | void>;
     onSetSquadRpcBackup?: (url: string) => string | void | Promise<string | void>;
@@ -71,10 +73,15 @@
 
   <SquadStickersSection {squad} {announcementsGroupId} />
 
-  <SquadNetworkSection {squadNetwork} {squadNetworkFromInfra} {onSetSquadNetwork} />
+  <SquadNetworkSection
+    {primaryNetwork}
+    {practiceNetwork}
+    {onSetPrimaryNetwork}
+    {onSetPracticeNetwork}
+  />
 
   <SquadEndpointsPanel
-    {squadNetwork}
+    squadNetwork={primaryNetwork}
     {squadRpcConfig}
     {onSetSquadRpcPrimary}
     {onSetSquadRpcBackup}

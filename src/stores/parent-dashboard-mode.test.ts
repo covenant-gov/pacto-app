@@ -10,7 +10,7 @@ describe('parseSquadDashboardChannelMode', () => {
     expect(parseSquadDashboardChannelMode('governance')).toBe('governance');
     expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
     expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
-    expect(parseSquadDashboardChannelMode('settings')).toBe('settings');
+    expect(parseSquadDashboardChannelMode('settings')).toBe('status');
   });
 
   it('resets unknown values to status', () => {

@@ -343,6 +343,7 @@
 	"messaging.structuredNotice.squadMemberLeft": "A member left the squad",
 	"messaging.structuredNotice.squadNetworkUpdated": "Squad network updated",
 	"messaging.structuredNotice.squadNetworkUpdatedTo": "Squad network updated to {network}",
+	"messaging.structuredNotice.squadNetworkUpdatedToSlots": "Squad network updated — Primary: {primary} · Practice: {practice}",
 	"messaging.structuredNotice.squadRpcUpdated": "Squad RPC updated",
 	"messaging.structuredNotice.squadSyncRequest": "Squad sync request",
 	"messaging.structuredNotice.squadUpdate": "Squad update",

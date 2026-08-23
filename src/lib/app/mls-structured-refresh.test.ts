@@ -65,7 +65,7 @@ import {
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
 import { formatSquadStateSyncRequest } from '../squad/squad-state-sync';
 import { formatSquadNetworkUpdated } from '../squad/squad-network-share';
-import { loadSquadNetworkOverride, SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
+import { loadSquadNetworkPair, SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
   mutinyProcessTxByParentId,
@@ -173,9 +173,12 @@ describe('onMlsStructuredMessage', () => {
       mergeSquadInfraForParent: vi.fn(),
       mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
     };
-    const raw = formatSquadNetworkUpdated({ parentId: 'g1', chain: 'local' });
+    const raw = formatSquadNetworkUpdated({
+      parentId: 'g1',
+      pair: { primary: 'local', practice: 'sepolia' },
+    });
     onMlsStructuredMessage(raw, 'g1', handlers);
-    expect(loadSquadNetworkOverride('npub1alice', 'g1')).toBe('local');
+    expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({ primary: 'local', practice: 'sepolia' });
     expect(localStorage.getItem(`${SQUAD_NETWORK_PREFIX}_npub1alice`)).toBeTruthy();
   });
 
@@ -185,10 +188,13 @@ describe('onMlsStructuredMessage', () => {
       mergeSquadInfraForParent: vi.fn(),
       mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
     };
-    const raw = formatSquadNetworkUpdated({ parentId: 'other', chain: 'sepolia' });
+    const raw = formatSquadNetworkUpdated({
+      parentId: 'other',
+      pair: { primary: 'sepolia', practice: 'sepolia' },
+    });
     onMlsStructuredMessage(raw, 'g1', handlers);
-    expect(loadSquadNetworkOverride('npub1alice', 'g1')).toBeNull();
-    expect(loadSquadNetworkOverride('npub1alice', 'other')).toBeNull();
+    expect(loadSquadNetworkPair('npub1alice', 'g1')).toBeNull();
+    expect(loadSquadNetworkPair('npub1alice', 'other')).toBeNull();
   });
 
   it('bumps allowlist nonce', () => {

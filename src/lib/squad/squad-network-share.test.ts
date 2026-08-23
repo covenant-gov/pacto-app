@@ -40,13 +40,15 @@ vi.mock('../../stores/auth', () => ({
   currentUser,
 }));
 
-import { saveSquadNetworkOverride, SQUAD_NETWORK_PREFIX } from './squad-network';
+import { saveSquadNetworkPair, SQUAD_NETWORK_PREFIX } from './squad-network';
 import {
   formatSquadNetworkUpdated,
   infraChainFromSquadRows,
   parseSquadNetworkUpdated,
+  practiceInfraChainFromSquadRows,
   publishSquadNetworkUpdated,
   SQUAD_NETWORK_UPDATED_TYPE,
+  SQUAD_NETWORK_UPDATED_VERSION,
 } from './squad-network-share';
 
 describe('squad-network-share', () => {
@@ -76,20 +78,38 @@ describe('squad-network-share', () => {
     listSquadInfra.mockResolvedValue([]);
   });
 
-  it('formats and parses squad_network_updated', () => {
-    const raw = formatSquadNetworkUpdated({ parentId: gid, chain: 'sepolia' });
+  it('formats and parses squad_network_updated v2', () => {
+    const raw = formatSquadNetworkUpdated({
+      parentId: gid,
+      pair: { primary: 'sepolia', practice: 'local' },
+    });
     expect(JSON.parse(raw)).toMatchObject({
       type: SQUAD_NETWORK_UPDATED_TYPE,
+      version: SQUAD_NETWORK_UPDATED_VERSION,
       pacto_virtual_bucket: 'announcements',
+      payload: { parent_id: gid, primary: 'sepolia', practice: 'local' },
+    });
+    expect(parseSquadNetworkUpdated(raw)).toEqual({
+      parent_id: gid,
+      primary: 'sepolia',
+      practice: 'local',
+    });
+  });
+
+  it('rejects v1 single-chain payloads', () => {
+    const raw = JSON.stringify({
+      type: SQUAD_NETWORK_UPDATED_TYPE,
+      version: 1,
       payload: { parent_id: gid, chain: 'sepolia' },
     });
-    expect(parseSquadNetworkUpdated(raw)).toEqual({ parent_id: gid, chain: 'sepolia' });
+    expect(parseSquadNetworkUpdated(raw)).toBeNull();
   });
 
   it('rejects non-deployable chains on parse', () => {
     const raw = JSON.stringify({
       type: SQUAD_NETWORK_UPDATED_TYPE,
-      payload: { parent_id: gid, chain: 'mainnet' },
+      version: 2,
+      payload: { parent_id: gid, primary: 'mainnet', practice: 'sepolia' },
     });
     expect(parseSquadNetworkUpdated(raw)).toBeNull();
   });
@@ -104,33 +124,40 @@ describe('squad-network-share', () => {
     expect(infraChainFromSquadRows([{ infraType: 'sponsor', chain: 'local' }])).toBe('local');
   });
 
-  it('publishes override when set', async () => {
-    saveSquadNetworkOverride(npub, gid, 'local');
+  it('practiceInfraChainFromSquadRows reads pacto_gov_wargame', () => {
+    expect(
+      practiceInfraChainFromSquadRows([
+        { infraType: 'pacto_gov', chain: 'local' },
+        { infraType: 'pacto_gov_wargame', chain: 'sepolia' },
+      ]),
+    ).toBe('sepolia');
+  });
+
+  it('publishes stored pair', async () => {
+    saveSquadNetworkPair(npub, gid, { primary: 'local', practice: 'sepolia' });
     await expect(publishSquadNetworkUpdated(gid)).resolves.toBe(true);
     expect(sendDmMessage).toHaveBeenCalledWith(
       gid,
-      expect.stringContaining('"chain":"local"'),
+      expect.stringContaining('"primary":"local"'),
+      '',
+      { virtualBucket: 'announcements' },
+    );
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      gid,
+      expect.stringContaining('"practice":"sepolia"'),
       '',
       { virtualBucket: 'announcements' },
     );
     expect(localStorage.getItem(`${SQUAD_NETWORK_PREFIX}_${npub}`)).toBeTruthy();
   });
 
-  it('publishes infra chain when override unset', async () => {
-    listSquadInfra.mockResolvedValueOnce([
-      { infraType: 'pacto_gov', chain: 'sepolia', id: '1', parentId: gid, canonicalRef: '1' },
-    ]);
+  it('publishes defaults when unset', async () => {
     await expect(publishSquadNetworkUpdated(gid)).resolves.toBe(true);
     expect(sendDmMessage).toHaveBeenCalledWith(
       gid,
-      expect.stringContaining('"chain":"sepolia"'),
+      expect.stringContaining('"primary":"sepolia"'),
       '',
       { virtualBucket: 'announcements' },
     );
-  });
-
-  it('returns false when network unset', async () => {
-    await expect(publishSquadNetworkUpdated(gid)).resolves.toBe(false);
-    expect(sendDmMessage).not.toHaveBeenCalled();
   });
 });

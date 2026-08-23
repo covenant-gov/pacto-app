@@ -53,7 +53,7 @@ describe('summarizeStructuredMessageContent', () => {
       summarizeStructuredMessageContent(
         JSON.stringify({
           type: 'squad_network_updated',
-          payload: { parent_id: 'g1', chain: 'sepolia' },
+          payload: { parent_id: 'g1', primary: 'sepolia', practice: 'sepolia' },
         }),
         tFn
       )
@@ -62,11 +62,11 @@ describe('summarizeStructuredMessageContent', () => {
       summarizeStructuredMessageContent(
         JSON.stringify({
           type: 'squad_network_updated',
-          payload: { parent_id: 'g1', chain: 'local' },
+          payload: { parent_id: 'g1', primary: 'sepolia', practice: 'local' },
         }),
         tFn
       )
-    ).toBe('messaging.structuredNotice.squadNetworkUpdatedTo');
+    ).toBe('messaging.structuredNotice.squadNetworkUpdatedToSlots');
   });
 
   it('detects structured product content', () => {

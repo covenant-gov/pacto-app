@@ -15,12 +15,17 @@ export const MY_DASHBOARD_CHANNEL_NAME = 'my-dashboard';
 export const SQUAD_WARGAME_CHANNEL_ID = '__squad_wargame__';
 export const SQUAD_WARGAME_CHANNEL_NAME = 'squad-wargame';
 
+/** Virtual squad settings (not an MLS group). */
+export const SETTINGS_CHANNEL_ID = '__squad_settings__';
+export const SETTINGS_CHANNEL_NAME = 'settings';
+
 /** Virtual hub rows: not MLS groups and not chat `VirtualBucket`s. */
 export function isVirtualHubChannelId(id: string | null | undefined): boolean {
   return (
     id === SQUAD_DASHBOARD_CHANNEL_ID ||
     id === MY_DASHBOARD_CHANNEL_ID ||
-    id === SQUAD_WARGAME_CHANNEL_ID
+    id === SQUAD_WARGAME_CHANNEL_ID ||
+    id === SETTINGS_CHANNEL_ID
   );
 }
 
