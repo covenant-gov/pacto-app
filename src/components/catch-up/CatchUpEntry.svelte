@@ -12,6 +12,7 @@
   import { findWelcomeInviteSource } from '../../lib/invites/find-invite-source';
   import { pendingMlsWelcomes } from '../../stores/mls-chat';
   import { resolveWelcomeEntry } from './resolve-welcome-entry';
+  import { SETTINGS_CHANNEL_ID, SETTINGS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
 
   let { entry }: { entry: CatchUpEntry } = $props();
 
@@ -44,6 +45,9 @@
     }
     const squad = $squads.find((s) => s.id === target.squadId);
     if (target.kind === 'squad-dashboard') return squad?.name ?? '';
+    if (target.kind === 'squad-channel' && target.channelId === SETTINGS_CHANNEL_ID) {
+      return squad ? `${squad.name} · #${SETTINGS_CHANNEL_NAME}` : '';
+    }
     const channel = squad?.channels.find((c) => c.groupId === target.channelId);
     return squad ? `${squad.name} · #${channel?.name ?? ''}` : '';
   });

@@ -29,6 +29,7 @@
     clearPendingAdmitForMember,
   } from '../../lib/parent/pending-admit';
   import type { Squad } from '../../stores/squads';
+  import DashboardAssetCard from '../parent/dashboard/DashboardAssetCard.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
   let { squad }: { squad: Squad } = $props();
@@ -174,13 +175,20 @@
   }
 </script>
 
-<section class="join-requests-panel" aria-label={$t('squad.joinRequests.ariaLabel')}>
-  <header class="join-requests-header">
-    <h2 class="join-requests-title">{$t('squad.joinRequests.title')}</h2>
-    {#if !loading && !canAct}
-      <p class="join-requests-muted" role="status">{$t('squad.joinRequests.holdersOnlyHint')}</p>
-    {/if}
-  </header>
+<DashboardAssetCard
+  id="settings-join-requests"
+  headingId="settings-join-requests-heading"
+  heading={$t('squad.joinRequests.title')}
+  hint={!loading && !canAct ? $t('squad.joinRequests.holdersOnlyHint') : ''}
+>
+  {#snippet headerAction()}
+    <RefreshIconButton
+      disabled={syncing}
+      spinning={syncing}
+      ariaLabel={syncing ? $t('squad.joinRequests.refreshingAria') : $t('squad.joinRequests.refreshAria')}
+      onclick={() => refresh()}
+    />
+  {/snippet}
 
   {#if loading}
     <p class="join-requests-muted" role="status">{$t('squad.joinRequests.loading')}</p>
@@ -248,32 +256,9 @@
       {/each}
     </ul>
   {/if}
-
-  <div class="join-requests-footer">
-    <RefreshIconButton
-      disabled={syncing}
-      spinning={syncing}
-      ariaLabel={syncing ? $t('squad.joinRequests.refreshingAria') : $t('squad.joinRequests.refreshAria')}
-      onclick={() => refresh()}
-    />
-  </div>
-</section>
+</DashboardAssetCard>
 
 <style>
-  .join-requests-panel {
-    padding: 16px;
-  }
-
-  .join-requests-header {
-    margin-bottom: 16px;
-  }
-
-  .join-requests-title {
-    margin: 0 0 4px 0;
-    font-size: 1.125rem;
-    color: var(--text-primary);
-  }
-
   .join-requests-list {
     list-style: none;
     margin: 0;
@@ -381,11 +366,5 @@
 
   .join-requests-error {
     color: var(--danger);
-  }
-
-  .join-requests-footer {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 16px;
   }
 </style>

@@ -8,7 +8,7 @@
   import { currentUser } from '../../../stores/auth';
   import { needsSquadRosterKeyChoice } from '../../../lib/squad/squad-roster-key-choice';
   import { requestSquadStateSync, isSquadStateSyncInFlight, squadStateSyncRequestInFlightRevision } from '../../../lib/squad/squad-state-sync';
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
 
   /** Enable when squad key rotation backend is wired. */
   const ROTATE_SQUAD_KEY_ENABLED = false;
@@ -17,9 +17,15 @@
     announcementsGroupId?: string | null;
     parentId?: string;
     squadMemberEvmByNpub?: Record<string, string>;
+    afterChecklist?: Snippet;
   }
 
-  let { announcementsGroupId = null, parentId = '', squadMemberEvmByNpub = {} }: Props = $props();
+  let {
+    announcementsGroupId = null,
+    parentId = '',
+    squadMemberEvmByNpub = {},
+    afterChecklist,
+  }: Props = $props();
 
   let rotateModalOpen = $state(false);
   let rosterKeyNeeded = $state<boolean | null>(null);
@@ -84,6 +90,8 @@
     </li>
   </ul>
 </section>
+
+{@render afterChecklist?.()}
 
 <section class="dashboard-section" aria-labelledby="my-status-evm-heading">
   <h3 id="my-status-evm-heading" class="section-heading">{$t('governance.myStatus.yourEvmAddress')}</h3>

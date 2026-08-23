@@ -16,7 +16,7 @@ import {
   type Squad,
 } from '../../stores/app';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
-import { ANNOUNCEMENTS_CHANNEL_NAME } from '../squad/hub-channel-names';
+import { ANNOUNCEMENTS_CHANNEL_NAME, SETTINGS_CHANNEL_ID } from '../squad/hub-channel-names';
 import { get } from 'svelte/store';
 
 /**
@@ -89,19 +89,22 @@ export function navigateToTarget(target: NavigationTarget): void {
  * (R22): a real squad channel group id, a DM npub, or — for `action_prompt`
  * entries recorded against a squad's announcements channel (the governance
  * roster-key prompt and pending join requests both use that fallback id,
- * since neither is tied to one specific channel) — the squad's dashboard
- * tab, where both of those items are actually reviewed and resolved.
+ * since neither is tied to one specific channel) — `#settings` for
+ * `join-request:*` items and the squad dashboard for other prompts.
  * Returns `null` for a reference that resolves to nothing (a bug in the
  * Catch up backend's orphan cleanup, not an expected case here).
  */
 export function resolveCatchUpTarget(
-  entry: { chatId: string; kind: string },
+  entry: { chatId: string; kind: string; sourceEventId?: string },
   allSquads: Squad[]
 ): NavigationTarget | null {
   for (const squad of allSquads) {
     const channel = squad.channels.find((c) => c.groupId === entry.chatId);
     if (!channel) continue;
     if (entry.kind === 'action_prompt' && channel.name === ANNOUNCEMENTS_CHANNEL_NAME) {
+      if (entry.sourceEventId?.startsWith('join-request:')) {
+        return { kind: 'squad-channel', squadId: squad.id, channelId: SETTINGS_CHANNEL_ID };
+      }
       return { kind: 'squad-dashboard', squadId: squad.id };
     }
     return { kind: 'squad-channel', squadId: squad.id, channelId: entry.chatId };

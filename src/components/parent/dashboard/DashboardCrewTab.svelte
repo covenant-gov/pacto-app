@@ -2,10 +2,8 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   const tFn = get(t);
-  import SquadJoinRequestsPanel from '../../squad/SquadJoinRequestsPanel.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { profiles } from '../../../stores/profiles';
-  import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
   import {
     needsSquadRosterKeyChoice,
@@ -28,7 +26,6 @@
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
 
   let {
-    squad,
     announcementsGroupId = null,
     channelMembers = [],
     loadingMembers = false,
@@ -50,7 +47,6 @@
     sponsorHatsMode = false,
     hasSponsor = false,
   }: {
-    squad: Squad;
     announcementsGroupId?: string | null;
     channelMembers?: string[];
     loadingMembers?: boolean;
@@ -317,12 +313,6 @@
   </div>
 {/if}
 
-{#if squad}
-  <section class="join-requests-wrap" aria-label={$t('governance.crew.joinRequestsAria')}>
-    <SquadJoinRequestsPanel {squad} />
-  </section>
-{/if}
-
 <style>
   .sponsor-owner-banner {
     display: flex;
@@ -504,8 +494,5 @@
     cursor: pointer;
     text-decoration: underline;
     text-underline-offset: 2px;
-  }
-  .join-requests-wrap {
-    margin-top: 8px;
   }
 </style>

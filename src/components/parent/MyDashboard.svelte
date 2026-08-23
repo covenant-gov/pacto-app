@@ -53,14 +53,17 @@
         {announcementsGroupId}
         parentId={parentId ?? ''}
         {squadMemberEvmByNpub}
-      />
+      >
+        {#snippet afterChecklist()}
+          {#await loadMyDashboardAlertsTab() then AlertsTab}
+            <AlertsTab {parentId} {announcementsGroupId} />
+          {:catch}
+            <p class="tab-error" role="alert">{$t('governance.tabLoadError.alerts')}</p>
+          {/await}
+        {/snippet}
+      </StatusTab>
     {:catch}
       <p class="tab-error" role="alert">{$t('governance.tabLoadError.statusShort')}</p>
-    {/await}
-    {#await loadMyDashboardAlertsTab() then AlertsTab}
-      <AlertsTab {parentId} {announcementsGroupId} />
-    {:catch}
-      <p class="tab-error" role="alert">{$t('governance.tabLoadError.alerts')}</p>
     {/await}
   </div>
 </div>

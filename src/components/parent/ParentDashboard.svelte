@@ -840,7 +840,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
           <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'crew'} hidden={dashboardView !== 'crew'}>
           {#await loadDashboardCrewTab() then CrewTab}
             <CrewTab
-              squad={parent}
               {announcementsGroupId}
               {channelMembers}
               {loadingMembers}

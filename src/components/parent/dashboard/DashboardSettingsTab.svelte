@@ -5,6 +5,7 @@
   import SquadIdentitySection from './SquadIdentitySection.svelte';
   import SquadNetworkSection from './SquadNetworkSection.svelte';
   import SquadStickersSection from './SquadStickersSection.svelte';
+  import SquadJoinRequestsPanel from '../../squad/SquadJoinRequestsPanel.svelte';
   import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import type { SquadRpcConfig } from '../../../lib/squad/squad-rpc';
@@ -68,6 +69,8 @@
 
 <div class="settings-stack">
   <SquadIdentitySection {squad} />
+
+  <SquadJoinRequestsPanel {squad} />
 
   <SquadBroadcastSettingsSection {squad} />
 

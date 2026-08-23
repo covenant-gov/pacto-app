@@ -14,6 +14,7 @@ import {
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
+  SETTINGS_CHANNEL_ID,
   type Squad,
 } from '../../stores/app';
 import { openSquadDashboard, openSquadWargame, navigateToTarget, resolveCatchUpTarget } from './open-squad-dashboard';
@@ -158,6 +159,14 @@ describe('resolveCatchUpTarget', () => {
   it('resolves an action_prompt entry on the announcements channel to the squad dashboard', () => {
     const target = resolveCatchUpTarget({ chatId: 'grp-announce', kind: 'action_prompt' }, testSquads);
     expect(target).toEqual({ kind: 'squad-dashboard', squadId: 'squad-1' });
+  });
+
+  it('resolves a join-request action_prompt to #settings', () => {
+    const target = resolveCatchUpTarget(
+      { chatId: 'grp-announce', kind: 'action_prompt', sourceEventId: 'join-request:evt-1' },
+      testSquads,
+    );
+    expect(target).toEqual({ kind: 'squad-channel', squadId: 'squad-1', channelId: SETTINGS_CHANNEL_ID });
   });
 
   it('resolves an action_prompt entry on a non-announcements channel to that channel directly', () => {

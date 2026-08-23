@@ -770,7 +770,6 @@
 	"governance.crew.titlePermit": "Permit this address for gas sponsorship",
 	"governance.crew.privilegesLabel": "Privileges",
 	"governance.crew.manage": "Manage",
-	"governance.crew.joinRequestsAria": "Join requests",
 	"governance.crew.unknown": "Unknown",
 	"governance.crew.toastAddressCopied": "Address copied",
 	"governance.crew.toastCopyFailed": "Could not copy address",

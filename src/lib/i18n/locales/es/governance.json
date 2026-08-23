@@ -770,7 +770,6 @@
 	"governance.crew.titlePermit": "Permitir esta dirección para patrocinio de gas",
 	"governance.crew.privilegesLabel": "Privilegios",
 	"governance.crew.manage": "Gestionar",
-	"governance.crew.joinRequestsAria": "Solicitudes de unión",
 	"governance.crew.unknown": "Desconocido",
 	"governance.crew.toastAddressCopied": "Dirección copiada",
 	"governance.crew.toastCopyFailed": "No se pudo copiar la dirección",
