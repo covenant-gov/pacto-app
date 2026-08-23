@@ -1,5 +1,6 @@
 <script lang="ts">
   import GovProposalsBoard from './GovProposalsBoard.svelte';
+  import GovAllActions from './GovAllActions.svelte';
   import GovCrewActions from './GovCrewActions.svelte';
   import GovCaptainActions from './GovCaptainActions.svelte';
   import {
@@ -67,7 +68,7 @@
     hasSponsor?: boolean;
     warGameStack?: boolean;
     archiveView?: boolean;
-    /** Proposals board (Status) vs Crew/Captain commands (Governance). */
+    /** Proposals board (Status) vs All/Crew/Captain commands (Governance). */
     surface?: 'proposals' | 'commands';
   }
 
@@ -89,14 +90,14 @@
     surface = 'commands',
   }: Props = $props();
 
-  type GovSubMode = 'crew' | 'captain';
+  type GovSubMode = 'all' | 'crew' | 'captain';
   type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
   /** Capability-preflight state: `unresolved` must never render a gated action as available. */
   type CapabilitiesStatus = 'unresolved' | 'ready' | 'error';
 
   const tFn = get(t);
 
-  let govSubMode: GovSubMode = $state('crew');
+  let govSubMode: GovSubMode = $state('all');
   let mutinyCaptain = $state('');
   let capabilities: SquadCapabilitiesDto | null = $state(null);
   let capabilitiesStatus: CapabilitiesStatus = $state('unresolved');
@@ -474,6 +475,7 @@
   }
 
   const subModes: { id: GovSubMode; label: string }[] = [
+    { id: 'all', label: tFn('governance.shell.tab.all') },
     { id: 'crew', label: tFn('governance.shell.tab.crew') },
     { id: 'captain', label: tFn('governance.shell.tab.captain') },
   ];
@@ -503,8 +505,11 @@
       {qmPending}
       {qmPendingLoading}
       {qmPendingError}
+      mutinyModule={payload.mutinyModule ?? ''}
       mutinyMode={rosterFrozen}
       rosterFreezeReason={rosterFreezeReason}
+      mutinyHasVoted={mutinyHasVotedFlag}
+      {offboardHasVoted}
       onRefreshProposals={refreshAllProposals}
       onExecuteMutiny={executeMutinyFromBoard}
       onExpireMutiny={expireMutinyFromBoard}
@@ -528,22 +533,27 @@
   </div>
 
   <div class="submode-panel" role="tabpanel" tabindex="0" aria-label={subModes.find((m) => m.id === govSubMode)?.label ?? govSubMode}>
-    {#if govSubMode === 'crew'}
-      <GovCrewActions
+    {#if govSubMode === 'all'}
+      <GovAllActions
         {network}
         {parentId}
         treasuryAuthority={payload.treasuryAuthority ?? ''}
+        {privilege}
+        {fundingHint}
+        {capabilitiesPending}
+        onSubmitted={refreshAllProposals}
+      />
+    {:else if govSubMode === 'crew'}
+      <GovCrewActions
+        {network}
+        {parentId}
         mutinyModule={payload.mutinyModule ?? ''}
         quartermaster={payload.quartermaster ?? ''}
         {privilege}
-        proposals={treasuryProposals}
         {mutinyStatus}
-        mutinyHasVotedFlag={mutinyHasVotedFlag}
         {qmStatus}
         memberEvmOptions={crewMemberOptions}
         squadMemberOptions={memberEvmOptions}
-        {offboardHasVoted}
-        onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         onRefreshQm={() => {
           void reloadQm(true);
@@ -556,18 +566,15 @@
       <GovCaptainActions
         {network}
         {parentId}
-        treasuryAuthority={payload.treasuryAuthority ?? ''}
         quartermaster={payload.quartermaster ?? ''}
         mutinyModule={payload.mutinyModule ?? ''}
         {privilege}
-        proposals={treasuryProposals}
         {mutinyStatus}
         {qmStatus}
         {memberEvmOptions}
         {captainWearers}
         {crewWearers}
         {warGameStack}
-        onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         onRefreshQm={() => {
           void reloadQm(true);

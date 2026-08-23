@@ -9,12 +9,14 @@
     isTreasuryProposalPast,
     treasuryProposalOutcomeLabel,
   } from '../../../lib/governance/treasury-proposal-ui';
-  import { executableTreasuryProposals, isMutinyExecutable, isMutinyExpirable } from '../../../lib/governance/gov-proposal-lists';
+  import { executableTreasuryProposals, isMutinyActive, isMutinyExecutable, isMutinyExpirable } from '../../../lib/governance/gov-proposal-lists';
   import { isCrewOffboardExecutable, isCrewOffboardExpirable } from '../../../lib/governance/crew-offboard';
   import { mutinyTxExplorerUrl, shortTxHash } from '../../../lib/governance/mutiny-process-tx';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import { scheduleDeadlineTimeout } from '../../../lib/utils/deadline-timeout';
   import ProposalActionSummary from './ProposalActionSummary.svelte';
+  import GovCtaButton from './GovCtaButton.svelte';
+  import type { CtaGate } from '../../../lib/governance/governance-privilege';
 
   interface Props {
     card: GovProcessCard;
@@ -26,6 +28,16 @@
     onExpire?: () => void;
     network?: string;
     txHash?: string;
+    showVotes?: boolean;
+    votePending?: boolean;
+    crewVoteGate?: CtaGate;
+    captainVoteGate?: CtaGate;
+    mutinyHasVoted?: boolean;
+    offboardHasVoted?: boolean;
+    onCrewVote?: (support: boolean) => void;
+    onCaptainVote?: (support: boolean) => void;
+    onMutinyVote?: () => void;
+    onOffboardVote?: (support: boolean) => void;
   }
 
   let {
@@ -37,9 +49,53 @@
     onExpire = undefined,
     network = 'sepolia',
     txHash = '',
+    showVotes = false,
+    votePending = false,
+    crewVoteGate = { enabled: false, reason: 'governance.status.loading' },
+    captainVoteGate = { enabled: false, reason: 'governance.status.loading' },
+    mutinyHasVoted = false,
+    offboardHasVoted = false,
+    onCrewVote = undefined,
+    onCaptainVote = undefined,
+    onMutinyVote = undefined,
+    onOffboardVote = undefined,
   }: Props = $props();
 
   let nowSec = $state(0);
+  const ALLOW_GATE: CtaGate = { enabled: true, reason: '' };
+  let showCrewVotes = $derived(
+    showVotes &&
+      card.kind === 'treasury' &&
+      card.proposal.status === 'active' &&
+      !card.proposal.executed,
+  );
+  let showCaptainVotes = $derived(
+    showVotes &&
+      card.kind === 'treasury' &&
+      card.proposal.status === 'active_passed_crew' &&
+      !card.proposal.captainApproved &&
+      !card.proposal.captainDefeated &&
+      !card.proposal.executed,
+  );
+  let showMutinyVote = $derived(showVotes && card.kind === 'mutiny' && isMutinyActive(card.status));
+  let showOffboardVotes = $derived(showVotes && card.kind === 'crew_offboard');
+  let mutinyVoteGate = $derived.by((): CtaGate => {
+    if (card.kind !== 'mutiny') return ALLOW_GATE;
+    if (isMutinyExpirable(card.status, nowSec)) {
+      return { enabled: false, reason: 'governance.gate.mutinyExpired' };
+    }
+    if (mutinyHasVoted) return { enabled: false, reason: 'governance.gate.alreadyVoted' };
+    return crewVoteGate;
+  });
+  let offboardVoteGate = $derived.by((): CtaGate => {
+    if (card.kind !== 'crew_offboard') return ALLOW_GATE;
+    if (isCrewOffboardExpirable(card.status, nowSec)) {
+      return { enabled: false, reason: 'governance.gate.offboardExpired' };
+    }
+    if (offboardHasVoted) return { enabled: false, reason: 'governance.gate.alreadyVotedOffboard' };
+    return crewVoteGate;
+  });
+
   let tool = $derived($t(govProcessToolLabel(card)));
   let isActive = $derived(card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true);
   let isPast = $derived(card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false);
@@ -173,6 +229,41 @@
       dataHex={card.proposal.dataHex}
       operation={card.proposal.operation}
     />
+    {#if showCrewVotes && onCrewVote}
+      <div class="vote-row">
+        <GovCtaButton
+          label={$t('governance.action.voteYea')}
+          variant="primary"
+          gate={crewVoteGate}
+          acting={votePending}
+          onClick={() => onCrewVote(true)}
+        />
+        <GovCtaButton
+          label={$t('governance.action.voteNay')}
+          gate={crewVoteGate}
+          acting={votePending}
+          onClick={() => onCrewVote(false)}
+        />
+      </div>
+    {/if}
+    {#if showCaptainVotes && onCaptainVote}
+      <div class="vote-row">
+        <GovCtaButton
+          label={$t('governance.action.approve')}
+          variant="primary"
+          gate={captainVoteGate}
+          acting={votePending}
+          onClick={() => onCaptainVote(true)}
+        />
+        <GovCtaButton
+          label={$t('governance.action.veto')}
+          variant="danger"
+          gate={captainVoteGate}
+          acting={votePending}
+          onClick={() => onCaptainVote(false)}
+        />
+      </div>
+    {/if}
   {:else if card.kind === 'mutiny'}
     <p class="proposal-card-meta muted">
       {$t('governance.proposal.mutinyMeta', {
@@ -215,6 +306,17 @@
         {/if}
       </p>
     {/if}
+    {#if showMutinyVote && onMutinyVote}
+      <div class="vote-row">
+        <GovCtaButton
+          label={mutinyHasVoted ? $t('governance.action.alreadyVoted') : $t('governance.action.castMutinyVote')}
+          variant="primary"
+          gate={mutinyVoteGate}
+          acting={votePending}
+          onClick={onMutinyVote}
+        />
+      </div>
+    {/if}
   {:else if card.kind === 'crew_offboard'}
     <p class="proposal-card-meta muted">
       {$t('governance.proposal.offboardMeta', {
@@ -227,6 +329,23 @@
         },
       })}
     </p>
+    {#if showOffboardVotes && onOffboardVote}
+      <div class="vote-row">
+        <GovCtaButton
+          label={offboardHasVoted ? $t('governance.action.alreadyVotedOffboard') : $t('governance.action.voteYea')}
+          variant="primary"
+          gate={offboardVoteGate}
+          acting={votePending}
+          onClick={() => onOffboardVote(true)}
+        />
+        <GovCtaButton
+          label={$t('governance.action.voteNay')}
+          gate={offboardVoteGate}
+          acting={votePending}
+          onClick={() => onOffboardVote(false)}
+        />
+      </div>
+    {/if}
   {:else}
     <p class="proposal-card-meta muted">
       {card.kind === 'crew_add' ? $t('governance.proposal.candidate') : $t('governance.proposal.member')}
@@ -350,6 +469,12 @@
   }
   .muted {
     color: var(--text-muted);
+  }
+  .vote-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 4px 0 8px;
   }
   .execute-wrap {
     display: flex;

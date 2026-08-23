@@ -67,7 +67,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/dm/DmMessageRouter.svelte` | Invite cards, wallet cards, plain `Message` |
 | `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + live Proposals board |
 | `components/parent/dashboard/DashboardSettingsTab.svelte` | Squad photo, Broadcast, Stickers, network, Chain RPC / Pimlico, Join-inbox holders |
-| `components/parent/dashboard/DashboardGovernanceTab.svelte` | Crew / Captain commands + Hats tree |
+| `components/parent/dashboard/DashboardGovernanceTab.svelte` | All / Crew / Captain commands + Hats tree |
 | `components/parent/dashboard/DashboardRolesTreeTab.svelte` | Hats tree (mounted at the bottom of Governance) |
 | `components/parent/dashboard/DashboardTreasuryTab.svelte` | Sponsor + governance treasury Safe + other vaults |
 | `components/parent/dashboard/DashboardCrewTab.svelte` | MLS member roster (EVM / Hats / Privileges) + join requests |
@@ -85,7 +85,7 @@ My dashboard modes: `myDashboardChannelMode` (`status` \| `alerts`).
 
 **Keep-alive:** After a Squad Dashboard mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders).
 
-Governance uses role sub-modes inside `PactoGovGovernanceShell` (Proposals read board + Crew/Captain action panes). CTAs use **ACL** (access control) snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
+Governance uses role sub-modes inside `PactoGovGovernanceShell` (All / Crew / Captain command panes; Status owns the live Proposals board). Propose and vote-mode writes live on **All**; process votes live on Status cards. CTAs use **ACL** (access control) snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 
 ---
 

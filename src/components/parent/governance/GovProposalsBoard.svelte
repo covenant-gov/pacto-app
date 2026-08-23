@@ -8,6 +8,10 @@
     quartermasterExecuteOffboard,
     quartermasterExecuteRemoveCrew,
     quartermasterExpireOffboard,
+    mutinyCastVote,
+    quartermasterCrewOffboardVote,
+    treasuryAuthorityCaptainVote,
+    treasuryAuthorityCrewVote,
     treasuryAuthorityExecute,
     type MutinyStatusDto,
     type QuartermasterPendingActionDto,
@@ -17,6 +21,8 @@
   import {
     gatePermissionlessSigner,
     gateQuartermasterExecute,
+    gateRequiresCaptain,
+    gateRequiresCrew,
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
@@ -38,6 +44,7 @@
     mutinyTxHashForCard,
   } from '../../../lib/governance/mutiny-process-tx';
   import { showToast } from '../../../stores/toast';
+  import { requireBackupVerified } from '../../../stores/backup-verification';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
@@ -46,6 +53,7 @@
     parentId: string;
     treasuryAuthority: string;
     quartermaster?: string;
+    mutinyModule?: string;
     privilege: GovernancePrivilege;
     proposals?: TreasuryProposalDto[];
     proposalsLoading?: boolean;
@@ -58,6 +66,8 @@
     qmPendingError?: string;
     mutinyMode?: boolean;
     rosterFreezeReason?: string;
+    mutinyHasVoted?: boolean;
+    offboardHasVoted?: boolean;
     onRefreshProposals?: () => void;
     onExecuteMutiny?: () => void | Promise<void>;
     onExpireMutiny?: () => void | Promise<void>;
@@ -71,6 +81,7 @@
     parentId,
     treasuryAuthority,
     quartermaster = '',
+    mutinyModule = '',
     privilege,
     proposals = [],
     proposalsLoading = false,
@@ -83,6 +94,8 @@
     qmPendingError = '',
     mutinyMode = false,
     rosterFreezeReason = 'governance.gate.quartermasterLocked',
+    mutinyHasVoted = false,
+    offboardHasVoted = false,
     onRefreshProposals = () => {},
     onExecuteMutiny = () => {},
     onExpireMutiny = () => {},
@@ -96,6 +109,8 @@
   let acting = $state(false);
 
   let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
+  let crewVoteGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCrew(privilege));
+  let captainVoteGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCaptain(privilege));
   let qmExecGate = $derived(
     capabilitiesPending ? PENDING_GATE : gateQuartermasterExecute(privilege, mutinyMode, rosterFreezeReason),
   );
@@ -253,6 +268,89 @@
     }
   }
 
+  async function runCrewVote(proposalId: string, support: boolean) {
+    if (acting || !crewVoteGate.enabled || !requireBackupVerified()) return;
+    acting = true;
+    const label = support ? tFn('governance.action.crewYea') : tFn('governance.action.crewNay');
+    try {
+      const result = await treasuryAuthorityCrewVote({
+        network,
+        parentId,
+        treasuryAuthority,
+        proposalId,
+        support,
+      });
+      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
+      onRefreshProposals();
+    } catch (e) {
+      showGovWriteErrorToast(e, label);
+    } finally {
+      acting = false;
+    }
+  }
+
+  async function runCaptainVote(proposalId: string, support: boolean) {
+    if (acting || !captainVoteGate.enabled) return;
+    acting = true;
+    const label = support ? tFn('governance.action.captainApprove') : tFn('governance.action.captainVeto');
+    try {
+      const result = await treasuryAuthorityCaptainVote({
+        network,
+        parentId,
+        treasuryAuthority,
+        proposalId,
+        support,
+      });
+      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
+      onRefreshProposals();
+    } catch (e) {
+      showGovWriteErrorToast(e, label);
+    } finally {
+      acting = false;
+    }
+  }
+
+  async function runMutinyVote() {
+    if (acting || !mutinyModule.trim() || !mutinyStatus) return;
+    acting = true;
+    const label = tFn('governance.action.mutinyVote');
+    try {
+      const result = await mutinyCastVote({
+        network,
+        parentId,
+        mutinyModule,
+        mutinyId: mutinyStatus.activeMutinyId,
+      });
+      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
+      onRefreshProposals();
+    } catch (e) {
+      showGovWriteErrorToast(e, label);
+    } finally {
+      acting = false;
+    }
+  }
+
+  async function runOffboardVote(support: boolean) {
+    if (acting || !quartermaster.trim() || !qmStatus?.offboard || !requireBackupVerified()) return;
+    acting = true;
+    const label = support ? tFn('governance.action.voteYea') : tFn('governance.action.voteNay');
+    try {
+      const result = await quartermasterCrewOffboardVote({
+        network,
+        parentId,
+        quartermaster,
+        offboardId: qmStatus.offboard.offboardId,
+        support,
+      });
+      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
+      onRefreshProposals();
+    } catch (e) {
+      showGovWriteErrorToast(e, label);
+    } finally {
+      acting = false;
+    }
+  }
+
   function privilegeReasonKeyFor(card: GovProcessCard): string {
     if (card.kind === 'crew_add' || card.kind === 'crew_remove') {
       return qmExecGate.enabled ? '' : qmExecGate.reason;
@@ -308,6 +406,20 @@
           privilegeReasonKey={privilegeReasonKeyFor(card)}
           onExecute={() => executeForCard(card)}
           onExpire={() => expireForCard(card)}
+          showVotes
+          votePending={acting}
+          {crewVoteGate}
+          {captainVoteGate}
+          {mutinyHasVoted}
+          {offboardHasVoted}
+          onCrewVote={
+            card.kind === 'treasury' ? (support) => void runCrewVote(card.proposal.proposalId, support) : undefined
+          }
+          onCaptainVote={
+            card.kind === 'treasury' ? (support) => void runCaptainVote(card.proposal.proposalId, support) : undefined
+          }
+          onMutinyVote={card.kind === 'mutiny' ? () => void runMutinyVote() : undefined}
+          onOffboardVote={card.kind === 'crew_offboard' ? (support) => void runOffboardVote(support) : undefined}
         />
       {/each}
     </ul>

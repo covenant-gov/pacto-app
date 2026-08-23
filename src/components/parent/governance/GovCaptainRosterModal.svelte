@@ -1,0 +1,284 @@
+<script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+  import Modal from '../../ui/Modal.svelte';
+  import GovCtaButton from './GovCtaButton.svelte';
+  import {
+    getQuartermasterPending,
+    quartermasterCancelAddCrew,
+    quartermasterCancelRemoveCrew,
+    quartermasterExecuteAddCrew,
+    quartermasterExecuteRemoveCrew,
+    quartermasterRequestAddCrew,
+    quartermasterRequestRemoveCrew,
+    type QuartermasterPendingDto,
+    type QuartermasterStatusDto,
+  } from '../../../lib/governance/api';
+  import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
+  import { type CtaGate } from '../../../lib/governance/governance-privilege';
+  import {
+    fundedByFromWriteResult,
+    govWriteSubmittedToast,
+  } from '../../../lib/governance/gov-write-funding';
+  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import { showToast } from '../../../stores/toast';
+
+  let {
+    open = false,
+    onClose = () => {},
+    mode,
+    network,
+    parentId,
+    quartermaster,
+    qmStatus = null,
+    memberEvmOptions = [],
+    qmGate,
+    execGate,
+    onSubmitted = () => {},
+  }: {
+    open?: boolean;
+    onClose?: () => void;
+    mode: 'add' | 'remove';
+    network: string;
+    parentId: string;
+    quartermaster: string;
+    qmStatus?: QuartermasterStatusDto | null;
+    memberEvmOptions?: { address: string; label: string }[];
+    qmGate: CtaGate;
+    execGate: CtaGate;
+    onSubmitted?: () => void;
+  } = $props();
+
+  const tFn = get(t);
+  const titleId = $derived(mode === 'add' ? 'gov-captain-add-crew-title' : 'gov-captain-remove-crew-title');
+  const titleKey = $derived(mode === 'add' ? 'governance.shell.addCrew' : 'governance.shell.removeCrew');
+
+  let acting = $state(false);
+  let qmAddress = $state('');
+  let qmPending: QuartermasterPendingDto | null = $state(null);
+
+  let offboardActive = $derived(isCrewOffboardActive(qmStatus));
+
+  function shortEvm(addr: string): string {
+    const a = addr.trim();
+    if (a.length < 12) return a;
+    return `${a.slice(0, 6)}…${a.slice(-4)}`;
+  }
+
+  $effect(() => {
+    if (memberEvmOptions.length > 0) {
+      const hit = memberEvmOptions.some(
+        (o) => o.address.trim().toLowerCase() === qmAddress.trim().toLowerCase(),
+      );
+      if (!qmAddress.trim() || !hit) {
+        qmAddress = memberEvmOptions[0].address;
+      }
+    }
+  });
+
+  async function run(label: string, fn: () => Promise<unknown>) {
+    if (acting) return;
+    acting = true;
+    try {
+      const result = await fn();
+      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
+      await Promise.resolve(onSubmitted());
+    } catch (e) {
+      showGovWriteErrorToast(e, label);
+    } finally {
+      acting = false;
+    }
+  }
+
+  async function checkQmPending() {
+    if (!quartermaster || !qmAddress.trim()) return;
+    try {
+      qmPending = await getQuartermasterPending({
+        network,
+        quartermaster,
+        address: qmAddress.trim(),
+      });
+    } catch {
+      qmPending = null;
+    }
+  }
+</script>
+
+{#if open}
+  <Modal {titleId} {onClose} contentClass="gov-action-modal">
+    <h2 id={titleId} class="modal-title">{$t(titleKey)}</h2>
+    {#if qmStatus?.mutinyActive}
+      <p class="muted"><strong>{$t('governance.info.mutinyModeOn')}</strong> — {$t('governance.info.mutinyModeBlocked')}</p>
+    {:else if offboardActive}
+      <p class="muted">{$t('governance.gate.rosterFrozenOffboard')}</p>
+    {:else if qmStatus}
+      <p class="muted">{$t('governance.info.crewChangeDelay', { values: { delay: qmStatus.crewChangeDelaySecs } })}</p>
+    {/if}
+    <label class="field-label">
+      {$t('governance.field.targetMember')}
+      {#if memberEvmOptions.length > 0}
+        <select bind:value={qmAddress} disabled={acting} aria-label={$t('governance.field.targetMemberAriaLabel')}>
+          {#each memberEvmOptions as opt (opt.address)}
+            <option value={opt.address}>{opt.label} — {shortEvm(opt.address)}</option>
+          {/each}
+        </select>
+      {:else}
+        <input bind:value={qmAddress} placeholder={$t('governance.field.targetMemberPlaceholder')} disabled={acting} />
+      {/if}
+    </label>
+    <button
+      type="button"
+      class="linkish"
+      disabled={acting || !qmAddress.trim()}
+      onclick={() => void checkQmPending()}
+    >
+      {$t('governance.quartermaster.checkPending')}
+    </button>
+    {#if qmPending}
+      <p class="muted tiny">
+        {$t('governance.quartermaster.pendingAdd', { values: { at: qmPending.pendingAddAt || '0' } })} · {$t('governance.quartermaster.pendingRemove', { values: { at: qmPending.pendingRemoveAt || '0' } })}
+      </p>
+    {/if}
+    {#if mode === 'add'}
+      <div class="row">
+        <GovCtaButton
+          label={tFn('governance.action.requestAdd')}
+          gate={qmGate}
+          {acting}
+          onClick={() =>
+            void run(tFn('governance.action.requestAdd'), () =>
+              quartermasterRequestAddCrew({
+                network,
+                parentId,
+                quartermaster,
+                candidate: qmAddress,
+              }))}
+        />
+        <GovCtaButton
+          label={tFn('governance.action.cancelAdd')}
+          gate={qmGate}
+          {acting}
+          onClick={() =>
+            void run(tFn('governance.action.cancelAdd'), () =>
+              quartermasterCancelAddCrew({
+                network,
+                parentId,
+                quartermaster,
+                candidate: qmAddress,
+              }))}
+        />
+        <GovCtaButton
+          label={tFn('governance.action.executeAdd')}
+          gate={execGate}
+          {acting}
+          onClick={() =>
+            void run(tFn('governance.action.executeAdd'), () =>
+              quartermasterExecuteAddCrew({
+                network,
+                parentId,
+                quartermaster,
+                candidate: qmAddress,
+              }))}
+        />
+      </div>
+    {:else}
+      <div class="row">
+        <GovCtaButton
+          label={tFn('governance.action.requestRemove')}
+          gate={qmGate}
+          {acting}
+          onClick={() =>
+            void run(tFn('governance.action.requestRemove'), () =>
+              quartermasterRequestRemoveCrew({
+                network,
+                parentId,
+                quartermaster,
+                crew: qmAddress,
+              }))}
+        />
+        <GovCtaButton
+          label={tFn('governance.action.cancelRemove')}
+          gate={qmGate}
+          {acting}
+          onClick={() =>
+            void run(tFn('governance.action.cancelRemove'), () =>
+              quartermasterCancelRemoveCrew({
+                network,
+                parentId,
+                quartermaster,
+                crew: qmAddress,
+              }))}
+        />
+        <GovCtaButton
+          label={tFn('governance.action.executeRemove')}
+          gate={execGate}
+          {acting}
+          onClick={() =>
+            void run(tFn('governance.action.executeRemove'), () =>
+              quartermasterExecuteRemoveCrew({
+                network,
+                parentId,
+                quartermaster,
+                crew: qmAddress,
+              }))}
+        />
+      </div>
+    {/if}
+  </Modal>
+{/if}
+
+<style>
+  :global(.gov-action-modal) {
+    max-width: 32rem;
+  }
+  .modal-title {
+    margin: 0 0 12px;
+    font-size: 1.0625rem;
+    font-weight: 600;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .field-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .muted {
+    margin: 0 0 8px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+  .tiny {
+    font-size: 0.6875rem;
+  }
+  input,
+  select {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+  }
+  .linkish {
+    align-self: flex-start;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 8px 0 0;
+    color: var(--brand);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .linkish:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+</style>

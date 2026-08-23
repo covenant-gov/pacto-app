@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import { render, screen, waitFor, cleanup } from '@testing-library/svelte';
 import PactoGovGovernanceShell from './PactoGovGovernanceShell.svelte';
 import { getSquadCapabilities } from '../../../lib/governance/api';
 import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
@@ -85,8 +85,6 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
       },
     });
 
-    await fireEvent.click(await screen.findByRole('tab', { name: 'Captain' }));
-
     const submitButton = (await screen.findByRole('button', {
       name: 'Submit proposal',
     })) as HTMLButtonElement;
@@ -116,8 +114,6 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
         crewWearers: [],
       },
     });
-
-    await fireEvent.click(await screen.findByRole('tab', { name: 'Captain' }));
 
     const submitButton = (await screen.findByRole('button', {
       name: 'Submit proposal',
@@ -153,8 +149,6 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
       },
     });
 
-    await fireEvent.click(await screen.findByRole('tab', { name: 'Crew' }));
-
     const submitButton = (await screen.findByRole('button', {
       name: 'Submit proposal',
     })) as HTMLButtonElement;
@@ -185,7 +179,6 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
       },
     });
 
-    await fireEvent.click(await screen.findByRole('tab', { name: 'Captain' }));
     const submitButton = (await screen.findByRole('button', {
       name: 'Submit proposal',
     })) as HTMLButtonElement;
@@ -233,7 +226,6 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
 
     const { rerender } = render(PactoGovGovernanceShell, { props });
 
-    await fireEvent.click(await screen.findByRole('tab', { name: 'Crew' }));
     const submitButton = (await screen.findByRole('button', {
       name: 'Submit proposal',
     })) as HTMLButtonElement;
@@ -312,7 +304,27 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     expect(mockedGetSquadCapabilities).toHaveBeenCalledTimes(2);
   });
 
-  it('renders the proposals board without Crew or Captain tabs on the proposals surface', async () => {
+  it('renders All, Crew, and Captain command tabs by default', async () => {
+    mockedGetSquadCapabilities.mockResolvedValue(capabilitiesSnapshot());
+
+    render(PactoGovGovernanceShell, {
+      props: {
+        payload: basePayload(),
+        network: 'sepolia',
+        parentId: 'parent1',
+        myAddress: CAPTAIN_ADDRESS,
+        captainWearers: [CAPTAIN_ADDRESS],
+        crewWearers: [],
+      },
+    });
+
+    expect(await screen.findByRole('tab', { name: 'All' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Crew' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Captain' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Submit proposal' })).toBeTruthy();
+  });
+
+  it('renders the proposals board without All, Crew, or Captain tabs on the proposals surface', async () => {
     mockedGetSquadCapabilities.mockResolvedValue(capabilitiesSnapshot());
 
     render(PactoGovGovernanceShell, {
@@ -328,6 +340,7 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     });
 
     expect(await screen.findByRole('heading', { name: /Proposals/i })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'All' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Crew' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Captain' })).toBeNull();
   });

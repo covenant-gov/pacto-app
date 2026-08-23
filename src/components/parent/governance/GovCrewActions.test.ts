@@ -49,7 +49,6 @@ function mutinyProps(overrides: Record<string, unknown> = {}) {
   return {
     network: 'sepolia',
     parentId: 'parent-1',
-    treasuryAuthority: '',
     mutinyModule: '0xmutiny',
     privilege: CREW,
     memberEvmOptions: CREW_HAT_OPTIONS,
@@ -62,9 +61,14 @@ function renderCrewMutiny(overrides: Record<string, unknown> = {}) {
   return render(GovCrewActions, { props: mutinyProps(overrides) });
 }
 
+async function openStartMutiny() {
+  await fireEvent.click(screen.getByRole('button', { name: 'Start mutiny' }));
+}
+
 describe('GovCrewActions mutiny start pickers', () => {
-  it('lists crew-hat wearers for To crew member', () => {
+  it('lists crew-hat wearers for To crew member', async () => {
     renderCrewMutiny();
+    await openStartMutiny();
     const kind = screen.getByRole('combobox', { name: 'Start mutiny' }) as HTMLSelectElement;
     expect(kind.value).toBe('crew');
     expect(screen.getByRole('option', { name: 'To Squad member' })).toBeTruthy();
@@ -78,6 +82,7 @@ describe('GovCrewActions mutiny start pickers', () => {
 
   it('lists MLS announcements members including non-crew for To Squad member', async () => {
     renderCrewMutiny();
+    await openStartMutiny();
     const kind = screen.getByRole('combobox', { name: 'Start mutiny' });
     await fireEvent.change(kind, { target: { value: 'eoa' } });
 
@@ -93,6 +98,7 @@ describe('GovCrewActions mutiny start pickers', () => {
     expect(screen.queryByRole('combobox', { name: 'Proposed address' })).toBeNull();
 
     await rerender(mutinyProps({ mutinyStatus: mutiny({ activeMutinyId: '0' }) }));
+    await openStartMutiny();
 
     const kind = screen.getByRole('combobox', { name: 'Start mutiny' }) as HTMLSelectElement;
     expect(kind.value).toBe('crew');
@@ -106,6 +112,7 @@ describe('GovCrewActions mutiny start pickers', () => {
   it('lists MLS members after expire then kind switch', async () => {
     const { rerender } = renderCrewMutiny({ mutinyStatus: mutiny() });
     await rerender(mutinyProps({ mutinyStatus: mutiny({ activeMutinyId: '0' }) }));
+    await openStartMutiny();
 
     const kind = screen.getByRole('combobox', { name: 'Start mutiny' });
     await fireEvent.change(kind, { target: { value: 'eoa' } });
@@ -117,6 +124,7 @@ describe('GovCrewActions mutiny start pickers', () => {
 
   it('clears leftover proposed when crew options are empty', async () => {
     const { rerender } = renderCrewMutiny();
+    await openStartMutiny();
     expect(screen.getByRole('option', { name: /bravo-test/ })).toBeTruthy();
 
     await rerender(mutinyProps({ memberEvmOptions: [] }));
