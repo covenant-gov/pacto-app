@@ -8,6 +8,7 @@ import {
   resetJoinInboxHolderActionInFlight,
   rotateJoinInboxKey,
   addJoinInboxHolder,
+  initJoinInbox,
   joinInboxHolderActionInFlight,
   joinInboxHolderActionInFlightRevision,
   JOIN_INBOX_META_SCHEMA,
@@ -146,5 +147,39 @@ describe('join inbox holder action in-flight', () => {
 describe('JOIN_INBOX_META_SCHEMA', () => {
   it('uses join inbox wire schema', () => {
     expect(JOIN_INBOX_META_SCHEMA).toBe('pacto.squad.join_inbox.meta.v1');
+  });
+});
+
+describe('initJoinInbox', () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+  });
+
+  it('returns ok state on success', async () => {
+    const state = {
+      squadId: 's1',
+      inboxNpub: 'npub1inbox',
+      holders: ['npub1a'],
+      keyEpoch: 1,
+      updatedAt: 1,
+      hasLocalSecret: true,
+      iAmHolder: true,
+    };
+    vi.mocked(invoke).mockResolvedValue({
+      state,
+      mlsAnnouncements: [],
+      mlsInbox: [],
+      keyShares: [],
+    });
+    await expect(initJoinInbox('s1')).resolves.toEqual({ ok: true, state });
+  });
+
+  it('returns error instead of swallowing', async () => {
+    vi.mocked(invoke).mockRejectedValue('Only the squad creator can initialize Join inbox');
+    const result = await initJoinInbox('s1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/squad creator/i);
+    }
   });
 });

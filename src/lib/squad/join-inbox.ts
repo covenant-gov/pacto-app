@@ -105,16 +105,21 @@ export async function getJoinInboxState(squadId: string): Promise<JoinInboxState
 }
 
 /** Init on create (or no-op if already present). Publishes MLS meta when newly created. */
-export async function initJoinInbox(squadId: string): Promise<JoinInboxState | null> {
+export async function initJoinInbox(
+  squadId: string
+): Promise<{ ok: true; state: JoinInboxState } | { ok: false; error: string }> {
   const id = squadId.trim();
-  if (!id) return null;
+  if (!id) {
+    return { ok: false, error: 'squadId is required' };
+  }
   try {
     const bundle = await invoke<JoinInboxPublishBundle>('join_inbox_init', { squadId: id });
     await publishBundle(id, bundle);
-    return bundle.state;
-  } catch (e) {
-    console.warn('[join-inbox] init failed', e);
-    return null;
+    return { ok: true, state: bundle.state };
+  } catch (e: unknown) {
+    const error = getInvokeErrorMessage(e, 'Could not initialize Join inbox.');
+    console.warn('[join-inbox] init failed', error);
+    return { ok: false, error };
   }
 }
 

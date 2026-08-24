@@ -6,8 +6,10 @@ Private Commons join: requesters **DM the squad Join inbox** (shared Nostr ident
 
 ## Init and ownership
 
-- `join_inbox_init` runs at **squad create** (creator = sole holder). It refuses to mint when the announcements MLS group already has other members and the caller is not the group creator.
-- Settings **Initialize** may sync first; mint only if the solo/creator gate allows. Opening Settings never auto-mints.
+- `join_inbox_init` runs at **squad create** (creator = sole holder). When MLS creator identity is known, only that npub may mint; when creator is unknown/unparseable, any member may mint (first published `meta.v1` wins via same-epoch apply rules).
+- Settings **Initialize** may sync first; mint follows the same gate. Opening Settings never auto-mints.
+- Creator pubkey on MLS group rows may be stored as npub or hex (welcome path); mint gating normalizes both to bech32 npub at read time.
+- Virgin pre-join-inbox squads: local meta is empty and peers have nothing to sync — Initialize mints for the creator (or any member if creator is unknown).
 - Same-`keyEpoch` MLS meta cannot replace `inboxNpub`. Higher epoch is a real rotate. Same-epoch overwrite of holders with a different inbox npub is rejected.
 - Split fingerprint (`secret.inbox_npub != meta.inbox_npub` at the same epoch): holder sync / Settings reload reclaim the local secret, bump epoch, and republish public meta.
 - Squad state sync republishes **public** `pacto.squad.join_inbox.meta.v1` only (no nsec).

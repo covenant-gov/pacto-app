@@ -49,7 +49,7 @@ describe('JoinInboxHoldersSection', () => {
     vi.mocked(reclaimJoinInboxIfSplit).mockReset();
     vi.mocked(reclaimJoinInboxIfSplit).mockResolvedValue(inboxState());
     vi.mocked(getJoinInboxState).mockResolvedValue(inboxState());
-    vi.mocked(initJoinInbox).mockResolvedValue(inboxState());
+    vi.mocked(initJoinInbox).mockResolvedValue({ ok: true, state: inboxState() });
   });
 
   afterEach(() => {

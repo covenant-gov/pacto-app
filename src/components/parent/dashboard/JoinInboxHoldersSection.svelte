@@ -90,7 +90,12 @@
       await requestSquadStateSync(squadId);
       inboxState = await getJoinInboxState(squadId);
       if (inboxState) return;
-      inboxState = await initJoinInbox(squadId);
+      const result = await initJoinInbox(squadId);
+      if (!result.ok) {
+        error = result.error;
+        return;
+      }
+      inboxState = result.state;
     } catch (e) {
       error = e instanceof Error ? e.message : tFn('governance.joinInbox.toastLoadFailed');
     } finally {

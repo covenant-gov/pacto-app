@@ -420,6 +420,21 @@ struct MlsGroupView {
     members: Vec<String>,
 }
 
+/// Bech32 npub from stored MLS `creator_pubkey` (npub or hex). Welcome path often stores hex.
+pub fn normalize_creator_npub(raw: &str) -> Option<String> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Ok(pk) = PublicKey::parse(s) {
+        return pk.to_bech32().ok();
+    }
+    if let Ok(pk) = PublicKey::from_hex(s) {
+        return pk.to_bech32().ok();
+    }
+    None
+}
+
 async fn mls_group_view(group_id: &str) -> Result<MlsGroupView, String> {
     let group_id = group_id.to_string();
     tokio::task::spawn_blocking(move || {
@@ -436,8 +451,8 @@ async fn mls_group_view(group_id: &str) -> Result<MlsGroupView, String> {
                     || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id)
             });
             let creator_npub = meta
-                .map(|g| g.creator_pubkey.trim().to_string())
-                .filter(|s| s.starts_with("npub1"));
+                .map(|g| g.creator_pubkey.as_str())
+                .and_then(normalize_creator_npub);
             let engine_id = meta
                 .map(|g| {
                     if !g.engine_group_id.is_empty() {
@@ -483,20 +498,20 @@ fn require_holder(holders: &[String], me: &str) -> Result<(), String> {
     }
 }
 
-/// Mint is create-time only: MLS group creator, or solo when creator is unknown.
+/// Mint when local meta is absent: known MLS creator only, or any member when creator is unknown.
 pub fn may_mint_join_inbox(
     me: &str,
     creator_npub: Option<&str>,
-    members: &[String],
+    _members: &[String],
 ) -> Result<(), String> {
     if let Some(creator) = creator_npub.filter(|c| !c.is_empty()) {
         if creator == me {
             return Ok(());
         }
-        return Err("Join inbox already exists — wait for holder sync".into());
-    }
-    if members.iter().any(|m| m != me) {
-        return Err("Join inbox already exists — wait for holder sync".into());
+        return Err(
+            "Only the squad creator can initialize Join inbox — ask them to open Settings → Join inbox holders"
+                .into(),
+        );
     }
     Ok(())
 }
@@ -1304,13 +1319,26 @@ mod tests {
     fn may_mint_allows_creator_even_with_other_members() {
         let members = vec!["npub1creator".into(), "npub1joiner".into()];
         assert!(may_mint_join_inbox("npub1creator", Some("npub1creator"), &members).is_ok());
-        assert!(may_mint_join_inbox("npub1joiner", Some("npub1creator"), &members).is_err());
+        let err = may_mint_join_inbox("npub1joiner", Some("npub1creator"), &members).unwrap_err();
+        assert!(err.contains("Only the squad creator"));
+        assert!(!err.contains("already exists"));
     }
 
     #[test]
-    fn may_mint_solo_when_creator_unknown() {
+    fn may_mint_when_creator_unknown_allows_any_member() {
         assert!(may_mint_join_inbox("npub1a", None, &["npub1a".into()]).is_ok());
-        assert!(may_mint_join_inbox("npub1a", None, &["npub1a".into(), "npub1b".into()]).is_err());
+        assert!(may_mint_join_inbox("npub1a", None, &["npub1a".into(), "npub1b".into()]).is_ok());
+    }
+
+    #[test]
+    fn normalize_creator_npub_accepts_npub_and_hex() {
+        let keys = Keys::generate();
+        let npub = keys.public_key().to_bech32().unwrap();
+        let hex = keys.public_key().to_hex();
+        assert_eq!(normalize_creator_npub(&npub).as_deref(), Some(npub.as_str()));
+        assert_eq!(normalize_creator_npub(&hex).as_deref(), Some(npub.as_str()));
+        assert_eq!(normalize_creator_npub(""), None);
+        assert_eq!(normalize_creator_npub("not-a-key"), None);
     }
 
     #[test]
