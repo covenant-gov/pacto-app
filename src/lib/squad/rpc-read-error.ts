@@ -29,3 +29,19 @@ export function rpcReadErrorKind(raw: string | null | undefined): RpcReadErrorKi
   }
   return null;
 }
+
+/** At most one card per transport kind across parallel dashboard reads. */
+export function uniqueRpcReadErrorKinds(
+  ...rawErrors: (string | null | undefined)[]
+): RpcReadErrorKind[] {
+  const seen = new Set<RpcReadErrorKind>();
+  const kinds: RpcReadErrorKind[] = [];
+  for (const raw of rawErrors) {
+    const kind = rpcReadErrorKind(raw);
+    if (kind && !seen.has(kind)) {
+      seen.add(kind);
+      kinds.push(kind);
+    }
+  }
+  return kinds;
+}

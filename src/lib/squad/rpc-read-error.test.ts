@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rpcReadErrorKind } from './rpc-read-error';
+import { rpcReadErrorKind, uniqueRpcReadErrorKinds } from './rpc-read-error';
 
 const ALLNODES_429 =
   'HTTP error 429 with body: {"jsonrpc":"2.0","error":{"code":-32005,"message":"Rate limit exceeded. To obtain higher limits, please request a personal token or a dedicated node: https://www.allnodes.com/publicnode"},"id":31}';
@@ -33,5 +33,30 @@ describe('rpcReadErrorKind', () => {
     expect(rpcReadErrorKind('INVALID_TREASURY_AUTHORITY')).toBeNull();
     expect(rpcReadErrorKind('')).toBeNull();
     expect(rpcReadErrorKind(null)).toBeNull();
+  });
+});
+
+describe('uniqueRpcReadErrorKinds', () => {
+  it('dedupes identical rate-limit errors from parallel reads', () => {
+    expect(uniqueRpcReadErrorKinds(ALLNODES_429, ALLNODES_429)).toEqual(['rate_limited']);
+  });
+
+  it('keeps distinct transport kinds in first-seen order', () => {
+    expect(
+      uniqueRpcReadErrorKinds(
+        ALLNODES_429,
+        '{"code":"RPC_CONNECT","message":"tried 5 URL(s), last error: RPC connect timeout"}',
+      ),
+    ).toEqual(['rate_limited', 'unreachable']);
+  });
+
+  it('ignores non-RPC chain errors', () => {
+    expect(
+      uniqueRpcReadErrorKinds(
+        'Not allowed for your role.',
+        ALLNODES_429,
+        'execution reverted: Unauthorized',
+      ),
+    ).toEqual(['rate_limited']);
   });
 });
