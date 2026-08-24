@@ -25,8 +25,6 @@
   import { syncSquadInfraForParent } from '../../../lib/dashboard/dashboard-data-sync';
   import { openSquadWargame } from '../../../lib/navigation/open-squad-dashboard';
   import { isActiveWarGameStack, warGameStatusAction } from '../../../lib/governance/war-game-payload';
-  import { WAR_GAME_PUBLIC_RULES_URL } from '../../../lib/governance/war-game-links';
-  import { openExternalUrl } from '../../../lib/utils/open-external';
   import DeployWarGameModal from '../governance/DeployWarGameModal.svelte';
   import { showToast } from '../../../stores/toast';
   import type { WarGameDeployComplete } from '../../../lib/governance/start-war-game-deploy';
@@ -148,15 +146,6 @@
 
 <section class="status-checklist" aria-label={$t('governance.status.checklistAria')}>
   <span class="meta-label">{$t('governance.status.checklistTitle')}</span>
-  <p class="wargame-nudge">
-    <button
-      type="button"
-      class="checklist-action"
-      onclick={() => void openExternalUrl(WAR_GAME_PUBLIC_RULES_URL)}
-    >
-      {$t('governance.status.wargameRulesLink')}
-    </button>
-  </p>
   <ul class="checklist" role="list">
     <li class="checklist-item" class:done={!!squadNetwork}>
       <span class={glyphClass(squadNetwork ? 'done' : 'not_started')} aria-hidden="true"
@@ -276,13 +265,6 @@
     letter-spacing: 0.04em;
     color: var(--text-muted);
     min-width: 5.5rem;
-  }
-
-  .wargame-nudge {
-    margin: 0;
-    font-size: 0.8125rem;
-    line-height: 1.45;
-    color: var(--text-muted);
   }
 
   .checklist {

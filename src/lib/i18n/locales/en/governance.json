@@ -696,7 +696,6 @@
 	"governance.status.redeployWargame": "Redeploy wargame",
 	"governance.status.wargameDeployed": "Wargame deployed",
 	"governance.status.openWargame": "Open squad-wargame",
-	"governance.status.wargameRulesLink": "Wargame rules",
 	"governance.status.squadGovernance": "Squad governance",
 	"governance.status.deploySquadGovernance": "Deploy Squad governance",
 	"governance.status.squadAdmin": "Squad admin",
