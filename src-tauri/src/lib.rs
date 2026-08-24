@@ -10956,6 +10956,7 @@ pub fn run() {
             evm::member_governance_read::get_hat_wearers_for_ids,
             evm::member_governance_read::get_squad_admin_executor_roles,
             evm::access_control::get_squad_capabilities,
+            evm::roster_bind_cert::sign_squad_roster_bind_cert,
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,

@@ -327,6 +327,7 @@
 	"messaging.structuredNotice.joinRequestRejected": "La solicitud de unión a {squadName} fue rechazada",
 	"messaging.structuredNotice.joinUpdateFor": "Actualización de unión a {squadName}",
 	"messaging.structuredNotice.memberEvmAddressShared": "Dirección EVM del miembro compartida",
+	"messaging.structuredNotice.memberEvmRosterSynced": "EVM del roster del escuad sincronizado",
 	"messaging.structuredNotice.safeProposal": "Propuesta de Safe",
 	"messaging.structuredNotice.squadBotKeyRotated": "Clave de bandeja de entrada rotada",
 	"messaging.structuredNotice.squadBotKeyUpdate": "Actualización de clave de bandeja de entrada",

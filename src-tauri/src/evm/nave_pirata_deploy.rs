@@ -334,7 +334,13 @@ pub(crate) fn ensure_captain_for_parent_deploy<R: Runtime>(
         if bound_squad_address_for_parent(app, pid)?.as_ref() == Some(&captain) {
             let hex = format!("{captain:#x}");
             for heal_pid in &candidates {
-                db::upsert_squad_member_evm(app.clone(), (*heal_pid).to_string(), hex.clone())?;
+                db::upsert_squad_member_evm(
+                    app.clone(),
+                    (*heal_pid).to_string(),
+                    hex.clone(),
+                    None,
+                    None,
+                )?;
             }
             return Ok(());
         }

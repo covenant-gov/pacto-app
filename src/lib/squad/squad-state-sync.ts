@@ -30,7 +30,7 @@ import {
   warGameActionFromProviderPayload,
 } from '../governance/war-game-announce';
 import { currentUser } from '../../stores/auth';
-import { publishSquadMemberEvmShare, getBoundSquadEvmAddressForParent } from './squad-member-evm-share';
+import { publishSquadEvmRosterSnapshot } from './squad-evm-roster-snapshot';
 import { publishSquadNetworkUpdated } from './squad-network-share';
 import { publishSquadRpcUpdated } from './squad-rpc-share';
 import { publishSquadChannelsCatalog } from './squad-channels-catalog';
@@ -281,17 +281,11 @@ export async function respondToSquadStateSyncRequest(
   if (wantEvm) {
     try {
       const catalogId = parent?.id?.trim() && parent.id.trim() !== parentId ? parent.id.trim() : null;
-      const bound = await getBoundSquadEvmAddressForParent(parentId, catalogId);
-      if (bound) {
-        const ok = await publishSquadMemberEvmShare(parentId, {
-          evmAddress: bound,
-          ...(catalogId ? { altParentId: catalogId } : {}),
-        });
-        if (ok) anyOk = true;
-      }
-      /* unbound: omit EVM; still help with infra/network/channels */
+      const snapOk = await publishSquadEvmRosterSnapshot(parentId, catalogId);
+      if (snapOk) anyOk = true;
+      /* unbound / no certs: omit EVM snapshot; still help with infra/network/channels */
     } catch (e) {
-      console.warn('[squad-state-sync] EVM republish failed', e);
+      console.warn('[squad-state-sync] EVM roster snapshot failed', e);
     }
   }
 

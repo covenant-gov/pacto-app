@@ -1,16 +1,31 @@
 import { invoke } from '@tauri-apps/api/core';
 import { sendDmMessage } from '../api/nostr';
+import { signSquadRosterBindCert, type SquadRosterBindCert } from '../api/roster-bind';
 import { listEvmAccounts } from '../wallet/evm-accounts';
 import { listEvmAccountSquadBindings } from './evm-account-squad-bindings';
 
 export const SQUAD_MEMBER_EVM_SHARE_TYPE = 'squad_member_evm_share';
-export const SQUAD_MEMBER_EVM_SHARE_VERSION = 1;
+export const SQUAD_MEMBER_EVM_SHARE_VERSION = 2;
 
-export function formatSquadMemberEvmShare(rosterParentId: string, evmAddress: string): string {
+export type SquadMemberEvmRow = {
+  memberNpub: string;
+  evmAddress: string;
+  updatedAtMs: number;
+  issuedAt?: number;
+  bindSignature?: string;
+};
+
+export function formatSquadMemberEvmShare(rosterParentId: string, cert: SquadRosterBindCert): string {
   return JSON.stringify({
     version: SQUAD_MEMBER_EVM_SHARE_VERSION,
     type: SQUAD_MEMBER_EVM_SHARE_TYPE,
-    payload: { parent_id: rosterParentId, evm_address: evmAddress },
+    payload: {
+      parent_id: rosterParentId,
+      member_npub: cert.memberNpub,
+      evm_address: cert.evmAddress,
+      issued_at: cert.issuedAt,
+      signature: cert.signature,
+    },
     pacto_virtual_bucket: 'announcements',
   });
 }
@@ -88,8 +103,17 @@ export async function publishSquadMemberEvmShare(
   if (!rosterId) return false;
   const fromWallet = await resolveSquadMemberEvmShareAddress(rosterId, options);
   if (!fromWallet) return false;
-  // Publish first so peers sync; local upsert only after MLS send succeeds.
-  const json = formatSquadMemberEvmShare(rosterId, fromWallet);
+  let cert: SquadRosterBindCert;
+  try {
+    cert = await signSquadRosterBindCert(rosterId);
+  } catch (e) {
+    console.warn('[squad-member-evm] sign bind cert failed', e);
+    return false;
+  }
+  if (cert.evmAddress.trim().toLowerCase() !== fromWallet.toLowerCase()) {
+    return false;
+  }
+  const json = formatSquadMemberEvmShare(rosterId, cert);
   try {
     await sendDmMessage(rosterId, json, '', { virtualBucket: 'announcements' });
   } catch (e) {
@@ -97,7 +121,12 @@ export async function publishSquadMemberEvmShare(
     return false;
   }
   try {
-    await invoke('upsert_squad_member_evm', { parentId: rosterId, evmAddress: fromWallet });
+    await invoke('upsert_squad_member_evm', {
+      parentId: rosterId,
+      evmAddress: cert.evmAddress,
+      issuedAt: cert.issuedAt,
+      bindSignature: cert.signature,
+    });
   } catch (e) {
     console.warn('[squad-member-evm] upsert_squad_member_evm failed after publish', e);
     return false;

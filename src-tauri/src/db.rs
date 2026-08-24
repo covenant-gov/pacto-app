@@ -4091,6 +4091,10 @@ pub struct SquadMemberEvmRow {
     pub member_npub: String,
     pub evm_address: String,
     pub updated_at_ms: i64,
+    #[serde(default)]
+    pub issued_at: i64,
+    #[serde(default)]
+    pub bind_signature: String,
 }
 
 /// Persist this account's squad-visible EVM address for a parent (same id as squad/network root and announcements MLS group in current UX).
@@ -4099,6 +4103,8 @@ pub fn upsert_squad_member_evm<R: Runtime>(
     handle: AppHandle<R>,
     parent_id: String,
     evm_address: String,
+    issued_at: Option<i64>,
+    bind_signature: Option<String>,
 ) -> Result<(), String> {
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let member_npub = crate::account_manager::get_current_account()?;
@@ -4109,19 +4115,33 @@ pub fn upsert_squad_member_evm<R: Runtime>(
     let norm = crate::evm::normalize_hex_address(evm_address.trim())
         .ok_or_else(|| "Invalid EVM address".to_string())?;
     crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(&handle, norm.as_str())?;
+    let issued = issued_at.unwrap_or(0);
+    let sig = bind_signature.unwrap_or_default();
+    if issued > 0 && !sig.trim().is_empty() {
+        crate::evm::roster_bind_cert::verify_squad_roster_bind_cert(
+            parent,
+            member_npub.as_str(),
+            norm.as_str(),
+            issued as u64,
+            sig.trim(),
+        )?;
+    }
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    conn.execute(
-        "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(parent_id, member_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms",
-        rusqlite::params![parent, member_npub.as_str(), norm, now_ms],
-    )
-    .map_err(|e| format!("Failed to upsert squad_member_evm: {}", e))?;
+    let applied = upsert_certified_squad_member_evm(
+        &conn,
+        parent,
+        member_npub.as_str(),
+        norm.as_str(),
+        issued,
+        sig.trim(),
+        now_ms,
+    );
     crate::account_manager::return_db_connection(conn);
-    Ok(())
+    applied.map(|_| ())
 }
 
 #[command]
@@ -4143,7 +4163,7 @@ pub fn list_squad_member_evm<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let mut stmt = conn
         .prepare(
-            "SELECT member_npub, evm_address, updated_at_ms FROM squad_member_evm WHERE parent_id = ?1 ORDER BY member_npub ASC",
+            "SELECT member_npub, evm_address, updated_at_ms, issued_at, bind_signature FROM squad_member_evm WHERE parent_id = ?1 ORDER BY member_npub ASC",
         )
         .map_err(|e| format!("Failed to list squad_member_evm: {}", e))?;
 
@@ -4156,6 +4176,8 @@ pub fn list_squad_member_evm<R: Runtime>(
                     member_npub: row.get(0)?,
                     evm_address: row.get(1)?,
                     updated_at_ms: row.get(2)?,
+                    issued_at: row.get(3)?,
+                    bind_signature: row.get(4)?,
                 })
             })
             .map_err(|e| format!("Failed to query squad_member_evm: {}", e))?;
@@ -4285,8 +4307,8 @@ pub fn upsert_squad_member_evm_account<R: Runtime>(
         )
         .map_err(|e| format!("Failed to upsert squad_member_evm_account: {}", e))?;
         tx.execute(
-            "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(parent_id, member_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms",
+            "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms, issued_at, bind_signature) VALUES (?1, ?2, ?3, ?4, 0, '')
+             ON CONFLICT(parent_id, member_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms, issued_at = 0, bind_signature = ''",
             rusqlite::params![parent, member_npub.as_str(), norm, now_ms],
         )
         .map_err(|e| format!("Failed to upsert squad_member_evm: {}", e))?;
@@ -4301,6 +4323,8 @@ pub fn upsert_squad_member_evm_account<R: Runtime>(
         member_npub,
         evm_address: norm,
         updated_at_ms: now_ms,
+        issued_at: 0,
+        bind_signature: String::new(),
     })
 }
 
@@ -4544,6 +4568,7 @@ pub fn apply_mls_virtual_bucket_side_effects<R: Runtime>(
         || effective_bucket.is_none()
     {
         try_apply_squad_member_evm_share(handle, content, chat_id, author_npub);
+        try_apply_squad_evm_roster_snapshot(handle, content, chat_id, author_npub);
     }
 
     if effective_bucket == Some("announcements") || effective_bucket.is_none() {
@@ -4612,7 +4637,153 @@ fn is_announcements_governance_announce_content(content: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// If `content` is a `squad_member_evm_share` JSON from MLS, store a normalized address for `author_npub` only.
+fn json_issued_at(v: Option<&serde_json::Value>) -> Option<i64> {
+    let v = v?;
+    match v {
+        serde_json::Value::Number(n) => n.as_i64().or_else(|| n.as_u64().map(|u| u as i64)),
+        serde_json::Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RosterBindCertIngest {
+    pub parent_id: String,
+    pub member_npub: String,
+    pub evm_address: String,
+    pub issued_at: i64,
+    pub signature: String,
+}
+
+fn roster_bind_cert_from_json(
+    p: &serde_json::Value,
+    parent_id: &str,
+) -> Option<RosterBindCertIngest> {
+    let member_npub = p
+        .get("member_npub")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    let raw_addr = p
+        .get("evm_address")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?;
+    let evm_address = crate::evm::normalize_hex_address(raw_addr)?;
+    let issued_at = json_issued_at(p.get("issued_at")).filter(|n| *n > 0)?;
+    let signature = p
+        .get("signature")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    Some(RosterBindCertIngest {
+        parent_id: parent_id.to_string(),
+        member_npub,
+        evm_address,
+        issued_at,
+        signature,
+    })
+}
+
+pub(crate) fn upsert_certified_squad_member_evm(
+    conn: &rusqlite::Connection,
+    parent_id: &str,
+    member_npub: &str,
+    evm_address: &str,
+    issued_at: i64,
+    bind_signature: &str,
+    now_ms: i64,
+) -> Result<bool, String> {
+    let changed = conn
+        .execute(
+            "INSERT INTO squad_member_evm \
+             (parent_id, member_npub, evm_address, updated_at_ms, issued_at, bind_signature) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(parent_id, member_npub) DO UPDATE SET \
+               evm_address = excluded.evm_address, \
+               updated_at_ms = excluded.updated_at_ms, \
+               issued_at = excluded.issued_at, \
+               bind_signature = excluded.bind_signature \
+             WHERE excluded.issued_at >= squad_member_evm.issued_at",
+            rusqlite::params![
+                parent_id,
+                member_npub,
+                evm_address,
+                now_ms,
+                issued_at,
+                bind_signature
+            ],
+        )
+        .map_err(|e| format!("Failed to upsert squad_member_evm: {e}"))?;
+    Ok(changed > 0)
+}
+
+pub(crate) fn apply_verified_roster_bind_cert(
+    conn: &rusqlite::Connection,
+    chat_id: &str,
+    cert: &RosterBindCertIngest,
+) -> bool {
+    if !side_effect_parent_matches_chat(chat_id, &cert.parent_id) {
+        return false;
+    }
+    if crate::evm::roster_bind_cert::verify_squad_roster_bind_cert(
+        &cert.parent_id,
+        &cert.member_npub,
+        &cert.evm_address,
+        cert.issued_at as u64,
+        &cert.signature,
+    )
+    .is_err()
+    {
+        return false;
+    }
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    upsert_certified_squad_member_evm(
+        conn,
+        &cert.parent_id,
+        &cert.member_npub,
+        &cert.evm_address,
+        cert.issued_at,
+        &cert.signature,
+        now_ms,
+    )
+    .unwrap_or(false)
+}
+
+/// v2 certified share: MLS author must equal payload.member_npub.
+pub(crate) fn parse_v2_squad_member_evm_share(
+    content: &str,
+    author_npub: &str,
+) -> Option<RosterBindCertIngest> {
+    let author = author_npub.trim();
+    if author.is_empty() {
+        return None;
+    }
+    let parsed: serde_json::Value = serde_json::from_str(content).ok()?;
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("squad_member_evm_share") {
+        return None;
+    }
+    if parsed.get("version").and_then(|v| v.as_u64()) != Some(2) {
+        return None;
+    }
+    let p = parsed.get("payload").filter(|v| v.is_object())?;
+    let parent_id = p
+        .get("parent_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?;
+    let cert = roster_bind_cert_from_json(p, parent_id)?;
+    if cert.member_npub != author {
+        return None;
+    }
+    Some(cert)
+}
+
 pub fn try_apply_squad_member_evm_share<R: Runtime>(
     handle: &AppHandle<R>,
     content: &str,
@@ -4622,67 +4793,81 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
     let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
         return;
     };
-    let parsed: serde_json::Value = match serde_json::from_str(content) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-    if parsed.get("type").and_then(|v| v.as_str()) != Some("squad_member_evm_share") {
-        return;
-    }
-    let version_ok = match parsed.get("version") {
-        None => true,
-        Some(v) => v.as_u64() == Some(1),
-    };
-    if !version_ok {
-        return;
-    }
-    let Some(p) = parsed.get("payload").filter(|v| v.is_object()) else {
+    let Some(cert) = parse_v2_squad_member_evm_share(content, author) else {
         return;
     };
-    let Some(parent_id) = p
-        .get("parent_id")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    else {
-        return;
-    };
-    if !side_effect_parent_matches_chat(chat_id, parent_id) {
-        return;
-    }
-    let Some(raw_addr) = p
-        .get("evm_address")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    else {
-        return;
-    };
-    let Some(norm) = crate::evm::normalize_hex_address(raw_addr) else {
-        return;
-    };
-    if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(handle, norm.as_str())
-        .is_err()
+    if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(
+        handle,
+        cert.evm_address.as_str(),
+    )
+    .is_err()
     {
         return;
     }
-
     let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
         return;
     };
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
-    if let Err(e) = conn.execute(
-        "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(parent_id, member_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms",
-        rusqlite::params![parent_id, author, norm, now_ms],
-    ) {
-        eprintln!(
-            "[squad_member_evm_share] failed to upsert for parent {}: {}",
-            parent_id, e
-        );
+    let _ = apply_verified_roster_bind_cert(&conn, chat_id, &cert);
+    crate::account_manager::return_db_connection(conn);
+}
+
+/// Certified roster snapshot. Forwarder must be an MLS member; each cert is independent.
+pub(crate) fn parse_squad_evm_roster_snapshot_certs(
+    content: &str,
+) -> Option<(String, Vec<RosterBindCertIngest>)> {
+    let parsed: serde_json::Value = serde_json::from_str(content).ok()?;
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("squad_evm_roster_snapshot") {
+        return None;
+    }
+    if parsed.get("version").and_then(|v| v.as_u64()).unwrap_or(1) != 1 {
+        return None;
+    }
+    let p = parsed.get("payload").filter(|v| v.is_object())?;
+    let parent_id = p
+        .get("parent_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    let members = p.get("members").and_then(|v| v.as_array())?;
+    let certs = members
+        .iter()
+        .filter_map(|raw| roster_bind_cert_from_json(raw, &parent_id))
+        .collect::<Vec<_>>();
+    Some((parent_id, certs))
+}
+
+pub fn try_apply_squad_evm_roster_snapshot<R: Runtime>(
+    handle: &AppHandle<R>,
+    content: &str,
+    chat_id: &str,
+    author_npub: Option<&str>,
+) {
+    let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    let Some((parent_id, members)) = parse_squad_evm_roster_snapshot_certs(content) else {
+        return;
+    };
+    if !side_effect_parent_matches_chat(chat_id, &parent_id) {
+        return;
+    }
+    if !is_author_mls_member_for_chat(handle, chat_id, author) {
+        return;
+    }
+    let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
+        return;
+    };
+    for cert in members {
+        if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(
+            handle,
+            cert.evm_address.as_str(),
+        )
+        .is_err()
+        {
+            continue;
+        }
+        let _ = apply_verified_roster_bind_cert(&conn, chat_id, &cert);
     }
     crate::account_manager::return_db_connection(conn);
 }

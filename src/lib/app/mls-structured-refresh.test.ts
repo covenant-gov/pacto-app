@@ -403,12 +403,38 @@ describe('onMlsStructuredMessage', () => {
     onMlsStructuredMessage(
       JSON.stringify({
         type: 'squad_member_evm_share',
-        payload: { parent_id: 'evm-parent', evm_address: '0xabc' },
+        payload: {
+          parent_id: 'evm-parent',
+          member_npub: 'npub1alice',
+          evm_address: '0xabc',
+          issued_at: 1710000000,
+          signature: `0x${'ab'.repeat(65)}`,
+        },
       }),
       'g1',
       handlers,
     );
     expect(handlers.mergeSquadMemberEvmForAnnouncementsGroup).toHaveBeenCalledWith('evm-parent');
+
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_evm_roster_snapshot',
+        payload: {
+          parent_id: 'g1',
+          members: [
+            {
+              member_npub: 'npub1alice',
+              evm_address: '0xabc',
+              issued_at: 1710000000,
+              signature: `0x${'ab'.repeat(65)}`,
+            },
+          ],
+        },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(handlers.mergeSquadMemberEvmForAnnouncementsGroup).toHaveBeenCalledWith('g1');
 
     onMlsStructuredMessage(
       JSON.stringify({

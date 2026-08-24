@@ -146,10 +146,13 @@ export interface SafeProposalPayload {
   created_at?: number;
 }
 
-/** Payload for squad_member_evm_share (may include optional version on wire JSON root). */
+/** Payload for squad_member_evm_share v2 (EIP-712 bind cert). */
 export interface SquadMemberEvmSharePayload {
   parent_id: string;
+  member_npub: string;
   evm_address: string;
+  issued_at: number;
+  signature: string;
 }
 
 /** Payload for dashboard_poll_created (matches MLS rumor JSON). */
@@ -247,11 +250,23 @@ function isSafeProposalPayload(p: unknown): p is SafeProposalPayload {
 function isSquadMemberEvmSharePayload(p: unknown): p is SquadMemberEvmSharePayload {
   if (!p || typeof p !== 'object') return false;
   const q = p as Record<string, unknown>;
+  const issued =
+    typeof q.issued_at === 'number'
+      ? q.issued_at
+      : typeof q.issued_at === 'string'
+        ? Number.parseInt(q.issued_at, 10)
+        : NaN;
   return (
     typeof q.parent_id === 'string' &&
     q.parent_id.trim().length > 0 &&
+    typeof q.member_npub === 'string' &&
+    q.member_npub.trim().length > 0 &&
     typeof q.evm_address === 'string' &&
-    q.evm_address.trim().length > 0
+    q.evm_address.trim().length > 0 &&
+    Number.isFinite(issued) &&
+    issued > 0 &&
+    typeof q.signature === 'string' &&
+    q.signature.trim().length > 0
   );
 }
 

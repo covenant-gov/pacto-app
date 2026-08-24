@@ -16,6 +16,7 @@ pub mod nave_pirata_deploy;
 pub mod nave_pirata_read;
 pub mod pacto_chain_config;
 pub mod quartermaster_ops;
+pub mod roster_bind_cert;
 pub mod rpc;
 pub mod safe_deploy;
 pub mod sponsor_paymaster;

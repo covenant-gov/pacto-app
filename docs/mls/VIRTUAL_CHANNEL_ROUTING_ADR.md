@@ -109,7 +109,7 @@ Apply **first matching rule** (implementations walk top-to-bottom):
 | 3b | Payload classified as dashboard poll **vote** (`d` tag / `pacto.dashboard_poll.v1` vote action) | `polls` |
 | 4 | JSON `schema` is `pacto.squad.join_request.v1` or `pacto.squad.join_request_response.v1` | `join_requests` |
 | 5 | `parseAnnouncement`-style governance/treasury/Safe (and similar **structured announce**) payloads used for automation today | `inbox` |
-| 6 | JSON `type` identifies **`squad_member_evm_share`** (member published roster EVM address) | `announcements` |
+| 6 | JSON `type` identifies **`squad_member_evm_share`** (certified roster EVM share) or **`squad_evm_roster_snapshot`** (certified roster gossip) | `announcements` |
 | 7 | JSON `schema` is `pacto.squad_bot.meta.v1` or `pacto.squad_bot.key_rotated.v1` | `announcements` |
 | 8 | JSON `schema` is `pacto.squad_bot.rotate_prompt.v1` | `inbox` |
 | 9 | Plaintext or JSON without any rule above | `announcements` |

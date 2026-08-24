@@ -136,10 +136,25 @@ describe('parseAnnouncement', () => {
       parseAnnouncement(
         JSON.stringify({
           type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
-          payload: { parent_id: 'p', evm_address: '0xabc' },
+          payload: {
+            parent_id: 'p',
+            member_npub: 'npub1alice',
+            evm_address: '0xabc',
+            issued_at: 1710000000,
+            signature: '0x' + 'ab'.repeat(65),
+          },
         }),
       ),
     ).toMatchObject({ type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE });
+
+    expect(
+      parseAnnouncement(
+        JSON.stringify({
+          type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
+          payload: { parent_id: 'p', evm_address: '0xabc' },
+        }),
+      ),
+    ).toBeNull();
 
     expect(
       parseAnnouncement(

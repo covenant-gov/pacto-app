@@ -34,6 +34,7 @@ const TYPE_KEYS: Record<string, string> = {
   squad_contract_allowlist_updated: 'messaging.structuredNotice.contractAllowlistUpdated',
   squad_tracked_tokens_updated: 'messaging.structuredNotice.trackedTokensUpdated',
   squad_member_evm_share: 'messaging.structuredNotice.memberEvmAddressShared',
+  squad_evm_roster_snapshot: 'messaging.structuredNotice.memberEvmRosterSynced',
   squad_state_sync_request: 'messaging.structuredNotice.squadSyncRequest',
   squad_network_updated: 'messaging.structuredNotice.squadNetworkUpdated',
   squad_rpc_updated: 'messaging.structuredNotice.squadRpcUpdated',

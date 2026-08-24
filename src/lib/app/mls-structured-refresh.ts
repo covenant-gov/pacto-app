@@ -31,6 +31,7 @@ import {
   applySquadIdentityUpdated,
   parseSquadIdentityUpdated,
 } from '../squad/squad-identity-announce';
+import { parseSquadEvmRosterSnapshot } from '../squad/squad-evm-roster-snapshot';
 import { currentUser } from '../../stores/auth';
 import { squadInfraByParentId } from '../../stores/squads';
 import {
@@ -98,6 +99,9 @@ export function onMlsStructuredMessage(
   }
   if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
     handlers.mergeSquadMemberEvmForAnnouncementsGroup(announce.payload.parent_id || gid);
+  }
+  if (parseSquadEvmRosterSnapshot(raw)) {
+    handlers.mergeSquadMemberEvmForAnnouncementsGroup(gid);
   }
 
   if (parseSquadStateSyncRequest(raw)) {

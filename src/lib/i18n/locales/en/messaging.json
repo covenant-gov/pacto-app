@@ -327,6 +327,7 @@
 	"messaging.structuredNotice.joinRequestRejected": "Join request for {squadName} was rejected",
 	"messaging.structuredNotice.joinUpdateFor": "Join update for {squadName}",
 	"messaging.structuredNotice.memberEvmAddressShared": "Member EVM address shared",
+	"messaging.structuredNotice.memberEvmRosterSynced": "Squad roster EVM synced",
 	"messaging.structuredNotice.safeProposal": "Safe proposal",
 	"messaging.structuredNotice.squadBotKeyRotated": "Join inbox key rotated",
 	"messaging.structuredNotice.squadBotKeyUpdate": "Join inbox key update",

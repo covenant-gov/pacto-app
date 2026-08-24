@@ -92,7 +92,13 @@ describe('deriveVirtualBucketFromMessageContent', () => {
 
     const evmShare = buildAnnounceContent({
       type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
-      payload: { parent_id: 'p', evm_address: '0xdef' },
+      payload: {
+        parent_id: 'p',
+        member_npub: 'npub1alice',
+        evm_address: '0xdef',
+        issued_at: 1710000000,
+        signature: `0x${'ab'.repeat(65)}`,
+      },
     });
     expect(deriveVirtualBucketFromMessageContent(evmShare)).toBe('announcements');
   });
@@ -329,7 +335,13 @@ describe('announceCardAllowedForTimelineBucket', () => {
   it('routes squad_member_evm_share to announcements', () => {
     const raw = buildAnnounceContent({
       type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
-      payload: { parent_id: 'p', evm_address: '0x0000000000000000000000000000000000000001' },
+      payload: {
+        parent_id: 'p',
+        member_npub: 'npub1alice',
+        evm_address: '0x0000000000000000000000000000000000000001',
+        issued_at: 1710000000,
+        signature: `0x${'ab'.repeat(65)}`,
+      },
     });
     const p = parseAnnouncement(raw);
     expect(p).not.toBeNull();
@@ -341,6 +353,24 @@ describe('announceCardAllowedForTimelineBucket', () => {
     expect(
       resolveVirtualBucketForTimelineMessage({ content: raw, virtual_bucket: 'inbox' })
     ).toBe('announcements');
+  });
+
+  it('routes squad_evm_roster_snapshot to announcements', () => {
+    const raw = JSON.stringify({
+      type: 'squad_evm_roster_snapshot',
+      payload: {
+        parent_id: 'p',
+        members: [
+          {
+            member_npub: 'npub1alice',
+            evm_address: '0x0000000000000000000000000000000000000001',
+            issued_at: 1710000000,
+            signature: `0x${'ab'.repeat(65)}`,
+          },
+        ],
+      },
+    });
+    expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
   });
 
   it('routes squad_network_updated to announcements', () => {

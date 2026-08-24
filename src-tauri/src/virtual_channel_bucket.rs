@@ -89,7 +89,10 @@ pub fn normalize_virtual_bucket_for_message(
             if matches!(ty, Some("squad_safe_updated" | "safe_proposal")) {
                 return Some("inbox".to_string());
             }
-            if ty == Some("squad_member_evm_share") {
+            if matches!(
+                ty,
+                Some("squad_member_evm_share" | "squad_evm_roster_snapshot")
+            ) {
                 return Some("announcements".to_string());
             }
             if ty == Some("squad_network_updated") || ty == Some("squad_state_sync_request") {
@@ -172,6 +175,15 @@ mod tests {
     fn squad_member_evm_share_derives_announcements_bucket() {
         let content =
             r#"{"type":"squad_member_evm_share","payload":{"parent_id":"p","evm_address":"0x1"}}"#;
+        let bucket =
+            normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn squad_evm_roster_snapshot_derives_announcements_bucket() {
+        let content =
+            r#"{"type":"squad_evm_roster_snapshot","payload":{"parent_id":"p","members":[]}}"#;
         let bucket =
             normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
         assert_eq!(bucket.as_deref(), Some("announcements"));
