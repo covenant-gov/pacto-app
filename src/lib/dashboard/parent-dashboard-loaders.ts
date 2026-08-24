@@ -96,6 +96,7 @@ export async function fetchTreasuryProposalVoteMap(params: {
   treasuryAuthority: string;
   proposals: TreasuryProposalDto[];
   voterAddress: string;
+  parentId?: string | null;
 }): Promise<Record<string, boolean>> {
   const active = params.proposals.filter((p) => isTreasuryProposalActive(p.status));
   if (active.length === 0) return {};
@@ -107,6 +108,7 @@ export async function fetchTreasuryProposalVoteMap(params: {
           treasuryAuthority: params.treasuryAuthority,
           proposalId: p.proposalId,
           voter: params.voterAddress,
+          parentId: params.parentId,
         });
         return [p.proposalId, voted] as const;
       }),
@@ -397,6 +399,7 @@ export async function fetchSettingsChainMemberMaps(params: {
           network: params.network,
           memberAddresses,
           hatChecks,
+          parentId: params.parentId,
         });
         memberHatByAddress = memberHatByAddressFromAssignments(assignments);
       }
@@ -408,6 +411,7 @@ export async function fetchSettingsChainMemberMaps(params: {
         squadAdminProxy: params.squadAdminProxy,
         squadAdminChain: params.squadAdminChain,
         evmAddresses: rosterAddresses,
+        parentId: params.parentId,
       });
     }
 

@@ -1270,7 +1270,7 @@ fn chat_db_participants_contain_author(
 /// True when `author_npub` is treated as an MLS member of `chat_id` for announce side effects.
 /// Prefer in-memory participants when populated; otherwise `chats.participants` in SQLite.
 /// Fail closed when membership cannot be verified (no `mls_groups`-only shortcut).
-fn is_author_mls_member_for_chat<R: Runtime>(
+pub(crate) fn is_author_mls_member_for_chat<R: Runtime>(
     handle: &AppHandle<R>,
     chat_id: &str,
     author_npub: &str,
@@ -4532,6 +4532,7 @@ pub fn apply_mls_virtual_bucket_side_effects<R: Runtime>(
         maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
     }
     maybe_upsert_war_game_from_announce(handle, content, chat_id, author_npub);
+    crate::squad_gov_replica::maybe_upsert_from_announce(handle, content, chat_id, author_npub);
 
     // Sticker pack announces are always announcements-bucket traffic; ingest unconditionally,
     // same as governance above, so sync works even if bucket derivation was skipped upstream.

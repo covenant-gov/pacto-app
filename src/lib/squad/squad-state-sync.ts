@@ -12,11 +12,15 @@ import {
   formatChannelInSquadMessage,
 } from '../api/nostr';
 import {
+  ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
   ANNOUNCE_TYPE_WAR_GAME_UPDATED,
   buildAnnounceContent,
   isAnnouncementsGovernanceProvider,
+  type GovernanceProcessKind,
+  type GovernanceProcessStack,
 } from '../announcements';
+import { listSquadGovReplica, parseGovReplicaSnapshot } from '../governance/gov-replica';
 import {
   listSquadInfra,
   squadInfraLegacyProvider,
@@ -107,7 +111,7 @@ export function formatSquadStateSyncRequest(params: {
       parent_id: params.parentId.trim(),
       request_id: params.requestId.trim(),
       requester_npub: params.requesterNpub.trim(),
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica'],
     } satisfies SquadStateSyncRequestPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -266,6 +270,7 @@ export async function respondToSquadStateSyncRequest(
   const wantRpc = !req.requested?.length || req.requested.includes('rpc');
   const wantChannels = !req.requested?.length || req.requested.includes('channels');
   const wantIdentity = !req.requested?.length || req.requested.includes('identity');
+  const wantGovReplica = !req.requested?.length || req.requested.includes('gov_replica');
 
   const parent =
     get(squads).find((s) => s.id === parentId) ??
@@ -374,6 +379,42 @@ export async function respondToSquadStateSyncRequest(
       if (ok) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] network republish failed', e);
+    }
+  }
+
+  if (wantGovReplica) {
+    try {
+      const rows = await listSquadGovReplica(parentId);
+      for (const row of rows) {
+        const snapshot = parseGovReplicaSnapshot(row.snapshotJson);
+        if (!snapshot) continue;
+        const kind = row.kind as GovernanceProcessKind;
+        if (!['hats', 'qm_pending', 'ta_proposal', 'mutiny', 'crew_offboard'].includes(kind)) {
+          continue;
+        }
+        const stack = row.stack as GovernanceProcessStack;
+        if (stack !== 'pacto_gov' && stack !== 'pacto_gov_wargame') continue;
+        await sendDmMessage(
+          gid,
+          buildAnnounceContent({
+            type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
+            payload: {
+              parent_id: parentId,
+              kind,
+              stack,
+              round: row.round || undefined,
+              block_number: String(row.blockNumber ?? 0),
+              tx_hash: row.txHash || undefined,
+              snapshot,
+            },
+          }),
+          '',
+          { virtualBucket: 'announcements' },
+        );
+        anyOk = true;
+      }
+    } catch (e) {
+      console.warn('[squad-state-sync] gov replica republish failed', e);
     }
   }
 

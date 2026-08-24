@@ -33,6 +33,13 @@
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
+  import {
+    listSquadGovReplica,
+    parseGovReplicaSnapshot,
+    pickReplicaRow,
+    replicaStackForDashboard,
+    upsertSquadGovReplica,
+  } from '../../../lib/governance/gov-replica';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
   import { labeledWearerOptions } from '../../../lib/governance/war-game-captain';
@@ -127,7 +134,10 @@
   $effect(() => {
     if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
       lastSeenProcessNonce = processNonce;
-      refreshAllProposals();
+      onRefreshProposals();
+      void reloadMutiny(false);
+      void reloadQm(false);
+      void reloadQmPending();
     }
   });
 
@@ -260,6 +270,24 @@
     if (!mutinyModule) return;
     const hydrateKey = `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`;
     const key = mutinyReadCacheKey(network, mutinyModule, privilege.myAddress);
+    if (!force) {
+      try {
+        const rows = await listSquadGovReplica(parentId);
+        const replica = pickReplicaRow(rows, {
+          stack: replicaStackForDashboard(warGameStack),
+          kind: 'mutiny',
+        });
+        const snap = replica ? parseGovReplicaSnapshot(replica.snapshotJson) : null;
+        if (snap?.mutiny) {
+          mutinyStatus = snap.mutiny;
+          mutinyCaptain = snap.mutiny.captain ?? '';
+          mutinyLoading = false;
+          return;
+        }
+      } catch {
+        /* chain fill */
+      }
+    }
     const peeked = peekGovModuleRead<MutinySnapshot>(key);
     if (peeked && !force) applyMutinySnapshot(peeked);
 
@@ -276,6 +304,15 @@
         parentId,
         async () => {
           const next = await getMutinyStatus({ network, mutinyModule, parentId });
+          if (parentId) {
+            void upsertSquadGovReplica({
+              parentId,
+              stack: replicaStackForDashboard(warGameStack),
+              kind: 'mutiny',
+              snapshot: { mutiny: next },
+              blockNumber: 0,
+            });
+          }
           let voted = false;
           if (next.activeMutinyId !== '0' && privilege.myAddress) {
             voted = await mutinyHasVoted({
@@ -373,11 +410,37 @@
     }
     const hydrateKey = `${parentId}|${network}|${quartermaster}|pending`;
     qmPendingLoading = qmPending.length === 0;
+    try {
+      const rows = await listSquadGovReplica(parentId);
+      const replica = pickReplicaRow(rows, {
+        stack: replicaStackForDashboard(warGameStack),
+        kind: 'qm_pending',
+      });
+      const snap = replica ? parseGovReplicaSnapshot(replica.snapshotJson) : null;
+      if (snap?.qmPending?.length) {
+        if (hydrateKey !== `${parentId}|${network}|${quartermaster}|pending`) return;
+        qmPendingLoading = false;
+        qmPending = snap.qmPending;
+        qmPendingError = '';
+        return;
+      }
+    } catch {
+      /* chain fill */
+    }
     const result = await fetchQuartermasterPendingActions({ network, quartermaster, parentId });
     if (hydrateKey !== `${parentId}|${network}|${quartermaster}|pending`) return;
     qmPendingLoading = false;
     qmPending = result.pending;
     qmPendingError = result.error;
+    if (!result.error && result.pending.length > 0) {
+      void upsertSquadGovReplica({
+        parentId,
+        stack: replicaStackForDashboard(warGameStack),
+        kind: 'qm_pending',
+        snapshot: { qmPending: result.pending },
+        blockNumber: 0,
+      });
+    }
   }
 
   function refreshAllProposals() {

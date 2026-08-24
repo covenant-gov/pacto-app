@@ -10,6 +10,7 @@ pub mod signer;
 
 pub use address::parse_address;
 pub use config::parse_salt_nonce;
+pub use call::is_retryable_gov_rpc_error;
 pub use errors::{classify_gov_call_revert, wallet_err_json, wallet_err_json_with_tx_hash};
 pub use provider::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,

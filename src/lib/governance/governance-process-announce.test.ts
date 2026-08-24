@@ -41,6 +41,21 @@ describe('governance-process-announce', () => {
       parent_id: 'p',
       kind: 'hats',
     });
+    expect(
+      buildGovernanceProcessUpdatedPayload({
+        parentId: 'p',
+        kind: 'hats',
+        stack: 'pacto_gov',
+        blockNumber: 9,
+        snapshot: { memberHatByAddress: { '0xaa': 'Captain' } },
+      }),
+    ).toEqual({
+      parent_id: 'p',
+      kind: 'hats',
+      stack: 'pacto_gov',
+      block_number: '9',
+      snapshot: { memberHatByAddress: { '0xaa': 'Captain' } },
+    });
   });
 
   it('skips send when the parent has no announcements group', async () => {

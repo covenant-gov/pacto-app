@@ -275,3 +275,25 @@ export function collectAnnotatedRolesTreeNodes(
   walk(tree);
   return out;
 }
+
+/** Crew column: invert hat→wearers using role labels (skip unlabeled top hat). */
+export function memberHatByAddressFromWearerMaps(
+  roleLabelByHatId: Record<string, string>,
+  wearerAddressesByHatId: Record<string, string[]>,
+): Record<string, string> {
+  const labels = new Map<string, string[]>();
+  for (const [hatId, addrs] of Object.entries(wearerAddressesByHatId)) {
+    const label = roleLabelByHatId[hatId]?.trim();
+    if (!label || label === 'Top hat') continue;
+    for (const addr of addrs) {
+      const key = addr.trim().toLowerCase();
+      if (!key) continue;
+      const list = labels.get(key) ?? [];
+      if (!list.includes(label)) list.push(label);
+      labels.set(key, list);
+    }
+  }
+  const out: Record<string, string> = {};
+  for (const [addr, labs] of labels) out[addr] = labs.join(', ');
+  return out;
+}

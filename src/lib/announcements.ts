@@ -28,7 +28,7 @@ export const ANNOUNCE_TYPE_WAR_GAME_UPDATED = 'war_game_updated';
 /** Squad sticker pack sync (`sticker_packs` table), mirrors `governance_updated`. Wire: `sticker_pack_updated`. */
 export const ANNOUNCE_TYPE_STICKER_PACK_UPDATED = 'sticker_pack_updated';
 
-/** Notify-only: QM / TA / mutiny / hats process changed. Revalidate from chain. */
+/** Process change on #announcements. Optional snapshot is the display replica. */
 export const ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED = 'governance_process_updated';
 
 export type GovernanceProcessKind =
@@ -38,12 +38,27 @@ export type GovernanceProcessKind =
   | 'crew_offboard'
   | 'hats';
 
+export type GovernanceProcessStack = 'pacto_gov' | 'pacto_gov_wargame';
+
+export interface GovernanceProcessSnapshot {
+  memberHatByAddress?: Record<string, string>;
+  memberRolesByAddress?: Record<string, string>;
+  wearerAddressesByHatId?: Record<string, string[]>;
+  treasuryProposals?: unknown[];
+  qmPending?: unknown[];
+  mutiny?: unknown;
+}
+
 export interface GovernanceProcessUpdatedPayload {
   parent_id: string;
   kind: GovernanceProcessKind;
   address?: string;
   proposal_id?: string;
   tx_hash?: string;
+  stack?: GovernanceProcessStack;
+  round?: string;
+  block_number?: string;
+  snapshot?: GovernanceProcessSnapshot;
 }
 
 /** Payload for `governance_updated`. `parent_id` is the squad or network root id. */
@@ -282,6 +297,14 @@ function isGovernanceProcessUpdatedPayload(p: unknown): p is GovernanceProcessUp
   if (q.address !== undefined && typeof q.address !== 'string') return false;
   if (q.proposal_id !== undefined && typeof q.proposal_id !== 'string') return false;
   if (q.tx_hash !== undefined && typeof q.tx_hash !== 'string') return false;
+  if (q.stack !== undefined && q.stack !== 'pacto_gov' && q.stack !== 'pacto_gov_wargame') {
+    return false;
+  }
+  if (q.round !== undefined && typeof q.round !== 'string') return false;
+  if (q.block_number !== undefined && typeof q.block_number !== 'string') return false;
+  if (q.snapshot !== undefined && (typeof q.snapshot !== 'object' || q.snapshot === null)) {
+    return false;
+  }
   return true;
 }
 

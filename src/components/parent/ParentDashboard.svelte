@@ -33,10 +33,18 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';  import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
   import {
+    memberHatByAddressFromWearerMaps,
     protocolWearerCandidateAddresses,
     protocolWearerLabelByAddress,
     wearersForRoleLabel,
   } from '../../lib/governance/hats-tree-annotations';
+  import {
+    listSquadGovReplica,
+    parseGovReplicaSnapshot,
+    pickReplicaRow,
+    replicaStackForDashboard,
+    upsertSquadGovReplica,
+  } from '../../lib/governance/gov-replica';
   import { hasSquadAdminInfra, resolveSquadAdminContext, resolveWarGameSquadAdminContext } from '../../lib/governance/squad-admin-payload';
   import { resolveSquadSponsorVariant } from '../../lib/governance/squad-sponsor-variant';
   import { DEFAULT_CHAIN_ID, parseSupportedChainId, type SupportedChainId } from '../../lib/wallet/chains';
@@ -74,19 +82,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   } from '../../stores/mls-group-members';
   import {
     getCachedHatsTree,
-    getCachedRolesTree,
-    getCachedTreasuryProposals,
     persistHatsTreeSnapshot,
-    persistRolesTreeSnapshot,
-    persistTreasuryProposalsSnapshot,
   } from '../../lib/dashboard/governance-snapshot-cache';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
   import { governanceProcessNonceByParentId, focusSquadSettingsNetworkEditor } from '../../stores/navigation';
-  import {
-    getCachedSettingsChainSnapshot,
-    persistSettingsChainSnapshot,
-    settingsChainCacheKey,
-  } from '../../lib/dashboard/settings-chain-cache';
+  import { settingsChainCacheKey } from '../../lib/dashboard/settings-chain-cache';
   import { squadMemberEvmByParentId } from '../../stores/squads';
 
   type ParentDashboardView = SquadDashboardChannelMode;
@@ -294,17 +294,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     const key = `${pactoNetwork}:${ta ?? ''}`;
     if (!ta || treasuryProposalsKey === key) return;
     treasuryProposalsKey = key;
-    const npub = $currentUser?.npub;
-    const cached = getCachedTreasuryProposals(npub, key);
-    if (cached) {
-      treasuryProposals = cached.proposals;
-      treasuryProposalsLoading = false;
-      treasuryProposalsRefreshing = true;
-    } else {
-      treasuryProposalsLoading = true;
-      treasuryProposalsRefreshing = false;
-    }
     treasuryProposalsError = '';
+    const replica = await hydrateGovReplica();
+    if (replica.hasProposals) {
+      treasuryProposalsLoading = false;
+      treasuryProposalsRefreshing = false;
+      return;
+    }
+    treasuryProposalsLoading = treasuryProposals.length === 0;
+    treasuryProposalsRefreshing = !treasuryProposalsLoading;
     const result = await fetchTreasuryProposals({
       network: pactoNetwork,
       treasuryAuthority: ta,
@@ -315,9 +313,16 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     treasuryProposalsRefreshing = false;
     if (!result.error) {
       treasuryProposals = result.proposals;
-      if (npub) persistTreasuryProposalsSnapshot(npub, key, result.proposals);
-    } else if (cached) {
-      treasuryProposalsError = result.error;
+      if (parentId && result.proposals.length > 0) {
+        void upsertSquadGovReplica({
+          parentId,
+          stack: replicaStackForDashboard(warGameStack),
+          kind: 'ta_proposal',
+          snapshot: { treasuryProposals: result.proposals },
+          blockNumber: 0,
+          round: warGameStack ? String(warGameActiveRound || '') : '',
+        });
+      }
     } else {
       treasuryProposals = result.proposals;
       treasuryProposalsError = result.error;
@@ -341,16 +346,56 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   let lastSeenProcessNonce = 0;
   let onChainGovRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
+  function applyCrewMapsFromRoles() {
+    memberHatByAddress = memberHatByAddressFromWearerMaps(roleLabelByHatId, wearerAddressesByHatId);
+    if (Object.keys(executorRolesByAddress).length > 0) {
+      memberRolesByAddress = executorRolesByAddress;
+    }
+  }
+
+  async function hydrateGovReplica(): Promise<{
+    hasHats: boolean;
+    hasProposals: boolean;
+  }> {
+    if (!parentId) return { hasHats: false, hasProposals: false };
+    try {
+      const rows = await listSquadGovReplica(parentId);
+      const stack = replicaStackForDashboard(warGameStack);
+      const round = warGameStack ? String(warGameActiveRound || '') : '';
+      const hats = pickReplicaRow(rows, { stack, kind: 'hats', round });
+      const hatsSnap = hats ? parseGovReplicaSnapshot(hats.snapshotJson) : null;
+      if (hatsSnap?.memberHatByAddress) memberHatByAddress = hatsSnap.memberHatByAddress;
+      if (hatsSnap?.memberRolesByAddress) memberRolesByAddress = hatsSnap.memberRolesByAddress;
+      if (hatsSnap?.wearerAddressesByHatId) wearerAddressesByHatId = hatsSnap.wearerAddressesByHatId;
+      const ta = pickReplicaRow(rows, { stack, kind: 'ta_proposal', round });
+      const taSnap = ta ? parseGovReplicaSnapshot(ta.snapshotJson) : null;
+      if (taSnap?.treasuryProposals) treasuryProposals = taSnap.treasuryProposals;
+      return {
+        hasHats: !!(
+          hatsSnap?.memberHatByAddress && Object.keys(hatsSnap.memberHatByAddress).length
+        ),
+        hasProposals: (taSnap?.treasuryProposals?.length ?? 0) > 0,
+      };
+    } catch {
+      return { hasHats: false, hasProposals: false };
+    }
+  }
+
   function refreshOnChainGovSnapshots() {
-    treasuryProposalsKey = '';
-    hatsTreeKey = '';
-    rolesTreeAnnotationsKey = '';
-    settingsChainKey = '';
-    void loadTreasuryProposals();
-    void loadHatsTree();
-    void loadRolesTreeAnnotations();
-    void loadSettingsChainContext();
-    void loadSquadMemberEvm();
+    void (async () => {
+      const hydrated = await hydrateGovReplica();
+      if (!hydrated.hasProposals) {
+        treasuryProposalsKey = '';
+        void loadTreasuryProposals();
+      }
+      if (!hydrated.hasHats) {
+        rolesTreeAnnotationsKey = '';
+        settingsChainKey = '';
+        void loadRolesTreeAnnotations();
+        void loadSettingsChainContext();
+      }
+      void loadSquadMemberEvm();
+    })();
   }
 
   function scheduleOnChainGovRefresh() {
@@ -441,15 +486,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}:${protocolKey}:${stack}`;
     if (!topHat || rolesTreeAnnotationsKey === key) return;
     rolesTreeAnnotationsKey = key;
-    const npub = $currentUser?.npub;
-    const cached = getCachedRolesTree(npub, key);
-    if (cached) {
-      roleLabelByHatId = cached.roleLabelByHatId;
-      wearerAddressesByHatId = cached.wearerAddressesByHatId;
-      executorRolesByAddress = cached.executorRolesByAddress;
-      rolesTreeAnnotationsLoading = false;
-      rolesTreeAnnotationsRefreshing = true;
-    } else if (Object.keys(roleLabelByHatId).length > 0) {
+    if (Object.keys(roleLabelByHatId).length > 0) {
       rolesTreeAnnotationsLoading = false;
       rolesTreeAnnotationsRefreshing = true;
     } else {
@@ -457,6 +494,13 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       rolesTreeAnnotationsRefreshing = false;
     }
     rolesTreeAnnotationsError = '';
+    const replica = await hydrateGovReplica();
+    if (replica.hasHats) {
+      applyCrewMapsFromRoles();
+      rolesTreeAnnotationsLoading = false;
+      rolesTreeAnnotationsRefreshing = false;
+      return;
+    }
     const result = await fetchRolesTreeAnnotations({
       network: pactoNetwork,
       topHatId: topHat,
@@ -475,19 +519,26 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       roleLabelByHatId = result.roleLabelByHatId;
       wearerAddressesByHatId = result.wearerAddressesByHatId;
       executorRolesByAddress = result.executorRolesByAddress;
-      if (npub) {
-        persistRolesTreeSnapshot(npub, key, {
-          roleLabelByHatId: result.roleLabelByHatId,
-          wearerAddressesByHatId: result.wearerAddressesByHatId,
-          executorRolesByAddress: result.executorRolesByAddress,
+      applyCrewMapsFromRoles();
+      if (parentId) {
+        void upsertSquadGovReplica({
+          parentId,
+          stack: replicaStackForDashboard(warGameStack),
+          kind: 'hats',
+          snapshot: {
+            memberHatByAddress,
+            memberRolesByAddress: result.executorRolesByAddress,
+            wearerAddressesByHatId: result.wearerAddressesByHatId,
+          },
+          blockNumber: 0,
+          round: warGameStack ? String(warGameActiveRound || '') : '',
         });
       }
-    } else if (cached) {
-      rolesTreeAnnotationsError = result.error;
     } else {
       roleLabelByHatId = result.roleLabelByHatId;
       wearerAddressesByHatId = result.wearerAddressesByHatId;
       executorRolesByAddress = result.executorRolesByAddress;
+      applyCrewMapsFromRoles();
       rolesTreeAnnotationsError = result.error;
     }
   }
@@ -513,21 +564,20 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     });
     if ((!topHat && !squadAdmin) || settingsChainKey === cacheKey) return;
     settingsChainKey = cacheKey;
-    const npub = $currentUser?.npub;
-    const cached =
-      npub && parentId ? getCachedSettingsChainSnapshot(npub, parentId, cacheKey) : null;
-    if (cached) {
-      memberHatByAddress = cached.memberHatByAddress;
-      memberRolesByAddress = cached.memberRolesByAddress;
+    if (topHat) {
       settingsChainLoading = false;
-      settingsChainRefreshing = true;
-    } else {
-      settingsChainLoading = true;
       settingsChainRefreshing = false;
-      memberHatByAddress = {};
-      memberRolesByAddress = {};
+      applyCrewMapsFromRoles();
+      return;
     }
+    settingsChainLoading = true;
+    settingsChainRefreshing = false;
     settingsChainError = '';
+    const replica = await hydrateGovReplica();
+    if (replica.hasHats) {
+      settingsChainLoading = false;
+      return;
+    }
     const result = await fetchSettingsChainMemberMaps({
       network: pactoNetwork,
       topHatId: topHat,
@@ -544,14 +594,19 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     if (!result.error) {
       memberHatByAddress = result.memberHatByAddress;
       memberRolesByAddress = result.memberRolesByAddress;
-      if (npub && parentId) {
-        persistSettingsChainSnapshot(npub, parentId, cacheKey, {
-          memberHatByAddress: result.memberHatByAddress,
-          memberRolesByAddress: result.memberRolesByAddress,
+      if (parentId) {
+        void upsertSquadGovReplica({
+          parentId,
+          stack: replicaStackForDashboard(warGameStack),
+          kind: 'hats',
+          snapshot: {
+            memberHatByAddress: result.memberHatByAddress,
+            memberRolesByAddress: result.memberRolesByAddress,
+          },
+          blockNumber: 0,
+          round: warGameStack ? String(warGameActiveRound || '') : '',
         });
       }
-    } else if (cached) {
-      settingsChainError = result.error;
     } else {
       memberHatByAddress = result.memberHatByAddress;
       memberRolesByAddress = result.memberRolesByAddress;

@@ -7,6 +7,22 @@ use alloy::sol_types::SolCall;
 use super::errors::wallet_err_json;
 use crate::evm::wallet_security;
 
+/// Transient HTTP / JSON-RPC transport failures — try the next URL.
+pub fn is_retryable_gov_rpc_error(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    m.contains("429")
+        || m.contains("rate limit")
+        || m.contains("-32005")
+        || m.contains("502")
+        || m.contains("503")
+        || m.contains("504")
+        || m.contains("522")
+        || m.contains("523")
+        || m.contains("524")
+        || m.contains("timeout")
+        || m.contains("timed out")
+}
+
 /// ABI `uint256` return. Empty or short RPC payloads → zero (EOA target, no code, stripped leading zeros).
 pub fn decode_abi_u256_return(data: &[u8]) -> U256 {
     if data.is_empty() {
@@ -111,5 +127,14 @@ mod tests {
         word[0] = 0xff;
         word[31] = 0xff;
         assert_eq!(decode_abi_u256_return(&word), U256::from_be_slice(&word));
+    }
+
+    #[test]
+    fn retryable_gov_rpc_matches_publicnode_429() {
+        assert!(is_retryable_gov_rpc_error(
+            r#"HTTP error 429 with body: {"error":{"code":-32005,"message":"Rate limit exceeded"}}"#
+        ));
+        assert!(is_retryable_gov_rpc_error("jsonrpc error code -32005"));
+        assert!(!is_retryable_gov_rpc_error("execution reverted: Unauthorized"));
     }
 }

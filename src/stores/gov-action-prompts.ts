@@ -193,6 +193,7 @@ export async function refreshGovActionPromptsForSquad(squad: Squad): Promise<voi
             treasuryAuthority,
             proposals,
             voterAddress: voter,
+            parentId: id,
           })
         : {};
     if (refreshGenBySquadId.get(id) !== gen) return;

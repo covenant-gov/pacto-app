@@ -167,6 +167,7 @@ describe('fetchTreasuryProposalVoteMap', () => {
       treasuryAuthority: '0xAuth',
       proposalId: '1',
       voter: '0xVoter',
+      parentId: undefined,
     });
     expect(result).toEqual({ '1': true });
   });
@@ -186,6 +187,7 @@ describe('fetchTreasuryProposals', () => {
     expect(mockedListTreasuryProposals).toHaveBeenCalledWith({
       network: 'sepolia',
       treasuryAuthority: '0xAuth',
+      parentId: undefined,
     });
     expect(result.proposals.map((p) => p.proposalId)).toEqual(['10', '7', '5']);
     expect(result.error).toBe('');
@@ -346,13 +348,17 @@ describe('fetchSettingsChainMemberMaps', () => {
       squadAdminProxy: null,
       squadAdminChain: null,
       squadMemberEvmByNpub: { npub1: '0xABC' },
+      parentId: 'parent-1',
     });
 
     expect(mockedGetNavePirataDeployment).toHaveBeenCalledWith({
       network: 'sepolia',
       topHatId: '0xTop',
-      parentId: undefined,
+      parentId: 'parent-1',
     });
+    expect(mockedGetMemberHatWearers).toHaveBeenCalledWith(
+      expect.objectContaining({ parentId: 'parent-1' }),
+    );
     expect(result.memberHatByAddress).toEqual({ '0xabc': 'Captain' });
     expect(result.memberRolesByAddress).toEqual({});
     expect(result.error).toBe('');
@@ -378,6 +384,7 @@ describe('fetchSettingsChainMemberMaps', () => {
       network: 'arbitrum',
       squadAdminProxy: '0xAdmin',
       executorAddress: '0xABC',
+      parentId: undefined,
     });
     expect(result.memberHatByAddress).toEqual({});
     expect(result.memberRolesByAddress).toEqual({ '0xabc': 'Full' });

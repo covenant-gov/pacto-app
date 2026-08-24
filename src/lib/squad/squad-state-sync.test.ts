@@ -118,6 +118,17 @@ vi.mock('../governance/api', () => ({
   squadInfraLegacyProvider: (t: string) => (t === 'standalone_safe' ? 'gnosis_safe' : t),
 }));
 
+vi.mock('../governance/gov-replica', () => ({
+  listSquadGovReplica: vi.fn(async () => []),
+  parseGovReplicaSnapshot: (raw: string) => {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+}));
+
 vi.mock('../../stores/auth', () => ({
   currentUser,
 }));
@@ -193,7 +204,7 @@ describe('squad-state-sync', () => {
       parent_id: 'ann-gid',
       request_id: 'req-1',
       requester_npub: 'npub1joiner',
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica'],
     });
   });
 

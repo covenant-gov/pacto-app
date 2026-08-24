@@ -3,6 +3,7 @@ import {
   formatWearerDisplayLabel,
   hatChecksForRolesTree,
   memberHatByAddressFromAssignments,
+  memberHatByAddressFromWearerMaps,
   npubByEvmAddressFromSquadRoster,
   protocolWearerCandidateAddresses,
   protocolWearerLabelByAddress,
@@ -212,6 +213,20 @@ describe('isAddressWearingHat', () => {
     expect(isAddressWearingHat(wearers, pretty, charlie)).toBe(true);
     expect(isAddressWearingHat(wearers, '3659.1.1', charlie)).toBe(true);
     expect(isAddressWearingHat(wearers, pretty, bravo)).toBe(false);
+  });
+});
+
+describe('memberHatByAddressFromWearerMaps', () => {
+  it('inverts hat wearers and skips the top-hat label', () => {
+    expect(
+      memberHatByAddressFromWearerMaps(
+        { '100': 'Captain', '101': 'Crew', '1': 'Top hat' },
+        { '100': ['0xAa'], '101': ['0xAa', '0xBb'], '1': ['0xCc'] },
+      ),
+    ).toEqual({
+      '0xaa': 'Captain, Crew',
+      '0xbb': 'Crew',
+    });
   });
 });
 

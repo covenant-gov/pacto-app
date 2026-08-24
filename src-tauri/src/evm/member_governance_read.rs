@@ -7,6 +7,7 @@ use alloy::primitives::{Address, B256, TxHash, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEvent;
+use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Runtime};
 
@@ -14,9 +15,12 @@ use super::contracts::hats::IHats::{isWearerOfHatCall, TransferHat};
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     hasExecutorRoleCall, isExecutorFullPermissionCall, isExecutorPausedCall,
 };
-use super::gov_read::{connect_gov_read_provider, parse_top_hat_id};
+use super::gov_read::{connect_gov_read_provider, parse_top_hat_id, resolve_gov_read_network};
 use super::pacto_chain_config;
-use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
+use super::rpc::{
+    call::eth_call_decode, connect_read_provider, is_retryable_gov_rpc_error, parse_address,
+    wallet_err_json,
+};
 
 fn bytes32_tag(label: &str) -> B256 {
     let mut buf = [0u8; 32];
@@ -118,26 +122,92 @@ pub async fn get_member_hat_wearers<R: Runtime>(
         })
         .collect();
 
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    let mut out = Vec::new();
+    let ctx = resolve_gov_read_network(network.as_str(), rpc_urls)?;
+    let urls = ctx.rpc_urls.clone();
+    let mut url_idx = 0usize;
+    let mut provider = connect_read_provider(&urls[url_idx..]).await?;
 
+    const WEARER_CHUNK: usize = 16;
+    #[derive(Clone)]
+    struct WearerPair {
+        addr: Address,
+        hat_id: U256,
+        label: String,
+    }
+
+    let mut pairs: Vec<WearerPair> = Vec::new();
+    let mut ordered: Vec<Address> = Vec::new();
+    let mut seen = HashSet::new();
     for raw in member_addresses {
         let addr = match parse_address(raw.trim()) {
             Ok(a) => a,
             Err(_) => continue,
         };
-        let mut worn = Vec::new();
+        if !seen.insert(addr) {
+            continue;
+        }
+        ordered.push(addr);
         for (hat_id, label) in &checks {
-            if is_wearer(&provider, hats, addr, *hat_id).await? {
-                worn.push(MemberHatLabelDto {
-                    hat_id: hat_id.to_string(),
-                    label: label.clone(),
-                });
+            pairs.push(WearerPair {
+                addr,
+                hat_id: *hat_id,
+                label: label.clone(),
+            });
+        }
+    }
+
+    let mut worn: HashMap<Address, Vec<MemberHatLabelDto>> = HashMap::new();
+    for chunk in pairs.chunks(WEARER_CHUNK) {
+        let mut pending = chunk.to_vec();
+        while !pending.is_empty() {
+            let futs = pending.iter().cloned().map(|pair| {
+                let provider = provider.clone();
+                async move {
+                    let result = is_wearer(&provider, hats, pair.addr, pair.hat_id).await;
+                    (pair, result)
+                }
+            });
+            let results = join_all(futs).await;
+            let mut retry = Vec::new();
+            let mut need_failover = false;
+            for (pair, result) in results {
+                match result {
+                    Ok(true) => {
+                        worn.entry(pair.addr).or_default().push(MemberHatLabelDto {
+                            hat_id: pair.hat_id.to_string(),
+                            label: pair.label,
+                        });
+                    }
+                    Ok(false) => {}
+                    Err(e) if is_retryable_gov_rpc_error(&e) => {
+                        need_failover = true;
+                        retry.push(pair);
+                    }
+                    Err(_) => {}
+                }
+            }
+            if !need_failover {
+                break;
+            }
+            url_idx = url_idx.saturating_add(1);
+            if url_idx >= urls.len() {
+                break;
+            }
+            match connect_read_provider(&urls[url_idx..]).await {
+                Ok(p) => {
+                    provider = p;
+                    pending = retry;
+                }
+                Err(_) => break,
             }
         }
+    }
+
+    let mut out = Vec::new();
+    for addr in ordered {
         out.push(MemberHatAssignmentDto {
             address: format!("{:#x}", addr),
-            hats: worn,
+            hats: worn.remove(&addr).unwrap_or_default(),
         });
     }
 
