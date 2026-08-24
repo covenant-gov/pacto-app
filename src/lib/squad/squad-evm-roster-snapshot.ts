@@ -94,7 +94,7 @@ export async function publishSquadEvmRosterSnapshot(
   const gid = announcementsGroupId.trim();
   if (!gid) return false;
   const q = listSquadMemberEvmInvokeArgs(altParentId?.trim() || gid, gid);
-  let rows: SquadMemberEvmRow[] = [];
+  let rows: SquadMemberEvmRow[];
   try {
     rows = (await invoke<SquadMemberEvmRow[]>('list_squad_member_evm', q)) ?? [];
   } catch (e) {

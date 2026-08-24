@@ -61,12 +61,12 @@ describe('sendCommonsJoinRequest', () => {
     delete (globalThis as unknown as { localStorage?: Storage }).localStorage;
   });
 
-  it('sends structured bot join DM to broadcast author', async () => {
+  it('sends structured join inbox DM to broadcast author', async () => {
     const result = await sendCommonsJoinRequest(broadcast, 'npub1me', []);
     expect(result).toEqual({ ok: true });
     expect(sendDmMessage).toHaveBeenCalledWith(
       broadcast.authorNpub,
-      expect.stringContaining('pacto.squad.bot_join_dm.v1')
+      expect.stringContaining('pacto.squad.join_inbox_dm.v1')
     );
     expect(isJoinRequestInFlight('squad-mls-id')).toBe(false);
   });

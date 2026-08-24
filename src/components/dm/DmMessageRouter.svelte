@@ -12,8 +12,6 @@
   import {
     acceptedSquadInviteIds,
     declinedSquadInviteIds,
-    acceptedChannelInviteMessageIds,
-    declinedChannelInviteMessageIds,
     declinedWalletTxRequestMessageIds,
     acceptedWalletPeerInfoRequestMessageIds,
     declinedWalletPeerInfoRequestMessageIds,
@@ -22,10 +20,7 @@
     type DmMessage,
   } from '../../stores/app';
   import { pendingSquadAdmissions } from '../../stores/pending-squad-admission';
-  import {
-    squadInviteResolvedByMembership,
-    channelInSquadInviteResolvedByMembership,
-  } from '../../lib/invites/accept-invite';
+  import { squadInviteResolvedByMembership } from '../../lib/invites/accept-invite';
   import {
     resolveDmMessagePresentation,
     inviteInviterNpub,
@@ -34,6 +29,7 @@
     isInvitePresentation,
     buildPlainMessageProps,
   } from '../../lib/dm/resolve-dm-message-presentation';
+  import { shouldShowWalletPeerGrantCard } from '../../lib/wallet/wallet-peer-exchange';
   import { isWalletTxAnnouncementOnChainPending } from '../../lib/wallet/dm-messages';
   import { reactToMessage } from '../../lib/api/nostr';
   import { clearPendingReactions } from '../../lib/messaging/reactions';
@@ -42,6 +38,8 @@
     msg: DmMessage;
     npub: string;
     contactDisplayName: string;
+    /** Full thread — used to decide which wallet peer grant cards to show. */
+    threadMessages: DmMessage[];
     fulfilledWalletRequestIds: ReadonlySet<string>;
     acceptingSquadInviteId?: string | null;
     acceptingChannelInSquadId?: string | null;
@@ -71,14 +69,12 @@
     msg,
     npub,
     contactDisplayName,
+    threadMessages,
     fulfilledWalletRequestIds,
     acceptingSquadInviteId = null,
-    acceptingChannelInSquadId = null,
     acceptingWalletPeerInfoRequestId = null,
     onAcceptSquadInvite = () => {},
-    onAcceptChannelInSquad = () => {},
     onDeclineSquad = () => {},
-    onDeclineChannelInSquad = () => {},
     onAcceptWalletPeerInfoRequest = () => {},
     onDeclineWalletPeerInfoRequest = () => {},
     onOpenInviterChat,
@@ -117,36 +113,10 @@
   }
 </script>
 
-{#if presentation.kind === 'local-announcement'}
+{#if presentation.kind === 'hidden'}
+  <!-- Protocol / echo / duplicate — not shown in 1:1 threads. -->
+{:else if presentation.kind === 'local-announcement'}
   <div class="dm-thread-announcement" role="status">{msg.content}</div>
-{:else if presentation.kind === 'channel-in-squad'}
-  {@const channelInviteStatus = $acceptedChannelInviteMessageIds.includes(msg.id)
-    ? 'accepted'
-    : $declinedChannelInviteMessageIds.includes(msg.id)
-      ? 'declined'
-      : channelInSquadInviteResolvedByMembership(
-          presentation.payload.announcementsGroupId,
-          presentation.payload.channelGroupId
-        )
-        ? 'accepted'
-        : 'pending'}
-  <InviteCard
-    variant="channel-in-squad"
-    squadName={presentation.payload.squadName}
-    channelName={presentation.payload.channelName}
-    isMine={msg.mine}
-    inviterName={inviterDisplay.inviterName}
-    inviterAvatarSrc={inviterDisplay.inviterAvatarSrc}
-    status={channelInviteStatus}
-    accepting={acceptingChannelInSquadId === msg.id}
-    onAccept={() =>
-      onAcceptChannelInSquad(msg, {
-        channelGroupId: presentation.payload.channelGroupId,
-        announcementsGroupId: presentation.payload.announcementsGroupId,
-        channelName: presentation.payload.channelName,
-      })}
-    onDecline={() => onDeclineChannelInSquad(msg)}
-  />
 {:else if presentation.kind === 'squad-invite' || presentation.kind === 'squad-pair-invite'}
   {@const inviteStatus = $acceptedSquadInviteIds.includes(msg.id)
     ? 'accepted'
@@ -192,17 +162,17 @@
     onDecline={msg.mine ? undefined : () => onDeclineWalletPeerInfoRequest(msg, presentation.payload)}
   />
 {:else if presentation.kind === 'wallet-peer-info-grant'}
-  {@const wpeerGrantName = getInviterDisplay(msg, npub, $profiles).inviterName}
-  <WalletPeerExchangeCard
-    variant={msg.mine ? 'grant-out' : 'grant-in'}
-    peerName={wpeerGrantName}
-  />
+  {#if shouldShowWalletPeerGrantCard({
+    mine: !!msg.mine,
+    requestId: presentation.payload.request_id,
+    myNpub: $currentUser?.npub,
+    messages: threadMessages,
+  })}
+    {@const wpeerGrantName = getInviterDisplay(msg, npub, $profiles).inviterName}
+    <WalletPeerExchangeCard variant="grant-in" peerName={wpeerGrantName} />
+  {/if}
 {:else if presentation.kind === 'wallet-peer-info-decline'}
-  {@const wpeerDeclName = getInviterDisplay(msg, npub, $profiles).inviterName}
-  <WalletPeerExchangeCard
-    variant={msg.mine ? 'decline-out' : 'decline-in'}
-    peerName={wpeerDeclName}
-  />
+  <!-- Decline is recorded on the request card; no extra decline card. -->
 {:else if presentation.kind === 'wallet-tx-request'}
   {@const walletFulfilled = fulfilledWalletRequestIds.has(presentation.payload.request_id)}
   {@const walletReqStatus = msg.pending && msg.mine
@@ -255,13 +225,7 @@
       {$t('messaging.dm.thread.joinRequestRejected', { values: { squadName: presentation.payload.squadName } })}
     {/if}
   </div>
-{:else if presentation.kind === 'join-inbox-dm'}
-  <div class="dm-thread-announcement" role="status">
-    {$t('messaging.dm.thread.joinRequestPending', { values: { squadName: presentation.payload.squadName } })}
-  </div>
-{:else if presentation.kind === 'structured-notice'}
-  <div class="dm-thread-announcement" role="status">{presentation.text}</div>
-{:else}
+{:else if presentation.kind === 'plain'}
   <Message
     {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub)}
     reactions={msg.reactions}

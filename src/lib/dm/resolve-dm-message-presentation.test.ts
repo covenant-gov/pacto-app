@@ -110,51 +110,55 @@ describe('resolveDmMessagePresentation', () => {
     expect(resolveDmMessagePresentation(msg({ content: 'hello' }))).toEqual({ kind: 'plain' });
   });
 
-  it('classifies bot join response DM', () => {
+  it('classifies join inbox response DM', () => {
     const content = JSON.stringify({
-      schema: 'pacto.squad.bot_join_response.v1',
+      schema: 'pacto.squad.join_inbox_response.v1',
       squadId: 's1',
       squadName: 'zzz',
       requestId: 'r1',
       status: 'accepted',
     });
     const p = resolveDmMessagePresentation(msg({ content }));
-    expect(p.kind).toBe('bot-join-response');
-    if (p.kind === 'bot-join-response') {
+    expect(p.kind).toBe('join-inbox-response');
+    if (p.kind === 'join-inbox-response') {
       expect(p.payload.squadName).toBe('zzz');
       expect(p.payload.status).toBe('accepted');
     }
   });
 
-  it('classifies bot join DM', () => {
+  it('hides join inbox outbound DM (echo)', () => {
     const content = JSON.stringify({
-      schema: 'pacto.squad.bot_join_dm.v1',
+      schema: 'pacto.squad.join_inbox_dm.v1',
       requestId: 'r1',
       squadId: 's1',
       squadName: 'Pirates',
       broadcastEventId: 'e1',
     });
-    const p = resolveDmMessagePresentation(msg({ content }));
-    expect(p.kind).toBe('bot-join-dm');
-    if (p.kind === 'bot-join-dm') {
-      expect(p.payload.squadName).toBe('Pirates');
-    }
+    expect(resolveDmMessagePresentation(msg({ content }))).toEqual({ kind: 'hidden' });
   });
 
-  it('falls back to structured-notice for unknown schema JSON', () => {
+  it('hides unknown schema / MLS leftover JSON instead of a notice bar', () => {
     const content = JSON.stringify({ schema: 'pacto.future.thing.v1', foo: 1 });
-    expect(resolveDmMessagePresentation(msg({ content }))).toEqual({
-      kind: 'structured-notice',
-      text: 'Squad update',
+    expect(resolveDmMessagePresentation(msg({ content }))).toEqual({ kind: 'hidden' });
+  });
+
+  it('hides channel-in-squad JSON (under-the-hood notify)', () => {
+    expect(resolveDmMessagePresentation(msg({ content: CHANNEL_IN_SQUAD }))).toEqual({
+      kind: 'hidden',
     });
   });
 
-  it('treats channel-in-squad JSON as structured notice (no invite card)', () => {
-    const p = resolveDmMessagePresentation(msg({ content: CHANNEL_IN_SQUAD }));
-    expect(p.kind).toBe('structured-notice');
-    if (p.kind === 'structured-notice') {
-      expect(p.text).toBe('Channel join');
-    }
+  it('hides squad_invite_accepted claim DMs', () => {
+    const content = JSON.stringify({
+      type: 'squad_invite_accepted',
+      payload: {
+        parent_id: 'g1',
+        invite_id: 'inv1',
+        invitee_npub: NPUB_A,
+        squad_name: 'Alpha',
+      },
+    });
+    expect(resolveDmMessagePresentation(msg({ content }))).toEqual({ kind: 'hidden' });
   });
 
   it('classifies squad invite JSON', () => {
@@ -212,19 +216,18 @@ describe('resolveDmMessagePresentation', () => {
     }
   });
 
-  it('falls back to plain for non-structured content; unknown type JSON uses structured-notice', () => {
+  it('falls back to plain for non-structured content; unknown type JSON is hidden', () => {
     expect(resolveDmMessagePresentation(msg({ content: 'not json' }))).toEqual({ kind: 'plain' });
     expect(resolveDmMessagePresentation(msg({ content: '' }))).toEqual({ kind: 'plain' });
     expect(resolveDmMessagePresentation(msg({ content: '{"type":"unknown"}' }))).toEqual({
-      kind: 'structured-notice',
-      text: 'Squad update',
+      kind: 'hidden',
     });
   });
 });
 
 describe('isInvitePresentation', () => {
   it('covers invite kinds only', () => {
-    expect(isInvitePresentation({ kind: 'channel-in-squad', payload: {} as never })).toBe(false);
+    expect(isInvitePresentation({ kind: 'hidden' })).toBe(false);
     expect(isInvitePresentation({ kind: 'squad-invite', payload: {} as never })).toBe(true);
     expect(isInvitePresentation({ kind: 'squad-pair-invite', payload: {} as never })).toBe(true);
     expect(isInvitePresentation({ kind: 'plain' })).toBe(false);

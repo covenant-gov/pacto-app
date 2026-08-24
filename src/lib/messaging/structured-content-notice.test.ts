@@ -15,7 +15,7 @@ describe('summarizeStructuredMessageContent', () => {
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({
-          schema: 'pacto.squad.bot_join_response.v1',
+          schema: 'pacto.squad.join_inbox_response.v1',
           squadName: 'zzz',
           status: 'accepted',
         }),
@@ -116,7 +116,7 @@ describe('summarizeStructuredMessageContent', () => {
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({
-          schema: 'pacto.squad.bot_join_response.v1',
+          schema: 'pacto.squad.join_inbox_response.v1',
           status: 'rejected',
         }),
         tFn
@@ -125,7 +125,7 @@ describe('summarizeStructuredMessageContent', () => {
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({
-          schema: 'pacto.squad.bot_join_response.v1',
+          schema: 'pacto.squad.join_inbox_response.v1',
           squadName: 'zzz',
           status: 'pending',
         }),
@@ -134,7 +134,7 @@ describe('summarizeStructuredMessageContent', () => {
     ).toBe('messaging.structuredNotice.joinUpdateFor');
     expect(
       summarizeStructuredMessageContent(
-        JSON.stringify({ schema: 'pacto.squad.bot_join_dm.v1', squadName: 'Crew' }),
+        JSON.stringify({ schema: 'pacto.squad.join_inbox_dm.v1', squadName: 'Crew' }),
         tFn
       )
     ).toBe('messaging.structuredNotice.joinRequestFor');

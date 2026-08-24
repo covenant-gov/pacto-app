@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import {
   shouldSendReciprocalWalletPeerGrant,
   shouldPersistInboundWalletPeerGrant,
+  shouldShowWalletPeerGrantCard,
   threadHasOutboundRequestForId,
   threadHasOutboundGrantForRequest,
   formatReciprocalWalletPeerGrant,
@@ -51,6 +52,37 @@ describe('wallet-peer-exchange', () => {
         NPUB_A
       )
     ).toBe(true);
+  });
+
+  it('shows inbound grant card only when we sent the matching request', () => {
+    const withRequest = [
+      { mine: true, content: requestJson },
+      { mine: false, content: grantFromB },
+    ];
+    expect(
+      shouldShowWalletPeerGrantCard({
+        mine: false,
+        requestId: 'rid-1',
+        myNpub: NPUB_A,
+        messages: withRequest,
+      })
+    ).toBe(true);
+    expect(
+      shouldShowWalletPeerGrantCard({
+        mine: true,
+        requestId: 'rid-1',
+        myNpub: NPUB_A,
+        messages: withRequest,
+      })
+    ).toBe(false);
+    expect(
+      shouldShowWalletPeerGrantCard({
+        mine: false,
+        requestId: 'rid-1',
+        myNpub: NPUB_A,
+        messages: [{ mine: false, content: grantFromB }],
+      })
+    ).toBe(false);
   });
 
   it('reciprocates when we requested and peer granted', () => {

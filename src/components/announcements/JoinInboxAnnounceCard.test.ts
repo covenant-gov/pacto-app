@@ -12,7 +12,7 @@ describe('JoinInboxAnnounceCard', () => {
   });
 
   it('renders meta roster for the author', () => {
-    currentUser.set({ npub: 'npub1alice' });
+    currentUser.set({ npub: 'npub1alice', pubkey: 'pk' });
     const announce: JoinInboxAnnounceMessage = {
       kind: 'meta',
       payload: {
@@ -28,7 +28,7 @@ describe('JoinInboxAnnounceCard', () => {
   });
 
   it('renders meta roster for another author', () => {
-    currentUser.set({ npub: 'npub1alice' });
+    currentUser.set({ npub: 'npub1alice', pubkey: 'pk' });
     const announce: JoinInboxAnnounceMessage = {
       kind: 'meta',
       payload: {
@@ -46,7 +46,7 @@ describe('JoinInboxAnnounceCard', () => {
   });
 
   it('renders key rotated notice', () => {
-    currentUser.set({ npub: 'npub1alice' });
+    currentUser.set({ npub: 'npub1alice', pubkey: 'pk' });
     const announce: JoinInboxAnnounceMessage = {
       kind: 'key_rotated',
       payload: {

@@ -75,10 +75,9 @@
 
   let showBadge = $derived(variant === 'squad-pair');
   let badgeLabel = $derived($t('messaging.inviteCard.partnerSquad'));
-  let collapsed = $derived(status === 'accepted' || status === 'declined');
 </script>
 
-<div class="invite-card" class:collapsed role="article">
+<div class="invite-card" role="article">
   <div class="invite-card-icon">
     {#if squadIconUrl}
       <SquadAvatar src={squadIconUrl} name={squadName} seed={squadId || squadName} fill />
@@ -166,21 +165,6 @@
     max-width: 380px;
   }
 
-  .invite-card.collapsed {
-    align-items: center;
-    padding: 8px 14px;
-    gap: 10px;
-  }
-
-  .invite-card.collapsed .invite-card-icon {
-    width: 28px;
-    height: 28px;
-  }
-
-  .invite-card.collapsed .invite-card-icon-placeholder {
-    font-size: 0.875rem;
-  }
-
   .invite-card-icon {
     flex-shrink: 0;
     width: 40px;
@@ -252,12 +236,6 @@
 
   .invite-card-inviter-link:hover {
     color: var(--brand-hover);
-  }
-
-  .invite-card.collapsed .invite-card-text,
-  .invite-card.collapsed .invite-card-subtitle,
-  .invite-card.collapsed .invite-card-evm-caption {
-    display: none;
   }
 
   .invite-card-status {

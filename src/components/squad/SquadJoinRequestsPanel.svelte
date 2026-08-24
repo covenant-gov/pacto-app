@@ -88,7 +88,7 @@
   async function refresh() {
     refreshError = '';
     try {
-      await loadBotState(squad.id);
+      await loadInboxState(squad.id);
       await syncJoinRequestsForSquad(squad.id);
     } catch (e) {
       refreshError = e instanceof Error ? e.message : tFn('squad.joinRequests.loadError');
