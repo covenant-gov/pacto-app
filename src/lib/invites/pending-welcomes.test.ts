@@ -52,6 +52,7 @@ vi.mock('./accept-invite', async (importOriginal) => {
 import {
   acceptOfferedWelcome,
   MAX_OFFERED_WELCOMES,
+  offeredWelcomeFromPendingMls,
   offeredWelcomes,
   recordDeclinedWelcomeGroupId,
   type OfferedWelcome,
@@ -108,6 +109,12 @@ function offered(overrides: Partial<OfferedWelcome> = {}): OfferedWelcome {
 }
 
 describe('offeredWelcomes', () => {
+  it('offeredWelcomeFromPendingMls copies engine fields onto the card payload', () => {
+    expect(offeredWelcomeFromPendingMls(welcome({ group_image_url: 'https://example/img.png' }))).toEqual(
+      offered({ imageUrl: 'https://example/img.png' })
+    );
+  });
+
   it('maps every field from a plain pending welcome', () => {
     const w = welcome({
       id: 'welcome-9',

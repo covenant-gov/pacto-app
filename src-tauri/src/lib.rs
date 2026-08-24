@@ -7597,6 +7597,11 @@ async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
             .unwrap_or((None, None))
     };
 
+    #[cfg(debug_assertions)]
+    {
+        let _ = crate::sandbox_handle::record_npub(&npub);
+    }
+
     Ok(LoginKeyPair {
         public: npub,
         private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
@@ -8100,6 +8105,11 @@ async fn create_account() -> Result<LoginKeyPair, String> {
         evm::derive_eth_bip44_v1_from_mnemonic_phrase(&mnemonic_string, 0)
             .map(|(k, a)| (Some(k), Some(a)))
             .unwrap_or((None, None));
+
+    #[cfg(debug_assertions)]
+    {
+        let _ = crate::sandbox_handle::record_npub(&npub);
+    }
 
     Ok(LoginKeyPair {
         public: npub,

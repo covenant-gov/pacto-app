@@ -13,6 +13,8 @@
   import { pendingMlsWelcomes } from '../../stores/mls-chat';
   import { resolveWelcomeEntry } from './resolve-welcome-entry';
   import { SETTINGS_CHANNEL_ID, SETTINGS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import { sameMlsGroupId } from '../../lib/invites/accept-invite';
+  import { acceptOfferedWelcome, offeredWelcomeFromPendingMls } from '../../lib/invites/pending-welcomes';
 
   let { entry }: { entry: CatchUpEntry } = $props();
 
@@ -53,6 +55,13 @@
   });
 
   let resolving = $state(false);
+  let accepting = $state(false);
+
+  let matchingWelcome = $derived(
+    entry.kind === 'welcome'
+      ? $pendingMlsWelcomes.find((w) => sameMlsGroupId(w.nostr_group_id, entry.chatId))
+      : undefined
+  );
 
   function open() {
     if (!target) return;
@@ -76,9 +85,36 @@
       resolving = false;
     }
   }
+
+  async function accept() {
+    if (accepting) return;
+    if (!matchingWelcome) {
+      open();
+      return;
+    }
+    accepting = true;
+    try {
+      await acceptOfferedWelcome(offeredWelcomeFromPendingMls(matchingWelcome));
+      await resolve();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : $t('messaging.inviteCard.acceptFailed'));
+    } finally {
+      accepting = false;
+    }
+  }
 </script>
 
 <li class="catch-up-entry">
+  {#if entry.kind === 'welcome'}
+    <button
+      type="button"
+      class="catch-up-entry-accept"
+      onclick={accept}
+      disabled={accepting}
+    >
+      {accepting ? $t('messaging.inviteCard.accepting') : $t('messaging.inviteCard.accept')}
+    </button>
+  {/if}
   <button type="button" class="catch-up-entry-open" onclick={open} disabled={!target}>
     <span class="catch-up-entry-kind catch-up-entry-kind-{entry.kind}">
       {$t(`notifications.catchup.entryKind.${entry.kind}`)}
@@ -153,6 +189,28 @@
     white-space: nowrap;
     font-size: 0.875rem;
     color: var(--text-primary);
+  }
+
+  .catch-up-entry-accept {
+    flex-shrink: 0;
+    margin: 8px 0 8px 8px;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 8px;
+    background: var(--brand);
+    color: var(--on-brand);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .catch-up-entry-accept:hover:not(:disabled) {
+    filter: brightness(1.05);
+  }
+
+  .catch-up-entry-accept:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
 
   .catch-up-entry-resolve {
