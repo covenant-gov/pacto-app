@@ -53,6 +53,7 @@
     onRefreshProposals = () => {},
     warGameStack = false,
     archiveView = false,
+    warGameRound = '',
   }: {
     announcementsGroupId?: string | null;
     parentId?: string;
@@ -77,6 +78,7 @@
     onRefreshProposals?: () => void;
     warGameStack?: boolean;
     archiveView?: boolean;
+    warGameRound?: string;
   } = $props();
 
   let rosterKeyNeeded = $state(false);
@@ -231,6 +233,7 @@
     {onRefreshProposals}
     {warGameStack}
     {archiveView}
+    {warGameRound}
     surface="proposals"
   />
 {/if}

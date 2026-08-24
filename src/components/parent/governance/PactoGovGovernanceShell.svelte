@@ -69,6 +69,8 @@
     onRefreshProposals?: () => void;
     warGameStack?: boolean;
     archiveView?: boolean;
+    /** Viewed war-game round; empty on live nave. */
+    warGameRound?: string;
     /** Proposals board (Status) vs All/Crew/Captain commands (Governance). */
     surface?: 'proposals' | 'commands';
     /** Live command snapshot for in-tree Hats CTAs. */
@@ -90,6 +92,7 @@
     onRefreshProposals = () => {},
     warGameStack = false,
     archiveView = false,
+    warGameRound = '',
     surface = 'commands',
     treeCommands = $bindable(null),
   }: Props = $props();
@@ -123,6 +126,7 @@
   let qmPendingError = $state('');
   let qmPendingHydrateKey = $state('');
   let lastSeenProcessNonce = $state(0);
+  let replicaRound = $derived(warGameStack ? String(warGameRound || '').trim() : '');
 
   let processNonce = $derived($governanceProcessNonceByParentId[parentId.trim()] ?? 0);
   let rosterFrozen = $derived(isMutinyActive(mutinyStatus) || isCrewOffboardActive(qmStatus));
@@ -284,13 +288,12 @@
         const replica = pickReplicaRow(rows, {
           stack: replicaStackForDashboard(warGameStack),
           kind: 'mutiny',
+          round: replicaRound,
         });
         const snap = replica ? parseGovReplicaSnapshot(replica.snapshotJson) : null;
         if (snap?.mutiny) {
           mutinyStatus = snap.mutiny;
           mutinyCaptain = snap.mutiny.captain ?? '';
-          mutinyLoading = false;
-          return;
         }
       } catch {
         /* chain fill */
@@ -319,6 +322,7 @@
               kind: 'mutiny',
               snapshot: { mutiny: next },
               blockNumber: 0,
+              round: replicaRound,
             });
           }
           let voted = false;
@@ -423,14 +427,13 @@
       const replica = pickReplicaRow(rows, {
         stack: replicaStackForDashboard(warGameStack),
         kind: 'qm_pending',
+        round: replicaRound,
       });
       const snap = replica ? parseGovReplicaSnapshot(replica.snapshotJson) : null;
       if (snap?.qmPending?.length) {
         if (hydrateKey !== `${parentId}|${network}|${quartermaster}|pending`) return;
-        qmPendingLoading = false;
         qmPending = snap.qmPending;
         qmPendingError = '';
-        return;
       }
     } catch {
       /* chain fill */
@@ -447,6 +450,7 @@
         kind: 'qm_pending',
         snapshot: { qmPending: result.pending },
         blockNumber: 0,
+        round: replicaRound,
       });
     }
   }

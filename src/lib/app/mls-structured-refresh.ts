@@ -13,6 +13,7 @@ import {
 import {
   applySquadNetworkUpdated,
   parseSquadNetworkUpdated,
+  infraChainFromSquadRows,
   practiceInfraChainFromSquadRows,
 } from '../squad/squad-network-share';
 import { applySquadRpcUpdated, parseSquadRpcUpdated } from '../squad/squad-rpc-share';
@@ -121,10 +122,12 @@ export function onMlsStructuredMessage(
   if (networkUpdate && networkUpdate.parent_id === gid) {
     const me = get(currentUser)?.npub?.trim();
     if (me) {
+      const infraRows = get(squadInfraByParentId)[networkUpdate.parent_id] ?? [];
       applySquadNetworkUpdated(
         networkUpdate,
         me,
-        practiceInfraChainFromSquadRows(get(squadInfraByParentId)[networkUpdate.parent_id] ?? []),
+        practiceInfraChainFromSquadRows(infraRows),
+        infraChainFromSquadRows(infraRows),
       );
     }
   }

@@ -47,10 +47,16 @@ export function pickReplicaRow(
   return (
     rows.find(
       (r) => r.stack === params.stack && r.kind === params.kind && (r.round ?? '') === round,
-    ) ??
-    rows.find((r) => r.stack === params.stack && r.kind === params.kind) ??
-    null
+    ) ?? null
   );
+}
+
+/** Replica may paint immediately; chain fills always continue. */
+export function govReplicaChainFillPlan(_hit: {
+  hasHats: boolean;
+  hasProposals: boolean;
+}): { applyReplica: true; fetchHats: true; fetchProposals: true } {
+  return { applyReplica: true, fetchHats: true, fetchProposals: true };
 }
 
 export async function listSquadGovReplica(parentId: string): Promise<SquadGovReplicaRow[]> {

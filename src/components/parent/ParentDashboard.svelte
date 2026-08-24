@@ -47,6 +47,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     parseGovReplicaSnapshot,
     pickReplicaRow,
     replicaStackForDashboard,
+    govReplicaChainFillPlan,
     upsertSquadGovReplica,
   } from '../../lib/governance/gov-replica';
   import { hasSquadAdminInfra, resolveSquadAdminContext, resolveWarGameSquadAdminContext } from '../../lib/governance/squad-admin-payload';
@@ -181,6 +182,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     warGameViewedRound = warGameActiveRound;
   }
   $: warGameArchiveView = warGameStack && isWarGameArchiveView(warGameViewedRound, warGameActiveRound);
+  $: replicaRound = warGameStack ? String(warGameViewedRound || '') : '';
   $: viewedTopHatId = warGameStack
     ? viewedWarGameTopHatId({
         viewedRound: warGameViewedRound,
@@ -300,13 +302,14 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     treasuryProposalsKey = key;
     treasuryProposalsError = '';
     const replica = await hydrateGovReplica();
-    if (replica.hasProposals) {
+    const plan = govReplicaChainFillPlan(replica);
+    treasuryProposalsLoading = treasuryProposals.length === 0;
+    treasuryProposalsRefreshing = !treasuryProposalsLoading;
+    if (!plan.fetchProposals) {
       treasuryProposalsLoading = false;
       treasuryProposalsRefreshing = false;
       return;
     }
-    treasuryProposalsLoading = treasuryProposals.length === 0;
-    treasuryProposalsRefreshing = !treasuryProposalsLoading;
     const result = await fetchTreasuryProposals({
       network: pactoNetwork,
       treasuryAuthority: ta,
@@ -324,7 +327,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
           kind: 'ta_proposal',
           snapshot: { treasuryProposals: result.proposals },
           blockNumber: 0,
-          round: warGameStack ? String(warGameActiveRound || '') : '',
+          round: replicaRound,
         });
       }
     } else {
@@ -372,7 +375,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     try {
       const rows = await listSquadGovReplica(parentId);
       const stack = replicaStackForDashboard(warGameStack);
-      const round = warGameStack ? String(warGameActiveRound || '') : '';
+      const round = replicaRound;
       const hats = pickReplicaRow(rows, { stack, kind: 'hats', round });
       const hatsSnap = hats ? parseGovReplicaSnapshot(hats.snapshotJson) : null;
       if (hatsSnap?.memberHatByAddress) memberHatByAddress = hatsSnap.memberHatByAddress;
@@ -394,17 +397,13 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 
   function refreshOnChainGovSnapshots() {
     void (async () => {
-      const hydrated = await hydrateGovReplica();
-      if (!hydrated.hasProposals) {
-        treasuryProposalsKey = '';
-        void loadTreasuryProposals();
-      }
-      if (!hydrated.hasHats) {
-        rolesTreeAnnotationsKey = '';
-        settingsChainKey = '';
-        void loadRolesTreeAnnotations();
-        void loadSettingsChainContext();
-      }
+      await hydrateGovReplica();
+      treasuryProposalsKey = '';
+      rolesTreeAnnotationsKey = '';
+      settingsChainKey = '';
+      void loadTreasuryProposals();
+      void loadRolesTreeAnnotations();
+      void loadSettingsChainContext();
       void loadSquadMemberEvm();
     })();
   }
@@ -506,8 +505,9 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     }
     rolesTreeAnnotationsError = '';
     const replica = await hydrateGovReplica();
-    if (replica.hasHats) {
-      applyCrewMapsFromRoles();
+    const plan = govReplicaChainFillPlan(replica);
+    if (replica.hasHats) applyCrewMapsFromRoles();
+    if (!plan.fetchHats) {
       rolesTreeAnnotationsLoading = false;
       rolesTreeAnnotationsRefreshing = false;
       return;
@@ -542,7 +542,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
             wearerAddressesByHatId: result.wearerAddressesByHatId,
           },
           blockNumber: 0,
-          round: warGameStack ? String(warGameActiveRound || '') : '',
+          round: replicaRound,
         });
       }
     } else {
@@ -585,7 +585,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     settingsChainRefreshing = false;
     settingsChainError = '';
     const replica = await hydrateGovReplica();
-    if (replica.hasHats) {
+    const plan = govReplicaChainFillPlan(replica);
+    if (!plan.fetchHats) {
       settingsChainLoading = false;
       return;
     }
@@ -615,7 +616,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
             memberRolesByAddress: result.memberRolesByAddress,
           },
           blockNumber: 0,
-          round: warGameStack ? String(warGameActiveRound || '') : '',
+          round: replicaRound,
         });
       }
     } else {
@@ -900,6 +901,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onRefreshProposals={refreshTreasuryProposals}
               {warGameStack}
               archiveView={warGameArchiveView}
+              warGameRound={replicaRound}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.status')}</p>
@@ -927,6 +929,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenLaunchpad={openLaunchpad}
               {warGameStack}
               archiveView={warGameArchiveView}
+              warGameRound={replicaRound}
               {structureSummary}
               {hatsTree}
               {hatsTreeLoading}

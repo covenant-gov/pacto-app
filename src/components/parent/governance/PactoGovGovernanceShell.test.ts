@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/svelte';
 import PactoGovGovernanceShell from './PactoGovGovernanceShell.svelte';
-import { getSquadCapabilities } from '../../../lib/governance/api';
+import { getSquadCapabilities, getMutinyStatus, mutinyHasVoted } from '../../../lib/governance/api';
+import { listSquadGovReplica } from '../../../lib/governance/gov-replica';
 import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
 import type { SquadCapabilitiesDto } from '../../../lib/governance/api';
 import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
@@ -11,7 +12,21 @@ import { ACL_SNAPSHOT_RETRY_MS } from '../../../lib/governance/acl-snapshot-key'
 
 vi.mock('../../../lib/governance/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../lib/governance/api')>();
-  return { ...actual, getSquadCapabilities: vi.fn() };
+  return {
+    ...actual,
+    getSquadCapabilities: vi.fn(),
+    getMutinyStatus: vi.fn(),
+    mutinyHasVoted: vi.fn(),
+  };
+});
+
+vi.mock('../../../lib/governance/gov-replica', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/governance/gov-replica')>();
+  return {
+    ...actual,
+    listSquadGovReplica: vi.fn(),
+    upsertSquadGovReplica: vi.fn().mockResolvedValue(true),
+  };
 });
 
 vi.mock('../../../lib/wallet/signer-balance', async (importOriginal) => {
@@ -20,6 +35,9 @@ vi.mock('../../../lib/wallet/signer-balance', async (importOriginal) => {
 });
 
 const mockedGetSquadCapabilities = vi.mocked(getSquadCapabilities);
+const mockedGetMutinyStatus = vi.mocked(getMutinyStatus);
+const mockedMutinyHasVoted = vi.mocked(mutinyHasVoted);
+const mockedListSquadGovReplica = vi.mocked(listSquadGovReplica);
 const mockedFetchEvmBalance = vi.mocked(fetchEvmBalance);
 
 const CAPTAIN_ADDRESS = '0xcaptain0000000000000000000000000000001';
@@ -52,6 +70,21 @@ function capabilitiesSnapshot(overrides: Partial<SquadCapabilitiesDto> = {}): Sq
 describe('PactoGovGovernanceShell capability preflight gating', () => {
   beforeEach(() => {
     mockedGetSquadCapabilities.mockReset();
+    mockedGetMutinyStatus.mockReset();
+    mockedMutinyHasVoted.mockReset();
+    mockedListSquadGovReplica.mockReset();
+    mockedListSquadGovReplica.mockResolvedValue([]);
+    mockedGetMutinyStatus.mockResolvedValue({
+      activeMutinyId: '0',
+      proposedNewCaptain: '',
+      startedAt: 0,
+      deadline: 0,
+      snapshot: 0,
+      yeas: 0,
+      executed: false,
+      captain: '',
+    });
+    mockedMutinyHasVoted.mockResolvedValue(false);
     mockedFetchEvmBalance.mockReset();
     mockedFetchEvmBalance.mockResolvedValue({
       balanceRaw: '0',
@@ -406,5 +439,74 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     expect(screen.queryByRole('tab', { name: 'All' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Crew' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Captain' })).toBeNull();
+  });
+
+  it('still fetches live mutinyHasVoted after replica hydrate and keeps the vote pending', async () => {
+    const { promise: votedPromise, resolve: resolveVoted } = Promise.withResolvers<boolean>();
+    mockedGetSquadCapabilities.mockResolvedValue(
+      capabilitiesSnapshot({
+        wearsCaptain: false,
+        wearsCrew: true,
+        rosterAddress: CREW_ADDRESS,
+        roleLabel: 'Crew',
+        capabilities: {
+          castMutinyVote: { allowed: true, reason: '' },
+        },
+      }),
+    );
+    mockedListSquadGovReplica.mockResolvedValue([
+      {
+        parentId: 'parent1',
+        stack: 'pacto_gov',
+        round: '',
+        kind: 'mutiny',
+        blockNumber: 12,
+        txHash: '0x1',
+        snapshotJson: JSON.stringify({
+          mutiny: {
+            activeMutinyId: '7',
+            proposedNewCaptain: CREW_ADDRESS,
+            startedAt: 1,
+            deadline: Math.floor(Date.now() / 1000) + 86_400,
+            snapshot: 1,
+            yeas: 1,
+            executed: false,
+            captain: CAPTAIN_ADDRESS,
+          },
+        }),
+        updatedAtMs: 1,
+      },
+    ]);
+    mockedGetMutinyStatus.mockResolvedValue({
+      activeMutinyId: '7',
+      proposedNewCaptain: CREW_ADDRESS,
+      startedAt: 1,
+      deadline: Math.floor(Date.now() / 1000) + 86_400,
+      snapshot: 1,
+      yeas: 1,
+      executed: false,
+      captain: CAPTAIN_ADDRESS,
+    });
+    mockedMutinyHasVoted.mockReturnValue(votedPromise);
+
+    render(PactoGovGovernanceShell, {
+      props: {
+        payload: { ...basePayload(), mutinyModule: '0xmutiny00000000000000000000000000000001' },
+        network: 'sepolia',
+        parentId: 'parent1',
+        myAddress: CREW_ADDRESS,
+        captainWearers: [CAPTAIN_ADDRESS],
+        crewWearers: [CREW_ADDRESS],
+        surface: 'proposals',
+      },
+    });
+
+    const voteBtn = (await screen.findByRole('button', { name: 'Cast mutiny vote' })) as HTMLButtonElement;
+    expect(voteBtn.disabled).toBe(true);
+    expect(voteBtn.title).toBe('Loading…');
+    await waitFor(() => expect(mockedMutinyHasVoted).toHaveBeenCalled());
+
+    resolveVoted(true);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Already voted' })).toBeTruthy());
   });
 });

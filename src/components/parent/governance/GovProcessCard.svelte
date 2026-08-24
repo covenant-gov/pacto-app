@@ -85,6 +85,7 @@
       return { enabled: false, reason: 'governance.gate.mutinyExpired' };
     }
     if (mutinyHasVoted) return { enabled: false, reason: 'governance.gate.alreadyVoted' };
+    if (votePending) return { enabled: false, reason: 'governance.status.loading' };
     return crewVoteGate;
   });
   let offboardVoteGate = $derived.by((): CtaGate => {

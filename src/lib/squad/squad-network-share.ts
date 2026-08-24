@@ -1,7 +1,7 @@
 /**
  * Silent #announcements share of the squad's Primary and Practice deploy networks.
- * Primary is last-write-wins. Practice applies only when it matches operator default
- * or on-chain pacto_gov_wargame. FE localStorage only (no SQLite side effect).
+ * Each slot applies only when it matches operator default or on-chain infra.
+ * FE localStorage only (no SQLite side effect).
  */
 
 import { get } from 'svelte/store';
@@ -11,6 +11,7 @@ import { currentUser } from '../../stores/auth';
 import type { SupportedChainId } from '../wallet/chains';
 import {
   DEFAULT_SQUAD_PRACTICE_NETWORK,
+  DEFAULT_SQUAD_PRIMARY_NETWORK,
   isSquadDeployableChain,
   loadSquadNetworkPair,
   resolvePracticeSquadNetwork,
@@ -80,18 +81,33 @@ export function trustedPracticeFromAnnounce(
   return null;
 }
 
+/** Persist announced primary only when it matches default or on-chain gov infra. */
+export function trustedPrimaryFromAnnounce(
+  announced: SupportedChainId,
+  infraChain?: string | null,
+): SupportedChainId | null {
+  if (announced === DEFAULT_SQUAD_PRIMARY_NETWORK) return announced;
+  if (isSquadDeployableChain(infraChain) && announced === infraChain) return announced;
+  return null;
+}
+
 export function applySquadNetworkUpdated(
   payload: SquadNetworkUpdatedPayload,
   accountNpub: string,
   practiceInfraChain?: string | null,
+  primaryInfraChain?: string | null,
 ): void {
   const existing = loadSquadNetworkPair(accountNpub, payload.parent_id);
   const practice =
     trustedPracticeFromAnnounce(payload.practice, practiceInfraChain) ??
     existing?.practice ??
     DEFAULT_SQUAD_PRACTICE_NETWORK;
+  const primary =
+    trustedPrimaryFromAnnounce(payload.primary, primaryInfraChain) ??
+    existing?.primary ??
+    DEFAULT_SQUAD_PRIMARY_NETWORK;
   saveSquadNetworkPair(accountNpub, payload.parent_id, {
-    primary: payload.primary,
+    primary,
     practice,
   });
 }

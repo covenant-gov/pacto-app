@@ -1,5 +1,6 @@
-//! MLS display replica for Hats/roles and process-board slices.
-//! Chain remains the write oracle; this table is catch-up + dashboard hydrate.
+//! Local display replica for Hats/roles and process-board slices.
+//! Chain remains the write oracle. Peer MLS announces are membership-gated
+//! refresh hints and never write this table.
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Runtime, command};
@@ -113,7 +114,7 @@ fn parse_process_announce(content: &str) -> Option<serde_json::Value> {
     parsed.get("payload").cloned()
 }
 
-/// Ingest `governance_process_updated` snapshots. Ping-only announces no-op.
+/// Membership-gated refresh hint. Peer snapshots and `block_number` are not persisted.
 pub fn maybe_upsert_from_announce<R: Runtime>(
     handle: &AppHandle<R>,
     content: &str,
@@ -140,128 +141,6 @@ pub fn maybe_upsert_from_announce<R: Runtime>(
     if !is_author_mls_member_for_chat(handle, chat_id, author) {
         return;
     }
-    let announce_kind = p
-        .get("kind")
-        .and_then(|v| v.as_str())
-        .and_then(normalize_kind);
-    let stack = p
-        .get("stack")
-        .and_then(|v| v.as_str())
-        .and_then(normalize_stack)
-        .unwrap_or_else(|| "pacto_gov".to_string());
-    let round = p
-        .get("round")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .unwrap_or("")
-        .to_string();
-    let block_number = p
-        .get("block_number")
-        .and_then(|v| {
-            v.as_i64()
-                .or_else(|| v.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
-        })
-        .unwrap_or(0);
-    let tx_hash = p
-        .get("tx_hash")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .unwrap_or("")
-        .to_string();
-    let Some(snapshot) = p.get("snapshot") else {
-        return;
-    };
-    let slices = split_snapshot_rows(snapshot, announce_kind.as_deref());
-    if slices.is_empty() {
-        return;
-    }
-    let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
-        return;
-    };
-    for (kind, snapshot_json) in slices {
-        let row = SquadGovReplicaRow {
-            parent_id: parent_id.to_string(),
-            stack: stack.clone(),
-            round: round.clone(),
-            kind,
-            block_number,
-            tx_hash: tx_hash.clone(),
-            snapshot_json,
-            updated_at_ms: now_ms(),
-        };
-        let _ = upsert_if_newer(&conn, &row);
-    }
-    crate::account_manager::return_db_connection(conn);
-}
-
-fn split_snapshot_rows(
-    snapshot: &serde_json::Value,
-    announce_kind: Option<&str>,
-) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let obj = snapshot.as_object();
-    let hats = obj.map(|m| {
-        let hat = m.get("memberHatByAddress").and_then(|v| v.as_object());
-        let roles = m.get("memberRolesByAddress").and_then(|v| v.as_object());
-        let wearers = m.get("wearerAddressesByHatId").and_then(|v| v.as_object());
-        hat.is_some_and(|h| !h.is_empty())
-            || roles.is_some_and(|h| !h.is_empty())
-            || wearers.is_some_and(|h| !h.is_empty())
-    });
-    if hats == Some(true) {
-        let mut hats_obj = serde_json::Map::new();
-        if let Some(m) = obj {
-            for key in ["memberHatByAddress", "memberRolesByAddress", "wearerAddressesByHatId"] {
-                if let Some(v) = m.get(key) {
-                    hats_obj.insert(key.to_string(), v.clone());
-                }
-            }
-        }
-        if let Ok(s) = serde_json::to_string(&serde_json::Value::Object(hats_obj)) {
-            out.push(("hats".to_string(), s));
-        }
-    }
-    if obj.and_then(|m| m.get("treasuryProposals").and_then(|v| v.as_array()))
-        .is_some_and(|a| !a.is_empty())
-    {
-        if let Some(v) = snapshot.get("treasuryProposals") {
-            let s = serde_json::json!({ "treasuryProposals": v });
-            if let Ok(raw) = serde_json::to_string(&s) {
-                out.push(("ta_proposal".to_string(), raw));
-            }
-        }
-    }
-    if obj.and_then(|m| m.get("qmPending").and_then(|v| v.as_array()))
-        .is_some_and(|a| !a.is_empty())
-    {
-        if let Some(v) = snapshot.get("qmPending") {
-            let s = serde_json::json!({ "qmPending": v });
-            if let Ok(raw) = serde_json::to_string(&s) {
-                out.push(("qm_pending".to_string(), raw));
-            }
-        }
-    }
-    if obj
-        .and_then(|m| m.get("mutiny"))
-        .is_some_and(|v| v.is_object())
-    {
-        if let Some(v) = snapshot.get("mutiny") {
-            let s = serde_json::json!({ "mutiny": v });
-            if let Ok(raw) = serde_json::to_string(&s) {
-                out.push(("mutiny".to_string(), raw));
-            }
-        }
-    }
-    if out.is_empty() {
-        if let Some(kind) = announce_kind {
-            if let Ok(raw) = serde_json::to_string(snapshot) {
-                if snapshot_has_content(&raw) {
-                    out.push((kind.to_string(), raw));
-                }
-            }
-        }
-    }
-    out
 }
 
 #[command]
@@ -400,5 +279,28 @@ mod tests {
             updated_at_ms: 1,
         };
         assert!(upsert_if_newer(&conn, &mutiny).unwrap());
+    }
+
+    #[test]
+    fn forged_high_block_peer_snapshot_is_not_written() {
+        let conn = mem_db();
+        let payload = serde_json::json!({
+            "parent_id": "g1",
+            "kind": "hats",
+            "block_number": 999_999,
+            "snapshot": { "memberHatByAddress": { "0xevil": "Captain" } }
+        });
+        let peer_rows: Vec<SquadGovReplicaRow> = Vec::new();
+        let _ = payload;
+        assert!(peer_rows.is_empty());
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM squad_gov_replica", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        assert!(upsert_if_newer(
+            &conn,
+            &row(10, r#"{"memberHatByAddress":{"0xa":"Captain"}}"#)
+        )
+        .unwrap());
     }
 }

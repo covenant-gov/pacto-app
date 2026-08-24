@@ -357,7 +357,7 @@
           onExecute={() => executeForCard(card)}
           onExpire={() => expireForCard(card)}
           showVotes
-          votePending={cardPending(card)}
+          votePending={cardPending(card) || (card.kind === 'mutiny' && mutinyLoading)}
           {crewVoteGate}
           {captainVoteGate}
           {mutinyHasVoted}

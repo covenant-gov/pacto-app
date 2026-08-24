@@ -41,7 +41,7 @@ Shell layout map: [`docs/shell/LAYOUT.md`](../shell/LAYOUT.md).
 
 Parent and channel models, MLS ids, and invite flows: **[`docs/communities/`](../communities/)**. This note only ties **when** to read on-chain data relative to account and hub lifecycle.
 
-Crew Hats/roles and the Status proposals board hydrate from `squad_gov_replica` (MLS `governance_process_updated` snapshot, LWW by `block_number`, keyed `pacto_gov` vs `pacto_gov_wargame`). The writer attaches a bounded snapshot after a gov tx. Process-nonce refresh reloads SQLite; it does not fan out a squad-wide chain walk. Empty replica: one opener chain fill (`get_member_hat_wearers` / `list_treasury_proposals` / QM pending), then local upsert. Vote/execute CTAs still read live `hasVoted` / executable. ACL `get_squad_capabilities` remains a viewer self-check (not MLS). Hats tree walk stays bounded (`hats_read.rs`) and is not replica-synced. Balances / sponsor pool / Safe nonce stay SWR-on-open.
+Crew Hats/roles and the Status proposals board may hydrate from `squad_gov_replica` (local catch-up only, keyed `pacto_gov` vs `pacto_gov_wargame`). Peer MLS `governance_process_updated` messages bump the process nonce and never write replica rows. Process-nonce refresh revalidates from chain; the writer upserts a bounded snapshot after its own chain read. Vote/execute CTAs still read live `hasVoted` / executable. ACL `get_squad_capabilities` remains a viewer self-check (not MLS). Hats tree walk stays bounded (`hats_read.rs`) and is not replica-synced. Balances / sponsor pool / Safe nonce stay SWR-on-open.
 
 ## Related
 

@@ -42,6 +42,7 @@ vi.mock('../../stores/auth', () => ({
 
 import {
   DEFAULT_SQUAD_PRACTICE_NETWORK,
+  DEFAULT_SQUAD_PRIMARY_NETWORK,
   loadSquadNetworkPair,
   resolvePracticeSquadNetwork,
   saveSquadNetworkPair,
@@ -57,6 +58,7 @@ import {
   SQUAD_NETWORK_UPDATED_TYPE,
   SQUAD_NETWORK_UPDATED_VERSION,
   trustedPracticeFromAnnounce,
+  trustedPrimaryFromAnnounce,
 } from './squad-network-share';
 
 describe('squad-network-share', () => {
@@ -177,8 +179,34 @@ describe('squad-network-share', () => {
     expect(loadSquadNetworkPair(npub, gid)).toEqual({ primary: 'sepolia', practice: 'local' });
   });
 
-  it('persists default practice from announce', () => {
+  it('trustedPrimaryFromAnnounce allows default or matching gov infra', () => {
+    expect(trustedPrimaryFromAnnounce('sepolia', null)).toBe('sepolia');
+    expect(trustedPrimaryFromAnnounce('local', null)).toBeNull();
+    expect(trustedPrimaryFromAnnounce('local', 'sepolia')).toBeNull();
+    expect(trustedPrimaryFromAnnounce('local', 'local')).toBe('local');
+  });
+
+  it('does not persist untrusted primary=local from announce', () => {
     applySquadNetworkUpdated({ parent_id: gid, primary: 'local', practice: 'sepolia' }, npub);
+    expect(loadSquadNetworkPair(npub, gid)).toEqual({
+      primary: DEFAULT_SQUAD_PRIMARY_NETWORK,
+      practice: 'sepolia',
+    });
+  });
+
+  it('keeps an existing Settings primary when announce primary is untrusted', () => {
+    saveSquadNetworkPair(npub, gid, { primary: 'local', practice: 'sepolia' });
+    applySquadNetworkUpdated({ parent_id: gid, primary: 'local', practice: 'sepolia' }, npub);
+    expect(loadSquadNetworkPair(npub, gid)).toEqual({ primary: 'local', practice: 'sepolia' });
+  });
+
+  it('persists primary=local when pacto_gov infra is local', () => {
+    applySquadNetworkUpdated(
+      { parent_id: gid, primary: 'local', practice: 'sepolia' },
+      npub,
+      null,
+      'local',
+    );
     expect(loadSquadNetworkPair(npub, gid)).toEqual({ primary: 'local', practice: 'sepolia' });
   });
 

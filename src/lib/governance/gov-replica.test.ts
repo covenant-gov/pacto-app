@@ -4,6 +4,7 @@ import {
   pickReplicaRow,
   replicaSlicesFromSnapshot,
   replicaStackForDashboard,
+  govReplicaChainFillPlan,
   type SquadGovReplicaRow,
 } from './gov-replica';
 
@@ -44,6 +45,21 @@ describe('gov replica helpers', () => {
       pickReplicaRow([hats, game], { stack: 'pacto_gov_wargame', kind: 'hats', round: '2' })
         ?.snapshotJson,
     ).toContain('0xbb');
+  });
+
+  it('does not fall back across war-game rounds', () => {
+    expect(
+      pickReplicaRow([hats, game], { stack: 'pacto_gov_wargame', kind: 'hats', round: '3' }),
+    ).toBeNull();
+    expect(pickReplicaRow([hats, game], { stack: 'pacto_gov_wargame', kind: 'hats' })).toBeNull();
+  });
+
+  it('never lets a replica hit skip chain fills', () => {
+    expect(govReplicaChainFillPlan({ hasHats: true, hasProposals: true })).toEqual({
+      applyReplica: true,
+      fetchHats: true,
+      fetchProposals: true,
+    });
   });
 
   it('splits a writer snapshot into hats / process kinds', () => {

@@ -26,6 +26,7 @@
     onOpenLaunchpad?: () => void;
     warGameStack?: boolean;
     archiveView?: boolean;
+    warGameRound?: string;
     structureSummary?: DashboardStructureSummary | null;
     hatsTree?: HatTreeNodeDto | null;
     hatsTreeLoading?: boolean;
@@ -61,6 +62,7 @@
     onOpenLaunchpad = () => {},
     warGameStack = false,
     archiveView = false,
+    warGameRound = '',
     structureSummary = undefined,
     hatsTree = null,
     hatsTreeLoading = false,
@@ -111,6 +113,7 @@
       {onRefreshProposals}
       {warGameStack}
       {archiveView}
+      {warGameRound}
       surface="commands"
       bind:treeCommands
     />
