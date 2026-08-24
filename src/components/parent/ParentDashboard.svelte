@@ -39,6 +39,10 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     wearersForRoleLabel,
   } from '../../lib/governance/hats-tree-annotations';
   import {
+    addressesWithHatLabel,
+    mergeWearerAddresses,
+  } from '../../lib/governance/gov-member-options';
+  import {
     listSquadGovReplica,
     parseGovReplicaSnapshot,
     pickReplicaRow,
@@ -329,8 +333,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     }
   }
 
-  $: captainWearers = wearersForRoleLabel(roleLabelByHatId, wearerAddressesByHatId, 'Captain');
-  $: crewWearers = wearersForRoleLabel(roleLabelByHatId, wearerAddressesByHatId, 'Crew');
+  $: captainWearers = mergeWearerAddresses(
+    wearersForRoleLabel(roleLabelByHatId, wearerAddressesByHatId, 'Captain'),
+    addressesWithHatLabel(memberHatByAddress, 'Captain'),
+  );
+  $: crewWearers = mergeWearerAddresses(
+    wearersForRoleLabel(roleLabelByHatId, wearerAddressesByHatId, 'Crew'),
+    addressesWithHatLabel(memberHatByAddress, 'Crew'),
+  );
+  $: memberOptionsLoading = rolesTreeAnnotationsLoading || settingsChainLoading;
   $: myGovernanceAddress = (() => {
     const npub = $currentUser?.npub;
     if (!npub) return '';
@@ -906,6 +917,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               myAddress={myGovernanceAddress}
               {captainWearers}
               {crewWearers}
+              {memberOptionsLoading}
               memberEvmOptions={memberEvmOptionsForRoles}
               {treasuryProposals}
               {treasuryProposalsLoading}

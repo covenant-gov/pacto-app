@@ -12,7 +12,7 @@
   } from '../../../lib/governance/api';
   import { type CtaGate } from '../../../lib/governance/governance-privilege';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
-  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
+  import GovMemberPicker from './GovMemberPicker.svelte';
 
   let {
     open = false,
@@ -24,6 +24,7 @@
     kindGate,
     memberEvmOptions = [],
     squadMemberOptions = [],
+    memberOptionsLoading = false,
     onSubmitted = () => {},
   }: {
     open?: boolean;
@@ -35,6 +36,7 @@
     kindGate: CtaGate;
     memberEvmOptions?: { address: string; label: string }[];
     squadMemberOptions?: { address: string; label: string }[];
+    memberOptionsLoading?: boolean;
     onSubmitted?: () => void;
   } = $props();
 
@@ -62,20 +64,6 @@
       return { enabled: false, reason: 'governance.gate.noSquadMemberForMutiny' };
     }
     return startGate;
-  });
-
-  $effect(() => {
-    const opts = startPickerOptions;
-    if (opts.length === 0) {
-      if (proposed) proposed = '';
-      return;
-    }
-    const hit = opts.some(
-      (o) => o.address.trim().toLowerCase() === proposed.trim().toLowerCase(),
-    );
-    if (!proposed.trim() || !hit) {
-      proposed = opts[0].address;
-    }
   });
 
   function startMutiny() {
@@ -122,25 +110,18 @@
           <option value="pause">{$t('governance.mutiny.startOption.pause')}</option>
         </select>
         {#if startKind === 'crew' || startKind === 'eoa'}
-          {#if startPickerOptions.length > 0}
-            <select
-              bind:value={proposed}
-              disabled={!kindGate.enabled}
-              aria-label={$t('governance.field.proposedAddress')}
-            >
-              {#each startPickerOptions as opt (opt.address)}
-                <option value={opt.address}>{opt.label} — {shortEvmAddress(opt.address)}</option>
-              {/each}
-            </select>
-          {:else}
-            <p class="muted">
-              {$t(
-                startKind === 'crew'
-                  ? 'governance.gate.noCrewHatForMutiny'
-                  : 'governance.gate.noSquadMemberForMutiny',
-              )}
-            </p>
-          {/if}
+          <GovMemberPicker
+            bind:value={proposed}
+            options={startPickerOptions}
+            ariaLabelKey="governance.field.proposedAddress"
+            emptyKey={
+              startKind === 'crew'
+                ? 'governance.gate.noCrewHatForMutiny'
+                : 'governance.gate.noSquadMemberForMutiny'
+            }
+            loading={memberOptionsLoading}
+            disabled={!kindGate.enabled}
+          />
         {:else if startKind !== 'pause'}
           <input
             bind:value={proposed}
@@ -172,11 +153,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-  .muted {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
   }
   input,
   select {

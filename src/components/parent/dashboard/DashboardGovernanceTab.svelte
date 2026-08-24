@@ -16,6 +16,7 @@
     myAddress?: string;
     captainWearers?: string[];
     crewWearers?: string[];
+    memberOptionsLoading?: boolean;
     memberEvmOptions?: { address: string; label: string }[];
     treasuryProposals?: TreasuryProposalDto[];
     treasuryProposalsLoading?: boolean;
@@ -50,6 +51,7 @@
     myAddress = '',
     captainWearers = [],
     crewWearers = [],
+    memberOptionsLoading = false,
     memberEvmOptions = [],
     treasuryProposals = [],
     treasuryProposalsLoading = false,
@@ -101,6 +103,7 @@
       {myAddress}
       {captainWearers}
       {crewWearers}
+      {memberOptionsLoading}
       {memberEvmOptions}
       {treasuryProposals}
       {treasuryProposalsLoading}

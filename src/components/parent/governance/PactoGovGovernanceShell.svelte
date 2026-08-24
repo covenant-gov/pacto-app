@@ -42,7 +42,7 @@
   } from '../../../lib/governance/gov-replica';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
-  import { labeledWearerOptions } from '../../../lib/governance/war-game-captain';
+  import { govMemberOptions } from '../../../lib/governance/gov-member-options';
   import {
     ACL_SNAPSHOT_RETRY_MS,
     aclSnapshotLoadKey,
@@ -61,6 +61,7 @@
     myAddress?: string;
     captainWearers?: string[];
     crewWearers?: string[];
+    memberOptionsLoading?: boolean;
     memberEvmOptions?: { address: string; label: string }[];
     treasuryProposals?: TreasuryProposalDto[];
     treasuryProposalsLoading?: boolean;
@@ -81,6 +82,7 @@
     myAddress = '',
     captainWearers = [],
     crewWearers = [],
+    memberOptionsLoading = false,
     memberEvmOptions = [],
     treasuryProposals = [],
     treasuryProposalsLoading = false,
@@ -129,7 +131,13 @@
       ? 'governance.gate.quartermasterLocked'
       : 'governance.gate.rosterFrozenOffboard',
   );
-  let crewMemberOptions = $derived(labeledWearerOptions(crewWearers, memberEvmOptions));
+  let crewMemberOptions = $derived(
+    govMemberOptions({
+      roster: memberEvmOptions,
+      crewWearers,
+      preset: 'crewWearers',
+    }),
+  );
 
   $effect(() => {
     if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
@@ -522,6 +530,7 @@
       parentId,
       memberEvmOptions,
       crewMemberOptions,
+      memberOptionsLoading,
       captainWearers,
       crewWearers,
       warGameStack,
@@ -603,6 +612,7 @@
         {qmStatus}
         memberEvmOptions={crewMemberOptions}
         squadMemberOptions={memberEvmOptions}
+        {memberOptionsLoading}
         onRefreshMutiny={() => reloadMutiny(true)}
         onRefreshQm={() => {
           void reloadQm(true);
@@ -620,6 +630,7 @@
         {mutinyStatus}
         {qmStatus}
         {memberEvmOptions}
+        {memberOptionsLoading}
         {captainWearers}
         {crewWearers}
         {warGameStack}

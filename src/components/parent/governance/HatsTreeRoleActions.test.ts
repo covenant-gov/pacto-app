@@ -35,6 +35,7 @@ function command(overrides: Partial<HatsTreeCommandContext> = {}): HatsTreeComma
     parentId: 'parent-1',
     memberEvmOptions: [],
     crewMemberOptions: [],
+    memberOptionsLoading: false,
     captainWearers: [],
     crewWearers: [],
     warGameStack: false,

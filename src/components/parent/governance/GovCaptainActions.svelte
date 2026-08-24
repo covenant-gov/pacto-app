@@ -11,6 +11,7 @@
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { pickRandomRosterCaptain, labeledWearerOptions } from '../../../lib/governance/war-game-captain';
+  import { govMemberOptions } from '../../../lib/governance/gov-member-options';
 
   interface Props {
     network: string;
@@ -21,6 +22,7 @@
     mutinyStatus?: MutinyStatusDto | null;
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
+    memberOptionsLoading?: boolean;
     captainWearers?: string[];
     crewWearers?: string[];
     warGameStack?: boolean;
@@ -38,6 +40,7 @@
     mutinyStatus = null,
     qmStatus = null,
     memberEvmOptions = [],
+    memberOptionsLoading = false,
     captainWearers = [],
     crewWearers = [],
     warGameStack = false,
@@ -74,6 +77,12 @@
   let bootstrapGate = $derived(gates.bootstrap);
   let randomizeExclude = $derived([privilege.myAddress, ...captainWearers]);
   let randomizePool = $derived(labeledWearerOptions(crewWearers, memberEvmOptions));
+  let addCrewOptions = $derived(
+    govMemberOptions({ roster: memberEvmOptions, crewWearers, preset: 'squadNotCrew' }),
+  );
+  let removeCrewOptions = $derived(
+    govMemberOptions({ roster: memberEvmOptions, crewWearers, preset: 'crewWearers' }),
+  );
 
   function randomizeCaptain() {
     const picked = pickRandomRosterCaptain(randomizePool, randomizeExclude);
@@ -135,7 +144,9 @@
   {parentId}
   {quartermaster}
   {qmStatus}
-  {memberEvmOptions}
+  memberEvmOptions={addCrewOptions}
+  {memberOptionsLoading}
+  emptyKey="governance.gate.noSquadMemberToAdd"
   {qmGate}
   {execGate}
   onSubmitted={onRefreshQm}
@@ -149,7 +160,9 @@
   {parentId}
   {quartermaster}
   {qmStatus}
-  {memberEvmOptions}
+  memberEvmOptions={removeCrewOptions}
+  {memberOptionsLoading}
+  emptyKey="governance.gate.noCrewHatToRemove"
   {qmGate}
   {execGate}
   onSubmitted={onRefreshQm}

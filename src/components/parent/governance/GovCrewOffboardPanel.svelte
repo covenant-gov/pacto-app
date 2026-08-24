@@ -26,7 +26,8 @@
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { hasPendingJob, pendingOnChainJobs } from '../../../stores/pending-on-chain';
   import { requireBackupVerified } from '../../../stores/backup-verification';
-  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
+  import { govMemberOptions } from '../../../lib/governance/gov-member-options';
+  import GovMemberPicker from './GovMemberPicker.svelte';
 
   let {
     network,
@@ -36,6 +37,7 @@
     mutinyActive = false,
     qmStatus = null,
     memberEvmOptions = [],
+    memberOptionsLoading = false,
     hasVoted = false,
     onRefresh = () => {},
   }: {
@@ -46,6 +48,7 @@
     mutinyActive?: boolean;
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
+    memberOptionsLoading?: boolean;
     hasVoted?: boolean;
     onRefresh?: () => void;
   } = $props();
@@ -71,10 +74,14 @@
   const quorumBps = $derived(parseQuorumBps(qmStatus?.crewOffboardQuorumBps));
   const expired = $derived(isCrewOffboardExpirable(offboard, nowSec));
   const executable = $derived(isCrewOffboardExecutable(offboard, quorumBps, nowSec));
-  const targetOptions = $derived.by(() => {
-    void memberEvmOptions.length;
-    return memberEvmOptions.map((o) => ({ address: o.address, label: o.label }));
-  });
+  const targetOptions = $derived(
+    govMemberOptions({
+      roster: memberEvmOptions,
+      crewWearers: memberEvmOptions.map((o) => o.address),
+      excludeAddresses: [privilege.myAddress],
+      preset: 'crewWearers',
+    }),
+  );
   const targetFormKey = $derived(
     `${qmStatus?.activeCrewOffboardId ?? '0'}|${targetOptions.map((o) => o.address).join(',')}`,
   );
@@ -88,23 +95,12 @@
     });
   });
 
-  $effect(() => {
-    const opts = targetOptions;
-    if (opts.length === 0) {
-      if (target) target = '';
-      return;
-    }
-    const hit = opts.some(
-      (o) => o.address.trim().toLowerCase() === target.trim().toLowerCase(),
-    );
-    if (!target.trim() || !hit) {
-      target = opts[0].address;
-    }
-  });
-
   const proposeGate: CtaGate = $derived.by(() => {
     if (mutinyActive) {
       return { enabled: false, reason: 'governance.gate.cannotOffboardWhileMutiny' };
+    }
+    if (targetOptions.length === 0) {
+      return { enabled: false, reason: 'governance.gate.noCrewHatForOffboard' };
     }
     const self = privilege.myAddress.trim().toLowerCase();
     if (self && target.trim().toLowerCase() === self) {
@@ -241,20 +237,17 @@
     </div>
   {:else}
     <div class="section">
-      <label class="field-label">
-        {$t('governance.field.targetMember')}
-        {#key targetFormKey}
-          {#if targetOptions.length > 0}
-            <select bind:value={target} disabled={acting || !proposeGate.enabled} aria-label={$t('governance.field.targetMemberAriaLabel')}>
-              {#each targetOptions as opt (opt.address)}
-                <option value={opt.address}>{opt.label} — {shortEvmAddress(opt.address)}</option>
-              {/each}
-            </select>
-          {:else}
-            <input bind:value={target} placeholder={$t('governance.field.targetMemberPlaceholder')} disabled={acting || !proposeGate.enabled} />
-          {/if}
-        {/key}
-      </label>
+      {#key targetFormKey}
+        <GovMemberPicker
+          bind:value={target}
+          options={targetOptions}
+          labelKey="governance.field.targetMember"
+          ariaLabelKey="governance.field.targetMemberAriaLabel"
+          emptyKey="governance.gate.noCrewHatForOffboard"
+          loading={memberOptionsLoading}
+          disabled={acting || !proposeGate.enabled}
+        />
+      {/key}
       <GovCtaButton
         label={tFn('governance.action.proposeOffboard')}
         variant="primary"
@@ -309,25 +302,9 @@
     flex-wrap: wrap;
     gap: 8px;
   }
-  .field-label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
   .muted {
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
-  }
-  input,
-  select {
-    padding: 6px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.8125rem;
   }
 </style>

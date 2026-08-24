@@ -12,6 +12,7 @@
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { labeledWearerOptions, pickRandomRosterCaptain } from '../../../lib/governance/war-game-captain';
+  import { govMemberOptions } from '../../../lib/governance/gov-member-options';
   import type { HatsTreeCommandAction, HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
 
   interface Props {
@@ -37,6 +38,20 @@
   );
   const randomizeExclude = $derived([command.privilege.myAddress, ...command.captainWearers]);
   const randomizePool = $derived(labeledWearerOptions(command.crewWearers, command.memberEvmOptions));
+  const addCrewOptions = $derived(
+    govMemberOptions({
+      roster: command.memberEvmOptions,
+      crewWearers: command.crewWearers,
+      preset: 'squadNotCrew',
+    }),
+  );
+  const removeCrewOptions = $derived(
+    govMemberOptions({
+      roster: command.memberEvmOptions,
+      crewWearers: command.crewWearers,
+      preset: 'crewWearers',
+    }),
+  );
 
   function randomizeCaptain() {
     const picked = pickRandomRosterCaptain(randomizePool, randomizeExclude);
@@ -89,6 +104,7 @@
   kindGate={gates.startMutiny}
   memberEvmOptions={command.crewMemberOptions}
   squadMemberOptions={command.memberEvmOptions}
+  memberOptionsLoading={command.memberOptionsLoading}
   onSubmitted={command.refreshMutiny}
 />
 
@@ -101,7 +117,8 @@
   privilege={command.privilege}
   mutinyActive={gates.mutinyActive}
   qmStatus={command.qmStatus}
-  memberEvmOptions={command.memberEvmOptions}
+  memberEvmOptions={command.crewMemberOptions}
+  memberOptionsLoading={command.memberOptionsLoading}
   onSubmitted={command.refreshQm}
 />
 
@@ -113,7 +130,9 @@
   parentId={command.parentId}
   quartermaster={command.quartermaster}
   qmStatus={command.qmStatus}
-  memberEvmOptions={command.memberEvmOptions}
+  memberEvmOptions={addCrewOptions}
+  memberOptionsLoading={command.memberOptionsLoading}
+  emptyKey="governance.gate.noSquadMemberToAdd"
   qmGate={gates.qmRoster}
   execGate={gates.exec}
   onSubmitted={command.refreshQm}
@@ -127,7 +146,9 @@
   parentId={command.parentId}
   quartermaster={command.quartermaster}
   qmStatus={command.qmStatus}
-  memberEvmOptions={command.memberEvmOptions}
+  memberEvmOptions={removeCrewOptions}
+  memberOptionsLoading={command.memberOptionsLoading}
+  emptyKey="governance.gate.noCrewHatToRemove"
   qmGate={gates.qmRoster}
   execGate={gates.exec}
   onSubmitted={command.refreshQm}

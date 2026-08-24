@@ -17,7 +17,7 @@
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import { type CtaGate } from '../../../lib/governance/governance-privilege';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
-  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
+  import GovMemberPicker from './GovMemberPicker.svelte';
 
   let {
     open = false,
@@ -28,6 +28,8 @@
     quartermaster,
     qmStatus = null,
     memberEvmOptions = [],
+    memberOptionsLoading = false,
+    emptyKey = 'governance.gate.noSquadMemberToAdd',
     qmGate,
     execGate,
     onSubmitted = () => {},
@@ -40,6 +42,8 @@
     quartermaster: string;
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
+    memberOptionsLoading?: boolean;
+    emptyKey?: string;
     qmGate: CtaGate;
     execGate: CtaGate;
     onSubmitted?: () => void;
@@ -53,17 +57,6 @@
   let qmPending: QuartermasterPendingDto | null = $state(null);
 
   let offboardActive = $derived(isCrewOffboardActive(qmStatus));
-
-  $effect(() => {
-    if (memberEvmOptions.length > 0) {
-      const hit = memberEvmOptions.some(
-        (o) => o.address.trim().toLowerCase() === qmAddress.trim().toLowerCase(),
-      );
-      if (!qmAddress.trim() || !hit) {
-        qmAddress = memberEvmOptions[0].address;
-      }
-    }
-  });
 
   function run(label: string, actionKey: string, fn: () => Promise<unknown>) {
     onClose();
@@ -100,18 +93,14 @@
     {:else if qmStatus}
       <p class="muted">{$t('governance.info.crewChangeDelay', { values: { delay: qmStatus.crewChangeDelaySecs } })}</p>
     {/if}
-    <label class="field-label">
-      {$t('governance.field.targetMember')}
-      {#if memberEvmOptions.length > 0}
-        <select bind:value={qmAddress} aria-label={$t('governance.field.targetMemberAriaLabel')}>
-          {#each memberEvmOptions as opt (opt.address)}
-            <option value={opt.address}>{opt.label} — {shortEvmAddress(opt.address)}</option>
-          {/each}
-        </select>
-      {:else}
-        <input bind:value={qmAddress} placeholder={$t('governance.field.targetMemberPlaceholder')} />
-      {/if}
-    </label>
+    <GovMemberPicker
+      bind:value={qmAddress}
+      options={memberEvmOptions}
+      labelKey="governance.field.targetMember"
+      ariaLabelKey="governance.field.targetMemberAriaLabel"
+      {emptyKey}
+      loading={memberOptionsLoading}
+    />
     <button
       type="button"
       class="linkish"
@@ -222,13 +211,6 @@
     gap: 8px;
     margin-top: 8px;
   }
-  .field-label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
   .muted {
     margin: 0 0 8px;
     font-size: 0.8125rem;
@@ -236,15 +218,6 @@
   }
   .tiny {
     font-size: 0.6875rem;
-  }
-  input,
-  select {
-    padding: 6px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.8125rem;
   }
   .linkish {
     align-self: flex-start;

@@ -26,6 +26,7 @@ export type HatsTreeCommandContext = {
   parentId: string;
   memberEvmOptions: MemberEvmOption[];
   crewMemberOptions: MemberEvmOption[];
+  memberOptionsLoading: boolean;
   captainWearers: string[];
   crewWearers: string[];
   warGameStack: boolean;

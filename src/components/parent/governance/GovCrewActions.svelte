@@ -19,6 +19,7 @@
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
     squadMemberOptions?: { address: string; label: string }[];
+    memberOptionsLoading?: boolean;
     onRefreshMutiny?: () => void;
     onRefreshQm?: () => void;
     capabilitiesPending?: boolean;
@@ -34,6 +35,7 @@
     qmStatus = null,
     memberEvmOptions = [],
     squadMemberOptions = [],
+    memberOptionsLoading = false,
     onRefreshMutiny = () => {},
     onRefreshQm = () => {},
     capabilitiesPending = false,
@@ -87,6 +89,7 @@
   kindGate={startMutinyGate}
   {memberEvmOptions}
   {squadMemberOptions}
+  {memberOptionsLoading}
   onSubmitted={onRefreshMutiny}
 />
 
@@ -100,6 +103,7 @@
   {mutinyActive}
   {qmStatus}
   {memberEvmOptions}
+  {memberOptionsLoading}
   onSubmitted={onRefreshQm}
 />
 

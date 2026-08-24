@@ -17,6 +17,7 @@
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { showToast } from '../../../stores/toast';
   import { appConfig } from '../../../stores/app-config';
+  import GovMemberPicker from './GovMemberPicker.svelte';
 
   interface Props {
     open?: boolean;
@@ -59,12 +60,6 @@
   const saGate = $derived(
     effectivePrivilege ? gateSquadAdminWrite(effectivePrivilege) : ({ enabled: true, reason: '' } as const),
   );
-
-  $effect(() => {
-    if (open && !executorAddress && memberEvmOptions.length > 0) {
-      executorAddress = memberEvmOptions[0].address;
-    }
-  });
 
   $effect(() => {
     if (open && parentId.trim()) {
@@ -216,27 +211,15 @@
     </div>
 
     <div class="squad-roles-field">
-      <label class="squad-roles-label" for="squad-role-executor">{$t('governance.squadRoles.executorLabel')}</label>
-      {#if memberEvmOptions.length > 0}
-        <select
-          id="squad-role-executor"
-          class="squad-roles-input"
-          bind:value={executorAddress}
-        >
-          {#each memberEvmOptions as opt (opt.address)}
-            <option value={opt.address}>{opt.label} — {opt.address}</option>
-          {/each}
-        </select>
-      {:else}
-        <input
-          id="squad-role-executor"
-          type="text"
-          class="squad-roles-input"
-          placeholder={$t('governance.squadRoles.executorPlaceholder')}
-          bind:value={executorAddress}
-          autocomplete="off"
-        />
-      {/if}
+      <GovMemberPicker
+        bind:value={executorAddress}
+        options={memberEvmOptions}
+        labelKey="governance.squadRoles.executorLabel"
+        ariaLabelKey="governance.squadRoles.executorLabel"
+        emptyKey="governance.gate.noSquadMemberForRole"
+        selectId="squad-role-executor"
+        disabled={!saGate.enabled}
+      />
     </div>
 
     {#if actionError}
