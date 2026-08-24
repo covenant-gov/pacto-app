@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import DashboardAssetCard from '../dashboard/DashboardAssetCard.svelte';
   import SquadSponsorWithdrawModal from './SquadSponsorWithdrawModal.svelte';
   import SquadSponsoredFeeUsagePanel from './SquadSponsoredFeeUsagePanel.svelte';
   import type { SquadInfraDto } from '../../../lib/governance/api';
@@ -32,20 +33,24 @@
     type SignerBalance,
   } from '../../../lib/wallet/signer-balance';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
-  import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
+  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { formatEther, parseEther } from 'viem';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import { resolveSquadSponsorVariant } from '../../../lib/governance/squad-sponsor-variant';
+  import { displayHatsTreeId } from '../../../lib/governance/pretty-hat-id';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
 
   interface Props {
     parentId: string;
     sponsorRow?: SquadInfraDto | null;
+    topHatId?: string;
     onOpenDeploy?: () => void;
   }
 
-  let { parentId, sponsorRow = null, onOpenDeploy = undefined }: Props = $props();
+  let { parentId, sponsorRow = null, topHatId = '', onOpenDeploy = undefined }: Props = $props();
 
   const tFn = get(t);
 
@@ -72,6 +77,8 @@
   const network = $derived(parseSupportedChainId(sponsorRow?.chain));
   const poolBalanceWei = $derived(summary ? BigInt(summary.poolBalanceWei) : null);
   const lowBalance = $derived(poolBalanceWei != null && poolBalanceWei < SPONSOR_LOW_BALANCE_WEI);
+  const hatsLinked = $derived(resolveSquadSponsorVariant(sponsorRow) === 'hats');
+  const hatsId = $derived(hatsLinked ? displayHatsTreeId(topHatId) : '');
   const explorerUrl = $derived(
     summary?.sponsorAddress &&
       explorerAddressUrl(parseSupportedChainId(summary.chain), summary.sponsorAddress),
@@ -281,45 +288,55 @@
       return;
     }
     const payFrom: SquadSponsorDeploySignerWallet = signersAreSame ? 'squad' : signerWallet;
-    depositing = true;
-    try {
-      await depositSquadSponsor({
-        network,
-        parentId: parentId.trim(),
-        amountWei,
-        sponsorAddress: sponsorRow.canonicalRef,
-        signerWallet: payFrom,
-      });
-      showToast(tFn('governance.toast.sponsorDepositConfirmed'));
-      showDepositForm = false;
-      await refreshSummary(true);
-    } catch (e) {
-      let raw = getInvokeErrorMessage(e, tFn('governance.error.depositFailed'));
-      const parsed = parseWalletOpError(raw);
-      if (parsed?.message) raw = parsed.message;
-      if (/insufficient funds/i.test(raw)) {
-        depositError = tFn('governance.error.insufficientFundsForDeposit', {
-          values: {
-            symbol: selectedSymbol,
-            address: shortAddress(selectedAddress),
-            network,
-          },
-        });
-      } else {
-        depositError = raw;
-      }
-    } finally {
-      depositing = false;
-    }
+    const symbol = selectedSymbol;
+    const address = shortAddress(selectedAddress);
+    showDepositForm = false;
+    runOnChainInBackground({
+      jobLabel: tFn('governance.action.confirmDeposit'),
+      parentId: parentId.trim(),
+      actionKey: 'sponsor-deposit',
+      startedToast: tFn('governance.toast.squadTransactionSubmitted'),
+      job: () =>
+        depositSquadSponsor({
+          network,
+          parentId: parentId.trim(),
+          amountWei,
+          sponsorAddress: sponsorRow.canonicalRef,
+          signerWallet: payFrom,
+        }),
+      onSuccess: async () => {
+        showToast(tFn('governance.toast.sponsorDepositConfirmed'));
+        await refreshSummary(true);
+      },
+      onError: (message) => {
+        if (/insufficient funds/i.test(message)) {
+          depositError = tFn('governance.error.insufficientFundsForDeposit', {
+            values: {
+              symbol,
+              address,
+              network,
+            },
+          });
+          showDepositForm = true;
+          return true;
+        }
+        depositError = message;
+        showDepositForm = true;
+        return true;
+      },
+    });
   }
 </script>
 
-<section class="dashboard-section sponsor-treasury-section" aria-labelledby="sponsor-heading">
-  <div class="treasury-section-head">
-    <h3 id="sponsor-heading" class="section-heading">{$t('governance.title.squadSponsor')}</h3>
+<DashboardAssetCard
+  class="sponsor-treasury-section"
+  headingId="sponsor-heading"
+  heading={$t('governance.title.squadSponsor')}
+  showFooter={!!sponsorRow}
+>
+  {#snippet headerAction()}
     {#if sponsorRow}
       <RefreshIconButton
-        className="sponsor-refresh-btn"
         disabled={loading}
         spinning={loading}
         ariaLabel={loading ? $t('governance.aria.refreshingSponsorBalance') : $t('governance.aria.refreshSponsorBalance')}
@@ -328,7 +345,7 @@
     {:else if onOpenDeploy}
       <button type="button" class="btn-primary sponsor-deploy-btn" onclick={onOpenDeploy}>{tFn('governance.action.deploySponsor')}</button>
     {/if}
-  </div>
+  {/snippet}
 
   {#if !sponsorRow}
     <p class="sponsor-empty-lead">{$t('governance.empty.noSponsorDeployed')}</p>
@@ -338,22 +355,40 @@
     <p class="sponsor-error" role="alert">{friendlyMessage(loadError, 'sponsor')}</p>
     <button type="button" class="btn-secondary" onclick={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
-    <p class="sponsor-lead muted">{$t('governance.info.sponsorLead', { values: { chain: summary.chain } })}</p>
-    <dl class="sponsor-dl">
-      <dt>{$t('governance.info.sponsorPoolBalance')}</dt>
+    <dl class="asset-dl">
+      <dt>{$t('governance.info.sponsorEth')}</dt>
       <dd>
-        <strong>{$t('governance.treasury.balanceEth', { values: { balance: formatEther(BigInt(summary.poolBalanceWei)) } })}</strong>
+        <strong>{formatEther(BigInt(summary.poolBalanceWei))}</strong>
         {#if lowBalance}
           <span class="sponsor-low-badge" role="status">{$t('governance.info.sponsorLowBalance')}</span>
         {/if}
       </dd>
-      <dt>{$t('governance.info.sponsorClone')}</dt>
+      {#if hatsLinked}
+        <dt>{$t('governance.info.sponsorEligible')}</dt>
+        <dd class="asset-dd-inline">
+          <span>{$t('governance.crew.sponsorEligibleRoles')}</span>
+          {#if hatsId}
+            <span class="hats-id-chip" title={$t('governance.crew.hatsIdTitle', { values: { id: hatsId } })}>
+              <span class="hats-id-label">{$t('governance.crew.hatsIdLabel')}</span>
+              <code>{hatsId}</code>
+            </span>
+          {/if}
+        </dd>
+      {/if}
+      <dt>{$t('governance.info.sponsor')}</dt>
       <dd>
-        <code class="sponsor-mono">{summary.sponsorAddress}</code>
         {#if explorerUrl}
-          <button type="button" class="btn-link sponsor-explorer-link" onclick={() => openExternalUrl(explorerUrl)}>
-            {tFn('governance.action.viewOnExplorer')}
+          <button
+            type="button"
+            class="btn-link sponsor-addr-link"
+            title={summary.sponsorAddress}
+            aria-label={$t('governance.hats.wearerExplorerTitle', { values: { address: summary.sponsorAddress } })}
+            onclick={() => openExternalUrl(explorerUrl)}
+          >
+            {shortEvmAddress(summary.sponsorAddress)}
           </button>
+        {:else}
+          <code class="sponsor-mono" title={summary.sponsorAddress}>{shortEvmAddress(summary.sponsorAddress)}</code>
         {/if}
       </dd>
     </dl>
@@ -480,14 +515,16 @@
     {/if}
   {/if}
 
-  {#if sponsorRow}
-    <SquadSponsoredFeeUsagePanel
-      parentId={parentId}
-      chain={sponsorRow.chain || summary?.chain || network}
-      refreshToken={feeUsageRefreshToken}
-    />
-  {/if}
-</section>
+  {#snippet footer()}
+    {#if sponsorRow}
+      <SquadSponsoredFeeUsagePanel
+        parentId={parentId}
+        chain={sponsorRow.chain || summary?.chain || network}
+        refreshToken={feeUsageRefreshToken}
+      />
+    {/if}
+  {/snippet}
+</DashboardAssetCard>
 
 <SquadSponsorWithdrawModal
   open={showWithdrawModal}
@@ -501,38 +538,11 @@
 />
 
 <style>
-  .dashboard-section {
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 16px;
-  }
-
-  .sponsor-treasury-section {
+  :global(.sponsor-treasury-section) {
     margin-bottom: 16px;
   }
 
-  .section-heading {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0;
-  }
-
-  .treasury-section-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .treasury-section-head .section-heading {
-    margin: 0;
-  }
-
-  .sponsor-deploy-btn,
-  :global(.sponsor-refresh-btn) {
+  .sponsor-deploy-btn {
     flex-shrink: 0;
   }
 
@@ -569,32 +579,37 @@
     font-size: 0.875rem;
   }
 
-  .sponsor-lead {
-    margin: 0 0 12px;
-    font-size: 0.875rem;
-  }
-
-  .sponsor-dl {
-    margin: 0 0 14px;
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 8px 14px;
-    font-size: 0.875rem;
-  }
-
-  .sponsor-dl dt {
-    margin: 0;
-    color: var(--text-muted);
-    font-weight: 500;
-  }
-
-  .sponsor-dl dd {
-    margin: 0;
-    word-break: break-all;
-  }
-
   .sponsor-mono {
     font-size: 0.8125rem;
+  }
+
+  .hats-id-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .hats-id-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+  }
+
+  .hats-id-chip code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .sponsor-addr-link {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8125rem;
+    margin: 0;
+    padding: 0;
   }
 
   .sponsor-low-badge {
@@ -622,13 +637,6 @@
     color: var(--brand);
     cursor: pointer;
     text-decoration: underline;
-  }
-
-  .sponsor-explorer-link {
-    display: inline-block;
-    margin-left: 8px;
-    padding: 0;
-    font-size: inherit;
   }
 
   .sponsor-deposit-form {

@@ -7,8 +7,8 @@ import { hatIdToHex, prettyHatId } from './pretty-hat-id';
 
 export function shortEvmAddress(addr: string): string {
   const a = addr.trim();
-  if (a.length < 10) return a;
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+  if (a.length < 16) return a;
+  return `${a.slice(0, 8)}…${a.slice(-6)}`;
 }
 
 /** Pacto Gov module addresses that may wear role hats (not just squad roster EOAs). */
@@ -133,6 +133,24 @@ function indexWearerAddressesByHatAlias(
   return index;
 }
 
+/** True when `address` wears `hatId` (pretty / hex / decimal ids join). */
+export function isAddressWearingHat(
+  wearerAddressesByHatId: Record<string, string[]>,
+  hatId: string,
+  address: string,
+): boolean {
+  const want = address.trim().toLowerCase();
+  if (!want) return false;
+  const aliases = hatIdLookupKeys(hatId);
+  if (aliases.length === 0) return false;
+  const byAlias = indexWearerAddressesByHatAlias(wearerAddressesByHatId);
+  for (const alias of aliases) {
+    const hit = byAlias.get(alias);
+    if (hit?.includes(want)) return true;
+  }
+  return false;
+}
+
 /** On-chain wearers for every hat labeled `label` (pretty / hex / decimal ids join). */
 export function wearersForRoleLabel(
   roleLabelByHatId: Record<string, string>,
@@ -255,5 +273,27 @@ export function collectAnnotatedRolesTreeNodes(
     for (const child of node.children ?? []) walk(child);
   };
   walk(tree);
+  return out;
+}
+
+/** Crew column: invert hat→wearers using role labels (skip unlabeled top hat). */
+export function memberHatByAddressFromWearerMaps(
+  roleLabelByHatId: Record<string, string>,
+  wearerAddressesByHatId: Record<string, string[]>,
+): Record<string, string> {
+  const labels = new Map<string, string[]>();
+  for (const [hatId, addrs] of Object.entries(wearerAddressesByHatId)) {
+    const label = roleLabelByHatId[hatId]?.trim();
+    if (!label || label === 'Top hat') continue;
+    for (const addr of addrs) {
+      const key = addr.trim().toLowerCase();
+      if (!key) continue;
+      const list = labels.get(key) ?? [];
+      if (!list.includes(label)) list.push(label);
+      labels.set(key, list);
+    }
+  }
+  const out: Record<string, string> = {};
+  for (const [addr, labs] of labels) out[addr] = labs.join(', ');
   return out;
 }

@@ -10,9 +10,13 @@ import {
   squadDashboardChannelMode,
   SQUAD_DASHBOARD_MODE_PREFIX,
   parseSquadDashboardChannelMode,
+  settingsChannelMode,
+  SETTINGS_CHANNEL_MODE_PREFIX,
+  parseSettingsChannelMode,
   squadSettingsRpcFocusNonce,
   focusSquadSettingsRpcEditor,
   squadSettingsNetworkFocusNonce,
+  squadSettingsNetworkFocusSlot,
   focusSquadSettingsNetworkEditor,
   showMembersPanel,
   lastOpenedSquadId,
@@ -64,8 +68,10 @@ describe('navigation', () => {
     activeHubChannelName.set(null);
     activeView.set('hub');
     squadDashboardChannelMode.set('status');
+    settingsChannelMode.set('personal');
     squadSettingsRpcFocusNonce.set(0);
     squadSettingsNetworkFocusNonce.set(0);
+    squadSettingsNetworkFocusSlot.set('primary');
     showMembersPanel.set(false);
     lastOpenedSquadId.set(null);
     lastOpenedChannelId.set(null);
@@ -88,16 +94,16 @@ describe('navigation', () => {
     expect(get(activeHubChannelName)).toBeNull();
     expect(get(activeView)).toBe('hub');
     expect(get(squadDashboardChannelMode)).toBe('status');
+    expect(get(settingsChannelMode)).toBe('personal');
     expect(get(showMembersPanel)).toBe(false);
   });
 
   it('parses known squad dashboard channel modes', () => {
     expect(parseSquadDashboardChannelMode('status')).toBe('status');
     expect(parseSquadDashboardChannelMode('governance')).toBe('governance');
-    expect(parseSquadDashboardChannelMode('roles')).toBe('roles');
     expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
     expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
-    expect(parseSquadDashboardChannelMode('settings')).toBe('settings');
+    expect(parseSquadDashboardChannelMode('settings')).toBe('status');
   });
 
   it('resets unknown squad dashboard modes to status', () => {
@@ -107,12 +113,27 @@ describe('navigation', () => {
     expect(parseSquadDashboardChannelMode('polls')).toBe('status');
     expect(parseSquadDashboardChannelMode('modules')).toBe('status');
     expect(parseSquadDashboardChannelMode('stickers')).toBe('status');
+    expect(parseSquadDashboardChannelMode('roles')).toBe('status');
   });
 
   it('persists squad dashboard channel mode under an npub-scoped key', () => {
     setCurrentNpubForPersistence('npub1abc');
     squadDashboardChannelMode.set('treasury');
     expect(storage.get(`${SQUAD_DASHBOARD_MODE_PREFIX}_npub1abc`)).toBe('treasury');
+  });
+
+  it('parses known settings channel modes and resets unknown values to personal', () => {
+    expect(parseSettingsChannelMode('personal')).toBe('personal');
+    expect(parseSettingsChannelMode('squad')).toBe('squad');
+    expect(parseSettingsChannelMode(null)).toBe('personal');
+    expect(parseSettingsChannelMode('')).toBe('personal');
+    expect(parseSettingsChannelMode('settings')).toBe('personal');
+  });
+
+  it('persists settings channel mode under an npub-scoped key', () => {
+    setCurrentNpubForPersistence('npub1abc');
+    settingsChannelMode.set('squad');
+    expect(storage.get(`${SETTINGS_CHANNEL_MODE_PREFIX}_npub1abc`)).toBe('squad');
   });
 
   it('persists last opened squad and channel ids', () => {
@@ -176,21 +197,28 @@ describe('navigation', () => {
     expect(get(dashboardPollReplicaNonceByParentId)).toEqual({ p1: 1 });
   });
 
-  it('focusSquadSettingsRpcEditor switches to settings and bumps the RPC focus nonce', () => {
+  it('focusSquadSettingsRpcEditor opens #settings in squad mode and bumps the RPC focus nonce', () => {
     squadDashboardChannelMode.set('governance');
+    settingsChannelMode.set('personal');
     expect(get(squadSettingsRpcFocusNonce)).toBe(0);
     focusSquadSettingsRpcEditor();
-    expect(get(squadDashboardChannelMode)).toBe('settings');
+    expect(get(activeChannelId)).toBe('__squad_settings__');
+    expect(get(settingsChannelMode)).toBe('squad');
+    expect(get(squadDashboardChannelMode)).toBe('governance');
     expect(get(squadSettingsRpcFocusNonce)).toBe(1);
     focusSquadSettingsRpcEditor();
     expect(get(squadSettingsRpcFocusNonce)).toBe(2);
   });
 
-  it('focusSquadSettingsNetworkEditor switches to settings and bumps the network focus nonce', () => {
+  it('focusSquadSettingsNetworkEditor opens #settings in squad mode and bumps the network focus nonce', () => {
     squadDashboardChannelMode.set('governance');
+    settingsChannelMode.set('personal');
     expect(get(squadSettingsNetworkFocusNonce)).toBe(0);
-    focusSquadSettingsNetworkEditor();
-    expect(get(squadDashboardChannelMode)).toBe('settings');
+    focusSquadSettingsNetworkEditor('practice');
+    expect(get(activeChannelId)).toBe('__squad_settings__');
+    expect(get(settingsChannelMode)).toBe('squad');
+    expect(get(squadSettingsNetworkFocusSlot)).toBe('practice');
+    expect(get(squadDashboardChannelMode)).toBe('governance');
     expect(get(squadSettingsNetworkFocusNonce)).toBe(1);
     focusSquadSettingsNetworkEditor();
     expect(get(squadSettingsNetworkFocusNonce)).toBe(2);

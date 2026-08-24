@@ -6,12 +6,7 @@
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
-  import { showToast } from '../../../stores/toast';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
@@ -20,7 +15,6 @@
     parentId: string;
     treasuryAuthority: string;
     privilege: GovernancePrivilege;
-    fundingHint?: string;
     /** True while capability preflight is still loading; forces the gate closed. */
     capabilitiesPending?: boolean;
     onSubmitted?: () => void;
@@ -31,7 +25,6 @@
     parentId,
     treasuryAuthority,
     privilege,
-    fundingHint = '',
     capabilitiesPending = false,
     onSubmitted = () => {},
   }: Props = $props();
@@ -39,7 +32,6 @@
   const tFn = get(t);
   const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
-  let acting = $state(false);
   let proposeTo = $state('');
   let proposeValue = $state('0');
   let proposeData = $state('0x');
@@ -47,48 +39,43 @@
 
   let proposeGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCaptainOrCrew(privilege));
 
-  async function submit() {
-    if (acting || !proposeGate.enabled) return;
-    acting = true;
+  function submit() {
+    if (!proposeGate.enabled) return;
     const label = tFn('governance.action.submitProposal');
-    try {
-      const result = await treasuryAuthorityPropose({
-        network,
-        parentId,
-        treasuryAuthority,
-        to: proposeTo,
-        valueWei: proposeValue,
-        dataHex: proposeData,
-        operation: proposeOp,
-      });
-      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      onSubmitted();
-    } catch (e) {
-      showGovWriteErrorToast(e, label);
-    } finally {
-      acting = false;
-    }
+    runGovWriteInBackground({
+      label,
+      parentId,
+      actionKey: 'treasury-propose',
+      job: () =>
+        treasuryAuthorityPropose({
+          network,
+          parentId,
+          treasuryAuthority,
+          to: proposeTo,
+          valueWei: proposeValue,
+          dataHex: proposeData,
+          operation: proposeOp,
+        }),
+      onSettled: () => onSubmitted(),
+    });
   }
 </script>
 
 <div class="propose-section">
   <h6 class="section-label">{$t('governance.section.submitProposal')}</h6>
-  {#if fundingHint}
-    <p class="muted funding-hint">{fundingHint}</p>
-  {/if}
   <div class="form-grid">
-    <label>{$t('governance.field.to')}<input bind:value={proposeTo} placeholder={$t('governance.field.toPlaceholder')} disabled={!proposeGate.enabled || acting} /></label>
-    <label>{$t('governance.field.valueWei')}<input bind:value={proposeValue} disabled={!proposeGate.enabled || acting} /></label>
-    <label>{$t('governance.field.data')}<input bind:value={proposeData} placeholder={$t('governance.field.dataPlaceholder')} disabled={!proposeGate.enabled || acting} /></label>
+    <label>{$t('governance.field.to')}<input bind:value={proposeTo} placeholder={$t('governance.field.toPlaceholder')} disabled={!proposeGate.enabled} /></label>
+    <label>{$t('governance.field.valueWei')}<input bind:value={proposeValue} disabled={!proposeGate.enabled} /></label>
+    <label>{$t('governance.field.data')}<input bind:value={proposeData} placeholder={$t('governance.field.dataPlaceholder')} disabled={!proposeGate.enabled} /></label>
     <label
       >{$t('governance.field.op')}
-      <select bind:value={proposeOp} disabled={!proposeGate.enabled || acting}>
+      <select bind:value={proposeOp} disabled={!proposeGate.enabled}>
         <option value="call">{$t('governance.field.opCall')}</option>
         <option value="delegatecall">{$t('governance.field.opDelegatecall')}</option>
       </select>
     </label>
   </div>
-  <GovCtaButton label={tFn('governance.action.submitProposal')} variant="primary" gate={proposeGate} {acting} onClick={submit} />
+  <GovCtaButton label={tFn('governance.action.submitProposal')} variant="primary" gate={proposeGate} onClick={submit} />
 </div>
 
 <style>
@@ -96,14 +83,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-  .muted {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-  .funding-hint {
-    margin: 0 0 4px;
   }
   .section-label {
     margin: 0;

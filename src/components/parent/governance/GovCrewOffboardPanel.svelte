@@ -23,13 +23,11 @@
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
-  import { showToast } from '../../../stores/toast';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
+  import { hasPendingJob, pendingOnChainJobs } from '../../../stores/pending-on-chain';
   import { requireBackupVerified } from '../../../stores/backup-verification';
+  import { govMemberOptions } from '../../../lib/governance/gov-member-options';
+  import GovMemberPicker from './GovMemberPicker.svelte';
 
   let {
     network,
@@ -39,8 +37,8 @@
     mutinyActive = false,
     qmStatus = null,
     memberEvmOptions = [],
+    memberOptionsLoading = false,
     hasVoted = false,
-    fundingHint = '',
     onRefresh = () => {},
   }: {
     network: string;
@@ -50,14 +48,22 @@
     mutinyActive?: boolean;
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
+    memberOptionsLoading?: boolean;
     hasVoted?: boolean;
-    fundingHint?: string;
     onRefresh?: () => void;
   } = $props();
 
   const tFn = get(t);
 
-  let acting = $state(false);
+  let acting = $derived.by(() => {
+    void $pendingOnChainJobs;
+    return (
+      hasPendingJob(parentId, 'offboard-propose') ||
+      hasPendingJob(parentId, 'offboard-vote') ||
+      hasPendingJob(parentId, 'offboard-exec') ||
+      hasPendingJob(parentId, 'offboard-expire')
+    );
+  });
   let target = $state('');
   let nowSec = $state(Math.floor(Date.now() / 1000));
 
@@ -68,10 +74,14 @@
   const quorumBps = $derived(parseQuorumBps(qmStatus?.crewOffboardQuorumBps));
   const expired = $derived(isCrewOffboardExpirable(offboard, nowSec));
   const executable = $derived(isCrewOffboardExecutable(offboard, quorumBps, nowSec));
-  const targetOptions = $derived.by(() => {
-    void memberEvmOptions.length;
-    return memberEvmOptions.map((o) => ({ address: o.address, label: o.label }));
-  });
+  const targetOptions = $derived(
+    govMemberOptions({
+      roster: memberEvmOptions,
+      crewWearers: memberEvmOptions.map((o) => o.address),
+      excludeAddresses: [privilege.myAddress],
+      preset: 'crewWearers',
+    }),
+  );
   const targetFormKey = $derived(
     `${qmStatus?.activeCrewOffboardId ?? '0'}|${targetOptions.map((o) => o.address).join(',')}`,
   );
@@ -85,23 +95,12 @@
     });
   });
 
-  $effect(() => {
-    const opts = targetOptions;
-    if (opts.length === 0) {
-      if (target) target = '';
-      return;
-    }
-    const hit = opts.some(
-      (o) => o.address.trim().toLowerCase() === target.trim().toLowerCase(),
-    );
-    if (!target.trim() || !hit) {
-      target = opts[0].address;
-    }
-  });
-
   const proposeGate: CtaGate = $derived.by(() => {
     if (mutinyActive) {
       return { enabled: false, reason: 'governance.gate.cannotOffboardWhileMutiny' };
+    }
+    if (targetOptions.length === 0) {
+      return { enabled: false, reason: 'governance.gate.noCrewHatForOffboard' };
     }
     const self = privilege.myAddress.trim().toLowerCase();
     if (self && target.trim().toLowerCase() === self) {
@@ -129,32 +128,19 @@
     return execGate;
   });
 
-  function shortEvm(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 12) return a;
-    return `${a.slice(0, 6)}…${a.slice(-4)}`;
-  }
-
-  async function run(label: string, fn: () => Promise<unknown>) {
-    if (acting) return;
-    acting = true;
-    try {
-      const result = await fn();
-      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      await Promise.resolve(onRefresh());
-    } catch (e) {
-      showGovWriteErrorToast(e, label);
-    } finally {
-      acting = false;
-    }
+  function run(label: string, actionKey: string, fn: () => Promise<unknown>) {
+    runGovWriteInBackground({
+      label,
+      parentId,
+      actionKey,
+      job: fn,
+      onSettled: () => void onRefresh(),
+    });
   }
 </script>
 
 <section class="contract-box" aria-labelledby="crew-offboard-heading">
   <h5 id="crew-offboard-heading" class="contract-title">{$t('governance.title.crewOffboard')}</h5>
-  {#if fundingHint}
-    <p class="muted funding-hint">{fundingHint}</p>
-  {/if}
   <p class="muted">{$t('governance.offboard.hint')}</p>
   <p class="muted">
     {$t('governance.offboard.quorum', { values: { percent: quorumBpsToPercent(quorumBps) } })}
@@ -192,7 +178,7 @@
           {acting}
           onClick={() => {
             if (!requireBackupVerified()) return;
-            void run(tFn('governance.action.voteYea'), () =>
+            void run(tFn('governance.action.voteYea'), 'offboard-vote', () =>
               quartermasterCrewOffboardVote({
                 network,
                 parentId,
@@ -208,7 +194,7 @@
           {acting}
           onClick={() => {
             if (!requireBackupVerified()) return;
-            void run(tFn('governance.action.voteNay'), () =>
+            void run(tFn('governance.action.voteNay'), 'offboard-vote', () =>
               quartermasterCrewOffboardVote({
                 network,
                 parentId,
@@ -224,7 +210,7 @@
           gate={executeGate}
           {acting}
           onClick={() =>
-            void run(tFn('governance.action.executeOffboard'), () =>
+            void run(tFn('governance.action.executeOffboard'), 'offboard-exec', () =>
               quartermasterExecuteOffboard({
                 network,
                 parentId,
@@ -238,7 +224,7 @@
             gate={expireGate}
             {acting}
             onClick={() =>
-              void run(tFn('governance.action.expireOffboard'), () =>
+              void run(tFn('governance.action.expireOffboard'), 'offboard-expire', () =>
                 quartermasterExpireOffboard({
                   network,
                   parentId,
@@ -251,20 +237,17 @@
     </div>
   {:else}
     <div class="section">
-      <label class="field-label">
-        {$t('governance.field.targetMember')}
-        {#key targetFormKey}
-          {#if targetOptions.length > 0}
-            <select bind:value={target} disabled={acting || !proposeGate.enabled} aria-label={$t('governance.field.targetMemberAriaLabel')}>
-              {#each targetOptions as opt (opt.address)}
-                <option value={opt.address}>{opt.label} — {shortEvm(opt.address)}</option>
-              {/each}
-            </select>
-          {:else}
-            <input bind:value={target} placeholder={$t('governance.field.targetMemberPlaceholder')} disabled={acting || !proposeGate.enabled} />
-          {/if}
-        {/key}
-      </label>
+      {#key targetFormKey}
+        <GovMemberPicker
+          bind:value={target}
+          options={targetOptions}
+          labelKey="governance.field.targetMember"
+          ariaLabelKey="governance.field.targetMemberAriaLabel"
+          emptyKey="governance.gate.noCrewHatForOffboard"
+          loading={memberOptionsLoading}
+          disabled={acting || !proposeGate.enabled}
+        />
+      {/key}
       <GovCtaButton
         label={tFn('governance.action.proposeOffboard')}
         variant="primary"
@@ -272,7 +255,7 @@
         {acting}
         onClick={() => {
           if (!requireBackupVerified()) return;
-          void run(tFn('governance.action.proposeOffboard'), () =>
+          void run(tFn('governance.action.proposeOffboard'), 'offboard-propose', () =>
             quartermasterProposeOffboard({
               network,
               parentId,
@@ -319,28 +302,9 @@
     flex-wrap: wrap;
     gap: 8px;
   }
-  .field-label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
   .muted {
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
-  }
-  .funding-hint {
-    margin: 0 0 4px;
-  }
-  input,
-  select {
-    padding: 6px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.8125rem;
   }
 </style>

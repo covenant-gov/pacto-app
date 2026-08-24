@@ -1,10 +1,12 @@
 <script lang="ts">
-  import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
   import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
+  import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadEndpointsPanel from './SquadEndpointsPanel.svelte';
+  import SquadIdentitySection from './SquadIdentitySection.svelte';
   import SquadNetworkSection from './SquadNetworkSection.svelte';
+  import SquadPrivilegesSection from './SquadPrivilegesSection.svelte';
   import SquadStickersSection from './SquadStickersSection.svelte';
-  import type { DashboardPermissionsContext } from '../../../lib/dashboard/permissions-panel';
+  import SquadJoinRequestsPanel from '../../squad/SquadJoinRequestsPanel.svelte';
   import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import type { SquadRpcConfig } from '../../../lib/squad/squad-rpc';
@@ -17,36 +19,42 @@
 
   let {
     squad,
-    permissionsCtx,
     squadAdminCtx = null,
     announcementsGroupId = null,
     parentId = '',
     channelMembers = [],
     squadMemberEvmByNpub = {},
     memberRolesByAddress = {},
-    squadNetwork = null,
-    squadNetworkFromInfra = false,
-    onSetSquadNetwork = () => {},
+    primaryNetwork,
+    practiceNetwork,
+    onSetPrimaryNetwork = () => {},
+    onSetPracticeNetwork = () => {},
     squadRpcConfig = null,
     onSetSquadRpcPrimary = () => {},
     onSetSquadRpcBackup = () => {},
     onClearSquadRpcPrimary = () => {},
+    privilegesAdmin = null,
+    pactoGovRevision = '',
+    memberEvmOptions = [],
   }: {
     squad: Squad;
-    permissionsCtx: DashboardPermissionsContext;
     squadAdminCtx?: ResolvedSquadAdminContext | null;
     announcementsGroupId?: string | null;
     parentId?: string;
     channelMembers?: string[];
     squadMemberEvmByNpub?: Record<string, string>;
     memberRolesByAddress?: Record<string, string>;
-    squadNetwork?: SupportedChainId | null;
-    squadNetworkFromInfra?: boolean;
-    onSetSquadNetwork?: (chain: SupportedChainId) => void;
+    primaryNetwork: SupportedChainId;
+    practiceNetwork: SupportedChainId;
+    onSetPrimaryNetwork?: (chain: SupportedChainId) => void;
+    onSetPracticeNetwork?: (chain: SupportedChainId) => void;
     squadRpcConfig?: SquadRpcConfig | null;
     onSetSquadRpcPrimary?: (url: string) => string | void | Promise<string | void>;
     onSetSquadRpcBackup?: (url: string) => string | void | Promise<string | void>;
     onClearSquadRpcPrimary?: () => void | Promise<void>;
+    privilegesAdmin?: ResolvedSquadAdminContext | null;
+    pactoGovRevision?: string;
+    memberEvmOptions?: { address: string; label: string }[];
   } = $props();
 
   let rosterKeyNeeded = $state(false);
@@ -67,12 +75,30 @@
 </script>
 
 <div class="settings-stack">
+  <SquadIdentitySection {squad} />
+
+  <SquadJoinRequestsPanel {squad} />
+
+  <SquadBroadcastSettingsSection {squad} />
+
+  <SquadPrivilegesSection
+    {parentId}
+    {privilegesAdmin}
+    {pactoGovRevision}
+    {memberEvmOptions}
+  />
+
   <SquadStickersSection {squad} {announcementsGroupId} />
 
-  <SquadNetworkSection {squadNetwork} {squadNetworkFromInfra} {onSetSquadNetwork} />
+  <SquadNetworkSection
+    {primaryNetwork}
+    {practiceNetwork}
+    {onSetPrimaryNetwork}
+    {onSetPracticeNetwork}
+  />
 
   <SquadEndpointsPanel
-    {squadNetwork}
+    squadNetwork={primaryNetwork}
     {squadRpcConfig}
     {onSetSquadRpcPrimary}
     {onSetSquadRpcBackup}
@@ -87,15 +113,6 @@
       ? memberRolesByAddress[myRosterEvm.trim().toLowerCase()] ?? ''
       : ''}
   />
-
-  {#if parentId}
-    <SmartContractSecuritySection
-      {parentId}
-      announcementsGroupId={announcementsGroupId ?? ''}
-      canManage={permissionsCtx.phase === 'pacto_gov'}
-      compact
-    />
-  {/if}
 </div>
 
 <style>

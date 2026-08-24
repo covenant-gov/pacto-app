@@ -3,12 +3,6 @@ import { WAR_GAME_SQUAD_PARAMS } from './squad-params';
 
 export type WarGameStackStatus = 'active' | 'retired' | 'pending_sponsor';
 
-export type WarGamePriorRound = {
-  round: string;
-  gameSquadId?: string;
-  sponsor?: string;
-};
-
 const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 
 function asRecord(raw: string | null | undefined): Record<string, unknown> | null {
@@ -70,39 +64,20 @@ export function isActiveWarGameStack(raw: string | null | undefined): boolean {
   return parseWarGameStackMeta(raw).status === 'active';
 }
 
+export type WarGameStatusAction = 'deploy' | 'open' | 'redeploy';
+
+/** One Status CTA: deploy first, then open from #dashboard or redeploy on squad-wargame. */
+export function warGameStatusAction(
+  hasActiveWarGame: boolean,
+  onWarGameHub: boolean,
+): WarGameStatusAction {
+  if (!hasActiveWarGame) return 'deploy';
+  return onWarGameHub ? 'redeploy' : 'open';
+}
+
 export function parseWarGameRoundNumber(raw: string | null | undefined): number {
   const n = Number.parseInt(parseWarGameStackMeta(raw).round, 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-export function parseWarGamePriorRounds(raw: string | null | undefined): WarGamePriorRound[] {
-  const p = asRecord(raw);
-  const arr = Array.isArray(p?.priorRounds) ? p.priorRounds : [];
-  const out: WarGamePriorRound[] = [];
-  for (const item of arr) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-    const rec = item as Record<string, unknown>;
-    const round = roundFromUnknown(rec.round);
-    if (!round) continue;
-    const gameSquadId = typeof rec.gameSquadId === 'string' ? rec.gameSquadId.trim() : '';
-    const sponsor = typeof rec.sponsor === 'string' ? rec.sponsor.trim() : '';
-    out.push({
-      round,
-      ...(gameSquadId ? { gameSquadId } : {}),
-      ...(sponsor ? { sponsor } : {}),
-    });
-  }
-  return out;
-}
-
-/** `1..=activeRound` so pager arrows work before history exists. */
-export function warGameVisibleRounds(raw: string | null | undefined): number[] {
-  const max = Math.max(1, parseWarGameRoundNumber(raw));
-  return Array.from({ length: max }, (_, i) => i + 1);
-}
-
-export function isWarGameArchiveView(viewedRound: number, activeRound: number): boolean {
-  return viewedRound > 0 && activeRound > 0 && viewedRound !== activeRound;
 }
 
 export function parseWarGameDelaySecs(raw: string | null | undefined): number {

@@ -96,3 +96,17 @@ export function govWriteSubmittedToast(
   }
   return tFn('governance.toast.submitted', { label });
 }
+
+/** Receipt toast after a background gov write settles. */
+export function govWriteConfirmedToast(
+  label: string,
+  mode: GovWriteFundingMode | null | undefined,
+): string {
+  if (mode === 'sponsored') {
+    return tFn('governance.toast.confirmedSponsored', { label });
+  }
+  if (mode === 'self_funded') {
+    return tFn('governance.toast.confirmedSelfFunded', { label });
+  }
+  return tFn('governance.toast.confirmed', { label });
+}

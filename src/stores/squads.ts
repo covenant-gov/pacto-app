@@ -1,13 +1,12 @@
 import { writable } from 'svelte/store';
 import type { TreasurySafeEntry } from '../lib/treasury/treasury-safes';
 import type { SquadInfraDto } from '../lib/governance/api';
-import type { SupportedChainId } from '../lib/wallet/chains';
 import { ensureDefaultHubChannelRows } from '../lib/squad/hub-channel-rows';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  MY_DASHBOARD_CHANNEL_ID,
-  MY_DASHBOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
+  SETTINGS_CHANNEL_ID,
+  SETTINGS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_NAME,
   SQUAD_WARGAME_CHANNEL_ID,
@@ -27,9 +26,9 @@ export type { SquadKind, PairedSquadRef, PairedSquads, SquadVisibility };
 export { partnerSquadsForAnchor, partnerSquadsForHubParent } from '../lib/squad-pair';
 export {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  MY_DASHBOARD_CHANNEL_ID,
-  MY_DASHBOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
+  SETTINGS_CHANNEL_ID,
+  SETTINGS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_NAME,
   SQUAD_WARGAME_CHANNEL_ID,
@@ -117,9 +116,7 @@ export const parentCreateErrorById = writable<Record<string, string>>({});
 export const parentPendingCreateMembers = writable<Record<string, string[]>>({});
 
 /** Create-time choices a retry has to replay so a retried squad is not a lesser squad. */
-export interface ParentPendingCreateOptions {
-  network?: SupportedChainId;
-}
+export type ParentPendingCreateOptions = Record<string, never>;
 
 export const parentPendingCreateOptions = writable<Record<string, ParentPendingCreateOptions>>({});
 

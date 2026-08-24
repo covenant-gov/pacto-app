@@ -8,7 +8,7 @@
   import { currentUser } from '../../../stores/auth';
   import { needsSquadRosterKeyChoice } from '../../../lib/squad/squad-roster-key-choice';
   import { requestSquadStateSync, isSquadStateSyncInFlight, squadStateSyncRequestInFlightRevision } from '../../../lib/squad/squad-state-sync';
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
 
   /** Enable when squad key rotation backend is wired. */
   const ROTATE_SQUAD_KEY_ENABLED = false;
@@ -17,9 +17,15 @@
     announcementsGroupId?: string | null;
     parentId?: string;
     squadMemberEvmByNpub?: Record<string, string>;
+    afterChecklist?: Snippet;
   }
 
-  let { announcementsGroupId = null, parentId = '', squadMemberEvmByNpub = {} }: Props = $props();
+  let {
+    announcementsGroupId = null,
+    parentId = '',
+    squadMemberEvmByNpub = {},
+    afterChecklist,
+  }: Props = $props();
 
   let rotateModalOpen = $state(false);
   let rosterKeyNeeded = $state<boolean | null>(null);
@@ -85,6 +91,8 @@
   </ul>
 </section>
 
+{@render afterChecklist?.()}
+
 <section class="dashboard-section" aria-labelledby="my-status-evm-heading">
   <h3 id="my-status-evm-heading" class="section-heading">{$t('governance.myStatus.yourEvmAddress')}</h3>
   {#if announcementsGroupId && parentId}
@@ -138,7 +146,6 @@
 {#if announcementsGroupId && parentId}
   <section class="dashboard-section sync-section" aria-labelledby="my-status-sync-heading">
     <h3 id="my-status-sync-heading" class="section-heading">{$t('governance.myStatus.squadSync')}</h3>
-    <p class="muted sync-hint">{$t('governance.myStatus.syncHint')}</p>
     <button
       type="button"
       class="btn-secondary"
@@ -216,9 +223,8 @@
   .sync-section {
     margin-top: 8px;
   }
-  .sync-hint {
-    margin: 0 0 12px;
-    line-height: 1.4;
+  .sync-section .btn-secondary {
+    margin-top: 12px;
   }
   .btn-secondary {
     padding: 8px 14px;

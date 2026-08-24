@@ -59,7 +59,7 @@ vi.mock('../stores/squads', () => ({
   removeParentCreatingAnnouncements: vi.fn(),
   parentCreateErrorById: createMockWritable<Record<string, string>>({}),
   parentPendingCreateMembers: createMockWritable<Record<string, string[]>>({}),
-  parentPendingCreateOptions: createMockWritable<Record<string, { network?: string }>>({}),
+  parentPendingCreateOptions: createMockWritable<Record<string, Record<string, never>>>({}),
   parentRetryingCreateIds: createMockWritable<Set<string>>(new Set()),
   ANNOUNCEMENTS_CHANNEL_NAME: 'announcements',
 }));
@@ -513,8 +513,8 @@ describe('retryParentAnnouncementsCreate', () => {
     expect(get(squads)).toEqual([]);
   });
 
-  it('replays the network chosen at create time', async () => {
-    parentPendingCreateOptions.set({ 'parent-1': { network: 'sepolia' } });
+  it('applies default network slots on retry', async () => {
+    parentPendingCreateOptions.set({ 'parent-1': {} });
     vi.mocked(createDefaultParentChannels).mockResolvedValue({
       parentId: 'group-3',
       channels: retriedChannels,
@@ -524,7 +524,7 @@ describe('retryParentAnnouncementsCreate', () => {
 
     await retryParentAnnouncementsCreate(retryParent);
 
-    expect(applySquadCreateNetwork).toHaveBeenCalledWith('me', 'group-3', 'sepolia');
+    expect(applySquadCreateNetwork).toHaveBeenCalledWith('me', 'group-3');
     expect(get(parentPendingCreateOptions)['parent-1']).toBeUndefined();
     expect(get(pendingReadyToast)?.text).toBe('Alpha is ready!');
   });

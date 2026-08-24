@@ -13,9 +13,11 @@
     type EvmAccountRow,
   } from '../../../lib/wallet/evm-accounts';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
-  import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
+  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
+  import { hasPendingJob } from '../../../stores/pending-on-chain';
   import { showToast } from '../../../stores/toast';
   import { formatEther } from 'viem';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
 
   interface Props {
     open?: boolean;
@@ -45,7 +47,6 @@
   let selectedAccountId = $state('');
   let withdrawableWei = $state<string | null>(null);
   let withdrawableLoading = $state(false);
-  let acting = $state(false);
   let error = $state('');
   let wasOpen = $state(false);
 
@@ -123,37 +124,37 @@
 
   function optionLabel(acc: EvmAccountRow): string {
     const name = acc.label?.trim() || (acc.isDefaultShared ? tFn('governance.withdraw.accountDefault') : tFn('governance.withdraw.accountUnnamed'));
-    const short = `${acc.address.slice(0, 6)}…${acc.address.slice(-4)}`;
+    const short = shortEvmAddress(acc.address);
     return `${name} · ${short} (${tFn(evmAccountPurposeLabel(acc.purpose))}, ${tFn(evmAccountSchemeLabel(acc.scheme))})`;
   }
 
-  async function submit() {
-    if (acting || !selectedAccountId) return;
-    acting = true;
+  function submit() {
+    if (!selectedAccountId || hasPendingJob(parentId.trim(), 'sponsor-withdraw')) return;
     error = '';
-    try {
-      await withdrawSquadSponsor({
-        network,
-        parentId: parentId.trim(),
-        accountId: selectedAccountId,
-        sponsorAddress: sponsorAddress.trim() || null,
-      });
-      showToast(tFn('governance.withdraw.toast.confirmed'));
-      onSubmitted();
-      onClose();
-    } catch (e) {
-      let raw = getInvokeErrorMessage(e, tFn('governance.withdraw.toast.error'));
-      const parsed = parseWalletOpError(raw);
-      if (parsed?.message) raw = parsed.message;
-      error = raw;
-    } finally {
-      acting = false;
-    }
+    const accountId = selectedAccountId;
+    onClose();
+    runOnChainInBackground({
+      jobLabel: tFn('governance.withdraw.title'),
+      parentId: parentId.trim(),
+      actionKey: 'sponsor-withdraw',
+      startedToast: tFn('governance.toast.squadTransactionSubmitted'),
+      job: () =>
+        withdrawSquadSponsor({
+          network,
+          parentId: parentId.trim(),
+          accountId,
+          sponsorAddress: sponsorAddress.trim() || null,
+        }),
+      onSuccess: () => {
+        showToast(tFn('governance.withdraw.toast.confirmed'));
+        onSubmitted();
+      },
+    });
   }
 </script>
 
 {#if open}
-  <Modal {titleId} descriptionId={descId} onClose={onClose} dismissible={!acting} contentClass="sponsor-withdraw-modal">
+  <Modal {titleId} descriptionId={descId} onClose={onClose} dismissible contentClass="sponsor-withdraw-modal">
     <h2 id={titleId} class="modal-title">{$t('governance.withdraw.title')}</h2>
     <p id={descId} class="modal-lead muted">
       {$t('governance.withdraw.description')}
@@ -169,7 +170,6 @@
         id="sponsor-withdraw-account"
         class="account-select"
         bind:value={selectedAccountId}
-        disabled={acting}
       >
         {#each accounts as acc (acc.id)}
           <option value={acc.id}>{optionLabel(acc)}</option>
@@ -196,14 +196,14 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" disabled={acting} onclick={onClose}>{$t('governance.common.cancel')}</button>
+      <button type="button" class="btn-secondary" onclick={onClose}>{$t('governance.common.cancel')}</button>
       <button
         type="button"
         class="btn-primary"
-        disabled={acting || !selectedAccountId || accounts.length === 0}
+        disabled={!selectedAccountId || accounts.length === 0}
         onclick={submit}
       >
-        {acting ? $t('governance.withdraw.action.withdrawing') : $t('governance.withdraw.action.confirm')}
+        {$t('governance.withdraw.action.confirm')}
       </button>
     </div>
   </Modal>

@@ -2,8 +2,11 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use alloy::providers::Provider;
+
 use super::rpc::{connect_read_provider, wallet_err_json};
 use super::wallet_chain_config;
+use super::wallet_security;
 
 pub struct GovReadNetwork {
     pub key: String,
@@ -159,6 +162,26 @@ pub async fn connect_gov_read_provider(
     let ctx = resolve_gov_read_network(network, rpc_urls_override)?;
     let provider = connect_read_provider(&ctx.rpc_urls).await?;
     Ok((provider, ctx))
+}
+
+/// Latest block for replica LWW. Uses squad RPC override when provided.
+#[tauri::command]
+pub async fn get_evm_block_number(
+    network: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<String, String> {
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+    let n = provider
+        .get_block_number()
+        .await
+        .map_err(|e| {
+            wallet_err_json(
+                "RPC_HEAD",
+                wallet_security::redact_urls_in_text(&e.to_string()),
+                None,
+            )
+        })?;
+    Ok(n.to_string())
 }
 
 #[cfg(test)]

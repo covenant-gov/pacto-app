@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import DashboardAssetCard from './DashboardAssetCard.svelte';
   import AvatarPicker from '../../ui/AvatarPicker.svelte';
   import SquadAvatar from '../../squad/SquadAvatar.svelte';
   import { persistSquadPatch } from '../../../lib/squad/squad-catalog';
@@ -40,8 +41,7 @@
   }
 </script>
 
-<section class="squad-identity" aria-labelledby="squad-identity-heading">
-  <h3 id="squad-identity-heading" class="section-heading">{$t('squad.pfp.sectionTitle')}</h3>
+<DashboardAssetCard headingId="squad-identity-heading" heading={$t('squad.pfp.sectionTitle')}>
   <AvatarPicker
     src={squad.iconUrl ?? null}
     editable
@@ -61,27 +61,11 @@
   {#if saveError}
     <p class="squad-identity-error" role="alert">{saveError}</p>
   {/if}
-</section>
+</DashboardAssetCard>
 
 <style>
-  .squad-identity {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-
-  .section-heading {
-    margin: 0;
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
   .squad-identity-error {
-    margin: 0;
+    margin: 8px 0 0;
     font-size: 0.8125rem;
     color: var(--danger);
   }

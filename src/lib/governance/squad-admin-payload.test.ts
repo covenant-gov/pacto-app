@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { SquadInfraDto } from './api';
 import {
+  resolveSettingsPrivilegesAdmin,
   resolveSquadAdminContext,
   resolveWarGameSquadAdminContext,
+  settingsPrivilegesRevision,
 } from './squad-admin-payload';
 
 function row(overrides: Partial<SquadInfraDto> = {}): SquadInfraDto {
@@ -62,5 +64,74 @@ describe('resolveSquadAdminContext', () => {
         }),
       ]),
     ).toBeNull();
+  });
+});
+
+const liveProxy = '0x1111111111111111111111111111111111111111';
+const wargameProxy = '0x4444444444444444444444444444444444444444';
+
+describe('resolveSettingsPrivilegesAdmin', () => {
+  it('prefers live Squad Admin over war-game', () => {
+    expect(
+      resolveSettingsPrivilegesAdmin([
+        row({
+          infraType: 'pacto_gov',
+          providerPayload: JSON.stringify({ squadAdminProxy: liveProxy }),
+        }),
+        row({
+          id: 'wg-1',
+          infraType: 'pacto_gov_wargame',
+          providerPayload: JSON.stringify({ squadAdminProxy: wargameProxy }),
+        }),
+      ]),
+    ).toMatchObject({ proxy: liveProxy, source: 'pacto_gov' });
+  });
+
+  it('falls back to war-game when live admin is absent', () => {
+    expect(
+      resolveSettingsPrivilegesAdmin([
+        row({
+          infraType: 'pacto_gov_wargame',
+          providerPayload: JSON.stringify({ squadAdminProxy: wargameProxy }),
+        }),
+      ]),
+    ).toMatchObject({ proxy: wargameProxy, source: 'pacto_gov_wargame' });
+  });
+
+  it('returns null when neither stack has a proxy', () => {
+    expect(resolveSettingsPrivilegesAdmin([row()])).toBeNull();
+  });
+});
+
+describe('settingsPrivilegesRevision', () => {
+  it('uses the war-game row when that stack is the resolved admin', () => {
+    const rows = [
+      row({ pactoGovRevision: 'live-rev' }),
+      row({
+        id: 'wg-1',
+        infraType: 'pacto_gov_wargame',
+        pactoGovRevision: 'wg-rev',
+        providerPayload: JSON.stringify({ squadAdminProxy: wargameProxy }),
+      }),
+    ];
+    const ctx = resolveSettingsPrivilegesAdmin(rows);
+    expect(settingsPrivilegesRevision(rows, ctx)).toBe('wg-rev');
+  });
+
+  it('uses the live pacto-gov revision when live admin wins', () => {
+    const rows = [
+      row({
+        pactoGovRevision: 'live-rev',
+        providerPayload: JSON.stringify({ squadAdminProxy: liveProxy }),
+      }),
+      row({
+        id: 'wg-1',
+        infraType: 'pacto_gov_wargame',
+        pactoGovRevision: 'wg-rev',
+        providerPayload: JSON.stringify({ squadAdminProxy: wargameProxy }),
+      }),
+    ];
+    const ctx = resolveSettingsPrivilegesAdmin(rows);
+    expect(settingsPrivilegesRevision(rows, ctx)).toBe('live-rev');
   });
 });

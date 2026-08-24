@@ -20,6 +20,6 @@ describe('treasury vault labels', () => {
   });
 
   it('uses dedicated governance treasury heading', () => {
-    expect(governanceTreasuryHeading()).toBe('Squad governance treasury (Pacto Gov Safe)');
+    expect(governanceTreasuryHeading()).toBe('Treasury');
   });
 });

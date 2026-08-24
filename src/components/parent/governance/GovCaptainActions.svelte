@@ -1,580 +1,172 @@
 <script lang="ts">
-  import GovCtaButton from './GovCtaButton.svelte';
-  import GovProposeForm from './GovProposeForm.svelte';
-  import CrewVoteModeSettings from './CrewVoteModeSettings.svelte';
-  import GovBootstrapCrewModal from './GovBootstrapCrewModal.svelte';
-  import {
-    getQuartermasterPending,
-    mutinyCaptainResign,
-    mutinyExecute,
-    mutinyExpire,
-    quartermasterCancelAddCrew,
-    quartermasterCancelRemoveCrew,
-    quartermasterExecuteAddCrew,
-    quartermasterExecuteRemoveCrew,
-    quartermasterRequestAddCrew,
-    quartermasterRequestRemoveCrew,
-    treasuryAuthorityCaptainVote,
-    treasuryAuthorityExecute,
-    type MutinyStatusDto,
-    type QuartermasterPendingDto,
-    type QuartermasterStatusDto,
-    type TreasuryProposalDto,
-  } from '../../../lib/governance/api';
-  import {
-    captainVotableProposals,
-    executableTreasuryProposals,
-    isMutinyActive,
-    isMutinyExpirable,
-    proposalSelectLabel,
-  } from '../../../lib/governance/gov-proposal-lists';
-  import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
-  import {
-    gateBlockedByMutinyMode,
-    gatePermissionlessSigner,
-    gateRequiresCaptain,
-    type CtaGate,
-    type GovernancePrivilege,
-  } from '../../../lib/governance/governance-privilege';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
-  import { clearGovModuleReadsForParent } from '../../../lib/governance/gov-module-read-cache';
-  import {
-    pickRandomRosterCaptain,
-    randomizeCaptainCandidates,
-    labeledWearerOptions,
-  } from '../../../lib/governance/war-game-captain';
-  import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import GovCtaButton from './GovCtaButton.svelte';
+  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
+  import GovBootstrapCrewModal from './GovBootstrapCrewModal.svelte';
+  import GovCaptainRosterModal from './GovCaptainRosterModal.svelte';
+  import GovCaptainResignModal from './GovCaptainResignModal.svelte';
+  import { mutinyCaptainResign, type MutinyStatusDto, type QuartermasterStatusDto } from '../../../lib/governance/api';
+  import { isHatRequiredReason, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+  import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
+  import { pickRandomRosterCaptain, labeledWearerOptions } from '../../../lib/governance/war-game-captain';
+  import { govMemberOptions } from '../../../lib/governance/gov-member-options';
 
   interface Props {
     network: string;
     parentId: string;
-    treasuryAuthority: string;
     quartermaster: string;
     mutinyModule: string;
     privilege: GovernancePrivilege;
-    proposals?: TreasuryProposalDto[];
     mutinyStatus?: MutinyStatusDto | null;
     qmStatus?: QuartermasterStatusDto | null;
     memberEvmOptions?: { address: string; label: string }[];
+    memberOptionsLoading?: boolean;
     captainWearers?: string[];
     crewWearers?: string[];
     warGameStack?: boolean;
-    onRefreshProposals?: () => void;
     onRefreshMutiny?: () => void;
     onRefreshQm?: () => void;
-    fundingHint?: string;
-    /** True while capability preflight is still loading; forces every gate closed. */
     capabilitiesPending?: boolean;
   }
 
   let {
     network,
     parentId,
-    treasuryAuthority,
     quartermaster,
     mutinyModule,
     privilege,
-    proposals = [],
     mutinyStatus = null,
     qmStatus = null,
     memberEvmOptions = [],
+    memberOptionsLoading = false,
     captainWearers = [],
     crewWearers = [],
     warGameStack = false,
-    onRefreshProposals = () => {},
     onRefreshMutiny = () => {},
     onRefreshQm = () => {},
-    fundingHint = '',
     capabilitiesPending = false,
   }: Props = $props();
 
   const tFn = get(t);
-  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
-  let acting = $state(false);
-  let voteProposalId = $state('');
-  let execProposalId = $state('');
-  let resignTo = $state('');
-  let qmAddress = $state('');
-  let qmPending: QuartermasterPendingDto | null = $state(null);
+  let showAddCrew = $state(false);
+  let showRemoveCrew = $state(false);
   let showBootstrapModal = $state(false);
+  let showResign = $state(false);
 
-  function shortEvm(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 12) return a;
-    return `${a.slice(0, 6)}…${a.slice(-4)}`;
-  }
-
-  $effect(() => {
-    if (memberEvmOptions.length > 0) {
-      const hit = memberEvmOptions.some(
-        (o) => o.address.trim().toLowerCase() === qmAddress.trim().toLowerCase(),
-      );
-      if (!qmAddress.trim() || !hit) {
-        qmAddress = memberEvmOptions[0].address;
-      }
-    }
-  });
-
-  let captainGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCaptain(privilege));
-  let offboardActive = $derived(isCrewOffboardActive(qmStatus));
-  let rosterFrozen = $derived(!!qmStatus?.mutinyActive || offboardActive);
-  let rosterFreezeReason = $derived(
-    qmStatus?.mutinyActive ? 'governance.gate.quartermasterLocked' : 'governance.gate.rosterFrozenOffboard',
+  let gates = $derived(
+    buildGovCommandGates({
+      privilege,
+      capabilitiesPending,
+      mutinyStatus,
+      qmStatus,
+      captainWearers,
+      crewWearers,
+      memberEvmOptions,
+    }),
   );
-  let qmGate = $derived(
-    capabilitiesPending ? PENDING_GATE : gateBlockedByMutinyMode(privilege, rosterFrozen, rosterFreezeReason),
-  );
-  let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
-  let votable = $derived(captainVotableProposals(proposals));
-  let executable = $derived(executableTreasuryProposals(proposals));
-  let mutinyActive = $derived(isMutinyActive(mutinyStatus));
-  let mutinyExpired = $derived(isMutinyExpirable(mutinyStatus));
+  let captainGate = $derived(gates.captain);
+  let qmGate = $derived(gates.qmRoster);
+  let execGate = $derived(gates.exec);
+  let mutinyActive = $derived(gates.mutinyActive);
+  let resignGate = $derived(gates.resign);
+  let randomizeGate = $derived(gates.randomize);
+  let bootstrapAvailable = $derived(gates.bootstrapAvailable);
+  let bootstrapGate = $derived(gates.bootstrap);
   let randomizeExclude = $derived([privilege.myAddress, ...captainWearers]);
   let randomizePool = $derived(labeledWearerOptions(crewWearers, memberEvmOptions));
-  let randomizeCandidates = $derived(randomizeCaptainCandidates(randomizePool, randomizeExclude));
-  let resignGate = $derived(
-    mutinyActive
-      ? ({ enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' } as const)
-      : captainGate,
+  let addCrewOptions = $derived(
+    govMemberOptions({ roster: memberEvmOptions, crewWearers, preset: 'squadNotCrew' }),
   );
-  let randomizeGate = $derived.by((): CtaGate => {
-    if (mutinyActive) {
-      return { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' };
-    }
-    if (!captainGate.enabled) return captainGate;
-    if (randomizeCandidates.length === 0) {
-      return { enabled: false, reason: 'governance.gate.noOtherRosterForCaptain' };
-    }
-    return captainGate;
-  });
-  let bootstrapAvailable = $derived(qmStatus?.bootstrapAvailable === true);
-  let bootstrapGate = $derived.by((): CtaGate => {
-    if (capabilitiesPending) return PENDING_GATE;
-    if (!bootstrapAvailable) {
-      return {
-        enabled: false,
-        reason: qmStatus?.mutinyActive
-          ? 'governance.gate.cannotBootstrapMutiny'
-          : offboardActive
-            ? 'governance.gate.rosterFrozenOffboard'
-            : 'governance.gate.bootstrapOnlyEmptyRoster',
-      };
-    }
-    return captainGate;
-  });
-
-  $effect(() => {
-    if (votable.length && !votable.some((p) => p.proposalId === voteProposalId)) {
-      voteProposalId = votable[0]?.proposalId ?? '';
-    }
-  });
-
-  $effect(() => {
-    if (executable.length && !executable.some((p) => p.proposalId === execProposalId)) {
-      execProposalId = executable[0]?.proposalId ?? '';
-    }
-  });
-
-  async function run(
-    label: string,
-    fn: () => Promise<unknown>,
-    refresh: () => void | Promise<void>,
-    refreshOnError = false,
-  ) {
-    if (acting) return;
-    acting = true;
-    try {
-      const result = await fn();
-      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      await Promise.resolve(refresh());
-    } catch (e) {
-      showGovWriteErrorToast(e, label);
-      if (refreshOnError) {
-        clearGovModuleReadsForParent(parentId);
-        await Promise.resolve(refresh());
-      }
-    } finally {
-      acting = false;
-    }
-  }
+  let removeCrewOptions = $derived(
+    govMemberOptions({ roster: memberEvmOptions, crewWearers, preset: 'crewWearers' }),
+  );
 
   function randomizeCaptain() {
     const picked = pickRandomRosterCaptain(randomizePool, randomizeExclude);
     if (!picked) return;
-    resignTo = picked;
-    void run(
-      tFn('governance.action.randomizeCaptain'),
-      () => mutinyCaptainResign({ network, parentId, mutinyModule, newCaptain: picked }),
-      onRefreshMutiny,
-    );
-  }
-
-  async function checkQmPending() {
-    if (!quartermaster || !qmAddress.trim()) return;
-    try {
-      qmPending = await getQuartermasterPending({
-        network,
-        quartermaster,
-        address: qmAddress.trim(),
-      });
-    } catch {
-      qmPending = null;
-    }
+    showResign = false;
+    runGovWriteInBackground({
+      label: tFn('governance.action.randomizeCaptain'),
+      parentId,
+      actionKey: 'randomize-captain',
+      job: () => mutinyCaptainResign({ network, parentId, mutinyModule, newCaptain: picked }),
+      onSettled: () => onRefreshMutiny(),
+    });
   }
 </script>
 
 <div class="captain-actions">
-  {#if fundingHint}
-    <p class="muted funding-hint">{fundingHint}</p>
+  {#if !captainGate.enabled && isHatRequiredReason(captainGate.reason)}
+    <GovHatRequiredBanner reason={captainGate.reason} />
   {/if}
-  {#if treasuryAuthority}
-    <section class="contract-box" aria-labelledby="captain-ta-heading">
-      <h5 id="captain-ta-heading" class="contract-title">{$t('governance.title.treasuryAuthority')}</h5>
-
-      <GovProposeForm
-        {network}
-        {parentId}
-        {treasuryAuthority}
-        {privilege}
-        {fundingHint}
-        {capabilitiesPending}
-        onSubmitted={onRefreshProposals}
+  <div class="row">
+    {#if quartermaster}
+      <GovCtaButton
+        label={tFn('governance.shell.addCrew')}
+        variant="primary"
+        gate={qmGate}
+        onClick={() => (showAddCrew = true)}
       />
-
-      <CrewVoteModeSettings
-        {network}
-        {parentId}
-        {treasuryAuthority}
-        {privilege}
-        {fundingHint}
-        onSubmitted={onRefreshProposals}
+      <GovCtaButton
+        label={tFn('governance.shell.removeCrew')}
+        variant="primary"
+        gate={qmGate}
+        onClick={() => (showRemoveCrew = true)}
       />
-
-      <div class="section">
-        <h6 class="section-label">{$t('governance.section.approveVeto')}</h6>
-        {#if votable.length === 0}
-          <p class="muted">{$t('governance.empty.noProposalsAwaitingCaptain')}</p>
-        {:else}
-          <label class="field-label">
-            {$t('governance.field.proposal')}
-            <select bind:value={voteProposalId} disabled={acting}>
-              {#each votable as p (p.proposalId)}
-                <option value={p.proposalId}>{proposalSelectLabel(p)}</option>
-              {/each}
-            </select>
-          </label>
-          <div class="row">
-            <GovCtaButton
-              label={tFn('governance.action.approve')}
-              variant="primary"
-              gate={captainGate}
-              {acting}
-              onClick={() =>
-                void run(tFn('governance.action.captainApprove'), () =>
-                  treasuryAuthorityCaptainVote({
-                    network,
-                    parentId,
-                    treasuryAuthority,
-                    proposalId: voteProposalId,
-                    support: true,
-                  }),
-                onRefreshProposals)}
-            />
-            <GovCtaButton
-              label={tFn('governance.action.veto')}
-              variant="danger"
-              gate={captainGate}
-              {acting}
-              onClick={() =>
-                void run(tFn('governance.action.captainVeto'), () =>
-                  treasuryAuthorityCaptainVote({
-                    network,
-                    parentId,
-                    treasuryAuthority,
-                    proposalId: voteProposalId,
-                    support: false,
-                  }),
-                onRefreshProposals)}
-            />
-          </div>
-        {/if}
-      </div>
-
-      <div class="section">
-        <h6 class="section-label">{$t('governance.section.executeProposal')}</h6>
-        {#if executable.length === 0}
-          <p class="muted">{$t('governance.empty.noProposalsReady')}</p>
-        {:else}
-          <label class="field-label">
-            {$t('governance.field.proposal')}
-            <select bind:value={execProposalId} disabled={acting}>
-              {#each executable as p (p.proposalId)}
-                <option value={p.proposalId}>{proposalSelectLabel(p)}</option>
-              {/each}
-            </select>
-          </label>
-          <GovCtaButton
-            label={tFn('governance.action.execute')}
-            variant="execute"
-            gate={execGate}
-            {acting}
-            onClick={() =>
-              void run(tFn('governance.action.execute'), () =>
-                treasuryAuthorityExecute({
-                  network,
-                  parentId,
-                  treasuryAuthority,
-                  proposalId: execProposalId,
-                }),
-              onRefreshProposals)}
-          />
-        {/if}
-      </div>
-    </section>
-  {/if}
-
-  {#if quartermaster}
-    <section class="contract-box" aria-labelledby="captain-qm-heading">
-      <h5 id="captain-qm-heading" class="contract-title">{$t('governance.title.quartermaster')}</h5>
-
-      <div class="section">
-        <h6 class="section-label">{$t('governance.section.roster')}</h6>
-        {#if qmStatus?.mutinyActive}
-          <p class="muted"><strong>{$t('governance.info.mutinyModeOn')}</strong> — {$t('governance.info.mutinyModeBlocked')}</p>
-        {:else if offboardActive}
-          <p class="muted">{$t('governance.gate.rosterFrozenOffboard')}</p>
-        {:else if qmStatus}
-          <p class="muted">{$t('governance.info.crewChangeDelay', { values: { delay: qmStatus.crewChangeDelaySecs } })}</p>
-        {/if}
-        <label class="field-label">
-          {$t('governance.field.targetMember')}
-          {#if memberEvmOptions.length > 0}
-            <select bind:value={qmAddress} disabled={acting} aria-label={$t('governance.field.targetMemberAriaLabel')}>
-              {#each memberEvmOptions as opt (opt.address)}
-                <option value={opt.address}>{opt.label} — {shortEvm(opt.address)}</option>
-              {/each}
-            </select>
-          {:else}
-            <input bind:value={qmAddress} placeholder={$t('governance.field.targetMemberPlaceholder')} disabled={acting} />
-          {/if}
-        </label>
-        <button
-          type="button"
-          class="linkish"
-          disabled={acting || !qmAddress.trim()}
-          onclick={() => void checkQmPending()}
-        >
-          {$t('governance.quartermaster.checkPending')}
-        </button>
-        {#if qmPending}
-          <p class="muted tiny">
-            {$t('governance.quartermaster.pendingAdd', { values: { at: qmPending.pendingAddAt || '0' } })} · {$t('governance.quartermaster.pendingRemove', { values: { at: qmPending.pendingRemoveAt || '0' } })}
-          </p>
-        {/if}
-        <div class="row">
-          <GovCtaButton
-            label={tFn('governance.action.requestAdd')}
-            gate={qmGate}
-            {acting}
-            onClick={() =>
-              void run(tFn('governance.action.requestAdd'), () =>
-                quartermasterRequestAddCrew({
-                  network,
-                  parentId,
-                  quartermaster,
-                  candidate: qmAddress,
-                }),
-              onRefreshQm)}
-          />
-          <GovCtaButton
-            label={tFn('governance.action.cancelAdd')}
-            gate={qmGate}
-            {acting}
-            onClick={() =>
-              void run(tFn('governance.action.cancelAdd'), () =>
-                quartermasterCancelAddCrew({
-                  network,
-                  parentId,
-                  quartermaster,
-                  candidate: qmAddress,
-                }),
-              onRefreshQm)}
-          />
-          <GovCtaButton
-            label={tFn('governance.action.executeAdd')}
-            gate={execGate}
-            {acting}
-            onClick={() =>
-              void run(tFn('governance.action.executeAdd'), () =>
-                quartermasterExecuteAddCrew({
-                  network,
-                  parentId,
-                  quartermaster,
-                  candidate: qmAddress,
-                }),
-              onRefreshQm)}
-          />
-        </div>
-        <div class="row">
-          <GovCtaButton
-            label={tFn('governance.action.requestRemove')}
-            gate={qmGate}
-            {acting}
-            onClick={() =>
-              void run(tFn('governance.action.requestRemove'), () =>
-                quartermasterRequestRemoveCrew({
-                  network,
-                  parentId,
-                  quartermaster,
-                  crew: qmAddress,
-                }),
-              onRefreshQm)}
-          />
-          <GovCtaButton
-            label={tFn('governance.action.cancelRemove')}
-            gate={qmGate}
-            {acting}
-            onClick={() =>
-              void run(tFn('governance.action.cancelRemove'), () =>
-                quartermasterCancelRemoveCrew({
-                  network,
-                  parentId,
-                  quartermaster,
-                  crew: qmAddress,
-                }),
-              onRefreshQm)}
-          />
-          <GovCtaButton
-            label={tFn('governance.action.executeRemove')}
-            gate={execGate}
-            {acting}
-            onClick={() =>
-              void run(tFn('governance.action.executeRemove'), () =>
-                quartermasterExecuteRemoveCrew({
-                  network,
-                  parentId,
-                  quartermaster,
-                  crew: qmAddress,
-                }),
-              onRefreshQm)}
-          />
-        </div>
-      </div>
-
-      <div class="section">
-        <h6 class="section-label">{$t('governance.section.bootstrapInitialCrew')}</h6>
-        <p class="muted">
-          {$t('governance.info.bootstrapHint')}
-        </p>
+      {#if bootstrapAvailable}
         <GovCtaButton
           label={tFn('governance.action.bootstrapCrew')}
           variant="primary"
           gate={bootstrapGate}
-          {acting}
           onClick={() => (showBootstrapModal = true)}
         />
-      </div>
-    </section>
-  {/if}
-
-  {#if mutinyModule}
-    <section class="contract-box" aria-labelledby="captain-mutiny-heading">
-      <h5 id="captain-mutiny-heading" class="contract-title">{$t('governance.title.mutiny')}</h5>
-
-      <div class="section">
-        <h6 class="section-label">{$t('governance.section.captainResign')}</h6>
-        <input
-          bind:value={resignTo}
-          placeholder={$t('governance.field.newCaptainPlaceholder')}
-          disabled={!captainGate.enabled || acting || mutinyActive}
-        />
-        <div class="row">
-          <GovCtaButton
-            label={tFn('governance.action.resignCaptain')}
-            gate={resignGate}
-            {acting}
-            onClick={() =>
-              void run(tFn('governance.action.captainResign'), () =>
-                mutinyCaptainResign({ network, parentId, mutinyModule, newCaptain: resignTo }),
-              onRefreshMutiny)}
-          />
-          {#if warGameStack}
-            <GovCtaButton
-              label={tFn('governance.action.randomizeCaptain')}
-              gate={randomizeGate}
-              {acting}
-              onClick={randomizeCaptain}
-            />
-          {/if}
-        </div>
-      </div>
-
-      <div class="section">
-        <h6 class="section-label">{$t('governance.section.executeMutiny')}</h6>
-        {#if mutinyActive && mutinyStatus}
-          <p class="muted">
-            {$t('governance.mutiny.activeToward', { values: { id: mutinyStatus.activeMutinyId, address: mutinyStatus.proposedNewCaptain, yeas: mutinyStatus.yeas, snapshot: mutinyStatus.snapshot } })}
-          </p>
-          {#if mutinyStatus.fromCaptain}
-            <p class="muted">
-              {$t('governance.mutiny.fromCaptain', { values: { address: mutinyStatus.fromCaptain } })}
-            </p>
-          {/if}
-          {#if mutinyStatus.deadline > 0}
-            <p class="muted">
-              {$t('governance.mutiny.deadline', { values: { when: new Date(mutinyStatus.deadline * 1000).toLocaleString() } })}
-            </p>
-          {/if}
-          {#if mutinyExpired}
-            <p class="muted">{$t('governance.mutiny.expired')}</p>
-          {/if}
-          <GovCtaButton
-            label={tFn('governance.action.executeMutiny')}
-            variant="execute"
-            gate={mutinyExpired ? { enabled: false, reason: 'governance.gate.mutinyExpired' } : execGate}
-            {acting}
-            onClick={() =>
-              void run(tFn('governance.action.executeMutiny'), () =>
-                mutinyExecute({
-                  network,
-                  parentId,
-                  mutinyModule,
-                  mutinyId: mutinyStatus.activeMutinyId,
-                }),
-              onRefreshMutiny,
-              true)}
-          />
-          {#if mutinyExpired}
-            <GovCtaButton
-              label={tFn('governance.action.expireMutiny')}
-              gate={execGate}
-              {acting}
-              onClick={() =>
-                void run(tFn('governance.action.expireMutiny'), () =>
-                  mutinyExpire({
-                    network,
-                    parentId,
-                    mutinyModule,
-                    mutinyId: mutinyStatus.activeMutinyId,
-                  }),
-                onRefreshMutiny,
-                true)}
-            />
-          {/if}
-        {:else}
-          <p class="muted">{$t('governance.empty.noActiveMutiny')}</p>
-        {/if}
-      </div>
-    </section>
-  {/if}
+      {/if}
+    {/if}
+    {#if mutinyModule}
+      <GovCtaButton
+        label={tFn('governance.action.resignCaptain')}
+        variant="primary"
+        gate={resignGate}
+        onClick={() => (showResign = true)}
+      />
+    {/if}
+  </div>
 </div>
+
+<GovCaptainRosterModal
+  open={showAddCrew}
+  onClose={() => (showAddCrew = false)}
+  mode="add"
+  {network}
+  {parentId}
+  {quartermaster}
+  {qmStatus}
+  memberEvmOptions={addCrewOptions}
+  {memberOptionsLoading}
+  emptyKey="governance.gate.noSquadMemberToAdd"
+  {qmGate}
+  {execGate}
+  onSubmitted={onRefreshQm}
+/>
+
+<GovCaptainRosterModal
+  open={showRemoveCrew}
+  onClose={() => (showRemoveCrew = false)}
+  mode="remove"
+  {network}
+  {parentId}
+  {quartermaster}
+  {qmStatus}
+  memberEvmOptions={removeCrewOptions}
+  {memberOptionsLoading}
+  emptyKey="governance.gate.noCrewHatToRemove"
+  {qmGate}
+  {execGate}
+  onSubmitted={onRefreshQm}
+/>
 
 <GovBootstrapCrewModal
   open={showBootstrapModal}
@@ -586,7 +178,21 @@
   memberOptions={memberEvmOptions}
   captainAddresses={captainWearers}
   onSubmitted={onRefreshQm}
-  {fundingHint}
+/>
+
+<GovCaptainResignModal
+  open={showResign}
+  onClose={() => (showResign = false)}
+  {network}
+  {parentId}
+  {mutinyModule}
+  {resignGate}
+  {randomizeGate}
+  {warGameStack}
+  captainGateEnabled={captainGate.enabled}
+  {mutinyActive}
+  onRandomize={randomizeCaptain}
+  onSubmitted={onRefreshMutiny}
 />
 
 <style>
@@ -595,78 +201,9 @@
     flex-direction: column;
     gap: 12px;
   }
-  .contract-box {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    padding: 12px 14px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--bg-elevated);
-  }
-  .contract-title {
-    margin: 0;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .section {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .section-label {
-    margin: 0;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
   .row {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-  }
-  .field-label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-  .muted {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-  .funding-hint {
-    margin: 0 0 4px;
-  }
-  .tiny {
-    font-size: 0.6875rem;
-  }
-  input,
-  select {
-    padding: 6px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.8125rem;
-  }
-  .linkish {
-    align-self: flex-start;
-    background: none;
-    border: none;
-    padding: 0;
-    color: var(--brand);
-    font-size: 0.8125rem;
-    cursor: pointer;
-    text-decoration: underline;
-  }
-  .linkish:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
   }
 </style>

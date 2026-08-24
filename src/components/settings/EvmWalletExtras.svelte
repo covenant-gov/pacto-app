@@ -22,6 +22,7 @@
   } from '../../lib/wallet/rpc-prefs';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { showToast } from '../../stores/toast';
+  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   const tFn = get(t);
 
@@ -216,7 +217,7 @@
           <div class="evm-extras-token-meta">
             <span class="evm-extras-token-sym">{row.symbol}</span>
             <span class="evm-extras-token-net">{getWalletNetworkDisplayName(row.network)}</span>
-            <code class="evm-extras-token-addr">{row.address.slice(0, 10)}…{row.address.slice(-6)}</code>
+            <code class="evm-extras-token-addr">{shortEvmAddress(row.address)}</code>
             <span class="evm-extras-token-src">{tokenSourceLabel(row.source)}</span>
           </div>
           <button type="button" class="evm-extras-btn-text" onclick={() => onRemoveWatchedRow(row)}>{$t('settings.remove')}</button>

@@ -19,6 +19,7 @@ import {
   import {
   squads,
   squadInfraByParentId,
+  SETTINGS_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   type Squad,
@@ -236,13 +237,13 @@ describe('restoreSquadsHubSelection', () => {
     expect(resolved.channelId).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
   });
 
-  it('resolveEffectiveHubChannel keeps my-dashboard virtual channel', () => {
+  it('resolveEffectiveHubChannel remaps obsolete my-dashboard to settings', () => {
     const squad: Squad = {
       ...regular,
       channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
     };
     const resolved = resolveEffectiveHubChannel(squad, '__my_dashboard__', {}, {});
-    expect(resolved.channelId).toBe('__my_dashboard__');
+    expect(resolved.channelId).toBe(SETTINGS_CHANNEL_ID);
     expect(resolved.hubChannelName).toBeNull();
   });
 

@@ -1,4 +1,6 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
+import { SETTINGS_CHANNEL_ID } from '../lib/squad/hub-channel-names';
+import type { SquadNetworkSlot } from '../lib/squad/squad-network';
 import { persistenceKey } from './persistence-context';
 
 export type TopNavTab = 'commons' | 'dms' | 'squads' | 'catchup';
@@ -18,22 +20,13 @@ export type SquadDashboardChannelMode =
   | 'status'
   | 'governance'
   | 'treasury'
-  | 'roles'
-  | 'crew'
-  | 'settings';
+  | 'crew';
 
 export const SQUAD_DASHBOARD_MODE_PREFIX = 'pacto_squad_dashboard_mode';
 
 export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboardChannelMode {
   const v = raw?.trim();
-  if (
-    v === 'status' ||
-    v === 'governance' ||
-    v === 'treasury' ||
-    v === 'roles' ||
-    v === 'crew' ||
-    v === 'settings'
-  ) {
+  if (v === 'status' || v === 'governance' || v === 'treasury' || v === 'crew') {
     return v;
   }
   return 'status';
@@ -41,34 +34,51 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
 
 export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
 
-/** Bumped to open Settings → Add custom RPC after a dashboard RPC read failure. */
+/** #settings segmented mode; unknown persisted values reset to `personal`. */
+export type SettingsChannelMode = 'personal' | 'squad';
+
+export const SETTINGS_CHANNEL_MODE_PREFIX = 'pacto_settings_channel_mode';
+
+export function parseSettingsChannelMode(raw: string | null): SettingsChannelMode {
+  const v = raw?.trim();
+  if (v === 'personal' || v === 'squad') return v;
+  return 'personal';
+}
+
+export const settingsChannelMode = writable<SettingsChannelMode>('personal');
+
+function openSquadSettingsChannel(mode?: SettingsChannelMode) {
+  const squadId = get(activeSquadId);
+  activeChannelId.set(SETTINGS_CHANNEL_ID);
+  activeHubChannelName.set(null);
+  activeView.set('hub');
+  if (mode) settingsChannelMode.set(mode);
+  if (!squadId) return;
+  lastChannelBySquadId.update((m) => ({ ...m, [squadId]: SETTINGS_CHANNEL_ID }));
+  lastHubChannelNameBySquadId.update((m) => {
+    const next = { ...m };
+    delete next[squadId];
+    return next;
+  });
+}
+
+/** Bumped to open #settings → Add custom RPC after a dashboard RPC read failure. */
 export const squadSettingsRpcFocusNonce = writable(0);
 
 export function focusSquadSettingsRpcEditor() {
-  squadDashboardChannelMode.set('settings');
+  openSquadSettingsChannel('squad');
   squadSettingsRpcFocusNonce.update((n) => n + 1);
 }
 
-/** Bumped to open Settings → network editor from the Status checklist CTA. */
+/** Bumped to open #settings → network editor from the Status checklist CTA. */
 export const squadSettingsNetworkFocusNonce = writable(0);
+export const squadSettingsNetworkFocusSlot = writable<SquadNetworkSlot>('primary');
 
-export function focusSquadSettingsNetworkEditor() {
-  squadDashboardChannelMode.set('settings');
+export function focusSquadSettingsNetworkEditor(slot: SquadNetworkSlot = 'primary') {
+  openSquadSettingsChannel('squad');
+  squadSettingsNetworkFocusSlot.set(slot);
   squadSettingsNetworkFocusNonce.update((n) => n + 1);
 }
-
-/** #my-dashboard segmented mode; unknown persisted values reset to `status`. */
-export type MyDashboardChannelMode = 'status' | 'alerts';
-
-export const MY_DASHBOARD_MODE_PREFIX = 'pacto_my_dashboard_mode';
-
-export function parseMyDashboardChannelMode(raw: string | null): MyDashboardChannelMode {
-  const v = raw?.trim();
-  if (v === 'status' || v === 'alerts') return v;
-  return 'status';
-}
-
-export const myDashboardChannelMode = writable<MyDashboardChannelMode>('status');
 
 /** Bumped when the Rust SQLite poll replica changes for a parent (local or remote MLS ingest). */
 export const dashboardPollReplicaNonceByParentId = writable<Record<string, number>>({});
@@ -103,9 +113,9 @@ squadDashboardChannelMode.subscribe((mode) => {
   }
 });
 
-myDashboardChannelMode.subscribe((mode) => {
+settingsChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(MY_DASHBOARD_MODE_PREFIX);
+  const key = persistenceKey(SETTINGS_CHANNEL_MODE_PREFIX);
   if (!key) return;
   try {
     localStorage.setItem(key, mode);

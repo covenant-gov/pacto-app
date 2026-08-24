@@ -1,11 +1,8 @@
 /**
- * Squad network model: a squad's on-chain infra lives on a single network.
+ * Squad deploy networks: Primary (dashboard / production) and Practice/Wargame.
  *
- * Squad deployments (Pacto Gov, Squad Admin, sponsor, treasury Safe) are restricted to
- * `SQUAD_DEPLOYABLE_CHAIN_IDS`. The first deploy picks and locks the squad network; later
- * deploys default to and are pinned to it. A member can retarget future deploys from
- * Settings via a small per-parent override (npub-scoped). The DM wallet is unaffected and
- * still uses the full chain set.
+ * Flip `DEFAULT_SQUAD_PRIMARY_NETWORK` to `arbitrum` when protocol addresses exist.
+ * Deployable set stays Sepolia + Local until then. DM wallet is unaffected.
  */
 
 import { writable } from 'svelte/store';
@@ -15,7 +12,17 @@ import { getWalletNetworkDisplayName } from '../wallet/assets';
 /** Chains a squad may deploy on-chain infrastructure to. */
 export const SQUAD_DEPLOYABLE_CHAIN_IDS: SupportedChainId[] = ['sepolia', 'local'];
 
-const STORAGE_VERSION = 1 as const;
+/** Pointer: change to `arbitrum` when factories land. */
+export const DEFAULT_SQUAD_PRIMARY_NETWORK: SupportedChainId = 'sepolia';
+export const DEFAULT_SQUAD_PRACTICE_NETWORK: SupportedChainId = 'sepolia';
+
+export type SquadNetworkSlot = 'primary' | 'practice';
+export type SquadNetworkPair = {
+  primary: SupportedChainId;
+  practice: SupportedChainId;
+};
+
+const STORAGE_VERSION = 2 as const;
 /** Prefix for `clear-account-state` scoped removal (`_${npub}`). */
 export const SQUAD_NETWORK_PREFIX = 'pacto_squad_network_v1';
 
@@ -31,11 +38,31 @@ export function listSquadDeployNetworkOptions(): { id: SupportedChainId; label: 
   return SQUAD_DEPLOYABLE_CHAIN_IDS.map((id) => ({ id, label: getWalletNetworkDisplayName(id) }));
 }
 
+export function defaultSquadNetworkPair(): SquadNetworkPair {
+  return {
+    primary: DEFAULT_SQUAD_PRIMARY_NETWORK,
+    practice: DEFAULT_SQUAD_PRACTICE_NETWORK,
+  };
+}
+
 function storageKey(accountNpub: string): string {
   return `${SQUAD_NETWORK_PREFIX}_${accountNpub}`;
 }
 
-function readBlob(accountNpub: string): Record<string, SupportedChainId> {
+function parseSlot(value: unknown, fallback: SupportedChainId): SupportedChainId {
+  return isSquadDeployableChain(value) ? value : fallback;
+}
+
+function parsePair(value: unknown): SquadNetworkPair | null {
+  if (!value || typeof value !== 'object') return null;
+  const rec = value as Record<string, unknown>;
+  return {
+    primary: parseSlot(rec.primary, DEFAULT_SQUAD_PRIMARY_NETWORK),
+    practice: parseSlot(rec.practice, DEFAULT_SQUAD_PRACTICE_NETWORK),
+  };
+}
+
+function readBlob(accountNpub: string): Record<string, SquadNetworkPair> {
   if (typeof localStorage === 'undefined') return {};
   try {
     const parsed = JSON.parse(localStorage.getItem(storageKey(accountNpub)) ?? '') as {
@@ -45,9 +72,10 @@ function readBlob(accountNpub: string): Record<string, SupportedChainId> {
     if (parsed?.v !== STORAGE_VERSION || !parsed.byParentId || typeof parsed.byParentId !== 'object') {
       return {};
     }
-    const out: Record<string, SupportedChainId> = {};
-    for (const [parentId, chain] of Object.entries(parsed.byParentId as Record<string, unknown>)) {
-      if (isSquadDeployableChain(chain)) out[parentId] = chain;
+    const out: Record<string, SquadNetworkPair> = {};
+    for (const [parentId, raw] of Object.entries(parsed.byParentId as Record<string, unknown>)) {
+      const pair = parsePair(raw);
+      if (pair) out[parentId] = pair;
     }
     return out;
   } catch {
@@ -55,39 +83,82 @@ function readBlob(accountNpub: string): Record<string, SupportedChainId> {
   }
 }
 
-/** User-set squad network override for a parent, or null when unset / stale. */
-export function loadSquadNetworkOverride(
+function writeBlob(accountNpub: string, byParentId: Record<string, SquadNetworkPair>): void {
+  localStorage.setItem(storageKey(accountNpub), JSON.stringify({ v: STORAGE_VERSION, byParentId }));
+  squadNetworkTick.update((n) => n + 1);
+}
+
+/** Stored pair for a parent, or null when unset / stale v1 blob. */
+export function loadSquadNetworkPair(
   accountNpub: string | null | undefined,
   parentId: string | null | undefined,
-): SupportedChainId | null {
+): SquadNetworkPair | null {
   if (!accountNpub || !parentId) return null;
   return readBlob(accountNpub)[parentId] ?? null;
 }
 
-export function saveSquadNetworkOverride(
+export function loadSquadNetworkSlot(
+  accountNpub: string | null | undefined,
+  parentId: string | null | undefined,
+  slot: SquadNetworkSlot,
+): SupportedChainId | null {
+  return loadSquadNetworkPair(accountNpub, parentId)?.[slot] ?? null;
+}
+
+export function saveSquadNetworkPair(
   accountNpub: string,
   parentId: string,
+  pair: SquadNetworkPair,
+): void {
+  if (!accountNpub || !parentId || typeof localStorage === 'undefined') return;
+  if (!isSquadDeployableChain(pair.primary) || !isSquadDeployableChain(pair.practice)) return;
+  const byParentId = readBlob(accountNpub);
+  byParentId[parentId] = { primary: pair.primary, practice: pair.practice };
+  writeBlob(accountNpub, byParentId);
+}
+
+export function saveSquadNetworkSlot(
+  accountNpub: string,
+  parentId: string,
+  slot: SquadNetworkSlot,
   chain: SupportedChainId,
 ): void {
   if (!accountNpub || !parentId || !isSquadDeployableChain(chain) || typeof localStorage === 'undefined') {
     return;
   }
-  const byParentId = readBlob(accountNpub);
-  byParentId[parentId] = chain;
-  localStorage.setItem(storageKey(accountNpub), JSON.stringify({ v: STORAGE_VERSION, byParentId }));
-  squadNetworkTick.update((n) => n + 1);
+  const current = loadSquadNetworkPair(accountNpub, parentId) ?? defaultSquadNetworkPair();
+  current[slot] = chain;
+  saveSquadNetworkPair(accountNpub, parentId, current);
 }
 
 /**
- * Effective squad network for deploy defaults: the user override wins, else the chain of
- * already-deployed infra, else null (never established → first deploy must pick). Only
- * deployable chains count; anything else resets to unset.
+ * Effective slot chain: override → matching infra → default pointer.
+ * Unknown / non-deployable values reset to the slot default.
  */
-export function resolveSquadNetwork(params: {
-  override: SupportedChainId | null;
-  infraChain: string | null | undefined;
-}): SupportedChainId | null {
+export function resolveSquadNetworkSlot(params: {
+  override: SupportedChainId | null | undefined;
+  infraChain?: string | null | undefined;
+  fallback: SupportedChainId;
+}): SupportedChainId {
   if (isSquadDeployableChain(params.override)) return params.override;
   if (isSquadDeployableChain(params.infraChain)) return params.infraChain;
-  return null;
+  return isSquadDeployableChain(params.fallback) ? params.fallback : DEFAULT_SQUAD_PRIMARY_NETWORK;
+}
+
+export function resolvePrimarySquadNetwork(params: {
+  override: SupportedChainId | null | undefined;
+  infraChain?: string | null | undefined;
+}): SupportedChainId {
+  return resolveSquadNetworkSlot({ ...params, fallback: DEFAULT_SQUAD_PRIMARY_NETWORK });
+}
+
+export function resolvePracticeSquadNetwork(params: {
+  override: SupportedChainId | null | undefined;
+  infraChain?: string | null | undefined;
+}): SupportedChainId {
+  return resolveSquadNetworkSlot({ ...params, fallback: DEFAULT_SQUAD_PRACTICE_NETWORK });
+}
+
+export function distinctSquadNetworkChains(pair: SquadNetworkPair): SupportedChainId[] {
+  return pair.primary === pair.practice ? [pair.primary] : [pair.primary, pair.practice];
 }

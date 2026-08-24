@@ -116,10 +116,19 @@ export function summarizeStructuredMessageContent(
         obj.payload && typeof obj.payload === 'object'
           ? (obj.payload as Record<string, unknown>)
           : null;
-      const chain = payload?.chain;
-      if (isSquadDeployableChain(chain)) {
-        return t('messaging.structuredNotice.squadNetworkUpdatedTo', {
-          values: { network: getWalletNetworkDisplayName(chain) },
+      const primary = payload?.primary;
+      const practice = payload?.practice;
+      if (isSquadDeployableChain(primary) && isSquadDeployableChain(practice)) {
+        if (primary === practice) {
+          return t('messaging.structuredNotice.squadNetworkUpdatedTo', {
+            values: { network: getWalletNetworkDisplayName(primary) },
+          });
+        }
+        return t('messaging.structuredNotice.squadNetworkUpdatedToSlots', {
+          values: {
+            primary: getWalletNetworkDisplayName(primary),
+            practice: getWalletNetworkDisplayName(practice),
+          },
         });
       }
       const key = TYPE_KEYS.squad_network_updated;

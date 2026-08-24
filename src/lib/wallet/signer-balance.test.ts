@@ -34,7 +34,7 @@ describe('canonicalAddress', () => {
 
 describe('shortAddress', () => {
   it('truncates long addresses and passes short ones through', () => {
-    expect(shortAddress(addrA)).toBe(`${addrA.slice(0, 10)}…${addrA.slice(-8)}`);
+    expect(shortAddress(addrA)).toBe(`${addrA.slice(0, 8)}…${addrA.slice(-6)}`);
     expect(shortAddress('0x1234')).toBe('0x1234');
     expect(shortAddress(null)).toBe('Not set');
   });

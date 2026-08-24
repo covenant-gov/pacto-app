@@ -18,10 +18,15 @@
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import { getAddress, isAddress, parseEther } from 'viem';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
+  import type { SupportedChainId } from '../../../lib/wallet/chains';
+  import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
+  import { DEFAULT_SQUAD_PRACTICE_NETWORK } from '../../../lib/squad/squad-network';
+  import { shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
 
   let {
     parentId,
     announcementsGroupId = null,
+    practiceNetwork = undefined,
     redeploy = false,
     memberOptions = [],
     onClose,
@@ -29,6 +34,7 @@
   }: {
     parentId: string;
     announcementsGroupId?: string | null;
+    practiceNetwork?: SupportedChainId;
     redeploy?: boolean;
     memberOptions?: { address: string; label?: string }[];
     onClose: () => void;
@@ -69,11 +75,6 @@
       return null;
     }
   });
-
-  function shortAddress(addr: string): string {
-    if (addr.length < 18) return addr;
-    return `${addr.slice(0, 10)}…${addr.slice(-8)}`;
-  }
 
   $effect(() => {
     const pid = parentId.trim();
@@ -127,6 +128,7 @@
     const started = startWarGameDeploy({
       parentId: parentId.trim(),
       announcementsGroupId,
+      network: practiceNetwork ?? DEFAULT_SQUAD_PRACTICE_NETWORK,
       captain: myRosterEvm,
       initialDepositWei: depositWei,
       signerWallet,
@@ -167,7 +169,8 @@
   <div class="war-game-deploy-field">
     <span class="war-game-deploy-label">{$t('governance.deployWarGame.networkLabel')}</span>
     <p class="war-game-deploy-pinned">
-      {$t('governance.deployWarGame.networkSepolia')}
+      {getWalletNetworkDisplayName(practiceNetwork ?? DEFAULT_SQUAD_PRACTICE_NETWORK)}
+      <span class="war-game-deploy-pinned-note">{$t('governance.field.squadNetworkSuffix')}</span>
     </p>
   </div>
 

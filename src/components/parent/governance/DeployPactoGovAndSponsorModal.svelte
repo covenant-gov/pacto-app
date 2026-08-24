@@ -34,6 +34,7 @@
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
   import { walletBuildAndSendTransaction } from '../../../lib/wallet/backend-wallet';
+  import { waitForOnChainConfirmationInBackground } from '../../../lib/evm/on-chain-background';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
   import { formatEther, parseEther } from 'viem';
@@ -357,6 +358,46 @@
       onClose();
     };
 
+    const startDeploy = () => {
+      const ok = sponsorOnly
+        ? startHatsSponsorOnlyDeploy({
+            parentId: parentId.trim(),
+            squadNetwork,
+            topHatId: existingTopHatId.trim(),
+            initialDepositWei: depositWei,
+            bootstrapCrew: doBootstrap,
+            memberOptions: captainMemberOptions,
+            bootstrapExcludeAddresses,
+            quartermaster: quartermaster.trim() || undefined,
+            captainAddress: captainAddress || undefined,
+            signerWallet: payFrom,
+            onProgress,
+            onReject,
+            onError,
+            onComplete: handleComplete,
+          })
+        : startPactoGovAndSponsorDeploy({
+            parentId: parentId.trim(),
+            announcementsGroupId,
+            squadNetwork,
+            captain: captainAddress,
+            initialDepositWei: depositWei,
+            bootstrapCrew: doBootstrap,
+            memberOptions: captainMemberOptions,
+            bootstrapExcludeAddresses,
+            signerWallet: payFrom,
+            squadParams,
+            onProgress,
+            onReject,
+            onError,
+            onComplete: handleComplete,
+          });
+      if (!ok) {
+        deploying = false;
+        progressStep = '';
+      }
+    };
+
     deploying = true;
 
     if (needsFundTransfer && transferWei != null && squadCanonical && squadNetwork) {
@@ -368,57 +409,32 @@
         formatEther(transferWei),
         null,
         squadCanonical,
-        true,
+        false,
       );
-      if (closed) {
-        deploying = false;
-        return;
-      }
       if (!send.ok) {
         deploying = false;
         progressStep = '';
         deployError = getInvokeErrorMessage(send.message, tFn('governance.deployGovAndSponsor.error.transferFailed'));
         return;
       }
+      onClose();
+      waitForOnChainConfirmationInBackground(squadNetwork, send.result.txHash, {
+        subject: tFn('governance.deployGovAndSponsor.progress.fund'),
+        parentId: parentId.trim(),
+        actionKey: `gov-fund:${send.result.txHash}`,
+        onConfirmed: () => {
+          startDeploy();
+        },
+        onFailed: (message) => {
+          deploying = false;
+          progressStep = '';
+          deployError = getInvokeErrorMessage(message, tFn('governance.deployGovAndSponsor.error.transferFailed'));
+        },
+      });
+      return;
     }
 
-    const ok = sponsorOnly
-      ? startHatsSponsorOnlyDeploy({
-          parentId: parentId.trim(),
-          squadNetwork,
-          topHatId: existingTopHatId.trim(),
-          initialDepositWei: depositWei,
-          bootstrapCrew: doBootstrap,
-          memberOptions: captainMemberOptions,
-          bootstrapExcludeAddresses,
-          quartermaster: quartermaster.trim() || undefined,
-          captainAddress: captainAddress || undefined,
-          signerWallet: payFrom,
-          onProgress,
-          onReject,
-          onError,
-          onComplete: handleComplete,
-        })
-      : startPactoGovAndSponsorDeploy({
-          parentId: parentId.trim(),
-          announcementsGroupId,
-          squadNetwork,
-          captain: captainAddress,
-          initialDepositWei: depositWei,
-          bootstrapCrew: doBootstrap,
-          memberOptions: captainMemberOptions,
-          bootstrapExcludeAddresses,
-          signerWallet: payFrom,
-          squadParams,
-          onProgress,
-          onReject,
-          onError,
-          onComplete: handleComplete,
-        });
-    if (!ok) {
-      deploying = false;
-      progressStep = '';
-    }
+    startDeploy();
   }
 
   const customizeInvalid = $derived(
@@ -446,7 +462,7 @@
   );
 </script>
 
-<Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-gov-sponsor-panel">
+<Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-gov-sponsor-panel">
   <h2 id={titleId}>
     {$t(sponsorOnly ? 'governance.deployGovAndSponsor.title.sponsorOnly' : 'governance.deployGovAndSponsor.title.full')}
   </h2>

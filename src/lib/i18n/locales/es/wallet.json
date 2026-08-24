@@ -245,5 +245,15 @@
 	"wallet.importFailed": "Importación fallida.",
 	"wallet.dmWallet": "Mensajes directos",
 	"wallet.settings": "Ajustes",
-	"wallet.docsPath": "docs/audits/README.md"
+	"wallet.docsPath": "docs/audits/README.md",
+	"wallet.onChain.regionAria": "Actividad en cadena",
+	"wallet.onChain.pending": "{label}",
+	"wallet.onChain.pendingAria": "Transacción pendiente: {label}",
+	"wallet.onChain.confirmed": "{label} confirmado",
+	"wallet.onChain.confirmedAria": "Transacción confirmada: {label}",
+	"wallet.onChain.failed": "{label} falló",
+	"wallet.onChain.failedAria": "Transacción fallida: {label}",
+	"wallet.onChain.multiplePending": "{count} pendientes",
+	"wallet.onChain.multiplePendingAria": "{count} transacciones pendientes",
+	"wallet.onChain.defaultLabel": "Transacción"
 }

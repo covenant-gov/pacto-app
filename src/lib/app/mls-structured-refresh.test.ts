@@ -65,7 +65,12 @@ import {
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
 import { formatSquadStateSyncRequest } from '../squad/squad-state-sync';
 import { formatSquadNetworkUpdated } from '../squad/squad-network-share';
-import { loadSquadNetworkOverride, SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
+import {
+  loadSquadNetworkPair,
+  resolvePracticeSquadNetwork,
+  SQUAD_NETWORK_PREFIX,
+} from '../squad/squad-network';
+import { squadInfraByParentId } from '../../stores/squads';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
   mutinyProcessTxByParentId,
@@ -87,6 +92,7 @@ describe('onMlsStructuredMessage', () => {
     currentUser.set({ npub: 'npub1alice' });
     setCurrentNpubForPersistence('npub1alice');
     resetMutinyProcessTxStore();
+    squadInfraByParentId.set({});
     store.clear();
     (globalThis as unknown as { localStorage: Storage }).localStorage = {
       getItem: (k: string) => store.get(k) ?? null,
@@ -173,10 +179,75 @@ describe('onMlsStructuredMessage', () => {
       mergeSquadInfraForParent: vi.fn(),
       mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
     };
-    const raw = formatSquadNetworkUpdated({ parentId: 'g1', chain: 'local' });
+    const raw = formatSquadNetworkUpdated({
+      parentId: 'g1',
+      pair: { primary: 'sepolia', practice: 'sepolia' },
+    });
     onMlsStructuredMessage(raw, 'g1', handlers);
-    expect(loadSquadNetworkOverride('npub1alice', 'g1')).toBe('local');
+    expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({ primary: 'sepolia', practice: 'sepolia' });
     expect(localStorage.getItem(`${SQUAD_NETWORK_PREFIX}_npub1alice`)).toBeTruthy();
+  });
+
+  it('does not apply untrusted practice=local from squad_network_updated', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    const raw = formatSquadNetworkUpdated({
+      parentId: 'g1',
+      pair: { primary: 'sepolia', practice: 'local' },
+    });
+    onMlsStructuredMessage(raw, 'g1', handlers);
+    const stored = loadSquadNetworkPair('npub1alice', 'g1');
+    expect(stored).toEqual({ primary: 'sepolia', practice: 'sepolia' });
+    expect(resolvePracticeSquadNetwork({ override: stored?.practice, infraChain: null })).toBe(
+      'sepolia',
+    );
+  });
+
+  it('does not apply untrusted primary=local from squad_network_updated', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    const raw = formatSquadNetworkUpdated({
+      parentId: 'g1',
+      pair: { primary: 'local', practice: 'sepolia' },
+    });
+    onMlsStructuredMessage(raw, 'g1', handlers);
+    expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({
+      primary: 'sepolia',
+      practice: 'sepolia',
+    });
+  });
+
+  it('applies practice=local from squad_network_updated when wargame infra is local', () => {
+    squadInfraByParentId.set({
+      g1: [
+        {
+          id: 'wg-1',
+          parentId: 'g1',
+          infraType: 'pacto_gov_wargame',
+          chain: 'local',
+          canonicalRef: '1',
+          createdAtMs: 0,
+          updatedAtMs: 0,
+        },
+      ],
+    });
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    const raw = formatSquadNetworkUpdated({
+      parentId: 'g1',
+      pair: { primary: 'sepolia', practice: 'local' },
+    });
+    onMlsStructuredMessage(raw, 'g1', handlers);
+    expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({ primary: 'sepolia', practice: 'local' });
   });
 
   it('ignores squad_network_updated when parent_id mismatches groupId', () => {
@@ -185,10 +256,13 @@ describe('onMlsStructuredMessage', () => {
       mergeSquadInfraForParent: vi.fn(),
       mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
     };
-    const raw = formatSquadNetworkUpdated({ parentId: 'other', chain: 'sepolia' });
+    const raw = formatSquadNetworkUpdated({
+      parentId: 'other',
+      pair: { primary: 'sepolia', practice: 'sepolia' },
+    });
     onMlsStructuredMessage(raw, 'g1', handlers);
-    expect(loadSquadNetworkOverride('npub1alice', 'g1')).toBeNull();
-    expect(loadSquadNetworkOverride('npub1alice', 'other')).toBeNull();
+    expect(loadSquadNetworkPair('npub1alice', 'g1')).toBeNull();
+    expect(loadSquadNetworkPair('npub1alice', 'other')).toBeNull();
   });
 
   it('bumps allowlist nonce', () => {

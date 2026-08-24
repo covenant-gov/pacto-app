@@ -29,7 +29,14 @@ Browser-side reads use `getEffectiveRpcUrlsForChain` in `chains.ts` — operator
 
 ## Squad deployment network
 
-The DM/embedded wallet works on any enabled chain. **On-chain squad infrastructure** (Pacto Gov, Squad Admin, sponsor, treasury Safe) is restricted to `SQUAD_DEPLOYABLE_CHAIN_IDS = ['sepolia', 'local']` (`src/lib/squad/squad-network.ts`). A squad lives on a single network: the first deployment picks and locks it; later deployments pin to it. A member can retarget **future** deployments from the squad dashboard's Settings tab (chain-bound infra already deployed is never migrated). The effective network resolves as user override → chain of already-deployed infra → unset.
+The DM/embedded wallet works on any enabled chain. **On-chain squad infrastructure** (Pacto Gov, Squad Admin, sponsor, treasury Safe) is restricted to `SQUAD_DEPLOYABLE_CHAIN_IDS = ['sepolia', 'local']` (`src/lib/squad/squad-network.ts`).
+
+Each squad has two deploy slots, both defaulting to Sepolia:
+
+- **Primary** — `#squad-dashboard` checklist and production deploys
+- **Practice/Wargame** — `#squad-wargame` checklist and wargame deploys
+
+Create-squad persists both defaults. Members retarget **future** deploys from `#settings` (already-deployed infra is never migrated). Effective chain per slot: user override → matching infra chain → slot default. Flipping Primary to Arbitrum later is `DEFAULT_SQUAD_PRIMARY_NETWORK` plus adding `arbitrum` to the deployable set and protocol addresses.
 
 ## Changing a network
 

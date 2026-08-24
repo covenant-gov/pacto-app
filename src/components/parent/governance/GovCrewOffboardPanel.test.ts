@@ -49,6 +49,14 @@ function offboardProps(overrides: Record<string, unknown> = {}) {
 }
 
 describe('GovCrewOffboardPanel target picker', () => {
+  it('lists crew-hat wearers except self', () => {
+    render(GovCrewOffboardPanel, { props: offboardProps() });
+    const target = screen.getByRole('combobox', { name: 'Target member' }) as HTMLSelectElement;
+    expect(target.options).toHaveLength(1);
+    expect(screen.getByRole('option', { name: /bravo-test/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /charlie-test/ })).toBeNull();
+  });
+
   it('rehydrates target options after offboard clears', async () => {
     const { rerender } = render(GovCrewOffboardPanel, {
       props: offboardProps({
@@ -72,12 +80,12 @@ describe('GovCrewOffboardPanel target picker', () => {
     await rerender(offboardProps({ qmStatus: qm({ activeCrewOffboardId: '0', offboard: null }) }));
 
     const target = screen.getByRole('combobox', { name: 'Target member' }) as HTMLSelectElement;
-    expect(target.options).toHaveLength(2);
-    expect(screen.getByRole('option', { name: /charlie-test/ })).toBeTruthy();
+    expect(target.options).toHaveLength(1);
     expect(screen.getByRole('option', { name: /bravo-test/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /charlie-test/ })).toBeNull();
   });
 
-  it('clears leftover target when member options are empty', async () => {
+  it('shows empty copy instead of a paste field when no other crew remain', async () => {
     const { rerender } = render(GovCrewOffboardPanel, { props: offboardProps() });
     expect(screen.getByRole('option', { name: /bravo-test/ })).toBeTruthy();
 
@@ -85,6 +93,17 @@ describe('GovCrewOffboardPanel target picker', () => {
 
     expect(screen.queryByRole('combobox', { name: 'Target member' })).toBeNull();
     expect(screen.queryByRole('option', { name: /bravo-test/ })).toBeNull();
-    expect(screen.getByPlaceholderText('0x… (share EVM on Status first)')).toBeTruthy();
+    expect(screen.queryByPlaceholderText('0x… (share EVM on Status first)')).toBeNull();
+    expect(
+      screen.getAllByText('Need a crew-hat wearer with a bound squad EVM.').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('shows loading copy while hat maps are in flight', () => {
+    render(GovCrewOffboardPanel, {
+      props: offboardProps({ memberEvmOptions: [], memberOptionsLoading: true }),
+    });
+    expect(screen.getByText('Loading members…')).toBeTruthy();
+    expect(screen.queryByPlaceholderText('0x… (share EVM on Status first)')).toBeNull();
   });
 });

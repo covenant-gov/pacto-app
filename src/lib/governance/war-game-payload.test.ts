@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isWarGameArchiveView,
   isActiveWarGameStack,
   parseWarGameDelaySecs,
-  parseWarGamePriorRounds,
   parseWarGameRoundNumber,
   parseWarGameSponsorAddress,
   parseWarGameStackMeta,
   warGameDelayMinutes,
   warGameRoundSponsorRow,
-  warGameVisibleRounds,
+  warGameStatusAction,
 } from './war-game-payload';
 import type { SquadInfraDto } from './api';
 import { WAR_GAME_SQUAD_PARAMS } from './squad-params';
@@ -63,37 +61,27 @@ describe('parseWarGameStackMeta', () => {
   });
 });
 
-describe('round history helpers', () => {
-  it('parses round numbers and visible 1..=active range', () => {
+describe('warGameStatusAction', () => {
+  it('offers deploy until an active stack exists', () => {
+    expect(warGameStatusAction(false, false)).toBe('deploy');
+    expect(warGameStatusAction(false, true)).toBe('deploy');
+  });
+
+  it('opens from #dashboard and redeploys from squad-wargame', () => {
+    expect(warGameStatusAction(true, false)).toBe('open');
+    expect(warGameStatusAction(true, true)).toBe('redeploy');
+  });
+});
+
+describe('parseWarGameRoundNumber', () => {
+  it('parses positive rounds and treats missing as 0', () => {
     expect(parseWarGameRoundNumber(null)).toBe(0);
     expect(parseWarGameRoundNumber(JSON.stringify({ round: '3' }))).toBe(3);
-    expect(warGameVisibleRounds(JSON.stringify({ round: '3' }))).toEqual([1, 2, 3]);
-    expect(warGameVisibleRounds('{}')).toEqual([1]);
+    expect(parseWarGameRoundNumber('{}')).toBe(0);
   });
+});
 
-  it('treats a viewed older round as archive', () => {
-    expect(isWarGameArchiveView(1, 3)).toBe(true);
-    expect(isWarGameArchiveView(3, 3)).toBe(false);
-    expect(isWarGameArchiveView(0, 3)).toBe(false);
-  });
-
-  it('reads priorRounds snapshots', () => {
-    expect(
-      parseWarGamePriorRounds(
-        JSON.stringify({
-          round: '3',
-          priorRounds: [
-            { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa' },
-            { round: 2 },
-          ],
-        }),
-      ),
-    ).toEqual([
-      { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa' },
-      { round: '2' },
-    ]);
-  });
-
+describe('war-game delay', () => {
   it('uses payload delay when present, otherwise the wargame default', () => {
     expect(parseWarGameDelaySecs(null)).toBe(WAR_GAME_SQUAD_PARAMS.crewChangeDelaySecs);
     expect(warGameDelayMinutes(null)).toBe(5);

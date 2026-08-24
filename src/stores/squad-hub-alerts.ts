@@ -5,7 +5,7 @@ import { recordActionNeededEntry } from '../lib/api/catch-up';
 import { hydrateCatchUpCount, resolveOneCatchUpEntry } from './catch-up';
 import type { Squad } from './squads';
 
-/** Per-user action needed in my-dashboard alerts (roster signer prompt). */
+/** Per-user action needed in #settings username-mode alerts (roster signer prompt). */
 export const personalAlertsNeededBySquadId = writable<Record<string, boolean>>({});
 
 /** Per-channel mention alerts keyed by `${squadId}:${channelName}`. */

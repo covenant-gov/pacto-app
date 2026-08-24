@@ -5,6 +5,7 @@ import { announceGovernanceProcessUpdated } from './governance-process-announce'
 import { recordMutinyProcessTx } from './mutiny-process-tx';
 import { bumpGovernanceProcessNonce } from '../../stores/navigation';
 import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
+import { DEFAULT_SQUAD_PRACTICE_NETWORK } from '../squad/squad-network';
 import type { SquadParamsInput } from './squad-params';
 import { squadParamsToInvoke } from './squad-params';
 
@@ -523,6 +524,7 @@ export async function deployNavePirataForParent(params: {
 export async function deployWarGameForParent(params: {
   parentId: string;
   captain: string;
+  network?: string | null;
   metadataUri?: string | null;
   saltNonce?: string | null;
   signerWallet?: SquadSponsorDeploySignerWallet;
@@ -530,8 +532,9 @@ export async function deployWarGameForParent(params: {
   squadParams?: SquadParamsInput | null;
   initialDepositWei?: string | null;
 }): Promise<WarGameDeployResultDto> {
+  const network = params.network?.trim() || DEFAULT_SQUAD_PRACTICE_NETWORK;
   return (await invoke('deploy_war_game_for_parent', {
-    network: 'sepolia',
+    network,
     parentId: params.parentId,
     captain: params.captain,
     metadataUri: params.metadataUri?.trim() ?? '',
@@ -540,7 +543,7 @@ export async function deployWarGameForParent(params: {
     altParentId: params.altParentId?.trim() ? params.altParentId.trim() : null,
     squadParams: params.squadParams ? squadParamsToInvoke(params.squadParams) : null,
     initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, 'sepolia'),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, network),
   })) as WarGameDeployResultDto;
 }
 
@@ -685,12 +688,46 @@ async function afterGovWrite<T extends { txHash?: string }>(
     });
   }
   bumpGovernanceProcessNonce(hint.parentId);
+  let replica: {
+    stack: 'pacto_gov' | 'pacto_gov_wargame';
+    round: string;
+    blockNumber: number;
+    snapshot: import('./gov-replica').GovReplicaSnapshot;
+  } | null;
+  try {
+    const { buildWriterGovReplicaSnapshot } = await import('./gov-replica-writer');
+    replica = await buildWriterGovReplicaSnapshot({
+      parentId: hint.parentId,
+      kind: hint.kind,
+    });
+  } catch {
+    replica = null;
+  }
+  if (replica) {
+    try {
+      const { persistGovReplicaSnapshot } = await import('./gov-replica');
+      await persistGovReplicaSnapshot({
+        parentId: hint.parentId,
+        stack: replica.stack,
+        snapshot: replica.snapshot,
+        blockNumber: replica.blockNumber,
+        round: replica.round,
+        txHash: result.txHash,
+      });
+    } catch {
+      /* best-effort local hydrate */
+    }
+  }
   await announceGovernanceProcessUpdated({
     parentId: hint.parentId,
     kind: hint.kind,
     address: hint.address,
     proposalId: hint.proposalId,
     txHash: result.txHash,
+    stack: replica?.stack,
+    round: replica?.round,
+    blockNumber: replica?.blockNumber,
+    snapshot: replica?.snapshot,
   });
   return result;
 }
@@ -1317,6 +1354,27 @@ export async function getMemberHatWearers(params: {
     hatChecks: params.hatChecks,
     rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as MemberHatAssignmentDto[];
+}
+
+export interface HatWearersDto {
+  hatId: string;
+  addresses: string[];
+}
+
+export async function getHatWearersForIds(params: {
+  network: string;
+  hatIds: string[];
+  fromTxHash?: string | null;
+  hatsContract?: string | null;
+  parentId?: string | null;
+}): Promise<HatWearersDto[]> {
+  return (await invoke('get_hat_wearers_for_ids', {
+    network: params.network,
+    hatIds: params.hatIds,
+    fromTxHash: params.fromTxHash?.trim() ? params.fromTxHash.trim() : null,
+    hatsContract: params.hatsContract?.trim() ? params.hatsContract.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as HatWearersDto[];
 }
 
 export interface SquadAdminExecutorRolesDto {

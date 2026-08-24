@@ -6,6 +6,8 @@ import {
   gateRequiresCaptainOrCrew,
   gateRequiresCrew,
   gateSquadAdminWrite,
+  hideCtaInlineReason,
+  isHatRequiredReason,
   localizeAclReason,
   resolveGovernancePrivilege,
 } from './governance-privilege';
@@ -145,6 +147,12 @@ describe('governance gates', () => {
     ).toBe('governance.gate.linkSquadEvmAddressToAct');
     expect(localizeAclReason('governance.gate.requiresCrew')).toBe('governance.gate.requiresCrew');
     expect(localizeAclReason('Nope')).toBe('governance.gate.accessDenied');
+    expect(isHatRequiredReason('governance.gate.requiresCaptain')).toBe(true);
+    expect(isHatRequiredReason('governance.gate.requiresCrew')).toBe(true);
+    expect(isHatRequiredReason('governance.gate.requiresCaptainOrCrew')).toBe(true);
+    expect(isHatRequiredReason('governance.gate.accessDenied')).toBe(false);
+    expect(hideCtaInlineReason('governance.gate.linkSquadEvmAddressToAct')).toBe(true);
+    expect(hideCtaInlineReason('governance.gate.bootstrapOnlyEmptyRoster')).toBe(false);
   });
 
   it('falls back to hat checks without capability flags', () => {

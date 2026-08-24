@@ -155,10 +155,8 @@ See [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md).
 
 ## 7. Squad contract allowlist
 
-Dashboard → Settings → **Smart contract security**. Pacto Gov deployed; **squad-purpose** active signer.
+Settings no longer exposes allowlist or contract-call UI. Backend list/upsert/send and MLS `squad_contract_allowlist_updated` ingest still exist.
 
-- [ ] **Add contract** → row + **`squad_contract_allowlist_updated`** on **#personal-alerts**; **Remove** announces delete.
-- [ ] Allowlisted target: simulate + **Send (squad key)** mines; other `0x` → **`TARGET_NOT_ALLOWLISTED`**.
 - [ ] Advanced panel still sends arbitrary `to`; squad command refuses advanced signer.
 
 ---

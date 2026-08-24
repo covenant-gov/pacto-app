@@ -2,16 +2,19 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   const tFn = get(t);
-  import SquadJoinRequestsPanel from '../../squad/SquadJoinRequestsPanel.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { profiles } from '../../../stores/profiles';
-  import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
   import {
+    crewHatLookupAddress,
     needsSquadRosterKeyChoice,
     squadMemberEvmForDisplay,
   } from '../../../lib/squad/squad-roster-key-choice';
-  import { npubByEvmAddressFromSquadRoster } from '../../../lib/governance/hats-tree-annotations';
+  import {
+    getBoundSquadEvmAddressForParent,
+    listSquadMemberEvmInvokeArgs,
+  } from '../../../lib/squad/squad-member-evm-share';
+  import { npubByEvmAddressFromSquadRoster, shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
   import {
     crewRosterEligibilityColumns,
     permittedByAddressFromExtStatus,
@@ -28,7 +31,6 @@
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
 
   let {
-    squad,
     announcementsGroupId = null,
     channelMembers = [],
     loadingMembers = false,
@@ -38,9 +40,6 @@
     squadMemberEvmByNpub = {},
     memberHatByAddress = {},
     memberRolesByAddress = {},
-    onOpenSquadRolesModal = () => {},
-    showManagePrivileges = false,
-    pactoGovRevision = '',
     sponsorExtStatus = null,
     sponsorExtLoading = false,
     sponsorExtError = '',
@@ -50,7 +49,6 @@
     sponsorHatsMode = false,
     hasSponsor = false,
   }: {
-    squad: Squad;
     announcementsGroupId?: string | null;
     channelMembers?: string[];
     loadingMembers?: boolean;
@@ -60,9 +58,6 @@
     squadMemberEvmByNpub?: Record<string, string>;
     memberHatByAddress?: Record<string, string>;
     memberRolesByAddress?: Record<string, string>;
-    onOpenSquadRolesModal?: () => void;
-    showManagePrivileges?: boolean;
-    pactoGovRevision?: string;
     /** Sponsor Ext eligibility (null when no Ext sponsor / not loaded). */
     sponsorExtStatus?: SquadSponsorExtStatusDto | null;
     sponsorExtLoading?: boolean;
@@ -77,6 +72,7 @@
 
   let sponsoringAddress = $state('');
   let rosterKeyNeeded = $state(false);
+  let viewerBindAddress = $state('');
 
   const myNpub = $derived($currentUser?.npub ?? '');
   const displayEvmByNpub = $derived(squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded));
@@ -103,12 +99,13 @@
     void needsSquadRosterKeyChoice(parentId, announcementsGroupId).then((needed) => {
       rosterKeyNeeded = needed;
     });
+    const rosterArgs = listSquadMemberEvmInvokeArgs(parentId, announcementsGroupId);
+    void getBoundSquadEvmAddressForParent(rosterArgs.parentId, rosterArgs.altParentId).then(
+      (addr) => {
+        viewerBindAddress = addr?.trim() ?? '';
+      },
+    );
   });
-
-  function shortAddress(addr: string): string {
-    if (!addr || addr.length < 12) return addr;
-    return addr.slice(0, 6) + '…' + addr.slice(-4);
-  }
 
   async function copyEvmAddress(address: string) {
     const t = address.trim();
@@ -147,13 +144,7 @@
   }
 </script>
 
-{#if sponsorHatsMode && hasSponsor}
-  <section class="sponsor-owner-banner" aria-label={$t('governance.crew.sponsorAriaLabel')}>
-    <span class="meta-label">{$t('governance.crew.sponsorLabel')}</span>
-    <span class="sponsor-owner-value">{$t('governance.crew.sponsorHatsLinked')}</span>
-    <span class="muted sponsor-owner-hint">{$t('governance.crew.sponsorHatsHint')}</span>
-  </section>
-{:else if sponsorExtStatus || sponsorExtLoading || sponsorExtError}
+{#if sponsorExtStatus || sponsorExtLoading || sponsorExtError}
   <section class="sponsor-owner-banner" aria-label={$t('governance.crew.sponsorOwnerAriaLabel')}>
     <span class="meta-label">{$t('governance.crew.sponsorOwnerLabel')}</span>
     {#if sponsorExtLoading && !sponsorExtStatus}
@@ -181,7 +172,6 @@
 
 <section class="dashboard-section" aria-labelledby="crew-roster-heading">
   <h3 id="crew-roster-heading" class="section-heading">{$t('governance.crew.sectionCrew')}</h3>
-  <p class="caption muted">{$t('governance.crew.membershipCaption')}</p>
 
   {#if settingsChainRefreshing}
     <p class="muted" role="status">{$t('governance.crew.refreshing')}</p>
@@ -202,6 +192,13 @@
         {#each channelMembers as memberNpub (memberNpub)}
           {@const npub = memberNpub as string}
           {@const rosterEvm = displayEvmByNpub[npub]}
+          {@const hatLookupEvm = crewHatLookupAddress({
+            npub,
+            rawRosterEvmByNpub: squadMemberEvmByNpub,
+            viewerNpub: myNpub,
+            viewerBindAddress,
+          })}
+          {@const hatLookupKey = hatLookupEvm.trim().toLowerCase()}
           {@const rosterKey = rosterEvm?.trim().toLowerCase() ?? ''}
           {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
           {@const isExtSponsored = rosterKey ? permittedByAddress[rosterKey] === true : false}
@@ -258,11 +255,11 @@
                 <span class="roles-col-label">{$t('governance.crew.colHats')}</span>
                 <span
                   class="roles-col-value"
-                  class:muted={!rosterEvm || !memberHatByAddress[rosterEvm.toLowerCase()]}
-                  >{settingsChainLoading && !memberHatByAddress[rosterEvm?.toLowerCase() ?? '']
+                  class:muted={!hatLookupKey || !memberHatByAddress[hatLookupKey]}
+                  >{settingsChainLoading && !memberHatByAddress[hatLookupKey]
                     ? $t('governance.crew.loadingShort')
-                    : rosterEvm
-                      ? memberHatByAddress[rosterEvm.toLowerCase()] || $t('governance.crew.dash')
+                    : hatLookupKey
+                      ? memberHatByAddress[hatLookupKey] || $t('governance.crew.dash')
                       : $t('governance.crew.notShared')}
                 </span>
               {/if}
@@ -317,24 +314,6 @@
   {/if}
 </section>
 
-{#if showManagePrivileges || pactoGovRevision}
-  <div class="privileges-row">
-    <span class="meta-label">{$t('governance.crew.privilegesLabel')}</span>
-    {#if pactoGovRevision}
-      <code class="rev">{pactoGovRevision}</code>
-    {/if}
-    {#if showManagePrivileges}
-      <button type="button" class="btn-text" onclick={onOpenSquadRolesModal}>{$t('governance.crew.manage')}</button>
-    {/if}
-  </div>
-{/if}
-
-{#if squad}
-  <section class="join-requests-wrap" aria-label={$t('governance.crew.joinRequestsAria')}>
-    <SquadJoinRequestsPanel {squad} />
-  </section>
-{/if}
-
 <style>
   .sponsor-owner-banner {
     display: flex;
@@ -364,10 +343,6 @@
     font-weight: 600;
     color: var(--text-secondary);
     margin: 0 0 8px;
-  }
-  .caption {
-    font-size: 0.8125rem;
-    margin: 0 0 12px;
   }
   .muted {
     color: var(--text-muted);
@@ -487,16 +462,6 @@
     opacity: 0.45;
     cursor: not-allowed;
   }
-  .privileges-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 12px;
-    padding: 8px 0 12px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--border-subtle);
-    font-size: 0.875rem;
-  }
   .meta-label {
     font-size: 0.7rem;
     font-weight: 600;
@@ -504,24 +469,5 @@
     letter-spacing: 0.04em;
     color: var(--text-muted);
     min-width: 5.5rem;
-  }
-  .rev {
-    font-family: ui-monospace, monospace;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-  .btn-text {
-    padding: 4px 8px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    font: inherit;
-    font-size: 0.8125rem;
-    cursor: pointer;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-  .join-requests-wrap {
-    margin-top: 8px;
   }
 </style>

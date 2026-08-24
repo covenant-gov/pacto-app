@@ -57,6 +57,7 @@
     runOnChainInBackground({
       startedToast: tFn('governance.deploySquadAdmin.toast.submitted'),
       subject: tFn('governance.deploySquadAdmin.subject'),
+      parentId: parentId.trim(),
       job: () => deploySquadAdminForParent(jobParams),
       onSuccess: async (result) => {
         await onComplete({

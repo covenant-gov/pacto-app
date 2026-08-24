@@ -190,6 +190,24 @@ describe('parseAnnouncement', () => {
     expect(
       parseAnnouncement(
         JSON.stringify({
+          type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
+          payload: {
+            parent_id: 'p',
+            kind: 'hats',
+            stack: 'pacto_gov',
+            block_number: '42',
+            snapshot: { memberHatByAddress: { '0xaa': 'Captain' } },
+          },
+        }),
+      ),
+    ).toMatchObject({
+      type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
+      payload: { stack: 'pacto_gov', block_number: '42' },
+    });
+
+    expect(
+      parseAnnouncement(
+        JSON.stringify({
           type: ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
           payload: {
             parent_id: 'p',

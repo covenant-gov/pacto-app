@@ -13,6 +13,7 @@
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { profiles } from '../../stores/profiles';
   import { getProfileDisplayName } from '../../lib/utils/profile';
+  import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
 
   let {
     payload,
@@ -27,12 +28,6 @@
   } = $props();
 
   const tFn = get(t);
-
-  function shortAddr(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 18) return a;
-    return `${a.slice(0, 10)}…${a.slice(-8)}`;
-  }
 
   function txHashFromProviderPayload(raw: string | undefined): string {
     if (!raw?.trim()) return '';

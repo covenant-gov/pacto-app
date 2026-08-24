@@ -2,6 +2,7 @@
   import type { HatTreeNodeDto } from '../../../lib/governance/api';
   import {
     formatWearerDisplayLabel,
+    isAddressWearingHat,
     npubByEvmAddressFromSquadRoster,
   } from '../../../lib/governance/hats-tree-annotations';
   import { prettyHatId } from '../../../lib/governance/pretty-hat-id';
@@ -12,7 +13,14 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { localizeRoleLabel } from '../../../lib/governance/governance-privilege';
+  import { getContext } from 'svelte';
+  import {
+    HATS_TREE_ACTIONS_KEY,
+    hatsTreeRoleActionKind,
+    type HatsTreeActionsApi,
+  } from '../../../lib/governance/hats-tree-role-actions';
   import HatsTreeNode from './HatsTreeNode.svelte';
+  import HatsTreeRoleActions from './HatsTreeRoleActions.svelte';
 
   interface Props {
     node: HatTreeNodeDto;
@@ -23,6 +31,7 @@
     /** Known protocol module labels keyed by lowercase address. */
     knownWearerLabels?: Record<string, string>;
     chainKey?: SupportedChainId | null;
+    viewerAddress?: string;
   }
 
   let {
@@ -33,18 +42,21 @@
     squadMemberEvmByNpub = {},
     knownWearerLabels = {},
     chainKey = null,
+    viewerAddress = '',
   }: Props = $props();
 
   const tFn = get(t);
+  const actionsApi = getContext<HatsTreeActionsApi | undefined>(HATS_TREE_ACTIONS_KEY);
 
   const roleLabel = $derived(roleLabelByHatId[node.hatId] ?? '');
+  const actionKind = $derived(hatsTreeRoleActionKind(roleLabel));
+  const treeCommand = $derived(actionsApi?.command ?? null);
   const wearerAddresses = $derived(wearerAddressesByHatId[node.hatId] ?? []);
   const npubByAddress = $derived(npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub));
   const prettyId = $derived(prettyHatId(node.hatId) ?? node.hatId);
   const humanDetails = $derived(humanHatDetails(node.details));
-  /** Extra line only when role label and a distinct human details string both exist. */
-  const detailsSubtitle = $derived(
-    roleLabel && humanDetails && humanDetails !== roleLabel ? humanDetails : '',
+  const wornByViewer = $derived(
+    isAddressWearingHat(wearerAddressesByHatId, node.hatId, viewerAddress),
   );
   const hasWearers = $derived(wearerAddresses.length > 0 || node.supply > 0);
   const children = $derived(node.children ?? []);
@@ -93,14 +105,18 @@
   }
 </script>
 
-<div class="hats-tree-node" role="treeitem" aria-expanded={childCount > 0 ? 'true' : undefined} aria-selected="false">
-  <div class="hats-tree-node-card" class:has-wearers={hasWearers} class:inactive={!node.active}>
+<div class="hats-tree-node" role="treeitem" aria-expanded={childCount > 0 ? 'true' : undefined} aria-selected={wornByViewer}>
+  <div
+    class="hats-tree-node-card"
+    class:has-wearers={hasWearers}
+    class:inactive={!node.active}
+    class:worn-by-viewer={wornByViewer}
+    title={wornByViewer ? $t('governance.hats.youWearThis') : undefined}
+    aria-label={wornByViewer ? $t('governance.hats.youWearThis') : undefined}
+  >
     <div class="hats-tree-node-body">
       <code class="hats-tree-node-id" title={node.hatId}>{prettyId}</code>
       <span class="hats-tree-node-title">{$t(localizeRoleLabel(roleLabel)) || humanDetails || $t('governance.hats.untitled')}</span>
-      {#if detailsSubtitle}
-        <span class="hats-tree-node-details muted">{detailsSubtitle}</span>
-      {/if}
     </div>
     <div class="hats-tree-node-footer">
       <span class="hats-tree-footer-primary">
@@ -140,6 +156,9 @@
         {/each}
       </div>
     {/if}
+    {#if actionKind && treeCommand}
+      <HatsTreeRoleActions kind={actionKind} />
+    {/if}
   </div>
 
   {#if childCount > 0}
@@ -158,6 +177,7 @@
             {squadMemberEvmByNpub}
             {knownWearerLabels}
             {chainKey}
+            {viewerAddress}
           />
         </div>
       {/each}
@@ -188,6 +208,11 @@
     opacity: 0.72;
   }
 
+  .hats-tree-node-card.worn-by-viewer {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
   .hats-tree-node-body {
     display: flex;
     flex-direction: column;
@@ -208,12 +233,6 @@
     font-size: 0.8125rem;
     color: var(--text-primary);
     line-height: 1.25;
-    word-break: break-word;
-  }
-
-  .hats-tree-node-details {
-    font-size: 0.6875rem;
-    line-height: 1.3;
     word-break: break-word;
   }
 

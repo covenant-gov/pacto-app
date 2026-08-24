@@ -19,9 +19,6 @@
 <div class="poll-announce-body">
   <p class="poll-announce-badge">{$t('announcements.pollCreated.badge')}</p>
   <h3 class="poll-announce-title">{payload.title}</h3>
-  <p class="poll-announce-hint">
-    {$t('announcements.pollCreated.hint')}
-  </p>
   <p class="poll-announce-meta">
     {#if authorName}{authorName}{/if}
     {#if timestamp} — {formatMessageTimestamp(timestamp)}{/if}
@@ -49,13 +46,6 @@
     font-weight: 600;
     color: var(--text-primary);
     line-height: 1.35;
-  }
-
-  .poll-announce-hint {
-    margin: 0 0 6px 0;
-    font-size: 0.8125rem;
-    line-height: 1.45;
-    color: var(--text-secondary);
   }
 
   .poll-announce-meta {

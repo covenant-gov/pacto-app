@@ -192,11 +192,6 @@
     showToast(ok ? tFn('governance.polls.copiedChatRef') : tFn('governance.polls.copyFailed'));
   }
 
-  const tallyHint = $derived(
-    variant === 'channel'
-      ? $t('governance.polls.tallyChannelHint')
-      : $t('governance.polls.tallyDashboardHint'),
-  );
 </script>
 
 <div
@@ -211,7 +206,7 @@
       {:else}
         {#if !viewerNpub?.trim()}
           <p class="dashboard-placeholder-text muted dashboard-polls-feed-msg">
-            {$t('governance.polls.signInHint', { values: { tallyHint } })}
+            {$t('governance.polls.signInHint')}{#if variant === 'channel'} {$t('governance.polls.tallyChannelHint')}{/if}
           </p>
         {/if}
         {#if parentPollsList.length === 0}
@@ -321,14 +316,13 @@
     min-height: 0;
     max-height: none;
     border-bottom: none;
-    padding: 8px 12px 0;
+    padding: 8px 12px 12px;
   }
 
   .dashboard-polls-scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    margin-bottom: 12px;
   }
 
   .dashboard-polls-scroll-inner {
@@ -337,11 +331,6 @@
     gap: 12px;
     padding-bottom: 8px;
     box-sizing: border-box;
-  }
-
-  .dashboard-polls-shell:not(.dashboard-polls-shell--channel) .dashboard-polls-scroll-inner {
-    min-height: 100%;
-    justify-content: flex-end;
   }
 
   .dashboard-polls-feed-msg {
@@ -461,7 +450,11 @@
 
   .dashboard-polls-composer {
     flex-shrink: 0;
-    padding-top: 4px;
+    padding: 12px;
+    margin-top: 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    background: var(--bg-elevated);
   }
 
   .dashboard-polls-create-btn {

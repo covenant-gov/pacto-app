@@ -306,7 +306,7 @@ async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: strin
   await persistCreatedSquad(parent.id, finalized);
   void initSquadBot(gid);
   const myNpub = get(currentUser)?.npub;
-  applySquadCreateNetwork(myNpub, gid, get(parentPendingCreateOptions)[parent.id]?.network);
+  applySquadCreateNetwork(myNpub, gid);
   if (get(activeSquadId) === parent.id) {
     activeSquadId.set(gid);
     activeChannelId.set(gid);

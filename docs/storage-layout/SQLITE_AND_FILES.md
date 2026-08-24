@@ -41,6 +41,7 @@ Old accounts are detected by the absence of `refinery_schema_history` and the pr
 | **squad_infra** | On-chain deploy pointers (`pacto_gov`, sponsor, Safe, …) + `provider_payload` |
 | **squad_member_evm** / **squad_member_evm_account** | Roster address / local signing-account binding per parent |
 | **squad_tracked_tokens** | Squad-shared ERC-20 watchlist for Treasury Safe balance UI (MLS announce sync) |
+| **squad_gov_replica** | Display replica for Hats/roles and TA/QM process slices (local chain catch-up, not MLS-trusted, not ACL) |
 
 Indexes and foreign keys are defined next to each table in the migration files.
 

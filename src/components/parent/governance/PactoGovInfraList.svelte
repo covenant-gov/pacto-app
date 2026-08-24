@@ -11,6 +11,7 @@
   } from '../../../lib/governance/pacto-gov-payload';
   import { hatsTreeDomain, prettyHatId } from '../../../lib/governance/pretty-hat-id';
   import { t } from 'svelte-i18n';
+  import { shortEvmAddress as shortAddr } from '../../../lib/governance/hats-tree-annotations';
 
   interface Props {
     providerPayload?: string | null;
@@ -20,12 +21,6 @@
   }
 
   let { providerPayload = undefined, topHatId = '', chain = undefined, showDeployTx = true }: Props = $props();
-
-  function shortAddr(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 18) return a;
-    return `${a.slice(0, 10)}…${a.slice(-8)}`;
-  }
 
   function displayHatValue(id: string): string {
     return hatsTreeDomain(id) ?? prettyHatId(id) ?? id.trim();

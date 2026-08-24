@@ -241,6 +241,7 @@ export function startPactoGovAndSponsorDeploy(params: {
   runOnChainInBackground({
     startedToast: 'Pacto Gov + sponsor deploy started. Steps continue in the background.',
     subject: 'Pacto Gov + sponsor',
+    parentId,
     job: async () => {
       const rosterRaw = await resolveSquadRosterEvmAddress(
         altParentId || parentId,
@@ -436,6 +437,7 @@ export function startHatsSponsorOnlyDeploy(params: {
   runOnChainInBackground({
     startedToast: 'Hats sponsor deploy started. Confirmation continues in the background.',
     subject: 'Hats sponsor',
+    parentId,
     job: async () => {
       params.onProgress?.('sponsor');
       const sponsorResult = await deploySquadSponsorHatsForParent({

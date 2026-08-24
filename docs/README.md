@@ -22,6 +22,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[communities/SQUAD_BOT_JOIN.md](./communities/SQUAD_BOT_JOIN.md)** | Squad bot join inbox wire (`join_requests` virtual bucket) |
 | **[shell/LAYOUT.md](./shell/LAYOUT.md)** | **Logged-in shell**: page layout, store slices, lib modules, dashboard/DM routers |
 | **[dashboard/POLLS.md](./dashboard/POLLS.md)** | Dashboard polls: MLS announcements transport, replica, vote rules |
+| **[dashboard/ASSET_CARDS.md](./dashboard/ASSET_CARDS.md)** | Sponsor / Treasury / vault card chrome (`DashboardAssetCard`) |
 | **[legacy-fixes/](./legacy-fixes/)** | Alpha-only repair and migration paths to remove before beta or public v1 ([catalog](./legacy-fixes/CATALOG.md)) |
 | **[wallet/](./wallet/)** | Embedded EVM wallet, RPC, chain config, DM payment messages ([on-chain read pattern](./wallet/ONCHAIN_READ_PATTERN.md)) |
 | **[governance/ACCESS_CONTROL.md](./governance/ACCESS_CONTROL.md)** | Nostr↔EVM roster **ACL** (access control): Hats / Squad Admin capabilities, fail-closed signing preflight |

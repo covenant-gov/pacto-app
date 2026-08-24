@@ -1,6 +1,7 @@
 /**
- * Silent #announcements share of the squad's selected deploy network.
- * Last-write-wins; FE localStorage only (no SQLite side effect).
+ * Silent #announcements share of the squad's Primary and Practice deploy networks.
+ * Each slot applies only when it matches operator default or on-chain infra.
+ * FE localStorage only (no SQLite side effect).
  */
 
 import { get } from 'svelte/store';
@@ -9,29 +10,36 @@ import { listSquadInfra } from '../governance/api';
 import { currentUser } from '../../stores/auth';
 import type { SupportedChainId } from '../wallet/chains';
 import {
+  DEFAULT_SQUAD_PRACTICE_NETWORK,
+  DEFAULT_SQUAD_PRIMARY_NETWORK,
   isSquadDeployableChain,
-  loadSquadNetworkOverride,
-  resolveSquadNetwork,
+  loadSquadNetworkPair,
+  resolvePracticeSquadNetwork,
+  resolvePrimarySquadNetwork,
+  saveSquadNetworkPair,
+  type SquadNetworkPair,
 } from './squad-network';
 
 export const SQUAD_NETWORK_UPDATED_TYPE = 'squad_network_updated';
-export const SQUAD_NETWORK_UPDATED_VERSION = 1;
+export const SQUAD_NETWORK_UPDATED_VERSION = 2;
 
 export type SquadNetworkUpdatedPayload = {
   parent_id: string;
-  chain: SupportedChainId;
+  primary: SupportedChainId;
+  practice: SupportedChainId;
 };
 
 export function formatSquadNetworkUpdated(params: {
   parentId: string;
-  chain: SupportedChainId;
+  pair: SquadNetworkPair;
 }): string {
   return JSON.stringify({
     version: SQUAD_NETWORK_UPDATED_VERSION,
     type: SQUAD_NETWORK_UPDATED_TYPE,
     payload: {
       parent_id: params.parentId.trim(),
-      chain: params.chain,
+      primary: params.pair.primary,
+      practice: params.pair.practice,
     } satisfies SquadNetworkUpdatedPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -52,13 +60,56 @@ export function parseSquadNetworkUpdated(
   if (!parsed || typeof parsed !== 'object') return null;
   const root = parsed as Record<string, unknown>;
   if (root.type !== SQUAD_NETWORK_UPDATED_TYPE) return null;
+  if (root.version !== SQUAD_NETWORK_UPDATED_VERSION) return null;
   const payload = root.payload;
   if (!payload || typeof payload !== 'object') return null;
   const p = payload as Record<string, unknown>;
   const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
-  const chain = p.chain;
-  if (!parent_id || !isSquadDeployableChain(chain)) return null;
-  return { parent_id, chain };
+  const primary = p.primary;
+  const practice = p.practice;
+  if (!parent_id || !isSquadDeployableChain(primary) || !isSquadDeployableChain(practice)) return null;
+  return { parent_id, primary, practice };
+}
+
+/** Persist announced practice only when it matches default or on-chain wargame. */
+export function trustedPracticeFromAnnounce(
+  announced: SupportedChainId,
+  infraChain?: string | null,
+): SupportedChainId | null {
+  if (announced === DEFAULT_SQUAD_PRACTICE_NETWORK) return announced;
+  if (isSquadDeployableChain(infraChain) && announced === infraChain) return announced;
+  return null;
+}
+
+/** Persist announced primary only when it matches default or on-chain gov infra. */
+export function trustedPrimaryFromAnnounce(
+  announced: SupportedChainId,
+  infraChain?: string | null,
+): SupportedChainId | null {
+  if (announced === DEFAULT_SQUAD_PRIMARY_NETWORK) return announced;
+  if (isSquadDeployableChain(infraChain) && announced === infraChain) return announced;
+  return null;
+}
+
+export function applySquadNetworkUpdated(
+  payload: SquadNetworkUpdatedPayload,
+  accountNpub: string,
+  practiceInfraChain?: string | null,
+  primaryInfraChain?: string | null,
+): void {
+  const existing = loadSquadNetworkPair(accountNpub, payload.parent_id);
+  const practice =
+    trustedPracticeFromAnnounce(payload.practice, practiceInfraChain) ??
+    existing?.practice ??
+    DEFAULT_SQUAD_PRACTICE_NETWORK;
+  const primary =
+    trustedPrimaryFromAnnounce(payload.primary, primaryInfraChain) ??
+    existing?.primary ??
+    DEFAULT_SQUAD_PRIMARY_NETWORK;
+  saveSquadNetworkPair(accountNpub, payload.parent_id, {
+    primary,
+    practice,
+  });
 }
 
 /** Prefer pacto_gov → squad_admin → sponsor chain, matching dashboard infra seed. */
@@ -69,9 +120,14 @@ export function infraChainFromSquadRows(
   return byType('pacto_gov') || byType('squad_admin') || byType('sponsor') || null;
 }
 
+export function practiceInfraChainFromSquadRows(
+  rows: { infraType: string; chain?: string | null }[],
+): string | null {
+  return rows.find((r) => r.infraType === 'pacto_gov_wargame')?.chain?.trim() || null;
+}
+
 /**
- * Publish effective squad network (override → infra) to #announcements.
- * Returns false when unset or send fails.
+ * Publish effective Primary + Practice networks to #announcements.
  */
 export async function publishSquadNetworkUpdated(
   announcementsGroupId: string,
@@ -81,17 +137,28 @@ export async function publishSquadNetworkUpdated(
   const me = get(currentUser)?.npub?.trim();
   if (!me) return false;
 
-  const override = loadSquadNetworkOverride(me, gid);
-  let infraChain: string | null = null;
+  const stored = loadSquadNetworkPair(me, gid);
+  let rows: { infraType: string; chain?: string | null }[] = [];
   try {
-    infraChain = infraChainFromSquadRows(await listSquadInfra(gid));
+    rows = await listSquadInfra(gid);
   } catch {
-    /* still try override-only */
+    /* still try stored + defaults */
   }
-  const chain = resolveSquadNetwork({ override, infraChain });
-  if (!chain) return false;
+  const pair: SquadNetworkPair = {
+    primary: resolvePrimarySquadNetwork({
+      override: stored?.primary ?? null,
+      infraChain: infraChainFromSquadRows(rows),
+    }),
+    practice: resolvePracticeSquadNetwork({
+      override: stored?.practice ?? null,
+      infraChain: practiceInfraChainFromSquadRows(rows),
+    }),
+  };
+  if (!stored) {
+    saveSquadNetworkPair(me, gid, pair);
+  }
 
-  const json = formatSquadNetworkUpdated({ parentId: gid, chain });
+  const json = formatSquadNetworkUpdated({ parentId: gid, pair });
   try {
     await sendDmMessage(gid, json, '', { virtualBucket: 'announcements' });
     return true;
@@ -100,3 +167,4 @@ export async function publishSquadNetworkUpdated(
     return false;
   }
 }
+

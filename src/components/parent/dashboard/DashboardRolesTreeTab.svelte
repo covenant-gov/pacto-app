@@ -12,6 +12,7 @@
   } from '../../../lib/governance/hats-tree-read';
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
+  import type { HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
 
   interface Props {
     squadInfraRows?: unknown[];
@@ -31,6 +32,8 @@
     onOpenLaunchpad?: () => void;
     /** Lowercase address → protocol module label for wearer chips. */
     knownWearerLabels?: Record<string, string>;
+    viewerAddress?: string;
+    commandContext?: HatsTreeCommandContext | null;
   }
 
   let {
@@ -50,6 +53,8 @@
     onRefreshRolesTree = () => {},
     onOpenLaunchpad = () => {},
     knownWearerLabels = {},
+    viewerAddress = '',
+    commandContext = null,
   }: Props = $props();
 
   const rolesTreeRefreshing = $derived(hatsTreeRefreshing || rolesTreeAnnotationsRefreshing);
@@ -62,14 +67,23 @@
 {#if squadInfraRows !== undefined && !structureSummary}
   <div class="sponsor-empty-banner" role="status">
     <p class="sponsor-empty-banner-text">{$t('governance.roles.empty')}</p>
-    <button type="button" class="btn-primary" onclick={onOpenLaunchpad}>{$t('governance.roles.openDeploy')}</button>
+    <button type="button" class="btn-primary" onclick={onOpenLaunchpad}>{$t('governance.governance.deploy')}</button>
   </div>
 {/if}
 
-<section class="roles-tree-panel" aria-labelledby="roles-tree-heading">
-  <div class="roles-tree-section-head">
-    <h3 id="roles-tree-heading" class="section-heading">{$t('governance.roles.title')}</h3>
-    {#if structureSummary}
+<section class="roles-tree-panel" aria-label={$t('governance.roles.title')}>
+  {#if structureSummary === undefined}
+    <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingContext')}</p>
+  {:else if structureSummary}
+    <div class="structure-actions">
+      {#if structureSummary.hatsExplorerUrl}
+        {@const hatsUrl = structureSummary.hatsExplorerUrl}
+        <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(hatsUrl)}>
+          {$t('governance.roles.openExplorer')}
+        </button>
+      {:else}
+        <p class="dashboard-placeholder-text muted">{$t('governance.roles.explorerError')}</p>
+      {/if}
       <RefreshIconButton
         className="roles-tree-refresh-btn"
         disabled={rolesTreeLoading || rolesTreeRefreshing}
@@ -77,37 +91,7 @@
         ariaLabel={rolesTreeRefreshing ? $t('governance.roles.refreshing') : $t('governance.roles.refresh')}
         onclick={onRefreshRolesTree}
       />
-    {/if}
-  </div>
-  {#if structureSummary === undefined}
-    <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingContext')}</p>
-  {:else if structureSummary === null}
-    <p class="dashboard-placeholder-text dashboard-placeholder-lead">
-      {$t('governance.roles.leadPrefix')}
-      <strong>{$t('governance.roles.leadBrand')}</strong>
-      {$t('governance.roles.leadSuffix')}
-    </p>
-  {:else}
-    <p class="structure-summary-lead dashboard-placeholder-text">
-      {$t('governance.roles.topHatOn')}
-      <strong>{structureSummary.chainDisplayName}</strong>
-      {$t('governance.roles.chainIdStart')}
-      <code class="structure-mono">{structureSummary.chainIdNumeric}</code>
-      {$t('governance.roles.hatTreeIdStart')}
-      <code class="structure-mono" title={structureSummary.treeIdRaw}
-        >{structureSummary.treeDomain ?? structureSummary.treeIdRaw}</code
-      >.
-    </p>
-    {#if structureSummary.hatsExplorerUrl}
-      {@const hatsUrl = structureSummary.hatsExplorerUrl}
-      <p class="structure-actions">
-        <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(hatsUrl)}>
-          {$t('governance.roles.openExplorer')}
-        </button>
-      </p>
-    {:else}
-      <p class="dashboard-placeholder-text muted">{$t('governance.roles.explorerError')}</p>
-    {/if}
+    </div>
     {#if hatsTreeError && hatsTree}
       {#if hatsTreeRpcKind}
         <RpcReadErrorCard kind={hatsTreeRpcKind} />
@@ -146,6 +130,8 @@
         {squadMemberEvmByNpub}
         {knownWearerLabels}
         {chainKey}
+        {viewerAddress}
+        {commandContext}
       />
     {/if}
   {/if}
@@ -177,28 +163,8 @@
     width: 100%;
   }
 
-  .roles-tree-section-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .roles-tree-section-head .section-heading {
-    margin: 0;
-  }
-
   :global(.roles-tree-refresh-btn) {
     flex-shrink: 0;
-  }
-
-  .section-heading {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0 0 12px 0;
   }
 
   .hats-tree-truncation-note {
@@ -214,27 +180,22 @@
     margin: 0 0 12px 0;
   }
 
-  .dashboard-placeholder-lead {
-    margin-bottom: 16px;
-  }
-
   .dashboard-placeholder-text.muted,
   .muted {
     color: var(--text-muted);
   }
 
-  .structure-summary-lead {
-    margin-top: 0;
-  }
-
-  .structure-mono {
-    font-size: 0.8125rem;
-    color: var(--text-primary);
-    font-family: ui-monospace, monospace;
-  }
-
   .structure-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
     margin: 0 0 12px;
+  }
+
+  .structure-actions .dashboard-placeholder-text {
+    margin: 0;
   }
 
   .btn-primary {

@@ -4,10 +4,12 @@ import {
   GOVERNANCE_SNAPSHOT_CACHE_PREFIX,
   clearGovernanceSnapshotCacheStore,
   getCachedHatsTree,
+  getCachedRolesTree,
   getCachedTreasuryProposals,
   governanceSnapshotHydrated,
   hydrateGovernanceSnapshotCacheFromDisk,
   persistHatsTreeSnapshot,
+  persistRolesTreeSnapshot,
   persistTreasuryProposalsSnapshot,
 } from './governance-snapshot-cache';
 import type { HatTreeNodeDto, TreasuryProposalDto } from '../governance/api';
@@ -116,6 +118,22 @@ describe('governance-snapshot-cache', () => {
   it('returns null for a mismatched hats tree key', () => {
     persistHatsTreeSnapshot(npub, key, hatTree());
     expect(getCachedHatsTree(npub, 'wrong-key')).toBeNull();
+  });
+
+  it('hydrates role labels so the hats tree can paint without a refetch', () => {
+    persistRolesTreeSnapshot(npub, key, {
+      roleLabelByHatId: { '105': 'Treasury Authority Role' },
+      wearerAddressesByHatId: { '101': ['0xcrew'] },
+      executorRolesByAddress: { '0xabc': 'Full' },
+    });
+    governanceSnapshotHydrated.set(null);
+
+    hydrateGovernanceSnapshotCacheFromDisk(npub);
+
+    const snap = getCachedRolesTree(npub, key);
+    expect(snap?.roleLabelByHatId['105']).toBe('Treasury Authority Role');
+    expect(snap?.wearerAddressesByHatId['101']).toEqual(['0xcrew']);
+    expect(snap?.executorRolesByAddress['0xabc']).toBe('Full');
   });
 
   it('validates treasury proposals and rejects malformed snapshots', () => {

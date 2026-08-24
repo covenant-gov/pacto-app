@@ -9,5 +9,5 @@ export function treasuryVaultHeading(entry: TreasurySafeEntry): string {
 
 /** Heading for the Pacto Gov governance treasury Safe section. */
 export function governanceTreasuryHeading(): string {
-  return 'Squad governance treasury (Pacto Gov Safe)';
+  return 'Treasury';
 }

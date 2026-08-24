@@ -256,5 +256,15 @@
 	"wallet.importFailed": "Import failed.",
 	"wallet.dmWallet": "DMs",
 	"wallet.settings": "Settings",
-	"wallet.docsPath": "docs/audits/README.md"
+	"wallet.docsPath": "docs/audits/README.md",
+	"wallet.onChain.regionAria": "On-chain activity",
+	"wallet.onChain.pending": "{label}",
+	"wallet.onChain.pendingAria": "Transaction pending: {label}",
+	"wallet.onChain.confirmed": "{label} confirmed",
+	"wallet.onChain.confirmedAria": "Transaction confirmed: {label}",
+	"wallet.onChain.failed": "{label} failed",
+	"wallet.onChain.failedAria": "Transaction failed: {label}",
+	"wallet.onChain.multiplePending": "{count} pending",
+	"wallet.onChain.multiplePendingAria": "{count} transactions pending",
+	"wallet.onChain.defaultLabel": "Transaction"
 }

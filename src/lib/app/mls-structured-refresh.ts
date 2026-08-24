@@ -10,8 +10,12 @@ import {
   parseSquadStateSyncRequest,
   respondToSquadStateSyncRequest,
 } from '../squad/squad-state-sync';
-import { parseSquadNetworkUpdated } from '../squad/squad-network-share';
-import { saveSquadNetworkOverride } from '../squad/squad-network';
+import {
+  applySquadNetworkUpdated,
+  parseSquadNetworkUpdated,
+  infraChainFromSquadRows,
+  practiceInfraChainFromSquadRows,
+} from '../squad/squad-network-share';
 import { applySquadRpcUpdated, parseSquadRpcUpdated } from '../squad/squad-rpc-share';
 import {
   onMlsAdmitNeeded,
@@ -28,6 +32,7 @@ import {
   parseSquadIdentityUpdated,
 } from '../squad/squad-identity-announce';
 import { currentUser } from '../../stores/auth';
+import { squadInfraByParentId } from '../../stores/squads';
 import {
   bumpGovernanceProcessNonce,
   squadAllowlistNonceByParentId,
@@ -117,7 +122,13 @@ export function onMlsStructuredMessage(
   if (networkUpdate && networkUpdate.parent_id === gid) {
     const me = get(currentUser)?.npub?.trim();
     if (me) {
-      saveSquadNetworkOverride(me, networkUpdate.parent_id, networkUpdate.chain);
+      const infraRows = get(squadInfraByParentId)[networkUpdate.parent_id] ?? [];
+      applySquadNetworkUpdated(
+        networkUpdate,
+        me,
+        practiceInfraChainFromSquadRows(infraRows),
+        infraChainFromSquadRows(infraRows),
+      );
     }
   }
 

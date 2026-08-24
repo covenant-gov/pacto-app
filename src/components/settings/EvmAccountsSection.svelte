@@ -22,6 +22,7 @@
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
   import EditIconButton from '../ui/EditIconButton.svelte';
+  import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
 
   interface Props {
     accountNpub?: string | null;
@@ -87,12 +88,6 @@
     } finally {
       bindingsLoading = false;
     }
-  }
-
-  function shortAddr(a: string): string {
-    const t = a.trim();
-    if (t.length < 18) return t;
-    return `${t.slice(0, 10)}…${t.slice(-8)}`;
   }
 
   function shortParentId(id: string): string {

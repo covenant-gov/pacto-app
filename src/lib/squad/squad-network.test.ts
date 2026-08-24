@@ -1,17 +1,31 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
+  DEFAULT_SQUAD_PRACTICE_NETWORK,
+  DEFAULT_SQUAD_PRIMARY_NETWORK,
   SQUAD_DEPLOYABLE_CHAIN_IDS,
   SQUAD_NETWORK_PREFIX,
+  defaultSquadNetworkPair,
   isSquadDeployableChain,
   listSquadDeployNetworkOptions,
-  loadSquadNetworkOverride,
-  resolveSquadNetwork,
-  saveSquadNetworkOverride,
+  loadSquadNetworkPair,
+  loadSquadNetworkSlot,
+  resolvePracticeSquadNetwork,
+  resolvePrimarySquadNetwork,
+  saveSquadNetworkPair,
+  saveSquadNetworkSlot,
 } from './squad-network';
 
 describe('SQUAD_DEPLOYABLE_CHAIN_IDS', () => {
   it('restricts squad deploys to Sepolia + Local Anvil', () => {
     expect(SQUAD_DEPLOYABLE_CHAIN_IDS).toEqual(['sepolia', 'local']);
+  });
+});
+
+describe('default pointers', () => {
+  it('defaults both slots to Sepolia', () => {
+    expect(DEFAULT_SQUAD_PRIMARY_NETWORK).toBe('sepolia');
+    expect(DEFAULT_SQUAD_PRACTICE_NETWORK).toBe('sepolia');
+    expect(defaultSquadNetworkPair()).toEqual({ primary: 'sepolia', practice: 'sepolia' });
   });
 });
 
@@ -37,26 +51,28 @@ describe('listSquadDeployNetworkOptions', () => {
   });
 });
 
-describe('resolveSquadNetwork', () => {
+describe('resolvePrimarySquadNetwork / resolvePracticeSquadNetwork', () => {
   it('prefers a valid override over the infra chain', () => {
-    expect(resolveSquadNetwork({ override: 'local', infraChain: 'sepolia' })).toBe('local');
+    expect(resolvePrimarySquadNetwork({ override: 'local', infraChain: 'sepolia' })).toBe('local');
+    expect(resolvePracticeSquadNetwork({ override: 'local', infraChain: 'sepolia' })).toBe('local');
   });
 
   it('falls back to the infra chain when there is no override', () => {
-    expect(resolveSquadNetwork({ override: null, infraChain: 'sepolia' })).toBe('sepolia');
+    expect(resolvePrimarySquadNetwork({ override: null, infraChain: 'sepolia' })).toBe('sepolia');
   });
 
-  it('is null (unestablished) when nothing is set', () => {
-    expect(resolveSquadNetwork({ override: null, infraChain: null })).toBeNull();
+  it('uses the slot default when nothing is set', () => {
+    expect(resolvePrimarySquadNetwork({ override: null, infraChain: null })).toBe('sepolia');
+    expect(resolvePracticeSquadNetwork({ override: null })).toBe('sepolia');
   });
 
-  it('ignores non-deployable infra chains (reset to unset)', () => {
-    expect(resolveSquadNetwork({ override: null, infraChain: 'mainnet' })).toBeNull();
-    expect(resolveSquadNetwork({ override: null, infraChain: 'arbitrum' })).toBeNull();
+  it('ignores non-deployable infra chains (reset to default)', () => {
+    expect(resolvePrimarySquadNetwork({ override: null, infraChain: 'mainnet' })).toBe('sepolia');
+    expect(resolvePrimarySquadNetwork({ override: null, infraChain: 'arbitrum' })).toBe('sepolia');
   });
 });
 
-describe('squad network override persistence', () => {
+describe('squad network pair persistence', () => {
   const npub = 'npub1squadnetworktestxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
   const parentId = 'parent-123';
   const store = new Map<string, string>();
@@ -83,35 +99,51 @@ describe('squad network override persistence', () => {
     delete (globalThis as unknown as { localStorage?: Storage }).localStorage;
   });
 
-  it('round-trips a per-parent override', () => {
-    expect(loadSquadNetworkOverride(npub, parentId)).toBeNull();
-    saveSquadNetworkOverride(npub, parentId, 'local');
-    expect(loadSquadNetworkOverride(npub, parentId)).toBe('local');
+  it('round-trips a per-parent pair', () => {
+    expect(loadSquadNetworkPair(npub, parentId)).toBeNull();
+    saveSquadNetworkPair(npub, parentId, { primary: 'local', practice: 'sepolia' });
+    expect(loadSquadNetworkPair(npub, parentId)).toEqual({ primary: 'local', practice: 'sepolia' });
+    expect(loadSquadNetworkSlot(npub, parentId, 'primary')).toBe('local');
+    expect(loadSquadNetworkSlot(npub, parentId, 'practice')).toBe('sepolia');
   });
 
-  it('scopes overrides per parent', () => {
-    saveSquadNetworkOverride(npub, parentId, 'sepolia');
-    saveSquadNetworkOverride(npub, 'parent-456', 'local');
-    expect(loadSquadNetworkOverride(npub, parentId)).toBe('sepolia');
-    expect(loadSquadNetworkOverride(npub, 'parent-456')).toBe('local');
+  it('saves one slot without clobbering the other', () => {
+    saveSquadNetworkPair(npub, parentId, { primary: 'sepolia', practice: 'sepolia' });
+    saveSquadNetworkSlot(npub, parentId, 'practice', 'local');
+    expect(loadSquadNetworkPair(npub, parentId)).toEqual({ primary: 'sepolia', practice: 'local' });
+  });
+
+  it('scopes pairs per parent', () => {
+    saveSquadNetworkPair(npub, parentId, { primary: 'sepolia', practice: 'sepolia' });
+    saveSquadNetworkPair(npub, 'parent-456', { primary: 'local', practice: 'local' });
+    expect(loadSquadNetworkSlot(npub, parentId, 'primary')).toBe('sepolia');
+    expect(loadSquadNetworkSlot(npub, 'parent-456', 'primary')).toBe('local');
   });
 
   it('does not persist non-deployable chains', () => {
-    saveSquadNetworkOverride(npub, parentId, 'mainnet' as never);
-    expect(loadSquadNetworkOverride(npub, parentId)).toBeNull();
+    saveSquadNetworkPair(npub, parentId, { primary: 'mainnet' as never, practice: 'sepolia' });
+    expect(loadSquadNetworkPair(npub, parentId)).toBeNull();
+  });
+
+  it('drops v1 single-chain blobs (reset to unset)', () => {
+    store.set(
+      `${SQUAD_NETWORK_PREFIX}_${npub}`,
+      JSON.stringify({ v: 1, byParentId: { [parentId]: 'sepolia' } }),
+    );
+    expect(loadSquadNetworkPair(npub, parentId)).toBeNull();
   });
 
   it('drops stale/unknown persisted values on load', () => {
     store.set(
       `${SQUAD_NETWORK_PREFIX}_${npub}`,
-      JSON.stringify({ v: 1, byParentId: { [parentId]: 'optimism' } }),
+      JSON.stringify({ v: 2, byParentId: { [parentId]: { primary: 'optimism', practice: 'local' } } }),
     );
-    expect(loadSquadNetworkOverride(npub, parentId)).toBeNull();
+    expect(loadSquadNetworkPair(npub, parentId)).toEqual({ primary: 'sepolia', practice: 'local' });
   });
 
   it('returns null without an npub or parentId', () => {
-    saveSquadNetworkOverride(npub, parentId, 'local');
-    expect(loadSquadNetworkOverride(null, parentId)).toBeNull();
-    expect(loadSquadNetworkOverride(npub, '')).toBeNull();
+    saveSquadNetworkPair(npub, parentId, { primary: 'local', practice: 'sepolia' });
+    expect(loadSquadNetworkPair(null, parentId)).toBeNull();
+    expect(loadSquadNetworkPair(npub, '')).toBeNull();
   });
 });

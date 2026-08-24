@@ -71,6 +71,8 @@ mod squad_bot;
 
 mod sticker_pack;
 
+mod squad_gov_replica;
+
 mod klipy;
 
 mod virtual_channel_bucket;
@@ -10739,6 +10741,8 @@ pub fn run() {
             db::list_parent_treasury_safes,
             db::add_parent_treasury_safe,
             db::list_squad_infra,
+            squad_gov_replica::list_squad_gov_replica,
+            squad_gov_replica::upsert_squad_gov_replica,
             db::list_squad_infra_canonical_refs,
             db::list_squad_contract_allowlist,
             db::upsert_squad_contract_allowlist,
@@ -10946,8 +10950,10 @@ pub fn run() {
             evm::quartermaster_ops::quartermaster_crew_offboard_vote,
             evm::quartermaster_ops::quartermaster_execute_offboard,
             evm::quartermaster_ops::quartermaster_expire_offboard,
+            evm::gov_read::get_evm_block_number,
             evm::hats_read::get_hats_tree,
             evm::member_governance_read::get_member_hat_wearers,
+            evm::member_governance_read::get_hat_wearers_for_ids,
             evm::member_governance_read::get_squad_admin_executor_roles,
             evm::access_control::get_squad_capabilities,
             regenerate_device_keypackage,

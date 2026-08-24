@@ -10,7 +10,7 @@
   import UpdateAvailableModal from '../components/updater/UpdateAvailableModal.svelte';
   import ParentNavbar from '../components/layout/ParentNavbar.svelte';
   import ParentDashboard from '../components/parent/ParentDashboard.svelte';
-import MyDashboard from '../components/parent/MyDashboard.svelte';
+  import SquadSettingsView from '../components/parent/SquadSettingsView.svelte';
     import Profile from '../components/profile/Profile.svelte';
   import MessengerNavbar from '../components/dm/MessengerNavbar.svelte';
   import MessengerChatView from '../components/dm/MessengerChatView.svelte';
@@ -19,6 +19,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   import WalletBar from '../components/wallet/WalletBar.svelte';
   import ResizableSidebar from '../components/ui/ResizableSidebar.svelte';
   import Toast from '../components/ui/Toast.svelte';
+  import OnChainActivityChip from '../components/ui/OnChainActivityChip.svelte';
   import { createLazyComponent } from '../lib/ui/lazy-svelte-component';
   import {
     getDmMessages,
@@ -94,8 +95,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     pinnedDmNpubs,
     blockedDmNpubs,
     dmSendError,
-    SQUAD_DASHBOARD_CHANNEL_ID,
-    MY_DASHBOARD_CHANNEL_ID,
+    SETTINGS_CHANNEL_ID,
     SQUAD_WARGAME_CHANNEL_ID,
     isVirtualHubChannelId,
     isSquadDashboardChromeChannelId,
@@ -127,9 +127,14 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     buildSquadAdminGovernanceAnnouncePayload,
     squadAdminInfraId,
     pactoGovTreasuryEntryId,
-    primaryGovernanceView,
   } from '../lib/governance/api';
   import { withPactoGovProviderPayloadTxHash } from '../lib/governance/pacto-gov-payload';
+  import {
+    rememberHubDashboard,
+    retainHubDashboardsForParent,
+    hubDashboardKeepAliveKey,
+    type HubDashboardKeepAlive,
+  } from '../lib/dashboard/hub-dashboard-keep-alive';
   import {
     buildStandaloneSafeProviderPayload,
     isPactoGovTreasurySafe,
@@ -183,8 +188,20 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     openHubParent != null &&
     (!effectiveHubChannel.channelId ||
       isSquadDashboardChromeChannelId(effectiveHubChannel.channelId));
-  $: showMyDashboard =
-    openHubParent != null && effectiveHubChannel.channelId === MY_DASHBOARD_CHANNEL_ID;
+  $: currentHubWarGame = effectiveHubChannel.channelId === SQUAD_WARGAME_CHANNEL_ID;
+  $: currentHubDashboardKey = openHubParent
+    ? hubDashboardKeepAliveKey(openHubParent.id, currentHubWarGame)
+    : '';
+  let visitedHubDashboards: HubDashboardKeepAlive[] = [];
+  $: if (openHubParent) {
+    visitedHubDashboards = showParentDashboard
+      ? rememberHubDashboard(visitedHubDashboards, openHubParent.id, currentHubWarGame)
+      : retainHubDashboardsForParent(visitedHubDashboards, openHubParent.id);
+  } else if (visitedHubDashboards.length > 0) {
+    visitedHubDashboards = [];
+  }
+  $: showSquadSettings =
+    openHubParent != null && effectiveHubChannel.channelId === SETTINGS_CHANNEL_ID;
   $: showMlsChatView =
     openHubParent != null &&
     !!effectiveHubChannel.channelId &&
@@ -1098,19 +1115,16 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
         <div class="parent-area">
           <ParentNavbar />
           <div class="parent-main">
-          {#if showParentDashboard && openHubParent}
-            {#key `${openHubParent.id}:${effectiveHubChannel.channelId ?? SQUAD_DASHBOARD_CHANNEL_ID}`}
+          {#if openHubParent && visitedHubDashboards.length > 0}
+            {#each visitedHubDashboards as hub (hub.key)}
+              <div
+                class="hub-dashboard-keep-alive"
+                hidden={!(showParentDashboard && currentHubDashboardKey === hub.key)}
+              >
               <ParentDashboard
               parent={openHubParent}
-              warGameStack={effectiveHubChannel.channelId === SQUAD_WARGAME_CHANNEL_ID}
+              warGameStack={hub.warGameStack}
               treasurySafes={$treasurySafesByParentId[openHubParent.id] ?? []}
-              governanceConfig={(() => {
-                const id = openHubParent.id;
-                const rows = $squadInfraByParentId[id];
-                return Object.prototype.hasOwnProperty.call($squadInfraByParentId, id)
-                  ? primaryGovernanceView(rows)
-                  : undefined;
-              })()}
               squadInfraRows={(() => {
                 const id = openHubParent.id;
                 return Object.prototype.hasOwnProperty.call($squadInfraByParentId, id)
@@ -1172,10 +1186,12 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
               onSponsorDeployComplete={finalizeSponsorDeploy}
               onSquadAdminDeployComplete={finalizeSquadAdminDeploy}
             />
-            {/key}
-          {:else if showMyDashboard && openHubParent}
-            {#key `${openHubParent.id}:${MY_DASHBOARD_CHANNEL_ID}`}
-              <MyDashboard parent={openHubParent} />
+              </div>
+            {/each}
+          {/if}
+          {#if showSquadSettings && openHubParent}
+            {#key `${openHubParent.id}:${SETTINGS_CHANNEL_ID}`}
+              <SquadSettingsView parent={openHubParent} />
             {/key}
           {:else if showMlsChatView}
             {#if ChatViewComponent}
@@ -1185,7 +1201,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
             {/if}
           {:else if $activeSquadId && !openHubParent}
             <p class="surface-loading muted" role="status">{$t('app.loading.squad')}</p>
-          {:else}
+          {:else if !showParentDashboard}
             <p class="surface-loading muted" role="status">{$t('app.selectSquadChannel')}</p>
           {/if}
           </div>
@@ -1195,6 +1211,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   </main>
   <div class="toast-portal-wrapper" use:portal>
     <Toast />
+    <OnChainActivityChip />
   </div>
   {#if $commonsBroadcastModalOpen}
     <div use:portal>
@@ -1252,6 +1269,18 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  .hub-dashboard-keep-alive {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .hub-dashboard-keep-alive[hidden] {
+    display: none;
   }
 
   .surface-loading {

@@ -7,6 +7,7 @@ import type {
 } from '../governance/api';
 import {
   getHatsTree,
+  getHatWearersForIds,
   getMemberHatWearers,
   getNavePirataDeployment,
   getWarGameDeployment,
@@ -95,6 +96,7 @@ export async function fetchTreasuryProposalVoteMap(params: {
   treasuryAuthority: string;
   proposals: TreasuryProposalDto[];
   voterAddress: string;
+  parentId?: string | null;
 }): Promise<Record<string, boolean>> {
   const active = params.proposals.filter((p) => isTreasuryProposalActive(p.status));
   if (active.length === 0) return {};
@@ -106,6 +108,7 @@ export async function fetchTreasuryProposalVoteMap(params: {
           treasuryAuthority: params.treasuryAuthority,
           proposalId: p.proposalId,
           voter: params.voterAddress,
+          parentId: params.parentId,
         });
         return [p.proposalId, voted] as const;
       }),
@@ -215,6 +218,43 @@ export async function fetchExecutorRolesByAddress(params: {
 
 export type GovRegistryStack = 'nave' | 'wargame';
 
+function mergeUniqueAddresses(existing: string[], extra: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of [...existing, ...extra]) {
+    const a = raw?.trim();
+    if (!a) continue;
+    const key = a.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(a);
+  }
+  return out;
+}
+
+async function logWearerAddresses(params: {
+  network: SupportedChainId;
+  hatIds: string[];
+  fromTxHash?: string | null;
+  parentId?: string | null;
+}): Promise<string[]> {
+  const hatIds = params.hatIds.map((id) => id.trim()).filter(Boolean);
+  if (hatIds.length === 0) return [];
+  try {
+    const rows = await withReadPlaneLimit(() =>
+      getHatWearersForIds({
+        network: params.network,
+        hatIds,
+        fromTxHash: params.fromTxHash,
+        parentId: params.parentId,
+      }),
+    );
+    return rows.flatMap((row) => row.addresses ?? []);
+  } catch {
+    return [];
+  }
+}
+
 async function getGovStackDeployment(params: {
   stack?: GovRegistryStack;
   network: string;
@@ -242,6 +282,7 @@ export async function fetchRolesTreeAnnotations(params: {
   /** Pacto Gov module addresses that may wear role hats. */
   protocolWearerCandidates?: string[];
   stack?: GovRegistryStack;
+  fromTxHash?: string | null;
 }): Promise<{
   roleLabelByHatId: Record<string, string>;
   wearerAddressesByHatId: Record<string, string[]>;
@@ -270,12 +311,20 @@ export async function fetchRolesTreeAnnotations(params: {
       topHatId: params.topHatId,
       parentId: params.parentId,
     });
+    const hatChecks = hatChecksForRolesTree(deployment, params.topHatId);
+    const logAddresses = await logWearerAddresses({
+      network: params.network,
+      hatIds: hatChecks.map((c) => c.hatId),
+      fromTxHash: params.fromTxHash,
+      parentId: params.parentId,
+    });
+    const candidates = mergeUniqueAddresses(wearerCandidates, logAddresses);
     let assignments: Awaited<ReturnType<typeof getMemberHatWearers>> = [];
-    if (wearerCandidates.length > 0) {
+    if (candidates.length > 0) {
       assignments = await getMemberHatWearers({
         network: params.network,
-        memberAddresses: wearerCandidates,
-        hatChecks: hatChecksForRolesTree(deployment, params.topHatId),
+        memberAddresses: candidates,
+        hatChecks,
         parentId: params.parentId,
       });
     }
@@ -315,13 +364,14 @@ export async function fetchSettingsChainMemberMaps(params: {
   squadMemberEvmByNpub: Record<string, string>;
   parentId?: string | null;
   stack?: GovRegistryStack;
+  fromTxHash?: string | null;
 }): Promise<{
   memberHatByAddress: Record<string, string>;
   memberRolesByAddress: Record<string, string>;
   error: string;
 }> {
-  const evmAddresses = Object.values(params.squadMemberEvmByNpub).filter(Boolean);
-  if (evmAddresses.length === 0) {
+  const rosterAddresses = Object.values(params.squadMemberEvmByNpub).filter(Boolean);
+  if (rosterAddresses.length === 0 && !params.topHatId) {
     return { memberHatByAddress: {}, memberRolesByAddress: {}, error: '' };
   }
 
@@ -336,20 +386,32 @@ export async function fetchSettingsChainMemberMaps(params: {
         topHatId: params.topHatId,
         parentId: params.parentId,
       });
-      const assignments = await getMemberHatWearers({
+      const hatChecks = hatChecksFromNaveDeployment(deployment);
+      const logAddresses = await logWearerAddresses({
         network: params.network,
-        memberAddresses: evmAddresses,
-        hatChecks: hatChecksFromNaveDeployment(deployment),
+        hatIds: hatChecks.map((c) => c.hatId),
+        fromTxHash: params.fromTxHash,
+        parentId: params.parentId,
       });
-      memberHatByAddress = memberHatByAddressFromAssignments(assignments);
+      const memberAddresses = mergeUniqueAddresses(rosterAddresses, logAddresses);
+      if (memberAddresses.length > 0) {
+        const assignments = await getMemberHatWearers({
+          network: params.network,
+          memberAddresses,
+          hatChecks,
+          parentId: params.parentId,
+        });
+        memberHatByAddress = memberHatByAddressFromAssignments(assignments);
+      }
     }
 
-    if (params.squadAdminProxy) {
+    if (params.squadAdminProxy && rosterAddresses.length > 0) {
       memberRolesByAddress = await fetchExecutorRolesByAddress({
         network: params.network,
         squadAdminProxy: params.squadAdminProxy,
         squadAdminChain: params.squadAdminChain,
-        evmAddresses,
+        evmAddresses: rosterAddresses,
+        parentId: params.parentId,
       });
     }
 

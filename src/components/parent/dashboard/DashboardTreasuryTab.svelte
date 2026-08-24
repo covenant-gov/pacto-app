@@ -6,7 +6,7 @@
   import { TREASURY_SAFE_UI_CAP } from '../../../lib/treasury/treasury-safes';
   import type { SquadInfraDto } from '../../../lib/governance/api';
   import { getSquadCapabilities } from '../../../lib/governance/api';
-  import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
+  import { aclSnapshotLoadKey } from '../../../lib/governance/acl-snapshot-key';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import {
     resolveGovernancePrivilege,
@@ -17,9 +17,11 @@
   import { safeStateByTreasuryId } from '../../../stores/safe';
   import { treasurySafesFetchMetaByParentId } from '../../../lib/dashboard/dashboard-fetch-meta';
   import { refreshAllSafeStates } from '../../../lib/dashboard/batch-safe-state-refresh';
+  import DashboardAssetCard from './DashboardAssetCard.svelte';
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
+  import { shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
 
   interface Props {
     parentId?: string;
@@ -36,8 +38,8 @@
     onOpenSponsorDeploy?: () => void;
     onOpenDeploySafe?: () => void;
     onOpenImportSafe?: () => void;
+    topHatId?: string;
     warGameStack?: boolean;
-    archiveView?: boolean;
   }
 
   let {
@@ -55,8 +57,8 @@
     onOpenSponsorDeploy = () => {},
     onOpenDeploySafe = () => {},
     onOpenImportSafe = () => {},
+    topHatId = '',
     warGameStack = false,
-    archiveView = false,
   }: Props = $props();
 
   let capabilitiesLoadKey = $state('');
@@ -75,13 +77,17 @@
 
   $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}|${archiveView ? 'archive' : 'live'}`;
+    const key = aclSnapshotLoadKey({
+      parentId: pid,
+      network,
+      warGameStack,
+      processNonce,
+      myAddress,
+      captainWearers,
+      crewWearers,
+    });
     if (!pid || key === capabilitiesLoadKey) return;
     capabilitiesLoadKey = key;
-    if (archiveView) {
-      capabilities = warGameArchiveCapabilities(pid);
-      return;
-    }
     capabilities = null;
     void loadCapabilities(pid, key);
   });
@@ -95,11 +101,6 @@
       if (key !== capabilitiesLoadKey) return;
       capabilities = null;
     }
-  }
-
-  function shortAddress(addr: string): string {
-    if (!addr || addr.length < 12) return addr;
-    return addr.slice(0, 6) + '…' + addr.slice(-4);
   }
 
   function openTreasuryExplorer(entry: TreasurySafeEntry) {
@@ -121,42 +122,23 @@
   });
   const govSafeAddress = $derived(governanceTreasurySafe?.safeAddress ?? pactoPayload?.safe ?? '');
   const showGovTreasury = $derived(!!govSafeAddress.trim());
-  const govExUrl = $derived(showGovTreasury ? explorerAddressUrl(parseSupportedChainId(network), govSafeAddress) : null);
-  const govSafeAppUrl = $derived(showGovTreasury ? safeAppHomeUrl(parseSupportedChainId(network), govSafeAddress) : null);
 </script>
 
 <SquadSponsorTreasuryPanel
   {parentId}
   {sponsorRow}
+  {topHatId}
   onOpenDeploy={warGameStack ? undefined : onOpenSponsorDeploy}
 />
 
 {#if showGovTreasury}
-  <section class="dashboard-section gov-treasury-section" aria-labelledby="gov-treasury-heading">
-    <h3 id="gov-treasury-heading" class="section-heading">{$t('governance.treasury.govHeading')}</h3>
-    <code class="treasury-card-address">{govSafeAddress}</code>
-    {#if govExUrl || govSafeAppUrl}
-      <div class="treasury-card-links">
-        {#if govExUrl}
-          <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(govExUrl)}>
-            {$t('governance.treasury.viewExplorer')}
-          </button>
-        {/if}
-        {#if govSafeAppUrl}
-          <button type="button" class="btn-link treasury-explorer-link" onclick={() => openExternalUrl(govSafeAppUrl)}>
-            {$t('governance.treasury.openSafe')}
-          </button>
-        {/if}
-      </div>
-    {/if}
-    <TreasurySafeModulePanel
-      {network}
-      {parentId}
-      safeAddress={govSafeAddress}
-      {announcementsGroupId}
-      {privilege}
-    />
-  </section>
+  <TreasurySafeModulePanel
+    {network}
+    {parentId}
+    safeAddress={govSafeAddress}
+    {announcementsGroupId}
+    {privilege}
+  />
 {/if}
 
 <section class="dashboard-section" aria-labelledby="safe-heading">
@@ -193,64 +175,69 @@
         {@const st = $safeStateByTreasuryId[entry.id]}
         {@const exUrl = explorerAddressUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
         {@const safeAppUrl = safeAppHomeUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
-        <li class="treasury-safe-card">
-          <h4 class="treasury-vault-title">{entry.label ? $t('governance.treasury.vaultLabel', { values: { label: entry.label } }) : $t('governance.treasury.vaultMultisig')}</h4>
-          <div class="treasury-card-top">
-            <span class="treasury-pill treasury-pill-chain">{entry.chain}</span>
-            {#if entry.label}
-              <span class="treasury-pill treasury-pill-label">{entry.label}</span>
-            {/if}
-          </div>
-          <code class="treasury-card-address">{entry.safeAddress}</code>
-          {#if exUrl || safeAppUrl}
-            <div class="treasury-card-links">
-              {#if exUrl}
-                <button
-                  type="button"
-                  class="btn-link treasury-explorer-link"
-                  onclick={() => openTreasuryExplorer(entry)}
-                >
-                  {$t('governance.treasury.viewExplorer')}
-                </button>
+        <li>
+          <DashboardAssetCard
+            headingId={`vault-heading-${entry.id}`}
+            heading={entry.label ? $t('governance.treasury.vaultLabel', { values: { label: entry.label } }) : $t('governance.treasury.vaultMultisig')}
+            headingLevel={4}
+          >
+            <dl class="asset-dl">
+              {#if st?.state}
+                <dt>{$t('governance.info.sponsorEth')}</dt>
+                <dd><strong>{st.state.balanceFormatted}</strong></dd>
               {/if}
-              {#if safeAppUrl}
-                <button
-                  type="button"
-                  class="btn-link treasury-explorer-link"
-                  onclick={() => openTreasurySafeApp(entry)}
-                >
-                  {$t('governance.treasury.openSafe')}
-                </button>
-              {/if}
-            </div>
-          {/if}
-          {#if st?.state}
-            <dl class="safe-state-dl treasury-card-dl">
-              <dt>{$t('governance.treasury.balance')}</dt>
-              <dd>{$t('governance.treasury.balanceEth', { values: { balance: st.state.balanceFormatted } })}</dd>
-              <dt>{$t('governance.treasury.signatures')}</dt>
-              <dd>{$t('governance.treasury.thresholdOf', { values: { threshold: st.state.threshold, owners: st.state.owners.length } })}</dd>
-              <dt>{$t('governance.treasury.nonce')}</dt>
-              <dd>{String(st.state.nonce)}</dd>
-              <dt>{$t('governance.treasury.owners')}</dt>
-              <dd>
-                <ul class="safe-owners-list">
-                  {#each st.state.owners as owner (owner)}
-                    <li><code class="safe-owner-address">{shortAddress(owner as string)}</code></li>
-                  {/each}
-                </ul>
+              <dt>{$t('governance.field.chain')}</dt>
+              <dd>{entry.chain}</dd>
+              <dt>{$t('governance.treasury.safe')}</dt>
+              <dd class="asset-dd-inline">
+                {#if exUrl}
+                  <button
+                    type="button"
+                    class="btn-link treasury-addr-link"
+                    title={entry.safeAddress}
+                    aria-label={$t('governance.hats.wearerExplorerTitle', { values: { address: entry.safeAddress } })}
+                    onclick={() => openTreasuryExplorer(entry)}
+                  >
+                    {shortAddress(entry.safeAddress)}
+                  </button>
+                {:else}
+                  <code class="safe-owner-address" title={entry.safeAddress}>{shortAddress(entry.safeAddress)}</code>
+                {/if}
+                {#if safeAppUrl}
+                  <button
+                    type="button"
+                    class="btn-link"
+                    onclick={() => openTreasurySafeApp(entry)}
+                  >
+                    {$t('governance.treasury.openSafe')}
+                  </button>
+                {/if}
               </dd>
+              {#if st?.state}
+                <dt>{$t('governance.treasury.signatures')}</dt>
+                <dd>{$t('governance.treasury.thresholdOf', { values: { threshold: st.state.threshold, owners: st.state.owners.length } })}</dd>
+                <dt>{$t('governance.treasury.nonce')}</dt>
+                <dd>{String(st.state.nonce)}</dd>
+                <dt>{$t('governance.treasury.owners')}</dt>
+                <dd>
+                  <ul class="safe-owners-list">
+                    {#each st.state.owners as owner (owner)}
+                      <li><code class="safe-owner-address">{shortAddress(owner as string)}</code></li>
+                    {/each}
+                  </ul>
+                </dd>
+              {/if}
             </dl>
-            {#if st.loading}
+            {#if st?.state && st.loading}
               <p class="safe-state-meta">{$t('governance.treasury.refreshing')}</p>
-            {:else if st.error}
+            {:else if st?.state && st.error}
               <p class="safe-state-error" role="alert">{$t('governance.treasury.lastRefreshFailed', { values: { error: st.error } })}</p>
+            {:else if !st?.state && st?.loading}
+              <p class="safe-state-meta">{$t('governance.treasury.loadingSafe')}</p>
+            {:else if !st?.state && st?.error}
+              <p class="safe-state-error" role="alert">{st.error}</p>
             {/if}
-          {:else if st?.loading}
-            <p class="safe-state-meta">{$t('governance.treasury.loadingSafe')}</p>
-          {:else if st?.error}
-            <p class="safe-state-error" role="alert">{st.error}</p>
-          {/if}
+          </DashboardAssetCard>
         </li>
       {/each}
     </ul>
@@ -262,10 +249,6 @@
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
     padding: 16px;
-    margin-top: 16px;
-  }
-
-  .gov-treasury-section {
     margin-top: 16px;
   }
 
@@ -287,13 +270,6 @@
 
   .treasury-section-head .section-heading {
     margin: 0;
-  }
-
-  .treasury-vault-title {
-    margin: 0 0 8px 0;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
   }
 
   .treasury-action-btns {
@@ -326,54 +302,10 @@
     gap: 12px;
   }
 
-  .treasury-safe-card {
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 12px;
-    background: var(--bg-elevated);
-  }
-
-  .treasury-card-top {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-
-  .treasury-pill {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-  }
-
-  .treasury-card-address {
-    display: block;
+  .treasury-addr-link {
     font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
-    word-break: break-all;
-    margin-bottom: 8px;
-    color: var(--text-primary);
-  }
-
-  .treasury-card-links {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 8px;
-  }
-
-  .treasury-explorer-link {
     margin: 0;
-  }
-
-  .treasury-card-dl {
-    margin-top: 8px;
+    padding: 0;
   }
 
   .btn-link {
@@ -402,25 +334,6 @@
     font-size: 0.875rem;
     color: var(--danger, #e53e3e);
     margin: 12px 0 0 0;
-  }
-
-  .safe-state-dl {
-    margin: 12px 0 0 0;
-    font-size: 0.875rem;
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 4px 16px;
-    align-items: baseline;
-  }
-
-  .safe-state-dl dt {
-    color: var(--text-muted);
-    font-weight: 500;
-  }
-
-  .safe-state-dl dd {
-    margin: 0;
-    color: var(--text-primary);
   }
 
   .safe-owners-list {

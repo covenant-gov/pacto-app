@@ -1,5 +1,4 @@
 {
-	"nav.topNavbar.viewLabel": "View",
 	"nav.topNavbar.mainViewAria": "Main view",
 	"nav.topNavbar.mainViewsAria": "Main views",
 	"nav.topNavbar.tabs.commons": "Commons",
@@ -24,10 +23,6 @@
 	"nav.navbar.organizeSquad.iconLabel": "Squad photo (optional)",
 	"nav.navbar.organizeSquad.membersLabel": "Members for announcements (select at least one)",
 	"nav.navbar.organizeSquad.membersEmpty": "Add friends in DMs first to create a squad with them.",
-	"nav.navbar.organizeSquad.networkLabel": "Network",
-	"nav.navbar.organizeSquad.networkNone": "none (choose later)",
-	"nav.navbar.organizeSquad.networkHint.withNetwork": "Network for this squad's on-chain deployments. Defaults to {network}; change it later in the squad's Settings.",
-	"nav.navbar.organizeSquad.networkHint.noNetwork": "No network yet — pick one later in the squad's Settings before deploying on-chain infra.",
 	"nav.navbar.organizeSquad.cancel": "Cancel",
 	"nav.navbar.organizeSquad.create": "Create",
 	"nav.navbar.organizeSquad.createAria": "Create squad",

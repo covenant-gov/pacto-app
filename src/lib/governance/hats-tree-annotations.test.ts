@@ -3,11 +3,13 @@ import {
   formatWearerDisplayLabel,
   hatChecksForRolesTree,
   memberHatByAddressFromAssignments,
+  memberHatByAddressFromWearerMaps,
   npubByEvmAddressFromSquadRoster,
   protocolWearerCandidateAddresses,
   protocolWearerLabelByAddress,
   roleLabelByHatIdFromNaveDeployment,
   wearerAddressesByHatIdFromAssignments,
+  isAddressWearingHat,
   wearersForRoleLabel,
 } from './hats-tree-annotations';
 import { hatIdToHex } from './pretty-hat-id';
@@ -134,7 +136,7 @@ describe('formatWearerDisplayLabel', () => {
   it('falls back to short address when no roster match', () => {
     expect(
       formatWearerDisplayLabel('0x9999999999999999999999999999999999999999', npubByAddress, () => ''),
-    ).toBe('0x9999…9999');
+    ).toBe('0x999999…999999');
   });
 });
 
@@ -178,6 +180,53 @@ describe('wearersForRoleLabel', () => {
         'Crew',
       ),
     ).toEqual([charlie, bravo]);
+  });
+});
+
+describe('isAddressWearingHat', () => {
+  const charlie = '0xcccccccccccccccccccccccccccccccccccccccc';
+  const bravo = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const pretty = '15.2.5.10.1';
+  const hex = hatIdToHex(pretty);
+  const decimal = BigInt(hex as string).toString(10);
+
+  it('matches pretty hat id against decimal and hex wearer keys', () => {
+    expect(hex).toBeTruthy();
+    expect(isAddressWearingHat({ [decimal]: [charlie] }, pretty, charlie)).toBe(true);
+    expect(isAddressWearingHat({ [hex as string]: [bravo] }, pretty, bravo)).toBe(true);
+  });
+
+  it('matches address case-insensitively', () => {
+    expect(
+      isAddressWearingHat({ [pretty]: [charlie] }, pretty, charlie.toUpperCase()),
+    ).toBe(true);
+  });
+
+  it('returns false for empty address or missing hat', () => {
+    expect(isAddressWearingHat({ [pretty]: [charlie] }, pretty, '')).toBe(false);
+    expect(isAddressWearingHat({ [pretty]: [charlie] }, '99.1', charlie)).toBe(false);
+    expect(isAddressWearingHat({}, pretty, charlie)).toBe(false);
+  });
+
+  it('returns true for each hat the address wears', () => {
+    const wearers = { [pretty]: [charlie], '3659.1.1': [charlie, bravo] };
+    expect(isAddressWearingHat(wearers, pretty, charlie)).toBe(true);
+    expect(isAddressWearingHat(wearers, '3659.1.1', charlie)).toBe(true);
+    expect(isAddressWearingHat(wearers, pretty, bravo)).toBe(false);
+  });
+});
+
+describe('memberHatByAddressFromWearerMaps', () => {
+  it('inverts hat wearers and skips the top-hat label', () => {
+    expect(
+      memberHatByAddressFromWearerMaps(
+        { '100': 'Captain', '101': 'Crew', '1': 'Top hat' },
+        { '100': ['0xAa'], '101': ['0xAa', '0xBb'], '1': ['0xCc'] },
+      ),
+    ).toEqual({
+      '0xaa': 'Captain, Crew',
+      '0xbb': 'Crew',
+    });
   });
 });
 

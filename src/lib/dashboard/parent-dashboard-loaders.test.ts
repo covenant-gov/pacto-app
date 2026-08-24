@@ -14,6 +14,7 @@ import {
 import { getMlsGroupMembers, type MlsGroupMembers } from '../api/nostr';
 import {
   getHatsTree,
+  getHatWearersForIds,
   getMemberHatWearers,
   getNavePirataDeployment,
   getWarGameDeployment,
@@ -38,6 +39,7 @@ const mockedListTreasuryProposals = vi.mocked(listTreasuryProposals);
 const mockedListQuartermasterPending = vi.mocked(listQuartermasterPending);
 const mockedTreasuryProposalHasVoted = vi.mocked(treasuryProposalHasVoted);
 const mockedGetHatsTree = vi.mocked(getHatsTree);
+const mockedGetHatWearersForIds = vi.mocked(getHatWearersForIds);
 const mockedGetNavePirataDeployment = vi.mocked(getNavePirataDeployment);
 const mockedGetWarGameDeployment = vi.mocked(getWarGameDeployment);
 const mockedGetMemberHatWearers = vi.mocked(getMemberHatWearers);
@@ -46,6 +48,7 @@ const mockedWithReadPlaneLimit = vi.mocked(withReadPlaneLimit);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedGetHatWearersForIds.mockResolvedValue([]);
 });
 
 const baseProposal: TreasuryProposalDto = {
@@ -164,6 +167,7 @@ describe('fetchTreasuryProposalVoteMap', () => {
       treasuryAuthority: '0xAuth',
       proposalId: '1',
       voter: '0xVoter',
+      parentId: undefined,
     });
     expect(result).toEqual({ '1': true });
   });
@@ -183,6 +187,7 @@ describe('fetchTreasuryProposals', () => {
     expect(mockedListTreasuryProposals).toHaveBeenCalledWith({
       network: 'sepolia',
       treasuryAuthority: '0xAuth',
+      parentId: undefined,
     });
     expect(result.proposals.map((p) => p.proposalId)).toEqual(['10', '7', '5']);
     expect(result.error).toBe('');
@@ -280,10 +285,10 @@ describe('fetchSettingsChainMemberMaps', () => {
     deployer: '0xDeployer',
   };
 
-  it('returns empty maps when there are no EVM addresses', async () => {
+  it('returns empty maps when there are no EVM addresses and no top hat', async () => {
     const result = await fetchSettingsChainMemberMaps({
       network: 'sepolia',
-      topHatId: '0xTop',
+      topHatId: null,
       squadAdminProxy: '0xAdmin',
       squadAdminChain: 'sepolia',
       squadMemberEvmByNpub: {},
@@ -294,6 +299,38 @@ describe('fetchSettingsChainMemberMaps', () => {
       memberRolesByAddress: {},
       error: '',
     });
+    expect(mockedGetHatWearersForIds).not.toHaveBeenCalled();
+  });
+
+  it('merges log-derived captain wearers into hat checks when the roster is empty', async () => {
+    mockedGetNavePirataDeployment.mockResolvedValueOnce(naveDeployment);
+    mockedGetHatWearersForIds.mockResolvedValueOnce([
+      { hatId: naveDeployment.captainHatId, addresses: ['0xCAPTAIN'] },
+    ]);
+    mockedGetMemberHatWearers.mockResolvedValueOnce([
+      {
+        address: '0xcaptain',
+        hats: [{ hatId: naveDeployment.captainHatId, label: 'Captain' }],
+      },
+    ]);
+
+    const result = await fetchSettingsChainMemberMaps({
+      network: 'sepolia',
+      topHatId: '0xTop',
+      squadAdminProxy: null,
+      squadAdminChain: null,
+      squadMemberEvmByNpub: {},
+      fromTxHash: '0xdeploy',
+    });
+
+    expect(mockedGetHatWearersForIds).toHaveBeenCalled();
+    expect(mockedGetMemberHatWearers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        memberAddresses: ['0xCAPTAIN'],
+      }),
+    );
+    expect(result.memberHatByAddress).toEqual({ '0xcaptain': 'Captain' });
+    expect(result.error).toBe('');
   });
 
   it('loads hats when topHatId is provided', async () => {
@@ -311,13 +348,17 @@ describe('fetchSettingsChainMemberMaps', () => {
       squadAdminProxy: null,
       squadAdminChain: null,
       squadMemberEvmByNpub: { npub1: '0xABC' },
+      parentId: 'parent-1',
     });
 
     expect(mockedGetNavePirataDeployment).toHaveBeenCalledWith({
       network: 'sepolia',
       topHatId: '0xTop',
-      parentId: undefined,
+      parentId: 'parent-1',
     });
+    expect(mockedGetMemberHatWearers).toHaveBeenCalledWith(
+      expect.objectContaining({ parentId: 'parent-1' }),
+    );
     expect(result.memberHatByAddress).toEqual({ '0xabc': 'Captain' });
     expect(result.memberRolesByAddress).toEqual({});
     expect(result.error).toBe('');
@@ -343,6 +384,7 @@ describe('fetchSettingsChainMemberMaps', () => {
       network: 'arbitrum',
       squadAdminProxy: '0xAdmin',
       executorAddress: '0xABC',
+      parentId: undefined,
     });
     expect(result.memberHatByAddress).toEqual({});
     expect(result.memberRolesByAddress).toEqual({ '0xabc': 'Full' });
@@ -518,6 +560,28 @@ describe('fetchRolesTreeAnnotations', () => {
     expect(result.wearerAddressesByHatId).toEqual({});
     expect(mockedGetNavePirataDeployment).toHaveBeenCalled();
     expect(mockedGetMemberHatWearers).not.toHaveBeenCalled();
+  });
+
+  it('checks log-derived captain addresses when the roster is empty', async () => {
+    mockedGetHatWearersForIds.mockResolvedValueOnce([
+      { hatId: rolesTreeDeployment.captainHatId, addresses: [captainAddress] },
+    ]);
+    mockedGetMemberHatWearers.mockResolvedValueOnce([
+      {
+        address: captainAddress,
+        hats: [{ hatId: rolesTreeDeployment.captainHatId, label: 'Captain' }],
+      },
+    ]);
+    const result = await fetchRolesTreeAnnotations({
+      network: 'sepolia',
+      topHatId: '3519',
+      squadMemberEvmByNpub: {},
+      fromTxHash: '0xdeploy',
+    });
+    expect(result.wearerAddressesByHatId[rolesTreeDeployment.captainHatId]).toEqual([
+      captainAddress.toLowerCase(),
+    ]);
+    expect(mockedGetMemberHatWearers).toHaveBeenCalled();
   });
 
   it('checks protocol module addresses even without roster members', async () => {

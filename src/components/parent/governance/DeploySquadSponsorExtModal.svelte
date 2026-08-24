@@ -220,6 +220,7 @@
     runOnChainInBackground({
       startedToast: tFn('governance.deploySquadSponsorExt.toast.submitted'),
       subject: tFn('governance.deploySquadSponsorExt.subject'),
+      parentId: parentId.trim(),
       job: () => deploySquadSponsorForParent(jobParams),
       onSuccess: async (result) => {
         await onComplete({

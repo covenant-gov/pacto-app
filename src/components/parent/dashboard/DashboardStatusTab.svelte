@@ -1,9 +1,10 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
-  import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
-  import SquadIdentitySection from './SquadIdentitySection.svelte';
-  import type { Squad } from '../../../stores/squads';
+  import PactoGovGovernanceShell from '../governance/PactoGovGovernanceShell.svelte';
+  import { resolveGovernanceProvider } from '../../../lib/governance/governance-provider';
+  import type { SquadInfraDto, TreasuryProposalDto } from '../../../lib/governance/api';
+  import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { currentUser } from '../../../stores/auth';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
@@ -23,15 +24,12 @@
   import { hasSquadAdminInfra } from '../../../lib/governance/squad-admin-payload';
   import { syncSquadInfraForParent } from '../../../lib/dashboard/dashboard-data-sync';
   import { openSquadWargame } from '../../../lib/navigation/open-squad-dashboard';
-  import { isActiveWarGameStack } from '../../../lib/governance/war-game-payload';
-  import { WAR_GAME_PUBLIC_RULES_URL } from '../../../lib/governance/war-game-links';
-  import { openExternalUrl } from '../../../lib/utils/open-external';
+  import { isActiveWarGameStack, warGameStatusAction } from '../../../lib/governance/war-game-payload';
   import DeployWarGameModal from '../governance/DeployWarGameModal.svelte';
   import { showToast } from '../../../stores/toast';
   import type { WarGameDeployComplete } from '../../../lib/governance/start-war-game-deploy';
 
   let {
-    squad,
     announcementsGroupId = null,
     parentId = '',
     channelMembers = [],
@@ -43,8 +41,19 @@
     onOpenDeploy = () => {},
     onOpenCrewBootstrap = () => {},
     onSelectNetwork = () => {},
+    practiceNetwork = null,
+    squadInfraRows = undefined,
+    pactoPayload = null,
+    pactoGovChain = undefined,
+    myAddress = '',
+    memberEvmOptions = [],
+    treasuryProposals = [],
+    treasuryProposalsLoading = false,
+    treasuryProposalsError = '',
+    onRefreshProposals = () => {},
+    warGameStack = false,
+    warGameRound = '',
   }: {
-    squad: Squad;
     announcementsGroupId?: string | null;
     parentId?: string;
     channelMembers?: string[];
@@ -56,6 +65,18 @@
     onOpenDeploy?: () => void;
     onOpenCrewBootstrap?: () => void;
     onSelectNetwork?: () => void;
+    practiceNetwork?: SupportedChainId | null;
+    squadInfraRows?: SquadInfraDto[];
+    pactoPayload?: PactoGovProviderPayloadV1 | null;
+    pactoGovChain?: string;
+    myAddress?: string;
+    memberEvmOptions?: { address: string; label: string }[];
+    treasuryProposals?: TreasuryProposalDto[];
+    treasuryProposalsLoading?: boolean;
+    treasuryProposalsError?: string;
+    onRefreshProposals?: () => void;
+    warGameStack?: boolean;
+    warGameRound?: string;
   } = $props();
 
   let rosterKeyNeeded = $state(false);
@@ -73,6 +94,7 @@
   const hasWarGame = $derived(
     warGameRow != null && isActiveWarGameStack(warGameRow.providerPayload),
   );
+  const warGameAction = $derived(warGameStatusAction(hasWarGame, warGameStack));
   const rosterMemberOptions = $derived(
     channelMembers
       .map((npub) => {
@@ -91,6 +113,11 @@
       crewWearers,
     }),
   );
+  const liveProvider = $derived(resolveGovernanceProvider(squadInfraRows));
+  const showPactoGovShell = $derived(
+    Boolean(pactoPayload?.treasuryAuthority?.trim()) && (warGameStack || liveProvider === 'pacto_gov'),
+  );
+  const govNetwork = $derived(pactoGovChain ?? 'sepolia');
 
   $effect(() => {
     const pid = parentId;
@@ -117,20 +144,8 @@
   }
 </script>
 
-<SquadIdentitySection {squad} />
-
 <section class="status-checklist" aria-label={$t('governance.status.checklistAria')}>
   <span class="meta-label">{$t('governance.status.checklistTitle')}</span>
-  <p class="wargame-nudge">
-    {$t('governance.status.wargameNudge')}
-    <button
-      type="button"
-      class="checklist-action"
-      onclick={() => void openExternalUrl(WAR_GAME_PUBLIC_RULES_URL)}
-    >
-      {$t('governance.status.wargameRulesLink')}
-    </button>
-  </p>
   <ul class="checklist" role="list">
     <li class="checklist-item" class:done={!!squadNetwork}>
       <span class={glyphClass(squadNetwork ? 'done' : 'not_started')} aria-hidden="true"
@@ -152,11 +167,13 @@
       <span class={glyphClass(hasWarGame ? 'done' : 'not_started')} aria-hidden="true"
         >{checklistGlyph(hasWarGame ? 'done' : 'not_started')}</span
       >
-      {#if hasWarGame}
+      {#if warGameAction === 'open'}
         <span>{$t('governance.status.wargameDeployed')}</span>
         <button type="button" class="checklist-action" onclick={() => openSquadWargame(parentId)}>
           {$t('governance.status.openWargame')}
         </button>
+      {:else if warGameAction === 'redeploy'}
+        <span>{$t('governance.status.wargameDeployed')}</span>
         <button type="button" class="checklist-action" onclick={() => (showWarGameDeploy = true)}>
           {$t('governance.status.redeployWargame')}
         </button>
@@ -166,22 +183,24 @@
         </button>
       {/if}
     </li>
-    <li class="checklist-item" class:done={govState === 'done'}>
-      <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
-      {#if productionGov}
-        <span>{$t('governance.status.squadGovernance')}</span>
-      {:else}
-        <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
-      {/if}
-    </li>
-    <li class="checklist-item" class:done={adminState === 'done'}>
-      <span class={glyphClass(adminState)} aria-hidden="true">{checklistGlyph(adminState)}</span>
-      {#if productionAdmin}
-        <span>{$t('governance.status.squadAdmin')}</span>
-      {:else}
-        <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
-      {/if}
-    </li>
+    {#if !warGameStack}
+      <li class="checklist-item" class:done={govState === 'done'}>
+        <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
+        {#if productionGov}
+          <span>{$t('governance.status.squadGovernance')}</span>
+        {:else}
+          <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
+        {/if}
+      </li>
+      <li class="checklist-item" class:done={adminState === 'done'}>
+        <span class={glyphClass(adminState)} aria-hidden="true">{checklistGlyph(adminState)}</span>
+        {#if productionAdmin}
+          <span>{$t('governance.status.squadAdmin')}</span>
+        {:else}
+          <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
+        {/if}
+      </li>
+    {/if}
     <li class="checklist-item" class:done={crewMintState === 'done'}>
       <span class={glyphClass(crewMintState)} aria-hidden="true">{checklistGlyph(crewMintState)}</span>
       {#if crewMintState === 'done'}
@@ -197,12 +216,30 @@
   </ul>
 </section>
 
-<SquadBroadcastSettingsSection {squad} />
+{#if showPactoGovShell && pactoPayload}
+  <PactoGovGovernanceShell
+    payload={pactoPayload}
+    network={govNetwork}
+    {parentId}
+    {myAddress}
+    {captainWearers}
+    {crewWearers}
+    {memberEvmOptions}
+    {treasuryProposals}
+    {treasuryProposalsLoading}
+    {treasuryProposalsError}
+    {onRefreshProposals}
+    {warGameStack}
+    {warGameRound}
+    surface="proposals"
+  />
+{/if}
 
 {#if showWarGameDeploy}
   <DeployWarGameModal
     {parentId}
     {announcementsGroupId}
+    practiceNetwork={practiceNetwork ?? undefined}
     redeploy={hasWarGame}
     memberOptions={rosterMemberOptions}
     onClose={() => (showWarGameDeploy = false)}
@@ -228,13 +265,6 @@
     letter-spacing: 0.04em;
     color: var(--text-muted);
     min-width: 5.5rem;
-  }
-
-  .wargame-nudge {
-    margin: 0;
-    font-size: 0.8125rem;
-    line-height: 1.45;
-    color: var(--text-muted);
   }
 
   .checklist {

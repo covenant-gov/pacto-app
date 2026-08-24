@@ -40,13 +40,25 @@ vi.mock('../../stores/auth', () => ({
   currentUser,
 }));
 
-import { saveSquadNetworkOverride, SQUAD_NETWORK_PREFIX } from './squad-network';
 import {
+  DEFAULT_SQUAD_PRACTICE_NETWORK,
+  DEFAULT_SQUAD_PRIMARY_NETWORK,
+  loadSquadNetworkPair,
+  resolvePracticeSquadNetwork,
+  saveSquadNetworkPair,
+  SQUAD_NETWORK_PREFIX,
+} from './squad-network';
+import {
+  applySquadNetworkUpdated,
   formatSquadNetworkUpdated,
   infraChainFromSquadRows,
   parseSquadNetworkUpdated,
+  practiceInfraChainFromSquadRows,
   publishSquadNetworkUpdated,
   SQUAD_NETWORK_UPDATED_TYPE,
+  SQUAD_NETWORK_UPDATED_VERSION,
+  trustedPracticeFromAnnounce,
+  trustedPrimaryFromAnnounce,
 } from './squad-network-share';
 
 describe('squad-network-share', () => {
@@ -76,20 +88,38 @@ describe('squad-network-share', () => {
     listSquadInfra.mockResolvedValue([]);
   });
 
-  it('formats and parses squad_network_updated', () => {
-    const raw = formatSquadNetworkUpdated({ parentId: gid, chain: 'sepolia' });
+  it('formats and parses squad_network_updated v2', () => {
+    const raw = formatSquadNetworkUpdated({
+      parentId: gid,
+      pair: { primary: 'sepolia', practice: 'local' },
+    });
     expect(JSON.parse(raw)).toMatchObject({
       type: SQUAD_NETWORK_UPDATED_TYPE,
+      version: SQUAD_NETWORK_UPDATED_VERSION,
       pacto_virtual_bucket: 'announcements',
+      payload: { parent_id: gid, primary: 'sepolia', practice: 'local' },
+    });
+    expect(parseSquadNetworkUpdated(raw)).toEqual({
+      parent_id: gid,
+      primary: 'sepolia',
+      practice: 'local',
+    });
+  });
+
+  it('rejects v1 single-chain payloads', () => {
+    const raw = JSON.stringify({
+      type: SQUAD_NETWORK_UPDATED_TYPE,
+      version: 1,
       payload: { parent_id: gid, chain: 'sepolia' },
     });
-    expect(parseSquadNetworkUpdated(raw)).toEqual({ parent_id: gid, chain: 'sepolia' });
+    expect(parseSquadNetworkUpdated(raw)).toBeNull();
   });
 
   it('rejects non-deployable chains on parse', () => {
     const raw = JSON.stringify({
       type: SQUAD_NETWORK_UPDATED_TYPE,
-      payload: { parent_id: gid, chain: 'mainnet' },
+      version: 2,
+      payload: { parent_id: gid, primary: 'mainnet', practice: 'sepolia' },
     });
     expect(parseSquadNetworkUpdated(raw)).toBeNull();
   });
@@ -104,33 +134,107 @@ describe('squad-network-share', () => {
     expect(infraChainFromSquadRows([{ infraType: 'sponsor', chain: 'local' }])).toBe('local');
   });
 
-  it('publishes override when set', async () => {
-    saveSquadNetworkOverride(npub, gid, 'local');
+  it('practiceInfraChainFromSquadRows reads pacto_gov_wargame', () => {
+    expect(
+      practiceInfraChainFromSquadRows([
+        { infraType: 'pacto_gov', chain: 'local' },
+        { infraType: 'pacto_gov_wargame', chain: 'sepolia' },
+      ]),
+    ).toBe('sepolia');
+  });
+
+  it('trustedPracticeFromAnnounce allows default or matching wargame infra', () => {
+    expect(trustedPracticeFromAnnounce('sepolia', null)).toBe('sepolia');
+    expect(trustedPracticeFromAnnounce('local', null)).toBeNull();
+    expect(trustedPracticeFromAnnounce('local', 'sepolia')).toBeNull();
+    expect(trustedPracticeFromAnnounce('local', 'local')).toBe('local');
+  });
+
+  it('does not persist untrusted practice=local from announce', () => {
+    applySquadNetworkUpdated({ parent_id: gid, primary: 'sepolia', practice: 'local' }, npub);
+    expect(loadSquadNetworkPair(npub, gid)).toEqual({
+      primary: 'sepolia',
+      practice: DEFAULT_SQUAD_PRACTICE_NETWORK,
+    });
+    expect(
+      resolvePracticeSquadNetwork({
+        override: loadSquadNetworkPair(npub, gid)?.practice,
+        infraChain: null,
+      }),
+    ).toBe('sepolia');
+  });
+
+  it('keeps an existing Settings practice when announce practice is untrusted', () => {
+    saveSquadNetworkPair(npub, gid, { primary: 'sepolia', practice: 'local' });
+    applySquadNetworkUpdated({ parent_id: gid, primary: 'sepolia', practice: 'local' }, npub);
+    expect(loadSquadNetworkPair(npub, gid)).toEqual({ primary: 'sepolia', practice: 'local' });
+  });
+
+  it('persists practice=local when pacto_gov_wargame is local', () => {
+    applySquadNetworkUpdated(
+      { parent_id: gid, primary: 'sepolia', practice: 'local' },
+      npub,
+      'local',
+    );
+    expect(loadSquadNetworkPair(npub, gid)).toEqual({ primary: 'sepolia', practice: 'local' });
+  });
+
+  it('trustedPrimaryFromAnnounce allows default or matching gov infra', () => {
+    expect(trustedPrimaryFromAnnounce('sepolia', null)).toBe('sepolia');
+    expect(trustedPrimaryFromAnnounce('local', null)).toBeNull();
+    expect(trustedPrimaryFromAnnounce('local', 'sepolia')).toBeNull();
+    expect(trustedPrimaryFromAnnounce('local', 'local')).toBe('local');
+  });
+
+  it('does not persist untrusted primary=local from announce', () => {
+    applySquadNetworkUpdated({ parent_id: gid, primary: 'local', practice: 'sepolia' }, npub);
+    expect(loadSquadNetworkPair(npub, gid)).toEqual({
+      primary: DEFAULT_SQUAD_PRIMARY_NETWORK,
+      practice: 'sepolia',
+    });
+  });
+
+  it('keeps an existing Settings primary when announce primary is untrusted', () => {
+    saveSquadNetworkPair(npub, gid, { primary: 'local', practice: 'sepolia' });
+    applySquadNetworkUpdated({ parent_id: gid, primary: 'local', practice: 'sepolia' }, npub);
+    expect(loadSquadNetworkPair(npub, gid)).toEqual({ primary: 'local', practice: 'sepolia' });
+  });
+
+  it('persists primary=local when pacto_gov infra is local', () => {
+    applySquadNetworkUpdated(
+      { parent_id: gid, primary: 'local', practice: 'sepolia' },
+      npub,
+      null,
+      'local',
+    );
+    expect(loadSquadNetworkPair(npub, gid)).toEqual({ primary: 'local', practice: 'sepolia' });
+  });
+
+  it('publishes stored pair', async () => {
+    saveSquadNetworkPair(npub, gid, { primary: 'local', practice: 'sepolia' });
     await expect(publishSquadNetworkUpdated(gid)).resolves.toBe(true);
     expect(sendDmMessage).toHaveBeenCalledWith(
       gid,
-      expect.stringContaining('"chain":"local"'),
+      expect.stringContaining('"primary":"local"'),
+      '',
+      { virtualBucket: 'announcements' },
+    );
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      gid,
+      expect.stringContaining('"practice":"sepolia"'),
       '',
       { virtualBucket: 'announcements' },
     );
     expect(localStorage.getItem(`${SQUAD_NETWORK_PREFIX}_${npub}`)).toBeTruthy();
   });
 
-  it('publishes infra chain when override unset', async () => {
-    listSquadInfra.mockResolvedValueOnce([
-      { infraType: 'pacto_gov', chain: 'sepolia', id: '1', parentId: gid, canonicalRef: '1' },
-    ]);
+  it('publishes defaults when unset', async () => {
     await expect(publishSquadNetworkUpdated(gid)).resolves.toBe(true);
     expect(sendDmMessage).toHaveBeenCalledWith(
       gid,
-      expect.stringContaining('"chain":"sepolia"'),
+      expect.stringContaining('"primary":"sepolia"'),
       '',
       { virtualBucket: 'announcements' },
     );
-  });
-
-  it('returns false when network unset', async () => {
-    await expect(publishSquadNetworkUpdated(gid)).resolves.toBe(false);
-    expect(sendDmMessage).not.toHaveBeenCalled();
   });
 });

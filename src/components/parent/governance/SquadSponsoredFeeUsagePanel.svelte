@@ -144,9 +144,7 @@
 
 <style>
   .fee-usage {
-    margin-top: 14px;
-    border-top: 1px solid var(--border-subtle);
-    padding-top: 10px;
+    margin: 0;
   }
   .fee-usage-summary {
     cursor: pointer;

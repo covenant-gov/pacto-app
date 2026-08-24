@@ -1,5 +1,6 @@
 <script lang="ts">
   import GovProposalsBoard from './GovProposalsBoard.svelte';
+  import GovAllActions from './GovAllActions.svelte';
   import GovCrewActions from './GovCrewActions.svelte';
   import GovCaptainActions from './GovCaptainActions.svelte';
   import {
@@ -16,7 +17,6 @@
     type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
-  import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
   import {
     clearGovModuleReadsForParent,
     fetchGovModuleReadCached,
@@ -29,20 +29,26 @@
     resolveGovernancePrivilege,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import {
-    displayGovWriteFundingHint,
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
+  import {
+    listSquadGovReplica,
+    parseGovReplicaSnapshot,
+    pickReplicaRow,
+    replicaStackForDashboard,
+    upsertSquadGovReplica,
+  } from '../../../lib/governance/gov-replica';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
-  import { parseSupportedChainId } from '../../../lib/wallet/chains';
-  import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
-  import { labeledWearerOptions } from '../../../lib/governance/war-game-captain';
-  import { showToast } from '../../../stores/toast';
+  import { govMemberOptions } from '../../../lib/governance/gov-member-options';
+  import {
+    ACL_SNAPSHOT_RETRY_MS,
+    aclSnapshotLoadKey,
+    aclSnapshotShouldRetry,
+  } from '../../../lib/governance/acl-snapshot-key';
+  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
+  import type { HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -54,14 +60,19 @@
     myAddress?: string;
     captainWearers?: string[];
     crewWearers?: string[];
+    memberOptionsLoading?: boolean;
     memberEvmOptions?: { address: string; label: string }[];
     treasuryProposals?: TreasuryProposalDto[];
     treasuryProposalsLoading?: boolean;
     treasuryProposalsError?: string;
     onRefreshProposals?: () => void;
-    hasSponsor?: boolean;
     warGameStack?: boolean;
-    archiveView?: boolean;
+    /** Active war-game round; empty on live nave. */
+    warGameRound?: string;
+    /** Proposals board (Status) vs All/Crew/Captain commands (Governance). */
+    surface?: 'proposals' | 'commands';
+    /** Live command snapshot for in-tree Hats CTAs. */
+    treeCommands?: HatsTreeCommandContext | null;
   }
 
   let {
@@ -71,28 +82,32 @@
     myAddress = '',
     captainWearers = [],
     crewWearers = [],
+    memberOptionsLoading = false,
     memberEvmOptions = [],
     treasuryProposals = [],
     treasuryProposalsLoading = false,
     treasuryProposalsError = '',
     onRefreshProposals = () => {},
-    hasSponsor = false,
     warGameStack = false,
-    archiveView = false,
+    warGameRound = '',
+    surface = 'commands',
+    treeCommands = $bindable(null),
   }: Props = $props();
 
-  type GovSubMode = 'proposals' | 'crew' | 'captain';
+  type GovSubMode = 'all' | 'crew' | 'captain';
   type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
   /** Capability-preflight state: `unresolved` must never render a gated action as available. */
   type CapabilitiesStatus = 'unresolved' | 'ready' | 'error';
 
   const tFn = get(t);
 
-  let govSubMode: GovSubMode = $state('proposals');
+  let govSubMode: GovSubMode = $state('all');
   let mutinyCaptain = $state('');
   let capabilities: SquadCapabilitiesDto | null = $state(null);
   let capabilitiesStatus: CapabilitiesStatus = $state('unresolved');
   let capabilitiesLoadKey = $state('');
+  let capabilitiesRetryKey = $state('');
+  let capabilitiesRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   let mutinyStatus: MutinyStatusDto | null = $state(null);
   let mutinyHasVotedFlag = $state(false);
@@ -108,10 +123,7 @@
   let qmPendingError = $state('');
   let qmPendingHydrateKey = $state('');
   let lastSeenProcessNonce = $state(0);
-
-  let rosterBalanceRaw = $state('0');
-  let rosterBalanceKnown = $state(false);
-  let fundingBalanceKey = $state('');
+  let replicaRound = $derived(warGameStack ? String(warGameRound || '').trim() : '');
 
   let processNonce = $derived($governanceProcessNonceByParentId[parentId.trim()] ?? 0);
   let rosterFrozen = $derived(isMutinyActive(mutinyStatus) || isCrewOffboardActive(qmStatus));
@@ -120,12 +132,21 @@
       ? 'governance.gate.quartermasterLocked'
       : 'governance.gate.rosterFrozenOffboard',
   );
-  let crewMemberOptions = $derived(labeledWearerOptions(crewWearers, memberEvmOptions));
+  let crewMemberOptions = $derived(
+    govMemberOptions({
+      roster: memberEvmOptions,
+      crewWearers,
+      preset: 'crewWearers',
+    }),
+  );
 
   $effect(() => {
     if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
       lastSeenProcessNonce = processNonce;
-      refreshAllProposals();
+      onRefreshProposals();
+      void reloadMutiny(false);
+      void reloadQm(false);
+      void reloadQmPending();
     }
   });
 
@@ -135,8 +156,10 @@
     return [...set];
   });
 
-  /** Destructive captain/crew CTAs must stay closed until the ACL preflight resolves. */
-  let capabilitiesPending = $derived(capabilitiesStatus === 'unresolved');
+  /** Destructive captain/crew CTAs stay closed until ACL preflight is ready (error is fail-closed). */
+  let capabilitiesPending = $derived(
+    capabilitiesStatus === 'unresolved' || capabilitiesStatus === 'error',
+  );
 
   let privilege = $derived(
     resolveGovernancePrivilege({
@@ -149,38 +172,34 @@
   );
 
   $effect(() => {
-    const addr = (privilege.myAddress || myAddress).trim();
-    const key = `${network}|${addr}|${hasSponsor}`;
-    if (key !== fundingBalanceKey) {
-      fundingBalanceKey = key;
-      if (addr) {
-        void loadRosterFundingBalance(network, addr);
-      } else {
-        rosterBalanceKnown = false;
-      }
-    }
-  });
-
-  let fundingHint = $derived(
-    displayGovWriteFundingHint({
-      balanceRaw: rosterBalanceRaw,
-      balanceKnown: rosterBalanceKnown,
-      hasSponsorInfra: hasSponsor,
-    }),
-  );
-
-  $effect(() => {
     const pid = parentId.trim();
-    const key = `${pid}|${network}|${warGameStack ? 'wargame' : 'nave'}|${processNonce}|${archiveView ? 'archive' : 'live'}`;
+    const key = aclSnapshotLoadKey({
+      parentId: pid,
+      network,
+      warGameStack,
+      processNonce,
+      myAddress,
+      captainWearers,
+      crewWearers,
+    });
     if (!pid || key === capabilitiesLoadKey) return;
     capabilitiesLoadKey = key;
-    if (archiveView) {
-      capabilities = warGameArchiveCapabilities(pid);
-      capabilitiesStatus = 'ready';
-      return;
+    capabilitiesRetryKey = '';
+    if (capabilitiesRetryTimer) {
+      clearTimeout(capabilitiesRetryTimer);
+      capabilitiesRetryTimer = null;
     }
     capabilitiesStatus = 'unresolved';
     void loadCapabilities(pid, key);
+  });
+
+  $effect(() => {
+    return () => {
+      if (capabilitiesRetryTimer) {
+        clearTimeout(capabilitiesRetryTimer);
+        capabilitiesRetryTimer = null;
+      }
+    };
   });
 
   $effect(() => {
@@ -207,33 +226,40 @@
     }
   });
 
+  function scheduleCapabilitiesRetry(pid: string, key: string) {
+    if (capabilitiesRetryKey === key) return;
+    capabilitiesRetryKey = key;
+    if (capabilitiesRetryTimer) clearTimeout(capabilitiesRetryTimer);
+    capabilitiesRetryTimer = setTimeout(() => {
+      capabilitiesRetryTimer = null;
+      if (key !== capabilitiesLoadKey) return;
+      capabilitiesStatus = 'unresolved';
+      void loadCapabilities(pid, key);
+    }, ACL_SNAPSHOT_RETRY_MS);
+  }
+
   async function loadCapabilities(pid: string, key: string) {
     try {
       const snap = await getSquadCapabilities(pid, network, { wargame: warGameStack });
       if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
       capabilitiesStatus = 'ready';
+      if (
+        aclSnapshotShouldRetry({
+          snapshot: snap,
+          myAddress,
+          captainWearers,
+          crewWearers,
+        })
+      ) {
+        scheduleCapabilitiesRetry(pid, key);
+      }
     } catch {
       if (key !== capabilitiesLoadKey) return;
       capabilities = null;
       capabilitiesStatus = 'error';
+      scheduleCapabilitiesRetry(pid, key);
     }
-  }
-
-  async function loadRosterFundingBalance(net: string, addr: string) {
-    const chain = parseSupportedChainId(net);
-    if (!chain) {
-      rosterBalanceKnown = false;
-      return;
-    }
-    const bal = await fetchEvmBalance(chain, addr, { timeoutMs: 12_000 });
-    if (`${net}|${addr}|${hasSponsor}` !== fundingBalanceKey) return;
-    if (bal.error) {
-      rosterBalanceKnown = false;
-      return;
-    }
-    rosterBalanceRaw = bal.balanceRaw;
-    rosterBalanceKnown = true;
   }
 
   function applyMutinySnapshot(snap: MutinySnapshot) {
@@ -247,6 +273,23 @@
     if (!mutinyModule) return;
     const hydrateKey = `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`;
     const key = mutinyReadCacheKey(network, mutinyModule, privilege.myAddress);
+    if (!force) {
+      try {
+        const rows = await listSquadGovReplica(parentId);
+        const replica = pickReplicaRow(rows, {
+          stack: replicaStackForDashboard(warGameStack),
+          kind: 'mutiny',
+          round: replicaRound,
+        });
+        const snap = replica ? parseGovReplicaSnapshot(replica.snapshotJson) : null;
+        if (snap?.mutiny) {
+          mutinyStatus = snap.mutiny;
+          mutinyCaptain = snap.mutiny.captain ?? '';
+        }
+      } catch {
+        /* chain fill */
+      }
+    }
     const peeked = peekGovModuleRead<MutinySnapshot>(key);
     if (peeked && !force) applyMutinySnapshot(peeked);
 
@@ -263,6 +306,16 @@
         parentId,
         async () => {
           const next = await getMutinyStatus({ network, mutinyModule, parentId });
+          if (parentId) {
+            void upsertSquadGovReplica({
+              parentId,
+              stack: replicaStackForDashboard(warGameStack),
+              kind: 'mutiny',
+              snapshot: { mutiny: next },
+              blockNumber: 0,
+              round: replicaRound,
+            });
+          }
           let voted = false;
           if (next.activeMutinyId !== '0' && privilege.myAddress) {
             voted = await mutinyHasVoted({
@@ -360,11 +413,37 @@
     }
     const hydrateKey = `${parentId}|${network}|${quartermaster}|pending`;
     qmPendingLoading = qmPending.length === 0;
+    try {
+      const rows = await listSquadGovReplica(parentId);
+      const replica = pickReplicaRow(rows, {
+        stack: replicaStackForDashboard(warGameStack),
+        kind: 'qm_pending',
+        round: replicaRound,
+      });
+      const snap = replica ? parseGovReplicaSnapshot(replica.snapshotJson) : null;
+      if (snap?.qmPending?.length) {
+        if (hydrateKey !== `${parentId}|${network}|${quartermaster}|pending`) return;
+        qmPending = snap.qmPending;
+        qmPendingError = '';
+      }
+    } catch {
+      /* chain fill */
+    }
     const result = await fetchQuartermasterPendingActions({ network, quartermaster, parentId });
     if (hydrateKey !== `${parentId}|${network}|${quartermaster}|pending`) return;
     qmPendingLoading = false;
     qmPending = result.pending;
     qmPendingError = result.error;
+    if (!result.error && result.pending.length > 0) {
+      void upsertSquadGovReplica({
+        parentId,
+        stack: replicaStackForDashboard(warGameStack),
+        kind: 'qm_pending',
+        snapshot: { qmPending: result.pending },
+        blockNumber: 0,
+        round: replicaRound,
+      });
+    }
   }
 
   function refreshAllProposals() {
@@ -374,65 +453,124 @@
     void reloadQmPending();
   }
 
-  async function executeMutinyFromBoard() {
+  function executeMutinyFromBoard() {
     const mutinyModule = payload.mutinyModule?.trim();
-    if (!mutinyModule || !mutinyStatus) return;
-    try {
-      const result = await mutinyExecute({
-        network,
-        parentId,
-        mutinyModule,
-        mutinyId: mutinyStatus.activeMutinyId,
-      });
-      showToast(govWriteSubmittedToast(tFn('governance.action.executeMutiny'), fundedByFromWriteResult(result)));
-      await reloadMutiny(true);
-    } catch (e) {
-      showGovWriteErrorToast(e, tFn('governance.action.executeMutiny'));
-      clearGovModuleReadsForParent(parentId);
-      await reloadMutiny(true);
-    }
+    const status = mutinyStatus;
+    if (!mutinyModule || !status) return;
+    runGovWriteInBackground({
+      label: tFn('governance.action.executeMutiny'),
+      parentId,
+      actionKey: `mutiny-exec:${status.activeMutinyId}`,
+      job: () =>
+        mutinyExecute({
+          network,
+          parentId,
+          mutinyModule,
+          mutinyId: status.activeMutinyId,
+        }),
+      onSettled: () => {
+        clearGovModuleReadsForParent(parentId);
+        void reloadMutiny(true);
+      },
+    });
   }
 
-  async function expireMutinyFromBoard() {
+  function expireMutinyFromBoard() {
     const mutinyModule = payload.mutinyModule?.trim();
-    if (!mutinyModule || !mutinyStatus) return;
-    try {
-      const result = await mutinyExpire({
-        network,
-        parentId,
-        mutinyModule,
-        mutinyId: mutinyStatus.activeMutinyId,
-      });
-      showToast(govWriteSubmittedToast(tFn('governance.action.expireMutiny'), fundedByFromWriteResult(result)));
-      await reloadMutiny(true);
-    } catch (e) {
-      showGovWriteErrorToast(e, tFn('governance.action.expireMutiny'));
-      clearGovModuleReadsForParent(parentId);
-      await reloadMutiny(true);
-    }
-  }
-
-  function shortAddr(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 14) return a || '—';
-    return `${a.slice(0, 8)}…${a.slice(-6)}`;
+    const status = mutinyStatus;
+    if (!mutinyModule || !status) return;
+    runGovWriteInBackground({
+      label: tFn('governance.action.expireMutiny'),
+      parentId,
+      actionKey: `mutiny-expire:${status.activeMutinyId}`,
+      job: () =>
+        mutinyExpire({
+          network,
+          parentId,
+          mutinyModule,
+          mutinyId: status.activeMutinyId,
+        }),
+      onSettled: () => {
+        clearGovModuleReadsForParent(parentId);
+        void reloadMutiny(true);
+      },
+    });
   }
 
   const subModes: { id: GovSubMode; label: string }[] = [
-    { id: 'proposals', label: tFn('governance.shell.tab.proposals') },
+    { id: 'all', label: tFn('governance.shell.tab.all') },
     { id: 'crew', label: tFn('governance.shell.tab.crew') },
     { id: 'captain', label: tFn('governance.shell.tab.captain') },
   ];
+
+  function refreshMutiny() {
+    void reloadMutiny(true);
+  }
+
+  function refreshQm() {
+    void reloadQm(true);
+    void reloadQmPending();
+  }
+
+  $effect(() => {
+    treeCommands = {
+      privilege,
+      capabilitiesPending,
+      mutinyStatus,
+      qmStatus,
+      treasuryAuthority: payload.treasuryAuthority ?? '',
+      mutinyModule: payload.mutinyModule ?? '',
+      quartermaster: payload.quartermaster ?? '',
+      network,
+      parentId,
+      memberEvmOptions,
+      crewMemberOptions,
+      memberOptionsLoading,
+      captainWearers,
+      crewWearers,
+      warGameStack,
+      refreshProposals: refreshAllProposals,
+      refreshMutiny,
+      refreshQm,
+    };
+  });
 </script>
 
 <div class="gov-shell">
   <div class="role-chip" role="status">
     {$t('governance.shell.you')} · <strong>{$t(privilege.roleLabel)}</strong>
     {#if privilege.myAddress}
-      <code class="role-addr">{shortAddr(privilege.myAddress)}</code>
+      <code class="role-addr">{shortEvmAddress(privilege.myAddress) || '—'}</code>
     {/if}
   </div>
 
+  {#if surface === 'proposals'}
+    <GovProposalsBoard
+      {network}
+      {parentId}
+      treasuryAuthority={payload.treasuryAuthority ?? ''}
+      quartermaster={payload.quartermaster ?? ''}
+      {privilege}
+      proposals={treasuryProposals}
+      proposalsLoading={treasuryProposalsLoading}
+      proposalsError={treasuryProposalsError}
+      {mutinyStatus}
+      {mutinyLoading}
+      {qmStatus}
+      {qmPending}
+      {qmPendingLoading}
+      {qmPendingError}
+      mutinyModule={payload.mutinyModule ?? ''}
+      mutinyMode={rosterFrozen}
+      rosterFreezeReason={rosterFreezeReason}
+      mutinyHasVoted={mutinyHasVotedFlag}
+      {offboardHasVoted}
+      onRefreshProposals={refreshAllProposals}
+      onExecuteMutiny={executeMutinyFromBoard}
+      onExpireMutiny={expireMutinyFromBoard}
+      {capabilitiesPending}
+    />
+  {:else}
   <div class="submode-tabs" role="tablist" aria-label={$t('governance.shell.subModesAria')}>
     {#each subModes as mode (mode.id)}
       <button
@@ -449,80 +587,58 @@
   </div>
 
   <div class="submode-panel" role="tabpanel" tabindex="0" aria-label={subModes.find((m) => m.id === govSubMode)?.label ?? govSubMode}>
-    {#if govSubMode === 'proposals'}
-      <GovProposalsBoard
+    {#if govSubMode === 'all'}
+      <GovAllActions
         {network}
         {parentId}
         treasuryAuthority={payload.treasuryAuthority ?? ''}
-        quartermaster={payload.quartermaster ?? ''}
         {privilege}
-        proposals={treasuryProposals}
-        proposalsLoading={treasuryProposalsLoading}
-        proposalsError={treasuryProposalsError}
-        {mutinyStatus}
-        {mutinyLoading}
-        {qmStatus}
-        {qmPending}
-        {qmPendingLoading}
-        {qmPendingError}
-        mutinyMode={rosterFrozen}
-        rosterFreezeReason={rosterFreezeReason}
-        onRefreshProposals={refreshAllProposals}
-        onExecuteMutiny={executeMutinyFromBoard}
-        onExpireMutiny={expireMutinyFromBoard}
-        {fundingHint}
         {capabilitiesPending}
+        onSubmitted={refreshAllProposals}
       />
     {:else if govSubMode === 'crew'}
       <GovCrewActions
         {network}
         {parentId}
-        treasuryAuthority={payload.treasuryAuthority ?? ''}
         mutinyModule={payload.mutinyModule ?? ''}
         quartermaster={payload.quartermaster ?? ''}
         {privilege}
-        proposals={treasuryProposals}
         {mutinyStatus}
-        mutinyHasVotedFlag={mutinyHasVotedFlag}
         {qmStatus}
         memberEvmOptions={crewMemberOptions}
         squadMemberOptions={memberEvmOptions}
-        {offboardHasVoted}
-        onRefreshProposals={refreshAllProposals}
+        {memberOptionsLoading}
         onRefreshMutiny={() => reloadMutiny(true)}
         onRefreshQm={() => {
           void reloadQm(true);
           void reloadQmPending();
         }}
-        {fundingHint}
         {capabilitiesPending}
       />
     {:else}
       <GovCaptainActions
         {network}
         {parentId}
-        treasuryAuthority={payload.treasuryAuthority ?? ''}
         quartermaster={payload.quartermaster ?? ''}
         mutinyModule={payload.mutinyModule ?? ''}
         {privilege}
-        proposals={treasuryProposals}
         {mutinyStatus}
         {qmStatus}
         {memberEvmOptions}
+        {memberOptionsLoading}
         {captainWearers}
         {crewWearers}
         {warGameStack}
-        onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         onRefreshQm={() => {
           void reloadQm(true);
           void reloadQmPending();
         }}
-        {fundingHint}
         {capabilitiesPending}
       />
     {/if}
   </div>
+  {/if}
 </div>
 
 <style>

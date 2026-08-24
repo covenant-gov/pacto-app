@@ -28,11 +28,11 @@ import {
 import { loadBackupVerified } from './backup-verification';
 import {
   SQUAD_DASHBOARD_MODE_PREFIX,
-  MY_DASHBOARD_MODE_PREFIX,
   parseSquadDashboardChannelMode,
-  parseMyDashboardChannelMode,
   squadDashboardChannelMode,
-  myDashboardChannelMode,
+  SETTINGS_CHANNEL_MODE_PREFIX,
+  parseSettingsChannelMode,
+  settingsChannelMode,
   lastOpenedSquadId,
   lastOpenedChannelId,
   lastChannelBySquadId,
@@ -158,8 +158,8 @@ export function loadAccountState(npub: string): void {
     // reconcileStaleInviteDecisions already runs after hydrateSquadsFromDb() completes
     const rawSquadDashboardMode = localStorage.getItem(`${SQUAD_DASHBOARD_MODE_PREFIX}_${npub}`);
     squadDashboardChannelMode.set(parseSquadDashboardChannelMode(rawSquadDashboardMode));
-    const rawMyDashboardMode = localStorage.getItem(`${MY_DASHBOARD_MODE_PREFIX}_${npub}`);
-    myDashboardChannelMode.set(parseMyDashboardChannelMode(rawMyDashboardMode));
+    const rawSettingsChannelMode = localStorage.getItem(`${SETTINGS_CHANNEL_MODE_PREFIX}_${npub}`);
+    settingsChannelMode.set(parseSettingsChannelMode(rawSettingsChannelMode));
     loadStartupCheckPreference(npub);
   } catch {
     // ignore parse errors

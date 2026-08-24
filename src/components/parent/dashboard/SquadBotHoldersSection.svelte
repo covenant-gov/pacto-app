@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import DashboardAssetCard from './DashboardAssetCard.svelte';
   import { get } from 'svelte/store';
   const tFn = get(t);
   import { onMount } from 'svelte';
@@ -150,14 +151,12 @@
   }
 </script>
 
-<section
+<DashboardAssetCard
   id="settings-squad-bot-holders"
-  class="dashboard-section squad-bot-holders-section"
-  aria-labelledby="squad-bot-holders-title"
+  headingId="squad-bot-holders-title"
+  heading={$t('governance.botHolders.title')}
+  hint={$t('governance.botHolders.lead')}
 >
-  <h3 id="squad-bot-holders-title" class="section-heading">{$t('governance.botHolders.title')}</h3>
-  <p class="section-lead">{$t('governance.botHolders.lead')}</p>
-
   {#if loading}
     <p class="muted" role="status">{$t('governance.common.loading')}</p>
   {:else if error}
@@ -168,42 +167,37 @@
       {$t('governance.botHolders.initialize')}
     </button>
   {:else}
-    <div class="bot-details">
-      <div class="bot-key-box">
-        <span class="bot-key-box-label">{$t('governance.botHolders.botNpub')}</span>
-        <div class="bot-key-value-row">
-          <code class="bot-key-value-full">{botState.botNpub}</code>
-          <button
-            type="button"
-            class="bot-key-copy-btn"
-            aria-label={copiedBotNpub ? $t('governance.common.copied') : $t('governance.botHolders.copyBotNpub')}
-            title={copiedBotNpub ? $t('governance.common.copied') : $t('governance.common.copy')}
-            onclick={copyBotNpub}
+    <dl class="asset-dl">
+      <dt>{$t('governance.botHolders.botNpub')}</dt>
+      <dd class="asset-dd-inline">
+        <code class="bot-key-value-full">{botState.botNpub}</code>
+        <button
+          type="button"
+          class="bot-key-copy-btn"
+          aria-label={copiedBotNpub ? $t('governance.common.copied') : $t('governance.botHolders.copyBotNpub')}
+          title={copiedBotNpub ? $t('governance.common.copied') : $t('governance.common.copy')}
+          onclick={copyBotNpub}
+        >
+          <svg
+            class="bot-key-copy-icon"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
           >
-            <svg
-              class="bot-key-copy-icon"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="bot-key-box bot-key-box-compact">
-        <span class="bot-key-box-label">{$t('governance.botHolders.keyEpoch')}</span>
-        <span class="bot-key-box-value">{botState.keyEpoch}</span>
-      </div>
-    </div>
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        </button>
+      </dd>
+      <dt>{$t('governance.botHolders.keyEpoch')}</dt>
+      <dd><strong>{botState.keyEpoch}</strong></dd>
+    </dl>
 
     <h4 class="subhead">{$t('governance.botHolders.holders')}</h4>
     <ul class="holder-list">
@@ -250,24 +244,9 @@
       </div>
     {/if}
   {/if}
-</section>
+</DashboardAssetCard>
 
 <style>
-  .squad-bot-holders-section {
-    padding: 14px 16px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-  }
-
-  .section-heading {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 8px;
-  }
-
-  .section-lead,
   .muted {
     margin: 0 0 0.75rem;
     font-size: 0.875rem;
@@ -277,31 +256,6 @@
   .err {
     color: var(--danger, #c44);
     font-size: 0.875rem;
-  }
-  .bot-details {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin: 0 0 1rem;
-  }
-  .bot-key-box {
-    padding: 10px 12px;
-    background: var(--bg-page);
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-  }
-  .bot-key-box-label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    letter-spacing: 0.02em;
-  }
-  .bot-key-value-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
   }
   .bot-key-value-full {
     flex: 1;
@@ -332,16 +286,6 @@
   }
   .bot-key-copy-icon {
     display: block;
-  }
-  .bot-key-box-compact {
-    min-width: 0;
-  }
-  .bot-key-box-value {
-    display: block;
-    font-size: 0.875rem;
-    line-height: 1.45;
-    color: var(--text-secondary);
-    word-break: break-word;
   }
   .subhead {
     margin: 0 0 0.35rem;
