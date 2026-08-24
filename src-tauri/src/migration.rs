@@ -202,13 +202,21 @@ fn count_encrypted_rows(conn: &rusqlite::Connection) -> Result<usize, String> {
         count += evm_count as usize;
     }
 
+    if table_exists(conn, "join_inbox_secret")? {
+        let inbox_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM join_inbox_secret", [], |row| {
+                row.get(0)
+            })
+            .map_err(|e| format!("Failed to count join_inbox_secret rows: {}", e))?;
+        count += inbox_count as usize;
+    }
     if table_exists(conn, "squad_bot_secret")? {
-        let squad_count: i64 = conn
+        let legacy_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM squad_bot_secret", [], |row| {
                 row.get(0)
             })
             .map_err(|e| format!("Failed to count squad_bot_secret rows: {}", e))?;
-        count += squad_count as usize;
+        count += legacy_count as usize;
     }
 
     if table_exists(conn, "events")? {
@@ -340,6 +348,18 @@ fn migrate_all_tables(
         )?;
     }
 
+    if table_exists(conn, "join_inbox_secret")? {
+        reencrypted += migrate_table_rows(
+            conn,
+            "join_inbox_secret",
+            "parent_id",
+            "encrypted_nsec",
+            "SELECT parent_id, encrypted_nsec FROM join_inbox_secret",
+            &[],
+            legacy_key,
+            new_key,
+        )?;
+    }
     if table_exists(conn, "squad_bot_secret")? {
         reencrypted += migrate_table_rows(
             conn,

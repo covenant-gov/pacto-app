@@ -122,6 +122,13 @@ vi.mock('../governance/gov-replica', () => ({
   },
 }));
 
+vi.mock('./join-inbox', () => ({
+  getJoinInboxState: vi.fn(async () => null),
+  formatJoinInboxMeta: vi.fn((state: { squadId: string }) =>
+    JSON.stringify({ schema: 'pacto.squad.join_inbox.meta.v1', squadId: state.squadId }),
+  ),
+}));
+
 vi.mock('../../stores/auth', () => ({
   currentUser,
 }));
@@ -196,7 +203,7 @@ describe('squad-state-sync', () => {
       parent_id: 'ann-gid',
       request_id: 'req-1',
       requester_npub: 'npub1joiner',
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica', 'join_inbox'],
     });
   });
 

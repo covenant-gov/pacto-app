@@ -4572,7 +4572,7 @@ pub fn apply_mls_virtual_bucket_side_effects<R: Runtime>(
     }
 
     if effective_bucket == Some("announcements") || effective_bucket.is_none() {
-        try_apply_squad_bot_meta(handle, content, chat_id);
+        try_apply_join_inbox_meta(handle, content, chat_id);
     }
 
     if effective_bucket == Some("inbox") {
@@ -4589,13 +4589,13 @@ pub fn apply_mls_virtual_bucket_side_effects<R: Runtime>(
     }
 }
 
-fn try_apply_squad_bot_meta<R: Runtime>(handle: &AppHandle<R>, content: &str, chat_id: &str) {
+fn try_apply_join_inbox_meta<R: Runtime>(handle: &AppHandle<R>, content: &str, chat_id: &str) {
     let Ok(val) = serde_json::from_str::<serde_json::Value>(content.trim()) else {
         return;
     };
     let schema = val.get("schema").and_then(|x| x.as_str()).unwrap_or("");
-    if schema != crate::squad_bot::SQUAD_BOT_META_SCHEMA
-        && schema != crate::squad_bot::SQUAD_BOT_KEY_ROTATED_SCHEMA
+    if schema != crate::join_inbox::JOIN_INBOX_META_SCHEMA
+        && schema != crate::join_inbox::JOIN_INBOX_KEY_ROTATED_SCHEMA
     {
         return;
     }
@@ -4614,8 +4614,8 @@ fn try_apply_squad_bot_meta<R: Runtime>(handle: &AppHandle<R>, content: &str, ch
     let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
         return;
     };
-    if let Err(e) = crate::squad_bot::apply_meta_from_content(&conn, content) {
-        eprintln!("[squad_bot] apply meta failed: {e}");
+    if let Err(e) = crate::join_inbox::apply_meta_from_content(&conn, content) {
+        eprintln!("[join_inbox] apply meta failed: {e}");
     }
     crate::account_manager::return_db_connection(conn);
 }

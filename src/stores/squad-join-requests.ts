@@ -2,7 +2,7 @@ import { get, writable } from 'svelte/store';
 import type { CommonsJoinRequestDto } from '../lib/commons/types';
 import { getInvokeErrorMessage } from '../lib/utils/tauri-errors';
 import {
-  fanOutBotJoinDmsToMls,
+  fanOutJoinInboxDmsToMls,
   loadPendingJoinRequestsFromMls,
 } from '../lib/squad/squad-join-mls';
 import { recordActionNeededEntry } from '../lib/api/catch-up';
@@ -86,7 +86,7 @@ async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequest
   setErrorForSquad(id, null);
   let fanOutError: string | null = null;
   try {
-    await fanOutBotJoinDmsToMls(id);
+    await fanOutJoinInboxDmsToMls(id);
   } catch (e) {
     fanOutError = getInvokeErrorMessage(e, 'Could not sync join inbox.');
   }

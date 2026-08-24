@@ -75,7 +75,7 @@ Other encrypted SQLite rows:
 
 - `settings` — `pkey` (encrypted BIP-39 seed), `evm_pkey`, `seed` (recovery seed).
 - `evm_accounts` — `imported_enc` (imported private keys).
-- `squad_bot_secret` — `encrypted_nsec`.
+- `join_inbox_secret` — `encrypted_nsec`.
 - `key_derivation_sentinel` — a canary value used to verify the PIN.
 
 Plaintext metadata that must stay searchable:
@@ -115,7 +115,7 @@ Only these rows are migrated; MLS engine state is **not** in this list:
 
 - `settings` — `pkey`, `evm_pkey`, `seed`.
 - `evm_accounts` — `imported_enc`.
-- `squad_bot_secret` — `encrypted_nsec`.
+- `join_inbox_secret` — `encrypted_nsec`.
 - `events` — `content` only for kinds `PRIVATE_DIRECT_MESSAGE` and `MESSAGE_EDIT`.
 - `messages` — `content_encrypted` (legacy/parallel table).
 

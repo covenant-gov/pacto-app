@@ -101,7 +101,7 @@ describe('join request rate limit', () => {
       requestId: 'request-1',
       squadId: 'group-1',
       squadName: 'Neo Builders',
-      botNpub: 'npub1author',
+      inboxNpub: 'npub1author',
       broadcastEventId: 'evt1',
       sentAt: now,
     });

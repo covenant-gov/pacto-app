@@ -51,7 +51,7 @@ export type CommonsJoinRequestRecord = {
   requestId: string;
   squadId: string;
   squadName: string;
-  botNpub: string;
+  inboxNpub: string;
   broadcastEventId: string;
   sentAt: number;
 };
@@ -100,7 +100,7 @@ export function getJoinRequestRecord(squadId: string): CommonsJoinRequestRecord 
 
 export function recordJoinRequestSent(record: CommonsJoinRequestRecord): void {
   const id = record.squadId.trim();
-  if (!id || !record.requestId.trim() || !record.botNpub.startsWith('npub1')) return;
+  if (!id || !record.requestId.trim() || !record.inboxNpub.startsWith('npub1')) return;
   const map = readJoinRequestMap();
   map[id] = { ...record, squadId: id };
   writeJoinRequestMap(map);

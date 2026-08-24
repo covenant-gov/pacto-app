@@ -120,15 +120,15 @@ describe('deriveVirtualBucketFromMessageContent', () => {
     ).toBe('join_requests');
   });
 
-  it('derives squad bot meta and rotate prompt buckets', () => {
+  it('derives join inbox meta and rotate prompt buckets', () => {
     expect(
       deriveVirtualBucketFromMessageContent(
-        JSON.stringify({ schema: 'pacto.squad_bot.meta.v1', botNpub: 'npub1x', keyEpoch: 1 })
+        JSON.stringify({ schema: 'pacto.squad.join_inbox.meta.v1', inboxNpub: 'npub1x', keyEpoch: 1 })
       )
     ).toBe('announcements');
     expect(
       deriveVirtualBucketFromMessageContent(
-        JSON.stringify({ schema: 'pacto.squad_bot.rotate_prompt.v1', reason: 'holder_removed' })
+        JSON.stringify({ schema: 'pacto.squad.join_inbox.rotate_prompt.v1', reason: 'holder_removed' })
       )
     ).toBe('inbox');
   });

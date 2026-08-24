@@ -47,8 +47,8 @@ Default hub channels after invite accept: **dashboard**, **announcements**, **jo
 
 | Sidebar row | Virtual bucket | Purpose |
 |-------------|----------------|---------|
-| **#announcements** | `announcements` | Chat plus **squad-wide state** everyone should see: certified roster EVM shares (`squad_member_evm_share` v2) and catch-up snapshots (`squad_evm_roster_snapshot`), squad network selection (`squad_network_updated`), sponsor/gov deploy announces, late-joiner catch-up (`squad_state_sync_request`), dashboard poll created, squad bot metadata / key-rotated notices. |
-| **#join-requests** | `join_requests` | Private Commons join request fan-out and accept/reject (MLS virtual bucket; bot DM ingress — [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md)). Not a separate MLS group. |
+| **#announcements** | `announcements` | Chat plus **squad-wide state** everyone should see: certified roster EVM shares (`squad_member_evm_share` v2) and catch-up snapshots (`squad_evm_roster_snapshot`), squad network selection (`squad_network_updated`), sponsor/gov deploy announces, late-joiner catch-up (`squad_state_sync_request`), dashboard poll created, Join inbox metadata / key-rotated notices. |
+| **#join-requests** | `join_requests` | Private Commons join request fan-out and accept/reject (MLS virtual bucket; Join inbox DM ingress — [`JOIN_INBOX.md`](./JOIN_INBOX.md)). Not a separate MLS group. |
 | **#personal-alerts** | `inbox` | **Prompts to action** for the viewing member only — e.g. the roster signer setup card (`SquadRosterKeyInboxCard`) until they bind a squad-purpose EVM account; bot key rotate prompts for holders. Not a feed of other members' automation. |
 | **#polls** | `polls` | Dashboard poll vote wire traffic. |
 

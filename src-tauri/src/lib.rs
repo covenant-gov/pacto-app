@@ -67,7 +67,7 @@ pub use chat::{Chat, ChatMetadata, ChatType, NotificationLevel};
 mod dashboard_poll;
 
 mod commons;
-mod squad_bot;
+mod join_inbox;
 
 mod sticker_pack;
 
@@ -2929,19 +2929,19 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                             // Set the wrapper event ID for database storage
                             msg.wrapper_event_id = Some(wrapper_event_id.clone());
                             if let Some(handle) = TAURI_APP.get() {
-                                match crate::squad_bot::apply_key_share_from_content(
+                                match crate::join_inbox::apply_key_share_from_content(
                                     handle,
                                     &msg.content,
                                 )
                                 .await
                                 {
                                     Ok(true) => {
-                                        // Bot key share consumed; do not persist nsec in the DM timeline.
+                                        // Join inbox key share consumed; do not persist nsec in the DM timeline.
                                         return true;
                                     }
                                     Ok(false) => {}
                                     Err(e) => {
-                                        eprintln!("[squad_bot] key share rejected: {e}");
+                                        eprintln!("[join_inbox] key share rejected: {e}");
                                     }
                                 }
                             }
@@ -10765,13 +10765,14 @@ pub fn run() {
             commons::commons_fetch_broadcasts,
             commons::commons_get_local_active,
             commons::commons_cancel_broadcast,
-            squad_bot::squad_bot_init,
-            squad_bot::squad_bot_get_state,
-            squad_bot::squad_bot_add_holder,
-            squad_bot::squad_bot_remove_holder,
-            squad_bot::squad_bot_rotate_key,
-            squad_bot::squad_bot_sync_join_dms,
-            squad_bot::squad_bot_send_join_response,
+            join_inbox::join_inbox_init,
+            join_inbox::join_inbox_get_state,
+            join_inbox::join_inbox_reclaim_if_split,
+            join_inbox::join_inbox_add_holder,
+            join_inbox::join_inbox_remove_holder,
+            join_inbox::join_inbox_rotate_key,
+            join_inbox::join_inbox_sync_join_dms,
+            join_inbox::join_inbox_send_join_response,
             db::upsert_squad_member_evm,
             db::list_squad_member_evm,
             db::upsert_squad_member_evm_account,

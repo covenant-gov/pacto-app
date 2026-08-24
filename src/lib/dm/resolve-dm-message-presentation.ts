@@ -16,10 +16,10 @@ import {
   type WalletTxRequestPayload,
 } from '../wallet/dm-messages';
 import {
-  parseBotJoinDm,
-  parseBotJoinResponseDm,
-  type SquadBotJoinDmDto,
-  type SquadBotJoinResponseDmDto,
+  parseJoinInboxDm,
+  parseJoinInboxResponseDm,
+  type JoinInboxDmDto,
+  type JoinInboxResponseDmDto,
 } from '../squad/squad-join-mls';
 import { summarizeStructuredMessageContent, type MessageFormatter } from '../messaging/structured-content-notice';
 import { getProfileAvatarSrc, getProfileDisplayName } from '../utils/profile';
@@ -42,8 +42,8 @@ export type DmMessagePresentation =
   | { kind: 'wallet-peer-info-decline'; payload: WalletPeerInfoDeclinePayload }
   | { kind: 'wallet-tx-request'; payload: WalletTxRequestPayload }
   | { kind: 'wallet-tx-announcement'; payload: WalletTxAnnouncementPayload }
-  | { kind: 'bot-join-response'; payload: SquadBotJoinResponseDmDto }
-  | { kind: 'bot-join-dm'; payload: SquadBotJoinDmDto }
+  | { kind: 'join-inbox-response'; payload: JoinInboxResponseDmDto }
+  | { kind: 'join-inbox-dm'; payload: JoinInboxDmDto }
   | { kind: 'structured-notice'; text: string }
   | { kind: 'plain' };
 
@@ -74,10 +74,10 @@ export function resolveDmMessagePresentation(msg: DmMessage): DmMessagePresentat
   if (walletTxRequest) return { kind: 'wallet-tx-request', payload: walletTxRequest };
   const walletTxAnnouncement = parseWalletTxAnnouncement(content);
   if (walletTxAnnouncement) return { kind: 'wallet-tx-announcement', payload: walletTxAnnouncement };
-  const botJoinResponse = parseBotJoinResponseDm(content);
-  if (botJoinResponse) return { kind: 'bot-join-response', payload: botJoinResponse };
-  const botJoinDm = parseBotJoinDm(content);
-  if (botJoinDm) return { kind: 'bot-join-dm', payload: botJoinDm };
+  const joinInboxResponse = parseJoinInboxResponseDm(content);
+  if (joinInboxResponse) return { kind: 'join-inbox-response', payload: joinInboxResponse };
+  const joinInboxDm = parseJoinInboxDm(content);
+  if (joinInboxDm) return { kind: 'join-inbox-dm', payload: joinInboxDm };
   const structuredNotice = summarizeStructuredMessageContent(content, tFn);
   if (structuredNotice) return { kind: 'structured-notice', text: structuredNotice };
   return { kind: 'plain' };

@@ -524,9 +524,10 @@ pub async fn commons_publish_broadcast<R: Runtime>(
             .as_ref()
             .map(|s| s.id.as_str())
             .ok_or_else(|| "squad id required".to_string())?;
-        let (bot_keys, bot_npub) = crate::squad_bot::bot_keys_for_holder(&handle, squad_id).await?;
-        let event = crate::nostr_sign::sign_with(builder, &bot_keys)?;
-        (event, bot_npub)
+        let (inbox_keys, inbox_npub) =
+            crate::join_inbox::inbox_keys_for_holder(&handle, squad_id).await?;
+        let event = crate::nostr_sign::sign_with(builder, &inbox_keys)?;
+        (event, inbox_npub)
     } else {
         let signer = client.signer().await.map_err(|e| e.to_string())?;
         let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
@@ -620,8 +621,8 @@ pub async fn commons_get_local_active<R: Runtime>(
     }
 
     let author_npub = if subject == "squad" {
-        crate::squad_bot::bot_npub_for_squad(&handle, subject_id)?
-            .ok_or_else(|| "Squad bot not initialized".to_string())?
+        crate::join_inbox::inbox_npub_for_squad(&handle, subject_id)?
+            .ok_or_else(|| "Join inbox not initialized".to_string())?
     } else {
         let client = get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
         let signer = client.signer().await.map_err(|e| e.to_string())?;
@@ -700,8 +701,9 @@ pub async fn commons_cancel_broadcast<R: Runtime>(
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
 
     let (author_npub, bot_keys) = if subject == "squad" {
-        let (keys, bot_npub) = crate::squad_bot::bot_keys_for_holder(&handle, &subject_id).await?;
-        (bot_npub, Some(keys))
+        let (keys, inbox_npub) =
+            crate::join_inbox::inbox_keys_for_holder(&handle, &subject_id).await?;
+        (inbox_npub, Some(keys))
     } else {
         let signer = client.signer().await.map_err(|e| e.to_string())?;
         let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;

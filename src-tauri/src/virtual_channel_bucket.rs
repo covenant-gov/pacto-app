@@ -53,11 +53,11 @@ pub fn normalize_virtual_bucket_for_message(
             }
             if matches!(
                 schema,
-                Some("pacto.squad_bot.meta.v1" | "pacto.squad_bot.key_rotated.v1")
+                Some("pacto.squad.join_inbox.meta.v1" | "pacto.squad.join_inbox.key_rotated.v1")
             ) {
                 return Some("announcements".to_string());
             }
-            if schema == Some("pacto.squad_bot.rotate_prompt.v1") {
+            if schema == Some("pacto.squad.join_inbox.rotate_prompt.v1") {
                 return Some("inbox".to_string());
             }
             let ty = val.get("type").and_then(|x| x.as_str());
@@ -255,8 +255,8 @@ mod tests {
     }
 
     #[test]
-    fn squad_bot_meta_derives_announcements_bucket() {
-        let content = r#"{"schema":"pacto.squad_bot.meta.v1","botNpub":"npub1x","keyEpoch":1}"#;
+    fn join_inbox_meta_derives_announcements_bucket() {
+        let content = r#"{"schema":"pacto.squad.join_inbox.meta.v1","inboxNpub":"npub1x","keyEpoch":1}"#;
         let bucket =
             normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
         assert_eq!(bucket.as_deref(), Some("announcements"));

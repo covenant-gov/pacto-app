@@ -187,14 +187,14 @@ See **Personal alerts & per-squad roster keys** above.
 
 ---
 
-## 9. Squad bot join inbox (Commons)
+## 9. Join inbox (Commons)
 
 Two accounts helpful: **requester** (not in squad) and **holder** (creator or added holder with local bot secret).
 
 **Bot holders**
 
-- [ ] **Dashboard → Settings → Join inbox / Bot key holders** shows bot npub, epoch, holder list.
-- [ ] Creator is initial holder after squad create (Commons on path runs `initSquadBot`).
+- [ ] **Dashboard → Settings → Join inbox holders** shows Join inbox npub, epoch, holder list.
+- [ ] Creator is initial holder after squad create (Commons on path runs `initJoinInbox`).
 - [ ] Holder adds a second MLS member → key share DM arrives → second device shows **Holds bot key**.
 - [ ] Remove holder → remaining holders see **#personal-alerts** rotate prompt; **Rotate bot key** posts **#announcements** notice and rebroadcasts new bot npub on next Commons publish.
 
@@ -205,9 +205,9 @@ Two accounts helpful: **requester** (not in squad) and **holder** (creator or ad
 
 **Commons → join → accept**
 
-- [ ] Squad Commons card **Request to join** sends `pacto.squad.bot_join_dm.v1` NIP-17 to bot npub.
+- [ ] Squad Commons card **Request to join** sends `pacto.squad.join_inbox_dm.v1` NIP-17 to bot npub.
 - [ ] Holder opens **#join-requests** → refresh → pending row appears (bot DM fan-out to MLS).
-- [ ] **Accept** → MLS first-write-wins + invite DM to requester; requester gets private `pacto.squad.bot_join_response.v1` DM.
+- [ ] **Accept** → MLS first-write-wins + invite DM to requester; requester gets private `pacto.squad.join_inbox_response.v1` DM.
 - [ ] **Reject** → MLS reject + private response DM to requester.
 - [ ] **Mute** on a row suppresses re-fan-out for that requester npub (local per squad).
 
@@ -217,7 +217,7 @@ Two accounts helpful: **requester** (not in squad) and **holder** (creator or ad
 - [ ] Existing MLS members are not re-fanned from bot inbox.
 - [ ] Repeat join DMs from same requester dedupe to one pending row.
 
-See [`../communities/SQUAD_BOT_JOIN.md`](../communities/SQUAD_BOT_JOIN.md).
+See [`../communities/JOIN_INBOX.md`](../communities/JOIN_INBOX.md).
 
 ---
 

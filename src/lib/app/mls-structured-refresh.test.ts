@@ -59,7 +59,7 @@ import { onMlsStructuredMessage } from './mls-structured-refresh';
 import {
   governanceProcessNonceByParentId,
   squadAllowlistNonceByParentId,
-  squadBotMetaNonceBySquadId,
+  joinInboxMetaNonceBySquadId,
   squadTrackedTokensNonceByParentId,
 } from '../../stores/navigation';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
@@ -84,7 +84,7 @@ describe('onMlsStructuredMessage', () => {
   beforeEach(() => {
     squadAllowlistNonceByParentId.set({});
     squadTrackedTokensNonceByParentId.set({});
-    squadBotMetaNonceBySquadId.set({});
+    joinInboxMetaNonceBySquadId.set({});
     governanceProcessNonceByParentId.set({});
     vi.mocked(syncJoinRequestsForSquad).mockClear();
     respondToSquadStateSyncRequest.mockClear();
@@ -497,13 +497,13 @@ describe('onMlsStructuredMessage', () => {
 
     onMlsStructuredMessage(
       JSON.stringify({
-        schema: 'pacto.squad_bot.meta.v1',
+        schema: 'pacto.squad.join_inbox.meta.v1',
         squad_id: 'bot-squad',
       }),
       'g1',
       handlers,
     );
-    expect(get(squadBotMetaNonceBySquadId)['bot-squad']).toBe(1);
+    expect(get(joinInboxMetaNonceBySquadId)['bot-squad']).toBe(1);
 
     onMlsStructuredMessage(
       JSON.stringify({

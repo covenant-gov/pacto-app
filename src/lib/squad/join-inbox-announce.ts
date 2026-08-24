@@ -1,27 +1,27 @@
 import {
-  SQUAD_BOT_KEY_ROTATED_SCHEMA,
-  SQUAD_BOT_META_SCHEMA,
-} from './squad-bot';
+  JOIN_INBOX_KEY_ROTATED_SCHEMA,
+  JOIN_INBOX_META_SCHEMA,
+} from './join-inbox';
 
-export interface SquadBotMetaPayload {
+export interface JoinInboxMetaPayload {
   squadId: string;
-  botNpub: string;
+  inboxNpub: string;
   holders: string[];
   keyEpoch: number;
   updatedAt: number;
 }
 
-export interface SquadBotKeyRotatedPayload {
+export interface JoinInboxKeyRotatedPayload {
   squadId: string;
-  botNpub: string;
+  inboxNpub: string;
   keyEpoch: number;
   rotatedByNpub: string;
   updatedAt: number;
 }
 
-export type SquadBotAnnounceMessage =
-  | { kind: 'meta'; payload: SquadBotMetaPayload }
-  | { kind: 'key_rotated'; payload: SquadBotKeyRotatedPayload };
+export type JoinInboxAnnounceMessage =
+  | { kind: 'meta'; payload: JoinInboxMetaPayload }
+  | { kind: 'key_rotated'; payload: JoinInboxKeyRotatedPayload };
 
 function readString(obj: Record<string, unknown>, key: string): string | null {
   const v = obj[key];
@@ -50,8 +50,8 @@ function readNpubList(obj: Record<string, unknown>, key: string): string[] | nul
   return out;
 }
 
-/** Parse squad bot MLS JSON for #announcements timeline cards. */
-export function parseSquadBotAnnounceMessage(content: string): SquadBotAnnounceMessage | null {
+/** Parse Join inbox MLS JSON for #announcements timeline cards. */
+export function parseJoinInboxAnnounceMessage(content: string): JoinInboxAnnounceMessage | null {
   const trimmed = content?.trim();
   if (!trimmed?.startsWith('{')) return null;
 
@@ -67,26 +67,26 @@ export function parseSquadBotAnnounceMessage(content: string): SquadBotAnnounceM
   if (!schema) return null;
 
   const squadId = readString(rec, 'squadId') ?? readString(rec, 'squad_id');
-  const botNpub = readString(rec, 'botNpub') ?? readString(rec, 'bot_npub');
+  const inboxNpub = readString(rec, 'inboxNpub') ?? readString(rec, 'inbox_npub');
   const keyEpoch = readEpoch(rec, 'keyEpoch') ?? readEpoch(rec, 'key_epoch');
   const updatedAt = readEpoch(rec, 'updatedAt') ?? readEpoch(rec, 'updated_at');
 
-  if (schema === SQUAD_BOT_META_SCHEMA) {
+  if (schema === JOIN_INBOX_META_SCHEMA) {
     const holders = readNpubList(rec, 'holders');
-    if (!squadId || !botNpub || holders == null || keyEpoch == null || updatedAt == null) return null;
+    if (!squadId || !inboxNpub || holders == null || keyEpoch == null || updatedAt == null) return null;
     return {
       kind: 'meta',
-      payload: { squadId, botNpub, holders, keyEpoch, updatedAt },
+      payload: { squadId, inboxNpub, holders, keyEpoch, updatedAt },
     };
   }
 
-  if (schema === SQUAD_BOT_KEY_ROTATED_SCHEMA) {
+  if (schema === JOIN_INBOX_KEY_ROTATED_SCHEMA) {
     const rotatedByNpub =
       readString(rec, 'rotatedByNpub') ?? readString(rec, 'rotated_by_npub');
-    if (!squadId || !botNpub || keyEpoch == null || !rotatedByNpub || updatedAt == null) return null;
+    if (!squadId || !inboxNpub || keyEpoch == null || !rotatedByNpub || updatedAt == null) return null;
     return {
       kind: 'key_rotated',
-      payload: { squadId, botNpub, keyEpoch, rotatedByNpub, updatedAt },
+      payload: { squadId, inboxNpub, keyEpoch, rotatedByNpub, updatedAt },
     };
   }
 

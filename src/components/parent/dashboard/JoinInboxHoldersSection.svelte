@@ -9,18 +9,20 @@
   import { showToast } from '../../../stores/toast';
   import { getProfileDisplayName } from '../../../lib/utils/profile';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
+  import { requestSquadStateSync } from '../../../lib/squad/squad-state-sync';
   import {
-    addSquadBotHolder,
-    canAddBotHolder,
-    canManageBotHolders,
-    ensureSquadBot,
-    getSquadBotState,
-    isSquadBotHolderActionInFlight,
-    removeSquadBotHolder,
-    rotateSquadBotKey,
-    squadBotHolderActionInFlightRevision,
-    type SquadBotState,
-  } from '../../../lib/squad/squad-bot';
+    addJoinInboxHolder,
+    canAddJoinInboxHolder,
+    canManageJoinInboxHolders,
+    getJoinInboxState,
+    initJoinInbox,
+    isJoinInboxHolderActionInFlight,
+    reclaimJoinInboxIfSplit,
+    removeJoinInboxHolder,
+    rotateJoinInboxKey,
+    joinInboxHolderActionInFlightRevision,
+    type JoinInboxState,
+  } from '../../../lib/squad/join-inbox';
   import { refreshMlsGroupMembers } from '../../../stores/mls-group-members';
 
   interface Props {
@@ -37,42 +39,60 @@
     executorRolesLabel = '',
   }: Props = $props();
 
-  let botState = $state<SquadBotState | null>(null);
+  let inboxState = $state<JoinInboxState | null>(null);
   let loading = $state(true);
   let addNpub = $state('');
   let error = $state('');
-  let copiedBotNpub = $state(false);
+  let copiedInboxNpub = $state(false);
 
   const squadId = $derived(announcementsGroupId?.trim() || '');
   const acting = $derived.by(() => {
-    void $squadBotHolderActionInFlightRevision;
-    return squadId ? isSquadBotHolderActionInFlight(squadId) : false;
+    void $joinInboxHolderActionInFlightRevision;
+    return squadId ? isJoinInboxHolderActionInFlight(squadId) : false;
   });
   const myNpub = $derived($currentUser?.npub ?? '');
   const canManage = $derived(
-    canManageBotHolders({
+    canManageJoinInboxHolders({
       squadAdminActive,
       executorRolesLabel,
-      state: botState,
+      state: inboxState,
     }),
   );
   const candidates = $derived(
-    channelMembers.filter((n) => n && n !== myNpub && !(botState?.holders ?? []).includes(n)),
+    channelMembers.filter((n) => n && n !== myNpub && !(inboxState?.holders ?? []).includes(n)),
   );
 
   async function reload() {
     if (!squadId) {
-      botState = null;
+      inboxState = null;
       loading = false;
       return;
     }
     loading = true;
     error = '';
     try {
-      botState = (await getSquadBotState(squadId)) ?? (await ensureSquadBot(squadId));
+      inboxState = (await reclaimJoinInboxIfSplit(squadId)) ?? (await getJoinInboxState(squadId));
     } catch (e) {
-      error = e instanceof Error ? e.message : tFn('governance.botHolders.toastLoadFailed');
-      botState = null;
+      error = e instanceof Error ? e.message : tFn('governance.joinInbox.toastLoadFailed');
+      inboxState = null;
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function onInitialize() {
+    if (!squadId || acting) return;
+    loading = true;
+    error = '';
+    try {
+      inboxState = await getJoinInboxState(squadId);
+      if (inboxState) return;
+      await requestSquadStateSync(squadId);
+      inboxState = await getJoinInboxState(squadId);
+      if (inboxState) return;
+      inboxState = await initJoinInbox(squadId);
+    } catch (e) {
+      error = e instanceof Error ? e.message : tFn('governance.joinInbox.toastLoadFailed');
     } finally {
       loading = false;
     }
@@ -94,22 +114,22 @@
     return getProfileDisplayName($profiles[npub]) || npub.slice(0, 12) + '…';
   }
 
-  async function copyBotNpub() {
-    if (!botState?.botNpub) return;
-    const ok = await copyTextToClipboard(botState.botNpub);
+  async function copyInboxNpub() {
+    if (!inboxState?.inboxNpub) return;
+    const ok = await copyTextToClipboard(inboxState.inboxNpub);
     if (ok) {
-      copiedBotNpub = true;
+      copiedInboxNpub = true;
       setTimeout(() => {
-        copiedBotNpub = false;
+        copiedInboxNpub = false;
       }, 2000);
     } else {
-      showToast(tFn('governance.botHolders.toastCopyFailed'));
+      showToast(tFn('governance.joinInbox.toastCopyFailed'));
     }
   }
 
   async function onAdd() {
     if (!squadId || !addNpub || acting) return;
-    const block = canAddBotHolder(channelMembers, myNpub, addNpub, botState?.holders ?? [], {
+    const block = canAddJoinInboxHolder(channelMembers, myNpub, addNpub, inboxState?.holders ?? [], {
       squadAdminActive,
       executorRolesLabel,
     });
@@ -117,69 +137,69 @@
       showToast(block);
       return;
     }
-    const result = await addSquadBotHolder(squadId, addNpub);
+    const result = await addJoinInboxHolder(squadId, addNpub);
     if (!result.ok) {
       showToast(result.error);
       return;
     }
-    botState = result.state;
+    inboxState = result.state;
     addNpub = '';
-    showToast(tFn('governance.botHolders.toastAdded'));
+    showToast(tFn('governance.joinInbox.toastAdded'));
   }
 
   async function onRemove(npub: string) {
     if (!squadId || acting) return;
-    const result = await removeSquadBotHolder(squadId, npub);
+    const result = await removeJoinInboxHolder(squadId, npub);
     if (!result.ok) {
       showToast(result.error);
       return;
     }
-    botState = result.state;
-    showToast(tFn('governance.botHolders.toastRemoved'));
+    inboxState = result.state;
+    showToast(tFn('governance.joinInbox.toastRemoved'));
   }
 
   async function onRotate() {
     if (!squadId || acting) return;
     await refreshMlsGroupMembers(squadId).catch(() => {});
-    const result = await rotateSquadBotKey(squadId);
+    const result = await rotateJoinInboxKey(squadId);
     if (!result.ok) {
       showToast(result.error);
       return;
     }
-    botState = result.state;
-    showToast(tFn('governance.botHolders.toastRotated'));
+    inboxState = result.state;
+    showToast(tFn('governance.joinInbox.toastRotated'));
   }
 </script>
 
 <DashboardAssetCard
-  id="settings-squad-bot-holders"
-  headingId="squad-bot-holders-title"
-  heading={$t('governance.botHolders.title')}
-  hint={$t('governance.botHolders.lead')}
+  id="settings-join-inbox-holders"
+  headingId="join-inbox-holders-title"
+  heading={$t('governance.joinInbox.title')}
+  hint={$t('governance.joinInbox.lead')}
 >
   {#if loading}
     <p class="muted" role="status">{$t('governance.common.loading')}</p>
   {:else if error}
     <p class="err" role="alert">{error}</p>
-  {:else if !botState}
-    <p class="muted">{$t('governance.botHolders.botNotInitialized')}</p>
-    <button type="button" class="btn" disabled={acting || !squadId} onclick={() => void reload()}>
-      {$t('governance.botHolders.initialize')}
+  {:else if !inboxState}
+    <p class="muted">{$t('governance.joinInbox.notInitialized')}</p>
+    <button type="button" class="btn" disabled={acting || !squadId} onclick={() => void onInitialize()}>
+      {$t('governance.joinInbox.initialize')}
     </button>
   {:else}
     <dl class="asset-dl">
-      <dt>{$t('governance.botHolders.botNpub')}</dt>
+      <dt>{$t('governance.joinInbox.inboxNpub')}</dt>
       <dd class="asset-dd-inline">
-        <code class="bot-key-value-full">{botState.botNpub}</code>
+        <code class="inbox-key-value-full">{inboxState.inboxNpub}</code>
         <button
           type="button"
-          class="bot-key-copy-btn"
-          aria-label={copiedBotNpub ? $t('governance.common.copied') : $t('governance.botHolders.copyBotNpub')}
-          title={copiedBotNpub ? $t('governance.common.copied') : $t('governance.common.copy')}
-          onclick={copyBotNpub}
+          class="inbox-key-copy-btn"
+          aria-label={copiedInboxNpub ? $t('governance.common.copied') : $t('governance.joinInbox.copyInboxNpub')}
+          title={copiedInboxNpub ? $t('governance.common.copied') : $t('governance.common.copy')}
+          onclick={copyInboxNpub}
         >
           <svg
-            class="bot-key-copy-icon"
+            class="inbox-key-copy-icon"
             width="18"
             height="18"
             viewBox="0 0 24 24"
@@ -195,16 +215,16 @@
           </svg>
         </button>
       </dd>
-      <dt>{$t('governance.botHolders.keyEpoch')}</dt>
-      <dd><strong>{botState.keyEpoch}</strong></dd>
+      <dt>{$t('governance.joinInbox.keyEpoch')}</dt>
+      <dd><strong>{inboxState.keyEpoch}</strong></dd>
     </dl>
 
-    <h4 class="subhead">{$t('governance.botHolders.holders')}</h4>
+    <h4 class="subhead">{$t('governance.joinInbox.holders')}</h4>
     <ul class="holder-list">
-      {#each botState.holders as npub (npub)}
+      {#each inboxState.holders as npub (npub)}
         <li>
           <span>{label(npub)}</span>
-          {#if canManage && botState.holders.length > 1}
+          {#if canManage && inboxState.holders.length > 1}
             <button
               type="button"
               class="linkish danger"
@@ -220,9 +240,9 @@
 
     {#if canManage}
       <div class="add-row">
-        <label class="sr-only" for="squad-bot-add-holder">{$t('governance.botHolders.addHolderLabel')}</label>
-        <select id="squad-bot-add-holder" bind:value={addNpub} disabled={acting || candidates.length === 0}>
-          <option value="">{$t('governance.botHolders.addHolder')}</option>
+        <label class="sr-only" for="join-inbox-add-holder">{$t('governance.joinInbox.addHolderLabel')}</label>
+        <select id="join-inbox-add-holder" bind:value={addNpub} disabled={acting || candidates.length === 0}>
+          <option value="">{$t('governance.joinInbox.addHolder')}</option>
           {#each candidates as npub (npub)}
             <option value={npub}>{label(npub)}</option>
           {/each}
@@ -235,11 +255,11 @@
       <div class="rotate-row">
         <button
           type="button"
-          class="btn-secondary squad-bot-rotate-btn"
+          class="btn-secondary join-inbox-rotate-btn"
           disabled={acting}
           onclick={() => void onRotate()}
         >
-          {$t('governance.botHolders.rotateBotKey')}
+          {$t('governance.joinInbox.rotateKey')}
         </button>
       </div>
     {/if}
@@ -257,7 +277,7 @@
     color: var(--danger, #c44);
     font-size: 0.875rem;
   }
-  .bot-key-value-full {
+  .inbox-key-value-full {
     flex: 1;
     min-width: 0;
     font-family: ui-monospace, monospace;
@@ -266,7 +286,7 @@
     word-break: break-all;
     color: var(--text-primary);
   }
-  .bot-key-copy-btn {
+  .inbox-key-copy-btn {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -280,11 +300,11 @@
     color: var(--text-secondary);
     cursor: pointer;
   }
-  .bot-key-copy-btn:hover {
+  .inbox-key-copy-btn:hover {
     color: var(--text-primary);
     border-color: var(--text-muted);
   }
-  .bot-key-copy-icon {
+  .inbox-key-copy-icon {
     display: block;
   }
   .subhead {
@@ -333,7 +353,7 @@
     opacity: 0.55;
     cursor: not-allowed;
   }
-  .squad-bot-rotate-btn {
+  .join-inbox-rotate-btn {
     margin-top: 0.25rem;
   }
   .btn:disabled,

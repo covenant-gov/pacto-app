@@ -15,10 +15,10 @@ vi.mock('../utils/tauri-errors', () => ({
     typeof e === 'string' && e ? e : fallback
   ),
 }));
-vi.mock('../squad/squad-bot', () => ({
-  ensureSquadBot: vi.fn().mockResolvedValue({
+vi.mock('../squad/join-inbox', () => ({
+  getJoinInboxState: vi.fn().mockResolvedValue({
     squadId: 'squad1',
-    botNpub: 'npub1bot',
+    inboxNpub: 'npub1bot',
     holders: [],
     keyEpoch: 0,
     updatedAt: 0,

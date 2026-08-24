@@ -40,10 +40,10 @@ Only one canonical enum is used everywhere (tag value === JSON value).
 
 | Value | Meaning |
 |-------|---------|
-| `announcements` | Human-facing chat and **squad-wide state** the whole group should see (member roster EVM shares, sponsor deploys, poll created, squad bot metadata / key-rotated notices). |
-| `inbox` | **Personal prompts and automation** for the viewing member: treasury/governance cards, Safe proposals, roster setup cards in `#personal-alerts`, bot key rotate prompts. Wire bucket name remains `inbox`. |
+| `announcements` | Human-facing chat and **squad-wide state** the whole group should see (member roster EVM shares, sponsor deploys, poll created, Join inbox metadata / key-rotated notices). |
+| `inbox` | **Personal prompts and automation** for the viewing member: treasury/governance cards, Safe proposals, roster setup cards in `#personal-alerts`, Join inbox rotate prompts. Wire bucket name remains `inbox`. |
 | `polls` | Dashboard poll **vote** transport (and future poll-shaped traffic that is not a create card). Poll **creates** use `announcements`. |
-| `join_requests` | Commons join request fan-out and accept/reject state for `#join-requests` (private MLS; see [`../communities/SQUAD_BOT_JOIN.md`](../communities/SQUAD_BOT_JOIN.md)). |
+| `join_requests` | Commons join request fan-out and accept/reject state for `#join-requests` (private MLS; see [`../communities/JOIN_INBOX.md`](../communities/JOIN_INBOX.md)). |
 
 Future buckets extend this enum in the same ADR (revision) before code assumes open strings.
 
@@ -110,8 +110,8 @@ Apply **first matching rule** (implementations walk top-to-bottom):
 | 4 | JSON `schema` is `pacto.squad.join_request.v1` or `pacto.squad.join_request_response.v1` | `join_requests` |
 | 5 | `parseAnnouncement`-style governance/treasury/Safe (and similar **structured announce**) payloads used for automation today | `inbox` |
 | 6 | JSON `type` identifies **`squad_member_evm_share`** (certified roster EVM share) or **`squad_evm_roster_snapshot`** (certified roster gossip) | `announcements` |
-| 7 | JSON `schema` is `pacto.squad_bot.meta.v1` or `pacto.squad_bot.key_rotated.v1` | `announcements` |
-| 8 | JSON `schema` is `pacto.squad_bot.rotate_prompt.v1` | `inbox` |
+| 7 | JSON `schema` is `pacto.squad.join_inbox.meta.v1` or `pacto.squad.join_inbox.key_rotated.v1` | `announcements` |
+| 8 | JSON `schema` is `pacto.squad.join_inbox.rotate_prompt.v1` | `inbox` |
 | 9 | Plaintext or JSON without any rule above | `announcements` |
 
 **Rationale for default `announcements`:** safest UX default for unknown content (human-readable traffic); automation paths should **always** set tag or field once virtual routing lands.
@@ -140,5 +140,5 @@ SQLite applicators for structured announces (`governance_updated`, `squad_safe_u
 
 - This ADR — normative `pacto_bucket` / `pacto_virtual_bucket` contract.
 - [`../dashboard/POLLS.md`](../dashboard/POLLS.md) — polls virtual-channel transport.
-- [`../communities/SQUAD_BOT_JOIN.md`](../communities/SQUAD_BOT_JOIN.md) — `join_requests` bucket + squad bot wire schemas.
+- [`../communities/JOIN_INBOX.md`](../communities/JOIN_INBOX.md) — `join_requests` bucket + Join inbox wire schemas.
 - [`../communities/DESIGN.md`](../communities/DESIGN.md) — hub channel semantics.

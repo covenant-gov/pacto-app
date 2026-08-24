@@ -118,10 +118,10 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
   ) {
     return 'join_requests';
   }
-  if (schema === 'pacto.squad_bot.meta.v1' || schema === 'pacto.squad_bot.key_rotated.v1') {
+  if (schema === 'pacto.squad.join_inbox.meta.v1' || schema === 'pacto.squad.join_inbox.key_rotated.v1') {
     return 'announcements';
   }
-  if (schema === 'pacto.squad_bot.rotate_prompt.v1') {
+  if (schema === 'pacto.squad.join_inbox.rotate_prompt.v1') {
     return 'inbox';
   }
 

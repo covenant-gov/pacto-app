@@ -247,7 +247,7 @@
     pending={isWalletTxAnnouncementOnChainPending(presentation.payload, msg)}
     failed={!!msg.failed}
   />
-{:else if presentation.kind === 'bot-join-response'}
+{:else if presentation.kind === 'join-inbox-response'}
   <div class="dm-thread-announcement" role="status">
     {#if presentation.payload.status === 'accepted'}
       {$t('messaging.dm.thread.joinRequestAccepted', { values: { squadName: presentation.payload.squadName } })}
@@ -255,7 +255,7 @@
       {$t('messaging.dm.thread.joinRequestRejected', { values: { squadName: presentation.payload.squadName } })}
     {/if}
   </div>
-{:else if presentation.kind === 'bot-join-dm'}
+{:else if presentation.kind === 'join-inbox-dm'}
   <div class="dm-thread-announcement" role="status">
     {$t('messaging.dm.thread.joinRequestPending', { values: { squadName: presentation.payload.squadName } })}
   </div>

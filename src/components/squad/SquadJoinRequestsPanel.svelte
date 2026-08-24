@@ -11,7 +11,7 @@
     respondToMlsJoinRequest,
   } from '../../lib/squad/squad-join-mls';
   import { muteJoinRequester } from '../../lib/squad/squad-join-spam';
-  import { getSquadBotState, type SquadBotState } from '../../lib/squad/squad-bot';
+  import { getJoinInboxState, type JoinInboxState } from '../../lib/squad/join-inbox';
   import {
     ensureJoinRequestsHydrated,
     joinRequestsErrorBySquadId,
@@ -36,8 +36,8 @@
 
   let refreshError = $state('');
   let profileLoadToken = 0;
-  let botState = $state<SquadBotState | null>(null);
-  let botStateLoading = $state(true);
+  let inboxState = $state<JoinInboxState | null>(null);
+  let inboxStateLoading = $state(true);
 
   const tFn = get(t);
 
@@ -46,8 +46,8 @@
   let hydrated = $derived($joinRequestsHydratedBySquadId[squad.id] ?? false);
   let syncing = $derived($joinRequestsSyncingBySquadId[squad.id] ?? false);
   let loadError = $derived($joinRequestsErrorBySquadId[squad.id] ?? refreshError);
-  let loading = $derived((!hydrated && syncing) || botStateLoading);
-  let canAct = $derived(!!(botState?.iAmHolder && botState?.hasLocalSecret));
+  let loading = $derived((!hydrated && syncing) || inboxStateLoading);
+  let canAct = $derived(!!(inboxState?.iAmHolder && inboxState?.hasLocalSecret));
   let admitting = $derived.by(() => {
     void $pendingAdmitQueue;
     return listPendingAdmitForParent(squad.id).filter((e) => e.kind === 'join');
@@ -56,7 +56,7 @@
   $effect(() => {
     if (squad?.id) {
       void ensureJoinRequestsHydrated(squad.id);
-      void loadBotState(squad.id);
+      void loadInboxState(squad.id);
     }
   });
 
@@ -74,14 +74,14 @@
     });
   });
 
-  async function loadBotState(squadId: string) {
-    botStateLoading = true;
+  async function loadInboxState(squadId: string) {
+    inboxStateLoading = true;
     try {
-      botState = await getSquadBotState(squadId);
+      inboxState = await getJoinInboxState(squadId);
     } catch {
-      botState = null;
+      inboxState = null;
     } finally {
-      botStateLoading = false;
+      inboxStateLoading = false;
     }
   }
 

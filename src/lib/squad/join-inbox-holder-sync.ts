@@ -5,7 +5,7 @@
 import { get } from 'svelte/store';
 import { currentUser } from '../../stores/auth';
 import { squads } from '../../stores/squads';
-import { getSquadBotState } from './squad-bot';
+import { getJoinInboxState, reclaimJoinInboxIfSplit } from './join-inbox';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
 import { drainPendingAdmitQueue } from '../parent/pending-admit';
 
@@ -23,7 +23,8 @@ export async function syncJoinInboxForHolderSquads(): Promise<void> {
     const list = get(squads);
     for (const squad of list) {
       try {
-        const state = await getSquadBotState(squad.id);
+        const state =
+          (await reclaimJoinInboxIfSplit(squad.id)) ?? (await getJoinInboxState(squad.id));
         if (!state?.iAmHolder || !state.hasLocalSecret) continue;
         await syncJoinRequestsForSquad(squad.id);
       } catch (e) {

@@ -67,7 +67,7 @@ const mocks = vi.hoisted(() => {
     installSyncHealthTicker: vi.fn(() => vi.fn()),
     applyMlsStoreResetState: vi.fn(),
     refreshMlsStoreResetState: vi.fn(),
-    handleBotJoinResponseDm: vi.fn(),
+    handleJoinInboxResponseDm: vi.fn(),
   };
 
   const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
@@ -132,8 +132,8 @@ vi.mock('../invites/accept-invite', () => ({
 }));
 
 vi.mock('../squad/join-request-finalize', () => ({
-  handleBotJoinResponseDm: (...args: unknown[]) =>
-    mocks.mockFunctions.handleBotJoinResponseDm(...args),
+  handleJoinInboxResponseDm: (...args: unknown[]) =>
+    mocks.mockFunctions.handleJoinInboxResponseDm(...args),
   tryCompletePendingApprovedJoins: vi.fn(),
 }));
 
@@ -383,7 +383,7 @@ describe('subscribeAppEvents', () => {
         chat_id: 'npub1joininbox',
         message: dmMessage({ content: 'response' }),
       });
-      expect(mocks.mockFunctions.handleBotJoinResponseDm).toHaveBeenCalledWith(
+      expect(mocks.mockFunctions.handleJoinInboxResponseDm).toHaveBeenCalledWith(
         'response',
         'npub1joininbox',
       );

@@ -23,7 +23,7 @@ vi.mock('../../stores/toast', () => ({
 }));
 
 import {
-  handleBotJoinResponseDm,
+  handleJoinInboxResponseDm,
   loadPendingApprovedJoins,
   pendingApprovedJoins,
   resetPendingApprovedJoins,
@@ -57,7 +57,7 @@ describe('join request finalization', () => {
       requestId: 'request-1',
       squadId: 'squad-1',
       squadName: 'Pirates',
-      botNpub: 'npub1joininbox',
+      inboxNpub: 'npub1joininbox',
       broadcastEventId: 'broadcast-1',
       sentAt: 1,
     });
@@ -69,10 +69,10 @@ describe('join request finalization', () => {
   });
 
   it('accepts only a correlated response signed by the Join inbox', async () => {
-    await handleBotJoinResponseDm(response, 'npub1other');
+    await handleJoinInboxResponseDm(response, 'npub1other');
     expect(get(pendingApprovedJoins)).toEqual([]);
 
-    await handleBotJoinResponseDm(response, 'npub1joininbox');
+    await handleJoinInboxResponseDm(response, 'npub1joininbox');
     expect(get(pendingApprovedJoins)).toEqual([
       expect.objectContaining({
         groupId: 'squad-1',
@@ -88,12 +88,12 @@ describe('join request finalization', () => {
       requestId: 'forged',
       status: 'accepted',
     });
-    await handleBotJoinResponseDm(forged, 'npub1joininbox');
+    await handleJoinInboxResponseDm(forged, 'npub1joininbox');
     expect(get(pendingApprovedJoins)).toEqual([]);
   });
 
   it('reloads approved joins after restart', async () => {
-    await handleBotJoinResponseDm(response, 'npub1joininbox');
+    await handleJoinInboxResponseDm(response, 'npub1joininbox');
     resetPendingApprovedJoins();
     expect(get(pendingApprovedJoins)).toEqual([]);
 

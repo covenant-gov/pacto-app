@@ -450,7 +450,7 @@ pub(crate) fn delete_squad_inner(
         rusqlite::params![pid],
     )
     .map_err(|e| format!("Failed to delete squad_member_evm: {e}"))?;
-    crate::squad_bot::delete_squad_bot_rows(conn, pid)?;
+    crate::join_inbox::delete_join_inbox_rows(conn, pid)?;
     conn.execute("DELETE FROM squads WHERE id = ?1", rusqlite::params![pid])
         .map_err(|e| format!("Failed to delete squad: {e}"))?;
     // Catch up entries reference chat/channel ids, not squad ids (KD1 —

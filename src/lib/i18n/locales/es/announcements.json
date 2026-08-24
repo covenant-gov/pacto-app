@@ -34,13 +34,13 @@
 	"announcements.signerShare.mine": "Actualizaste tu clave EVM para este Escuad",
 	"announcements.signerShare.theirs": "{authorName} actualizó su clave EVM para este Escuad",
 	"announcements.signerShare.aMember": "Un miembro",
-	"announcements.squadBot.rosterMine": "Actualizaste los titulares de la bandeja de entrada",
-	"announcements.squadBot.rosterTheirs": "{authorName} actualizó los titulares de la bandeja de entrada",
-	"announcements.squadBot.aMember": "Un miembro",
-	"announcements.squadBot.rotatedMine": "Rotaste la clave de bandeja de entrada",
-	"announcements.squadBot.rotatedTheirs": "{authorName} rotó la clave de bandeja de entrada",
-	"announcements.squadBot.updateTitle": "Actualización de bandeja de entrada",
-	"announcements.squadBot.keyHolders": "{count, plural, =0 {0 titulares} one {1 titular} other {{count} titulares}}",
-	"announcements.squadBot.keyEpoch": "Época de clave {keyEpoch}",
-	"announcements.squadBot.botLabel": "Bandeja {shortNpub}"
+	"announcements.joinInbox.rosterMine": "Actualizaste los titulares de la bandeja de entrada",
+	"announcements.joinInbox.rosterTheirs": "{authorName} actualizó los titulares de la bandeja de entrada",
+	"announcements.joinInbox.aMember": "Un miembro",
+	"announcements.joinInbox.rotatedMine": "Rotaste la clave de bandeja de entrada",
+	"announcements.joinInbox.rotatedTheirs": "{authorName} rotó la clave de bandeja de entrada",
+	"announcements.joinInbox.updateTitle": "Actualización de bandeja de entrada",
+	"announcements.joinInbox.keyHolders": "{count, plural, =0 {0 titulares} one {1 titular} other {{count} titulares}}",
+	"announcements.joinInbox.keyEpoch": "Época de clave {keyEpoch}",
+	"announcements.joinInbox.inboxLabel": "Bandeja {shortNpub}"
 }

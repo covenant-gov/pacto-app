@@ -6,8 +6,8 @@ import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsJoinRequestDto, CommonsJoinRequestStatus } from '../commons/types';
 import { isJoinRequesterMuted } from './squad-join-spam';
 
-export const SQUAD_BOT_JOIN_DM_SCHEMA = 'pacto.squad.bot_join_dm.v1';
-export const SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA = 'pacto.squad.bot_join_response.v1';
+export const JOIN_INBOX_DM_SCHEMA = 'pacto.squad.join_inbox_dm.v1';
+export const JOIN_INBOX_RESPONSE_DM_SCHEMA = 'pacto.squad.join_inbox_response.v1';
 export const SQUAD_JOIN_REQUEST_SCHEMA = 'pacto.squad.join_request.v1';
 export const SQUAD_JOIN_REQUEST_RESPONSE_SCHEMA = 'pacto.squad.join_request_response.v1';
 
@@ -51,7 +51,7 @@ export function clearJoinRequestRespondInFlight(requestId: string): void {
   if (removed) joinRequestRespondInFlightRevision.update((n) => n + 1);
 }
 
-export interface SquadBotJoinDmDto {
+export interface JoinInboxDmDto {
   requestId: string;
   squadId: string;
   squadName: string;
@@ -60,14 +60,14 @@ export interface SquadBotJoinDmDto {
   createdAt: number;
 }
 
-export function formatBotJoinDm(input: {
+export function formatJoinInboxDm(input: {
   requestId: string;
   squadId: string;
   squadName: string;
   broadcastEventId: string;
 }): string {
   return JSON.stringify({
-    schema: SQUAD_BOT_JOIN_DM_SCHEMA,
+    schema: JOIN_INBOX_DM_SCHEMA,
     requestId: input.requestId.trim(),
     squadId: input.squadId.trim(),
     squadName: input.squadName.trim(),
@@ -83,7 +83,7 @@ export function formatJoinResponseDm(input: {
   status: 'accepted' | 'rejected';
 }): string {
   return JSON.stringify({
-    schema: SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA,
+    schema: JOIN_INBOX_RESPONSE_DM_SCHEMA,
     squadId: input.squadId.trim(),
     squadName: input.squadName.trim(),
     requestId: input.requestId.trim(),
@@ -91,16 +91,16 @@ export function formatJoinResponseDm(input: {
   });
 }
 
-export interface SquadBotJoinResponseDmDto {
+export interface JoinInboxResponseDmDto {
   squadId: string;
   squadName: string;
   requestId: string;
   status: 'accepted' | 'rejected';
 }
 
-export function parseBotJoinResponseDm(content: string | null | undefined): SquadBotJoinResponseDmDto | null {
+export function parseJoinInboxResponseDm(content: string | null | undefined): JoinInboxResponseDmDto | null {
   const wire = parseJoinWire(content);
-  if (!wire || wire.schema !== SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA) return null;
+  if (!wire || wire.schema !== JOIN_INBOX_RESPONSE_DM_SCHEMA) return null;
   const status = wire.status === 'accepted' || wire.status === 'rejected' ? wire.status : null;
   const squadId = wire.squadId?.trim() ?? '';
   const squadName = wire.squadName?.trim() ?? '';
@@ -109,9 +109,9 @@ export function parseBotJoinResponseDm(content: string | null | undefined): Squa
   return { squadId, squadName: squadName || squadId, requestId, status };
 }
 
-export function parseBotJoinDm(content: string | null | undefined): SquadBotJoinDmDto | null {
+export function parseJoinInboxDm(content: string | null | undefined): JoinInboxDmDto | null {
   const wire = parseJoinWire(content);
-  if (!wire || wire.schema !== SQUAD_BOT_JOIN_DM_SCHEMA) return null;
+  if (!wire || wire.schema !== JOIN_INBOX_DM_SCHEMA) return null;
   const squadId = wire.squadId?.trim() ?? '';
   const squadName = wire.squadName?.trim() ?? '';
   const broadcastEventId = wire.broadcastEventId?.trim() ?? '';
@@ -247,35 +247,34 @@ export function mergeJoinRequestsFromMlsMessages(
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export async function syncBotJoinDms(squadId: string): Promise<SquadBotJoinDmDto[]> {
-  return invoke<SquadBotJoinDmDto[]>('squad_bot_sync_join_dms', { squadId: squadId.trim() });
+export async function syncJoinInboxDms(squadId: string): Promise<JoinInboxDmDto[]> {
+  return invoke<JoinInboxDmDto[]>('join_inbox_sync_join_dms', { squadId: squadId.trim() });
 }
 
-/** Non-holders lack bot secret — bot inbox sync is expected to fail for them. */
-export function isExpectedNonHolderBotSyncError(message: string): boolean {
+/** Non-holders lack the Join inbox key — inbox sync is expected to fail for them. */
+export function isExpectedNonHolderJoinInboxSyncError(message: string): boolean {
   const lower = message.toLowerCase();
   return (
     lower.includes('holder') ||
-    lower.includes('bot secret') ||
     lower.includes('join inbox') ||
     lower.includes('not initialized') ||
     lower.includes('stale')
   );
 }
 
-/** Holder: unwrap bot DMs and fan out missing requests into MLS join_requests. */
-export async function fanOutBotJoinDmsToMls(squadId: string): Promise<number> {
+/** Holder: unwrap Join inbox DMs and fan out missing requests into MLS join_requests. */
+export async function fanOutJoinInboxDmsToMls(squadId: string): Promise<number> {
   const id = squadId.trim();
   if (!id) return 0;
   const me = get(currentUser)?.npub;
   if (!me) return 0;
 
-  let dms: SquadBotJoinDmDto[];
+  let dms: JoinInboxDmDto[];
   try {
-    dms = await syncBotJoinDms(id);
+    dms = await syncJoinInboxDms(id);
   } catch (e) {
-    const message = getInvokeErrorMessage(e, 'Could not sync bot inbox.');
-    if (isExpectedNonHolderBotSyncError(message)) return 0;
+    const message = getInvokeErrorMessage(e, 'Could not sync Join inbox.');
+    if (isExpectedNonHolderJoinInboxSyncError(message)) return 0;
     throw new Error(message, { cause: e });
   }
   if (dms.length === 0) return 0;
@@ -405,7 +404,7 @@ async function notifyJoinRequesterViaDm(input: {
     requestId: input.requestId,
     status: input.status,
   });
-  await invoke('squad_bot_send_join_response', {
+  await invoke('join_inbox_send_join_response', {
     squadId: input.squadId.trim(),
     requesterNpub: npub,
     content,

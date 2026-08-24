@@ -2,7 +2,7 @@ import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import type { SkippedMember, UndeliveredInvite } from '../api/nostr';
 import { profiles } from '../../stores/profiles';
-import { shortNpub } from './squad-bot-announce';
+import { shortNpub } from './join-inbox-announce';
 
 /**
  * Name for a member the notice has to blame. Reads the profile cache directly rather than

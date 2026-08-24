@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
+  import JoinInboxHoldersSection from './JoinInboxHoldersSection.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadEndpointsPanel from './SquadEndpointsPanel.svelte';
   import SquadIdentitySection from './SquadIdentitySection.svelte';
@@ -105,7 +105,7 @@
     {onClearSquadRpcPrimary}
   />
 
-  <SquadBotHoldersSection
+  <JoinInboxHoldersSection
     {announcementsGroupId}
     {channelMembers}
     squadAdminActive={!!squadAdminCtx}
