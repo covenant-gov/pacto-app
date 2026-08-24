@@ -15,6 +15,7 @@ import {
   toastOnChainConfirmed,
 } from '../evm/on-chain-background';
 import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import {
   appendPendingOutboundDmMessage,
   patchOutboundWalletTxByHash,
@@ -22,6 +23,11 @@ import {
   type DmMessage,
 } from '../../stores/dm';
 import { showToast } from '../../stores/toast';
+import {
+  beginOnChainJob,
+  completeOnChainJob,
+  failOnChainJob,
+} from '../../stores/pending-on-chain';
 
 export interface WalletDmTransferAfterBroadcastParams {
   peerNpub: string;
@@ -182,12 +188,18 @@ export async function finalizeWalletDmTransferAfterBroadcast(
   });
   appendPendingOutboundDmMessage(params.peerNpub, optimisticContent);
 
+  const jobId = beginOnChainJob({
+    label: get(t)('wallet.sendTitle'),
+    actionKey: `dm-tx:${params.txHash}`,
+    txHash: params.txHash,
+  });
   const wait = await waitForReceiptWithRetries(params.network, params.txHash);
   if (!wait.ok) {
     if (wait.parsed?.code === 'RECEIPT_TIMEOUT') {
       showToast('Submitted — still waiting for confirmation. Check the explorer from the chat card.');
       return;
     }
+    failOnChainJob(jobId);
     patchOutboundWalletTxByHash(params.peerNpub, params.txHash, {
       pending: false,
       failed: true,
@@ -196,6 +208,7 @@ export async function finalizeWalletDmTransferAfterBroadcast(
     return;
   }
 
+  completeOnChainJob(jobId, params.txHash);
   await finalizeConfirmed(params, fromEvm, wait);
 }
 
@@ -237,13 +250,20 @@ export function resumePendingWalletTxConfirmations(
           sendDm: ctx.sendDm,
           onBalanceRefresh: ctx.onBalanceRefresh,
         };
+        const jobId = beginOnChainJob({
+          label: get(t)('wallet.sendTitle'),
+          actionKey: `dm-tx:${ann.tx_hash}`,
+          txHash: ann.tx_hash,
+        });
         const wait = await waitForReceiptWithRetries(ann.network, ann.tx_hash);
         if (!wait.ok) {
           if (wait.parsed?.code !== 'RECEIPT_TIMEOUT') {
+            failOnChainJob(jobId);
             patchOutboundWalletTxByHash(peer, ann.tx_hash, { pending: false, failed: true });
           }
           return;
         }
+        completeOnChainJob(jobId, ann.tx_hash);
         await finalizeConfirmed(params, fromEvm, wait);
       } finally {
         resumeInFlight.delete(key);

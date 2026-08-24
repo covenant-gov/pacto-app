@@ -25,13 +25,13 @@
   import {
     getWalletSummary,
     walletBuildAndSendTransaction,
-    walletWaitForTransaction,
     watchedRowsToWire,
     watchedWireFingerprint,
     type WalletSummary,
   } from '../../lib/wallet';
   import { getAddress, isAddress, parseUnits } from 'viem';
   import { showToast } from '../../stores/toast';
+  import { waitForOnChainConfirmationInBackground } from '../../lib/evm/on-chain-background';
   import { requireBackupVerified } from '../../stores/backup-verification';
   import { normalizeLeadingDotDecimalInput } from '../../lib/wallet/amount-input';
 
@@ -279,14 +279,15 @@
       );
       if (out.ok) {
         onClose();
-        void walletWaitForTransaction(chainId, out.result.txHash).then((wait) => {
-          if (wait.ok) {
-            const h = wait.result.txHash;
+        waitForOnChainConfirmationInBackground(chainId, out.result.txHash, {
+          subject: tFn('wallet.sendTitle'),
+          actionKey: `wallet-send:${out.result.txHash}`,
+          confirmedToast: false,
+          onConfirmed: () => {
+            const h = out.result.txHash;
             const short = h.length > 14 ? `${h.slice(0, 10)}…${h.slice(-4)}` : h;
-            showToast(tFn('wallet.txConfirmed', { values: { network: wait.result.network, txHash: short } }));
-          } else if (wait.parsed?.code !== 'RECEIPT_TIMEOUT') {
-            showToast(wait.message);
-          }
+            showToast(tFn('wallet.txConfirmed', { values: { network: chainId, txHash: short } }));
+          },
         });
       } else {
         sendError = {

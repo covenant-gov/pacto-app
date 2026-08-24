@@ -23,13 +23,9 @@
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
+  import { hasPendingJob, pendingOnChainJobs } from '../../../stores/pending-on-chain';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
-  import { showToast } from '../../../stores/toast';
 
   let {
     network,
@@ -48,7 +44,10 @@
   const tFn = get(t);
 
   let loading = $state(false);
-  let acting = $state(false);
+  let acting = $derived.by(() => {
+    void $pendingOnChainJobs;
+    return hasPendingJob(parentId, 'vote-config-propose');
+  });
   let loadError = $state('');
   let hydrated = $state(false);
   let loadedMode = $state<CrewVoteMode>('majority');
@@ -124,39 +123,38 @@
     void loadConfig();
   });
 
-  async function submit() {
-    if (acting || !proposeGate.enabled) return;
-    acting = true;
+  function submit() {
+    if (!proposeGate.enabled) return;
     const changes = pending;
-    try {
-      for (const change of changes) {
-        const label =
-          change.kind === 'set_crew_vote_mode'
-            ? tFn('governance.action.proposeCrewVoteMode')
-            : tFn('governance.action.proposeQuorumBps');
-        const dataHex =
-          change.kind === 'set_crew_vote_mode'
-            ? encodeSetCrewVoteMode(change.mode)
-            : encodeSetQuorumBps(change.quorumBps);
-        const result = await treasuryAuthorityPropose({
-          network,
-          parentId,
-          treasuryAuthority,
-          to: treasuryAuthority,
-          valueWei: '0',
-          dataHex,
-          operation: 'call',
-        });
-        showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      }
-      onSubmitted();
-      await loadConfig();
-    } catch (e) {
-      showGovWriteErrorToast(e, tFn('governance.action.submitProposal'));
-      onSubmitted();
-    } finally {
-      acting = false;
-    }
+    const label = tFn('governance.action.submitProposal');
+    runGovWriteInBackground({
+      label,
+      parentId,
+      actionKey: 'vote-config-propose',
+      job: async () => {
+        let last: unknown;
+        for (const change of changes) {
+          const dataHex =
+            change.kind === 'set_crew_vote_mode'
+              ? encodeSetCrewVoteMode(change.mode)
+              : encodeSetQuorumBps(change.quorumBps);
+          last = await treasuryAuthorityPropose({
+            network,
+            parentId,
+            treasuryAuthority,
+            to: treasuryAuthority,
+            valueWei: '0',
+            dataHex,
+            operation: 'call',
+          });
+        }
+        return last;
+      },
+      onSettled: () => {
+        onSubmitted();
+        void loadConfig();
+      },
+    });
   }
 </script>
 

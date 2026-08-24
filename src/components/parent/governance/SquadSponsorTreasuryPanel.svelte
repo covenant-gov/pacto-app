@@ -33,7 +33,7 @@
     type SignerBalance,
   } from '../../../lib/wallet/signer-balance';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
-  import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
+  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { formatEther, parseEther } from 'viem';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
@@ -288,36 +288,43 @@
       return;
     }
     const payFrom: SquadSponsorDeploySignerWallet = signersAreSame ? 'squad' : signerWallet;
-    depositing = true;
-    try {
-      await depositSquadSponsor({
-        network,
-        parentId: parentId.trim(),
-        amountWei,
-        sponsorAddress: sponsorRow.canonicalRef,
-        signerWallet: payFrom,
-      });
-      showToast(tFn('governance.toast.sponsorDepositConfirmed'));
-      showDepositForm = false;
-      await refreshSummary(true);
-    } catch (e) {
-      let raw = getInvokeErrorMessage(e, tFn('governance.error.depositFailed'));
-      const parsed = parseWalletOpError(raw);
-      if (parsed?.message) raw = parsed.message;
-      if (/insufficient funds/i.test(raw)) {
-        depositError = tFn('governance.error.insufficientFundsForDeposit', {
-          values: {
-            symbol: selectedSymbol,
-            address: shortAddress(selectedAddress),
-            network,
-          },
-        });
-      } else {
-        depositError = raw;
-      }
-    } finally {
-      depositing = false;
-    }
+    const symbol = selectedSymbol;
+    const address = shortAddress(selectedAddress);
+    showDepositForm = false;
+    runOnChainInBackground({
+      jobLabel: tFn('governance.action.confirmDeposit'),
+      parentId: parentId.trim(),
+      actionKey: 'sponsor-deposit',
+      startedToast: tFn('governance.toast.squadTransactionSubmitted'),
+      job: () =>
+        depositSquadSponsor({
+          network,
+          parentId: parentId.trim(),
+          amountWei,
+          sponsorAddress: sponsorRow.canonicalRef,
+          signerWallet: payFrom,
+        }),
+      onSuccess: async () => {
+        showToast(tFn('governance.toast.sponsorDepositConfirmed'));
+        await refreshSummary(true);
+      },
+      onError: (message) => {
+        if (/insufficient funds/i.test(message)) {
+          depositError = tFn('governance.error.insufficientFundsForDeposit', {
+            values: {
+              symbol,
+              address,
+              network,
+            },
+          });
+          showDepositForm = true;
+          return true;
+        }
+        depositError = message;
+        showDepositForm = true;
+        return true;
+      },
+    });
   }
 </script>
 

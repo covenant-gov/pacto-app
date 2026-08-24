@@ -104,17 +104,17 @@ describe('SquadSponsorWithdrawModal', () => {
     expect(withdrawSquadSponsorMock).toHaveBeenCalledTimes(1);
   });
 
-  it('renders a failed withdrawal error verbatim, with no RPC URL appended by the component', async () => {
+  it('closes immediately when withdraw is submitted', async () => {
     const backendMessage = 'insufficient funds for withdrawal';
     withdrawSquadSponsorMock.mockRejectedValue(new Error(backendMessage));
+    const props = baseProps();
 
-    render(SquadSponsorWithdrawModal, { props: baseProps() });
+    render(SquadSponsorWithdrawModal, { props });
 
     const confirm = await screen.findByRole('button', { name: 'Confirm withdraw' });
     await fireEvent.click(confirm);
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent?.trim()).toBe(backendMessage);
-    expect(alert.textContent).not.toMatch(/https?:\/\//);
+    await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
+    expect(withdrawSquadSponsorMock).toHaveBeenCalledTimes(1);
   });
 });

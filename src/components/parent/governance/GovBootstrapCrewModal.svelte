@@ -3,10 +3,8 @@
   import { get } from 'svelte/store';
   import Modal from '../../ui/Modal.svelte';
   import { quartermasterBootstrapCrew } from '../../../lib/governance/api';
-  import { fundedByFromWriteResult } from '../../../lib/governance/gov-write-funding';
-  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { gateRequiresCaptain, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
-  import { showToast } from '../../../stores/toast';
 
   let {
     open = false,
@@ -36,7 +34,6 @@
   const tFn = get(t);
 
   let selected = $state(new Set<string>());
-  let acting = $state(false);
   let error = $state('');
   let wasOpen = false;
 
@@ -84,8 +81,8 @@
     }
   }
 
-  async function submit() {
-    if (acting || !captainGate.enabled) return;
+  function submit() {
+    if (!captainGate.enabled) return;
     const candidates = eligible
       .map((m) => m.address.trim())
       .filter((addr) => selected.has(addr.toLowerCase()));
@@ -93,36 +90,26 @@
       error = tFn('governance.bootstrapCrew.error.noMember');
       return;
     }
-    acting = true;
     error = '';
-    try {
-      const result = await quartermasterBootstrapCrew({
-        network,
-        parentId,
-        quartermaster,
-        candidates,
-      });
-      const count = candidates.length;
-      const fundedBy = fundedByFromWriteResult(result);
-      const toastKey =
-        fundedBy === 'sponsored'
-          ? 'governance.bootstrapCrew.toast.submittedSponsored'
-          : fundedBy === 'self_funded'
-            ? 'governance.bootstrapCrew.toast.submittedSelfFunded'
-            : 'governance.bootstrapCrew.toast.submitted';
-      showToast(tFn(toastKey, { values: { count } }));
-      onSubmitted();
-      onClose();
-    } catch (e) {
-      error = govWriteErrorMessage(e, tFn('governance.bootstrapCrew.toast.error'));
-    } finally {
-      acting = false;
-    }
+    onClose();
+    runGovWriteInBackground({
+      label: tFn('governance.bootstrapCrew.action'),
+      parentId,
+      actionKey: 'bootstrap-crew',
+      job: () =>
+        quartermasterBootstrapCrew({
+          network,
+          parentId,
+          quartermaster,
+          candidates,
+        }),
+      onSettled: () => onSubmitted(),
+    });
   }
 </script>
 
 {#if open}
-  <Modal {titleId} descriptionId={descId} onClose={onClose} dismissible={!acting} contentClass="bootstrap-crew-modal">
+  <Modal {titleId} descriptionId={descId} onClose={onClose} dismissible contentClass="bootstrap-crew-modal">
     <h2 id={titleId} class="modal-title">{$t('governance.bootstrapCrew.title')}</h2>
     <p id={descId} class="modal-lead muted">
       {$t('governance.bootstrapCrew.description')}
@@ -132,7 +119,7 @@
       <p class="muted">{$t('governance.bootstrapCrew.empty')}</p>
     {:else}
       <div class="select-row">
-        <button type="button" class="btn-link" disabled={acting} onclick={toggleAll}>
+        <button type="button" class="btn-link" onclick={toggleAll}>
           {allSelected ? $t('governance.common.clearSelection') : $t('governance.common.selectAll')}
         </button>
         <span class="muted tiny">{$t('governance.bootstrapCrew.selectCount', { values: { selected: selected.size, total: eligible.length } })}</span>
@@ -145,7 +132,6 @@
               <input
                 type="checkbox"
                 checked={selected.has(key)}
-                disabled={acting}
                 onchange={() => toggle(member.address)}
               />
               <span class="member-name">{member.label}</span>
@@ -164,14 +150,14 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" disabled={acting} onclick={onClose}>{$t('governance.common.cancel')}</button>
+      <button type="button" class="btn-secondary" onclick={onClose}>{$t('governance.common.cancel')}</button>
       <button
         type="button"
         class="btn-primary"
-        disabled={acting || !captainGate.enabled || selected.size === 0}
+        disabled={!captainGate.enabled || selected.size === 0}
         onclick={submit}
       >
-        {acting ? $t('governance.common.submitting') : $t('governance.bootstrapCrew.action')}
+        {$t('governance.bootstrapCrew.action')}
       </button>
     </div>
   </Modal>

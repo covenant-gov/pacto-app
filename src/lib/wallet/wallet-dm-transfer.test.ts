@@ -17,6 +17,15 @@ vi.mock('../../stores/toast', () => ({
   showToast: vi.fn(),
 }));
 
+vi.mock('svelte-i18n', () => ({
+  t: {
+    subscribe: (fn: (v: (k: string) => string) => void) => {
+      fn((k) => k);
+      return () => {};
+    },
+  },
+}));
+
 vi.mock('../evm/on-chain-background', () => ({
   toastOnChainSubmitted: vi.fn(),
   toastOnChainConfirmed: vi.fn(),

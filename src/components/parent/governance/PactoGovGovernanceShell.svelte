@@ -30,11 +30,7 @@
     resolveGovernancePrivilege,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
@@ -45,7 +41,6 @@
     aclSnapshotLoadKey,
     aclSnapshotShouldRetry,
   } from '../../../lib/governance/acl-snapshot-key';
-  import { showToast } from '../../../stores/toast';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import type { HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
@@ -392,42 +387,48 @@
     void reloadQmPending();
   }
 
-  async function executeMutinyFromBoard() {
+  function executeMutinyFromBoard() {
     const mutinyModule = payload.mutinyModule?.trim();
-    if (!mutinyModule || !mutinyStatus) return;
-    try {
-      const result = await mutinyExecute({
-        network,
-        parentId,
-        mutinyModule,
-        mutinyId: mutinyStatus.activeMutinyId,
-      });
-      showToast(govWriteSubmittedToast(tFn('governance.action.executeMutiny'), fundedByFromWriteResult(result)));
-      await reloadMutiny(true);
-    } catch (e) {
-      showGovWriteErrorToast(e, tFn('governance.action.executeMutiny'));
-      clearGovModuleReadsForParent(parentId);
-      await reloadMutiny(true);
-    }
+    const status = mutinyStatus;
+    if (!mutinyModule || !status) return;
+    runGovWriteInBackground({
+      label: tFn('governance.action.executeMutiny'),
+      parentId,
+      actionKey: `mutiny-exec:${status.activeMutinyId}`,
+      job: () =>
+        mutinyExecute({
+          network,
+          parentId,
+          mutinyModule,
+          mutinyId: status.activeMutinyId,
+        }),
+      onSettled: () => {
+        clearGovModuleReadsForParent(parentId);
+        void reloadMutiny(true);
+      },
+    });
   }
 
-  async function expireMutinyFromBoard() {
+  function expireMutinyFromBoard() {
     const mutinyModule = payload.mutinyModule?.trim();
-    if (!mutinyModule || !mutinyStatus) return;
-    try {
-      const result = await mutinyExpire({
-        network,
-        parentId,
-        mutinyModule,
-        mutinyId: mutinyStatus.activeMutinyId,
-      });
-      showToast(govWriteSubmittedToast(tFn('governance.action.expireMutiny'), fundedByFromWriteResult(result)));
-      await reloadMutiny(true);
-    } catch (e) {
-      showGovWriteErrorToast(e, tFn('governance.action.expireMutiny'));
-      clearGovModuleReadsForParent(parentId);
-      await reloadMutiny(true);
-    }
+    const status = mutinyStatus;
+    if (!mutinyModule || !status) return;
+    runGovWriteInBackground({
+      label: tFn('governance.action.expireMutiny'),
+      parentId,
+      actionKey: `mutiny-expire:${status.activeMutinyId}`,
+      job: () =>
+        mutinyExpire({
+          network,
+          parentId,
+          mutinyModule,
+          mutinyId: status.activeMutinyId,
+        }),
+      onSettled: () => {
+        clearGovModuleReadsForParent(parentId);
+        void reloadMutiny(true);
+      },
+    });
   }
 
   const subModes: { id: GovSubMode; label: string }[] = [

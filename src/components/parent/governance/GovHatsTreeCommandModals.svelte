@@ -10,14 +10,9 @@
   import GovCaptainResignModal from './GovCaptainResignModal.svelte';
   import { mutinyCaptainResign } from '../../../lib/governance/api';
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { labeledWearerOptions, pickRandomRosterCaptain } from '../../../lib/governance/war-game-captain';
   import type { HatsTreeCommandAction, HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
-  import { showToast } from '../../../stores/toast';
 
   interface Props {
     command: HatsTreeCommandContext;
@@ -28,7 +23,6 @@
   let { command, openAction = null, onClose = () => {} }: Props = $props();
 
   const tFn = get(t);
-  let acting = $state(false);
 
   const gates = $derived(
     buildGovCommandGates({
@@ -47,26 +41,20 @@
   function randomizeCaptain() {
     const picked = pickRandomRosterCaptain(randomizePool, randomizeExclude);
     if (!picked) return;
-    acting = true;
-    void mutinyCaptainResign({
-      network: command.network,
+    onClose();
+    runGovWriteInBackground({
+      label: tFn('governance.action.randomizeCaptain'),
       parentId: command.parentId,
-      mutinyModule: command.mutinyModule,
-      newCaptain: picked,
-    })
-      .then((result) => {
-        showToast(
-          govWriteSubmittedToast(tFn('governance.action.randomizeCaptain'), fundedByFromWriteResult(result)),
-        );
-        command.refreshMutiny();
-        onClose();
-      })
-      .catch((e) => {
-        showGovWriteErrorToast(e, tFn('governance.action.randomizeCaptain'));
-      })
-      .finally(() => {
-        acting = false;
-      });
+      actionKey: 'randomize-captain',
+      job: () =>
+        mutinyCaptainResign({
+          network: command.network,
+          parentId: command.parentId,
+          mutinyModule: command.mutinyModule,
+          newCaptain: picked,
+        }),
+      onSettled: () => command.refreshMutiny(),
+    });
   }
 </script>
 
@@ -170,5 +158,4 @@
   mutinyActive={gates.mutinyActive}
   onRandomize={randomizeCaptain}
   onSubmitted={command.refreshMutiny}
-  parentActing={acting}
 />

@@ -9,13 +9,8 @@
   import { mutinyCaptainResign, type MutinyStatusDto, type QuartermasterStatusDto } from '../../../lib/governance/api';
   import { isHatRequiredReason, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { pickRandomRosterCaptain, labeledWearerOptions } from '../../../lib/governance/war-game-captain';
-  import { showToast } from '../../../stores/toast';
 
   interface Props {
     network: string;
@@ -53,7 +48,6 @@
 
   const tFn = get(t);
 
-  let acting = $state(false);
   let showAddCrew = $state(false);
   let showRemoveCrew = $state(false);
   let showBootstrapModal = $state(false);
@@ -84,21 +78,14 @@
   function randomizeCaptain() {
     const picked = pickRandomRosterCaptain(randomizePool, randomizeExclude);
     if (!picked) return;
-    acting = true;
-    void mutinyCaptainResign({ network, parentId, mutinyModule, newCaptain: picked })
-      .then((result) => {
-        showToast(
-          govWriteSubmittedToast(tFn('governance.action.randomizeCaptain'), fundedByFromWriteResult(result)),
-        );
-        onRefreshMutiny();
-        showResign = false;
-      })
-      .catch((e) => {
-        showGovWriteErrorToast(e, tFn('governance.action.randomizeCaptain'));
-      })
-      .finally(() => {
-        acting = false;
-      });
+    showResign = false;
+    runGovWriteInBackground({
+      label: tFn('governance.action.randomizeCaptain'),
+      parentId,
+      actionKey: 'randomize-captain',
+      job: () => mutinyCaptainResign({ network, parentId, mutinyModule, newCaptain: picked }),
+      onSettled: () => onRefreshMutiny(),
+    });
   }
 </script>
 
@@ -125,7 +112,6 @@
           label={tFn('governance.action.bootstrapCrew')}
           variant="primary"
           gate={bootstrapGate}
-          {acting}
           onClick={() => (showBootstrapModal = true)}
         />
       {/if}
@@ -194,7 +180,6 @@
   {mutinyActive}
   onRandomize={randomizeCaptain}
   onSubmitted={onRefreshMutiny}
-  parentActing={acting}
 />
 
 <style>

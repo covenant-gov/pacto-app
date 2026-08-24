@@ -19,6 +19,7 @@
   import WalletBar from '../components/wallet/WalletBar.svelte';
   import ResizableSidebar from '../components/ui/ResizableSidebar.svelte';
   import Toast from '../components/ui/Toast.svelte';
+  import OnChainActivityChip from '../components/ui/OnChainActivityChip.svelte';
   import { createLazyComponent } from '../lib/ui/lazy-svelte-component';
   import {
     getDmMessages,
@@ -1210,6 +1211,7 @@
   </main>
   <div class="toast-portal-wrapper" use:portal>
     <Toast />
+    <OnChainActivityChip />
   </div>
   {#if $commonsBroadcastModalOpen}
     <div use:portal>

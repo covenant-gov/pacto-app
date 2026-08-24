@@ -15,6 +15,7 @@ import {
   govWriteFundingHint,
   govWriteNoSponsorHint,
   fundedByFromWriteResult,
+  govWriteConfirmedToast,
   govWriteSubmittedToast,
   resolveGovWriteFundingMode,
 } from './gov-write-funding';
@@ -119,6 +120,20 @@ describe('govWriteSubmittedToast', () => {
     );
     expect(govWriteSubmittedToast('Vote', null)).toBe(
       'governance.toast.submitted:{"label":"Vote"}',
+    );
+  });
+});
+
+describe('govWriteConfirmedToast', () => {
+  it('picks mode-specific confirmed toast keys', () => {
+    expect(govWriteConfirmedToast('Vote', 'sponsored')).toBe(
+      'governance.toast.confirmedSponsored:{"label":"Vote"}',
+    );
+    expect(govWriteConfirmedToast('Vote', 'self_funded')).toBe(
+      'governance.toast.confirmedSelfFunded:{"label":"Vote"}',
+    );
+    expect(govWriteConfirmedToast('Vote', null)).toBe(
+      'governance.toast.confirmed:{"label":"Vote"}',
     );
   });
 });

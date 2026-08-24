@@ -111,6 +111,7 @@ export function startWarGameDeploy(params: {
   runOnChainInBackground({
     startedToast: 'War-game deploy submitted. Confirmation continues in the background.',
     subject: 'War-game deploy',
+    parentId,
     job: () =>
       deployWarGameForParent({
         parentId,

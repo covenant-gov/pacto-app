@@ -107,6 +107,7 @@ export function startPactoGovDeploy(params: {
   runOnChainInBackground({
     startedToast: 'Pacto Gov deploy submitted. Confirmation continues in the background.',
     subject: 'Pacto Gov deploy',
+    parentId,
     job: () =>
       deployNavePirataForParent({
         network,

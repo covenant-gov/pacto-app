@@ -16,12 +16,7 @@
   } from '../../../lib/governance/api';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
   import { type CtaGate } from '../../../lib/governance/governance-privilege';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
-  import { showToast } from '../../../stores/toast';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
 
   let {
@@ -54,7 +49,6 @@
   const titleId = $derived(mode === 'add' ? 'gov-captain-add-crew-title' : 'gov-captain-remove-crew-title');
   const titleKey = $derived(mode === 'add' ? 'governance.shell.addCrew' : 'governance.shell.removeCrew');
 
-  let acting = $state(false);
   let qmAddress = $state('');
   let qmPending: QuartermasterPendingDto | null = $state(null);
 
@@ -71,18 +65,15 @@
     }
   });
 
-  async function run(label: string, fn: () => Promise<unknown>) {
-    if (acting) return;
-    acting = true;
-    try {
-      const result = await fn();
-      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      await Promise.resolve(onSubmitted());
-    } catch (e) {
-      showGovWriteErrorToast(e, label);
-    } finally {
-      acting = false;
-    }
+  function run(label: string, actionKey: string, fn: () => Promise<unknown>) {
+    onClose();
+    runGovWriteInBackground({
+      label,
+      parentId,
+      actionKey,
+      job: fn,
+      onSettled: () => void onSubmitted(),
+    });
   }
 
   async function checkQmPending() {
@@ -112,19 +103,19 @@
     <label class="field-label">
       {$t('governance.field.targetMember')}
       {#if memberEvmOptions.length > 0}
-        <select bind:value={qmAddress} disabled={acting} aria-label={$t('governance.field.targetMemberAriaLabel')}>
+        <select bind:value={qmAddress} aria-label={$t('governance.field.targetMemberAriaLabel')}>
           {#each memberEvmOptions as opt (opt.address)}
             <option value={opt.address}>{opt.label} — {shortEvmAddress(opt.address)}</option>
           {/each}
         </select>
       {:else}
-        <input bind:value={qmAddress} placeholder={$t('governance.field.targetMemberPlaceholder')} disabled={acting} />
+        <input bind:value={qmAddress} placeholder={$t('governance.field.targetMemberPlaceholder')} />
       {/if}
     </label>
     <button
       type="button"
       class="linkish"
-      disabled={acting || !qmAddress.trim()}
+      disabled={!qmAddress.trim()}
       onclick={() => void checkQmPending()}
     >
       {$t('governance.quartermaster.checkPending')}
@@ -139,9 +130,8 @@
         <GovCtaButton
           label={tFn('governance.action.requestAdd')}
           gate={qmGate}
-          {acting}
           onClick={() =>
-            void run(tFn('governance.action.requestAdd'), () =>
+            run(tFn('governance.action.requestAdd'), `crew-add:${qmAddress}`, () =>
               quartermasterRequestAddCrew({
                 network,
                 parentId,
@@ -152,9 +142,8 @@
         <GovCtaButton
           label={tFn('governance.action.cancelAdd')}
           gate={qmGate}
-          {acting}
           onClick={() =>
-            void run(tFn('governance.action.cancelAdd'), () =>
+            run(tFn('governance.action.cancelAdd'), `crew-add-cancel:${qmAddress}`, () =>
               quartermasterCancelAddCrew({
                 network,
                 parentId,
@@ -165,9 +154,8 @@
         <GovCtaButton
           label={tFn('governance.action.executeAdd')}
           gate={execGate}
-          {acting}
           onClick={() =>
-            void run(tFn('governance.action.executeAdd'), () =>
+            run(tFn('governance.action.executeAdd'), `crew-add-exec:${qmAddress}`, () =>
               quartermasterExecuteAddCrew({
                 network,
                 parentId,
@@ -181,9 +169,8 @@
         <GovCtaButton
           label={tFn('governance.action.requestRemove')}
           gate={qmGate}
-          {acting}
           onClick={() =>
-            void run(tFn('governance.action.requestRemove'), () =>
+            run(tFn('governance.action.requestRemove'), `crew-remove:${qmAddress}`, () =>
               quartermasterRequestRemoveCrew({
                 network,
                 parentId,
@@ -194,9 +181,8 @@
         <GovCtaButton
           label={tFn('governance.action.cancelRemove')}
           gate={qmGate}
-          {acting}
           onClick={() =>
-            void run(tFn('governance.action.cancelRemove'), () =>
+            run(tFn('governance.action.cancelRemove'), `crew-remove-cancel:${qmAddress}`, () =>
               quartermasterCancelRemoveCrew({
                 network,
                 parentId,
@@ -207,9 +193,8 @@
         <GovCtaButton
           label={tFn('governance.action.executeRemove')}
           gate={execGate}
-          {acting}
           onClick={() =>
-            void run(tFn('governance.action.executeRemove'), () =>
+            run(tFn('governance.action.executeRemove'), `crew-remove-exec:${qmAddress}`, () =>
               quartermasterExecuteRemoveCrew({
                 network,
                 parentId,

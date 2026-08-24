@@ -23,12 +23,8 @@
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
-  import { showToast } from '../../../stores/toast';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
+  import { hasPendingJob, pendingOnChainJobs } from '../../../stores/pending-on-chain';
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
 
@@ -56,7 +52,15 @@
 
   const tFn = get(t);
 
-  let acting = $state(false);
+  let acting = $derived.by(() => {
+    void $pendingOnChainJobs;
+    return (
+      hasPendingJob(parentId, 'offboard-propose') ||
+      hasPendingJob(parentId, 'offboard-vote') ||
+      hasPendingJob(parentId, 'offboard-exec') ||
+      hasPendingJob(parentId, 'offboard-expire')
+    );
+  });
   let target = $state('');
   let nowSec = $state(Math.floor(Date.now() / 1000));
 
@@ -128,18 +132,14 @@
     return execGate;
   });
 
-  async function run(label: string, fn: () => Promise<unknown>) {
-    if (acting) return;
-    acting = true;
-    try {
-      const result = await fn();
-      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      await Promise.resolve(onRefresh());
-    } catch (e) {
-      showGovWriteErrorToast(e, label);
-    } finally {
-      acting = false;
-    }
+  function run(label: string, actionKey: string, fn: () => Promise<unknown>) {
+    runGovWriteInBackground({
+      label,
+      parentId,
+      actionKey,
+      job: fn,
+      onSettled: () => void onRefresh(),
+    });
   }
 </script>
 
@@ -182,7 +182,7 @@
           {acting}
           onClick={() => {
             if (!requireBackupVerified()) return;
-            void run(tFn('governance.action.voteYea'), () =>
+            void run(tFn('governance.action.voteYea'), 'offboard-vote', () =>
               quartermasterCrewOffboardVote({
                 network,
                 parentId,
@@ -198,7 +198,7 @@
           {acting}
           onClick={() => {
             if (!requireBackupVerified()) return;
-            void run(tFn('governance.action.voteNay'), () =>
+            void run(tFn('governance.action.voteNay'), 'offboard-vote', () =>
               quartermasterCrewOffboardVote({
                 network,
                 parentId,
@@ -214,7 +214,7 @@
           gate={executeGate}
           {acting}
           onClick={() =>
-            void run(tFn('governance.action.executeOffboard'), () =>
+            void run(tFn('governance.action.executeOffboard'), 'offboard-exec', () =>
               quartermasterExecuteOffboard({
                 network,
                 parentId,
@@ -228,7 +228,7 @@
             gate={expireGate}
             {acting}
             onClick={() =>
-              void run(tFn('governance.action.expireOffboard'), () =>
+              void run(tFn('governance.action.expireOffboard'), 'offboard-expire', () =>
                 quartermasterExpireOffboard({
                   network,
                   parentId,
@@ -262,7 +262,7 @@
         {acting}
         onClick={() => {
           if (!requireBackupVerified()) return;
-          void run(tFn('governance.action.proposeOffboard'), () =>
+          void run(tFn('governance.action.proposeOffboard'), 'offboard-propose', () =>
             quartermasterProposeOffboard({
               network,
               parentId,

@@ -5,12 +5,7 @@
   import GovCtaButton from './GovCtaButton.svelte';
   import { mutinyCaptainResign } from '../../../lib/governance/api';
   import { type CtaGate } from '../../../lib/governance/governance-privilege';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
-  import { showToast } from '../../../stores/toast';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
 
   let {
     open = false,
@@ -45,29 +40,26 @@
   const tFn = get(t);
   const titleId = 'gov-captain-resign-title';
 
-  let acting = $state(false);
   let resignTo = $state('');
-  let busy = $derived(acting || parentActing);
+  let busy = $derived(parentActing);
 
-  async function resign() {
-    if (acting) return;
-    acting = true;
+  function resign() {
     const label = tFn('governance.action.captainResign');
-    try {
-      const result = await mutinyCaptainResign({
-        network,
-        parentId,
-        mutinyModule,
-        newCaptain: resignTo,
-      });
-      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      onSubmitted();
-      onClose();
-    } catch (e) {
-      showGovWriteErrorToast(e, label);
-    } finally {
-      acting = false;
-    }
+    const nextCaptain = resignTo;
+    onClose();
+    runGovWriteInBackground({
+      label,
+      parentId,
+      actionKey: 'captain-resign',
+      job: () =>
+        mutinyCaptainResign({
+          network,
+          parentId,
+          mutinyModule,
+          newCaptain: nextCaptain,
+        }),
+      onSettled: () => onSubmitted(),
+    });
   }
 </script>
 

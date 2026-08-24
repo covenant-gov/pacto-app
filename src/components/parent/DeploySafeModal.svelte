@@ -232,6 +232,7 @@
     runOnChainInBackground({
       startedToast: tFn('governance.deploySafe.toastSubmitted'),
       subject: tFn('governance.deploySafe.subject'),
+      parentId: parentId.trim(),
       job: async () => {
         const out = await safeDeployProxy(network, owners, th, null, parentId);
         if (!out.ok) {

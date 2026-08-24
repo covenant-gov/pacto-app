@@ -105,6 +105,8 @@
     actionError = '';
     runOnChainInBackground({
       startedToast: tFn('governance.squadRoles.toast.submitted'),
+      jobLabel: tFn('governance.squadRoles.title'),
+      parentId: parentId.trim(),
       job: fn,
       onSuccess: async () => {
         showToast(successMessage);

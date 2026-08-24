@@ -11,13 +11,8 @@
     mutinyStartToPauseCaptain,
   } from '../../../lib/governance/api';
   import { type CtaGate } from '../../../lib/governance/governance-privilege';
-  import {
-    fundedByFromWriteResult,
-    govWriteSubmittedToast,
-  } from '../../../lib/governance/gov-write-funding';
-  import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
-  import { showToast } from '../../../stores/toast';
 
   let {
     open = false,
@@ -46,7 +41,6 @@
   const tFn = get(t);
   const titleId = 'gov-start-mutiny-title';
 
-  let acting = $state(false);
   let startKind: 'crew' | 'committee' | 'eoa' | 'contract' | 'pause' = $state('crew');
   let proposed = $state('');
 
@@ -84,32 +78,30 @@
     }
   });
 
-  async function startMutiny() {
-    if (acting) return;
-    acting = true;
+  function startMutiny() {
     const label =
       startKind === 'pause'
         ? tFn('governance.action.startPauseCaptainMutiny')
         : tFn('governance.action.startMutiny');
-    try {
-      const result =
-        startKind === 'pause'
-          ? await mutinyStartToPauseCaptain({ network, parentId, mutinyModule })
-          : startKind === 'crew'
-            ? await mutinyStartToCrewMember({ network, parentId, mutinyModule, proposed })
-            : startKind === 'committee'
-              ? await mutinyStartToCommittee({ network, parentId, mutinyModule, proposed })
-              : startKind === 'eoa'
-                ? await mutinyStartToArbitraryEoa({ network, parentId, mutinyModule, proposed })
-                : await mutinyStartToArbitraryContract({ network, parentId, mutinyModule, proposed });
-      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
-      onSubmitted();
-      onClose();
-    } catch (e) {
-      showGovWriteErrorToast(e, label);
-    } finally {
-      acting = false;
-    }
+    const proposedAddr = proposed;
+    const kind = startKind;
+    onClose();
+    runGovWriteInBackground({
+      label,
+      parentId,
+      actionKey: `mutiny-start:${kind}`,
+      job: () =>
+        kind === 'pause'
+          ? mutinyStartToPauseCaptain({ network, parentId, mutinyModule })
+          : kind === 'crew'
+            ? mutinyStartToCrewMember({ network, parentId, mutinyModule, proposed: proposedAddr })
+            : kind === 'committee'
+              ? mutinyStartToCommittee({ network, parentId, mutinyModule, proposed: proposedAddr })
+              : kind === 'eoa'
+                ? mutinyStartToArbitraryEoa({ network, parentId, mutinyModule, proposed: proposedAddr })
+                : mutinyStartToArbitraryContract({ network, parentId, mutinyModule, proposed: proposedAddr }),
+      onSettled: () => onSubmitted(),
+    });
   }
 </script>
 
@@ -120,7 +112,7 @@
       {#key startFormKey}
         <select
           bind:value={startKind}
-          disabled={!kindGate.enabled || acting}
+          disabled={!kindGate.enabled}
           aria-label={$t('governance.section.startMutiny')}
         >
           <option value="crew">{$t('governance.mutiny.startOption.crew')}</option>
@@ -133,7 +125,7 @@
           {#if startPickerOptions.length > 0}
             <select
               bind:value={proposed}
-              disabled={!kindGate.enabled || acting}
+              disabled={!kindGate.enabled}
               aria-label={$t('governance.field.proposedAddress')}
             >
               {#each startPickerOptions as opt (opt.address)}
@@ -153,7 +145,7 @@
           <input
             bind:value={proposed}
             placeholder={$t('governance.field.proposedAddressPlaceholder')}
-            disabled={!kindGate.enabled || acting}
+            disabled={!kindGate.enabled}
           />
         {/if}
       {/key}
@@ -161,7 +153,6 @@
         label={tFn('governance.action.startMutiny')}
         variant="primary"
         gate={submitGate}
-        {acting}
         onClick={() => void startMutiny()}
       />
     </div>
