@@ -6,14 +6,8 @@
   import GovStartMutinyModal from './GovStartMutinyModal.svelte';
   import GovProposeOffboardModal from './GovProposeOffboardModal.svelte';
   import type { MutinyStatusDto, QuartermasterStatusDto } from '../../../lib/governance/api';
-  import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
-  import {
-    gateRequiresCrew,
-    isHatRequiredReason,
-    type CtaGate,
-    type GovernancePrivilege,
-  } from '../../../lib/governance/governance-privilege';
-  import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
+  import { isHatRequiredReason, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+  import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
 
   interface Props {
     network: string;
@@ -46,24 +40,17 @@
   }: Props = $props();
 
   const tFn = get(t);
-  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
   let showMutiny = $state(false);
   let showOffboard = $state(false);
 
-  let crewGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCrew(privilege));
-  let mutinyActive = $derived(isMutinyActive(mutinyStatus));
-  let offboardActive = $derived(isCrewOffboardActive(qmStatus));
-  let startMutinyGate = $derived.by((): CtaGate => {
-    if (mutinyActive) return { enabled: false, reason: 'governance.gate.mutinyAlreadyActive' };
-    if (offboardActive) return { enabled: false, reason: 'governance.gate.cannotStartMutinyWhileOffboard' };
-    return crewGate;
-  });
-  let proposeOffboardGate = $derived.by((): CtaGate => {
-    if (offboardActive) return { enabled: false, reason: 'governance.gate.offboardAlreadyActive' };
-    if (mutinyActive) return { enabled: false, reason: 'governance.gate.cannotOffboardWhileMutiny' };
-    return crewGate;
-  });
+  let gates = $derived(
+    buildGovCommandGates({ privilege, capabilitiesPending, mutinyStatus, qmStatus }),
+  );
+  let crewGate = $derived(gates.crew);
+  let mutinyActive = $derived(gates.mutinyActive);
+  let startMutinyGate = $derived(gates.startMutiny);
+  let proposeOffboardGate = $derived(gates.proposeOffboard);
 </script>
 
 <div class="crew-actions">

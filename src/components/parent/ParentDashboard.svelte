@@ -74,8 +74,10 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   } from '../../stores/mls-group-members';
   import {
     getCachedHatsTree,
+    getCachedRolesTree,
     getCachedTreasuryProposals,
     persistHatsTreeSnapshot,
+    persistRolesTreeSnapshot,
     persistTreasuryProposalsSnapshot,
   } from '../../lib/dashboard/governance-snapshot-cache';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
@@ -439,8 +441,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}:${protocolKey}:${stack}`;
     if (!topHat || rolesTreeAnnotationsKey === key) return;
     rolesTreeAnnotationsKey = key;
-    const hadData = Object.keys(roleLabelByHatId).length > 0;
-    if (hadData) {
+    const npub = $currentUser?.npub;
+    const cached = getCachedRolesTree(npub, key);
+    if (cached) {
+      roleLabelByHatId = cached.roleLabelByHatId;
+      wearerAddressesByHatId = cached.wearerAddressesByHatId;
+      executorRolesByAddress = cached.executorRolesByAddress;
+      rolesTreeAnnotationsLoading = false;
+      rolesTreeAnnotationsRefreshing = true;
+    } else if (Object.keys(roleLabelByHatId).length > 0) {
       rolesTreeAnnotationsLoading = false;
       rolesTreeAnnotationsRefreshing = true;
     } else {
@@ -462,10 +471,25 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     if (isSupersededLoaderKey(rolesTreeAnnotationsKey, key)) return;
     rolesTreeAnnotationsLoading = false;
     rolesTreeAnnotationsRefreshing = false;
-    roleLabelByHatId = result.roleLabelByHatId;
-    wearerAddressesByHatId = result.wearerAddressesByHatId;
-    executorRolesByAddress = result.executorRolesByAddress;
-    if (result.error) rolesTreeAnnotationsError = result.error;
+    if (!result.error) {
+      roleLabelByHatId = result.roleLabelByHatId;
+      wearerAddressesByHatId = result.wearerAddressesByHatId;
+      executorRolesByAddress = result.executorRolesByAddress;
+      if (npub) {
+        persistRolesTreeSnapshot(npub, key, {
+          roleLabelByHatId: result.roleLabelByHatId,
+          wearerAddressesByHatId: result.wearerAddressesByHatId,
+          executorRolesByAddress: result.executorRolesByAddress,
+        });
+      }
+    } else if (cached) {
+      rolesTreeAnnotationsError = result.error;
+    } else {
+      roleLabelByHatId = result.roleLabelByHatId;
+      wearerAddressesByHatId = result.wearerAddressesByHatId;
+      executorRolesByAddress = result.executorRolesByAddress;
+      rolesTreeAnnotationsError = result.error;
+    }
   }
 
   async function loadSettingsChainContext() {

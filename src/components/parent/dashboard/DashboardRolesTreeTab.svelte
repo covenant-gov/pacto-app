@@ -12,6 +12,7 @@
   } from '../../../lib/governance/hats-tree-read';
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
+  import type { HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
 
   interface Props {
     squadInfraRows?: unknown[];
@@ -33,6 +34,7 @@
     knownWearerLabels?: Record<string, string>;
     viewerAddress?: string;
     hatsHistoryUnavailable?: boolean;
+    commandContext?: HatsTreeCommandContext | null;
   }
 
   let {
@@ -54,6 +56,7 @@
     knownWearerLabels = {},
     viewerAddress = '',
     hatsHistoryUnavailable = false,
+    commandContext = null,
   }: Props = $props();
 
   const rolesTreeRefreshing = $derived(hatsTreeRefreshing || rolesTreeAnnotationsRefreshing);
@@ -132,6 +135,7 @@
         {knownWearerLabels}
         {chainKey}
         {viewerAddress}
+        {commandContext}
       />
     {/if}
   {/if}

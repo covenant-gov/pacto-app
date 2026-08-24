@@ -94,7 +94,6 @@
     pinnedDmNpubs,
     blockedDmNpubs,
     dmSendError,
-    SQUAD_DASHBOARD_CHANNEL_ID,
     SETTINGS_CHANNEL_ID,
     SQUAD_WARGAME_CHANNEL_ID,
     isVirtualHubChannelId,
@@ -129,6 +128,12 @@
     pactoGovTreasuryEntryId,
   } from '../lib/governance/api';
   import { withPactoGovProviderPayloadTxHash } from '../lib/governance/pacto-gov-payload';
+  import {
+    rememberHubDashboard,
+    retainHubDashboardsForParent,
+    hubDashboardKeepAliveKey,
+    type HubDashboardKeepAlive,
+  } from '../lib/dashboard/hub-dashboard-keep-alive';
   import {
     buildStandaloneSafeProviderPayload,
     isPactoGovTreasurySafe,
@@ -182,6 +187,18 @@
     openHubParent != null &&
     (!effectiveHubChannel.channelId ||
       isSquadDashboardChromeChannelId(effectiveHubChannel.channelId));
+  $: currentHubWarGame = effectiveHubChannel.channelId === SQUAD_WARGAME_CHANNEL_ID;
+  $: currentHubDashboardKey = openHubParent
+    ? hubDashboardKeepAliveKey(openHubParent.id, currentHubWarGame)
+    : '';
+  let visitedHubDashboards: HubDashboardKeepAlive[] = [];
+  $: if (openHubParent) {
+    visitedHubDashboards = showParentDashboard
+      ? rememberHubDashboard(visitedHubDashboards, openHubParent.id, currentHubWarGame)
+      : retainHubDashboardsForParent(visitedHubDashboards, openHubParent.id);
+  } else if (visitedHubDashboards.length > 0) {
+    visitedHubDashboards = [];
+  }
   $: showSquadSettings =
     openHubParent != null && effectiveHubChannel.channelId === SETTINGS_CHANNEL_ID;
   $: showMlsChatView =
@@ -1097,11 +1114,15 @@
         <div class="parent-area">
           <ParentNavbar />
           <div class="parent-main">
-          {#if showParentDashboard && openHubParent}
-            {#key `${openHubParent.id}:${effectiveHubChannel.channelId ?? SQUAD_DASHBOARD_CHANNEL_ID}`}
+          {#if openHubParent && visitedHubDashboards.length > 0}
+            {#each visitedHubDashboards as hub (hub.key)}
+              <div
+                class="hub-dashboard-keep-alive"
+                hidden={!(showParentDashboard && currentHubDashboardKey === hub.key)}
+              >
               <ParentDashboard
               parent={openHubParent}
-              warGameStack={effectiveHubChannel.channelId === SQUAD_WARGAME_CHANNEL_ID}
+              warGameStack={hub.warGameStack}
               treasurySafes={$treasurySafesByParentId[openHubParent.id] ?? []}
               squadInfraRows={(() => {
                 const id = openHubParent.id;
@@ -1164,8 +1185,10 @@
               onSponsorDeployComplete={finalizeSponsorDeploy}
               onSquadAdminDeployComplete={finalizeSquadAdminDeploy}
             />
-            {/key}
-          {:else if showSquadSettings && openHubParent}
+              </div>
+            {/each}
+          {/if}
+          {#if showSquadSettings && openHubParent}
             {#key `${openHubParent.id}:${SETTINGS_CHANNEL_ID}`}
               <SquadSettingsView parent={openHubParent} />
             {/key}
@@ -1177,7 +1200,7 @@
             {/if}
           {:else if $activeSquadId && !openHubParent}
             <p class="surface-loading muted" role="status">{$t('app.loading.squad')}</p>
-          {:else}
+          {:else if !showParentDashboard}
             <p class="surface-loading muted" role="status">{$t('app.selectSquadChannel')}</p>
           {/if}
           </div>
@@ -1244,6 +1267,18 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  .hub-dashboard-keep-alive {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .hub-dashboard-keep-alive[hidden] {
+    display: none;
   }
 
   .surface-loading {

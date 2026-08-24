@@ -6,6 +6,7 @@
   import type { HatTreeNodeDto, TreasuryProposalDto, SquadInfraDto } from '../../../lib/governance/api';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import type { DashboardStructureSummary } from '../../../lib/dashboard/structure-summary';
+  import type { HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
 
   interface Props {
     squadInfraRows?: SquadInfraDto[];
@@ -81,6 +82,7 @@
   );
   const showAbiModules = $derived(!warGameStack && liveProvider === 'abi_modules');
   const network = $derived(pactoGovChain ?? 'sepolia');
+  let treeCommands = $state<HatsTreeCommandContext | null>(null);
 </script>
 
 <section class="governance-section" aria-label={$t('governance.governance.title')}>
@@ -107,6 +109,7 @@
       {warGameStack}
       {archiveView}
       surface="commands"
+      bind:treeCommands
     />
   {/if}
 
@@ -129,6 +132,7 @@
     {knownWearerLabels}
     viewerAddress={myAddress}
     {hatsHistoryUnavailable}
+    commandContext={showPactoGovShell ? treeCommands : null}
   />
 </section>
 

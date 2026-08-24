@@ -47,6 +47,7 @@
   } from '../../../lib/governance/acl-snapshot-key';
   import { showToast } from '../../../stores/toast';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
+  import type { HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -67,6 +68,8 @@
     archiveView?: boolean;
     /** Proposals board (Status) vs All/Crew/Captain commands (Governance). */
     surface?: 'proposals' | 'commands';
+    /** Live command snapshot for in-tree Hats CTAs. */
+    treeCommands?: HatsTreeCommandContext | null;
   }
 
   let {
@@ -84,6 +87,7 @@
     warGameStack = false,
     archiveView = false,
     surface = 'commands',
+    treeCommands = $bindable(null),
   }: Props = $props();
 
   type GovSubMode = 'all' | 'crew' | 'captain';
@@ -431,6 +435,37 @@
     { id: 'crew', label: tFn('governance.shell.tab.crew') },
     { id: 'captain', label: tFn('governance.shell.tab.captain') },
   ];
+
+  function refreshMutiny() {
+    void reloadMutiny(true);
+  }
+
+  function refreshQm() {
+    void reloadQm(true);
+    void reloadQmPending();
+  }
+
+  $effect(() => {
+    treeCommands = {
+      privilege,
+      capabilitiesPending,
+      mutinyStatus,
+      qmStatus,
+      treasuryAuthority: payload.treasuryAuthority ?? '',
+      mutinyModule: payload.mutinyModule ?? '',
+      quartermaster: payload.quartermaster ?? '',
+      network,
+      parentId,
+      memberEvmOptions,
+      crewMemberOptions,
+      captainWearers,
+      crewWearers,
+      warGameStack,
+      refreshProposals: refreshAllProposals,
+      refreshMutiny,
+      refreshQm,
+    };
+  });
 </script>
 
 <div class="gov-shell">

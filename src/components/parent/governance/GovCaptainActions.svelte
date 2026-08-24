@@ -7,26 +7,14 @@
   import GovCaptainRosterModal from './GovCaptainRosterModal.svelte';
   import GovCaptainResignModal from './GovCaptainResignModal.svelte';
   import { mutinyCaptainResign, type MutinyStatusDto, type QuartermasterStatusDto } from '../../../lib/governance/api';
-  import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
-  import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
-  import {
-    gateBlockedByMutinyMode,
-    gatePermissionlessSigner,
-    gateRequiresCaptain,
-    isHatRequiredReason,
-    type CtaGate,
-    type GovernancePrivilege,
-  } from '../../../lib/governance/governance-privilege';
+  import { isHatRequiredReason, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+  import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
   import {
     fundedByFromWriteResult,
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
   import { showGovWriteErrorToast } from '../../../lib/governance/gov-write-errors';
-  import {
-    pickRandomRosterCaptain,
-    randomizeCaptainCandidates,
-    labeledWearerOptions,
-  } from '../../../lib/governance/war-game-captain';
+  import { pickRandomRosterCaptain, labeledWearerOptions } from '../../../lib/governance/war-game-captain';
   import { showToast } from '../../../stores/toast';
 
   interface Props {
@@ -64,7 +52,6 @@
   }: Props = $props();
 
   const tFn = get(t);
-  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
   let acting = $state(false);
   let showAddCrew = $state(false);
@@ -72,37 +59,27 @@
   let showBootstrapModal = $state(false);
   let showResign = $state(false);
 
-  let captainGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCaptain(privilege));
-  let offboardActive = $derived(isCrewOffboardActive(qmStatus));
-  let rosterFrozen = $derived(!!qmStatus?.mutinyActive || offboardActive);
-  let rosterFreezeReason = $derived(
-    qmStatus?.mutinyActive ? 'governance.gate.quartermasterLocked' : 'governance.gate.rosterFrozenOffboard',
+  let gates = $derived(
+    buildGovCommandGates({
+      privilege,
+      capabilitiesPending,
+      mutinyStatus,
+      qmStatus,
+      captainWearers,
+      crewWearers,
+      memberEvmOptions,
+    }),
   );
-  let qmGate = $derived(
-    capabilitiesPending ? PENDING_GATE : gateBlockedByMutinyMode(privilege, rosterFrozen, rosterFreezeReason),
-  );
-  let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
-  let mutinyActive = $derived(isMutinyActive(mutinyStatus));
+  let captainGate = $derived(gates.captain);
+  let qmGate = $derived(gates.qmRoster);
+  let execGate = $derived(gates.exec);
+  let mutinyActive = $derived(gates.mutinyActive);
+  let resignGate = $derived(gates.resign);
+  let randomizeGate = $derived(gates.randomize);
+  let bootstrapAvailable = $derived(gates.bootstrapAvailable);
+  let bootstrapGate = $derived(gates.bootstrap);
   let randomizeExclude = $derived([privilege.myAddress, ...captainWearers]);
   let randomizePool = $derived(labeledWearerOptions(crewWearers, memberEvmOptions));
-  let randomizeCandidates = $derived(randomizeCaptainCandidates(randomizePool, randomizeExclude));
-  let resignGate = $derived(
-    mutinyActive
-      ? ({ enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' } as const)
-      : captainGate,
-  );
-  let randomizeGate = $derived.by((): CtaGate => {
-    if (mutinyActive) {
-      return { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' };
-    }
-    if (!captainGate.enabled) return captainGate;
-    if (randomizeCandidates.length === 0) {
-      return { enabled: false, reason: 'governance.gate.noOtherRosterForCaptain' };
-    }
-    return captainGate;
-  });
-  let bootstrapAvailable = $derived(qmStatus?.bootstrapAvailable === true);
-  let bootstrapGate = $derived(capabilitiesPending ? PENDING_GATE : captainGate);
 
   function randomizeCaptain() {
     const picked = pickRandomRosterCaptain(randomizePool, randomizeExclude);

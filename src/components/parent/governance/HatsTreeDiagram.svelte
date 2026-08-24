@@ -1,7 +1,15 @@
 <script lang="ts">
+  import { setContext } from 'svelte';
   import type { HatTreeNodeDto } from '$lib/governance/api';
   import type { SupportedChainId } from '$lib/wallet/chains';
+  import {
+    HATS_TREE_ACTIONS_KEY,
+    type HatsTreeActionsApi,
+    type HatsTreeCommandAction,
+    type HatsTreeCommandContext,
+  } from '$lib/governance/hats-tree-role-actions';
   import HatsTreeNode from './HatsTreeNode.svelte';
+  import GovHatsTreeCommandModals from './GovHatsTreeCommandModals.svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -13,6 +21,7 @@
     knownWearerLabels?: Record<string, string>;
     chainKey?: SupportedChainId | null;
     viewerAddress?: string;
+    commandContext?: HatsTreeCommandContext | null;
   }
 
   let {
@@ -24,7 +33,20 @@
     knownWearerLabels = {},
     chainKey = null,
     viewerAddress = '',
+    commandContext = null,
   }: Props = $props();
+
+  let openAction = $state<HatsTreeCommandAction | null>(null);
+
+  const actionsApi: HatsTreeActionsApi = {
+    get command() {
+      return commandContext;
+    },
+    open(action) {
+      openAction = action;
+    },
+  };
+  setContext(HATS_TREE_ACTIONS_KEY, actionsApi);
 </script>
 
 <div class="hats-tree-scroll" role="tree" aria-label={$t('governance.title.hatsTree')}>
@@ -39,6 +61,13 @@
     {viewerAddress}
   />
 </div>
+{#if commandContext}
+  <GovHatsTreeCommandModals
+    command={commandContext}
+    {openAction}
+    onClose={() => (openAction = null)}
+  />
+{/if}
 
 <style>
   .hats-tree-scroll {

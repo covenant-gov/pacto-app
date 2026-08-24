@@ -13,7 +13,14 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { localizeRoleLabel } from '../../../lib/governance/governance-privilege';
+  import { getContext } from 'svelte';
+  import {
+    HATS_TREE_ACTIONS_KEY,
+    hatsTreeRoleActionKind,
+    type HatsTreeActionsApi,
+  } from '../../../lib/governance/hats-tree-role-actions';
   import HatsTreeNode from './HatsTreeNode.svelte';
+  import HatsTreeRoleActions from './HatsTreeRoleActions.svelte';
 
   interface Props {
     node: HatTreeNodeDto;
@@ -39,16 +46,15 @@
   }: Props = $props();
 
   const tFn = get(t);
+  const actionsApi = getContext<HatsTreeActionsApi | undefined>(HATS_TREE_ACTIONS_KEY);
 
   const roleLabel = $derived(roleLabelByHatId[node.hatId] ?? '');
+  const actionKind = $derived(hatsTreeRoleActionKind(roleLabel));
+  const treeCommand = $derived(actionsApi?.command ?? null);
   const wearerAddresses = $derived(wearerAddressesByHatId[node.hatId] ?? []);
   const npubByAddress = $derived(npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub));
   const prettyId = $derived(prettyHatId(node.hatId) ?? node.hatId);
   const humanDetails = $derived(humanHatDetails(node.details));
-  /** Extra line only when role label and a distinct human details string both exist. */
-  const detailsSubtitle = $derived(
-    roleLabel && humanDetails && humanDetails !== roleLabel ? humanDetails : '',
-  );
   const wornByViewer = $derived(
     isAddressWearingHat(wearerAddressesByHatId, node.hatId, viewerAddress),
   );
@@ -111,9 +117,6 @@
     <div class="hats-tree-node-body">
       <code class="hats-tree-node-id" title={node.hatId}>{prettyId}</code>
       <span class="hats-tree-node-title">{$t(localizeRoleLabel(roleLabel)) || humanDetails || $t('governance.hats.untitled')}</span>
-      {#if detailsSubtitle}
-        <span class="hats-tree-node-details muted">{detailsSubtitle}</span>
-      {/if}
     </div>
     <div class="hats-tree-node-footer">
       <span class="hats-tree-footer-primary">
@@ -152,6 +155,9 @@
           </button>
         {/each}
       </div>
+    {/if}
+    {#if actionKind && treeCommand}
+      <HatsTreeRoleActions kind={actionKind} />
     {/if}
   </div>
 
@@ -227,12 +233,6 @@
     font-size: 0.8125rem;
     color: var(--text-primary);
     line-height: 1.25;
-    word-break: break-word;
-  }
-
-  .hats-tree-node-details {
-    font-size: 0.6875rem;
-    line-height: 1.3;
     word-break: break-word;
   }
 

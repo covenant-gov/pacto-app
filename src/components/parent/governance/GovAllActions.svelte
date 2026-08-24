@@ -5,12 +5,8 @@
   import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
   import GovSubmitProposalModal from './GovSubmitProposalModal.svelte';
   import GovVoteModeModal from './GovVoteModeModal.svelte';
-  import {
-    gateRequiresCaptainOrCrew,
-    isHatRequiredReason,
-    type CtaGate,
-    type GovernancePrivilege,
-  } from '../../../lib/governance/governance-privilege';
+  import { isHatRequiredReason, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+  import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
 
   let {
     network,
@@ -29,8 +25,7 @@
   } = $props();
 
   const tFn = get(t);
-  const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
-  const sharedGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCaptainOrCrew(privilege));
+  const sharedGate = $derived(buildGovCommandGates({ privilege, capabilitiesPending }).treasury);
 
   let showPropose = $state(false);
   let showVoteMode = $state(false);
