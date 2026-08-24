@@ -17,7 +17,6 @@
     type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
-  import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
   import {
     clearGovModuleReadsForParent,
     fetchGovModuleReadCached,
@@ -68,8 +67,7 @@
     treasuryProposalsError?: string;
     onRefreshProposals?: () => void;
     warGameStack?: boolean;
-    archiveView?: boolean;
-    /** Viewed war-game round; empty on live nave. */
+    /** Active war-game round; empty on live nave. */
     warGameRound?: string;
     /** Proposals board (Status) vs All/Crew/Captain commands (Governance). */
     surface?: 'proposals' | 'commands';
@@ -91,7 +89,6 @@
     treasuryProposalsError = '',
     onRefreshProposals = () => {},
     warGameStack = false,
-    archiveView = false,
     warGameRound = '',
     surface = 'commands',
     treeCommands = $bindable(null),
@@ -181,7 +178,6 @@
       network,
       warGameStack,
       processNonce,
-      archiveView,
       myAddress,
       captainWearers,
       crewWearers,
@@ -192,11 +188,6 @@
     if (capabilitiesRetryTimer) {
       clearTimeout(capabilitiesRetryTimer);
       capabilitiesRetryTimer = null;
-    }
-    if (archiveView) {
-      capabilities = warGameArchiveCapabilities(pid);
-      capabilitiesStatus = 'ready';
-      return;
     }
     capabilitiesStatus = 'unresolved';
     void loadCapabilities(pid, key);

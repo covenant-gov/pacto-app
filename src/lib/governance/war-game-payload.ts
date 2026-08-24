@@ -3,14 +3,6 @@ import { WAR_GAME_SQUAD_PARAMS } from './squad-params';
 
 export type WarGameStackStatus = 'active' | 'retired' | 'pending_sponsor';
 
-export type WarGamePriorRound = {
-  round: string;
-  gameSquadId?: string;
-  sponsor?: string;
-  topHatId?: string;
-  txHash?: string;
-};
-
 const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 
 function asRecord(raw: string | null | undefined): Record<string, unknown> | null {
@@ -86,78 +78,6 @@ export function warGameStatusAction(
 export function parseWarGameRoundNumber(raw: string | null | undefined): number {
   const n = Number.parseInt(parseWarGameStackMeta(raw).round, 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-export function parseWarGamePriorRounds(raw: string | null | undefined): WarGamePriorRound[] {
-  const p = asRecord(raw);
-  const arr = Array.isArray(p?.priorRounds) ? p.priorRounds : [];
-  const out: WarGamePriorRound[] = [];
-  for (const item of arr) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-    const rec = item as Record<string, unknown>;
-    const round = roundFromUnknown(rec.round);
-    if (!round) continue;
-    const gameSquadId = typeof rec.gameSquadId === 'string' ? rec.gameSquadId.trim() : '';
-    const sponsor = typeof rec.sponsor === 'string' ? rec.sponsor.trim() : '';
-    const topHatId = typeof rec.topHatId === 'string' ? rec.topHatId.trim() : '';
-    const txHash = typeof rec.txHash === 'string' ? rec.txHash.trim() : '';
-    out.push({
-      round,
-      ...(gameSquadId ? { gameSquadId } : {}),
-      ...(sponsor ? { sponsor } : {}),
-      ...(topHatId ? { topHatId } : {}),
-      ...(txHash ? { txHash } : {}),
-    });
-  }
-  return out;
-}
-
-/** `1..=activeRound` so pager arrows work before history exists. */
-export function warGameVisibleRounds(raw: string | null | undefined): number[] {
-  const max = Math.max(1, parseWarGameRoundNumber(raw));
-  return Array.from({ length: max }, (_, i) => i + 1);
-}
-
-export function isWarGameArchiveView(viewedRound: number, activeRound: number): boolean {
-  return viewedRound > 0 && activeRound > 0 && viewedRound !== activeRound;
-}
-
-/** Top hat for the pager's viewed round. Archive with no stored id is null — never the Active hat. */
-export function viewedWarGameTopHatId(params: {
-  viewedRound: number;
-  activeRound: number;
-  activeTopHatId: string | null | undefined;
-  providerPayload: string | null | undefined;
-}): string | null {
-  const active = params.activeTopHatId?.trim() ?? '';
-  if (!params.viewedRound || !params.activeRound || params.viewedRound === params.activeRound) {
-    return active || null;
-  }
-  const prior = parseWarGamePriorRounds(params.providerPayload).find((row) => {
-    const n = Number.parseInt(row.round, 10);
-    return Number.isFinite(n) && n === params.viewedRound;
-  });
-  const hat = prior?.topHatId?.trim() ?? '';
-  return hat || null;
-}
-
-/** Deploy tx for the viewed round's hat log window. */
-export function viewedWarGameTxHash(params: {
-  viewedRound: number;
-  activeRound: number;
-  activeTxHash: string | null | undefined;
-  providerPayload: string | null | undefined;
-}): string | null {
-  const active = params.activeTxHash?.trim() ?? '';
-  if (!params.viewedRound || !params.activeRound || params.viewedRound === params.activeRound) {
-    return active || null;
-  }
-  const prior = parseWarGamePriorRounds(params.providerPayload).find((row) => {
-    const n = Number.parseInt(row.round, 10);
-    return Number.isFinite(n) && n === params.viewedRound;
-  });
-  const hash = prior?.txHash?.trim() ?? '';
-  return hash || null;
 }
 
 export function parseWarGameDelaySecs(raw: string | null | undefined): number {

@@ -23,15 +23,14 @@ describe('aclSnapshotLoadKey', () => {
     network: 'sepolia',
     warGameStack: true,
     processNonce: 2,
-    archiveView: false,
     myAddress: ' 0xAbC ',
     captainWearers: ['0xcap'],
     crewWearers: ['0xcrew'],
   };
 
-  it('includes stack, nonce, archive, address, and wearer fingerprints', () => {
+  it('includes stack, nonce, address, and wearer fingerprints', () => {
     expect(aclSnapshotLoadKey(base)).toBe(
-      'parent1|sepolia|wargame|2|live|0xabc|c:0xcap|r:0xcrew',
+      'parent1|sepolia|wargame|2|0xabc|c:0xcap|r:0xcrew',
     );
   });
 
@@ -54,7 +53,6 @@ describe('aclSnapshotLoadKey', () => {
     expect(aclSnapshotLoadKey({ ...base, myAddress: '0xdef' })).not.toBe(start);
     expect(aclSnapshotLoadKey({ ...base, crewWearers: ['0xcrew', '0xnew'] })).not.toBe(start);
     expect(aclSnapshotLoadKey({ ...base, warGameStack: false })).toContain('|nave|');
-    expect(aclSnapshotLoadKey({ ...base, archiveView: true })).toContain('|archive|');
   });
 });
 

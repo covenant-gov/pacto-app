@@ -33,7 +33,6 @@
     /** Lowercase address → protocol module label for wearer chips. */
     knownWearerLabels?: Record<string, string>;
     viewerAddress?: string;
-    hatsHistoryUnavailable?: boolean;
     commandContext?: HatsTreeCommandContext | null;
   }
 
@@ -55,7 +54,6 @@
     onOpenLaunchpad = () => {},
     knownWearerLabels = {},
     viewerAddress = '',
-    hatsHistoryUnavailable = false,
     commandContext = null,
   }: Props = $props();
 
@@ -108,9 +106,7 @@
         <p class="chain-read-error" role="alert">{rolesTreeAnnotationsError}</p>
       {/if}
     {/if}
-    {#if hatsHistoryUnavailable}
-      <p class="dashboard-placeholder-text muted" role="status">{$t('governance.roles.hatsHistoryUnavailable')}</p>
-    {:else if hatsTreeLoading && !hatsTree}
+    {#if hatsTreeLoading && !hatsTree}
       <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingTree')}</p>
     {:else if rolesTreeAnnotationsLoading && !hatsTree}
       <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingLabels')}</p>

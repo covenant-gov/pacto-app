@@ -24,12 +24,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     sponsorInfraRow,
   } from '../../lib/governance/api';
   import { resolveHubSponsorRow } from '../../lib/governance/hub-sponsor';
-  import {
-    isWarGameArchiveView,
-    parseWarGameRoundNumber,
-    viewedWarGameTopHatId,
-    viewedWarGameTxHash,
-  } from '../../lib/governance/war-game-payload';
+  import { parseWarGameRoundNumber } from '../../lib/governance/war-game-payload';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';  import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
   import {
@@ -168,34 +163,12 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   $: pactoGovRow = warGameStack
     ? pactoGovWargameInfraRow(squadInfraRows)
     : pactoGovInfraRow(squadInfraRows);
-  let warGameViewedRound = 0;
-  let warGameViewedParentId = '';
-  let warGameSeenActiveRound = 0;
-  $: if ((parentId ?? '') !== warGameViewedParentId) {
-    warGameViewedParentId = parentId ?? '';
-    warGameViewedRound = 0;
-    warGameSeenActiveRound = 0;
-  }
   $: warGameActiveRound = warGameStack ? parseWarGameRoundNumber(pactoGovRow?.providerPayload) : 0;
-  $: if (warGameStack && warGameActiveRound !== warGameSeenActiveRound) {
-    warGameSeenActiveRound = warGameActiveRound;
-    warGameViewedRound = warGameActiveRound;
-  }
-  $: warGameArchiveView = warGameStack && isWarGameArchiveView(warGameViewedRound, warGameActiveRound);
-  $: replicaRound = warGameStack ? String(warGameViewedRound || '') : '';
-  $: viewedTopHatId = warGameStack
-    ? viewedWarGameTopHatId({
-        viewedRound: warGameViewedRound,
-        activeRound: warGameActiveRound,
-        activeTopHatId: pactoGovRow?.canonicalRef,
-        providerPayload: pactoGovRow?.providerPayload,
-      })
-    : pactoGovRow?.canonicalRef?.trim() || null;
-  $: hatsHistoryUnavailable = Boolean(warGameArchiveView && !viewedTopHatId);
+  $: replicaRound = warGameStack ? String(warGameActiveRound || '') : '';
+  $: viewedTopHatId = pactoGovRow?.canonicalRef?.trim() || null;
   $: sponsorRow = resolveHubSponsorRow({
     warGameStack,
     rows: squadInfraRows,
-    archiveView: warGameArchiveView,
   });
   $: sponsorVariant = resolveSquadSponsorVariant(sponsorRow);
   $: hasSponsor = sponsorRow != null;
@@ -205,12 +178,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     : resolveSquadAdminContext(squadInfraRows);
   $: hasSquadAdmin = warGameStack && pactoGovRow != null ? true : hasSquadAdminInfra(squadInfraRows);
   $: pactoPayload = parsePactoGovProviderPayload(pactoGovRow?.providerPayload);
-  $: viewedTxHash = viewedWarGameTxHash({
-    viewedRound: warGameStack ? warGameViewedRound : warGameActiveRound,
-    activeRound: warGameStack ? warGameActiveRound : 0,
-    activeTxHash: pactoPayload?.txHash,
-    providerPayload: pactoGovRow?.providerPayload,
-  });
+  $: viewedTxHash = pactoPayload?.txHash?.trim() || null;
   $: knownWearerLabels = protocolWearerLabelByAddress(pactoPayload);
   $: pactoNetwork = parseSupportedChainId(
     pactoGovRow?.chain?.trim() || squadAdminCtx?.chain || DEFAULT_CHAIN_ID,
@@ -427,14 +395,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   });
 
   async function loadHatsTree() {
-    if (hatsHistoryUnavailable) {
-      hatsTree = null;
-      hatsTreeError = '';
-      hatsTreeLoading = false;
-      hatsTreeRefreshing = false;
-      hatsTreeKey = `${pactoNetwork}:unavailable`;
-      return;
-    }
     const topHat = viewedTopHatId?.trim();
     const key = `${pactoNetwork}:${topHat ?? ''}`;
     if (!topHat || hatsTreeKey === key) return;
@@ -470,16 +430,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   async function loadRolesTreeAnnotations() {
-    if (hatsHistoryUnavailable) {
-      roleLabelByHatId = {};
-      wearerAddressesByHatId = {};
-      executorRolesByAddress = {};
-      rolesTreeAnnotationsError = '';
-      rolesTreeAnnotationsLoading = false;
-      rolesTreeAnnotationsRefreshing = false;
-      rolesTreeAnnotationsKey = `${pactoNetwork}:unavailable`;
-      return;
-    }
     const topHat = viewedTopHatId?.trim();
     const evmKey = Object.values(squadMemberEvmByNpub)
       .map((a) => a.trim().toLowerCase())
@@ -555,15 +505,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   async function loadSettingsChainContext() {
-    if (hatsHistoryUnavailable) {
-      memberHatByAddress = {};
-      memberRolesByAddress = {};
-      settingsChainError = '';
-      settingsChainLoading = false;
-      settingsChainRefreshing = false;
-      settingsChainKey = `${pactoNetwork}:unavailable`;
-      return;
-    }
     const topHat = viewedTopHatId?.trim() ?? null;
     const squadAdmin = squadAdminCtx?.proxy?.trim() ?? null;
     const cacheKey = settingsChainCacheKey({
@@ -684,20 +625,20 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     void loadSquadMemberEvm();
   }
 
-  $: if (dashboardView === 'governance' && (viewedTopHatId || hatsHistoryUnavailable) && parentId) {
+  $: if (dashboardView === 'governance' && viewedTopHatId && parentId) {
     void squadMemberEvmByNpub;
     void viewedTopHatId;
     void loadRolesTreeAnnotations();
   }
 
-  $: if (dashboardView === 'governance' && (viewedTopHatId || hatsHistoryUnavailable)) {
+  $: if (dashboardView === 'governance' && viewedTopHatId) {
     void viewedTopHatId;
     void loadHatsTree();
   }
 
   $: if (
     (dashboardView === 'status' || dashboardView === 'crew') &&
-    (viewedTopHatId || hatsHistoryUnavailable || squadAdminCtx?.proxy)
+    (viewedTopHatId || squadAdminCtx?.proxy)
   ) {
     void squadMemberEvmByNpub;
     void viewedTopHatId;
@@ -706,7 +647,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 
   $: if (
     (dashboardView === 'status' || dashboardView === 'crew') &&
-    (viewedTopHatId || hatsHistoryUnavailable) &&
+    viewedTopHatId &&
     parentId
   ) {
     void squadMemberEvmByNpub;
@@ -751,7 +692,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     } else if (id === 'governance') {
       if (pactoPayload?.treasuryAuthority) void loadTreasuryProposals();
       void loadSquadMemberEvm();
-      if (viewedTopHatId || hatsHistoryUnavailable) {
+      if (viewedTopHatId) {
         void loadHatsTree();
         void loadRolesTreeAnnotations();
       }
@@ -839,10 +780,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     {#if warGameStack}
       <WarGameHubBanner
         providerPayload={pactoGovRow?.providerPayload}
-        viewedRound={warGameViewedRound}
-        onViewedRound={(round) => {
-          warGameViewedRound = round;
-        }}
       />
     {/if}
     <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.dashboardSection')}>
@@ -900,7 +837,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {treasuryProposalsError}
               onRefreshProposals={refreshTreasuryProposals}
               {warGameStack}
-              archiveView={warGameArchiveView}
               warGameRound={replicaRound}
             />
           {:catch}
@@ -928,7 +864,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onRefreshProposals={refreshTreasuryProposals}
               onOpenLaunchpad={openLaunchpad}
               {warGameStack}
-              archiveView={warGameArchiveView}
               warGameRound={replicaRound}
               {structureSummary}
               {hatsTree}
@@ -944,7 +879,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {rolesTreeAnnotationsError}
               onRefreshRolesTree={refreshRolesTree}
               {knownWearerLabels}
-              {hatsHistoryUnavailable}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.governance')}</p>
@@ -971,7 +905,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenImportSafe={openSetSafe}
               topHatId={pactoGovRow?.canonicalRef ?? ''}
               {warGameStack}
-              archiveView={warGameArchiveView}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.treasury')}</p>
@@ -999,7 +932,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onRefreshSponsorExt={refreshSponsorExtStatus}
               hasSponsor={hasSponsor}
               sponsorHatsMode={sponsorVariant === 'hats'}
-              {hatsHistoryUnavailable}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.crew')}</p>

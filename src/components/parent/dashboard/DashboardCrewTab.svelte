@@ -48,7 +48,6 @@
     onRefreshSponsorExt = () => {},
     sponsorHatsMode = false,
     hasSponsor = false,
-    hatsHistoryUnavailable = false,
   }: {
     announcementsGroupId?: string | null;
     channelMembers?: string[];
@@ -69,8 +68,6 @@
     /** Hats-linked sponsor: eligibility from captain/crew wear. */
     sponsorHatsMode?: boolean;
     hasSponsor?: boolean;
-    /** Archive round with no stored top hat — do not reuse the Active tree. */
-    hatsHistoryUnavailable?: boolean;
   } = $props();
 
   let sponsoringAddress = $state('');
@@ -176,9 +173,6 @@
 <section class="dashboard-section" aria-labelledby="crew-roster-heading">
   <h3 id="crew-roster-heading" class="section-heading">{$t('governance.crew.sectionCrew')}</h3>
 
-  {#if hatsHistoryUnavailable}
-    <p class="muted" role="status">{$t('governance.crew.hatsHistoryUnavailable')}</p>
-  {/if}
   {#if settingsChainRefreshing}
     <p class="muted" role="status">{$t('governance.crew.refreshing')}</p>
   {/if}
@@ -262,13 +256,11 @@
                 <span
                   class="roles-col-value"
                   class:muted={!hatLookupKey || !memberHatByAddress[hatLookupKey]}
-                  >{hatsHistoryUnavailable
-                    ? $t('governance.crew.dash')
-                    : settingsChainLoading && !memberHatByAddress[hatLookupKey]
-                      ? $t('governance.crew.loadingShort')
-                      : hatLookupKey
-                        ? memberHatByAddress[hatLookupKey] || $t('governance.crew.dash')
-                        : $t('governance.crew.notShared')}
+                  >{settingsChainLoading && !memberHatByAddress[hatLookupKey]
+                    ? $t('governance.crew.loadingShort')
+                    : hatLookupKey
+                      ? memberHatByAddress[hatLookupKey] || $t('governance.crew.dash')
+                      : $t('governance.crew.notShared')}
                 </span>
               {/if}
               <span class="roles-col-label">{$t('governance.crew.colPrivileges')}</span>

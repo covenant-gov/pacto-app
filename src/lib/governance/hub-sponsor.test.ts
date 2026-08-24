@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveHubSponsorRow, warGameArchiveCapabilities } from './hub-sponsor';
+import { resolveHubSponsorRow } from './hub-sponsor';
 import type { SquadInfraDto } from './api';
 
 const LIVE = '0x1111111111111111111111111111111111111111';
@@ -48,24 +48,5 @@ describe('resolveHubSponsorRow', () => {
         rows: [row({ infraType: 'pacto_gov_wargame', providerPayload: '{}' })],
       }),
     ).toBeNull();
-  });
-
-  it('returns null in archive view even when a round clone exists', () => {
-    expect(
-      resolveHubSponsorRow({ warGameStack: true, rows: [live, wargame], archiveView: true }),
-    ).toBeNull();
-  });
-});
-
-describe('warGameArchiveCapabilities', () => {
-  it('denies writes with the archive gate reason', () => {
-    const snap = warGameArchiveCapabilities('parent-1');
-    expect(snap.wearsCaptain).toBe(false);
-    expect(snap.wearsCrew).toBe(false);
-    expect(snap.capabilities.proposeTreasury).toEqual({
-      allowed: false,
-      reason: 'governance.gate.warGameArchive',
-    });
-    expect(snap.capabilities.executeTreasury?.allowed).toBe(false);
   });
 });

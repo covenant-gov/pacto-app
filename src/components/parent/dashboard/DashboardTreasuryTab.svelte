@@ -7,7 +7,6 @@
   import type { SquadInfraDto } from '../../../lib/governance/api';
   import { getSquadCapabilities } from '../../../lib/governance/api';
   import { aclSnapshotLoadKey } from '../../../lib/governance/acl-snapshot-key';
-  import { warGameArchiveCapabilities } from '../../../lib/governance/hub-sponsor';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import {
     resolveGovernancePrivilege,
@@ -41,7 +40,6 @@
     onOpenImportSafe?: () => void;
     topHatId?: string;
     warGameStack?: boolean;
-    archiveView?: boolean;
   }
 
   let {
@@ -61,7 +59,6 @@
     onOpenImportSafe = () => {},
     topHatId = '',
     warGameStack = false,
-    archiveView = false,
   }: Props = $props();
 
   let capabilitiesLoadKey = $state('');
@@ -85,17 +82,12 @@
       network,
       warGameStack,
       processNonce,
-      archiveView,
       myAddress,
       captainWearers,
       crewWearers,
     });
     if (!pid || key === capabilitiesLoadKey) return;
     capabilitiesLoadKey = key;
-    if (archiveView) {
-      capabilities = warGameArchiveCapabilities(pid);
-      return;
-    }
     capabilities = null;
     void loadCapabilities(pid, key);
   });

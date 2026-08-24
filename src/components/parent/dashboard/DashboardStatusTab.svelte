@@ -52,7 +52,6 @@
     treasuryProposalsError = '',
     onRefreshProposals = () => {},
     warGameStack = false,
-    archiveView = false,
     warGameRound = '',
   }: {
     announcementsGroupId?: string | null;
@@ -77,7 +76,6 @@
     treasuryProposalsError?: string;
     onRefreshProposals?: () => void;
     warGameStack?: boolean;
-    archiveView?: boolean;
     warGameRound?: string;
   } = $props();
 
@@ -232,7 +230,6 @@
     {treasuryProposalsError}
     {onRefreshProposals}
     {warGameStack}
-    {archiveView}
     {warGameRound}
     surface="proposals"
   />

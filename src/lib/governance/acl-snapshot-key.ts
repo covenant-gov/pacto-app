@@ -16,7 +16,6 @@ export function aclSnapshotLoadKey(params: {
   network: string;
   warGameStack: boolean;
   processNonce: number;
-  archiveView: boolean;
   myAddress?: string | null;
   captainWearers?: string[] | null;
   crewWearers?: string[] | null;
@@ -26,7 +25,6 @@ export function aclSnapshotLoadKey(params: {
     params.network,
     params.warGameStack ? 'wargame' : 'nave',
     String(params.processNonce),
-    params.archiveView ? 'archive' : 'live',
     (params.myAddress ?? '').trim().toLowerCase(),
     `c:${fingerprintWearerAddresses(params.captainWearers)}`,
     `r:${fingerprintWearerAddresses(params.crewWearers)}`,

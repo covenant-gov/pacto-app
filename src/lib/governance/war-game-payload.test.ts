@@ -1,18 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isWarGameArchiveView,
   isActiveWarGameStack,
   parseWarGameDelaySecs,
-  parseWarGamePriorRounds,
   parseWarGameRoundNumber,
   parseWarGameSponsorAddress,
   parseWarGameStackMeta,
-  viewedWarGameTopHatId,
-  viewedWarGameTxHash,
   warGameDelayMinutes,
   warGameRoundSponsorRow,
   warGameStatusAction,
-  warGameVisibleRounds,
 } from './war-game-payload';
 import type { SquadInfraDto } from './api';
 import { WAR_GAME_SQUAD_PARAMS } from './squad-params';
@@ -78,77 +73,15 @@ describe('warGameStatusAction', () => {
   });
 });
 
-describe('round history helpers', () => {
-  it('parses round numbers and visible 1..=active range', () => {
+describe('parseWarGameRoundNumber', () => {
+  it('parses positive rounds and treats missing as 0', () => {
     expect(parseWarGameRoundNumber(null)).toBe(0);
     expect(parseWarGameRoundNumber(JSON.stringify({ round: '3' }))).toBe(3);
-    expect(warGameVisibleRounds(JSON.stringify({ round: '3' }))).toEqual([1, 2, 3]);
-    expect(warGameVisibleRounds('{}')).toEqual([1]);
+    expect(parseWarGameRoundNumber('{}')).toBe(0);
   });
+});
 
-  it('treats a viewed older round as archive', () => {
-    expect(isWarGameArchiveView(1, 3)).toBe(true);
-    expect(isWarGameArchiveView(3, 3)).toBe(false);
-    expect(isWarGameArchiveView(0, 3)).toBe(false);
-  });
-
-  it('reads priorRounds snapshots', () => {
-    expect(
-      parseWarGamePriorRounds(
-        JSON.stringify({
-          round: '3',
-          priorRounds: [
-            { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa', topHatId: '11', txHash: '0xold' },
-            { round: 2 },
-          ],
-        }),
-      ),
-    ).toEqual([
-      { round: '1', sponsor: SPONSOR, gameSquadId: '0xaa', topHatId: '11', txHash: '0xold' },
-      { round: '2' },
-    ]);
-  });
-
-  it('resolves the viewed top hat and does not fall back to Active on missing history', () => {
-    const payload = JSON.stringify({
-      round: '2',
-      txHash: '0xnew',
-      priorRounds: [{ round: '1', topHatId: '11', txHash: '0xold' }],
-    });
-    expect(
-      viewedWarGameTopHatId({
-        viewedRound: 2,
-        activeRound: 2,
-        activeTopHatId: '22',
-        providerPayload: payload,
-      }),
-    ).toBe('22');
-    expect(
-      viewedWarGameTopHatId({
-        viewedRound: 1,
-        activeRound: 2,
-        activeTopHatId: '22',
-        providerPayload: payload,
-      }),
-    ).toBe('11');
-    expect(
-      viewedWarGameTopHatId({
-        viewedRound: 1,
-        activeRound: 2,
-        activeTopHatId: '22',
-        providerPayload: JSON.stringify({ round: '2', priorRounds: [{ round: '1' }] }),
-      }),
-    ).toBeNull();
-    expect(
-      viewedWarGameTxHash({
-        viewedRound: 1,
-        activeRound: 2,
-        activeTxHash: '0xnew',
-        providerPayload: payload,
-      }),
-    ).toBe('0xold');
-  });
-
+describe('war-game delay', () => {
   it('uses payload delay when present, otherwise the wargame default', () => {
     expect(parseWarGameDelaySecs(null)).toBe(WAR_GAME_SQUAD_PARAMS.crewChangeDelaySecs);
     expect(warGameDelayMinutes(null)).toBe(5);

@@ -25,7 +25,6 @@
     onRefreshProposals?: () => void;
     onOpenLaunchpad?: () => void;
     warGameStack?: boolean;
-    archiveView?: boolean;
     warGameRound?: string;
     structureSummary?: DashboardStructureSummary | null;
     hatsTree?: HatTreeNodeDto | null;
@@ -41,7 +40,6 @@
     rolesTreeAnnotationsError?: string;
     onRefreshRolesTree?: () => void;
     knownWearerLabels?: Record<string, string>;
-    hatsHistoryUnavailable?: boolean;
   }
 
   let {
@@ -61,7 +59,6 @@
     onRefreshProposals = () => {},
     onOpenLaunchpad = () => {},
     warGameStack = false,
-    archiveView = false,
     warGameRound = '',
     structureSummary = undefined,
     hatsTree = null,
@@ -77,7 +74,6 @@
     rolesTreeAnnotationsError = '',
     onRefreshRolesTree = () => {},
     knownWearerLabels = {},
-    hatsHistoryUnavailable = false,
   }: Props = $props();
 
   const liveProvider = $derived(resolveGovernanceProvider(squadInfraRows));
@@ -112,7 +108,6 @@
       {treasuryProposalsError}
       {onRefreshProposals}
       {warGameStack}
-      {archiveView}
       {warGameRound}
       surface="commands"
       bind:treeCommands
@@ -137,7 +132,6 @@
     {onOpenLaunchpad}
     {knownWearerLabels}
     viewerAddress={myAddress}
-    {hatsHistoryUnavailable}
     commandContext={showPactoGovShell ? treeCommands : null}
   />
 </section>
