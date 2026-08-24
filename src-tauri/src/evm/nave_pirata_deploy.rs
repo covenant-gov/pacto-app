@@ -305,8 +305,8 @@ fn bound_squad_address_for_parent<R: Runtime>(
         .and_then(|s| parse_address(s).ok()))
 }
 
-/// Captain must appear on the shared roster (primary + optional alt parent id).
-/// If it only exists as this user's local squad binding, heal `squad_member_evm` and allow.
+/// Captain must appear on the certified roster (primary + optional alt parent id),
+/// or match this user's local `#personal-alerts` squad binding (ACL source of truth).
 pub(crate) fn ensure_captain_for_parent_deploy<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
@@ -332,16 +332,6 @@ pub(crate) fn ensure_captain_for_parent_deploy<R: Runtime>(
     }
     for pid in &candidates {
         if bound_squad_address_for_parent(app, pid)?.as_ref() == Some(&captain) {
-            let hex = format!("{captain:#x}");
-            for heal_pid in &candidates {
-                db::upsert_squad_member_evm(
-                    app.clone(),
-                    (*heal_pid).to_string(),
-                    hex.clone(),
-                    None,
-                    None,
-                )?;
-            }
             return Ok(());
         }
     }
@@ -621,6 +611,19 @@ mod tests {
         let err = ensure_captain_on_roster(captain, std::iter::empty())
             .expect_err("empty roster must fail");
         assert_eq!(wallet_err_code(err), "INVALID_CAPTAIN");
+    }
+
+    #[test]
+    fn deploy_heal_cannot_insert_unsigned_roster_row() {
+        let err = crate::evm::roster_bind_cert::require_verified_bind_cert_for_upsert(
+            "g1",
+            "npub1captain",
+            "0x1111111111111111111111111111111111111111",
+            None,
+            None,
+        )
+        .expect_err("legacy heal path must not write unsigned rows");
+        assert!(err.contains("bind cert"));
     }
 
     #[test]

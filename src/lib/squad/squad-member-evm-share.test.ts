@@ -91,21 +91,30 @@ describe('publishSquadMemberEvmShare', () => {
     signSquadRosterBindCert.mockResolvedValue(CERT);
   });
 
-  it('signs, publishes v2, then upserts the cert', async () => {
+  it('upserts locally before publishing v2 to MLS', async () => {
     await expect(publishSquadMemberEvmShare(PARENT)).resolves.toBe(true);
     expect(signSquadRosterBindCert).toHaveBeenCalledWith(PARENT);
-    expect(sendDmMessage).toHaveBeenCalledWith(
-      PARENT,
-      expect.stringContaining('"version":2'),
-      '',
-      { virtualBucket: 'announcements' },
-    );
     expect(invoke).toHaveBeenCalledWith('upsert_squad_member_evm', {
       parentId: PARENT,
       evmAddress: BOUND,
       issuedAt: CERT.issuedAt,
       bindSignature: CERT.signature,
     });
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      PARENT,
+      expect.stringContaining('"version":2'),
+      '',
+      { virtualBucket: 'announcements' },
+    );
+    const invokeOrder = invoke.mock.invocationCallOrder[0] ?? 0;
+    const sendOrder = sendDmMessage.mock.invocationCallOrder[0] ?? 0;
+    expect(invokeOrder).toBeLessThan(sendOrder);
+  });
+
+  it('does not publish when local upsert fails', async () => {
+    invoke.mockRejectedValueOnce(new Error('bind cert required'));
+    await expect(publishSquadMemberEvmShare(PARENT)).resolves.toBe(false);
+    expect(sendDmMessage).not.toHaveBeenCalled();
   });
 
   it('formats a v2 share payload', () => {

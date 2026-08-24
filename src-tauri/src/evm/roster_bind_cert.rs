@@ -13,6 +13,8 @@ const DOMAIN_TYPEHASH: &[u8] =
     b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
 const BIND_TYPEHASH: &[u8] =
     b"SquadRosterBind(string parentId,string memberNpub,address evmAddress,uint64 issuedAt)";
+/// Max future skew for `issued_at` (anti-freeze on gossip ingest).
+pub const MAX_ISSUED_AT_SKEW_SECS: u64 = 300;
 
 pub fn roster_bind_signing_hash(
     parent_id: &str,
@@ -100,7 +102,40 @@ pub fn verify_squad_roster_bind_cert(
     if recovered != addr {
         return Err("bind cert recovered address mismatch".to_string());
     }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if issued_at > now.saturating_add(MAX_ISSUED_AT_SKEW_SECS) {
+        return Err("bind cert issued_at too far in the future".to_string());
+    }
     Ok(recovered)
+}
+
+pub(crate) fn require_verified_bind_cert_for_upsert(
+    parent_id: &str,
+    member_npub: &str,
+    evm_address: &str,
+    issued_at: Option<i64>,
+    bind_signature: Option<String>,
+) -> Result<(i64, String), String> {
+    let issued = issued_at.ok_or_else(|| "bind cert required".to_string())?;
+    if issued <= 0 {
+        return Err("bind cert issued_at must be positive".to_string());
+    }
+    let sig = bind_signature.ok_or_else(|| "bind cert required".to_string())?;
+    let sig_trim = sig.trim();
+    if sig_trim.is_empty() {
+        return Err("bind cert signature required".to_string());
+    }
+    verify_squad_roster_bind_cert(
+        parent_id,
+        member_npub,
+        evm_address,
+        issued as u64,
+        sig_trim,
+    )?;
+    Ok((issued, sig_trim.to_string()))
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -316,5 +351,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(stored, "npub1alice");
+    }
+
+    #[test]
+    fn require_verified_bind_cert_rejects_none_none() {
+        let err = require_verified_bind_cert_for_upsert(
+            "g1",
+            "npub1alice",
+            ANVIL_ADDR,
+            None,
+            None,
+        )
+        .expect_err("unsigned upsert must fail");
+        assert!(err.contains("bind cert"));
+    }
+
+    #[test]
+    fn reject_far_future_issued_at() {
+        let signer = anvil_signer();
+        let future = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            .saturating_add(MAX_ISSUED_AT_SKEW_SECS + 60);
+        let sig = sign_roster_bind_cert(&signer, "ann-gid", "npub1alice", future).unwrap();
+        assert!(verify_squad_roster_bind_cert("ann-gid", "npub1alice", ANVIL_ADDR, future, &sig).is_err());
     }
 }

@@ -111,25 +111,9 @@ fn table_exists(conn: &rusqlite::Connection, name: &str) -> Result<bool, String>
 }
 
 pub fn ensure_join_inbox_tables(conn: &rusqlite::Connection) -> Result<(), String> {
-    conn.execute_batch(
-        r#"
-        CREATE TABLE IF NOT EXISTS join_inbox_meta (
-            parent_id TEXT PRIMARY KEY NOT NULL,
-            inbox_npub TEXT NOT NULL,
-            holders_json TEXT NOT NULL,
-            key_epoch INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS join_inbox_secret (
-            parent_id TEXT PRIMARY KEY NOT NULL,
-            key_epoch INTEGER NOT NULL,
-            inbox_npub TEXT NOT NULL,
-            encrypted_nsec TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        "#,
-    )
-    .map_err(|e| format!("Failed to create join_inbox tables: {e}"))?;
+    if !table_exists(conn, "join_inbox_meta")? || !table_exists(conn, "join_inbox_secret")? {
+        return Err("join_inbox tables missing; run migrations".into());
+    }
     absorb_legacy_squad_bot_tables(conn)?;
     Ok(())
 }
@@ -163,7 +147,9 @@ pub fn delete_join_inbox_rows(conn: &rusqlite::Connection, parent_id: &str) -> R
     if pid.is_empty() {
         return Ok(());
     }
-    ensure_join_inbox_tables(conn)?;
+    if !table_exists(conn, "join_inbox_meta")? || !table_exists(conn, "join_inbox_secret")? {
+        return Ok(());
+    }
     conn.execute(
         "DELETE FROM join_inbox_secret WHERE parent_id = ?1",
         params![pid],
@@ -1257,8 +1243,8 @@ mod tests {
     use super::*;
 
     fn mem_conn() -> rusqlite::Connection {
-        let conn = rusqlite::Connection::open_in_memory().expect("mem");
-        ensure_join_inbox_tables(&conn).expect("tables");
+        let mut conn = rusqlite::Connection::open_in_memory().expect("mem");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
         conn
     }
 

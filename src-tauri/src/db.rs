@@ -2053,6 +2053,30 @@ mod allowlist_tests {
     }
 
     #[test]
+    fn roster_snapshot_author_must_be_chat_participant() {
+        let conn = rusqlite::Connection::open_in_memory().expect("db");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE chats (
+                chat_identifier TEXT PRIMARY KEY,
+                participants TEXT NOT NULL DEFAULT '[]'
+            );
+            "#,
+        )
+        .expect("schema");
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, participants) VALUES ('grp-1', ?1)",
+            rusqlite::params![r#"["npub1member"]"#],
+        )
+        .expect("chat");
+        assert!(!chat_db_participants_contain_author(
+            &conn,
+            "grp-1",
+            "npub1outsider"
+        ));
+    }
+
+    #[test]
     fn chat_db_participants_require_author_in_json_not_merely_mls_group_row() {
         let conn = rusqlite::Connection::open_in_memory().expect("db");
         conn.execute_batch(
@@ -4115,17 +4139,13 @@ pub fn upsert_squad_member_evm<R: Runtime>(
     let norm = crate::evm::normalize_hex_address(evm_address.trim())
         .ok_or_else(|| "Invalid EVM address".to_string())?;
     crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(&handle, norm.as_str())?;
-    let issued = issued_at.unwrap_or(0);
-    let sig = bind_signature.unwrap_or_default();
-    if issued > 0 && !sig.trim().is_empty() {
-        crate::evm::roster_bind_cert::verify_squad_roster_bind_cert(
-            parent,
-            member_npub.as_str(),
-            norm.as_str(),
-            issued as u64,
-            sig.trim(),
-        )?;
-    }
+    let (issued, sig) = crate::evm::roster_bind_cert::require_verified_bind_cert_for_upsert(
+        parent,
+        member_npub.as_str(),
+        norm.as_str(),
+        issued_at,
+        bind_signature,
+    )?;
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -4137,7 +4157,7 @@ pub fn upsert_squad_member_evm<R: Runtime>(
         member_npub.as_str(),
         norm.as_str(),
         issued,
-        sig.trim(),
+        sig.as_str(),
         now_ms,
     );
     crate::account_manager::return_db_connection(conn);
@@ -4183,6 +4203,9 @@ pub fn list_squad_member_evm<R: Runtime>(
             .map_err(|e| format!("Failed to query squad_member_evm: {}", e))?;
         for r in rows {
             let row = r.map_err(|e| e.to_string())?;
+            if !is_certified_squad_member_evm_row(row.issued_at, row.bind_signature.as_str()) {
+                continue;
+            }
             best.entry(row.member_npub.clone())
                 .and_modify(|existing| {
                     if row.updated_at_ms > existing.updated_at_ms {
@@ -4443,6 +4466,23 @@ mod squad_binding_list_tests {
         assert_eq!(rows[0].parent_id, "squad-a");
         assert_eq!(rows[1].parent_id, "squad-z");
         assert!(rows.iter().all(|r| r.evm_account_id == "acc-1"));
+    }
+}
+
+pub(crate) fn is_certified_squad_member_evm_row(issued_at: i64, bind_signature: &str) -> bool {
+    issued_at > 0 && !bind_signature.trim().is_empty()
+}
+
+#[cfg(test)]
+mod certified_roster_list_tests {
+    use super::is_certified_squad_member_evm_row;
+
+    #[test]
+    fn certified_row_filter_excludes_unsigned_backfill() {
+        assert!(!is_certified_squad_member_evm_row(0, ""));
+        assert!(!is_certified_squad_member_evm_row(0, "0xabc"));
+        assert!(!is_certified_squad_member_evm_row(100, "  "));
+        assert!(is_certified_squad_member_evm_row(100, "0xabc"));
     }
 }
 
@@ -4807,7 +4847,12 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
     let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
         return;
     };
-    let _ = apply_verified_roster_bind_cert(&conn, chat_id, &cert);
+    if !apply_verified_roster_bind_cert(&conn, chat_id, &cert) {
+        eprintln!(
+            "[roster_bind] apply squad_member_evm_share failed parent={} member={}",
+            cert.parent_id, cert.member_npub
+        );
+    }
     crate::account_manager::return_db_connection(conn);
 }
 
@@ -4867,7 +4912,12 @@ pub fn try_apply_squad_evm_roster_snapshot<R: Runtime>(
         {
             continue;
         }
-        let _ = apply_verified_roster_bind_cert(&conn, chat_id, &cert);
+        if !apply_verified_roster_bind_cert(&conn, chat_id, &cert) {
+            eprintln!(
+                "[roster_bind] apply roster snapshot cert failed parent={} member={}",
+                cert.parent_id, cert.member_npub
+            );
+        }
     }
     crate::account_manager::return_db_connection(conn);
 }

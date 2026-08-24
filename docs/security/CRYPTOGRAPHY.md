@@ -199,7 +199,15 @@ These are **MLS protocol-level** failures, not app-level PIN/salt decryption fai
 
 ---
 
-## 6. Code index
+## 6. Squad roster bind cert (EIP-712)
+
+Off-chain `SquadRosterBind` certs tie `(parentId, memberNpub)` to a roster EVM address for Crew display and MLS gossip. Implementation: `src-tauri/src/evm/roster_bind_cert.rs`.
+
+The domain uses `chainId = 0` and `verifyingContract = address(0)` — certs are chain-agnostic and replayable. That is acceptable because the cert is **display + gossip only**; squad ACL reads `squad_member_evm_account` binding, not the cert. See [`../governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
+
+---
+
+## 7. Code index
 
 | Topic | Location |
 |---|---|
@@ -211,8 +219,9 @@ These are **MLS protocol-level** failures, not app-level PIN/salt decryption fai
 | MLS engine and storage | `src-tauri/src/mls.rs` — `MlsService`, `MdkSqliteStorage`, `sync_group_since_cursor` |
 | Database schema, migrations, and paths | `src-tauri/src/migrations/` (refinery migrations), `src-tauri/src/account_manager.rs` (`init_profile_database`, `get_db_connection`, `get_mls_directory`) |
 
-## 7. See also
+## 8. See also
 
+- [`../governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md) — squad EVM binding vs bind cert (ACL source of truth).
 - [`../storage-layout/SQLITE_AND_FILES.md`](../storage-layout/SQLITE_AND_FILES.md) — per-account file layout.
 - [`../storage-layout/MESSAGE_ENCRYPTION.md`](../storage-layout/MESSAGE_ENCRYPTION.md) — older, narrower notes on DM encryption.
 - [`../mls/ARCHITECTURE.md`](../mls/ARCHITECTURE.md) — MDK engine, storage split, invites, eviction.

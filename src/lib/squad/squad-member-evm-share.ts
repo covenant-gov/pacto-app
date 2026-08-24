@@ -115,12 +115,6 @@ export async function publishSquadMemberEvmShare(
   }
   const json = formatSquadMemberEvmShare(rosterId, cert);
   try {
-    await sendDmMessage(rosterId, json, '', { virtualBucket: 'announcements' });
-  } catch (e) {
-    console.warn('[squad-member-evm] sendDmMessage failed', e);
-    return false;
-  }
-  try {
     await invoke('upsert_squad_member_evm', {
       parentId: rosterId,
       evmAddress: cert.evmAddress,
@@ -128,7 +122,13 @@ export async function publishSquadMemberEvmShare(
       bindSignature: cert.signature,
     });
   } catch (e) {
-    console.warn('[squad-member-evm] upsert_squad_member_evm failed after publish', e);
+    console.warn('[squad-member-evm] upsert_squad_member_evm failed before publish', e);
+    return false;
+  }
+  try {
+    await sendDmMessage(rosterId, json, '', { virtualBucket: 'announcements' });
+  } catch (e) {
+    console.warn('[squad-member-evm] sendDmMessage failed', e);
     return false;
   }
   return true;
