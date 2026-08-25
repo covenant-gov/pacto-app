@@ -5,14 +5,15 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { t } from 'svelte-i18n';
-	import { THEME_OPTIONS, type Theme } from '../../stores/theme';
+	import { THEME_OPTIONS } from '../../stores/theme';
 	import type { ShellPreviewState } from '$lib/shell';
 	import DesignDitherPanel from './components/DesignDitherPanel.svelte';
+	import { SKETCH_THEME_OPTIONS, type DesignTheme } from './sketches/sketches';
 
 	interface Props {
-		theme: Theme;
+		theme: DesignTheme;
 		previewState: ShellPreviewState;
-		onThemeChange: (theme: Theme) => void;
+		onThemeChange: (theme: DesignTheme) => void;
 		onPreviewStateChange: (state: ShellPreviewState) => void;
 	}
 
@@ -28,8 +29,13 @@
 	];
 
 	const themeLabel = $derived(
-		THEME_OPTIONS.find((option) => option.value === theme)?.label ?? theme,
+		[...THEME_OPTIONS, ...SKETCH_THEME_OPTIONS].find((option) => option.value === theme)?.label ??
+			theme,
 	);
+
+	function selectTheme(value: string): void {
+		if (value) onThemeChange(value as DesignTheme);
+	}
 </script>
 
 <header
@@ -57,7 +63,7 @@
 							{...props}
 							variant="secondary"
 							size="xs"
-							class="h-[26px] min-w-[104px] justify-between px-2 text-xs font-medium normal-case tracking-normal"
+							class="h-[26px] min-w-[148px] justify-between px-2 text-xs font-medium normal-case tracking-normal"
 							aria-label={$t('design.toolbar.theme')}
 						>
 							<span class="truncate">{themeLabel}</span>
@@ -65,15 +71,24 @@
 						</Button>
 					{/snippet}
 				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="min-w-36">
-					<DropdownMenu.RadioGroup
-						value={theme}
-						onValueChange={(value) => {
-							if (value) onThemeChange(value as Theme);
-						}}
-					>
+				<DropdownMenu.Content align="end" class="min-w-48">
+					<DropdownMenu.RadioGroup value={theme} onValueChange={selectTheme}>
+						<DropdownMenu.GroupHeading class="text-[0.625rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+							{$t('design.toolbar.themeShipped')}
+						</DropdownMenu.GroupHeading>
 						{#each THEME_OPTIONS as option (option.value)}
-							<DropdownMenu.RadioItem value={option.value}>{option.label}</DropdownMenu.RadioItem>
+							<DropdownMenu.RadioItem value={option.value} onSelect={() => selectTheme(option.value)}>
+								{option.label}
+							</DropdownMenu.RadioItem>
+						{/each}
+						<DropdownMenu.Separator />
+						<DropdownMenu.GroupHeading class="text-[0.625rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+							{$t('design.toolbar.themeSketches')}
+						</DropdownMenu.GroupHeading>
+						{#each SKETCH_THEME_OPTIONS as option (option.value)}
+							<DropdownMenu.RadioItem value={option.value} onSelect={() => selectTheme(option.value)}>
+								{option.label}
+							</DropdownMenu.RadioItem>
 						{/each}
 					</DropdownMenu.RadioGroup>
 				</DropdownMenu.Content>

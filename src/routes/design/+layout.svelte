@@ -10,7 +10,9 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { parseShellPreviewState, type AppShellLabels, type ShellPreviewState } from '$lib/shell';
-	import { setTheme, theme, type Theme } from '../../stores/theme';
+	import { get } from 'svelte/store';
+	import { onMount } from 'svelte';
+	import { DEFAULT_THEME, getStoredTheme, setTheme, theme } from '../../stores/theme';
 	import DesignToolbar from './DesignToolbar.svelte';
 	import DesignRail from './components/DesignRail.svelte';
 	import DesignChannels from './components/DesignChannels.svelte';
@@ -22,8 +24,41 @@
 	import en from './locales/en.json';
 	import es from './locales/es.json';
 	import './dither.css';
+	import './sketches/techno-light-paper.css';
+	import './sketches/techno-light-signal.css';
+	import {
+		applyPlaygroundTheme,
+		isDesignTheme,
+		isShippedTheme,
+		readDesignPreviewTheme,
+		writeDesignPreviewTheme,
+		type DesignTheme,
+	} from './sketches/sketches';
 
 	let { children }: { children: Snippet } = $props();
+
+	let previewTheme = $state<DesignTheme>(get(theme));
+
+	onMount(() => {
+		const preview = readDesignPreviewTheme();
+		if (preview) {
+			previewTheme = preview;
+			applyPlaygroundTheme(preview);
+		}
+		return () => {
+			setTheme(getStoredTheme() ?? DEFAULT_THEME);
+		};
+	});
+
+	function selectTheme(value: DesignTheme): void {
+		previewTheme = value;
+		writeDesignPreviewTheme(value);
+		if (isShippedTheme(value)) {
+			setTheme(value);
+			return;
+		}
+		applyPlaygroundTheme(value);
+	}
 
 	addMessages('en', en);
 	addMessages('es', es);
@@ -92,9 +127,12 @@
 	style={`--dither-mix: ${design.ditherMix}; --dither-tile: ${design.ditherTile}px; --dither-edge: ${design.ditherEdge}px;`}
 >
 	<DesignToolbar
-		theme={$theme}
+		theme={previewTheme}
 		{previewState}
-		onThemeChange={(value: Theme) => setTheme(value)}
+		onThemeChange={(value: DesignTheme) => {
+			if (!isDesignTheme(value)) return;
+			selectTheme(value);
+		}}
 		onPreviewStateChange={selectPreviewState}
 	/>
 

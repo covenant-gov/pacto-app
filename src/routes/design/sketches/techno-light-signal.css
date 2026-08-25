@@ -1,0 +1,75 @@
+/* Signal — dark-techno cyan on cool paper, dark rail as chrome. */
+:root[data-theme="techno-light-signal"] {
+  color-scheme: light;
+
+  --bg-page: #f4f6f8;
+  --bg-panel: #e7ecf1;
+  --bg-elevated: #ffffff;
+  --bg-hover: #d8dee6;
+  --text-primary: #12161d;
+  --text-secondary: #3a4450;
+  --text-muted: #5c6775;
+  --border: #c2cad3;
+  --border-subtle: #d8dee4;
+
+  --brand: #22d3ee;
+  --brand-hover: #06b6d4;
+  --on-brand: #0c1219;
+  --danger: #db2777;
+  --success: #16a34a;
+  --warning: #ea580c;
+  --notif: #db2777;
+  --on-notif: #ffffff;
+  --on-success: #052e16;
+  --shell-rail-bg: #12161d;
+  --user-strip-bg: #e2e8ee;
+  --gov-avatar-bg: #c6f0d8;
+  --role-quartermaster: #3d5a73;
+  --role-community-manager: #2c4a66;
+  --mention-accent: #c2410c;
+  --danger-muted-fg: #9f1239;
+
+  --code-bg: var(--bg-elevated);
+  --code-border: var(--border-subtle);
+  --blockquote-border: var(--brand);
+  --spoiler-bg: var(--text-primary);
+  --reply-border: var(--brand);
+
+  --icon-dropdown-filter: brightness(0);
+
+  --channel-active-bg: #12161d;
+  --channel-active-fg: #f4f6f8;
+
+  --techno-green: #22c55e;
+  --techno-blue: #22d3ee;
+  --techno-orange: #ea580c;
+  --techno-pink: #db2777;
+
+  --commons-tile-scrim-top: rgba(0, 0, 0, 0.04);
+  --commons-tile-scrim-mid: rgba(0, 0, 0, 0.1);
+  --commons-tile-scrim-bottom: rgba(0, 0, 0, 0.34);
+  --commons-tile-veil: rgba(244, 246, 248, 0.42);
+  --commons-tile-art-filter: brightness(1.12) contrast(1.03) saturate(1.08);
+  --commons-tile-text: #fff;
+  --commons-tile-title-shadow: 0 1px 8px rgba(0, 0, 0, 0.72);
+  --commons-tile-desc-shadow: 0 1px 6px rgba(0, 0, 0, 0.75);
+}
+
+:root[data-theme="techno-light-signal"] [data-shell-region="rail"] {
+  color-scheme: dark;
+  --text-primary: #f2f5f9;
+  --text-secondary: #c2cbd6;
+  --text-muted: #8b96a8;
+  --foreground: #f2f5f9;
+  --muted-foreground: #8b96a8;
+  --secondary: #2b3240;
+  --secondary-foreground: #f2f5f9;
+  --border: #455061;
+  --border-subtle: #343c4c;
+  --bg-hover: #2b3240;
+}
+
+:root[data-theme="techno-light-signal"] [data-slot="channel-row"][data-active="true"] {
+  background: var(--channel-active-bg);
+  color: var(--channel-active-fg);
+}
