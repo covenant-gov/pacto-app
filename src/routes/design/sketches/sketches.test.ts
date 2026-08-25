@@ -1,9 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { THEME_OPTIONS } from '../../../stores/theme';
-import { SKETCH_THEME_OPTIONS } from './sketches';
+import {
+	SKETCH_THEME_OPTIONS,
+	readDesignPreviewTheme,
+	writeDesignPreviewTheme,
+} from './sketches';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appCssPath = join(here, '../../../app.css');
@@ -115,4 +119,55 @@ describe('design techno-light sketches', () => {
 			expect(contrastRatio(tokenHex(css, '--success'), tokenHex(css, '--on-success'))).toBeGreaterThanOrEqual(4.5);
 		});
 	}
+
+	it('boots /design from pacto_design_theme or dark-techno, not pacto_theme', () => {
+		const appHtml = read(appHtmlPath);
+		expect(appHtml).toContain("path === '/design'");
+		expect(appHtml).toContain('pacto_design_theme');
+		expect(appHtml).toContain('pacto_theme');
+	});
+
+	it('does not let the root layout overwrite /design with the stored app theme', () => {
+		const root = read(join(here, '../../+layout.svelte'));
+		expect(root).toContain('if (!initialIsDesignRoute)');
+		expect(root).toMatch(/if \(!initialIsDesignRoute\) \{[\s\S]*setTheme\(/);
+	});
+});
+
+describe('design preview theme storage', () => {
+	let store: Map<string, string>;
+
+	beforeEach(() => {
+		store = new Map();
+		vi.stubGlobal('sessionStorage', {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => {
+				store.set(key, value);
+			},
+			removeItem: (key: string) => {
+				store.delete(key);
+			},
+		});
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('persists shipped playground themes', () => {
+		writeDesignPreviewTheme('dark-techno');
+		expect(readDesignPreviewTheme()).toBe('dark-techno');
+		writeDesignPreviewTheme('techno');
+		expect(readDesignPreviewTheme()).toBe('techno');
+	});
+
+	it('persists sketch playground themes', () => {
+		writeDesignPreviewTheme('techno-light-paper');
+		expect(readDesignPreviewTheme()).toBe('techno-light-paper');
+	});
+
+	it('ignores unknown preview values', () => {
+		sessionStorage.setItem('pacto_design_theme', 'not-a-theme');
+		expect(readDesignPreviewTheme()).toBeNull();
+	});
 });

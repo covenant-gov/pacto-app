@@ -57,9 +57,8 @@
   }
 
   onMount(() => {
-    const stored = getStoredTheme();
-    setTheme(stored ?? DEFAULT_THEME);
     if (!initialIsDesignRoute) {
+      setTheme(getStoredTheme() ?? DEFAULT_THEME);
       startProductionSession();
     }
   });

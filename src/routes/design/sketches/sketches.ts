@@ -37,7 +37,7 @@ export function readDesignPreviewTheme(): DesignTheme | null {
 	if (typeof sessionStorage === 'undefined') return null;
 	try {
 		const raw = sessionStorage.getItem(PREVIEW_STORAGE_KEY);
-		if (!raw || !isSketchTheme(raw)) return null;
+		if (!raw || !isDesignTheme(raw)) return null;
 		return raw;
 	} catch {
 		return null;
@@ -47,11 +47,7 @@ export function readDesignPreviewTheme(): DesignTheme | null {
 export function writeDesignPreviewTheme(value: DesignTheme): void {
 	if (typeof sessionStorage === 'undefined') return;
 	try {
-		if (isSketchTheme(value)) {
-			sessionStorage.setItem(PREVIEW_STORAGE_KEY, value);
-			return;
-		}
-		sessionStorage.removeItem(PREVIEW_STORAGE_KEY);
+		sessionStorage.setItem(PREVIEW_STORAGE_KEY, value);
 	} catch {
 		// ignore
 	}

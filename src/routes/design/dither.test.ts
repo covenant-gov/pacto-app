@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+	DITHER_DEFAULTS,
 	DITHER_PATTERNS,
 	ditherMaskStyle,
 	ditherPatternMaskImage,
@@ -14,6 +15,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 describe('design dither wiring', () => {
 	const css = readFileSync(join(here, 'dither.css'), 'utf8');
 	const layout = readFileSync(join(here, '+layout.svelte'), 'utf8');
+
+	it('css root fallbacks match dither defaults', () => {
+		expect(css).toContain(`--dither-mix: ${DITHER_DEFAULTS.mix};`);
+		expect(css).toContain(`--dither-tile: ${DITHER_DEFAULTS.tile}px;`);
+		expect(css).toContain(`--dither-edge: ${DITHER_DEFAULTS.edge}px;`);
+	});
 
 	it('binds pattern switching to data-dither-pattern on the design shell', () => {
 		expect(layout).toContain('data-dither-pattern={design.ditherPattern}');
@@ -36,7 +43,9 @@ describe('design dither wiring', () => {
 		for (const pattern of DITHER_PATTERNS) {
 			expect(ditherPatternUrl(pattern)).toMatch(/^data:image\/svg\+xml,/);
 			expect(ditherPatternMaskImage(pattern)).toMatch(/^url\("data:image\/svg\+xml,/);
-			expect(ditherMaskStyle(pattern)).toContain('mask-size: var(--dither-tile, 8px)');
+			expect(ditherMaskStyle(pattern)).toContain(
+				`mask-size: var(--dither-tile, ${DITHER_DEFAULTS.tile}px)`
+			);
 		}
 	});
 
@@ -44,13 +53,23 @@ describe('design dither wiring', () => {
 		const gate = readFileSync(join(here, 'components/DesignGate.svelte'), 'utf8');
 		expect(gate).toContain('ditherMaskStyle(design.ditherPattern)');
 		expect(css).not.toMatch(/\.shell-gate \.shell-dither-wash[\s\S]{0,200}radial-gradient/);
-		expect(css).toContain('var(--dither-tile, 8px)');
+		expect(css).toContain(`var(--dither-tile, ${DITHER_DEFAULTS.tile}px)`);
 	});
 
-	it('paints seam and grid from foreground so ink paper/panel stay visible', () => {
-		expect(css).toContain('.shell-dither-seam::before');
-		expect(css).toMatch(/\.shell-dither-seam::before[\s\S]*var\(--foreground\)/);
-		expect(css).toMatch(/\.shell-grid-void[\s\S]*var\(--foreground\)/);
-		expect(css).not.toMatch(/\.shell-dither-seam::before[\s\S]*var\(--muted\)/);
+	it('sizes the panel seam from --dither-edge and mix', () => {
+		const start = css.indexOf('.shell-dither-seam::before {');
+		expect(start).toBeGreaterThan(-1);
+		const block = css.slice(start, css.indexOf('}', start) + 1);
+		expect(block).toContain('width: var(--dither-edge, 17px)');
+		expect(block).toContain('var(--dither-mix, 32)');
+		expect(block).toContain('var(--dither-ink)');
+		expect(block).not.toContain('var(--muted)');
+	});
+
+	it('boots the playground at DEFAULT_THEME and applies it on mount', () => {
+		expect(layout).toContain('previewTheme = $state<DesignTheme>(DEFAULT_THEME)');
+		expect(layout).toContain('readDesignPreviewTheme() ?? DEFAULT_THEME');
+		expect(layout).toContain('applyPlaygroundTheme(preview)');
+		expect(layout).not.toMatch(/function selectTheme[\s\S]*setTheme\(/);
 	});
 });

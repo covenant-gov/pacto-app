@@ -18,6 +18,18 @@ export const DITHER_PATTERNS = [
 
 export type DitherPattern = (typeof DITHER_PATTERNS)[number];
 
+export const DITHER_DEFAULTS = {
+	mix: 32,
+	tile: 24,
+	edge: 17,
+	pattern: 'bayer',
+} as const satisfies {
+	mix: number;
+	tile: number;
+	edge: number;
+	pattern: DitherPattern;
+};
+
 function svgDataUrl(svg: string): string {
 	return `data:image/svg+xml,${encodeURIComponent(svg.trim())}`;
 }
@@ -45,8 +57,8 @@ export function ditherMaskStyle(pattern: DitherPattern): string {
 	return [
 		`mask-image: ${mask}`,
 		`-webkit-mask-image: ${mask}`,
-		`mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px)`,
-		`-webkit-mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px)`,
+		`mask-size: var(--dither-tile, ${DITHER_DEFAULTS.tile}px) var(--dither-tile, ${DITHER_DEFAULTS.tile}px)`,
+		`-webkit-mask-size: var(--dither-tile, ${DITHER_DEFAULTS.tile}px) var(--dither-tile, ${DITHER_DEFAULTS.tile}px)`,
 		`mask-repeat: repeat`,
 		`-webkit-mask-repeat: repeat`,
 	].join('; ');

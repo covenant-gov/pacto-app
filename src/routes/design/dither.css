@@ -1,8 +1,8 @@
 /* Mask urls must be literal — inherited url() vars do not paint on ::before. Mix is 8–70 unitless. */
 :root {
-  --dither-mix: 42;
-  --dither-tile: 8px;
-  --dither-edge: 12px;
+  --dither-mix: 32;
+  --dither-tile: 24px;
+  --dither-edge: 17px;
   --dither-ink: var(--dither-fill, var(--brand));
 }
 
@@ -14,8 +14,8 @@
 .shell-sys-notice-wash {
   -webkit-mask-image: url('./dither/bayer.svg');
   mask-image: url('./dither/bayer.svg');
-  -webkit-mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px);
-  mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px);
+  -webkit-mask-size: var(--dither-tile, 24px) var(--dither-tile, 24px);
+  mask-size: var(--dither-tile, 24px) var(--dither-tile, 24px);
   -webkit-mask-repeat: repeat;
   mask-repeat: repeat;
 }
@@ -29,7 +29,7 @@
   border-radius: inherit;
   background-color: color-mix(
     in oklch,
-    var(--dither-ink) calc(var(--dither-mix, 42) * 1%),
+    var(--dither-ink) calc(var(--dither-mix, 32) * 1%),
     transparent
   );
   opacity: 1;
@@ -40,7 +40,7 @@
   pointer-events: none;
   background-color: color-mix(
     in oklch,
-    var(--dither-ink) calc(var(--dither-mix, 42) * 1%),
+    var(--dither-ink) calc(var(--dither-mix, 32) * 1%),
     transparent
   );
 }
@@ -69,12 +69,13 @@
   bottom: 0;
   left: 0;
   z-index: 2;
-  width: var(--dither-edge, 12px);
+  width: var(--dither-edge, 17px);
   border-top-left-radius: inherit;
   background: linear-gradient(
     to right,
-    color-mix(in oklch, var(--dither-ink) 18%, transparent),
-    transparent
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 32) * 1%), transparent) 0%,
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 32) * 1%), transparent) 42%,
+    transparent 100%
   );
 }
 
@@ -107,8 +108,8 @@
   background: linear-gradient(
     to bottom,
     transparent 0%,
-    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 42) * 0.28%), transparent) 28%,
-    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 42) * 0.95%), transparent) 100%
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 32) * 0.28%), transparent) 28%,
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 32) * 0.95%), transparent) 100%
   );
 }
 
@@ -116,8 +117,8 @@
   background: linear-gradient(
     to bottom,
     transparent 0%,
-    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 42) * 0.4%), transparent) 24%,
-    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 42) * 1%), transparent) 100%
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 32) * 0.4%), transparent) 24%,
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 32) * 1%), transparent) 100%
   );
 }
 
@@ -133,7 +134,7 @@
   inset: 0;
   background-color: color-mix(
     in oklch,
-    var(--dither-ink) calc(var(--dither-mix, 42) * 0.55%),
+    var(--dither-ink) calc(var(--dither-mix, 32) * 0.55%),
     transparent
   );
 }
@@ -164,19 +165,19 @@
     );
   background-size: 100% 100%, 28px 28px, 28px 28px;
   background-position: 0 0, 12px 8px, 12px 8px;
-  opacity: calc(0.22 + var(--dither-mix, 42) * 0.01);
+  opacity: calc(0.22 + var(--dither-mix, 32) * 0.01);
 }
 
 .shell-gate-scan {
   background: repeating-linear-gradient(
     to bottom,
-    transparent 0 calc(var(--dither-tile, 8px) * 0.25),
+    transparent 0 calc(var(--dither-tile, 24px) * 0.25),
     color-mix(
         in oklch,
-        var(--dither-ink) calc(var(--dither-mix, 42) * 0.28%),
+        var(--dither-ink) calc(var(--dither-mix, 32) * 0.28%),
         transparent
       )
-      calc(var(--dither-tile, 8px) * 0.25) calc(var(--dither-tile, 8px) * 0.4)
+      calc(var(--dither-tile, 24px) * 0.25) calc(var(--dither-tile, 24px) * 0.4)
   );
 }
 

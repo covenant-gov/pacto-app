@@ -98,7 +98,7 @@
 		{/if}
 	</div>
 
-	<div class="relative min-h-0 flex-1 overflow-hidden rounded-tl-lg bg-background">
+	<div class="shell-dither-seam relative min-h-0 flex-1 overflow-hidden rounded-tl-lg bg-background">
 		<ScrollArea.Root class="h-full" bind:viewportRef={viewportEl}>
 			<div class="flex flex-col gap-6 px-5 pt-5 pb-48">
 				{#each messages as message (message.id)}

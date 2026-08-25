@@ -9,7 +9,7 @@ import {
 import type { Channel, Message, PresenceStatus, RailLens, Squad } from './fixtures.js';
 import { currentUser } from './fixtures.js';
 import { consumeChannelInList, withSyncedMentions } from './session.js';
-import type { DitherPattern } from './dither.js';
+import { DITHER_DEFAULTS, type DitherPattern } from './dither.js';
 
 const squadPalette = ['#2a4a3d', '#3d2c6b', '#1e3a4a', '#5a2a2a', '#26324a', '#3a2c4a'];
 
@@ -45,17 +45,17 @@ class DesignSession {
 	newChannelName = $state('');
 	asideCollapsed = $state(false);
 
-	ditherMix = $state(42);
-	ditherTile = $state(8);
-	ditherEdge = $state(12);
-	ditherPattern = $state<DitherPattern>('bayer');
+	ditherMix = $state(DITHER_DEFAULTS.mix);
+	ditherTile = $state(DITHER_DEFAULTS.tile);
+	ditherEdge = $state(DITHER_DEFAULTS.edge);
+	ditherPattern = $state<DitherPattern>(DITHER_DEFAULTS.pattern);
 	gateOpen = $state(false);
 
 	resetDither() {
-		this.ditherMix = 42;
-		this.ditherTile = 8;
-		this.ditherEdge = 12;
-		this.ditherPattern = 'bayer';
+		this.ditherMix = DITHER_DEFAULTS.mix;
+		this.ditherTile = DITHER_DEFAULTS.tile;
+		this.ditherEdge = DITHER_DEFAULTS.edge;
+		this.ditherPattern = DITHER_DEFAULTS.pattern;
 	}
 
 	get activeSquad() {

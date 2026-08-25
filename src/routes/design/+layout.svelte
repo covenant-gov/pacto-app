@@ -10,9 +10,8 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { parseShellPreviewState, type AppShellLabels, type ShellPreviewState } from '$lib/shell';
-	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
-	import { DEFAULT_THEME, getStoredTheme, setTheme, theme } from '../../stores/theme';
+	import { DEFAULT_THEME, getStoredTheme, setTheme } from '../../stores/theme';
 	import DesignToolbar from './DesignToolbar.svelte';
 	import DesignRail from './components/DesignRail.svelte';
 	import DesignChannels from './components/DesignChannels.svelte';
@@ -29,7 +28,6 @@
 	import {
 		applyPlaygroundTheme,
 		isDesignTheme,
-		isShippedTheme,
 		readDesignPreviewTheme,
 		writeDesignPreviewTheme,
 		type DesignTheme,
@@ -37,14 +35,12 @@
 
 	let { children }: { children: Snippet } = $props();
 
-	let previewTheme = $state<DesignTheme>(get(theme));
+	let previewTheme = $state<DesignTheme>(DEFAULT_THEME);
 
 	onMount(() => {
-		const preview = readDesignPreviewTheme();
-		if (preview) {
-			previewTheme = preview;
-			applyPlaygroundTheme(preview);
-		}
+		const preview = readDesignPreviewTheme() ?? DEFAULT_THEME;
+		previewTheme = preview;
+		applyPlaygroundTheme(preview);
 		return () => {
 			setTheme(getStoredTheme() ?? DEFAULT_THEME);
 		};
@@ -53,10 +49,6 @@
 	function selectTheme(value: DesignTheme): void {
 		previewTheme = value;
 		writeDesignPreviewTheme(value);
-		if (isShippedTheme(value)) {
-			setTheme(value);
-			return;
-		}
 		applyPlaygroundTheme(value);
 	}
 
