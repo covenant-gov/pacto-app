@@ -115,6 +115,17 @@ pub fn multi_instance_allowed() -> bool {
 /// ever sweeps (issue #347). Redirecting the unset-root fallback to a disposable
 /// OS temp directory, only inside test builds, keeps that litter out of the real
 /// filesystem without changing production path resolution at all.
+///
+/// Keyed by `std::process::id()`: under `cargo nextest run`, every test is its
+/// own OS process, so this gives each test a private root -- without it, all
+/// concurrently running tests shared this one directory, so a directory-wide
+/// scan in one test (`migrate_legacy_databases`) could mutate a sibling
+/// test's files mid-run, and heavy concurrent SQLite traffic against one
+/// shared tree produced intermittent "disk I/O error" failures. Under plain
+/// `cargo test`, every test in a binary shares one process and thus one
+/// fallback directory, same as before this change (already safe: those
+/// tests serialize via `.cargo/config.toml`'s `RUST_TEST_THREADS=1`).
+///
 /// `OnceLock`, not `LazyLock`: `remove_unit_test_fallback_root_at_exit` needs a
 /// non-forcing `get()` so a process that never touched the fallback root exits
 /// without creating (or trying to remove) anything.
@@ -125,7 +136,8 @@ static UNIT_TEST_FALLBACK_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLo
 fn unit_test_fallback_root() -> PathBuf {
     UNIT_TEST_FALLBACK_ROOT
         .get_or_init(|| {
-            let dir = std::env::temp_dir().join("pacto-cargo-test-fallback");
+            let dir = std::env::temp_dir()
+                .join(format!("pacto-cargo-test-fallback-{}", std::process::id()));
             // Best-effort: start every test binary run from a clean slate rather
             // than accumulating npub directories left by a run that was killed
             // before its own atexit handler below ran.
