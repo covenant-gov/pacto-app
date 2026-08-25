@@ -13,7 +13,6 @@ Read this tree before changing themes, shell layout, or shared UI.
 | [UI.md](./UI.md) | MUST / SHOULD / NEVER for interactions and taste |
 | [MOTION.md](./MOTION.md) | CSS vs `svelte/motion` vs `svelte/transition` (which tool) |
 | [decisions/](./decisions/) | Why token or shell contracts changed |
-| [reference/](./reference/) | Non-normative visual history |
 
 Live production shell map (stores, libs, dashboards): [docs/shell/LAYOUT.md](../shell/LAYOUT.md).
 

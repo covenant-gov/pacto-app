@@ -6,7 +6,7 @@ Current logged-in map (stores, libs, dashboards): [docs/shell/LAYOUT.md](../shel
 
 ## Four regions
 
-Visual model (Option I / Discord-style):
+Visual model (Discord-style):
 
 | Region | Role |
 |--------|------|
@@ -96,4 +96,3 @@ Sandbox-only encode (not production chrome):
 
 - [docs/shell/LAYOUT.md](../shell/LAYOUT.md)
 - [UI.md](./UI.md)
-- Non-normative Option I HTML: [reference/option-i.html](./reference/option-i.html)
