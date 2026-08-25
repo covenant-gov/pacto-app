@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Ad-hoc sign macOS app builds (#307)
+- Clear make build warnings by deleting dead code, not suppressing it (#306)
+- Create squads when a member's key package is stale, and say so when creation fails (#313)
+- Stop reclassifying failed MLS welcome retries as transient (#336)
+- Stop mls welcome-delivery failures from orphaning groups (#339)
+
+
+### Features
+- Convert root layout to svelte 5 runes (#322) (pacto-app-a7r.21)
+- Convert channel modals and roster item to svelte 5 runes (#323) (pacto-app-a7r.12)
+- Convert parent/ dashboard-polls, create-poll, deploy-safe, my-dashboard, setting-up to svelte 5 runes (#324) (pacto-app-a7r.15)
+- Convert governance treasury, roles, and security panels to svelte 5 runes (#325) (pacto-app-a7r.19)
+- Convert commons/ components to svelte 5 runes (#326) (pacto-app-a7r.14)
+- Convert settings components to svelte 5 runes (#327) (pacto-app-a7r.11)
+- Convert governance deploy-and-launch modals to svelte 5 runes (#328) (pacto-app-a7r.17)
+- Convert dm/ composer and thread to svelte 5 runes (#329) (pacto-app-a7r.26)
+- Convert governance actions and proposals to svelte 5 runes (#330) (pacto-app-a7r.18)
+- Convert small-file cluster to svelte 5 runes (#331) (pacto-app-a7r.10)
+- Convert layout navbar/sidebar components to svelte 5 runes (#332) (pacto-app-a7r.20)
+- Convert wallet/ components to svelte 5 runes (#333) (pacto-app-a7r.13)
+- Convert parent dashboard tabs and modals to svelte-5 runes (#334) (pacto-app-a7r.16)
+- Convert dm/ message-rendering components to svelte 5 runes (#335) (pacto-app-a7r.25)
+- Dual-publish MLS key packages on kind 30443, accept legacy 443 (#338)
+- Wargames (#305)
+- Nostr-to-evm eip-712 cert (#342)
+- Speed up two-window sandbox demo (#343)
+
+
+### Refactor
+- Dedupe commons-broadcast presentation logic (#308)
+- Convert on: directives to Svelte 5 event attributes repo-wide (#309)
+- Convert dm/ dispatchers to callback props (#310)
+- Convert ui/ to Svelte 5 runes (#314)
+- Convert announcements/ to Svelte 5 runes (#315)
+- War-game (#341)
+
+## v0.6.1
+
+### Bug Fixes
 - Size gif-picker thumbnails to a readable 3-column grid
 - Close klipy and sticker egress holes found in review (#243)
 - Recognize pre-0.6.0 migration checksums so upgrades don't trip the storage-format gate
@@ -18,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Chores
 - Unblock two-account testing and stop migration tests pinning a version
+- Bump version to 0.6.1 (#289) (release)
 
 
 ### Features
