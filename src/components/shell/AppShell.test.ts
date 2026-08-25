@@ -65,14 +65,17 @@ describe('AppShell', () => {
 		expect(screen.getByRole('main', { name: labels.main })).not.toBeNull();
 	});
 
-	it('hides the wide member column when collapsed', async () => {
+	it('collapses the wide member column without unmounting it', async () => {
 		const { container } = render(AppShellHarness, {
 			props: { labels, regionNames, asideCollapsed: true },
 		});
 		await tick();
 
-		expect(screen.queryByText(regionNames.aside)).toBeNull();
-		expect(container.querySelector('[data-shell-region="aside"]')).toBeNull();
+		const region = container.querySelector('[data-shell-region="aside"]');
+		expect(region).not.toBeNull();
+		expect(region?.getAttribute('data-collapsed')).toBe('true');
+		expect((region as HTMLElement).inert).toBe(true);
+		expect(region?.getAttribute('aria-hidden')).toBe('true');
 		expect(screen.queryByRole('button', { name: labels.openAside })).toBeNull();
 	});
 

@@ -37,11 +37,11 @@
 <DialogPrimitive.Root {open} onOpenChange={handleOpenChange}>
 	<DialogPrimitive.Portal>
 		<DialogPrimitive.Overlay
-			class="fixed inset-0 z-[10040] bg-black/45 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none"
+			class="fixed inset-0 z-[10040] bg-black/45 duration-200 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:duration-150 motion-reduce:animate-none"
 		/>
 		<DialogPrimitive.Content
 			class={cn(
-				'fixed inset-y-0 z-[10050] w-[min(20rem,calc(100vw-3rem))] overflow-hidden border-border bg-muted text-foreground shadow-2xl outline-none overscroll-contain data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 motion-reduce:animate-none',
+				'fixed inset-y-0 z-[10050] w-[min(20rem,calc(100vw-3rem))] overflow-hidden border-border bg-muted text-foreground shadow-2xl outline-none overscroll-contain duration-200 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:duration-150 motion-reduce:animate-none',
 				side === 'left'
 					? 'left-0 border-r data-open:slide-in-from-left data-closed:slide-out-to-left'
 					: 'right-0 border-l data-open:slide-in-from-right data-closed:slide-out-to-right',

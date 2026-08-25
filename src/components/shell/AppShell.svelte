@@ -41,7 +41,7 @@
 	let asideTrigger: HTMLButtonElement | null = $state(null);
 
 	const sidebarInGrid = $derived(viewport !== 'narrow');
-	const asideInGrid = $derived(Boolean(aside) && viewport === 'wide' && !asideCollapsed);
+	const wideAside = $derived(Boolean(aside) && viewport === 'wide');
 	const showSidebarDrawer = $derived(viewport === 'narrow');
 	const showAsideDrawer = $derived(Boolean(aside) && viewport !== 'wide');
 	const showDrawerBar = $derived(showSidebarDrawer || showAsideDrawer);
@@ -81,10 +81,15 @@
 <div
 	class={cn(
 		'grid h-full min-h-0 w-full overflow-hidden bg-background text-foreground',
+		wideAside &&
+			'motion-safe:transition-[grid-template-columns] motion-safe:ease-[var(--ease-out)] motion-reduce:transition-none',
+		wideAside && (asideCollapsed ? 'duration-150' : 'duration-200'),
 		viewport === 'narrow'
 			? "grid-cols-[64px_minmax(0,1fr)] [grid-template-areas:'rail_main']"
-			: asideInGrid
-				? "grid-cols-[72px_244px_minmax(0,1fr)_220px] [grid-template-areas:'rail_sidebar_main_aside']"
+			: wideAside
+				? asideCollapsed
+					? "grid-cols-[72px_244px_minmax(0,1fr)_0px] [grid-template-areas:'rail_sidebar_main_aside']"
+					: "grid-cols-[72px_244px_minmax(0,1fr)_220px] [grid-template-areas:'rail_sidebar_main_aside']"
 				: "grid-cols-[72px_244px_minmax(0,1fr)] [grid-template-areas:'rail_sidebar_main']",
 	)}
 	data-shell-background
@@ -159,14 +164,25 @@
 		</div>
 	</main>
 
-	{#if aside && asideInGrid}
+	{#if aside && wideAside}
 		<div
-			class="min-h-0 border-l border-border [grid-area:aside]"
+			class="min-h-0 min-w-0 overflow-hidden [grid-area:aside]"
 			data-shell-region="aside"
-			inert={contentInert || undefined}
-			aria-hidden={contentInert || undefined}
+			data-collapsed={asideCollapsed ? 'true' : undefined}
+			inert={asideCollapsed || contentInert || undefined}
+			aria-hidden={asideCollapsed || contentInert || undefined}
 		>
-			{@render aside()}
+			<div
+				class={cn(
+					'ml-auto h-full w-[220px] border-l border-border',
+					'motion-safe:transition-[opacity,transform] motion-safe:ease-[var(--ease-out)] motion-reduce:transition-none',
+					asideCollapsed
+						? 'pointer-events-none translate-x-2 opacity-0 duration-150'
+						: 'translate-x-0 opacity-100 duration-200',
+				)}
+			>
+				{@render aside()}
+			</div>
 		</div>
 	{/if}
 </div>
@@ -179,9 +195,7 @@
 		closeLabel={labels.closeSidebar}
 		returnFocusTo={sidebarTrigger}
 	>
-		{#if sidebarOpen}
-			{@render sidebar()}
-		{/if}
+		{@render sidebar()}
 	</ShellDrawer>
 {/if}
 
@@ -193,8 +207,6 @@
 		closeLabel={labels.closeAside}
 		returnFocusTo={asideTrigger}
 	>
-		{#if asideOpen}
-			{@render aside()}
-		{/if}
+		{@render aside()}
 	</ShellDrawer>
 {/if}
