@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
-use tauri::{AppHandle, Manager, Runtime};
+#[cfg(not(test))]
+use tauri::Manager;
+use tauri::{AppHandle, Runtime};
 
 /// Subdirectory used for the sandboxed equivalent of `app_data_dir`.
 const DATA_SUBPATH: &str = "data";
@@ -103,27 +105,95 @@ pub fn multi_instance_allowed() -> bool {
     cfg!(debug_assertions) && sandbox_root().is_some()
 }
 
-/// Returns the sandboxed `app_data_dir` when a sandbox root is configured,
-/// otherwise delegates to the normal Tauri path.
-pub fn test_data_dir<R: Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
-    match sandbox_root() {
-        Some(root) => resolve_sandboxed_path(&root, DATA_SUBPATH),
-        None => handle
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("Failed to get app data dir: {}", e)),
+/// Root used by `test_data_dir`/`test_local_data_dir` in `cargo test` builds when no
+/// `PACTO_TEST_SANDBOX_ROOT` is configured. `tauri::test::mock_app()` builds its
+/// `Context` with an empty `identifier` (`tauri::test::mock_context`), so the real
+/// `handle.path().app_data_dir()` this would otherwise fall through to resolves to
+/// the bare OS Application Support directory itself -- one level above every real
+/// `io.pacto` profile -- and every `#[cfg(test)]` module that creates a profile dir
+/// there via `mock_app()` litters it with fake `npub1…` directories that nothing
+/// ever sweeps (issue #347). Redirecting the unset-root fallback to a disposable
+/// OS temp directory, only inside test builds, keeps that litter out of the real
+/// filesystem without changing production path resolution at all.
+/// `OnceLock`, not `LazyLock`: `remove_unit_test_fallback_root_at_exit` needs a
+/// non-forcing `get()` so a process that never touched the fallback root exits
+/// without creating (or trying to remove) anything.
+#[cfg(test)]
+static UNIT_TEST_FALLBACK_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+#[cfg(test)]
+fn unit_test_fallback_root() -> PathBuf {
+    UNIT_TEST_FALLBACK_ROOT
+        .get_or_init(|| {
+            let dir = std::env::temp_dir().join("pacto-cargo-test-fallback");
+            // Best-effort: start every test binary run from a clean slate rather
+            // than accumulating npub directories left by a run that was killed
+            // before its own atexit handler below ran.
+            let _ = std::fs::remove_dir_all(&dir);
+            let _ = std::fs::create_dir_all(&dir);
+            // SAFETY: `remove_unit_test_fallback_root_at_exit` is a plain
+            // `extern "C" fn` with no captured state; libc runs every
+            // registered handler once, at normal process exit, after every
+            // test in this binary has finished -- so a local `cargo test` run
+            // leaves nothing in the OS temp directory rather than waiting on
+            // the next run's wipe-on-first-use above or the OS's own
+            // temp-file reclamation.
+            unsafe { libc::atexit(remove_unit_test_fallback_root_at_exit) };
+            dir
+        })
+        .clone()
+}
+
+#[cfg(test)]
+extern "C" fn remove_unit_test_fallback_root_at_exit() {
+    if let Some(dir) = UNIT_TEST_FALLBACK_ROOT.get() {
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
 
-/// Returns the sandboxed `app_local_data_dir` when a sandbox root is configured,
-/// otherwise delegates to the normal Tauri path.
+/// Returns the sandboxed `app_data_dir` when a sandbox root is configured.
+/// Otherwise: in `cargo test` builds, a disposable OS temp directory (see
+/// `unit_test_fallback_root`); in the real app, delegates to the normal Tauri path.
+pub fn test_data_dir<R: Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
+    match sandbox_root() {
+        Some(root) => resolve_sandboxed_path(&root, DATA_SUBPATH),
+        None => {
+            #[cfg(test)]
+            {
+                let _ = handle;
+                Ok(unit_test_fallback_root().join(DATA_SUBPATH))
+            }
+            #[cfg(not(test))]
+            {
+                handle
+                    .path()
+                    .app_data_dir()
+                    .map_err(|e| format!("Failed to get app data dir: {}", e))
+            }
+        }
+    }
+}
+
+/// Returns the sandboxed `app_local_data_dir` when a sandbox root is configured.
+/// Otherwise: in `cargo test` builds, a disposable OS temp directory (see
+/// `unit_test_fallback_root`); in the real app, delegates to the normal Tauri path.
 pub fn test_local_data_dir<R: Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
     match sandbox_root() {
         Some(root) => resolve_sandboxed_path(&root, LOCAL_SUBPATH),
-        None => handle
-            .path()
-            .app_local_data_dir()
-            .map_err(|e| format!("Failed to get app local data dir: {}", e)),
+        None => {
+            #[cfg(test)]
+            {
+                let _ = handle;
+                Ok(unit_test_fallback_root().join(LOCAL_SUBPATH))
+            }
+            #[cfg(not(test))]
+            {
+                handle
+                    .path()
+                    .app_local_data_dir()
+                    .map_err(|e| format!("Failed to get app local data dir: {}", e))
+            }
+        }
     }
 }
 
