@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
-import { recordJoinRequestSent } from '../commons/commons-join-request';
+import {
+  getJoinRequestRecord,
+  isJoinRequestRateLimited,
+  recordJoinRequestSent,
+} from '../commons/commons-join-request';
 import { formatJoinResponseDm } from './squad-join-mls';
 
 vi.mock('../api/nostr', () => ({
@@ -99,5 +103,19 @@ describe('join request finalization', () => {
 
     loadPendingApprovedJoins();
     expect(get(pendingApprovedJoins)[0]?.requestId).toBe('request-1');
+  });
+
+  it('clears requester cooldown on reject so a later re-request is allowed', async () => {
+    expect(isJoinRequestRateLimited('squad-1', 100)).toBe(true);
+    const rejected = formatJoinResponseDm({
+      squadId: 'squad-1',
+      squadName: 'Pirates',
+      requestId: 'request-1',
+      status: 'rejected',
+    });
+    await handleJoinInboxResponseDm(rejected, 'npub1joininbox');
+    expect(getJoinRequestRecord('squad-1')).toBeNull();
+    expect(isJoinRequestRateLimited('squad-1', 100)).toBe(false);
+    expect(get(pendingApprovedJoins)).toEqual([]);
   });
 });

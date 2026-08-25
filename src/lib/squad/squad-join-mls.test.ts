@@ -294,11 +294,17 @@ describe('squad-join-mls wire', () => {
 });
 
 describe('isExpectedNonHolderJoinInboxSyncError', () => {
-  it('treats holder/secret errors as expected for non-holders', () => {
+  it('silences true non-holder denials but surfaces init/stale for holders', () => {
     expect(isExpectedNonHolderJoinInboxSyncError('Only Join inbox holders can perform this action')).toBe(true);
-    expect(isExpectedNonHolderJoinInboxSyncError('Local Join inbox key is stale')).toBe(true);
-    expect(isExpectedNonHolderJoinInboxSyncError('Join inbox not initialized')).toBe(true);
-    expect(isExpectedNonHolderJoinInboxSyncError('stale keypackage')).toBe(true);
+    expect(isExpectedNonHolderJoinInboxSyncError('No local Join inbox key (not a holder on this device)')).toBe(
+      true
+    );
+    expect(isExpectedNonHolderJoinInboxSyncError('Local Join inbox key is stale — ask a holder to re-share')).toBe(
+      false
+    );
+    expect(isExpectedNonHolderJoinInboxSyncError('Join inbox not initialized — open Join inbox settings first')).toBe(
+      false
+    );
     expect(isExpectedNonHolderJoinInboxSyncError('MLS offline')).toBe(false);
   });
 });

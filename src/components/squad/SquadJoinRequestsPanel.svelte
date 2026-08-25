@@ -119,6 +119,31 @@
 
   async function handleAccept(request: CommonsJoinRequestDto) {
     if (!canAct || anyRespondInFlight || isJoinRequestRespondInFlight(request.eventId)) return;
+
+    // Admit first so Welcome is in flight before the requester is told "accepted".
+    enqueuePendingAdmit({
+      kind: 'join',
+      parentId: squad.id,
+      memberNpub: request.requesterNpub,
+      requestId: request.eventId,
+    });
+    const admitResult = await admitMemberToSquad({
+      parent: squad,
+      memberNpub: request.requesterNpub,
+    });
+    if (admitResult.ok) {
+      clearPendingAdmitForMember(squad.id, request.requesterNpub);
+    } else if (admitResult.error) {
+      enqueuePendingAdmit({
+        kind: 'join',
+        parentId: squad.id,
+        memberNpub: request.requesterNpub,
+        requestId: request.eventId,
+        lastError: admitResult.error,
+        lastAttemptAt: Date.now(),
+      });
+    }
+
     const respondResult = await respondToMlsJoinRequest({
       requestId: request.eventId,
       squadId: request.squadId,
@@ -130,33 +155,13 @@
     }
 
     removePendingJoinRequest(squad.id, request.eventId);
-    enqueuePendingAdmit({
-      kind: 'join',
-      parentId: squad.id,
-      memberNpub: request.requesterNpub,
-      requestId: request.eventId,
-    });
-    showToast(tFn('squad.joinRequests.approvedPendingToast'));
-
-    const admitResult = await admitMemberToSquad({
-      parent: squad,
-      memberNpub: request.requesterNpub,
-    });
     if (admitResult.ok) {
-      clearPendingAdmitForMember(squad.id, request.requesterNpub);
       const name =
         getProfileDisplayName($profiles[request.requesterNpub]) ||
         tFn('squad.joinRequests.memberFallback');
       showToast(tFn('squad.joinRequests.joinToast', { values: { name } }));
-    } else if (admitResult.error) {
-      enqueuePendingAdmit({
-        kind: 'join',
-        parentId: squad.id,
-        memberNpub: request.requesterNpub,
-        requestId: request.eventId,
-        lastError: admitResult.error,
-        lastAttemptAt: Date.now(),
-      });
+    } else {
+      showToast(tFn('squad.joinRequests.approvedPendingToast'));
     }
   }
 

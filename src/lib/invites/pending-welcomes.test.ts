@@ -56,6 +56,7 @@ import {
   offeredWelcomeFromPendingMls,
   offeredWelcomes,
   recordDeclinedWelcomeGroupId,
+  clearDeclinedWelcomeGroupId,
   type OfferedWelcome,
   type OfferedWelcomeInputs,
 } from './pending-welcomes';
@@ -303,6 +304,12 @@ describe('recordDeclinedWelcomeGroupId', () => {
   it('appends a group id to the declinedWelcomeGroupIds store', () => {
     recordDeclinedWelcomeGroupId('group-1');
     expect(get(declinedWelcomeGroupIds)).toEqual(['group-1']);
+  });
+
+  it('clearDeclinedWelcomeGroupId removes a prior decline', () => {
+    recordDeclinedWelcomeGroupId('group-1');
+    clearDeclinedWelcomeGroupId('group-1');
+    expect(get(declinedWelcomeGroupIds)).toEqual([]);
   });
 
   it('is idempotent for the exact same id', () => {

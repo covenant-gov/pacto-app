@@ -9,12 +9,9 @@ vi.mock('../parent-navbar', () => ({
   loadMembersForParent: vi.fn(),
 }));
 
-vi.mock('../pacto-app-inbox', () => ({
-  sendSquadInviteDm: vi.fn(),
-}));
-
-vi.mock('../squad/squad-outbound-invite', () => ({
-  publishOutboundInviteAnnounce: vi.fn(),
+vi.mock('../squad/consent-first-invite', () => ({
+  resolveAdmitterNpubs: vi.fn(),
+  sendConsentFirstSquadInvite: vi.fn(),
 }));
 
 vi.mock('../../stores/auth', () => ({
@@ -25,10 +22,11 @@ vi.mock('../../stores/squads', () => ({
   squads: { set: vi.fn(), subscribe: vi.fn(), update: vi.fn() },
 }));
 
-import { getMlsGroupMembers } from '../api/nostr';
 import { getAnnouncementsChannel, loadMembersForParent } from '../parent-navbar';
-import { sendSquadInviteDm } from '../pacto-app-inbox';
-import { publishOutboundInviteAnnounce } from '../squad/squad-outbound-invite';
+import {
+  resolveAdmitterNpubs,
+  sendConsentFirstSquadInvite,
+} from '../squad/consent-first-invite';
 import { currentUser } from '../../stores/auth';
 import {
   loadInviteCandidateNpubs,
@@ -81,14 +79,11 @@ describe('loadInviteCandidateNpubs', () => {
 
 describe('runInviteMembersToParent', () => {
   beforeEach(() => {
-    vi.mocked(sendSquadInviteDm).mockReset().mockResolvedValue(true);
-    vi.mocked(publishOutboundInviteAnnounce).mockReset().mockResolvedValue(true);
-    vi.mocked(getMlsGroupMembers).mockReset().mockResolvedValue({
-      members: ['npub-me', 'npub-member'],
-      admins: [],
-      group_id: 'g-announce',
-      pending_welcomes: [],
+    vi.mocked(sendConsentFirstSquadInvite).mockReset().mockResolvedValue({
+      ok: true,
+      inviteId: 'inv-1',
     });
+    vi.mocked(resolveAdmitterNpubs).mockReset().mockResolvedValue(['npub-me', 'npub-member']);
     vi.mocked(getAnnouncementsChannel).mockReset().mockReturnValue({
       name: 'announcements',
       groupId: 'g-announce',
@@ -100,7 +95,7 @@ describe('runInviteMembersToParent', () => {
     vi.restoreAllMocks();
   });
 
-  it('sends inbox invite + outbound announce without MLS-adding', async () => {
+  it('delegates to consent-first invite helper without MLS-adding', async () => {
     setCurrentUser('npub-me');
     const onComplete = vi.fn();
     const onErrorBanner = vi.fn();
@@ -116,28 +111,19 @@ describe('runInviteMembersToParent', () => {
       expect(onComplete).toHaveBeenCalled();
     });
 
-    expect(publishOutboundInviteAnnounce).toHaveBeenCalledTimes(2);
-    expect(sendSquadInviteDm).toHaveBeenCalledTimes(2);
-    expect(sendSquadInviteDm).toHaveBeenCalledWith(
-      'npub-a',
-      expect.objectContaining({
-        squadName: 'Alpha',
-        groupId: 'g-announce',
-        inviteId: expect.any(String),
-        admitterNpubs: expect.arrayContaining(['npub-me', 'npub-member']),
-        iconUrl: 'https://cdn.example/a.jpg',
-      }),
-      'npub-me'
-    );
+    expect(sendConsentFirstSquadInvite).toHaveBeenCalledTimes(2);
+    expect(sendConsentFirstSquadInvite).toHaveBeenCalledWith(parent, 'npub-a', {
+      admitterNpubs: ['npub-me', 'npub-member'],
+    });
     expect(onErrorBanner).not.toHaveBeenCalled();
     expect(onComplete).toHaveBeenCalledWith(['npub-a', 'npub-b']);
   });
 
-  it('shows error banner when squad invite DM fails', async () => {
+  it('shows error banner when consent-first invite fails', async () => {
     setCurrentUser('npub-me');
-    vi.mocked(sendSquadInviteDm)
-      .mockRejectedValueOnce(new Error('dm failed'))
-      .mockResolvedValue(true);
+    vi.mocked(sendConsentFirstSquadInvite)
+      .mockResolvedValueOnce({ ok: false, error: 'dm failed' })
+      .mockResolvedValue({ ok: true, inviteId: 'inv-2' });
     const onComplete = vi.fn();
     const onErrorBanner = vi.fn();
 

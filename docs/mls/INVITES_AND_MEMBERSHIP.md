@@ -50,7 +50,9 @@ Persist-before-delivery is deliberate: by the time `create_group` reaches the We
 
 A resend skips the store-reset KeyPackage-freshness gate (`resolve_fresh_keypackage` / `keypackage_generation_advanced`) that a genuine "Restore access" call still applies. That gate exists to reject a stale, pre-reset KeyPackage after a member wiped and re-created their MLS store — but a pending member never reset anything, so gating a resend on rotation would reject it forever. Resend still **fetches the latest** KeyPackage: the one recorded at create may already have been consumed.
 
-**Squad layer:** squad-create flows exclude pending npubs from the `squad_invite` DM loop so the invite card does not advertise a Welcome that was never published. A successful **Resend invite** on the announcements group then sends that DM (`restoreMlsMemberAccess`). Channel create still sends the under-the-hood `channel_in_squad` notify to pending npubs — a missing welcome makes accept a no-op, and the cached DM names the channel once the resend lands.
+**Squad layer (consent-first):** Creating a squad builds a **creator-only** announcements MLS group (`create_group_chat` with empty `member_ids`). Selected contacts are invited afterward via `sendConsentFirstSquadInvite` (`inviteId` + `admitterNpubs` + `squad_outbound_invite` announce + DM). MLS-add runs only after the invitee Accepts (admit pipeline). The Join inbox Nostr identity is never an MLS leaf.
+
+**Resend:** After admit, if Welcome delivery fails, Members shows a pending badge. **Resend invite** remove-then-re-adds (Restore) and sends a fresh consent-first DM so Accept still works if the Welcome is late. Channel create still sends the under-the-hood `channel_in_squad` notify to selected members.
 
 **Partial-failure state:** if a resend's remove commits but the re-add fails, the member ends up outside the group while still flagged pending in `pending_welcomes`; the panel keeps them visible so the admin can retry rather than silently dropping them.
 

@@ -4,7 +4,6 @@ import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import { createDefaultParentChannels, getAnnouncementsChannel } from './parent-navbar';
 import { getInvokeErrorMessage, friendlyMessage } from './utils/tauri-errors';
-import { sendSquadInviteDm } from './pacto-app-inbox';
 import { activateSquadHub } from './squad-hub-nav';
 import { currentUser } from '../stores/auth';
 import {
@@ -34,7 +33,7 @@ import { persistCreatedSquad } from './squad/squad-catalog';
 import { appendSquadNavId } from './squad/squad-nav-order';
 import { initJoinInbox } from './squad/join-inbox';
 import { applySquadCreateNetwork } from './squad/squad-create-network';
-import { warnSkippedMembers, skippedMembersNotice, warnPendingInvites, pendingInvitesNotice } from './squad/skipped-members';
+import { sendConsentFirstSquadInvite } from './squad/consent-first-invite';
 import type { PairedSquads } from './squad-pair';
 
 function resolvePublicSquadBroadcastTarget(squadId: string) {
@@ -186,7 +185,8 @@ export function runSquadPairCreateFlow(
   void (async () => {
     let createdGroupId: string | null = null;
     try {
-      const { parentId, channels, skippedMembers, pendingInvites } = await createDefaultParentChannels(memberNpubs);
+      // Creator-only MLS group; selected contacts are invited consent-first after create.
+      const { parentId, channels } = await createDefaultParentChannels([]);
       const groupId = parentId;
       createdGroupId = groupId;
       const paired = buildPairedSquads(anchor, partner);
@@ -216,13 +216,8 @@ export function runSquadPairCreateFlow(
         return next;
       });
       activateSquadHub(groupId);
-      const skippedNotice = skippedMembersNotice(skippedMembers);
-      const pendingNotice = pendingInvitesNotice(pendingInvites);
-      if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
-      if (pendingInvites.length > 0) warnPendingInvites(pendingInvites);
-      const readyNotice = [skippedNotice, pendingNotice].filter(Boolean).join(' ');
       pendingReadyToast.set({
-        text: readyNotice || get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
+        text: get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
         goTo: {
           type: 'squad',
           name,
@@ -232,23 +227,10 @@ export function runSquadPairCreateFlow(
             channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
         },
       });
-      // Pending npubs have no published Welcome yet, so the card can't be accepted; the
-      // creator's resend is the recovery path.
-      const excludedNpubs = new Set([
-        ...skippedMembers.map((s) => s.npub),
-        ...pendingInvites.map((p) => p.npub),
-      ]);
-      const myNpub = get(currentUser)?.npub;
       for (const npub of memberNpubs) {
-        if (excludedNpubs.has(npub)) continue;
-        try {
-          await sendSquadInviteDm(
-            npub,
-            { squadName: name, groupId, kind: 'squad-pair', pairedSquads: paired, iconUrl },
-            myNpub
-          );
-        } catch (e) {
-          console.warn('[squad-pair-create] invite DM failed for', npub.slice(0, 20) + '…', e);
+        const result = await sendConsentFirstSquadInvite(finalized, npub);
+        if (!result.ok) {
+          console.warn('[squad-pair-create] consent-first invite failed for', npub.slice(0, 20) + '…', result.error);
         }
       }
       schedulePublicSquadCreateBroadcast(groupId, () => resolvePublicSquadBroadcastTarget(groupId));
@@ -288,7 +270,8 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
 }
 
 async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: string[]): Promise<void> {
-  const { parentId: gid, channels, skippedMembers, pendingInvites } = await createDefaultParentChannels(memberIds);
+  // Creator-only MLS group; selected contacts are invited consent-first after create.
+  const { parentId: gid, channels } = await createDefaultParentChannels([]);
 
   // Discard while this create was in flight: the placeholder and its pending members are gone,
   // so persisting now would resurrect the squad the user just threw away.
@@ -326,15 +309,8 @@ async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: strin
       channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
     return hubName ? { ...next, [gid]: hubName } : next;
   });
-  const skippedNotice = skippedMembersNotice(skippedMembers);
-  const pendingNotice = pendingInvitesNotice(pendingInvites);
-  if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
-  if (pendingInvites.length > 0) warnPendingInvites(pendingInvites);
-  const readyNotice = [skippedNotice, pendingNotice].filter(Boolean).join(' ');
   pendingReadyToast.set({
-    text:
-      readyNotice ||
-      get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: parent.name } }),
+    text: get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: parent.name } }),
     goTo: {
       type: 'squad',
       name: parent.name,
@@ -360,26 +336,10 @@ async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: strin
     delete next[parent.id];
     return next;
   });
-  // Pending npubs have no published Welcome yet, so the card can't be accepted; the
-  // creator's resend is the recovery path.
-  const excludedNpubs = new Set([
-    ...skippedMembers.map((s) => s.npub),
-    ...pendingInvites.map((p) => p.npub),
-  ]);
-  const pairing =
-    parent.kind === 'squad-pair' && parent.pairedSquads
-      ? { kind: 'squad-pair' as const, pairedSquads: parent.pairedSquads }
-      : {};
   for (const npub of memberIds) {
-    if (excludedNpubs.has(npub)) continue;
-    try {
-      await sendSquadInviteDm(
-        npub,
-        { squadName: parent.name, groupId: gid, iconUrl: parent.iconUrl, ...pairing },
-        myNpub
-      );
-    } catch (e) {
-      console.warn('[squad-pair-create] retry invite DM failed for', npub.slice(0, 20) + '…', e);
+    const result = await sendConsentFirstSquadInvite(finalized, npub);
+    if (!result.ok) {
+      console.warn('[squad-pair-create] retry consent-first invite failed for', npub.slice(0, 20) + '…', result.error);
     }
   }
   schedulePublicSquadCreateBroadcast(gid, () => resolvePublicSquadBroadcastTarget(gid));

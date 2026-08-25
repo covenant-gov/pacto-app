@@ -3,32 +3,15 @@
  * Backend `add_member_device` classifies that as Restore (remove-then-re-add).
  */
 
-import { get } from 'svelte/store';
 import { inviteMemberToGroup } from '../api/nostr';
-import { sendSquadInviteDm } from '../pacto-app-inbox';
 import { bumpMembershipVersion } from '../../stores/mls-chat';
 import { refreshMlsGroupMembers } from '../../stores/mls-group-members';
-import { currentUser } from '../../stores/auth';
 import { squads } from '../../stores/squads';
+import { get } from 'svelte/store';
+import { sendConsentFirstSquadInvite } from '../squad/consent-first-invite';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
 
 export type RestoreMlsAccessResult = { ok: true } | { ok: false; error: string };
-
-async function sendSquadInviteDmAfterResend(groupId: string, memberNpub: string): Promise<void> {
-  const squad = get(squads).find((s) => s.id === groupId);
-  if (!squad) return;
-  await sendSquadInviteDm(
-    memberNpub,
-    {
-      squadName: squad.name,
-      groupId: squad.id,
-      kind: squad.kind,
-      pairedSquads: squad.pairedSquads,
-      iconUrl: squad.iconUrl,
-    },
-    get(currentUser)?.npub,
-  );
-}
 
 export async function restoreMlsMemberAccess(
   groupId: string,
@@ -45,10 +28,16 @@ export async function restoreMlsMemberAccess(
     bumpMembershipVersion(gid);
     await refreshMlsGroupMembers(gid).catch(() => {});
     if (isResend) {
-      try {
-        await sendSquadInviteDmAfterResend(gid, npub);
-      } catch (e) {
-        console.warn('[mls] squad invite DM after resend failed for', npub.slice(0, 20) + '…', e);
+      const squad = get(squads).find((s) => s.id === gid);
+      if (squad) {
+        const result = await sendConsentFirstSquadInvite(squad, npub);
+        if (!result.ok) {
+          console.warn(
+            '[mls] consent-first invite after resend failed for',
+            npub.slice(0, 20) + '…',
+            result.error,
+          );
+        }
       }
     }
     return { ok: true };
