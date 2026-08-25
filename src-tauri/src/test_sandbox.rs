@@ -668,6 +668,38 @@ mod tests {
     }
 
     #[test]
+    fn unsandboxed_test_dirs_resolve_under_the_private_fallback_root() {
+        let _lock = env_lock();
+        let _root = EnvGuard::unset(SANDBOX_ROOT_VAR);
+        let handle = tauri::test::mock_app().handle().clone();
+
+        let fallback = unit_test_fallback_root();
+        let data_dir = test_data_dir(&handle).unwrap();
+        let local_dir = test_local_data_dir(&handle).unwrap();
+
+        assert!(
+            data_dir.starts_with(&fallback),
+            "expected test_data_dir to resolve under the private fallback root, got: {}",
+            data_dir.display()
+        );
+        assert!(
+            local_dir.starts_with(&fallback),
+            "expected test_local_data_dir to resolve under the private fallback root, got: {}",
+            local_dir.display()
+        );
+        assert_ne!(
+            data_dir, local_dir,
+            "data and local subpaths must not collide with each other"
+        );
+
+        // A repeat call in the same process must resolve to the identical
+        // directory -- callers like account_manager's migrate/list pair
+        // write and then scan the same root within one test process.
+        assert_eq!(test_data_dir(&handle).unwrap(), data_dir);
+        assert_eq!(unit_test_fallback_root(), fallback);
+    }
+
+    #[test]
     fn enforce_dev_world_root_rejects_dotdot_root() {
         let _lock = env_lock();
         let base = temp_test_dir("enforce-dotdot-base");

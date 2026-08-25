@@ -218,7 +218,8 @@ jobs:
           workspaces: src-tauri
 
       - name: Install cargo-nextest
-        run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+        # Pinned to match Dockerfile.ci's ARG NEXTEST_VERSION -- keep both in sync.
+        run: curl -LsSf https://get.nexte.st/0.9.143/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
 
       - name: Rust unit tests
         working-directory: src-tauri
@@ -260,7 +261,8 @@ jobs:
           workspaces: src-tauri
 
       - name: Install cargo-nextest
-        run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+        # Pinned to match Dockerfile.ci's ARG NEXTEST_VERSION -- keep both in sync.
+        run: curl -LsSf https://get.nexte.st/0.9.143/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
 
       - name: Harness unit tests
         working-directory: src-tauri

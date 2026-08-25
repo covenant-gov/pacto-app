@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseJUnitTimings, parseTotalSeconds, formatSummary } from './nextest-slow-summary.mjs';
@@ -25,6 +28,16 @@ describe('parseJUnitTimings', () => {
 
   it('returns an empty array when no testcases are present', () => {
     assert.deepEqual(parseJUnitTimings('<testsuites></testsuites>'), []);
+  });
+});
+
+describe('main() CLI entrypoint', () => {
+  it('exits 0 and skips the summary when the JUnit report is missing', () => {
+    const script = fileURLToPath(new URL('./nextest-slow-summary.mjs', import.meta.url));
+    const output = execFileSync(process.execPath, [script, '/tmp/does-not-exist-junit.xml'], {
+      encoding: 'utf8',
+    });
+    assert.match(output, /No JUnit report at .*does-not-exist-junit\.xml; skipping timing summary\./);
   });
 });
 

@@ -214,7 +214,7 @@ cd src-tauri && cargo test
 ## Testing & QA
 
 - **Frontend tests:** Vitest 3 with `environment: 'node'` and `include: ['src/**/*.test.ts']`. Tests are co-located with source code and exercise pure functions, Svelte stores, and Tauri command shapes. No component rendering or DOM tests are present.
-- **Backend tests:** `cargo test` locally, `cargo nextest run` in CI (same tests, either runner works locally — install via `cargo install cargo-nextest --locked` for CI parity). Tests are co-located in `#[cfg(test)]` modules inside source files. They use in-memory SQLite and deterministic golden vectors.
+- **Backend tests:** `cargo test` locally, `cargo nextest run` in CI (same tests, either runner works locally — CI installs a pinned prebuilt binary, `curl -LsSf https://get.nexte.st/0.9.143/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"`; `cargo install cargo-nextest --locked` also works locally but does not pin to CI's exact version). Tests are co-located in `#[cfg(test)]` modules inside source files. They use in-memory SQLite and deterministic golden vectors.
 - **Common test patterns:**
   - Mock Tauri `invoke` with `vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))`.
   - Mock `localStorage`/`sessionStorage` with `vi.stubGlobal` / `vi.unstubAllGlobals`.

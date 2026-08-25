@@ -2,7 +2,7 @@
 // Parses a cargo-nextest JUnit report and renders a "slowest tests" table.
 // Used in CI (see .github/workflows/ci.yaml) to make backend test-suite
 // performance visible per run without a separate analytics service.
-import { readFileSync, appendFileSync } from 'node:fs';
+import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 /**
@@ -58,6 +58,11 @@ async function main() {
   if (!junitPath) {
     console.error('usage: nextest-slow-summary.mjs <junit.xml> [title]');
     process.exit(1);
+  }
+
+  if (!existsSync(junitPath)) {
+    console.log(`No JUnit report at ${junitPath}; skipping timing summary.`);
+    return;
   }
 
   const xml = readFileSync(junitPath, 'utf8');

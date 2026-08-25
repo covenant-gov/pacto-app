@@ -54,15 +54,19 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 
 # 3. cargo-nextest (parallel test runner; see .config/nextest.toml and
 # .github/workflows/ci.yaml). Prebuilt binary, matches the runner's glibc.
+# Pinned (not `latest`) so an upstream release can't silently change test
+# behavior or JUnit output on a PR that didn't touch this file; keep in
+# sync with the version in .github/workflows/ci.yaml's install steps.
 # ci.yaml still installs it per-run too, so a PR landing before this image
 # is rebuilt (ci-image.yaml only rebuilds on push to main) isn't broken;
 # that step is redundant, not required, once this layer ships.
+ARG NEXTEST_VERSION=0.9.143
 RUN NEXTEST_PLATFORM=$(case "$(dpkg --print-architecture)" in \
         amd64) echo linux ;; \
         arm64) echo linux-arm ;; \
         *) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac) \
-    && curl -LsSf "https://get.nexte.st/latest/${NEXTEST_PLATFORM}" | tar zxf - -C "${CARGO_HOME}/bin" \
+    && curl -LsSf "https://get.nexte.st/${NEXTEST_VERSION}/${NEXTEST_PLATFORM}" | tar zxf - -C "${CARGO_HOME}/bin" \
     && cargo nextest --version
 
 # 4. Node.js LTS + pnpm (match .github/workflows/ci.yaml versions)
