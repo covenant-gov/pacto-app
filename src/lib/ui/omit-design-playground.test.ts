@@ -6,7 +6,7 @@ import {
 	hideDesignRoutes,
 	restoreDesignRoutes,
 	viteIsProductionBuild,
-} from '../../../scripts/omit-design-playground.ts';
+} from '../../../scripts/omit-design-playground';
 
 describe('omit-design-playground', () => {
 	afterEach(() => {
