@@ -150,5 +150,12 @@ describe('theme token contract', () => {
       expect(contrastRatio(tokenHex(css, '--notif'), tokenHex(css, '--on-notif'))).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(tokenHex(css, '--success'), tokenHex(css, '--on-success'))).toBeGreaterThanOrEqual(4.5);
     });
+
+    it(`${id} keeps readable active channel fills`, () => {
+      const css = read(join(themesDir, `${id}.css`));
+      expect(
+        contrastRatio(tokenHex(css, '--channel-active-bg'), tokenHex(css, '--channel-active-fg')),
+      ).toBeGreaterThanOrEqual(4.5);
+    });
   }
 });

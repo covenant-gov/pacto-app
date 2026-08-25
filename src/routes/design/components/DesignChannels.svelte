@@ -89,6 +89,7 @@
 		aria-current={isChannelActive(channel) ? 'true' : undefined}
 		aria-label={channelAriaLabel(channel)}
 		active={isChannelActive(channel)}
+		data-active={isChannelActive(channel) ? 'true' : undefined}
 		unread={Boolean(channel.unread)}
 	>
 		{#if channel.id === 'announcements'}

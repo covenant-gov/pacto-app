@@ -56,6 +56,11 @@ describe('theme', () => {
     );
   });
 
+  it('names paired light/dark skins as {theme} Light and {theme} Dark', () => {
+    expect(THEME_OPTIONS.find((o) => o.value === 'techno')?.label).toBe('Techno Light');
+    expect(THEME_OPTIONS.find((o) => o.value === 'dark-techno')?.label).toBe('Techno Dark');
+  });
+
   it('stores and applies a valid theme', () => {
     setTheme('union');
     expect(get(theme)).toBe('union');
