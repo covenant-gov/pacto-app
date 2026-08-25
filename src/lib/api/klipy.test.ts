@@ -110,6 +110,17 @@ describe('klipy api wrappers', () => {
       expect(store.get('pacto_klipy_gifs_disclosure_accepted_v1_npub1test')).toBe('1');
     });
 
+    it('clears the pending key after migrating it onto the npub key', () => {
+      setCurrentNpubForPersistence(null);
+      acceptGifsDisclosure();
+      expect(store.get('pacto_klipy_gifs_disclosure_accepted_v1_pending')).toBe('1');
+
+      setCurrentNpubForPersistence('npub1test');
+      expect(isGifsDisclosureAccepted()).toBe(true);
+      expect(store.get('pacto_klipy_gifs_disclosure_accepted_v1_pending')).toBeUndefined();
+      expect(store.get('pacto_klipy_gifs_disclosure_accepted_v1_npub1test')).toBe('1');
+    });
+
     it('klipyIsConfigured is not gated: it is a local check, not a Klipy request', async () => {
       mockedInvoke.mockResolvedValueOnce(true);
       const result = await klipyIsConfigured();

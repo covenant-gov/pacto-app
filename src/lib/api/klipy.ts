@@ -42,13 +42,24 @@ function writeDisclosureFlag(key: string): void {
   }
 }
 
+function clearDisclosureFlag(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* storage unavailable; nothing to clean up */
+  }
+}
+
 /** Whether the current account has accepted the one-time Klipy disclosure. Npub-scoped, with a sandbox fallback. */
 export function isGifsDisclosureAccepted(): boolean {
   if (typeof localStorage === 'undefined') return false;
   const key = persistenceKey(DISCLOSURE_ACCEPTED_PREFIX);
   if (key && readDisclosureFlag(key)) return true;
   const fallback = readDisclosureFlag(DISCLOSURE_FALLBACK_KEY);
-  if (fallback && key) writeDisclosureFlag(key);
+  if (fallback && key) {
+    writeDisclosureFlag(key);
+    clearDisclosureFlag(DISCLOSURE_FALLBACK_KEY);
+  }
   return fallback;
 }
 

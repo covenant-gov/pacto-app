@@ -32,6 +32,7 @@ import {
   type PendingWelcomeFinalization,
 } from '../../stores/pending-welcome-finalization';
 import { dmError } from '../utils/dm-debug';
+import { requireBackupVerified } from '../../stores/backup-verification';
 import {
   finalizeSquadAfterAnnouncementsWelcome,
   sameMlsGroupId,
@@ -74,7 +75,6 @@ export interface OfferedWelcomeInputs {
 /** Max pending-welcome cards shown at once (newest first). Recovery rows are not capped. */
 export const MAX_OFFERED_WELCOMES = 20;
 
-/** Pending welcomes still awaiting a decision, newest-first order preserved. */
 /** Map an engine pending welcome into the card/Catch-up Accept payload. */
 export function offeredWelcomeFromPendingMls(welcome: PendingMlsWelcome): OfferedWelcome {
   const groupId = welcome.nostr_group_id?.trim() || welcome.nostr_group_id;
@@ -164,6 +164,7 @@ export function offeredWelcomeFromFinalization(row: PendingWelcomeFinalization):
  * a durable finalization record keeps the card retryable without re-accepting.
  */
 export async function acceptOfferedWelcome(welcome: OfferedWelcome): Promise<void> {
+  if (!requireBackupVerified()) throw new Error('Backup verification required');
   const startedAs = get(currentNpubForPersistence);
   const alreadyAccepted = getPendingWelcomeFinalizationByGroupId(welcome.groupId);
   if (!alreadyAccepted) {

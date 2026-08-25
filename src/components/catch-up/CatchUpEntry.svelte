@@ -110,7 +110,7 @@
       type="button"
       class="catch-up-entry-accept"
       onclick={accept}
-      disabled={accepting}
+      disabled={accepting || !matchingWelcome}
     >
       {accepting ? $t('messaging.inviteCard.accepting') : $t('messaging.inviteCard.accept')}
     </button>

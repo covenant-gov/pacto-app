@@ -256,6 +256,10 @@ pub async fn set_pkey<R: Runtime>(handle: AppHandle<R>, pkey: String) -> Result<
         )
         .map_err(|e| format!("Failed to insert pkey: {}", e))?;
         crate::account_manager::return_db_connection(conn);
+        #[cfg(debug_assertions)]
+        {
+            let _ = crate::sandbox_handle::record_npub(&npub);
+        }
         maybe_mark_backup_verified_for_test_auth(&handle);
         return Ok(());
     }
@@ -276,6 +280,7 @@ pub async fn set_pkey<R: Runtime>(handle: AppHandle<R>, pkey: String) -> Result<
 /// Sandbox/demo accounts created through the UI still need `backup_verified`
 /// or squad-invite Accept is a silent no-op. `dev_login` already sets this;
 /// honor the same env flag after PIN save so Create Account matches.
+#[cfg(debug_assertions)]
 fn maybe_mark_backup_verified_for_test_auth<R: Runtime>(handle: &AppHandle<R>) {
     if std::env::var("PACTO_ALLOW_TEST_AUTH").unwrap_or_default() != "1" {
         return;
@@ -288,6 +293,9 @@ fn maybe_mark_backup_verified_for_test_auth<R: Runtime>(handle: &AppHandle<R>) {
         eprintln!("[db] could not mark backup_verified under test auth: {e}");
     }
 }
+
+#[cfg(not(debug_assertions))]
+fn maybe_mark_backup_verified_for_test_auth<R: Runtime>(_handle: &AppHandle<R>) {}
 
 #[command]
 pub fn get_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {

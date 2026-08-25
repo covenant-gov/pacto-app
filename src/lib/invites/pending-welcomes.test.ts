@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
 
 const acceptMlsWelcomeMock = vi.fn();
+const requireBackupVerifiedMock = vi.fn(() => true);
 const finalizeMock = vi.fn();
 
 // accept-invite.ts drags in squad-catalog / outbound-invite / backup-verification /
@@ -14,7 +15,7 @@ vi.mock('../squad/squad-catalog', () => ({
 }));
 
 vi.mock('../../stores/backup-verification', () => ({
-  requireBackupVerified: () => true,
+  requireBackupVerified: () => requireBackupVerifiedMock(),
 }));
 
 vi.mock('../utils/dm-debug', () => ({
@@ -326,6 +327,7 @@ describe('recordDeclinedWelcomeGroupId', () => {
 describe('acceptOfferedWelcome', () => {
   beforeEach(() => {
     acceptMlsWelcomeMock.mockReset().mockResolvedValue(true);
+    requireBackupVerifiedMock.mockReset().mockReturnValue(true);
     finalizeMock.mockReset().mockResolvedValue(undefined);
     resetPendingWelcomeFinalizations();
     setCurrentNpubForPersistence('npub1invitee');
@@ -392,5 +394,11 @@ describe('acceptOfferedWelcome', () => {
     expect(acceptMlsWelcomeMock).not.toHaveBeenCalled();
     expect(finalizeMock).toHaveBeenCalledOnce();
     expect(getPendingWelcomeFinalizationByGroupId('group-1')).toBeUndefined();
+  });
+
+  it('rejects and never calls acceptMlsWelcome when backup verification is not satisfied', async () => {
+    requireBackupVerifiedMock.mockReturnValueOnce(false);
+    await expect(acceptOfferedWelcome(offered())).rejects.toThrow('Backup verification required');
+    expect(acceptMlsWelcomeMock).not.toHaveBeenCalled();
   });
 });
