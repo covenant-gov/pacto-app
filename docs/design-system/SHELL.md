@@ -85,6 +85,13 @@ Rules for that work:
 - Fixtures live only under the design sandbox route.
 - Production data stays in stores / lib; adapter composes props.
 
+Sandbox-only encode (not production chrome):
+
+- Dither CSS and SVG masks live in `src/routes/design/` (`dither.css`, `dither/*.svg`). Do not put mask `url()`s in `src/app.css`.
+- Inherited custom properties that contain `url(...)` do **not** paint as `mask-image` on `::before` (Chromium/WebKit). Use a `data-dither-pattern` ancestor and literal `url()` in the matching rule.
+- Unread `RailTile` `variant="squad"` stays encoded until hover / focus-visible / `data-active`. The selected tile is decoded.
+- The sealed gate is a full overlay with a radial knockout and a page-color well. Do not wrap lock chrome in a card. PIN wells are floating; copy sits on `--text-primary`.
+
 ## Related
 
 - [docs/shell/LAYOUT.md](../shell/LAYOUT.md)

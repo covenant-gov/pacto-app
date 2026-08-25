@@ -10,6 +10,8 @@ Value tweaks inside an existing theme file do not need a decision. Renaming or r
 |----|-------|
 | [0001](./0001-theme-token-layers.md) | Theme token layers: `--brand` vs shadcn `--accent` |
 | [0002](./0002-shell-data-boundary.md) | Presentational shell vs fixtures vs production stores |
+| [0003](./0003-shell-role-notification-tokens.md) | Shell, role, and notification tokens |
+| [0004](./0004-identity-avatar-contrast.md) | Identity chips vs default person mark |
 
 ## How to add one
 

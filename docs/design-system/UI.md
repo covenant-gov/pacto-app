@@ -86,6 +86,8 @@ Default taste dials: **DESIGN_VARIANCE=8**, **MOTION_INTENSITY=6**, **VISUAL_DEN
 - MUST: Correct `transform-origin`.
 - Default intensity: dial **6** — fluid CSS transitions; not cinematic scroll theater.
 
+Which tool (CSS vs `svelte/motion` vs `svelte/transition`): [MOTION.md](./MOTION.md).
+
 ---
 
 ## Layout
@@ -171,7 +173,7 @@ Dial variance **8**: allow controlled asymmetry in feature layouts; collapse to 
 - NEVER: Generic purple-on-white / purple-to-indigo AI chrome.
 - NEVER: Neon outer glow stacks, pure `#000` fields, or glow-as-brand.
 - NEVER: Rounded-full pill spam for every chip and tab.
-- NEVER: Card wrappers when spacing or a divider is enough. Cards only when they hold an interaction.
+- NEVER: Card wrappers when spacing or a divider is enough. Cards only when they hold an interaction. Full-bleed overlays (lock / gate) use a radial well, not a boxed panel.
 - MUST: One job per section — one headline, short support copy.
 - MUST: Use existing Pacto tokens; do not invent a new neutral scale.
 - SHOULD: Nested radii — child ≤ parent.

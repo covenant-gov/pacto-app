@@ -11,6 +11,7 @@ Read this tree before changing themes, shell layout, or shared UI.
 | [THEMING.md](./THEMING.md) | Tokens, fonts, adding a skin |
 | [SHELL.md](./SHELL.md) | App regions, ownership, future shell |
 | [UI.md](./UI.md) | MUST / SHOULD / NEVER for interactions and taste |
+| [MOTION.md](./MOTION.md) | CSS vs `svelte/motion` vs `svelte/transition` (which tool) |
 | [decisions/](./decisions/) | Why token or shell contracts changed |
 | [reference/](./reference/) | Non-normative visual history |
 

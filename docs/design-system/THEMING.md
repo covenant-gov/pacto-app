@@ -79,6 +79,7 @@ Important:
 - Success text uses `--success`, not `--brand`.
 - Hover surfaces use `--bg-hover`. Static elevated surfaces use `--bg-elevated`.
 - `--bg-tertiary` is undefined. Do not use it.
+- `--notif` is that skin’s `--danger` (unread / badge fill), not a shared orange. `--on-notif` is the ink on that fill.
 
 See [decisions/0001-theme-token-layers.md](./decisions/0001-theme-token-layers.md).
 
@@ -106,13 +107,15 @@ Prefer `font-mono` / `var(--font-mono-family)` for technical mono. Some local `u
 
 WOFF2 files live under `static/fonts/` and load via `@font-face` in `app.css`.
 
+Instrument Sans ships 400–600 only. `app.css` sets `font-synthesis: style` (italic only — never weight) and maps Tailwind `--font-weight-bold` / `--font-weight-extrabold` / `--font-weight-black` to **600**. A 700 `@font-face` reuses the 600 file. Without that, `font-bold` synthesizes or falls through to Arial on Windows. Native `button` / `input` / `select` / `textarea` inherit `--font-ui`; there is no Tailwind preflight to do it.
+
 ## Spacing, radius, motion
 
 | Token | Where | Notes |
 |-------|-------|-------|
 | `--radius` | `:root` in `app.css` | Default `0.5rem`; Tailwind `--radius-sm/md/lg/xl` derive from it |
 | `--ease-out` | `:root` | `cubic-bezier(0.23, 1, 0.32, 1)` |
-| `--notif` | `:root` | Notification badge color (shared) |
+| `--notif` | theme files | Unread / badge fill; that skin’s `--danger`, not a shared orange |
 
 Spacing: use Tailwind spacing scale with token colors. Keep density moderate (app chrome, not marketing whitespace).
 
@@ -160,6 +163,8 @@ Brand button text:
 
 Or Tailwind: `bg-primary text-primary-foreground`.
 
+Identity chips (squad tiles, letter avatars): set `--identity` to the member/squad hue and add `identity-fill`. Fill is that hue washed with `--brand` so Midnight/Techno/etc. tint the mark. Glyph is a light mix toward `--brand`, not `--foreground` / `color-scheme`. The silhouette placeholder stays for DMs without a photo; chat/rail/member faces use letters (see [0004](./decisions/0004-identity-avatar-contrast.md)).
+
 Hover row (not brand):
 
 ```css
@@ -189,4 +194,6 @@ Technical id:
 ## Related
 
 - Decision: [0001-theme-token-layers.md](./decisions/0001-theme-token-layers.md)
+- Decision: [0003-shell-role-notification-tokens.md](./decisions/0003-shell-role-notification-tokens.md)
+- Decision: [0004-identity-avatar-contrast.md](./decisions/0004-identity-avatar-contrast.md)
 - Design-system index: [README.md](./README.md)
