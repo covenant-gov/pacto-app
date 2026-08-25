@@ -39,7 +39,7 @@
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('/fonts/instrument-sans-600.woff2') format('woff2');
+  src: url('/fonts/instrument-sans-700.woff2') format('woff2');
 }
 
 @font-face {
@@ -145,9 +145,9 @@
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans: var(--font-ui);
   --font-mono: var(--font-mono-family);
-  --font-weight-bold: 600;
-  --font-weight-extrabold: 600;
-  --font-weight-black: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 700;
+  --font-weight-black: 700;
 }
 
 :is(h1, h2, h3, h4, h5, h6) {
