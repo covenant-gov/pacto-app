@@ -38,12 +38,14 @@
   let saving = $state(false);
   let saveError = $state('');
   let saveSuccess = $state(false);
+  let hasHydrated = false;
   let hydratedForPackId: string | null = null;
 
   $effect(() => {
     const pack = existingPack;
     const targetId = pack?.packId ?? null;
-    if (hydratedForPackId === targetId) return;
+    if (hasHydrated && hydratedForPackId === targetId) return;
+    hasHydrated = true;
     hydratedForPackId = targetId;
     packId = pack?.packId ?? crypto.randomUUID();
     packName = pack?.name ?? '';
@@ -71,7 +73,7 @@
   }
 
   const hasValidationErrors = $derived(validationEntries.some((entry) => fieldError(entry) !== ''));
-  const canSave = $derived(squadId !== '' && !saving && !isUploading && !hasValidationErrors);
+  const canSave = $derived(squadId !== '' && packId.trim() !== '' && !saving && !isUploading && !hasValidationErrors);
 
   function basenameFromPath(path: string): string {
     const normalized = path.replace(/\\/g, '/');
