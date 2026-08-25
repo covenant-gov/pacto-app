@@ -1,9 +1,9 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import Clock from '@lucide/svelte/icons/clock';
 	import { t } from 'svelte-i18n';
 	import { cn } from '$lib/utils.js';
 	import { embedCardClass } from './embed-surface.js';
+	import VoteEmbedHeading from './VoteEmbedHeading.svelte';
 
 	let {
 		title,
@@ -41,25 +41,7 @@
 
 <Card.Root class={embedCardClass}>
 	<Card.Header class="grid-cols-[minmax(0,1fr)_auto] gap-1.5">
-		<p class="m-0 flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-xs leading-none text-muted-foreground">
-			<span class="font-medium tracking-[0.04em] text-gov-success uppercase">
-				{tag ?? $t('design.chat.proposalFallback')}
-			</span>
-			<span aria-hidden="true">·</span>
-			<span>{$t('design.chat.voteTreasury')}</span>
-		</p>
-		{#if closes}
-			<Card.Action class="flex items-center gap-1 text-xs leading-none text-muted-foreground tabular-nums">
-				<Clock class="size-3" aria-hidden="true" />
-				<span>{closes}</span>
-			</Card.Action>
-		{/if}
-		<Card.Title class="min-w-0 text-pretty">
-			{#if proposalId}
-				<span class="mr-1.5 font-medium text-muted-foreground tabular-nums">#{proposalId}</span>
-			{/if}
-			{title}
-		</Card.Title>
+		<VoteEmbedHeading {title} {tag} {proposalId} {closes} titleClass="min-w-0 text-pretty" />
 		<Card.Description class="col-span-2 text-sm leading-relaxed text-pretty">{detail}</Card.Description>
 	</Card.Header>
 

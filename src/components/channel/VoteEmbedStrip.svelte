@@ -1,9 +1,9 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import Clock from '@lucide/svelte/icons/clock';
 	import { t } from 'svelte-i18n';
 	import { cn } from '$lib/utils.js';
-	import { embedKickerClass, embedStripFrameClass } from './embed-surface.js';
+	import { embedStripFrameClass } from './embed-surface.js';
+	import VoteEmbedHeading from './VoteEmbedHeading.svelte';
 
 	let {
 		title,
@@ -40,25 +40,13 @@
 	aria-label={$t('design.chat.openProposal', { values: { channel, title } })}
 >
 	<Card.Header class="grid-cols-[minmax(0,1fr)_auto] gap-1">
-		<p class={embedKickerClass}>
-			<span class="font-medium tracking-[0.04em] text-gov-success uppercase">
-				{tag ?? $t('design.chat.proposalFallback')}
-			</span>
-			<span aria-hidden="true">·</span>
-			<span>{$t('design.chat.voteTreasury')}</span>
-		</p>
-		{#if closes}
-			<Card.Action class="flex items-center gap-1 text-xs leading-none text-muted-foreground tabular-nums">
-				<Clock class="size-3" aria-hidden="true" />
-				<span>{closes}</span>
-			</Card.Action>
-		{/if}
-		<Card.Title class="col-span-2 line-clamp-2 min-h-10 text-pretty">
-			{#if proposalId}
-				<span class="mr-1.5 font-medium text-muted-foreground tabular-nums">#{proposalId}</span>
-			{/if}
+		<VoteEmbedHeading
 			{title}
-		</Card.Title>
+			{tag}
+			{proposalId}
+			{closes}
+			titleClass="col-span-2 line-clamp-2 min-h-10 text-pretty"
+		/>
 	</Card.Header>
 
 	<Card.Content class="flex min-h-0 flex-1 flex-col justify-end gap-2">
@@ -71,31 +59,31 @@
 			</span>
 		</div>
 		<div class="relative h-1.5 rounded-full bg-muted" aria-hidden="true">
+			<span
+				class={cn(
+					'absolute inset-y-0 left-0 w-full origin-left rounded-full',
+					quorumMet ? 'bg-gov-success' : 'bg-gov-success/45',
+				)}
+				style={`transform: scaleX(${forShare})`}
+			></span>
+			{#if quorumShare != null}
 				<span
-					class={cn(
-						'absolute inset-y-0 left-0 w-full origin-left rounded-full',
-						quorumMet ? 'bg-gov-success' : 'bg-gov-success/45',
-					)}
-					style={`transform: scaleX(${forShare})`}
+					class="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground ring-2 ring-card"
+					style={`left: ${quorumShare}%`}
 				></span>
-				{#if quorumShare != null}
-					<span
-						class="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground ring-2 ring-card"
-						style={`left: ${quorumShare}%`}
-					></span>
-				{/if}
-			</div>
-		</Card.Content>
+			{/if}
+		</div>
+	</Card.Content>
 
-		<Card.Footer class="mt-auto border-border/80">
+	<Card.Footer class="mt-auto border-border/80">
 		<p class="m-0 min-w-0 truncate text-xs leading-snug text-muted-foreground">
-				{#if quorumShare != null}
-					<span class={cn('tabular-nums', quorumMet && 'text-gov-success')}>
-						{$t('design.chat.quorumNeeded', { values: { pct: quorumShare } })}
-					</span>
-					<span aria-hidden="true"> · </span>
-				{/if}
-				{$t('design.chat.openInChannel', { values: { channel } })}
-			</p>
-		</Card.Footer>
+			{#if quorumShare != null}
+				<span class={cn('tabular-nums', quorumMet && 'text-gov-success')}>
+					{$t('design.chat.quorumNeeded', { values: { pct: quorumShare } })}
+				</span>
+				<span aria-hidden="true"> · </span>
+			{/if}
+			{$t('design.chat.openInChannel', { values: { channel } })}
+		</p>
+	</Card.Footer>
 </button>
