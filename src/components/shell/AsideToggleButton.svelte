@@ -31,11 +31,12 @@
 		variant="ghost"
 		size="sm"
 		class={cn(
-			'h-8 w-auto min-w-8 gap-1 bg-transparent! px-1.5 text-[color-mix(in_oklab,var(--foreground)_62%,var(--muted-foreground))] shadow-none',
-			'hover:bg-[color-mix(in_oklab,var(--foreground)_8%,transparent)]! hover:text-foreground',
-			'aria-expanded:bg-[color-mix(in_oklab,var(--foreground)_10%,transparent)]! aria-expanded:text-foreground',
-			'dark:hover:bg-[color-mix(in_oklab,var(--foreground)_12%,transparent)]!',
-			'dark:aria-expanded:bg-[color-mix(in_oklab,var(--foreground)_14%,transparent)]!',
+			'h-8 w-auto min-w-8 gap-1 px-1.5 text-[color-mix(in_oklab,var(--foreground)_62%,var(--muted-foreground))] shadow-none',
+			'[--avatar-ring:var(--muted)] bg-[var(--avatar-ring)]!',
+			'hover:[--avatar-ring:color-mix(in_oklab,var(--foreground)_8%,var(--muted))] hover:text-foreground',
+			'aria-expanded:[--avatar-ring:color-mix(in_oklab,var(--foreground)_10%,var(--muted))] aria-expanded:text-foreground',
+			'dark:hover:[--avatar-ring:color-mix(in_oklab,var(--foreground)_12%,var(--muted))]',
+			'dark:aria-expanded:[--avatar-ring:color-mix(in_oklab,var(--foreground)_14%,var(--muted))]',
 			className,
 		)}
 		aria-label={collapsed ? openLabel : closeLabel}
@@ -43,7 +44,10 @@
 		onclick={onToggle}
 	>
 		{#if stack.length}
-			<Avatar.Group class="-space-x-1.5 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-muted" aria-hidden="true">
+			<Avatar.Group
+				class="-space-x-1.5 *:data-[slot=avatar]:transition-[box-shadow] *:data-[slot=avatar]:duration-150 *:data-[slot=avatar]:ease-[var(--ease-out)] motion-reduce:*:data-[slot=avatar]:transition-none"
+				aria-hidden="true"
+			>
 				{#each stack as face (face.id ?? face.initials + face.color)}
 					<Avatar.Root size="sm" class="size-5">
 						<Avatar.Fallback class="identity-fill text-[8px] font-semibold" style={`--identity: ${face.color}`}>

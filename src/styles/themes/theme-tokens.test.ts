@@ -99,11 +99,12 @@ describe('theme token contract', () => {
     }
   });
 
-  it('retargets identity chip fill and glyph from color-scheme', () => {
+  it('washes identity fills with brand and keeps glyphs light', () => {
     const appCss = read(appCssPath);
     expect(appCss).toContain('.identity-fill');
-    expect(appCss).toContain('hsl(from var(--identity)');
-    expect(appCss).toContain('light-dark(');
+    expect(appCss).toContain('color-mix(in oklab, var(--identity) 62%, var(--brand) 38%)');
+    expect(appCss).toContain('color-mix(in oklab, white 86%, var(--brand) 14%)');
+    expect(appCss).not.toMatch(/\.identity-fill\s*\{[^}]*light-dark\(/s);
   });
 
   it('maps shadcn primary to brand and accent to hover surface', () => {

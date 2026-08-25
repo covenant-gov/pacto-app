@@ -205,11 +205,14 @@ body {
   min-height: 0;
 }
 
-/* Identity chips keep hue; lightness and glyph track color-scheme. Set --identity (hex/hsl) on the element. */
+/* Identity chips: squad/member hue, washed with --brand so skins tint the mark. Glyph stays light. */
 .identity-fill {
-  background-color: light-dark(
-    hsl(from var(--identity) h s 48%),
-    hsl(from var(--identity) h s 32%)
-  );
-  color: light-dark(hsl(from var(--identity) h 14% 14%), hsl(from var(--identity) h 8% 96%));
+  background-color: color-mix(in oklab, var(--identity) 62%, var(--brand) 38%);
+  color: color-mix(in oklab, white 86%, var(--brand) 14%);
+}
+
+/* Stacked avatars: knockout follows --avatar-ring on the host, else the page. */
+.cn-avatar-group > [data-slot='avatar'],
+.cn-avatar-group > [data-slot='avatar-group-count'] {
+  box-shadow: 0 0 0 2px var(--avatar-ring, var(--background));
 }

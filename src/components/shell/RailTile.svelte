@@ -35,7 +35,7 @@
 			'rounded-2xl text-muted-foreground hover:bg-secondary hover:text-foreground data-active:bg-secondary data-active:text-foreground',
 		variant === 'add' &&
 			'rounded-2xl border-2 border-dotted border-border text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground',
-		dim && 'opacity-[0.42] hover:opacity-100',
+		dim && 'opacity-[0.72] hover:opacity-100',
 		active &&
 			'after:pointer-events-none after:absolute after:inset-[-4px] after:z-0 after:rounded-[19px] after:border-2 after:border-primary',
 		className,
