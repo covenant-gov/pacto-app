@@ -7,7 +7,7 @@ import { runPostLoginNetworkSync } from '../lib/app/post-login-sync';
 import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
 import { closeWalletSidebar } from './dm';
 import { loadAccountState } from './persistence';
-import { markBackupVerified } from './backup-verification';
+import { markBackupVerified, loadBackupVerified } from './backup-verification';
 import { clearAccountState } from '../lib/utils/clear-account-state';
 import { isMigrationGateError } from '../lib/utils/tauri-errors';
 import { awaitGateBeforeAuth, freezeGate } from '../lib/updater/update-gate';
@@ -253,6 +253,9 @@ export async function createAccount(pin: string): Promise<void> {
     const npub = await getCurrentAccount();
     activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     loadAccountState(npub);
+    // PIN save may have marked backup_verified under PACTO_ALLOW_TEST_AUTH;
+    // wait for the store so invite Accept is not a silent no-op.
+    await loadBackupVerified();
     closeWalletSidebar();
     runPostLoginNetworkSync(npub);
 

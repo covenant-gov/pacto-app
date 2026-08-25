@@ -555,6 +555,30 @@ pub fn check_any_account_exists<R: Runtime>(handle: AppHandle<R>) -> bool {
     has_any_account(&handle)
 }
 
+fn sqlite_error_message_is_disk_io(msg: &str) -> bool {
+    let msg = msg.to_lowercase();
+    msg.contains("disk i/o") || msg.contains("ioerr")
+}
+
+fn sqlite_error_is_disk_io(err: &rusqlite::Error) -> bool {
+    sqlite_error_message_is_disk_io(&err.to_string())
+}
+
+fn open_profile_sqlite(db_path: &std::path::Path) -> Result<rusqlite::Connection, String> {
+    match rusqlite::Connection::open(db_path) {
+        Ok(conn) => Ok(conn),
+        Err(e) if sqlite_error_is_disk_io(&e) => {
+            // First-profile create can race a just-created directory against
+            // SQLite's initial WAL/journal write. One short retry absorbs that
+            // without treating a real I/O failure as success.
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            rusqlite::Connection::open(db_path)
+                .map_err(|e2| format!("Failed to open database: {}", e2))
+        }
+        Err(e) => Err(format!("Failed to open database: {}", e)),
+    }
+}
+
 /// Initialize SQL database for a specific profile
 /// Creates all tables if they don't exist
 pub async fn init_profile_database<R: Runtime>(
@@ -573,13 +597,18 @@ pub async fn init_profile_database<R: Runtime>(
             .map_err(|e| format!("Failed to create database directory: {}", e))?;
     }
 
-    // Open connection and create schema
-    let mut conn = rusqlite::Connection::open(&db_path)
-        .map_err(|e| format!("Failed to open database: {}", e))?;
+    let mut conn = open_profile_sqlite(&db_path)?;
 
     // Run migrations (schema creation for new accounts, incremental migrations for existing ones)
-    crate::migrations::run_migrations(&mut conn)
-        .map_err(|e| format!("Failed to run database migrations: {}", e))?;
+    if let Err(e) = crate::migrations::run_migrations(&mut conn) {
+        if sqlite_error_message_is_disk_io(&e) {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            crate::migrations::run_migrations(&mut conn)
+                .map_err(|e2| format!("Failed to run database migrations: {}", e2))?;
+        } else {
+            return Err(format!("Failed to run database migrations: {}", e));
+        }
+    }
 
     println!("[Account Manager] Database schema created successfully");
 
@@ -1116,5 +1145,19 @@ mod legacy_mls_store_migration_tests {
         assert!(!archive_dir.join(LEGACY_MLS_DB_FILENAME).exists());
 
         let _ = std::fs::remove_dir_all(&profile_dir);
+    }
+}
+
+#[cfg(test)]
+mod sqlite_disk_io_retry_tests {
+    use super::sqlite_error_message_is_disk_io;
+
+    #[test]
+    fn classifies_disk_io_messages() {
+        assert!(sqlite_error_message_is_disk_io("disk I/O error"));
+        assert!(sqlite_error_message_is_disk_io(
+            "SqliteFailure(Error { code: DiskIOFailure }, Some(\"ioerr\"))"
+        ));
+        assert!(!sqlite_error_message_is_disk_io("database is locked"));
     }
 }

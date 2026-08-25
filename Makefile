@@ -1,4 +1,4 @@
-.PHONY: help install relay-free-harness-seed dev dev-sandbox dev-sandbox-fresh dev-sandbox-seeded dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
+.PHONY: help install relay-free-harness-seed dev dev-sandbox dev-sandbox-fresh dev-sandbox-pair dev-sandbox-seeded dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
@@ -7,6 +7,7 @@ help:
 	@echo "  install      install Node/Rust dependencies"
 	@echo "  dev          run the desktop app in development mode (auto-isolated per branch, except main)"
 	@echo "  dev-sandbox  run the desktop app against a throwaway account for MCP-driven UI verification"
+	@echo "  dev-sandbox-pair    launch Host (solo) + Guest (alice) sandboxes with distinct autologin mnemonics"
 	@echo "  dev-sandbox-seeded  dev-sandbox, pre-seeded and already logged in -- no env vars to remember"
 	@echo "  dev-account  run the desktop app against the persistent, reusable primary test account"
 	@echo "  dev-buddy    run the desktop app against the persistent, reusable secondary test account"
@@ -107,6 +108,13 @@ dev-sandbox-fresh:
 	echo "removing test_sandbox/$$slug/$(PERSONA)"; \
 	rm -rf "$(CURDIR)/test_sandbox/$$slug/$(PERSONA)"
 	@$(MAKE) dev-sandbox
+
+# Two side-by-side sandboxes for the multi-instance demo. Distinct BIP-39
+# mnemonics (not the Anvil/relay-free-harness fixture) so Host and Guest
+# never collapse onto one identity. Waits until both sandbox-handle.json
+# files carry an npub, then stays in the foreground.
+dev-sandbox-pair:
+	@./scripts/dev-sandbox-pair.sh
 
 # Seed a populated per-account sandbox with zero network / no docker, through
 # the real ingest path. Treat as an ingest+MLS+migrations canary: rumor /

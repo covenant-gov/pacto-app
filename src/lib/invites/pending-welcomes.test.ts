@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
 
 const acceptMlsWelcomeMock = vi.fn();
+const requireBackupVerifiedMock = vi.fn(() => true);
 const finalizeMock = vi.fn();
 
 // accept-invite.ts drags in squad-catalog / outbound-invite / backup-verification /
@@ -14,7 +15,7 @@ vi.mock('../squad/squad-catalog', () => ({
 }));
 
 vi.mock('../../stores/backup-verification', () => ({
-  requireBackupVerified: () => true,
+  requireBackupVerified: () => requireBackupVerifiedMock(),
 }));
 
 vi.mock('../utils/dm-debug', () => ({
@@ -52,6 +53,7 @@ vi.mock('./accept-invite', async (importOriginal) => {
 import {
   acceptOfferedWelcome,
   MAX_OFFERED_WELCOMES,
+  offeredWelcomeFromPendingMls,
   offeredWelcomes,
   recordDeclinedWelcomeGroupId,
   type OfferedWelcome,
@@ -108,6 +110,12 @@ function offered(overrides: Partial<OfferedWelcome> = {}): OfferedWelcome {
 }
 
 describe('offeredWelcomes', () => {
+  it('offeredWelcomeFromPendingMls copies engine fields onto the card payload', () => {
+    expect(offeredWelcomeFromPendingMls(welcome({ group_image_url: 'https://example/img.png' }))).toEqual(
+      offered({ imageUrl: 'https://example/img.png' })
+    );
+  });
+
   it('maps every field from a plain pending welcome', () => {
     const w = welcome({
       id: 'welcome-9',
@@ -319,6 +327,7 @@ describe('recordDeclinedWelcomeGroupId', () => {
 describe('acceptOfferedWelcome', () => {
   beforeEach(() => {
     acceptMlsWelcomeMock.mockReset().mockResolvedValue(true);
+    requireBackupVerifiedMock.mockReset().mockReturnValue(true);
     finalizeMock.mockReset().mockResolvedValue(undefined);
     resetPendingWelcomeFinalizations();
     setCurrentNpubForPersistence('npub1invitee');
@@ -385,5 +394,11 @@ describe('acceptOfferedWelcome', () => {
     expect(acceptMlsWelcomeMock).not.toHaveBeenCalled();
     expect(finalizeMock).toHaveBeenCalledOnce();
     expect(getPendingWelcomeFinalizationByGroupId('group-1')).toBeUndefined();
+  });
+
+  it('rejects and never calls acceptMlsWelcome when backup verification is not satisfied', async () => {
+    requireBackupVerifiedMock.mockReturnValueOnce(false);
+    await expect(acceptOfferedWelcome(offered())).rejects.toThrow('Backup verification required');
+    expect(acceptMlsWelcomeMock).not.toHaveBeenCalled();
   });
 });

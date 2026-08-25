@@ -23,25 +23,55 @@ export interface KlipyPage {
 }
 
 const DISCLOSURE_ACCEPTED_PREFIX = 'pacto_klipy_gifs_disclosure_accepted_v1';
+/** Used when npub is not yet in the persistence context (first sandbox login). */
+const DISCLOSURE_FALLBACK_KEY = `${DISCLOSURE_ACCEPTED_PREFIX}_pending`;
 
-/** Whether the current account has accepted the one-time Klipy disclosure. Npub-scoped. */
-export function isGifsDisclosureAccepted(): boolean {
-  if (typeof localStorage === 'undefined') return false;
-  const key = persistenceKey(DISCLOSURE_ACCEPTED_PREFIX);
-  if (!key) return false;
-  return localStorage.getItem(key) === '1';
+function readDisclosureFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
 }
 
-/** Persist Klipy disclosure acceptance for the current account. */
-export function acceptGifsDisclosure(): void {
-  if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(DISCLOSURE_ACCEPTED_PREFIX);
-  if (!key) return;
+function writeDisclosureFlag(key: string): void {
   try {
     localStorage.setItem(key, '1');
   } catch {
     /* storage unavailable; the caller keeps in-memory acceptance for this session */
   }
+}
+
+function clearDisclosureFlag(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* storage unavailable; nothing to clean up */
+  }
+}
+
+/** Whether the current account has accepted the one-time Klipy disclosure. Npub-scoped, with a sandbox fallback. */
+export function isGifsDisclosureAccepted(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  const key = persistenceKey(DISCLOSURE_ACCEPTED_PREFIX);
+  if (key && readDisclosureFlag(key)) return true;
+  const fallback = readDisclosureFlag(DISCLOSURE_FALLBACK_KEY);
+  if (fallback && key) {
+    writeDisclosureFlag(key);
+    clearDisclosureFlag(DISCLOSURE_FALLBACK_KEY);
+  }
+  return fallback;
+}
+
+/** Persist Klipy disclosure acceptance for the current account (or a pending fallback). */
+export function acceptGifsDisclosure(): void {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(DISCLOSURE_ACCEPTED_PREFIX);
+  if (key) {
+    writeDisclosureFlag(key);
+    return;
+  }
+  writeDisclosureFlag(DISCLOSURE_FALLBACK_KEY);
 }
 
 /**

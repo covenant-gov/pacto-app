@@ -32,6 +32,7 @@ import {
   type PendingWelcomeFinalization,
 } from '../../stores/pending-welcome-finalization';
 import { dmError } from '../utils/dm-debug';
+import { requireBackupVerified } from '../../stores/backup-verification';
 import {
   finalizeSquadAfterAnnouncementsWelcome,
   sameMlsGroupId,
@@ -74,7 +75,20 @@ export interface OfferedWelcomeInputs {
 /** Max pending-welcome cards shown at once (newest first). Recovery rows are not capped. */
 export const MAX_OFFERED_WELCOMES = 20;
 
-/** Pending welcomes still awaiting a decision, newest-first order preserved. */
+/** Map an engine pending welcome into the card/Catch-up Accept payload. */
+export function offeredWelcomeFromPendingMls(welcome: PendingMlsWelcome): OfferedWelcome {
+  const groupId = welcome.nostr_group_id?.trim() || welcome.nostr_group_id;
+  return {
+    id: welcome.id,
+    groupId,
+    name: welcome.group_name?.trim() || groupId,
+    description: welcome.group_description?.trim() || null,
+    imageUrl: welcome.group_image_url?.trim() || null,
+    inviterNpub: welcome.welcomer,
+    memberCount: welcome.member_count,
+  };
+}
+
 export function offeredWelcomes({
   welcomes,
   squadIds,
@@ -100,15 +114,7 @@ export function offeredWelcomes({
     if (seen.has(key) || resolved.has(key)) continue;
     if (welcome.welcomer && blockedNpubs.has(welcome.welcomer)) continue;
     seen.add(key);
-    pending.push({
-      id: welcome.id,
-      groupId,
-      name: welcome.group_name?.trim() || groupId,
-      description: welcome.group_description?.trim() || null,
-      imageUrl: welcome.group_image_url?.trim() || null,
-      inviterNpub: welcome.welcomer,
-      memberCount: welcome.member_count,
-    });
+    pending.push(offeredWelcomeFromPendingMls(welcome));
   }
 
   // Engine-accepted rows stay visible even when the pending list is capped.
@@ -158,6 +164,7 @@ export function offeredWelcomeFromFinalization(row: PendingWelcomeFinalization):
  * a durable finalization record keeps the card retryable without re-accepting.
  */
 export async function acceptOfferedWelcome(welcome: OfferedWelcome): Promise<void> {
+  if (!requireBackupVerified()) throw new Error('Backup verification required');
   const startedAs = get(currentNpubForPersistence);
   const alreadyAccepted = getPendingWelcomeFinalizationByGroupId(welcome.groupId);
   if (!alreadyAccepted) {

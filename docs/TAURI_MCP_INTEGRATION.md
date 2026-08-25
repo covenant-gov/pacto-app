@@ -161,6 +161,11 @@ side and invite each other:
 PERSONA=alice make dev-sandbox
 ```
 
+For a two-window Host+Guest demo with distinct autologin mnemonics (not the
+Anvil fixture), `make dev-sandbox-pair` starts `solo` then `alice`, waits
+until both `sandbox-handle.json` files carry an `npub`, and prints each
+`ports.mcpBridge`. Ctrl+C stops both. See `.agents/sandbox-multi-instance-demo-prompt.md`.
+
 To start that persona over from an empty account — when the account-creation
 flow is itself what you are testing — use `make dev-sandbox-fresh`, which
 wipes just that persona's directory first. `make clean` removes all of them.

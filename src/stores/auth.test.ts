@@ -308,7 +308,7 @@ describe('auth', () => {
       expect(get(activeTopNavTab)).toBe(DEFAULT_TOP_NAV_TAB);
       expect(loadAccountState).toHaveBeenCalledWith(npub);
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
-      expect(get(backupVerified)).toBe(null);
+      expect(get(backupVerified)).toBe(false);
     });
 
     it('sets auth error on failure', async () => {
