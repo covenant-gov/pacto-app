@@ -185,8 +185,8 @@ Technical id:
 
 | Id | Scheme | Notes |
 |----|--------|-------|
-| `techno` | light | Only light skin in registry |
-| `dark-techno` | dark | Default; also on `:root` |
+| `techno` | light | Label: Techno Light. Bleached paper, black hairline, inverted channel |
+| `dark-techno` | dark | Label: Techno Dark. Default; warm ink field, cream hairline; also on `:root` |
 | `union` | dark | |
 | `midnight` | dark | |
 | `aztec` | dark | |
