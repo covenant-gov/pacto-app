@@ -10,7 +10,7 @@ import {
 	hideDesignRoutes,
 	omitDesignPlaygroundPlugin,
 	restoreDesignRoutes,
-} from './scripts/omit-design-playground.ts';
+} from './scripts/omit-design-playground';
 
 hideDesignRoutes();
 process.on('exit', restoreDesignRoutes);
