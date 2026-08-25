@@ -19,8 +19,13 @@
     hatsTreeRoleActionKind,
     type HatsTreeActionsApi,
   } from '../../../lib/governance/hats-tree-role-actions';
+  import {
+    HATS_TREE_INFO_KEY,
+    type HatsTreeInfoApi,
+  } from '../../../lib/governance/hats-tree-info';
   import HatsTreeNode from './HatsTreeNode.svelte';
   import HatsTreeRoleActions from './HatsTreeRoleActions.svelte';
+  import InfoIconButton from '../../ui/InfoIconButton.svelte';
 
   interface Props {
     node: HatTreeNodeDto;
@@ -47,6 +52,7 @@
 
   const tFn = get(t);
   const actionsApi = getContext<HatsTreeActionsApi | undefined>(HATS_TREE_ACTIONS_KEY);
+  const infoApi = getContext<HatsTreeInfoApi | undefined>(HATS_TREE_INFO_KEY);
 
   const roleLabel = $derived(roleLabelByHatId[node.hatId] ?? '');
   const actionKind = $derived(hatsTreeRoleActionKind(roleLabel));
@@ -117,6 +123,12 @@
     <div class="hats-tree-node-body">
       <code class="hats-tree-node-id" title={node.hatId}>{prettyId}</code>
       <span class="hats-tree-node-title">{$t(localizeRoleLabel(roleLabel)) || humanDetails || $t('governance.hats.untitled')}</span>
+      <InfoIconButton
+        className="hats-tree-info-btn"
+        ariaLabel={$t('governance.hats.info.open')}
+        title={$t('governance.hats.info.open')}
+        onclick={() => infoApi?.open({ node, roleLabel })}
+      />
     </div>
     <div class="hats-tree-node-footer">
       <span class="hats-tree-footer-primary">
@@ -234,6 +246,13 @@
     color: var(--text-primary);
     line-height: 1.25;
     word-break: break-word;
+  }
+
+  .hats-tree-node-body :global(.hats-tree-info-btn) {
+    align-self: flex-start;
+    width: 24px;
+    height: 24px;
+    margin-top: 2px;
   }
 
   .hats-tree-node-footer {

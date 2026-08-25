@@ -8,7 +8,16 @@
     type HatsTreeCommandAction,
     type HatsTreeCommandContext,
   } from '$lib/governance/hats-tree-role-actions';
+  import {
+    buildHatsTreeInfoViewModel,
+    HATS_TREE_INFO_KEY,
+    type HatsTreeInfoApi,
+    type HatsTreeInfoOpenPayload,
+    type HatsTreeInfoViewModel,
+  } from '$lib/governance/hats-tree-info';
+  import { npubByEvmAddressFromSquadRoster } from '$lib/governance/hats-tree-annotations';
   import HatsTreeNode from './HatsTreeNode.svelte';
+  import HatsTreeInfoModal from './HatsTreeInfoModal.svelte';
   import GovHatsTreeCommandModals from './GovHatsTreeCommandModals.svelte';
   import { t } from 'svelte-i18n';
 
@@ -37,6 +46,8 @@
   }: Props = $props();
 
   let openAction = $state<HatsTreeCommandAction | null>(null);
+  let infoOpen = $state(false);
+  let infoViewModel = $state<HatsTreeInfoViewModel | null>(null);
 
   const actionsApi: HatsTreeActionsApi = {
     get command() {
@@ -47,6 +58,26 @@
     },
   };
   setContext(HATS_TREE_ACTIONS_KEY, actionsApi);
+
+  const infoApi: HatsTreeInfoApi = {
+    open(payload: HatsTreeInfoOpenPayload) {
+      const npubByAddress = npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub);
+      infoViewModel = buildHatsTreeInfoViewModel({
+        node: payload.node,
+        roleLabel: payload.roleLabel,
+        wearerAddresses: wearerAddressesByHatId[payload.node.hatId] ?? [],
+        knownWearerLabels,
+        npubByAddress,
+      });
+      infoOpen = true;
+    },
+  };
+  setContext(HATS_TREE_INFO_KEY, infoApi);
+
+  function closeInfo() {
+    infoOpen = false;
+    infoViewModel = null;
+  }
 </script>
 
 <div class="hats-tree-scroll" role="tree" aria-label={$t('governance.title.hatsTree')}>
@@ -61,6 +92,7 @@
     {viewerAddress}
   />
 </div>
+<HatsTreeInfoModal open={infoOpen} viewModel={infoViewModel} onClose={closeInfo} />
 {#if commandContext}
   <GovHatsTreeCommandModals
     command={commandContext}
