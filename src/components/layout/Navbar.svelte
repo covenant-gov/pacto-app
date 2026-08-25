@@ -59,7 +59,7 @@
   import { requireBackupVerified } from '../../stores/backup-verification';
   import { persistCreatedSquad } from '../../lib/squad/squad-catalog';
   import { appendSquadNavId, moveSquadNavIdToGapIndex, orderSquads } from '../../lib/squad/squad-nav-order';
-  import { initSquadBot } from '../../lib/squad/squad-bot';
+  import { initJoinInbox } from '../../lib/squad/join-inbox';
   import { applySquadCreateNetwork } from '../../lib/squad/squad-create-network';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { portal } from '../../lib/utils/portal';
@@ -406,7 +406,7 @@
           updatedAt: Date.now(),
         };
         await persistCreatedSquad(tempId, finalized);
-        void initSquadBot(groupId);
+        void initJoinInbox(groupId);
         const creatorNpub = get(currentUser)?.npub;
         applySquadCreateNetwork(creatorNpub, groupId);
         removeParentCreatingAnnouncements(tempId);

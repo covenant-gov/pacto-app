@@ -15,7 +15,10 @@ describe('SignerShareAnnounceBody', () => {
     currentUser.set({ npub: 'npub1alice', pubkey: 'pk' });
     const payload: SquadMemberEvmSharePayload = {
       parent_id: 'squad-1',
+      member_npub: 'npub1alice',
       evm_address: '0x1111111111111111111111111111111111111111',
+      issued_at: 1710000000,
+      signature: `0x${'ab'.repeat(65)}`,
     };
     render(SignerShareAnnounceBody, {
       props: { payload, authorName: 'Alice', authorNpub: 'npub1alice', timestamp: '' },
@@ -27,7 +30,10 @@ describe('SignerShareAnnounceBody', () => {
     currentUser.set({ npub: 'npub1alice', pubkey: 'pk' });
     const payload: SquadMemberEvmSharePayload = {
       parent_id: 'squad-1',
+      member_npub: 'npub1bob',
       evm_address: '0x2222222222222222222222222222222222222222',
+      issued_at: 1710000000,
+      signature: `0x${'ab'.repeat(65)}`,
     };
     render(SignerShareAnnounceBody, {
       props: { payload, authorName: 'Bob', authorNpub: 'npub1bob', timestamp: '' },
@@ -39,7 +45,10 @@ describe('SignerShareAnnounceBody', () => {
     currentUser.set(null);
     const payload: SquadMemberEvmSharePayload = {
       parent_id: 'squad-1',
+      member_npub: 'npub1carol',
       evm_address: '0x3333333333333333333333333333333333333333',
+      issued_at: 1710000000,
+      signature: `0x${'ab'.repeat(65)}`,
     };
     render(SignerShareAnnounceBody, {
       props: { payload, authorName: 'Carol', authorNpub: 'npub1carol', timestamp: '' },

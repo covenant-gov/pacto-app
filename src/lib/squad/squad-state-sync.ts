@@ -30,7 +30,7 @@ import {
   warGameActionFromProviderPayload,
 } from '../governance/war-game-announce';
 import { currentUser } from '../../stores/auth';
-import { publishSquadMemberEvmShare, getBoundSquadEvmAddressForParent } from './squad-member-evm-share';
+import { publishSquadEvmRosterSnapshot } from './squad-evm-roster-snapshot';
 import { publishSquadNetworkUpdated } from './squad-network-share';
 import { publishSquadRpcUpdated } from './squad-rpc-share';
 import { publishSquadChannelsCatalog } from './squad-channels-catalog';
@@ -39,6 +39,7 @@ import { openCustomChannelTargets } from '../parent/channel-access';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { dmWarn } from '../utils/dm-debug';
 import { squads } from '../../stores/squads';
+import { formatJoinInboxMeta, getJoinInboxState } from './join-inbox';
 
 export const SQUAD_STATE_SYNC_REQUEST_TYPE = 'squad_state_sync_request';
 export const SQUAD_STATE_SYNC_REQUEST_VERSION = 1;
@@ -111,7 +112,7 @@ export function formatSquadStateSyncRequest(params: {
       parent_id: params.parentId.trim(),
       request_id: params.requestId.trim(),
       requester_npub: params.requesterNpub.trim(),
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica', 'join_inbox'],
     } satisfies SquadStateSyncRequestPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -271,6 +272,7 @@ export async function respondToSquadStateSyncRequest(
   const wantChannels = !req.requested?.length || req.requested.includes('channels');
   const wantIdentity = !req.requested?.length || req.requested.includes('identity');
   const wantGovReplica = !req.requested?.length || req.requested.includes('gov_replica');
+  const wantJoinInbox = !req.requested?.length || req.requested.includes('join_inbox');
 
   const parent =
     get(squads).find((s) => s.id === parentId) ??
@@ -281,17 +283,11 @@ export async function respondToSquadStateSyncRequest(
   if (wantEvm) {
     try {
       const catalogId = parent?.id?.trim() && parent.id.trim() !== parentId ? parent.id.trim() : null;
-      const bound = await getBoundSquadEvmAddressForParent(parentId, catalogId);
-      if (bound) {
-        const ok = await publishSquadMemberEvmShare(parentId, {
-          evmAddress: bound,
-          ...(catalogId ? { altParentId: catalogId } : {}),
-        });
-        if (ok) anyOk = true;
-      }
-      /* unbound: omit EVM; still help with infra/network/channels */
+      const snapOk = await publishSquadEvmRosterSnapshot(parentId, catalogId);
+      if (snapOk) anyOk = true;
+      /* unbound / no certs: omit EVM snapshot; still help with infra/network/channels */
     } catch (e) {
-      console.warn('[squad-state-sync] EVM republish failed', e);
+      console.warn('[squad-state-sync] EVM roster snapshot failed', e);
     }
   }
 
@@ -433,6 +429,18 @@ export async function respondToSquadStateSyncRequest(
       if (ok) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] identity republish failed', e);
+    }
+  }
+
+  if (wantJoinInbox) {
+    try {
+      const state = await getJoinInboxState(parentId);
+      if (state) {
+        await sendDmMessage(gid, formatJoinInboxMeta(state), '', { virtualBucket: 'announcements' });
+        anyOk = true;
+      }
+    } catch (e) {
+      console.warn('[squad-state-sync] join inbox meta republish failed', e);
     }
   }
 

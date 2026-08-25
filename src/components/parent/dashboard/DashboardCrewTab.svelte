@@ -28,7 +28,7 @@
   import { showToast } from '../../../stores/toast';
   import { onMount } from 'svelte';
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
-  import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
+  import { rpcReadErrorKind, uniqueRpcReadErrorKinds } from '../../../lib/squad/rpc-read-error';
 
   let {
     announcementsGroupId = null,
@@ -93,6 +93,7 @@
   const showSponsoredCol = $derived(eligibilityCols.showSponsoredCol);
   const sponsorExtRpcKind = $derived(rpcReadErrorKind(sponsorExtError));
   const settingsChainRpcKind = $derived(rpcReadErrorKind(settingsChainError));
+  const crewRpcKinds = $derived(uniqueRpcReadErrorKinds(sponsorExtError, settingsChainError));
 
   onMount(() => {
     if (!parentId) return;
@@ -144,15 +145,17 @@
   }
 </script>
 
+{#each crewRpcKinds as kind (kind)}
+  <RpcReadErrorCard {kind} />
+{/each}
+
 {#if sponsorExtStatus || sponsorExtLoading || sponsorExtError}
   <section class="sponsor-owner-banner" aria-label={$t('governance.crew.sponsorOwnerAriaLabel')}>
     <span class="meta-label">{$t('governance.crew.sponsorOwnerLabel')}</span>
     {#if sponsorExtLoading && !sponsorExtStatus}
       <span class="muted">{$t('governance.crew.loading')}</span>
     {:else if sponsorExtError && !sponsorExtStatus}
-      {#if sponsorExtRpcKind}
-        <RpcReadErrorCard kind={sponsorExtRpcKind} />
-      {:else}
+      {#if !sponsorExtRpcKind}
         <span class="chain-read-error" role="alert">{sponsorExtError}</span>
       {/if}
     {:else if sponsorExtStatus}
@@ -177,9 +180,7 @@
     <p class="muted" role="status">{$t('governance.crew.refreshing')}</p>
   {/if}
   {#if settingsChainError}
-    {#if settingsChainRpcKind}
-      <RpcReadErrorCard kind={settingsChainRpcKind} />
-    {:else}
+    {#if !settingsChainRpcKind}
       <p class="chain-read-error" role="alert">{settingsChainError}</p>
     {/if}
   {/if}

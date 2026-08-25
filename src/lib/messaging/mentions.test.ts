@@ -46,7 +46,7 @@ describe('mentions envelope', () => {
   });
 
   it('treats JSON with schema/type keys as plain text', () => {
-    const content = JSON.stringify({ schema: 'pacto.squad.bot_join_response.v1', status: 'accepted' });
+    const content = JSON.stringify({ schema: 'pacto.squad.join_inbox_response.v1', status: 'accepted' });
     const parsed = parseMessageContent(content);
     expect(parsed.isEnvelope).toBe(false);
     expect(parsed.body).toBe(content);

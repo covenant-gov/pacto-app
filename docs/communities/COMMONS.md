@@ -19,7 +19,7 @@ Wire/storage may still use `visibility: 'public' | 'private'` for Commons eligib
 | **Cooldown** | One active broadcast per **(author npub, subject)** — user npub or squad id. Squad broadcasts are **signed by the Join inbox identity**; author npub is that shared npub. UI blocks re-publish until `expiresAt`. |
 | **Cancel** | A **Join inbox holder** can retract an active squad broadcast (signed by the inbox identity). Publishes a replacement (NIP-33, same `d`) with `cancelled: true`; clients drop it from the feed even before `expiresAt`, and the cooldown lifts so they can rebroadcast immediately. Newest-event-wins keeps the tombstone hidden and prevents feed spam. |
 | **Feed** | Active broadcasts only; relay lookback **≤ 72 h** (max TTL). Refreshes every **60 s** while Commons is open. |
-| **Squad broadcast roles** | Only **Join inbox holders** with a local secret may publish/cancel. Holder list is Settings + MLS meta; SquadAdmin will gate who may be holders later ([`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md)). |
+| **Squad broadcast roles** | Only **Join inbox holders** with a local secret may publish/cancel. Holder list is Settings + MLS meta; SquadAdmin will gate who may be holders later ([`JOIN_INBOX.md`](./JOIN_INBOX.md)). |
 
 ---
 
@@ -33,13 +33,13 @@ Wire/storage may still use `visibility: 'public' | 'private'` for Commons eligib
    - **Combine logic:** **Category** tile search = **ANY** of all tags in that category (one category chip in the filter bar; no 3-tag cap). **Tags** menu search = **AND** of up to 3 chosen tags (each shown as a chip). Show and Audience are **AND** on top of either mode. **All** on a switch means no constraint. Picking tags clears an active category; opening **Tags** clears category. **Categories** resets everything.
 4. Cards show name, tags, message, time until expiry.
 5. **Message** (user) → opens DM with that npub.
-6. **Request to join** (squad) → sends a structured DM to the **Join inbox** npub (card `authorNpub`). Holders fan out into MLS `#join-requests` (see [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md)).
+6. **Request to join** (squad) → sends a structured DM to the **Join inbox** npub (card `authorNpub`). Holders fan out into MLS `#join-requests` (see [`JOIN_INBOX.md`](./JOIN_INBOX.md)).
 
 ### Publish — squad
 
 Squad discovery cards are **authored by the Join inbox identity** (same UX as messaging a user from their card: DM the author). Only holders with a local secret can publish.
 
-- **Create with Commons on** → automatic **72 h `#new`** broadcast (exactly **3** tags from create form + reserved `#new`), signed by the bot after `initSquadBot`.
+- **Create with Commons on** → automatic **72 h `#new`** broadcast (exactly **3** tags from create form + reserved `#new`), signed by the Join inbox after `initJoinInbox`.
 - **Dashboard Settings → Commons on → broadcast** → duration + message modal; pick **exactly 3** tags (may differ from a prior broadcast; no `#new`).
 - Cooldown copy when a broadcast is still active.
 
@@ -119,7 +119,7 @@ Discovery tiles keep `squadIconUrl` from **publish time**. Changing the squad PF
 
 ### Join request (not Commons feed)
 
-Squad cards send a **NIP-17 DM to the Join inbox** (`pacto.squad.bot_join_dm.v1`). Holders unwrap with the Join inbox key and fan out into MLS `#join-requests` — see [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md). Client-side rate limit: 24 h per squad target.
+Squad cards send a **NIP-17 DM to the Join inbox** (`pacto.squad.join_inbox_dm.v1`). Holders unwrap with the Join inbox key and fan out into MLS `#join-requests` — see [`JOIN_INBOX.md`](./JOIN_INBOX.md). Client-side rate limit: 24 h per squad target.
 
 ---
 
@@ -179,7 +179,7 @@ Cleared on logout via `clearAccountState`, except `pacto_commons_broadcasted_<np
 | Tag browse / search | `CommonsTagBrowser.svelte` (passive tiles), `CommonsTagMenu.svelte` (shared genre dropdown), `CommonsTagPicker.svelte` (searchable picker wrapping the menu, used in the broadcast composer) |
 | Personal panel | `CommonsPersonalPanel.svelte` |
 | Card actions | `src/lib/commons/commons-card-actions.ts` |
-| Join request (rate limit + CTA gate) | `src/lib/commons/commons-join-request.ts`; private bot DM + MLS — [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md) |
+| Join request (rate limit + CTA gate) | `src/lib/commons/commons-join-request.ts`; private Join inbox DM + MLS — [`JOIN_INBOX.md`](./JOIN_INBOX.md) |
 | Role gate (stub) | `src/lib/commons/permissions.ts` |
 | Squad create Commons UI | `SquadCommonsVisibilityFields.svelte` |
 
@@ -201,7 +201,7 @@ Relays: the resolved **`trusted_relays::trusted_relays()`** set only (same curat
 | Doc | Relevance |
 |-----|-----------|
 | [`DESIGN.md`](./DESIGN.md) | Squad id = announcements MLS group id |
-| [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md) | Private join via Join inbox + `join_requests` virtual bucket |
+| [`JOIN_INBOX.md`](./JOIN_INBOX.md) | Private join via Join inbox + `join_requests` virtual bucket |
 | [`../nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md) | Nostr paths vs MLS/DM |
 | [`../dashboard/POLLS.md`](../dashboard/POLLS.md) | Kind 30078 JSON schema pattern |
 | [`../wallet/PACTO_GOV.md`](../wallet/PACTO_GOV.md) | Future Squad Admin broadcast gate |

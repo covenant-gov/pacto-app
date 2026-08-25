@@ -15,9 +15,8 @@ export interface WelcomeInviteSource {
  * squad/channel name and the inviter's DM thread for one by scanning
  * locally cached DM messages for the `squad_invite` / `channel_in_squad`
  * payload that named this group — parsed directly rather than through
- * `resolveDmMessagePresentation`, which collapses channel-in-squad DMs into
- * an opaque "under-the-hood" notice. Returns null when the invite DM hasn't
- * loaded locally yet.
+ * `resolveDmMessagePresentation`, which hides channel-in-squad DMs in 1:1
+ * threads. Returns null when the invite DM hasn't loaded locally yet.
  */
 export function findWelcomeInviteSource(
   groupId: string,

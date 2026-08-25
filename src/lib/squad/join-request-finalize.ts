@@ -10,7 +10,7 @@ import {
   sameMlsGroupId,
   squadInviteResolvedByMembership,
 } from '../invites/accept-invite';
-import { parseBotJoinResponseDm } from './squad-join-mls';
+import { parseJoinInboxResponseDm } from './squad-join-mls';
 import { dmError } from '../utils/dm-debug';
 import { showToast } from '../../stores/toast';
 import { t } from 'svelte-i18n';
@@ -100,18 +100,18 @@ function forgetApprovedJoin(groupId: string): void {
   setRows(get(pendingApprovedJoins).filter((r) => r.groupId.trim().toLowerCase() !== id));
 }
 
-/** Handle inbound bot_join_response DM for the requester. */
-export async function handleBotJoinResponseDm(
+/** Handle inbound Join inbox response DM for the requester. */
+export async function handleJoinInboxResponseDm(
   content: string | null | undefined,
   senderNpub: string
 ): Promise<void> {
-  const parsed = parseBotJoinResponseDm(content);
+  const parsed = parseJoinInboxResponseDm(content);
   if (!parsed || parsed.status !== 'accepted') return;
   const request = getJoinRequestRecord(parsed.squadId);
   if (
     !request ||
     request.requestId !== parsed.requestId ||
-    request.botNpub.trim() !== senderNpub.trim()
+    request.inboxNpub.trim() !== senderNpub.trim()
   ) {
     return;
   }

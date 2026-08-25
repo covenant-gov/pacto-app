@@ -69,7 +69,7 @@ describe('squad join requests store', () => {
   });
 
   it('ensureJoinRequestsHydrated fetches once per squad', async () => {
-    vi.spyOn(squadJoinMls, 'fanOutBotJoinDmsToMls').mockResolvedValue(0);
+    vi.spyOn(squadJoinMls, 'fanOutJoinInboxDmsToMls').mockResolvedValue(0);
     const fetchSpy = vi
       .spyOn(squadJoinMls, 'loadPendingJoinRequestsFromMls')
       .mockResolvedValue([sampleRequest('x')]);
@@ -81,7 +81,7 @@ describe('squad join requests store', () => {
   });
 
   it('ensureJoinRequestsHydrated surfaces MLS load errors', async () => {
-    vi.spyOn(squadJoinMls, 'fanOutBotJoinDmsToMls').mockResolvedValue(0);
+    vi.spyOn(squadJoinMls, 'fanOutJoinInboxDmsToMls').mockResolvedValue(0);
     vi.spyOn(squadJoinMls, 'loadPendingJoinRequestsFromMls').mockRejectedValue(new Error('MLS offline'));
     const { ensureJoinRequestsHydrated, joinRequestsErrorBySquadId } = await import(
       './squad-join-requests'
@@ -92,7 +92,7 @@ describe('squad join requests store', () => {
   });
 
   it('still loads MLS pending when fan-out fails', async () => {
-    vi.spyOn(squadJoinMls, 'fanOutBotJoinDmsToMls').mockRejectedValue(new Error('Could not sync join inbox.'));
+    vi.spyOn(squadJoinMls, 'fanOutJoinInboxDmsToMls').mockRejectedValue(new Error('Could not sync join inbox.'));
     const fetchSpy = vi
       .spyOn(squadJoinMls, 'loadPendingJoinRequestsFromMls')
       .mockResolvedValue([sampleRequest('kept')]);

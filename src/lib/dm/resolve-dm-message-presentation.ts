@@ -16,10 +16,9 @@ import {
   type WalletTxRequestPayload,
 } from '../wallet/dm-messages';
 import {
-  parseBotJoinDm,
-  parseBotJoinResponseDm,
-  type SquadBotJoinDmDto,
-  type SquadBotJoinResponseDmDto,
+  parseJoinInboxDm,
+  parseJoinInboxResponseDm,
+  type JoinInboxResponseDmDto,
 } from '../squad/squad-join-mls';
 import { summarizeStructuredMessageContent, type MessageFormatter } from '../messaging/structured-content-notice';
 import { getProfileAvatarSrc, getProfileDisplayName } from '../utils/profile';
@@ -34,7 +33,6 @@ export type WalletPeerInfoDeclinePayload = NonNullable<ReturnType<typeof parseWa
 
 export type DmMessagePresentation =
   | { kind: 'local-announcement' }
-  | { kind: 'channel-in-squad'; payload: ChannelInSquadPayload }
   | { kind: 'squad-invite'; payload: SquadInvitePayload }
   | { kind: 'squad-pair-invite'; payload: SquadInvitePayload }
   | { kind: 'wallet-peer-info-request'; payload: WalletPeerInfoRequestPayload }
@@ -42,22 +40,17 @@ export type DmMessagePresentation =
   | { kind: 'wallet-peer-info-decline'; payload: WalletPeerInfoDeclinePayload }
   | { kind: 'wallet-tx-request'; payload: WalletTxRequestPayload }
   | { kind: 'wallet-tx-announcement'; payload: WalletTxAnnouncementPayload }
-  | { kind: 'bot-join-response'; payload: SquadBotJoinResponseDmDto }
-  | { kind: 'bot-join-dm'; payload: SquadBotJoinDmDto }
-  | { kind: 'structured-notice'; text: string }
+  | { kind: 'join-inbox-response'; payload: JoinInboxResponseDmDto }
+  /** Protocol / echo / MLS leftover — do not render in 1:1 threads. */
+  | { kind: 'hidden' }
   | { kind: 'plain' };
 
 export function resolveDmMessagePresentation(msg: DmMessage): DmMessagePresentation {
-  const tFn = get(t);
   if (msg.is_local_announcement) return { kind: 'local-announcement' };
   const content = msg.content ?? '';
-  // Channel joins are under-the-hood; never show as invite cards.
-  if (parseChannelInSquadMessage(content)) {
-    return { kind: 'structured-notice', text: 'Channel join' };
-  }
-  if (parseSquadInviteAccepted(content)) {
-    return { kind: 'structured-notice', text: 'Squad join update' };
-  }
+  // Channel joins are under-the-hood; never show as invite cards or notice bars.
+  if (parseChannelInSquadMessage(content)) return { kind: 'hidden' };
+  if (parseSquadInviteAccepted(content)) return { kind: 'hidden' };
   const invite = parseSquadInviteMessage(content);
   if (invite) {
     return invite.kind === 'squad-pair'
@@ -74,12 +67,12 @@ export function resolveDmMessagePresentation(msg: DmMessage): DmMessagePresentat
   if (walletTxRequest) return { kind: 'wallet-tx-request', payload: walletTxRequest };
   const walletTxAnnouncement = parseWalletTxAnnouncement(content);
   if (walletTxAnnouncement) return { kind: 'wallet-tx-announcement', payload: walletTxAnnouncement };
-  const botJoinResponse = parseBotJoinResponseDm(content);
-  if (botJoinResponse) return { kind: 'bot-join-response', payload: botJoinResponse };
-  const botJoinDm = parseBotJoinDm(content);
-  if (botJoinDm) return { kind: 'bot-join-dm', payload: botJoinDm };
-  const structuredNotice = summarizeStructuredMessageContent(content, tFn);
-  if (structuredNotice) return { kind: 'structured-notice', text: structuredNotice };
+  const joinInboxResponse = parseJoinInboxResponseDm(content);
+  if (joinInboxResponse) return { kind: 'join-inbox-response', payload: joinInboxResponse };
+  // Outbound Commons join echo to the Join inbox — response card is the useful one.
+  if (parseJoinInboxDm(content)) return { kind: 'hidden' };
+  // MLS-only structured leftovers that leak into a 1:1 thread: hide, do not label-bar.
+  if (summarizeStructuredMessageContent(content, get(t))) return { kind: 'hidden' };
   return { kind: 'plain' };
 }
 

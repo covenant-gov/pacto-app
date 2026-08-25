@@ -11,7 +11,7 @@ vi.mock('../../lib/squad/squad-join-mls', async (importOriginal) => {
   const actual = await importOriginal<typeof SquadJoinMls>();
   return {
     ...actual,
-    fanOutBotJoinDmsToMls: vi.fn().mockResolvedValue(undefined),
+    fanOutJoinInboxDmsToMls: vi.fn().mockResolvedValue(undefined),
     loadPendingJoinRequestsFromMls: vi.fn().mockResolvedValue([]),
   };
 });

@@ -3,8 +3,8 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
-  import type { SquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
-  import { shortNpub } from '../../lib/squad/squad-bot-announce';
+  import type { JoinInboxAnnounceMessage } from '../../lib/squad/join-inbox-announce';
+  import { shortNpub } from '../../lib/squad/join-inbox-announce';
   import { currentUser } from '../../stores/auth';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
@@ -16,7 +16,7 @@
     timestamp = '',
   }: {
     id?: string;
-    announce: SquadBotAnnounceMessage;
+    announce: JoinInboxAnnounceMessage;
     authorName?: string;
     authorNpub?: string;
     timestamp?: string;
@@ -29,19 +29,19 @@
   const title = $derived(
     announce.kind === 'meta'
       ? isMine
-        ? tFn('announcements.squadBot.rosterMine')
-        : tFn('announcements.squadBot.rosterTheirs', { values: { authorName: authorName || tFn('announcements.squadBot.aMember') } })
+        ? tFn('announcements.joinInbox.rosterMine')
+        : tFn('announcements.joinInbox.rosterTheirs', { values: { authorName: authorName || tFn('announcements.joinInbox.aMember') } })
       : announce.kind === 'key_rotated'
         ? isMine
-          ? tFn('announcements.squadBot.rotatedMine')
-          : tFn('announcements.squadBot.rotatedTheirs', { values: { authorName: authorName || tFn('announcements.squadBot.aMember') } })
-        : tFn('announcements.squadBot.updateTitle')
+          ? tFn('announcements.joinInbox.rotatedMine')
+          : tFn('announcements.joinInbox.rotatedTheirs', { values: { authorName: authorName || tFn('announcements.joinInbox.aMember') } })
+        : tFn('announcements.joinInbox.updateTitle')
   );
 
   const holderCount = $derived(announce.kind === 'meta' ? announce.payload.holders.length : null);
 
-  const botNpub = $derived(
-    announce.kind === 'meta' || announce.kind === 'key_rotated' ? announce.payload.botNpub : ''
+  const inboxNpub = $derived(
+    announce.kind === 'meta' || announce.kind === 'key_rotated' ? announce.payload.inboxNpub : ''
   );
 
   const keyEpoch = $derived(
@@ -49,18 +49,18 @@
   );
 </script>
 
-<div class="announce-card" id={id ? `msg-${id}` : undefined} data-squad-bot-announce={announce.kind}>
+<div class="announce-card" id={id ? `msg-${id}` : undefined} data-join-inbox-announce={announce.kind}>
   <div class="announce-body">
     <p class="announce-title">{title}</p>
     <ul class="announce-details">
       {#if holderCount != null}
-        <li>{$t('announcements.squadBot.keyHolders', { values: { count: holderCount } })}</li>
+        <li>{$t('announcements.joinInbox.keyHolders', { values: { count: holderCount } })}</li>
       {/if}
       {#if keyEpoch != null}
-        <li>{$t('announcements.squadBot.keyEpoch', { values: { keyEpoch } })}</li>
+        <li>{$t('announcements.joinInbox.keyEpoch', { values: { keyEpoch } })}</li>
       {/if}
-      {#if botNpub}
-        <li>{$t('announcements.squadBot.botLabel', { values: { shortNpub: shortNpub(botNpub) } })} <code title={botNpub}>{shortNpub(botNpub)}</code></li>
+      {#if inboxNpub}
+        <li>{$t('announcements.joinInbox.inboxLabel', { values: { shortNpub: shortNpub(inboxNpub) } })} <code title={inboxNpub}>{shortNpub(inboxNpub)}</code></li>
       {/if}
     </ul>
     <p class="announce-meta">

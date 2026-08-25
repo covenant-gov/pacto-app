@@ -32,7 +32,7 @@ import { pendingReadyToast, showToast } from '../stores/toast';
 import { schedulePublicSquadCreateBroadcast } from './commons/squad-create-broadcast';
 import { persistCreatedSquad } from './squad/squad-catalog';
 import { appendSquadNavId } from './squad/squad-nav-order';
-import { initSquadBot } from './squad/squad-bot';
+import { initJoinInbox } from './squad/join-inbox';
 import { applySquadCreateNetwork } from './squad/squad-create-network';
 import { warnSkippedMembers, skippedMembersNotice, warnPendingInvites, pendingInvitesNotice } from './squad/skipped-members';
 import type { PairedSquads } from './squad-pair';
@@ -203,7 +203,7 @@ export function runSquadPairCreateFlow(
         updatedAt: Date.now(),
       };
       await persistCreatedSquad(tempId, finalized);
-      void initSquadBot(groupId);
+      void initJoinInbox(groupId);
       removeParentCreatingAnnouncements(tempId);
       parentCreateErrorById.update((m) => {
         const next = { ...m };
@@ -304,7 +304,7 @@ async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: strin
     updatedAt: Date.now(),
   };
   await persistCreatedSquad(parent.id, finalized);
-  void initSquadBot(gid);
+  void initJoinInbox(gid);
   const myNpub = get(currentUser)?.npub;
   applySquadCreateNetwork(myNpub, gid);
   if (get(activeSquadId) === parent.id) {

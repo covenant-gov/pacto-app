@@ -1,7 +1,7 @@
 <script lang="ts">
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
   import RpcReadErrorCard from '../dashboard/RpcReadErrorCard.svelte';
-  import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
+  import { rpcReadErrorKind, uniqueRpcReadErrorKinds } from '../../../lib/squad/rpc-read-error';
   import GovProcessCardView from './GovProcessCard.svelte';
   import {
     quartermasterExecuteAddCrew,
@@ -125,6 +125,7 @@
   let refreshSpinning = $derived(proposalsLoading || mutinyLoading || qmPendingLoading);
   let proposalsRpcKind = $derived(rpcReadErrorKind(proposalsError));
   let qmPendingRpcKind = $derived(rpcReadErrorKind(qmPendingError));
+  let boardRpcKinds = $derived(uniqueRpcReadErrorKinds(proposalsError, qmPendingError));
 
   function runBoardWrite(label: string, actionKey: string, job: () => Promise<unknown>) {
     runGovWriteInBackground({
@@ -325,24 +326,24 @@
   {#if boardLoading}
     <p class="muted">{$t('governance.status.loadingProposals')}</p>
   {:else if processCards.length === 0}
-    {#if proposalsRpcKind}
-      <RpcReadErrorCard kind={proposalsRpcKind} />
-    {:else if qmPendingRpcKind}
-      <RpcReadErrorCard kind={qmPendingRpcKind} />
-    {:else}
-      <p class="muted">
-        {proposalsError || qmPendingError || $t('governance.empty.noTreasuryProposals')}
-      </p>
+    {#each boardRpcKinds as kind (kind)}
+      <RpcReadErrorCard {kind} />
+    {/each}
+    {#if proposalsError && !proposalsRpcKind}
+      <p class="muted">{proposalsError}</p>
+    {:else if qmPendingError && !qmPendingRpcKind}
+      <p class="muted">{qmPendingError}</p>
+    {:else if boardRpcKinds.length === 0}
+      <p class="muted">{$t('governance.empty.noTreasuryProposals')}</p>
     {/if}
   {:else}
-    {#if proposalsRpcKind}
-      <RpcReadErrorCard kind={proposalsRpcKind} />
-    {:else if proposalsError}
+    {#each boardRpcKinds as kind (kind)}
+      <RpcReadErrorCard {kind} />
+    {/each}
+    {#if proposalsError && !proposalsRpcKind}
       <p class="muted">{proposalsError}</p>
     {/if}
-    {#if qmPendingRpcKind}
-      <RpcReadErrorCard kind={qmPendingRpcKind} />
-    {:else if qmPendingError}
+    {#if qmPendingError && !qmPendingRpcKind}
       <p class="muted">{qmPendingError}</p>
     {/if}
     <ul class="proposal-list" role="list">

@@ -3,8 +3,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 const {
   sendDmMessage,
   syncMlsGroupsNow,
-  publishSquadMemberEvmShare,
-  getBoundSquadEvmAddressForParent,
+  publishSquadEvmRosterSnapshot,
   publishSquadNetworkUpdated,
   publishSquadRpcUpdated,
   listSquadInfra,
@@ -39,8 +38,7 @@ const {
   return {
     sendDmMessage: vi.fn(),
     syncMlsGroupsNow: vi.fn(),
-    publishSquadMemberEvmShare: vi.fn(),
-    getBoundSquadEvmAddressForParent: vi.fn(),
+    publishSquadEvmRosterSnapshot: vi.fn(),
     publishSquadNetworkUpdated: vi.fn(),
     publishSquadRpcUpdated: vi.fn(),
     listSquadInfra: vi.fn(),
@@ -92,14 +90,9 @@ vi.mock('../../stores/squads', () => ({
     },
   },
 }));
-vi.mock('./squad-member-evm-share', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./squad-member-evm-share')>();
-  return {
-    ...actual,
-    publishSquadMemberEvmShare: (...args: unknown[]) => publishSquadMemberEvmShare(...args),
-    getBoundSquadEvmAddressForParent: (...args: unknown[]) => getBoundSquadEvmAddressForParent(...args),
-  };
-});
+vi.mock('./squad-evm-roster-snapshot', () => ({
+  publishSquadEvmRosterSnapshot: (...args: unknown[]) => publishSquadEvmRosterSnapshot(...args),
+}));
 
 vi.mock('./squad-network-share', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./squad-network-share')>();
@@ -129,6 +122,13 @@ vi.mock('../governance/gov-replica', () => ({
   },
 }));
 
+vi.mock('./join-inbox', () => ({
+  getJoinInboxState: vi.fn(async () => null),
+  formatJoinInboxMeta: vi.fn((state: { squadId: string }) =>
+    JSON.stringify({ schema: 'pacto.squad.join_inbox.meta.v1', squadId: state.squadId }),
+  ),
+}));
+
 vi.mock('../../stores/auth', () => ({
   currentUser,
 }));
@@ -153,8 +153,7 @@ describe('squad-state-sync', () => {
     currentUser.set({ npub: 'npub1responder' });
     syncMlsGroupsNow.mockResolvedValue({ synced: 0, total: 0 });
     sendDmMessage.mockResolvedValue(undefined);
-    publishSquadMemberEvmShare.mockResolvedValue(true);
-    getBoundSquadEvmAddressForParent.mockResolvedValue('0xbound');
+    publishSquadEvmRosterSnapshot.mockResolvedValue(true);
     publishSquadNetworkUpdated.mockResolvedValue(true);
     publishSquadRpcUpdated.mockResolvedValue(true);
     publishSquadChannelsCatalog.mockResolvedValue(true);
@@ -204,7 +203,7 @@ describe('squad-state-sync', () => {
       parent_id: 'ann-gid',
       request_id: 'req-1',
       requester_npub: 'npub1joiner',
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica', 'join_inbox'],
     });
   });
 
@@ -312,7 +311,7 @@ describe('squad-state-sync', () => {
       requesterNpub: 'npub1responder',
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
+    expect(publishSquadEvmRosterSnapshot).not.toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
   });
 
@@ -359,9 +358,7 @@ describe('squad-state-sync', () => {
       requesterNpub: 'npub1joiner',
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(publishSquadMemberEvmShare).toHaveBeenCalledWith('ann-gid', {
-      evmAddress: '0xbound',
-    });
+    expect(publishSquadEvmRosterSnapshot).toHaveBeenCalledWith('ann-gid', null);
     expect(publishSquadNetworkUpdated).toHaveBeenCalledWith('ann-gid');
     expect(publishSquadIdentityUpdated).toHaveBeenCalled();
     const govCalls = sendDmMessage.mock.calls.filter((c) =>
@@ -386,23 +383,19 @@ describe('squad-state-sync', () => {
       requesterNpub: 'npub1joiner',
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(getBoundSquadEvmAddressForParent).toHaveBeenCalledWith('ann-gid', 'squad-catalog');
-    expect(publishSquadMemberEvmShare).toHaveBeenCalledWith('ann-gid', {
-      evmAddress: '0xbound',
-      altParentId: 'squad-catalog',
-    });
+    expect(publishSquadEvmRosterSnapshot).toHaveBeenCalledWith('ann-gid', 'squad-catalog');
     mockParent.id = 'ann-gid';
   });
 
-  it('skips EVM republish when unbound but still syncs network', async () => {
-    getBoundSquadEvmAddressForParent.mockResolvedValueOnce(null);
+  it('skips EVM snapshot when no certified rows but still syncs network', async () => {
+    publishSquadEvmRosterSnapshot.mockResolvedValueOnce(false);
     const raw = formatSquadStateSyncRequest({
       parentId: 'ann-gid',
       requestId: 'req-unbound',
       requesterNpub: 'npub1joiner',
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
+    expect(publishSquadEvmRosterSnapshot).toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).toHaveBeenCalledWith('ann-gid');
   });
 
@@ -414,7 +407,7 @@ describe('squad-state-sync', () => {
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(publishSquadMemberEvmShare).toHaveBeenCalledTimes(1);
+    expect(publishSquadEvmRosterSnapshot).toHaveBeenCalledTimes(1);
     expect(publishSquadNetworkUpdated).toHaveBeenCalledTimes(1);
   });
 
@@ -425,13 +418,13 @@ describe('squad-state-sync', () => {
       requesterNpub: 'npub1joiner',
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
+    expect(publishSquadEvmRosterSnapshot).not.toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
     expect(listSquadInfra).not.toHaveBeenCalled();
   });
 
   it('allows retry when republish fails without recording cooldown', async () => {
-    publishSquadMemberEvmShare.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    publishSquadEvmRosterSnapshot.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     publishSquadNetworkUpdated.mockResolvedValue(false);
     publishSquadRpcUpdated.mockResolvedValue(false);
     publishSquadChannelsCatalog.mockResolvedValue(false);
@@ -445,7 +438,7 @@ describe('squad-state-sync', () => {
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(publishSquadMemberEvmShare).toHaveBeenCalledTimes(2);
+    expect(publishSquadEvmRosterSnapshot).toHaveBeenCalledTimes(2);
   });
 
   it('responds to infra-only requests and skips admit when already a member', async () => {
@@ -466,7 +459,7 @@ describe('squad-state-sync', () => {
       },
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
+    expect(publishSquadEvmRosterSnapshot).not.toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
     expect(publishSquadChannelsCatalog).toHaveBeenCalled();
     expect(publishSquadIdentityUpdated).not.toHaveBeenCalled();
@@ -496,6 +489,6 @@ describe('squad-state-sync', () => {
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
     expect(publishSquadIdentityUpdated).not.toHaveBeenCalled();
-    expect(publishSquadMemberEvmShare).toHaveBeenCalled();
+    expect(publishSquadEvmRosterSnapshot).toHaveBeenCalled();
   });
 });

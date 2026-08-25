@@ -99,8 +99,8 @@ export function bumpGovernanceProcessNonce(parentId: string): void {
   governanceProcessNonceByParentId.update((m) => ({ ...m, [id]: (m[id] ?? 0) + 1 }));
 }
 
-/** Bumped when squad bot meta / key_rotated MLS announces apply. */
-export const squadBotMetaNonceBySquadId = writable<Record<string, number>>({});
+/** Bumped when Join inbox meta / key_rotated MLS announces apply. */
+export const joinInboxMetaNonceBySquadId = writable<Record<string, number>>({});
 
 squadDashboardChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;

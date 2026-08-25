@@ -39,7 +39,7 @@ Pacto stores some things encrypted and some things plain. The plain items are mo
 - The text of direct messages and message edits.
 - Your BIP-39 seed phrase.
 - Imported Ethereum private keys.
-- Squad bot secrets.
+- Join inbox secrets.
 
 **Stored plain (metadata):**
 - Contact names and profile pictures.

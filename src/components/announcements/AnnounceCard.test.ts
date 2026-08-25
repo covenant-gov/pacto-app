@@ -30,7 +30,13 @@ describe('AnnounceCard routing', () => {
   it('renders a signer-share body for squad_member_evm_share', () => {
     const announce: AnnounceMessage = {
       type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
-      payload: { parent_id: 'squad-1', evm_address: '0x1111111111111111111111111111111111111111' },
+      payload: {
+        parent_id: 'squad-1',
+        member_npub: 'npub1alice',
+        evm_address: '0x1111111111111111111111111111111111111111',
+        issued_at: 1710000000,
+        signature: `0x${'ab'.repeat(65)}`,
+      },
     };
     render(AnnounceCard, { props: { announce, authorName: 'Alice', authorNpub: 'npub1alice', timestamp: '' } });
     expect(screen.getByTitle('0x1111111111111111111111111111111111111111')).toBeTruthy();

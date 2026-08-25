@@ -1,13 +1,13 @@
 <script lang="ts">
   import Message from '../dm/Message.svelte';
   import AnnounceCard from '../announcements/AnnounceCard.svelte';
-  import SquadBotAnnounceCard from '../announcements/SquadBotAnnounceCard.svelte';
+  import JoinInboxAnnounceCard from '../announcements/JoinInboxAnnounceCard.svelte';
   import MessageInput from '../dm/MessageInput.svelte';
   import MlsResetNotice from './MlsResetNotice.svelte';
   import MlsMembersPanel from './MlsMembersPanel.svelte';
   import Modal from '../ui/Modal.svelte';
   import { parseAnnouncement } from '../../lib/announcements';
-  import { parseSquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
+  import { parseJoinInboxAnnounceMessage } from '../../lib/squad/join-inbox-announce';
   import { resolvePollsMlsGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
   import {
     groupTimelineKey,
@@ -238,7 +238,7 @@
     if (!channelParsesStructuredAnnounces) return false;
     const parsed = parseAnnouncement(message.content);
     if (parsed && announceCardAllowedForTimelineBucket(parsed, message)) return true;
-    return Boolean(parseSquadBotAnnounceMessage(message.content));
+    return Boolean(parseJoinInboxAnnounceMessage(message.content));
   }
 
   let prevTimelineKeyForSendError: string | null = null;
@@ -804,8 +804,8 @@
           {#each virtualTimelineMessages as message, i (message.id)}
             {@const props = toMessageProps(message)}
             {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
-            {@const squadBotAnnounce =
-              channelParsesStructuredAnnounces ? parseSquadBotAnnounceMessage(message.content) : null}
+            {@const joinInboxAnnounce =
+              channelParsesStructuredAnnounces ? parseJoinInboxAnnounceMessage(message.content) : null}
             {@const announceForCard =
               parsed && announceCardAllowedForTimelineBucket(parsed, message) ? parsed : null}
             {#if announceForCard}
@@ -816,10 +816,10 @@
                 authorNpub={message.npub}
                 timestamp={props.timestamp}
               />
-            {:else if squadBotAnnounce}
-              <SquadBotAnnounceCard
+            {:else if joinInboxAnnounce}
+              <JoinInboxAnnounceCard
                 id={message.id}
-                announce={squadBotAnnounce}
+                announce={joinInboxAnnounce}
                 authorName={props.authorName}
                 authorNpub={message.npub}
                 timestamp={props.timestamp}

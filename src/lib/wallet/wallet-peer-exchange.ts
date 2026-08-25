@@ -105,6 +105,22 @@ export function threadHasOutboundGrantForRequest(
   return false;
 }
 
+/**
+ * Show an inbound grant card only when we sent the matching request
+ * (requester’s single “share accepted” card). Hide outbound grants and declines.
+ */
+export function shouldShowWalletPeerGrantCard(params: {
+  mine: boolean;
+  requestId: string;
+  myNpub: string | undefined;
+  messages: WalletPeerExchangeMessage[];
+}): boolean {
+  if (params.mine) return false;
+  const me = params.myNpub?.trim();
+  if (!me) return false;
+  return threadHasOutboundRequestForId(params.messages, params.requestId, me);
+}
+
 /** True if we sent the original consent request for this id. */
 export function threadHasOutboundRequestForId(
   messages: WalletPeerExchangeMessage[],

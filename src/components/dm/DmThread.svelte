@@ -610,6 +610,7 @@
           {msg}
           {npub}
           {contactDisplayName}
+          threadMessages={messages}
           {fulfilledWalletRequestIds}
           {acceptingSquadInviteId}
           {acceptingChannelInSquadId}

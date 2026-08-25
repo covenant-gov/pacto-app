@@ -18,14 +18,14 @@ export type MessageFormatter = (
 ) => string;
 
 const SCHEMA_KEYS: Record<string, string> = {
-  'pacto.squad.bot_join_response.v1': 'messaging.structuredNotice.squadJoinResponse',
-  'pacto.squad.bot_join_dm.v1': 'messaging.structuredNotice.squadJoinRequest',
+  'pacto.squad.join_inbox_response.v1': 'messaging.structuredNotice.squadJoinResponse',
+  'pacto.squad.join_inbox_dm.v1': 'messaging.structuredNotice.squadJoinRequest',
   'pacto.squad.join_request.v1': 'messaging.structuredNotice.squadJoinRequest',
   'pacto.squad.join_request_response.v1': 'messaging.structuredNotice.squadJoinUpdate',
-  'pacto.squad_bot.key_share.v1': 'messaging.structuredNotice.squadBotKeyUpdate',
-  'pacto.squad_bot.meta.v1': 'messaging.structuredNotice.squadBotUpdate',
-  'pacto.squad_bot.key_rotated.v1': 'messaging.structuredNotice.squadBotKeyRotated',
-  'pacto.squad_bot.rotate_prompt.v1': 'messaging.structuredNotice.squadBotRotationPrompt',
+  'pacto.squad.join_inbox.key_share.v1': 'messaging.structuredNotice.joinInboxKeyUpdate',
+  'pacto.squad.join_inbox.meta.v1': 'messaging.structuredNotice.joinInboxUpdate',
+  'pacto.squad.join_inbox.key_rotated.v1': 'messaging.structuredNotice.joinInboxKeyRotated',
+  'pacto.squad.join_inbox.rotate_prompt.v1': 'messaging.structuredNotice.joinInboxRotationPrompt',
   'pacto.commons.broadcast.v1': 'messaging.structuredNotice.commonsBroadcast',
   'pacto.dashboard_poll.v1': 'messaging.structuredNotice.dashboardPollUpdate',
 };
@@ -34,6 +34,7 @@ const TYPE_KEYS: Record<string, string> = {
   squad_contract_allowlist_updated: 'messaging.structuredNotice.contractAllowlistUpdated',
   squad_tracked_tokens_updated: 'messaging.structuredNotice.trackedTokensUpdated',
   squad_member_evm_share: 'messaging.structuredNotice.memberEvmAddressShared',
+  squad_evm_roster_snapshot: 'messaging.structuredNotice.memberEvmRosterSynced',
   squad_state_sync_request: 'messaging.structuredNotice.squadSyncRequest',
   squad_network_updated: 'messaging.structuredNotice.squadNetworkUpdated',
   squad_rpc_updated: 'messaging.structuredNotice.squadRpcUpdated',
@@ -85,7 +86,7 @@ export function summarizeStructuredMessageContent(
 
   const schema = typeof obj.schema === 'string' ? obj.schema.trim() : '';
   if (schema) {
-    if (schema === 'pacto.squad.bot_join_response.v1') {
+    if (schema === 'pacto.squad.join_inbox_response.v1') {
       const name =
         typeof obj.squadName === 'string' && obj.squadName.trim()
           ? obj.squadName.trim()
@@ -97,7 +98,7 @@ export function summarizeStructuredMessageContent(
         return t('messaging.structuredNotice.joinRequestRejected', { values: { squadName: name } });
       return t('messaging.structuredNotice.joinUpdateFor', { values: { squadName: name } });
     }
-    if (schema === 'pacto.squad.bot_join_dm.v1') {
+    if (schema === 'pacto.squad.join_inbox_dm.v1') {
       const name =
         typeof obj.squadName === 'string' && obj.squadName.trim()
           ? obj.squadName.trim()

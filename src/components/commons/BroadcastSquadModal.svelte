@@ -224,7 +224,7 @@
                   bind:group={durationHours}
                   disabled={busy}
                 />
-                <span>{opt.label}</span>
+                <span>{$t(opt.label, { values: { hours: opt.hours } })}</span>
               </label>
             {/each}
           </div>

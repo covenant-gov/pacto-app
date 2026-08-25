@@ -18,15 +18,15 @@ import {
   type PublicSquadBroadcastTarget,
 } from './squad-create-broadcast';
 import { normalizeSquadBroadcastTags } from './tags';
-import { ensureSquadBot } from '../squad/squad-bot';
+import { getJoinInboxState } from '../squad/join-inbox';
 
 const tFn = get(t);
 
-async function requireBotHolder(squadId: string): Promise<string | null> {
-  const state = await ensureSquadBot(squadId);
-  if (!state) return tFn('commons.errors.squadBotNotInitialized');
+async function requireJoinInboxHolder(squadId: string): Promise<string | null> {
+  const state = await getJoinInboxState(squadId);
+  if (!state) return tFn('commons.errors.joinInboxNotInitialized');
   if (!state.iAmHolder || !state.hasLocalSecret) {
-    return tFn('commons.errors.squadBotHolderRequired');
+    return tFn('commons.errors.joinInboxHolderRequired');
   }
   return null;
 }
@@ -67,7 +67,7 @@ export function formatBroadcastCooldownRemaining(
 export async function cancelSquadCommonsBroadcast(
   squadId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const gate = await requireBotHolder(squadId);
+  const gate = await requireJoinInboxHolder(squadId);
   if (gate) return { ok: false, error: gate };
   try {
     await cancelCommonsBroadcast('squad', squadId);
@@ -99,7 +99,7 @@ export async function publishSquadCommonsBroadcast(
     return { ok: false, error: tFn('commons.errors.messageRequired') };
   }
 
-  const gate = await requireBotHolder(squad.id);
+  const gate = await requireJoinInboxHolder(squad.id);
   if (gate) return { ok: false, error: gate };
 
   const active = await fetchActiveSquadCommonsBroadcast(squad.id);

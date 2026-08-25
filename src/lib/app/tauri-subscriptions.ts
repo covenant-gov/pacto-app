@@ -16,7 +16,7 @@ import {
   parseSquadInviteAccepted,
 } from '../squad/squad-outbound-invite';
 import {
-  handleBotJoinResponseDm,
+  handleJoinInboxResponseDm,
   tryCompletePendingApprovedJoins,
 } from '../squad/join-request-finalize';
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
@@ -145,7 +145,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       return;
     }
     if (!message.mine) {
-      void handleBotJoinResponseDm(content, chat_id);
+      void handleJoinInboxResponseDm(content, chat_id);
     }
     const m = normalizeDmPayload(message);
     backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {

@@ -32,8 +32,8 @@ vi.mock('./squad/squad-catalog', () => ({
   persistCreatedSquad: vi.fn(async (_tempId: string, squad: unknown) => squad),
 }));
 
-vi.mock('./squad/squad-bot', () => ({
-  initSquadBot: vi.fn(),
+vi.mock('./squad/join-inbox', () => ({
+  initJoinInbox: vi.fn(),
 }));
 
 vi.mock('./squad/skipped-members', async (importOriginal) => {
@@ -103,7 +103,7 @@ import {
   warnPendingInvites,
   pendingInvitesNotice,
 } from './squad/skipped-members';
-import { shortNpub } from './squad/squad-bot-announce';
+import { shortNpub } from './squad/join-inbox-announce';
 import {
   squads,
   parentCreateErrorById,

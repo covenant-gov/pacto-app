@@ -59,7 +59,7 @@ import { onMlsStructuredMessage } from './mls-structured-refresh';
 import {
   governanceProcessNonceByParentId,
   squadAllowlistNonceByParentId,
-  squadBotMetaNonceBySquadId,
+  joinInboxMetaNonceBySquadId,
   squadTrackedTokensNonceByParentId,
 } from '../../stores/navigation';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
@@ -84,7 +84,7 @@ describe('onMlsStructuredMessage', () => {
   beforeEach(() => {
     squadAllowlistNonceByParentId.set({});
     squadTrackedTokensNonceByParentId.set({});
-    squadBotMetaNonceBySquadId.set({});
+    joinInboxMetaNonceBySquadId.set({});
     governanceProcessNonceByParentId.set({});
     vi.mocked(syncJoinRequestsForSquad).mockClear();
     respondToSquadStateSyncRequest.mockClear();
@@ -403,12 +403,38 @@ describe('onMlsStructuredMessage', () => {
     onMlsStructuredMessage(
       JSON.stringify({
         type: 'squad_member_evm_share',
-        payload: { parent_id: 'evm-parent', evm_address: '0xabc' },
+        payload: {
+          parent_id: 'evm-parent',
+          member_npub: 'npub1alice',
+          evm_address: '0xabc',
+          issued_at: 1710000000,
+          signature: `0x${'ab'.repeat(65)}`,
+        },
       }),
       'g1',
       handlers,
     );
     expect(handlers.mergeSquadMemberEvmForAnnouncementsGroup).toHaveBeenCalledWith('evm-parent');
+
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_evm_roster_snapshot',
+        payload: {
+          parent_id: 'g1',
+          members: [
+            {
+              member_npub: 'npub1alice',
+              evm_address: '0xabc',
+              issued_at: 1710000000,
+              signature: `0x${'ab'.repeat(65)}`,
+            },
+          ],
+        },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(handlers.mergeSquadMemberEvmForAnnouncementsGroup).toHaveBeenCalledWith('g1');
 
     onMlsStructuredMessage(
       JSON.stringify({
@@ -471,13 +497,13 @@ describe('onMlsStructuredMessage', () => {
 
     onMlsStructuredMessage(
       JSON.stringify({
-        schema: 'pacto.squad_bot.meta.v1',
+        schema: 'pacto.squad.join_inbox.meta.v1',
         squad_id: 'bot-squad',
       }),
       'g1',
       handlers,
     );
-    expect(get(squadBotMetaNonceBySquadId)['bot-squad']).toBe(1);
+    expect(get(joinInboxMetaNonceBySquadId)['bot-squad']).toBe(1);
 
     onMlsStructuredMessage(
       JSON.stringify({

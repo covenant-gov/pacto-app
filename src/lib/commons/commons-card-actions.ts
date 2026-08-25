@@ -10,7 +10,7 @@ import {
   recordJoinRequestSent,
   squadIdFromBroadcast,
 } from './commons-join-request';
-import { formatBotJoinDm } from '../squad/squad-join-mls';
+import { formatJoinInboxDm } from '../squad/squad-join-mls';
 import { activeTopNavTab, activeView } from '../../stores/navigation';
 import {
   activeDmId,
@@ -36,7 +36,7 @@ export function openCommonsUserDmRequest(authorNpub: string, displayName?: strin
   void loadProfile(authorNpub);
 }
 
-/** Send a structured join request DM to the squad bot (card author). */
+/** Send a structured join request DM to the Join inbox (card author). */
 export async function sendCommonsJoinRequest(
   broadcast: CommonsBroadcastDto,
   requesterNpub: string,
@@ -51,9 +51,9 @@ export async function sendCommonsJoinRequest(
     return { ok: false, error: blockReason };
   }
 
-  const botNpub = broadcast.authorNpub?.trim() ?? '';
-  if (!botNpub.startsWith('npub1')) {
-    return { ok: false, error: 'Squad broadcast is missing a bot author.' };
+  const inboxNpub = broadcast.authorNpub?.trim() ?? '';
+  if (!inboxNpub.startsWith('npub1')) {
+    return { ok: false, error: 'Squad broadcast is missing a Join inbox author.' };
   }
 
   if (!squadId) {
@@ -61,7 +61,7 @@ export async function sendCommonsJoinRequest(
   }
 
   const requestId = crypto.randomUUID();
-  const content = formatBotJoinDm({
+  const content = formatJoinInboxDm({
     requestId,
     squadId,
     squadName: broadcast.squadName ?? 'Squad',
@@ -72,12 +72,12 @@ export async function sendCommonsJoinRequest(
     requestId,
     squadId,
     squadName: broadcast.squadName ?? 'Squad',
-    botNpub,
+    inboxNpub,
     broadcastEventId: broadcast.eventId,
     sentAt: Math.floor(Date.now() / 1000),
   });
   try {
-    await sendDmMessage(botNpub, content);
+    await sendDmMessage(inboxNpub, content);
     return { ok: true };
   } catch (e: unknown) {
     clearJoinRequestRecord(squadId, requestId);

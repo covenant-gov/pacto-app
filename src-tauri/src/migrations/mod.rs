@@ -225,8 +225,8 @@ fn baseline_existing_account(conn: &mut rusqlite::Connection) -> Result<(), Stri
     Ok(())
 }
 
-/// Minimal V1–V27 tables for baseline tests. Real accounts had `mls_groups` from V1
-/// and `squad_infra` from V14.
+/// Minimal V1–V27 tables for baseline tests. Real accounts had `mls_groups` from V1,
+/// `squad_infra` from V14, and `squad_member_evm` from V16.
 #[cfg(test)]
 pub(crate) fn seed_pre_v28_schema(conn: &rusqlite::Connection) {
     conn.execute_batch(
@@ -312,7 +312,15 @@ pub(crate) fn seed_pre_v28_schema(conn: &rusqlite::Connection) {
         );
         CREATE INDEX idx_squad_infra_parent ON squad_infra(parent_id, created_at_ms);
         CREATE UNIQUE INDEX idx_squad_infra_pacto_gov_singleton
-            ON squad_infra(parent_id, infra_type) WHERE infra_type = 'pacto_gov';",
+            ON squad_infra(parent_id, infra_type) WHERE infra_type = 'pacto_gov';
+        CREATE TABLE squad_member_evm (
+            parent_id TEXT NOT NULL,
+            member_npub TEXT NOT NULL,
+            evm_address TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            PRIMARY KEY (parent_id, member_npub)
+        );
+        CREATE INDEX idx_squad_member_evm_parent ON squad_member_evm(parent_id);",
     )
     .expect("seed pre-V28 schema");
 }

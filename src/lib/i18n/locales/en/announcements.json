@@ -34,13 +34,13 @@
 	"announcements.signerShare.mine": "You updated your EVM key for this Squad",
 	"announcements.signerShare.theirs": "{authorName} updated their EVM key for this Squad",
 	"announcements.signerShare.aMember": "A member",
-	"announcements.squadBot.rosterMine": "You updated the Join inbox holders",
-	"announcements.squadBot.rosterTheirs": "{authorName} updated the Join inbox holders",
-	"announcements.squadBot.aMember": "A member",
-	"announcements.squadBot.rotatedMine": "You rotated the Join inbox key",
-	"announcements.squadBot.rotatedTheirs": "{authorName} rotated the Join inbox key",
-	"announcements.squadBot.updateTitle": "Join inbox update",
-	"announcements.squadBot.keyHolders": "{count, plural, =0 {0 holders} one {1 holder} other {{count} holders}}",
-	"announcements.squadBot.keyEpoch": "Key epoch {keyEpoch}",
-	"announcements.squadBot.botLabel": "Inbox {shortNpub}"
+	"announcements.joinInbox.rosterMine": "You updated the Join inbox holders",
+	"announcements.joinInbox.rosterTheirs": "{authorName} updated the Join inbox holders",
+	"announcements.joinInbox.aMember": "A member",
+	"announcements.joinInbox.rotatedMine": "You rotated the Join inbox key",
+	"announcements.joinInbox.rotatedTheirs": "{authorName} rotated the Join inbox key",
+	"announcements.joinInbox.updateTitle": "Join inbox update",
+	"announcements.joinInbox.keyHolders": "{count, plural, =0 {0 holders} one {1 holder} other {{count} holders}}",
+	"announcements.joinInbox.keyEpoch": "Key epoch {keyEpoch}",
+	"announcements.joinInbox.inboxLabel": "Inbox {shortNpub}"
 }

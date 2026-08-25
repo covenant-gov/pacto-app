@@ -15,7 +15,7 @@ describe('summarizeStructuredMessageContent', () => {
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({
-          schema: 'pacto.squad.bot_join_response.v1',
+          schema: 'pacto.squad.join_inbox_response.v1',
           squadName: 'zzz',
           status: 'accepted',
         }),
@@ -89,6 +89,9 @@ describe('summarizeStructuredMessageContent', () => {
       summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_identity_updated' }), tFn)
     ).toBe('messaging.structuredNotice.squadIdentityUpdated');
     expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_evm_roster_snapshot' }), tFn)
+    ).toBe('messaging.structuredNotice.memberEvmRosterSynced');
+    expect(
       summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' }), tFn)
     ).toBe('messaging.structuredNotice.squadInviteAccepted');
     expect(
@@ -113,7 +116,7 @@ describe('summarizeStructuredMessageContent', () => {
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({
-          schema: 'pacto.squad.bot_join_response.v1',
+          schema: 'pacto.squad.join_inbox_response.v1',
           status: 'rejected',
         }),
         tFn
@@ -122,7 +125,7 @@ describe('summarizeStructuredMessageContent', () => {
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({
-          schema: 'pacto.squad.bot_join_response.v1',
+          schema: 'pacto.squad.join_inbox_response.v1',
           squadName: 'zzz',
           status: 'pending',
         }),
@@ -131,7 +134,7 @@ describe('summarizeStructuredMessageContent', () => {
     ).toBe('messaging.structuredNotice.joinUpdateFor');
     expect(
       summarizeStructuredMessageContent(
-        JSON.stringify({ schema: 'pacto.squad.bot_join_dm.v1', squadName: 'Crew' }),
+        JSON.stringify({ schema: 'pacto.squad.join_inbox_dm.v1', squadName: 'Crew' }),
         tFn
       )
     ).toBe('messaging.structuredNotice.joinRequestFor');

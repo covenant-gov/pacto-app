@@ -34,7 +34,7 @@ import {
   squadTrackedTokensNonceByParentId,
   governanceProcessNonceByParentId,
   bumpGovernanceProcessNonce,
-  squadBotMetaNonceBySquadId,
+  joinInboxMetaNonceBySquadId,
 } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
 import { parseSquadNavOrder } from '../lib/squad/squad-nav-order';
@@ -82,7 +82,7 @@ describe('navigation', () => {
     squadAllowlistNonceByParentId.set({});
     squadTrackedTokensNonceByParentId.set({});
     governanceProcessNonceByParentId.set({});
-    squadBotMetaNonceBySquadId.set({});
+    joinInboxMetaNonceBySquadId.set({});
     setCurrentNpubForPersistence(null);
     vi.unstubAllGlobals();
   });

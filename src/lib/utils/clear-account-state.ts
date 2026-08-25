@@ -110,7 +110,7 @@ import { PACTO_COMMONS_BROADCASTS_PREFIX } from '../commons/local-broadcast-stat
 import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX, resetCommonsJoinRequestRevision } from '../commons/commons-join-request';
 import { resetJoinRequestRespondInFlight } from '../squad/squad-join-mls';
 import { resetWalletPeerInfoRequestInFlight } from '../wallet/wallet-peer-exchange';
-import { resetSquadBotHolderActionInFlight } from '../squad/squad-bot';
+import { resetJoinInboxHolderActionInFlight } from '../squad/join-inbox';
 import { resetSquadStateSyncRequestInFlight } from '../squad/squad-state-sync';
 import { resetDeferredSquadRosterKeyParentIds } from '../squad/squad-roster-key-choice';
 import {
@@ -206,7 +206,7 @@ export function clearAccountState(npub?: string): void {
   resetCommonsJoinRequestRevision();
   resetJoinRequestRespondInFlight();
   resetWalletPeerInfoRequestInFlight();
-  resetSquadBotHolderActionInFlight();
+  resetJoinInboxHolderActionInFlight();
   resetSquadStateSyncRequestInFlight();
   resetDeferredSquadRosterKeyParentIds();
   resetMutinyProcessTxStore();

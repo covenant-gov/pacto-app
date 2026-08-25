@@ -2,34 +2,34 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import {
   clearJoinRequestRespondInFlight,
-  formatBotJoinDm,
+  formatJoinInboxDm,
   formatJoinResponseDm,
   formatMlsJoinRequest,
   formatMlsJoinRequestResponse,
-  isExpectedNonHolderBotSyncError,
+  isExpectedNonHolderJoinInboxSyncError,
   isJoinRequestRespondInFlight,
   joinRequestRespondInFlight,
   joinRequestRespondInFlightRevision,
   markJoinRequestRespondInFlight,
   mergeJoinRequestsFromMlsMessages,
-  parseBotJoinDm,
-  parseBotJoinResponseDm,
+  parseJoinInboxDm,
+  parseJoinInboxResponseDm,
   resetJoinRequestRespondInFlight,
-  SQUAD_BOT_JOIN_DM_SCHEMA,
-  SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA,
+  JOIN_INBOX_DM_SCHEMA,
+  JOIN_INBOX_RESPONSE_DM_SCHEMA,
   SQUAD_JOIN_REQUEST_SCHEMA,
 } from './squad-join-mls';
 
 describe('squad-join-mls wire', () => {
   it('formats bot join dm', () => {
-    const raw = formatBotJoinDm({
+    const raw = formatJoinInboxDm({
       requestId: 'r1',
       squadId: 's1',
       squadName: 'Pirates',
       broadcastEventId: 'e1',
     });
     const parsed = JSON.parse(raw);
-    expect(parsed.schema).toBe(SQUAD_BOT_JOIN_DM_SCHEMA);
+    expect(parsed.schema).toBe(JOIN_INBOX_DM_SCHEMA);
     expect(parsed.requestId).toBe('r1');
     expect(parsed.squadId).toBe('s1');
   });
@@ -42,13 +42,13 @@ describe('squad-join-mls wire', () => {
       status: 'rejected',
     });
     const parsed = JSON.parse(raw);
-    expect(parsed.schema).toBe(SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA);
+    expect(parsed.schema).toBe(JOIN_INBOX_RESPONSE_DM_SCHEMA);
     expect(parsed.status).toBe('rejected');
   });
 
   it('parses bot join response dm and rejects invalid status/fields', () => {
     expect(
-      parseBotJoinResponseDm(
+      parseJoinInboxResponseDm(
         formatJoinResponseDm({
           squadId: 's1',
           squadName: 'Pirates',
@@ -62,14 +62,14 @@ describe('squad-join-mls wire', () => {
       requestId: 'r1',
       status: 'accepted',
     });
-    expect(parseBotJoinResponseDm(null)).toBeNull();
-    expect(parseBotJoinResponseDm('plain')).toBeNull();
-    expect(parseBotJoinResponseDm('{')).toBeNull();
-    expect(parseBotJoinResponseDm(JSON.stringify({ schema: SQUAD_BOT_JOIN_DM_SCHEMA }))).toBeNull();
+    expect(parseJoinInboxResponseDm(null)).toBeNull();
+    expect(parseJoinInboxResponseDm('plain')).toBeNull();
+    expect(parseJoinInboxResponseDm('{')).toBeNull();
+    expect(parseJoinInboxResponseDm(JSON.stringify({ schema: JOIN_INBOX_DM_SCHEMA }))).toBeNull();
     expect(
-      parseBotJoinResponseDm(
+      parseJoinInboxResponseDm(
         JSON.stringify({
-          schema: SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA,
+          schema: JOIN_INBOX_RESPONSE_DM_SCHEMA,
           status: 'pending',
           squadId: 's1',
           requestId: 'r1',
@@ -77,9 +77,9 @@ describe('squad-join-mls wire', () => {
       ),
     ).toBeNull();
     expect(
-      parseBotJoinResponseDm(
+      parseJoinInboxResponseDm(
         JSON.stringify({
-          schema: SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA,
+          schema: JOIN_INBOX_RESPONSE_DM_SCHEMA,
           status: 'rejected',
           squadId: '  ',
           requestId: 'r1',
@@ -87,9 +87,9 @@ describe('squad-join-mls wire', () => {
       ),
     ).toBeNull();
     expect(
-      parseBotJoinResponseDm(
+      parseJoinInboxResponseDm(
         JSON.stringify({
-          schema: SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA,
+          schema: JOIN_INBOX_RESPONSE_DM_SCHEMA,
           status: 'rejected',
           squadId: 's1',
           squadName: '',
@@ -106,9 +106,9 @@ describe('squad-join-mls wire', () => {
 
   it('parses bot join dm and fills optional defaults', () => {
     expect(
-      parseBotJoinDm(
+      parseJoinInboxDm(
         JSON.stringify({
-          schema: SQUAD_BOT_JOIN_DM_SCHEMA,
+          schema: JOIN_INBOX_DM_SCHEMA,
           requestId: 'r1',
           squadId: 's1',
           broadcastEventId: 'e1',
@@ -122,30 +122,30 @@ describe('squad-join-mls wire', () => {
       requesterNpub: '',
       createdAt: 0,
     });
-    expect(parseBotJoinDm(undefined)).toBeNull();
-    expect(parseBotJoinDm('{bad')).toBeNull();
+    expect(parseJoinInboxDm(undefined)).toBeNull();
+    expect(parseJoinInboxDm('{bad')).toBeNull();
     expect(
-      parseBotJoinDm(
+      parseJoinInboxDm(
         JSON.stringify({
-          schema: SQUAD_BOT_JOIN_DM_SCHEMA,
+          schema: JOIN_INBOX_DM_SCHEMA,
           squadId: 's1',
           broadcastEventId: 'e1',
         }),
       ),
     ).toBeNull();
     expect(
-      parseBotJoinDm(
+      parseJoinInboxDm(
         JSON.stringify({
-          schema: SQUAD_BOT_JOIN_DM_SCHEMA,
+          schema: JOIN_INBOX_DM_SCHEMA,
           squadId: '',
           broadcastEventId: 'e1',
         }),
       ),
     ).toBeNull();
     expect(
-      parseBotJoinDm(
+      parseJoinInboxDm(
         JSON.stringify({
-          schema: SQUAD_BOT_JOIN_DM_SCHEMA,
+          schema: JOIN_INBOX_DM_SCHEMA,
           squadId: 's1',
           squadName: 'Pirates',
           broadcastEventId: 'e1',
@@ -293,13 +293,13 @@ describe('squad-join-mls wire', () => {
   });
 });
 
-describe('isExpectedNonHolderBotSyncError', () => {
+describe('isExpectedNonHolderJoinInboxSyncError', () => {
   it('treats holder/secret errors as expected for non-holders', () => {
-    expect(isExpectedNonHolderBotSyncError('Only bot key holders can perform this action')).toBe(true);
-    expect(isExpectedNonHolderBotSyncError('Local bot secret required')).toBe(true);
-    expect(isExpectedNonHolderBotSyncError('Bot not initialized')).toBe(true);
-    expect(isExpectedNonHolderBotSyncError('stale keypackage')).toBe(true);
-    expect(isExpectedNonHolderBotSyncError('MLS offline')).toBe(false);
+    expect(isExpectedNonHolderJoinInboxSyncError('Only Join inbox holders can perform this action')).toBe(true);
+    expect(isExpectedNonHolderJoinInboxSyncError('Local Join inbox key is stale')).toBe(true);
+    expect(isExpectedNonHolderJoinInboxSyncError('Join inbox not initialized')).toBe(true);
+    expect(isExpectedNonHolderJoinInboxSyncError('stale keypackage')).toBe(true);
+    expect(isExpectedNonHolderJoinInboxSyncError('MLS offline')).toBe(false);
   });
 });
 

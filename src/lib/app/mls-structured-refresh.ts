@@ -31,12 +31,13 @@ import {
   applySquadIdentityUpdated,
   parseSquadIdentityUpdated,
 } from '../squad/squad-identity-announce';
+import { parseSquadEvmRosterSnapshot } from '../squad/squad-evm-roster-snapshot';
 import { currentUser } from '../../stores/auth';
 import { squadInfraByParentId } from '../../stores/squads';
 import {
   bumpGovernanceProcessNonce,
   squadAllowlistNonceByParentId,
-  squadBotMetaNonceBySquadId,
+  joinInboxMetaNonceBySquadId,
   squadTrackedTokensNonceByParentId,
 } from '../../stores/navigation';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
@@ -99,6 +100,9 @@ export function onMlsStructuredMessage(
   if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
     handlers.mergeSquadMemberEvmForAnnouncementsGroup(announce.payload.parent_id || gid);
   }
+  if (parseSquadEvmRosterSnapshot(raw)) {
+    handlers.mergeSquadMemberEvmForAnnouncementsGroup(gid);
+  }
 
   if (parseSquadStateSyncRequest(raw)) {
     void respondToSquadStateSyncRequest(raw, gid);
@@ -157,14 +161,14 @@ export function onMlsStructuredMessage(
 
   const schema = typeof root.schema === 'string' ? root.schema.trim() : '';
   if (
-    schema === 'pacto.squad_bot.meta.v1' ||
-    schema === 'pacto.squad_bot.key_rotated.v1'
+    schema === 'pacto.squad.join_inbox.meta.v1' ||
+    schema === 'pacto.squad.join_inbox.key_rotated.v1'
   ) {
     const squadId =
       (typeof root.squadId === 'string' && root.squadId.trim()) ||
       (typeof root.squad_id === 'string' && root.squad_id.trim()) ||
       gid;
-    bumpNonce(squadBotMetaNonceBySquadId, squadId);
+    bumpNonce(joinInboxMetaNonceBySquadId, squadId);
   }
 
   if (schema === SQUAD_JOIN_REQUEST_SCHEMA || schema === SQUAD_JOIN_REQUEST_RESPONSE_SCHEMA) {
