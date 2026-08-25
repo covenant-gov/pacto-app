@@ -1,0 +1,11 @@
+[profile.default]
+retries = 0
+
+# Used by CI (`cargo nextest run --profile ci`) to emit per-test timings for
+# the step-summary/slowest-tests report and artifact upload. See
+# .github/workflows/ci.yaml.
+[profile.ci]
+retries = 0
+
+[profile.ci.junit]
+path = "junit.xml"

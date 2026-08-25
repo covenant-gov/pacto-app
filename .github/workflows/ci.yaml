@@ -217,9 +217,29 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Install cargo-nextest
+        run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+
       - name: Rust unit tests
         working-directory: src-tauri
-        run: cargo test --lib --no-default-features
+        # nextest runs each test in its own process instead of cargo test's
+        # shared-process thread pool: ~7x faster wall time locally (948
+        # tests, 190s -> 26s) with identical pass/fail semantics. `--profile
+        # ci` emits a JUnit report (.config/nextest.toml) for the timing
+        # summary and artifact below.
+        run: cargo nextest run --lib --no-default-features --profile ci
+
+      - name: Test timing summary
+        if: always()
+        run: node scripts/nextest-slow-summary.mjs src-tauri/target/nextest/ci/junit.xml "Backend test timing"
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-tests-junit
+          path: src-tauri/target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
   relay-free-harness:
     # Relay-free seeding harness: builds populated per-account storage with
@@ -239,11 +259,14 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Install cargo-nextest
+        run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+
       - name: Harness unit tests
         working-directory: src-tauri
         # Quoted: the trailing `::` module filter would otherwise read as a
         # YAML mapping key and make this whole file unparseable.
-        run: "cargo test --lib --no-default-features --features relay-free-harness harness::"
+        run: "cargo nextest run --lib --no-default-features --features relay-free-harness harness::"
 
       - name: Build relay-free harness
         working-directory: src-tauri
@@ -340,5 +363,5 @@ jobs:
           node-version: 24.18.0
 
       - name: Run release script tests
-        run: node --test scripts/generate-release-manifest.test.mjs scripts/stamp-updater-compatibility.test.mjs
+        run: node --test scripts/generate-release-manifest.test.mjs scripts/stamp-updater-compatibility.test.mjs scripts/nextest-slow-summary.test.mjs
 
