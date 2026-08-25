@@ -6,7 +6,7 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { cn } from '$lib/utils.js';
 	import { design } from '../design-state.svelte.js';
-	import { DITHER_PATTERNS, ditherPatternUrl, type DitherPattern } from '../dither.js';
+	import { DITHER_PATTERNS, ditherPatternMaskImage, type DitherPattern } from '../dither.js';
 
 	function setNumber(field: 'ditherMix' | 'ditherTile' | 'ditherEdge', event: Event): void {
 		const value = Number((event.currentTarget as HTMLInputElement).value);
@@ -19,13 +19,13 @@
 	}
 
 	function patternThumbStyle(pattern: DitherPattern): string {
-		const url = ditherPatternUrl(pattern);
+		const mask = ditherPatternMaskImage(pattern);
 		return [
-			`mask-image: url('${url}')`,
-			`mask-size: 6px 6px`,
+			`mask-image: ${mask}`,
+			`mask-size: 8px 8px`,
 			`mask-repeat: repeat`,
-			`-webkit-mask-image: url('${url}')`,
-			`-webkit-mask-size: 6px 6px`,
+			`-webkit-mask-image: ${mask}`,
+			`-webkit-mask-size: 8px 8px`,
 			`-webkit-mask-repeat: repeat`,
 		].join('; ');
 	}

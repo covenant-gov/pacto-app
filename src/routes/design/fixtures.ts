@@ -105,7 +105,7 @@ export const members: Member[] = [
 	{ id: 'molly', name: 'Molly', initials: 'M', color: '#3a2c4a', hat: 'crew', status: 'offline' }
 ];
 
-export type MessageKind = 'text' | 'gov';
+export type MessageKind = 'text' | 'gov' | 'sys';
 export type MessageRole = 'admin' | 'qm' | 'cm';
 
 /** Squad proposals referenced as #N in chat (GitHub-issue style pills). */
@@ -219,6 +219,33 @@ export const messages: Message[] = [
 		time: 'Today at 9:11 AM',
 		kind: 'text',
 		text: 'gm — catching up now'
+	},
+	{
+		id: 'm3b',
+		author: 'Pacto',
+		initials: 'P',
+		color: '#14120f',
+		time: 'Today at 9:12 AM',
+		kind: 'sys',
+		text: 'Join inbox keys rotated for this squad.'
+	},
+	{
+		id: 'm3c',
+		author: 'Eve',
+		initials: 'E',
+		color: '#26324a',
+		time: 'Today at 9:13 AM',
+		kind: 'text',
+		text: 'rotations always land right when I’m mid-thread'
+	},
+	{
+		id: 'm3d',
+		author: 'Molly',
+		initials: 'M',
+		color: '#3a2c4a',
+		time: 'Today at 9:13 AM',
+		kind: 'text',
+		text: 'same. scrolling back.'
 	},
 	{
 		id: 'm4',

@@ -9,7 +9,7 @@
 		initials,
 		color,
 	}: {
-		kind: 'text' | 'gov';
+		kind: 'text' | 'gov' | 'sys';
 		role?: 'admin' | 'qm' | 'cm';
 		author: string;
 		initials: string;

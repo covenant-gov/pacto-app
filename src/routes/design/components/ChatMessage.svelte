@@ -9,6 +9,8 @@
 	import VoteEmbedCard from '../../../components/channel/VoteEmbedCard.svelte';
 	import VoteEmbedStrip from '../../../components/channel/VoteEmbedStrip.svelte';
 	import { cn } from '$lib/utils.js';
+	import { design } from '../design-state.svelte.js';
+	import { ditherMaskStyle } from '../dither.js';
 	import type { Message } from '../fixtures.js';
 	import { pollTitle, proposalTitle } from '../fixtures.js';
 
@@ -30,6 +32,21 @@
 	}
 </script>
 
+{#if message.kind === 'sys'}
+	<div class="shell-sys-notice px-4 py-3">
+		<div
+			class="shell-sys-notice-wash"
+			style={ditherMaskStyle(design.ditherPattern)}
+			aria-hidden="true"
+		></div>
+		<div class="shell-sys-notice-fade" aria-hidden="true"></div>
+		<p class="relative z-10 m-0 text-center text-xs leading-5 font-medium tracking-[0.04em] text-pretty text-muted-foreground">
+			<span class="text-foreground/80 uppercase">{$t('design.chat.systemLabel')}</span>
+			<span aria-hidden="true"> · </span>
+			{message.text}
+		</p>
+	</div>
+{:else}
 <div class="flex items-start gap-3">
 	<MessageAuthorAvatar
 		kind={message.kind}
@@ -142,3 +159,4 @@
 		{/if}
 	</div>
 </div>
+{/if}

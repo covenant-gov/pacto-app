@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { t } from 'svelte-i18n';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { design } from '../design-state.svelte.js';
+	import { ditherMaskStyle } from '../dither.js';
 
 	let { onClose }: { onClose: () => void } = $props();
 
@@ -26,9 +28,21 @@
 	aria-modal="true"
 	aria-labelledby="design-gate-title"
 >
-	<div class="shell-grid-void pointer-events-none absolute inset-0" aria-hidden="true"></div>
-	<div class="shell-dither-wash pointer-events-none absolute inset-0" aria-hidden="true"></div>
-	<div class="shell-gate-scan pointer-events-none absolute inset-0" aria-hidden="true"></div>
+	<div
+		class="shell-grid-void pointer-events-none absolute inset-0"
+		style={ditherMaskStyle(design.ditherPattern)}
+		aria-hidden="true"
+	></div>
+	<div
+		class="shell-dither-wash pointer-events-none absolute inset-0"
+		style={ditherMaskStyle(design.ditherPattern)}
+		aria-hidden="true"
+	></div>
+	<div
+		class="shell-gate-scan pointer-events-none absolute inset-0"
+		style={ditherMaskStyle(design.ditherPattern)}
+		aria-hidden="true"
+	></div>
 	<div class="shell-gate-well pointer-events-none absolute inset-0" aria-hidden="true"></div>
 
 	<div class="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center gap-7 px-6">

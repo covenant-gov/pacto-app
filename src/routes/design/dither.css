@@ -3,10 +3,15 @@
   --dither-mix: 42;
   --dither-tile: 8px;
   --dither-edge: 12px;
+  --dither-ink: var(--dither-fill, var(--brand));
 }
 
 [data-slot='rail-tile'][data-variant='squad']::before,
-.shell-dither-wash {
+.shell-dither-wash,
+.shell-dither-seam::before,
+.shell-grid-void,
+.shell-dither-arc-wash,
+.shell-sys-notice-wash {
   -webkit-mask-image: url('./dither/bayer.svg');
   mask-image: url('./dither/bayer.svg');
   -webkit-mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px);
@@ -23,8 +28,8 @@
   z-index: 1;
   border-radius: inherit;
   background-color: color-mix(
-    in srgb,
-    var(--foreground) calc(var(--dither-mix, 42) * 1%),
+    in oklch,
+    var(--dither-ink) calc(var(--dither-mix, 42) * 1%),
     transparent
   );
   opacity: 1;
@@ -34,8 +39,8 @@
 .shell-dither-wash {
   pointer-events: none;
   background-color: color-mix(
-    in srgb,
-    var(--foreground) calc(var(--dither-mix, 42) * 1%),
+    in oklch,
+    var(--dither-ink) calc(var(--dither-mix, 42) * 1%),
     transparent
   );
 }
@@ -66,155 +71,173 @@
   z-index: 2;
   width: var(--dither-edge, 12px);
   border-top-left-radius: inherit;
-  background-color: var(--muted);
-  mask-image: url('./dither/bayer.svg'), linear-gradient(to right, #000, transparent);
-  mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px), 100% 100%;
-  mask-repeat: repeat, no-repeat;
-  mask-composite: intersect;
-  -webkit-mask-image: url('./dither/bayer.svg'), linear-gradient(to right, #000, transparent);
-  -webkit-mask-size: var(--dither-tile, 8px) var(--dither-tile, 8px), 100% 100%;
-  -webkit-mask-repeat: repeat, no-repeat;
-  -webkit-mask-composite: source-in;
+  background: linear-gradient(
+    to right,
+    color-mix(in oklch, var(--dither-ink) 18%, transparent),
+    transparent
+  );
+}
+
+.shell-dither-arc-bowl {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: radial-gradient(
+    ellipse 135% 110% at 50% 100%,
+    #000 0%,
+    #000 38%,
+    transparent 78%
+  );
+  mask-image: radial-gradient(
+    ellipse 135% 110% at 50% 100%,
+    #000 0%,
+    #000 38%,
+    transparent 78%
+  );
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.shell-dither-arc-wash {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 42) * 0.28%), transparent) 28%,
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 42) * 0.95%), transparent) 100%
+  );
+}
+
+.shell-dither-arc[data-away] .shell-dither-arc-wash {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 42) * 0.4%), transparent) 24%,
+    color-mix(in oklch, var(--dither-ink) calc(var(--dither-mix, 42) * 1%), transparent) 100%
+  );
+}
+
+.shell-sys-notice {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+}
+
+.shell-sys-notice-wash {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background-color: color-mix(
+    in oklch,
+    var(--dither-ink) calc(var(--dither-mix, 42) * 0.55%),
+    transparent
+  );
+}
+
+.shell-sys-notice-fade {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 95% 80% at 50% 50%,
+    transparent 0%,
+    transparent 40%,
+    color-mix(in srgb, var(--background) 55%, transparent) 78%
+  );
 }
 
 .shell-grid-void {
   background-image:
-    linear-gradient(var(--border-subtle) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
-  background-size: 28px 28px, 28px 28px;
-  background-position: 12px 8px;
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/bayer.svg');
-  mask-size: 100% 100%, var(--dither-tile, 8px) var(--dither-tile, 8px);
-  mask-repeat: no-repeat, repeat;
-  mask-composite: intersect;
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/bayer.svg');
-  -webkit-mask-size: 100% 100%, var(--dither-tile, 8px) var(--dither-tile, 8px);
-  -webkit-mask-repeat: no-repeat, repeat;
-  -webkit-mask-composite: source-in;
-  opacity: calc(0.2 + var(--dither-mix, 42) * 0.01);
+    radial-gradient(ellipse 70% 55% at 50% 42%, transparent 42%, var(--background) 78%),
+    linear-gradient(
+      color-mix(in oklch, var(--dither-ink) 22%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--dither-ink) 22%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 100% 100%, 28px 28px, 28px 28px;
+  background-position: 0 0, 12px 8px, 12px 8px;
+  opacity: calc(0.22 + var(--dither-mix, 42) * 0.01);
 }
 
 .shell-gate-scan {
   background: repeating-linear-gradient(
     to bottom,
-    transparent 0 2px,
+    transparent 0 calc(var(--dither-tile, 8px) * 0.25),
     color-mix(
-        in srgb,
-        var(--foreground) calc(var(--dither-mix, 42) * 0.28%),
+        in oklch,
+        var(--dither-ink) calc(var(--dither-mix, 42) * 0.28%),
         transparent
       )
-      2px 3px
+      calc(var(--dither-tile, 8px) * 0.25) calc(var(--dither-tile, 8px) * 0.4)
   );
 }
 
 [data-dither-pattern='checker'] [data-slot='rail-tile'][data-variant='squad']::before,
-[data-dither-pattern='checker'] .shell-dither-wash {
+[data-dither-pattern='checker'] .shell-dither-wash,
+[data-dither-pattern='checker'] .shell-dither-seam::before,
+[data-dither-pattern='checker'] .shell-grid-void,
+[data-dither-pattern='checker'] .shell-dither-arc-wash,
+[data-dither-pattern='checker'] .shell-sys-notice-wash {
   -webkit-mask-image: url('./dither/checker.svg');
   mask-image: url('./dither/checker.svg');
 }
 
-[data-dither-pattern='checker'] .shell-dither-seam::before {
-  mask-image: url('./dither/checker.svg'), linear-gradient(to right, #000, transparent);
-  -webkit-mask-image: url('./dither/checker.svg'), linear-gradient(to right, #000, transparent);
-}
-
-[data-dither-pattern='checker'] .shell-grid-void {
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/checker.svg');
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/checker.svg');
-}
-
 [data-dither-pattern='dots'] [data-slot='rail-tile'][data-variant='squad']::before,
-[data-dither-pattern='dots'] .shell-dither-wash {
+[data-dither-pattern='dots'] .shell-dither-wash,
+[data-dither-pattern='dots'] .shell-dither-seam::before,
+[data-dither-pattern='dots'] .shell-grid-void,
+[data-dither-pattern='dots'] .shell-dither-arc-wash,
+[data-dither-pattern='dots'] .shell-sys-notice-wash {
   -webkit-mask-image: url('./dither/dots.svg');
   mask-image: url('./dither/dots.svg');
 }
 
-[data-dither-pattern='dots'] .shell-dither-seam::before {
-  mask-image: url('./dither/dots.svg'), linear-gradient(to right, #000, transparent);
-  -webkit-mask-image: url('./dither/dots.svg'), linear-gradient(to right, #000, transparent);
-}
-
-[data-dither-pattern='dots'] .shell-grid-void {
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/dots.svg');
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/dots.svg');
-}
-
 [data-dither-pattern='hline'] [data-slot='rail-tile'][data-variant='squad']::before,
-[data-dither-pattern='hline'] .shell-dither-wash {
+[data-dither-pattern='hline'] .shell-dither-wash,
+[data-dither-pattern='hline'] .shell-dither-seam::before,
+[data-dither-pattern='hline'] .shell-grid-void,
+[data-dither-pattern='hline'] .shell-dither-arc-wash,
+[data-dither-pattern='hline'] .shell-sys-notice-wash {
   -webkit-mask-image: url('./dither/hline.svg');
   mask-image: url('./dither/hline.svg');
 }
 
-[data-dither-pattern='hline'] .shell-dither-seam::before {
-  mask-image: url('./dither/hline.svg'), linear-gradient(to right, #000, transparent);
-  -webkit-mask-image: url('./dither/hline.svg'), linear-gradient(to right, #000, transparent);
-}
-
-[data-dither-pattern='hline'] .shell-grid-void {
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/hline.svg');
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/hline.svg');
-}
-
 [data-dither-pattern='vline'] [data-slot='rail-tile'][data-variant='squad']::before,
-[data-dither-pattern='vline'] .shell-dither-wash {
+[data-dither-pattern='vline'] .shell-dither-wash,
+[data-dither-pattern='vline'] .shell-dither-seam::before,
+[data-dither-pattern='vline'] .shell-grid-void,
+[data-dither-pattern='vline'] .shell-dither-arc-wash,
+[data-dither-pattern='vline'] .shell-sys-notice-wash {
   -webkit-mask-image: url('./dither/vline.svg');
   mask-image: url('./dither/vline.svg');
 }
 
-[data-dither-pattern='vline'] .shell-dither-seam::before {
-  mask-image: url('./dither/vline.svg'), linear-gradient(to right, #000, transparent);
-  -webkit-mask-image: url('./dither/vline.svg'), linear-gradient(to right, #000, transparent);
-}
-
-[data-dither-pattern='vline'] .shell-grid-void {
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/vline.svg');
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/vline.svg');
-}
-
 [data-dither-pattern='diag'] [data-slot='rail-tile'][data-variant='squad']::before,
-[data-dither-pattern='diag'] .shell-dither-wash {
+[data-dither-pattern='diag'] .shell-dither-wash,
+[data-dither-pattern='diag'] .shell-dither-seam::before,
+[data-dither-pattern='diag'] .shell-grid-void,
+[data-dither-pattern='diag'] .shell-dither-arc-wash,
+[data-dither-pattern='diag'] .shell-sys-notice-wash {
   -webkit-mask-image: url('./dither/diag.svg');
   mask-image: url('./dither/diag.svg');
 }
 
-[data-dither-pattern='diag'] .shell-dither-seam::before {
-  mask-image: url('./dither/diag.svg'), linear-gradient(to right, #000, transparent);
-  -webkit-mask-image: url('./dither/diag.svg'), linear-gradient(to right, #000, transparent);
-}
-
-[data-dither-pattern='diag'] .shell-grid-void {
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/diag.svg');
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/diag.svg');
-}
-
 [data-dither-pattern='cross'] [data-slot='rail-tile'][data-variant='squad']::before,
-[data-dither-pattern='cross'] .shell-dither-wash {
+[data-dither-pattern='cross'] .shell-dither-wash,
+[data-dither-pattern='cross'] .shell-dither-seam::before,
+[data-dither-pattern='cross'] .shell-grid-void,
+[data-dither-pattern='cross'] .shell-dither-arc-wash,
+[data-dither-pattern='cross'] .shell-sys-notice-wash {
   -webkit-mask-image: url('./dither/cross.svg');
   mask-image: url('./dither/cross.svg');
-}
-
-[data-dither-pattern='cross'] .shell-dither-seam::before {
-  mask-image: url('./dither/cross.svg'), linear-gradient(to right, #000, transparent);
-  -webkit-mask-image: url('./dither/cross.svg'), linear-gradient(to right, #000, transparent);
-}
-
-[data-dither-pattern='cross'] .shell-grid-void {
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/cross.svg');
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 42%, #000 0%, transparent 72%),
-    url('./dither/cross.svg');
 }
 
 .shell-gate-split {
@@ -222,12 +245,6 @@
     0 1px 18px var(--bg-page),
     -1px 0 color-mix(in srgb, var(--danger) 70%, transparent),
     1px 0 color-mix(in srgb, var(--brand) 70%, transparent);
-}
-
-.shell-gate .shell-dither-wash,
-.shell-gate .shell-gate-scan {
-  -webkit-mask-image: radial-gradient(ellipse 58% 50% at 50% 46%, transparent 12%, #000 64%);
-  mask-image: radial-gradient(ellipse 58% 50% at 50% 46%, transparent 12%, #000 64%);
 }
 
 .shell-gate-well {

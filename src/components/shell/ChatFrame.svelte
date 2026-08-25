@@ -63,7 +63,7 @@
 		{/if}
 	</header>
 
-	<div class="shell-dither-seam min-h-0 flex-1 overflow-hidden rounded-tl-lg bg-background">
+	<div class="min-h-0 flex-1 overflow-hidden rounded-tl-lg bg-background">
 		{#if state === 'loading'}
 			<div class="h-full overflow-hidden px-[18px] py-[22px]" role="status" aria-busy="true">
 				<span class="sr-only">{labels.loading}</span>

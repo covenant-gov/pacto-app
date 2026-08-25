@@ -8,6 +8,7 @@
 	import AsideToggleButton from '../../../components/shell/AsideToggleButton.svelte';
 	import ChatComposer from '../../../components/channel/ChatComposer.svelte';
 	import type { Message } from '../fixtures.js';
+	import ChatDitherDock from './ChatDitherDock.svelte';
 	import ChatMessage from './ChatMessage.svelte';
 
 	let {
@@ -31,6 +32,37 @@
 		onSend: (text: string) => void;
 		onToggleMembers?: () => void;
 	} = $props();
+
+	let viewportEl = $state<HTMLElement | null>(null);
+	let awayFromLatest = $state(false);
+
+	function measureAway(): void {
+		const el = viewportEl;
+		if (!el) return;
+		awayFromLatest = el.scrollHeight - el.scrollTop - el.clientHeight > 96;
+	}
+
+	function jumpToLatest(): void {
+		viewportEl?.scrollTo({ top: viewportEl.scrollHeight, behavior: 'smooth' });
+	}
+
+	$effect(() => {
+		const el = viewportEl;
+		if (!el) return;
+		measureAway();
+		el.addEventListener('scroll', measureAway, { passive: true });
+		return () => el.removeEventListener('scroll', measureAway);
+	});
+
+	$effect(() => {
+		const count = messages.length;
+		const el = viewportEl;
+		if (!el || awayFromLatest) return;
+		void count;
+		queueMicrotask(() => {
+			el.scrollTop = el.scrollHeight;
+		});
+	});
 </script>
 
 <div class="flex h-full min-w-0 flex-1 flex-col bg-muted">
@@ -66,23 +98,25 @@
 		{/if}
 	</div>
 
-	<div class="shell-dither-seam flex min-h-0 flex-1 flex-col overflow-hidden rounded-tl-lg bg-background">
-		<ScrollArea.Root class="min-h-0 flex-1">
-			<div class="flex flex-col gap-6 px-5 py-5">
+	<div class="relative min-h-0 flex-1 overflow-hidden rounded-tl-lg bg-background">
+		<ScrollArea.Root class="h-full" bind:viewportRef={viewportEl}>
+			<div class="flex flex-col gap-6 px-5 pt-5 pb-48">
 				{#each messages as message (message.id)}
 					<ChatMessage {message} {channelId} {announcementOnly} />
 				{/each}
 			</div>
 		</ScrollArea.Root>
 
-		{#if announcementOnly}
-			<div
-				class="mx-4 mb-4 flex shrink-0 items-center justify-center rounded-lg border border-dashed border-border px-4 py-3 text-center text-xs text-muted-foreground"
-			>
-				{$t('design.chat.publishOnly')}
-			</div>
-		{:else}
-			<ChatComposer {channelName} {onSend} />
-		{/if}
+		<ChatDitherDock {awayFromLatest} onJump={jumpToLatest}>
+			{#if announcementOnly}
+				<p
+					class="mx-4 px-1 py-3 text-center text-[15px] leading-6 tracking-sm text-pretty text-muted-foreground [text-shadow:0_1px_12px_var(--background)]"
+				>
+					{$t('design.chat.publishOnly')}
+				</p>
+			{:else}
+				<ChatComposer {channelName} {onSend} />
+			{/if}
+		</ChatDitherDock>
 	</div>
 </div>
