@@ -1,4 +1,4 @@
-/** Static fixtures for the Option I design reference route (dev-only, no live data). */
+/** Static fixtures for the /design sandbox (dev-only, no live data). */
 
 import type { ShellPreviewState } from '$lib/shell';
 
