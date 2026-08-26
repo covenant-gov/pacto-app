@@ -40,6 +40,40 @@ function stubViewport(mode: 'narrow' | 'medium' | 'wide'): void {
 	});
 }
 
+function stubViewportWithListeners(mode: 'narrow' | 'medium' | 'wide'): {
+	setMode: (next: 'narrow' | 'medium' | 'wide') => void;
+} {
+	let width = mode === 'narrow' ? 720 : mode === 'medium' ? 1180 : 1400;
+	const listeners = new Set<(ev: MediaQueryListEvent) => void>();
+
+	vi.stubGlobal('matchMedia', (query: string) => {
+		const maxWidth = /max-width:\s*(\d+)px/.exec(query)?.[1];
+		return {
+			get matches() {
+				return maxWidth !== undefined ? width <= Number(maxWidth) : false;
+			},
+			media: query,
+			onchange: null,
+			addEventListener: (_event: string, fn: (ev: MediaQueryListEvent) => void) => {
+				listeners.add(fn);
+			},
+			removeEventListener: (_event: string, fn: (ev: MediaQueryListEvent) => void) => {
+				listeners.delete(fn);
+			},
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			dispatchEvent: vi.fn(),
+		};
+	});
+
+	return {
+		setMode(next: 'narrow' | 'medium' | 'wide') {
+			width = next === 'narrow' ? 720 : next === 'medium' ? 1180 : 1400;
+			for (const fn of listeners) fn({ matches: true } as MediaQueryListEvent);
+		},
+	};
+}
+
 async function renderShell() {
 	const view = render(AppShellHarness, { props: { labels, regionNames } });
 	await tick();
@@ -118,6 +152,23 @@ describe('AppShell', () => {
 		await waitFor(() => {
 			expect(screen.queryByRole('dialog', { name: labels.asideDrawer })).toBeNull();
 			expect(document.activeElement).toBe(trigger);
+		});
+	});
+
+	it('restores focus to main when a breakpoint close unmounts the drawer trigger', async () => {
+		const viewport = stubViewportWithListeners('narrow');
+		await renderShell();
+		const trigger = screen.getByRole('button', { name: labels.openSidebar });
+		trigger.focus();
+		await fireEvent.click(trigger);
+		expect(screen.getByRole('dialog', { name: labels.sidebarDrawer })).not.toBeNull();
+
+		viewport.setMode('medium');
+		await tick();
+
+		await waitFor(() => {
+			expect(screen.queryByRole('dialog', { name: labels.sidebarDrawer })).toBeNull();
+			expect(document.activeElement).toBe(screen.getByRole('main', { name: labels.main }));
 		});
 	});
 });

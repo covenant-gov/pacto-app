@@ -9,6 +9,7 @@
 	} from '$lib/shell';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { cn } from '$lib/utils.js';
+	import { tick } from 'svelte';
 	import ShellDrawer from './ShellDrawer.svelte';
 
 	type ShellViewport = 'narrow' | 'medium' | 'wide';
@@ -61,11 +62,26 @@
 
 		viewport = viewportFromQueries();
 
+		function restoreFocus(trigger: HTMLButtonElement | null): void {
+			void tick().then(() => {
+				if (trigger?.isConnected) {
+					trigger.focus();
+					return;
+				}
+				const mainEl = document.querySelector('[data-shell-region="main"]');
+				if (mainEl instanceof HTMLElement) mainEl.focus();
+			});
+		}
+
 		function onViewportChange(): void {
 			const next = viewportFromQueries();
+			const closingSidebar = sidebarOpen && next !== 'narrow';
+			const closingAside = asideOpen && next === 'wide';
+			const trigger = closingSidebar ? sidebarTrigger : closingAside ? asideTrigger : null;
 			viewport = next;
 			if (next !== 'narrow') sidebarOpen = false;
 			if (next === 'wide') asideOpen = false;
+			if (closingSidebar || closingAside) restoreFocus(trigger);
 		}
 
 		narrowMq.addEventListener('change', onViewportChange);
@@ -119,6 +135,7 @@
 		class="flex min-h-0 min-w-0 flex-col overflow-hidden bg-muted [grid-area:main]"
 		aria-label={labels.main}
 		data-shell-region="main"
+		tabindex="-1"
 	>
 		{#if showDrawerBar}
 			<div
