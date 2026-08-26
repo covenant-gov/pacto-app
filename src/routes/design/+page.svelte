@@ -51,17 +51,19 @@
 		<div></div>
 	</ChatFrame>
 {:else if showChat && design.activeChannel}
-	<ChatColumn
-		channelId={design.activeChannel.id}
-		channelName={design.activeChannel.name}
-		channelCategory={design.activeChannel.category}
-		announcementOnly={design.activeChannel.id === 'announcements'}
-		messages={visibleMessages}
-		membersCollapsed={design.asideCollapsed}
-		{memberFaces}
-		onSend={(text) => design.sendMessage(text, $t('design.chat.justNow'))}
-		onToggleMembers={() => (design.asideCollapsed = !design.asideCollapsed)}
-	/>
+	{#key design.activeChannel.id}
+		<ChatColumn
+			channelId={design.activeChannel.id}
+			channelName={design.activeChannel.name}
+			channelCategory={design.activeChannel.category}
+			announcementOnly={design.activeChannel.id === 'announcements'}
+			messages={visibleMessages}
+			membersCollapsed={design.asideCollapsed}
+			{memberFaces}
+			onSend={(text) => design.sendMessage(text, $t('design.chat.justNow'))}
+			onToggleMembers={() => (design.asideCollapsed = !design.asideCollapsed)}
+		/>
+	{/key}
 {:else}
 	<div
 		class="shell-dither-seam relative flex h-full flex-col items-center justify-center gap-2 overflow-hidden rounded-tl-lg bg-background px-6 text-center"

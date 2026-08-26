@@ -5,7 +5,7 @@
 	import Megaphone from '@lucide/svelte/icons/megaphone';
 	import Pin from '@lucide/svelte/icons/pin';
 	import { t } from 'svelte-i18n';
-	import AsideToggleButton from '../../../components/shell/AsideToggleButton.svelte';
+	import { AsideToggleButton } from '../../../components/shell';
 	import ChatComposer from '../../../components/channel/ChatComposer.svelte';
 	import type { Message } from '../fixtures.js';
 	import ChatDitherDock from './ChatDitherDock.svelte';
@@ -55,10 +55,16 @@
 	});
 
 	$effect(() => {
+		void channelId;
+		awayFromLatest = false;
+	});
+
+	$effect(() => {
 		const count = messages.length;
 		const el = viewportEl;
 		if (!el || awayFromLatest) return;
 		void count;
+		void channelId;
 		queueMicrotask(() => {
 			el.scrollTop = el.scrollHeight;
 		});
