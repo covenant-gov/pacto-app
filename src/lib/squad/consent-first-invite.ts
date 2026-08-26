@@ -4,6 +4,7 @@
  */
 
 import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import { getMlsGroupMembers, type SquadInvitePayload } from '../api/nostr';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { sendSquadInviteDm } from '../pacto-app-inbox';
@@ -11,6 +12,18 @@ import { publishOutboundInviteAnnounce } from './squad-outbound-invite';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
 import { currentUser } from '../../stores/auth';
 import type { Squad } from '../../stores/squads';
+
+function tt(
+  key: string,
+  values?: Record<string, string | number | boolean | Date | null | undefined>
+): string {
+  try {
+    const translate = get(t);
+    return values ? translate(key, { values }) : translate(key);
+  } catch {
+    return key;
+  }
+}
 
 export function newInviteId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -48,26 +61,31 @@ export async function sendConsentFirstSquadInvite(
   const announcements = getAnnouncementsChannel(parent);
   const groupId = announcements.groupId?.trim();
   if (!groupId) {
-    return { ok: false, error: 'Squad channels are not ready to send invites yet.' };
+    return { ok: false, error: tt('squad.consentFirstInvite.channelsNotReady') };
   }
 
   const invitee = inviteeNpub.trim();
   if (!invitee.startsWith('npub1')) {
-    return { ok: false, error: 'Invalid invitee.' };
+    return { ok: false, error: tt('squad.consentFirstInvite.invalidInvitee') };
   }
 
   const myNpub = get(currentUser)?.npub;
   const admitterNpubs =
     opts?.admitterNpubs ?? (await resolveAdmitterNpubs(groupId, myNpub));
   if (admitterNpubs.length === 0) {
-    return { ok: false, error: 'No admitters available for this invite.' };
+    return { ok: false, error: tt('squad.consentFirstInvite.noAdmitters') };
   }
 
   const inviteId = newInviteId();
+  let announced: boolean;
   try {
-    await publishOutboundInviteAnnounce(parent, inviteId, invitee);
+    announced = await publishOutboundInviteAnnounce(parent, inviteId, invitee);
   } catch (e) {
     console.warn('[consent-first-invite] outbound announce failed', e);
+    return { ok: false, error: tt('squad.consentFirstInvite.announceFailed') };
+  }
+  if (!announced) {
+    return { ok: false, error: tt('squad.consentFirstInvite.announceFailed') };
   }
 
   const invitePayload: Omit<SquadInvitePayload, 'type'> = {

@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('svelte-i18n', () => ({
+  t: {
+    subscribe: (fn: (translate: (key: string) => string) => void) => {
+      fn((key: string) => key);
+      return () => {};
+    },
+  },
+}));
+
 vi.mock('../api/nostr', () => ({
   getMlsGroupMembers: vi.fn(),
 }));
@@ -113,7 +122,54 @@ describe('sendConsentFirstSquadInvite', () => {
     const result = await sendConsentFirstSquadInvite(parent, 'npub1invitee');
     expect(result).toEqual({
       ok: false,
-      error: 'Squad channels are not ready to send invites yet.',
+      error: 'squad.consentFirstInvite.channelsNotReady',
+    });
+    expect(sendSquadInviteDm).not.toHaveBeenCalled();
+  });
+
+  it('fails on invalid invitee npub', async () => {
+    const result = await sendConsentFirstSquadInvite(parent, 'bad-npub');
+    expect(result).toEqual({
+      ok: false,
+      error: 'squad.consentFirstInvite.invalidInvitee',
+    });
+    expect(publishOutboundInviteAnnounce).not.toHaveBeenCalled();
+    expect(sendSquadInviteDm).not.toHaveBeenCalled();
+  });
+
+  it('fails when no admitters available', async () => {
+    setCurrentUser(null);
+    vi.mocked(getMlsGroupMembers).mockResolvedValue({
+      members: [],
+      admins: [],
+      group_id: 'g-announce',
+      pending_welcomes: [],
+    });
+    const result = await sendConsentFirstSquadInvite(parent, 'npub1invitee');
+    expect(result).toEqual({
+      ok: false,
+      error: 'squad.consentFirstInvite.noAdmitters',
+    });
+    expect(publishOutboundInviteAnnounce).not.toHaveBeenCalled();
+    expect(sendSquadInviteDm).not.toHaveBeenCalled();
+  });
+
+  it('fails when outbound announce returns false and skips DM', async () => {
+    vi.mocked(publishOutboundInviteAnnounce).mockResolvedValue(false);
+    const result = await sendConsentFirstSquadInvite(parent, 'npub1invitee');
+    expect(result).toEqual({
+      ok: false,
+      error: 'squad.consentFirstInvite.announceFailed',
+    });
+    expect(sendSquadInviteDm).not.toHaveBeenCalled();
+  });
+
+  it('fails when outbound announce throws and skips DM', async () => {
+    vi.mocked(publishOutboundInviteAnnounce).mockRejectedValue(new Error('relay down'));
+    const result = await sendConsentFirstSquadInvite(parent, 'npub1invitee');
+    expect(result).toEqual({
+      ok: false,
+      error: 'squad.consentFirstInvite.announceFailed',
     });
     expect(sendSquadInviteDm).not.toHaveBeenCalled();
   });

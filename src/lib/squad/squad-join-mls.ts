@@ -343,13 +343,18 @@ export async function respondToMlsJoinRequest(input: {
   requestId: string;
   squadId: string;
   status: 'accepted' | 'rejected';
+  /** When true, caller already marked in-flight and owns clear (e.g. admit-then-respond). */
+  callerOwnsInFlight?: boolean;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const requestId = input.requestId.trim();
   if (!requestId) return { ok: false, error: 'Missing join request id.' };
-  if (isJoinRequestRespondInFlight(requestId)) {
-    return { ok: false, error: '' };
+  const ownsInFlight = !!input.callerOwnsInFlight;
+  if (!ownsInFlight) {
+    if (isJoinRequestRespondInFlight(requestId)) {
+      return { ok: false, error: '' };
+    }
+    markJoinRequestRespondInFlight(requestId);
   }
-  markJoinRequestRespondInFlight(requestId);
   try {
     const me = get(currentUser)?.npub;
     if (!me) return { ok: false, error: 'Not signed in.' };
@@ -377,7 +382,9 @@ export async function respondToMlsJoinRequest(input: {
   } catch (e: unknown) {
     return { ok: false, error: getInvokeErrorMessage(e, 'Could not update join request.') };
   } finally {
-    clearJoinRequestRespondInFlight(requestId);
+    if (!ownsInFlight) {
+      clearJoinRequestRespondInFlight(requestId);
+    }
   }
 }
 

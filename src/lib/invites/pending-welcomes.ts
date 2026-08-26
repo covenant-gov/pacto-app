@@ -21,7 +21,6 @@
 
 import { get } from 'svelte/store';
 import { acceptMlsWelcome, type PendingMlsWelcome } from '../api/nostr';
-import { declinedWelcomeGroupIds } from '../../stores/invite-decisions';
 import { currentNpubForPersistence } from '../../stores/persistence-context';
 import {
   clearPendingWelcomeFinalizationByGroupId,
@@ -35,9 +34,13 @@ import { dmError } from '../utils/dm-debug';
 import { requireBackupVerified } from '../../stores/backup-verification';
 import {
   finalizeSquadAfterAnnouncementsWelcome,
-  sameMlsGroupId,
   squadInviteResolvedByMembership,
 } from './accept-invite';
+
+export {
+  clearDeclinedWelcomeGroupId,
+  recordDeclinedWelcomeGroupId,
+} from './declined-welcomes';
 
 /** A pending welcome with the fields the request card needs. */
 export interface OfferedWelcome {
@@ -209,26 +212,4 @@ export async function tryCompleteAllPendingWelcomeFinalizations(): Promise<void>
       dmError('tryCompletePendingWelcomeFinalization', e);
     }
   }
-}
-
-/**
- * Refuse a pending welcome, or record that a `squad_invite` DM was declined so
- * this surface agrees with that decision.
- *
- * Local only: MLS has no decline primitive, so the welcome stays pending in the
- * engine and we merely stop offering it. Nothing reaches the inviter.
- */
-export function recordDeclinedWelcomeGroupId(groupId: string): void {
-  const id = groupId.trim();
-  if (!id) return;
-  declinedWelcomeGroupIds.update((ids) =>
-    ids.some((existing) => sameMlsGroupId(existing, id)) ? ids : [...ids, id]
-  );
-}
-
-/** Clear a prior Decline so a new Accept / Welcome for the same group is not suppressed. */
-export function clearDeclinedWelcomeGroupId(groupId: string): void {
-  const id = groupId.trim();
-  if (!id) return;
-  declinedWelcomeGroupIds.update((ids) => ids.filter((existing) => !sameMlsGroupId(existing, id)));
 }
