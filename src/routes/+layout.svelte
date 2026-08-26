@@ -12,12 +12,9 @@
   import { locale } from '../stores/locale';
   import { loadAppConfig } from '../stores/app-config';
   import { runDevAutologin } from '../lib/dev/autologin';
+  import { createOnce, isDesignPath } from '$lib/ui/design-route';
 
   let { children }: { children: Snippet } = $props();
-
-  function isDesignPath(pathname: string): boolean {
-    return pathname === '/design' || pathname.startsWith('/design/');
-  }
 
   const initialIsDesignRoute = isDesignPath(page.url.pathname);
   const isDesignRoute = $derived(isDesignPath(page.url.pathname));
@@ -35,11 +32,7 @@
     }
   });
 
-  let sessionStarted = false;
-
-  function startProductionSession(): void {
-    if (sessionStarted) return;
-    sessionStarted = true;
+  const startProductionSession = createOnce(() => {
     // The storage-format probe must precede any account enumeration -
     // checkAuthStatus() (which drives check_any_account_exists ->
     // list_accounts) runs from Login.svelte's own mount, and UpdateGate's
@@ -54,7 +47,7 @@
     void runDevAutologin();
     void loadAppConfig();
     scheduleCommonsStartupPrefetch();
-  }
+  });
 
   onMount(() => {
     if (!initialIsDesignRoute) {
