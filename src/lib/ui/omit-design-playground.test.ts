@@ -51,6 +51,26 @@ describe('omit-design-playground', () => {
 		expect(fs.existsSync(stash)).toBe(false);
 	});
 
+	it('stashes from vite.config load, not from the restore-only plugin', () => {
+		const viteConfig = fs.readFileSync(path.join(process.cwd(), 'vite.config.ts'), 'utf8');
+		const plugin = fs.readFileSync(
+			path.join(process.cwd(), 'scripts/omit-design-playground.ts'),
+			'utf8',
+		);
+		expect(viteConfig).toContain('hideDesignRoutes()');
+		expect(plugin).toMatch(/export function omitDesignPlaygroundPlugin[\s\S]*restoreDesignRoutes/);
+		expect(plugin).not.toMatch(/export function omitDesignPlaygroundPlugin[\s\S]*hideDesignRoutes\(\)/);
+	});
+
+	it('scans the frontend dist, not restored source routes', () => {
+		const check = fs.readFileSync(
+			path.join(process.cwd(), 'scripts/check-design-playground-omitted.mjs'),
+			'utf8',
+		);
+		expect(check).toContain("process.env.VITE_AGENT_BUILD ? 'build-agent' : 'build'");
+		expect(check).not.toContain('src/routes/design');
+	});
+
 	it('registers SIGINT and SIGTERM restore on the production omit path', () => {
 		const src = fs.readFileSync(
 			path.join(process.cwd(), 'scripts/omit-design-playground.ts'),
