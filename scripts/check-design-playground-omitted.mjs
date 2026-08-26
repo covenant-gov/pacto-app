@@ -3,7 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.env.VITE_AGENT_BUILD ? 'build-agent' : 'build';
-const needles = ['design.gate.wordmark', 'DesignGate', 'design.dither.title', '/dither/bayer.svg'];
+const needles = [
+	'design.gate.wordmark',
+	'DesignGate',
+	'design.dither.title',
+	'data-dither-pattern',
+	'shell-dither-seam',
+];
 
 function walk(dir) {
 	if (!fs.existsSync(dir)) {

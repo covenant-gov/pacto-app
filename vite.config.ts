@@ -9,11 +9,11 @@ import tailwindcss from '@tailwindcss/vite';
 import {
 	hideDesignRoutes,
 	omitDesignPlaygroundPlugin,
-	restoreDesignRoutes,
+	registerDesignRouteRestoreHandlers,
 } from './scripts/omit-design-playground';
 
 hideDesignRoutes();
-process.on('exit', restoreDesignRoutes);
+registerDesignRouteRestoreHandlers();
 
 const host = process.env.TAURI_DEV_HOST;
 
