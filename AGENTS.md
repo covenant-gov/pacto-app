@@ -209,19 +209,19 @@ cd src-tauri && cargo test
 - **Platform-specific deps:** Linux needs WebKit2GTK 4.1, Vulkan, ALSA, appindicator; macOS needs Xcode CLT, cmake, llvm, openssl; Windows needs VS Build Tools, LLVM, WebView2, Vulkan. See `docs/build/{ubuntuGuide,macGuide,windowsGuide}.md`.
 - **Whisper feature:** Enabled by default. Metal on macOS, Vulkan on Windows/Linux, excluded on Android. Feature-gated in `Cargo.toml`.
 - **MCP bridge:** `tauri-plugin-mcp-bridge` is included in debug builds only; release builds exclude it.
-- **CI:** `.github/workflows/ci.yaml` gates every PR: typecheck (`pnpm check`), lint (`pnpm lint`, `pnpm check:tauri-commands`), frontend unit tests with coverage, Playwright e2e, a Tauri debug e2e harness (`continue-on-error`), Rust `cargo test --lib`, and a release-binary symbol check. `.github/workflows/release.yaml` separately publishes macOS (arm64 + x86_64), Ubuntu (amd64 + arm64), and Windows bundles on every `v*` tag; requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater.
+- **CI:** `.github/workflows/ci.yaml` gates every PR: typecheck (`pnpm check`), lint (`pnpm lint`, `pnpm check:tauri-commands`), frontend unit tests with coverage, Playwright e2e, a Tauri debug e2e harness (`continue-on-error`), Rust tests via `cargo nextest run --lib` (process-per-test parallelism; ~7x faster wall time than `cargo test` on this suite), and a release-binary symbol check. `.github/workflows/release.yaml` separately publishes macOS (arm64 + x86_64), Ubuntu (amd64 + arm64), and Windows bundles on every `v*` tag; requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater.
 
 ## Testing & QA
 
 - **Frontend tests:** Vitest 3 with `environment: 'node'` and `include: ['src/**/*.test.ts']`. Tests are co-located with source code and exercise pure functions, Svelte stores, and Tauri command shapes. No component rendering or DOM tests are present.
-- **Backend tests:** Standard `cargo test` in `src-tauri`. Tests are co-located in `#[cfg(test)]` modules inside source files. They use in-memory SQLite and deterministic golden vectors.
+- **Backend tests:** `cargo test` locally, `cargo nextest run` in CI (same tests, either runner works locally — CI installs a pinned prebuilt binary, `curl -LsSf https://get.nexte.st/0.9.143/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"`; `cargo install cargo-nextest --locked` also works locally but does not pin to CI's exact version). Tests are co-located in `#[cfg(test)]` modules inside source files. They use in-memory SQLite and deterministic golden vectors.
 - **Common test patterns:**
   - Mock Tauri `invoke` with `vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))`.
   - Mock `localStorage`/`sessionStorage` with `vi.stubGlobal` / `vi.unstubAllGlobals`.
   - Reset Svelte stores in `beforeEach`/`afterEach`.
   - Rust DB tests create `rusqlite::Connection::open_in_memory()` and execute the minimal schema DDL inline.
 - **Coverage:** `@vitest/coverage-v8` is available via `pnpm test:coverage:serve`; no configured thresholds.
-- **Quality gates:** `ci.yaml` runs `pnpm test:coverage` and `cargo test --lib` on every PR (see CI above); `release.yaml` only builds and publishes tagged releases and does not run tests.
+- **Quality gates:** `ci.yaml` runs `pnpm test:coverage` and `cargo nextest run --lib` on every PR (see CI above); `release.yaml` only builds and publishes tagged releases and does not run tests.
 - **Manual QA:** `docs/wallet/MANUAL_E2E_CHECKLIST.md` and `docs/wallet/OPERATOR_SMOKE.md`.
 - **Security posture:** `docs/audits/README.md` states there is no independent third-party audit; treat wallet/key-handling code as alpha-grade.
 

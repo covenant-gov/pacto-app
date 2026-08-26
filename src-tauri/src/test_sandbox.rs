@@ -115,6 +115,17 @@ pub fn multi_instance_allowed() -> bool {
 /// ever sweeps (issue #347). Redirecting the unset-root fallback to a disposable
 /// OS temp directory, only inside test builds, keeps that litter out of the real
 /// filesystem without changing production path resolution at all.
+///
+/// Keyed by `std::process::id()`: under `cargo nextest run`, every test is its
+/// own OS process, so this gives each test a private root -- without it, all
+/// concurrently running tests shared this one directory, so a directory-wide
+/// scan in one test (`migrate_legacy_databases`) could mutate a sibling
+/// test's files mid-run, and heavy concurrent SQLite traffic against one
+/// shared tree produced intermittent "disk I/O error" failures. Under plain
+/// `cargo test`, every test in a binary shares one process and thus one
+/// fallback directory, same as before this change (already safe: those
+/// tests serialize via `.cargo/config.toml`'s `RUST_TEST_THREADS=1`).
+///
 /// `OnceLock`, not `LazyLock`: `remove_unit_test_fallback_root_at_exit` needs a
 /// non-forcing `get()` so a process that never touched the fallback root exits
 /// without creating (or trying to remove) anything.
@@ -125,7 +136,8 @@ static UNIT_TEST_FALLBACK_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLo
 fn unit_test_fallback_root() -> PathBuf {
     UNIT_TEST_FALLBACK_ROOT
         .get_or_init(|| {
-            let dir = std::env::temp_dir().join("pacto-cargo-test-fallback");
+            let dir = std::env::temp_dir()
+                .join(format!("pacto-cargo-test-fallback-{}", std::process::id()));
             // Best-effort: start every test binary run from a clean slate rather
             // than accumulating npub directories left by a run that was killed
             // before its own atexit handler below ran.
@@ -653,6 +665,38 @@ mod tests {
             "expected test_data_dir to resolve inside the sandbox root, got: {}",
             data_dir.display()
         );
+    }
+
+    #[test]
+    fn unsandboxed_test_dirs_resolve_under_the_private_fallback_root() {
+        let _lock = env_lock();
+        let _root = EnvGuard::unset(SANDBOX_ROOT_VAR);
+        let handle = tauri::test::mock_app().handle().clone();
+
+        let fallback = unit_test_fallback_root();
+        let data_dir = test_data_dir(&handle).unwrap();
+        let local_dir = test_local_data_dir(&handle).unwrap();
+
+        assert!(
+            data_dir.starts_with(&fallback),
+            "expected test_data_dir to resolve under the private fallback root, got: {}",
+            data_dir.display()
+        );
+        assert!(
+            local_dir.starts_with(&fallback),
+            "expected test_local_data_dir to resolve under the private fallback root, got: {}",
+            local_dir.display()
+        );
+        assert_ne!(
+            data_dir, local_dir,
+            "data and local subpaths must not collide with each other"
+        );
+
+        // A repeat call in the same process must resolve to the identical
+        // directory -- callers like account_manager's migrate/list pair
+        // write and then scan the same root within one test process.
+        assert_eq!(test_data_dir(&handle).unwrap(), data_dir);
+        assert_eq!(unit_test_fallback_root(), fallback);
     }
 
     #[test]
