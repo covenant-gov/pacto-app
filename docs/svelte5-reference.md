@@ -668,6 +668,7 @@ Notes:
 - Added in 5.8.0. 5.55.0 exported `TweenOptions`, `SpringOptions`, `SpringUpdateOptions`, and `Updater` types from `svelte/motion`.
 - `.current` gives the current animated value; `.set(target)` animates to it.
 - `Spring` accepts objects/arrays of numbers; `Tween` interpolates numeric values.
+- When to use this vs CSS / `svelte/transition` in Pacto: [design-system/MOTION.md](./design-system/MOTION.md).
 
 ---
 
