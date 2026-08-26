@@ -76,7 +76,7 @@ See [decisions/0002-shell-data-boundary.md](./decisions/0002-shell-data-boundary
 
 Implemented:
 
-1. **`src/components/shell/`** — presentational regions (rail, sidebar, main, aside, drawers).
+1. **`src/components/shell/`** — presentational regions. `/design` mounts `AppShell` plus `Design*` wrappers around `RailTile`, `ChannelRow`, and `PresenceAvatar` so the sandbox can add playground-only chrome (add/leave, context menus). `NavRail`, `ChannelSidebar`, and `MemberSidebar` are the production-shaped composites for the future adapter; they are not swapped into the sandbox because they do not accept that extra chrome.
 2. **`src/lib/shell/`** — shared types and pure helpers for shell views.
 3. **`src/routes/design/`** — development-only fixture sandbox for themes, responsive layouts, and preview states. It has no production stores, Tauri calls, or live account data. `vite build` / Tauri release bundles omit the route (stash `src/routes/design` for the compile). It is served by `pnpm dev` / `pnpm tauri:dev`. Override with `PACTO_INCLUDE_DESIGN=1`.
 
