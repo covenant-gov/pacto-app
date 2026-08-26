@@ -9,7 +9,7 @@
 	import Globe from '@lucide/svelte/icons/globe';
 	import { t } from 'svelte-i18n';
 	import type { RailLens, Squad } from '../fixtures.js';
-	import RailTile from '../../../components/shell/RailTile.svelte';
+	import { RailTile } from '../../../components/shell';
 
 	let {
 		squads,

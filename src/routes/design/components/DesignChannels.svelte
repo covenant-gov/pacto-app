@@ -15,8 +15,7 @@
 	import Settings from '@lucide/svelte/icons/settings';
 	import { t } from 'svelte-i18n';
 	import { presenceStatuses, type Channel, type CurrentUser, type PresenceStatus } from '../fixtures.js';
-	import ChannelRow from '../../../components/shell/ChannelRow.svelte';
-	import PresenceAvatar from '../../../components/shell/PresenceAvatar.svelte';
+	import { ChannelRow, PresenceAvatar } from '../../../components/shell';
 
 	let {
 		squadName,

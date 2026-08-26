@@ -2,7 +2,7 @@
 	import { cn } from '$lib/utils.js';
 	import { t } from 'svelte-i18n';
 	import type { Hat, Member, PresenceStatus } from '../fixtures.js';
-	import PresenceAvatar from '../../../components/shell/PresenceAvatar.svelte';
+	import { PresenceAvatar } from '../../../components/shell';
 
 	let { members }: { members: Member[] } = $props();
 

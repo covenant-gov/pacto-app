@@ -6,7 +6,7 @@
 	import type { Snippet } from 'svelte';
 	import Hash from '@lucide/svelte/icons/hash';
 	import { t } from 'svelte-i18n';
-	import AsideToggleButton from '../../../components/shell/AsideToggleButton.svelte';
+	import { AsideToggleButton } from '../../../components/shell';
 	import { design } from '../design-state.svelte.js';
 	import { memberToggleFaces, members, modes, type DashboardMode } from '../fixtures.js';
 
