@@ -131,6 +131,8 @@ describe('design techno-light sketches', () => {
 		const root = read(join(here, '../../+layout.svelte'));
 		expect(root).toContain('if (!initialIsDesignRoute)');
 		expect(root).toMatch(/if \(!initialIsDesignRoute\) \{[\s\S]*setTheme\(/);
+		expect(root).toContain('crossedDesignBoundary');
+		expect(root).toContain('applyDesignPreviewThemeFromSession');
 	});
 });
 

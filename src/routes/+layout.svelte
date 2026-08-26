@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
+  import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import '../app.css';
   import Login from '../components/auth/Login.svelte';
@@ -12,7 +13,12 @@
   import { locale } from '../stores/locale';
   import { loadAppConfig } from '../stores/app-config';
   import { runDevAutologin } from '../lib/dev/autologin';
-  import { createOnce, isDesignPath } from '$lib/ui/design-route';
+  import {
+    applyDesignPreviewThemeFromSession,
+    createOnce,
+    crossedDesignBoundary,
+    isDesignPath,
+  } from '$lib/ui/design-route';
 
   let { children }: { children: Snippet } = $props();
 
@@ -61,6 +67,17 @@
     if (!isDesignPath(page.url.pathname)) {
       startProductionSession();
     }
+  });
+
+  afterNavigate(({ from, to }) => {
+    const fromPath = from?.url.pathname ?? '';
+    const toPath = to?.url.pathname ?? '';
+    if (!crossedDesignBoundary(fromPath, toPath)) return;
+    if (isDesignPath(toPath)) {
+      applyDesignPreviewThemeFromSession();
+      return;
+    }
+    setTheme(getStoredTheme() ?? DEFAULT_THEME);
   });
 </script>
 
