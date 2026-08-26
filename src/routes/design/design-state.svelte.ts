@@ -45,9 +45,9 @@ class DesignSession {
 	newChannelName = $state('');
 	asideCollapsed = $state(false);
 
-	ditherMix = $state(DITHER_DEFAULTS.mix);
-	ditherTile = $state(DITHER_DEFAULTS.tile);
-	ditherEdge = $state(DITHER_DEFAULTS.edge);
+	ditherMix = $state<number>(DITHER_DEFAULTS.mix);
+	ditherTile = $state<number>(DITHER_DEFAULTS.tile);
+	ditherEdge = $state<number>(DITHER_DEFAULTS.edge);
 	ditherPattern = $state<DitherPattern>(DITHER_DEFAULTS.pattern);
 	gateOpen = $state(false);
 
