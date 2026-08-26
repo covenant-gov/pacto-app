@@ -20,6 +20,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[storage-layout/](./storage-layout/)** | SQLite schema, paths, logout, local message encryption |
 | **[communities/DESIGN.md](./communities/DESIGN.md)** | **Squads & in-app Networks**: shared MLS model, stable ids, invites, persistence |
 | **[communities/JOIN_INBOX.md](./communities/JOIN_INBOX.md)** | Join inbox wire (`join_requests` virtual bucket) |
+| **[design-system/](./design-system/)** | **UI design system**: theming tokens, shell regions, MUST/SHOULD/NEVER, decisions ([README](./design-system/README.md)) |
 | **[shell/LAYOUT.md](./shell/LAYOUT.md)** | **Logged-in shell**: page layout, store slices, lib modules, dashboard/DM routers |
 | **[dashboard/POLLS.md](./dashboard/POLLS.md)** | Dashboard polls: MLS announcements transport, replica, vote rules |
 | **[dashboard/ASSET_CARDS.md](./dashboard/ASSET_CARDS.md)** | Sponsor / Treasury / vault card chrome (`DashboardAssetCard`) |
