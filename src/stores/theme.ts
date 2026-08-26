@@ -9,8 +9,8 @@ import { writable } from 'svelte/store';
  * 5. Mark dark skins in `DARK_THEME_IDS` so `color-scheme: dark` stays in sync
  */
 export const THEME_OPTIONS = [
-  { value: 'techno', label: 'Techno' },
-  { value: 'dark-techno', label: 'Dark-Techno' },
+  { value: 'techno', label: 'Techno Light' },
+  { value: 'dark-techno', label: 'Techno Dark' },
   { value: 'union', label: 'Union' },
   { value: 'midnight', label: 'Midnight' },
   { value: 'aztec', label: 'Aztec' },

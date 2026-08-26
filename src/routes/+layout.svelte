@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
+  import { afterNavigate } from '$app/navigation';
+  import { page } from '$app/state';
   import '../app.css';
   import Login from '../components/auth/Login.svelte';
   import UpdateGate from '../components/updater/UpdateGate.svelte';
@@ -11,13 +13,23 @@
   import { locale } from '../stores/locale';
   import { loadAppConfig } from '../stores/app-config';
   import { runDevAutologin } from '../lib/dev/autologin';
+  import {
+    applyDesignPreviewThemeFromSession,
+    createOnce,
+    crossedDesignBoundary,
+    isDesignPath,
+  } from '$lib/ui/design-route';
 
   let { children }: { children: Snippet } = $props();
 
-  // Before first paint: clear any leftover auth state. The backend session check on mount
-  // is the authoritative source of truth, so never assume the session is still valid.
-  isAuthenticated.set(false);
-  currentUser.set(null);
+  const initialIsDesignRoute = isDesignPath(page.url.pathname);
+  const isDesignRoute = $derived(isDesignPath(page.url.pathname));
+
+  if (!initialIsDesignRoute) {
+    // Before first paint, backend session state remains authoritative.
+    isAuthenticated.set(false);
+    currentUser.set(null);
+  }
 
   $effect(() => {
     if ($locale) {
@@ -26,7 +38,7 @@
     }
   });
 
-  onMount(() => {
+  const startProductionSession = createOnce(() => {
     // The storage-format probe must precede any account enumeration -
     // checkAuthStatus() (which drives check_any_account_exists ->
     // list_accounts) runs from Login.svelte's own mount, and UpdateGate's
@@ -41,21 +53,50 @@
     void runDevAutologin();
     void loadAppConfig();
     scheduleCommonsStartupPrefetch();
-    const stored = getStoredTheme();
-    setTheme(stored ?? DEFAULT_THEME);
+  });
+
+  onMount(() => {
+    if (!initialIsDesignRoute) {
+      setTheme(getStoredTheme() ?? DEFAULT_THEME);
+      startProductionSession();
+    }
+  });
+
+  // Start the session if the user leaves /design for a production route.
+  $effect(() => {
+    if (!isDesignPath(page.url.pathname)) {
+      startProductionSession();
+    }
+  });
+
+  afterNavigate(({ from, to }) => {
+    const fromPath = from?.url.pathname ?? '';
+    const toPath = to?.url.pathname ?? '';
+    if (!crossedDesignBoundary(fromPath, toPath)) return;
+    if (isDesignPath(toPath)) {
+      applyDesignPreviewThemeFromSession();
+      return;
+    }
+    setTheme(getStoredTheme() ?? DEFAULT_THEME);
   });
 </script>
 
 <TooltipProvider>
-  <UpdateGate>
-    {#if $isAuthenticated && $currentUser}
-      <div class="layout-root">
-        {@render children()}
-      </div>
-    {:else}
-      <Login />
-    {/if}
-  </UpdateGate>
+  {#if isDesignRoute}
+    <div class="layout-root">
+      {@render children()}
+    </div>
+  {:else}
+    <UpdateGate>
+      {#if $isAuthenticated && $currentUser}
+        <div class="layout-root">
+          {@render children()}
+        </div>
+      {:else}
+        <Login />
+      {/if}
+    </UpdateGate>
+  {/if}
 </TooltipProvider>
 
 <style>

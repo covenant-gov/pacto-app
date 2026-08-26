@@ -1,26 +1,36 @@
-/* Dark-Techno — default dark UI; cool blue-gray chrome, cyan brand. Typography: app.css. */
+/* Techno Dark — warm ink field, cream hairline, inverted channel, cyan brand. Typography: app.css. */
 :root,
 [data-theme="dark-techno"] {
   color-scheme: dark;
 
-  --bg-page: #1a1f28;
-  --bg-panel: #222831;
-  --bg-elevated: #2b3240;
-  --bg-hover: #363e4f;
+  --bg-page: #14120f;
+  --bg-panel: #1c1915;
+  --bg-elevated: #242019;
+  --bg-hover: #2e2923;
 
-  --text-primary: #f2f5f9;
-  --text-secondary: #c2cbd6;
-  --text-muted: #8b96a8;
+  --text-primary: #f4f0e8;
+  --text-secondary: #c5bdb0;
+  --text-muted: #8a8276;
 
-  --border: #455061;
-  --border-subtle: #343c4c;
+  --border: #c9bfb0;
+  --border-subtle: #3a342c;
 
   --brand: #22d3ee;
   --brand-hover: #06b6d4;
-  --on-brand: #0c1219;
+  --on-brand: #14120f;
   --danger: #f472b6;
   --success: #4ade80;
   --warning: #fb923c;
+  --notif: #f472b6;
+  --on-notif: #14120f;
+  --on-success: #062016;
+  --shell-rail-bg: #0e0c0a;
+  --user-strip-bg: #16130f;
+  --gov-avatar-bg: #152a22;
+  --role-quartermaster: #c5bdb0;
+  --role-community-manager: #e2d9c8;
+  --mention-accent: #ffb37a;
+  --danger-muted-fg: #fecaca;
 
   --code-bg: var(--bg-elevated);
   --code-border: var(--border-subtle);
@@ -30,8 +40,9 @@
 
   --icon-dropdown-filter: brightness(0) invert(1);
 
-  --channel-active-bg: #1c5c72;
-  --channel-active-fg: #ecfeff;
+  --channel-active-bg: #ddd2c0;
+  --channel-active-fg: #1c1915;
+  --dither-fill: color-mix(in oklch, var(--brand) 48%, var(--bg-panel));
 
   --techno-green: #4ade80;
   --techno-blue: #22d3ee;

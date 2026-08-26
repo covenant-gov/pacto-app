@@ -26,6 +26,16 @@ const REQUIRED_THEME_TOKENS = [
   '--danger',
   '--success',
   '--warning',
+  '--notif',
+  '--on-notif',
+  '--on-success',
+  '--shell-rail-bg',
+  '--user-strip-bg',
+  '--gov-avatar-bg',
+  '--role-quartermaster',
+  '--role-community-manager',
+  '--mention-accent',
+  '--danger-muted-fg',
 ] as const;
 
 const THEME_IDS = THEME_OPTIONS.map((o) => o.value);
@@ -89,6 +99,14 @@ describe('theme token contract', () => {
     }
   });
 
+  it('washes identity fills with brand and keeps glyphs light', () => {
+    const appCss = read(appCssPath);
+    expect(appCss).toContain('.identity-fill');
+    expect(appCss).toContain('color-mix(in oklab, var(--identity) 62%, var(--brand) 38%)');
+    expect(appCss).toContain('color-mix(in oklab, white 86%, var(--brand) 14%)');
+    expect(appCss).not.toMatch(/\.identity-fill\s*\{[^}]*light-dark\(/s);
+  });
+
   it('maps shadcn primary to brand and accent to hover surface', () => {
     const appCss = read(appCssPath);
     expect(appCss).toContain('--primary: var(--brand);');
@@ -125,6 +143,19 @@ describe('theme token contract', () => {
       const brand = tokenHex(css, '--brand');
       const onBrand = tokenHex(css, '--on-brand');
       expect(contrastRatio(brand, onBrand)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${id} keeps readable notification and success fills`, () => {
+      const css = read(join(themesDir, `${id}.css`));
+      expect(contrastRatio(tokenHex(css, '--notif'), tokenHex(css, '--on-notif'))).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(tokenHex(css, '--success'), tokenHex(css, '--on-success'))).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${id} keeps readable active channel fills`, () => {
+      const css = read(join(themesDir, `${id}.css`));
+      expect(
+        contrastRatio(tokenHex(css, '--channel-active-bg'), tokenHex(css, '--channel-active-fg')),
+      ).toBeGreaterThanOrEqual(4.5);
     });
   }
 });

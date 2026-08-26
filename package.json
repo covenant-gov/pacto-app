@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
-    "build:agent": "VITE_AGENT_BUILD=1 vite build --config vite.config.agent.ts",
+    "build": "vite build && node scripts/check-design-playground-omitted.mjs",
+    "build:agent": "VITE_AGENT_BUILD=1 vite build --config vite.config.agent.ts && VITE_AGENT_BUILD=1 node scripts/check-design-playground-omitted.mjs",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

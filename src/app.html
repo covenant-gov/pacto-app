@@ -15,7 +15,11 @@
     <script>
       (function() {
         try {
-          var t = localStorage.getItem('pacto_theme');
+          var path = location.pathname;
+          var onDesign = path === '/design' || path.indexOf('/design/') === 0;
+          var t = onDesign
+            ? sessionStorage.getItem('pacto_design_theme')
+            : localStorage.getItem('pacto_theme');
           if (
             t !== 'aztec' &&
             t !== 'midnight' &&

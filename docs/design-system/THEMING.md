@@ -39,6 +39,16 @@ Every theme file must define these (enforced by `theme-tokens.test.ts`):
 | `--danger` | Destructive |
 | `--success` | Success (not brand) |
 | `--warning` | Warning |
+| `--notif` | Notification badge fill |
+| `--on-notif` | Text on notification fills |
+| `--on-success` | Text on success fills |
+| `--shell-rail-bg` | Squad rail column |
+| `--user-strip-bg` | Channel sidebar footer |
+| `--gov-avatar-bg` | Governance bot / landmark avatar |
+| `--role-quartermaster` | Quartermaster name color |
+| `--role-community-manager` | Community manager name / bot badge |
+| `--mention-accent` | Mention chip and brand-soft tag text |
+| `--danger-muted-fg` | Soft urgent/danger tag text |
 
 Also set `color-scheme: dark;` or `color-scheme: light;` to match the skin.
 
@@ -85,7 +95,7 @@ See [decisions/0001-theme-token-layers.md](./decisions/0001-theme-token-layers.m
 
 ## Contrast
 
-`--on-brand` on `--brand` must stay readable. Tests require WCAG contrast ratio ≥ 4.5 for the hex pair in each theme file.
+`--on-brand` on `--brand` must stay readable. Tests require WCAG contrast ratio ≥ 4.5 for the hex pair in each theme file. Same for `--on-notif` on `--notif` and `--on-success` on `--success`.
 
 Prefer APCA for new visual review when tools allow. Raise contrast on `:hover` / `:active` / `:focus` states.
 

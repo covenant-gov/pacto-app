@@ -20,6 +20,8 @@ describe('ui primitive z-index contracts', () => {
 			'dropdown-menu/dropdown-menu-sub-content.svelte',
 			'popover/popover-content.svelte',
 			'tooltip/tooltip-content.svelte',
+			'context-menu/context-menu-content.svelte',
+			'context-menu/context-menu-sub-content.svelte',
 		]) {
 			expect(readUi(file)).toContain('z-[10060]');
 		}

@@ -44,6 +44,13 @@ describe('tailwind foundation', () => {
 			'bg-popover',
 			'text-muted-foreground',
 			'dark:bg-primary',
+			'bg-notif',
+			'text-on-notif',
+			'bg-gov-success',
+			'text-on-success',
+			'bg-shell-rail',
+			'bg-user-strip',
+			'text-mention-accent',
 		]);
 		for (const [, weight] of order) {
 			expect(weight).not.toBeNull();

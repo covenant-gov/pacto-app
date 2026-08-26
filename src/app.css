@@ -35,6 +35,14 @@
 }
 
 @font-face {
+  font-family: 'Instrument Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/instrument-sans-700.woff2') format('woff2');
+}
+
+@font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
   font-weight: 400;
@@ -63,7 +71,7 @@
 
   color: var(--text-primary);
 
-  font-synthesis: none;
+  font-synthesis: style;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -72,7 +80,6 @@
   overscroll-behavior: none;
 
   --radius: 0.5rem;
-  --notif: #cb4f10;
   --gov-success: var(--success);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -121,13 +128,26 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-notif: var(--notif);
+  --color-on-notif: var(--on-notif);
   --color-gov-success: var(--gov-success);
+  --color-on-success: var(--on-success);
+  --color-warning: var(--warning);
+  --color-shell-rail: var(--shell-rail-bg);
+  --color-user-strip: var(--user-strip-bg);
+  --color-gov-avatar: var(--gov-avatar-bg);
+  --color-role-quartermaster: var(--role-quartermaster);
+  --color-role-community-manager: var(--role-community-manager);
+  --color-mention-accent: var(--mention-accent);
+  --color-danger-muted: var(--danger-muted-fg);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans: var(--font-ui);
   --font-mono: var(--font-mono-family);
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 700;
+  --font-weight-black: 700;
 }
 
 :is(h1, h2, h3, h4, h5, h6) {
@@ -145,6 +165,23 @@ body {
   padding: 0;
   overflow: hidden;
   background-color: var(--bg-page);
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-ui);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  letter-spacing: inherit;
 }
 
 body {
@@ -166,4 +203,16 @@ body {
   justify-content: flex-start;
   height: 100%;
   min-height: 0;
+}
+
+/* Identity chips: squad/member hue, washed with --brand so skins tint the mark. Glyph stays light. */
+.identity-fill {
+  background-color: color-mix(in oklab, var(--identity) 62%, var(--brand) 38%);
+  color: color-mix(in oklab, white 86%, var(--brand) 14%);
+}
+
+/* Stacked avatars: knockout follows --avatar-ring on the host, else the page. */
+.cn-avatar-group > [data-slot='avatar'],
+.cn-avatar-group > [data-slot='avatar-group-count'] {
+  box-shadow: 0 0 0 2px var(--avatar-ring, var(--background));
 }

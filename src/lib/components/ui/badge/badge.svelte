@@ -11,6 +11,12 @@
 				outline: "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
 				ghost: "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
 				link: "text-primary underline-offset-4 hover:underline",
+				notif: "h-4 min-w-4 rounded-full border-0 bg-notif px-1 text-[10px] font-semibold text-on-notif",
+				"brand-soft": "rounded-full border-0 bg-primary/18 text-mention-accent",
+				"warning-soft": "rounded-full border-0 bg-warning/14 text-warning",
+				"danger-soft": "rounded-full border-0 bg-destructive/18 text-danger-muted",
+				"gov-soft": "rounded-full border-0 bg-gov-success/14 text-gov-success",
+				bot: "h-4 rounded-sm border-0 bg-role-community-manager/12 px-1.5 text-[10px] font-semibold tracking-[0.04em] uppercase text-role-community-manager",
 			},
 		},
 		defaultVariants: {

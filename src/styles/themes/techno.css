@@ -1,16 +1,16 @@
-/* Techno — light gray structure, cyan brand. Typography: app.css. */
+/* Techno Light — bleached paper, black hairline, inverted channel, cyan brand. Typography: app.css. */
 [data-theme="techno"] {
   color-scheme: light;
 
-  --bg-page: #f0eeea;
-  --bg-panel: #e2dfda;
-  --bg-elevated: #f7f5f2;
-  --bg-hover: #d5d2cb;
+  --bg-page: #f8f6f1;
+  --bg-panel: #f3f1eb;
+  --bg-elevated: #fffcf7;
+  --bg-hover: #e7e3d8;
   --text-primary: #141414;
   --text-secondary: #3a3a3a;
   --text-muted: #5c5a55;
-  --border: #262626;
-  --border-subtle: #c7c4bd;
+  --border: #1f1f1d;
+  --border-subtle: #d5d0c7;
 
   --brand: #0891b2;
   --brand-hover: #0e7490;
@@ -18,6 +18,16 @@
   --danger: #db2777;
   --success: #16a34a;
   --warning: #ea580c;
+  --notif: #db2777;
+  --on-notif: #ffffff;
+  --on-success: #052e16;
+  --shell-rail-bg: #ece8e1;
+  --user-strip-bg: #e8e4dc;
+  --gov-avatar-bg: #c6f0d8;
+  --role-quartermaster: #3d5a73;
+  --role-community-manager: #2c4a66;
+  --mention-accent: #c2410c;
+  --danger-muted-fg: #9f1239;
 
   --code-bg: var(--bg-elevated);
   --code-border: var(--border-subtle);
@@ -27,8 +37,9 @@
 
   --icon-dropdown-filter: brightness(0);
 
-  --channel-active-bg: var(--text-primary);
-  --channel-active-fg: var(--bg-elevated);
+  --channel-active-bg: #322c24;
+  --channel-active-fg: #eee6d8;
+  --dither-fill: color-mix(in oklch, var(--brand) 58%, var(--bg-panel));
 
   --techno-green: #22c55e;
   --techno-blue: #0891b2;
@@ -38,7 +49,7 @@
   --commons-tile-scrim-top: rgba(0, 0, 0, 0.04);
   --commons-tile-scrim-mid: rgba(0, 0, 0, 0.1);
   --commons-tile-scrim-bottom: rgba(0, 0, 0, 0.34);
-  --commons-tile-veil: rgba(247, 245, 242, 0.42);
+  --commons-tile-veil: rgba(255, 252, 247, 0.42);
   --commons-tile-art-filter: brightness(1.12) contrast(1.03) saturate(1.08);
   --commons-tile-text: #fff;
   --commons-tile-title-shadow: 0 1px 8px rgba(0, 0, 0, 0.72);
