@@ -166,6 +166,7 @@
     acceptingChannelInSquadId,
   } from '../lib/invites/accept-invite';
   import { declineWelcomeForGroup } from '../lib/invites/pending-welcomes-store';
+  import { clearPendingSquadAdmissionByGroupId } from '../stores/pending-squad-admission';
   import { parseSquadInviteMessage } from '../lib/api/nostr';
 
   const loadChatView = createLazyComponent(() => import('../components/channel/ChatView.svelte'));
@@ -1053,7 +1054,11 @@
                   // Also refuse the matching MLS welcome, so a pending-welcome
                   // card cannot re-offer a squad the user just turned down.
                   const declined = parseSquadInviteMessage(msg.content ?? '');
-                  if (declined) declineWelcomeForGroup(declined.groupId);
+                  if (declined) {
+                    declineWelcomeForGroup(declined.groupId);
+                    // Unstick "joining" so a later invite for this group shows as pending.
+                    clearPendingSquadAdmissionByGroupId(declined.groupId);
+                  }
                   resolveOneCatchUpEntry(msg.id).catch(() => {});
                 }}
                 onDeclineChannelInSquad={(msg: DmMessage) => {

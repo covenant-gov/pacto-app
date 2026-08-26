@@ -91,7 +91,7 @@ describe('squad join requests store', () => {
     expect(getJoinRequestPendingCount('squad2')).toBe(0);
   });
 
-  it('still loads MLS pending when fan-out fails', async () => {
+  it('still loads MLS pending when fan-out fails and surfaces the fan-out error', async () => {
     vi.spyOn(squadJoinMls, 'fanOutJoinInboxDmsToMls').mockRejectedValue(new Error('Could not sync join inbox.'));
     const fetchSpy = vi
       .spyOn(squadJoinMls, 'loadPendingJoinRequestsFromMls')
@@ -103,6 +103,6 @@ describe('squad join requests store', () => {
     await ensureJoinRequestsHydrated('squad3');
     expect(fetchSpy).toHaveBeenCalled();
     expect(getJoinRequestPendingCount('squad3')).toBe(1);
-    expect(get(joinRequestsErrorBySquadId)['squad3']).toBeUndefined();
+    expect(get(joinRequestsErrorBySquadId)['squad3']).toMatch(/Could not sync join inbox/i);
   });
 });

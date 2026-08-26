@@ -6,10 +6,13 @@
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import type { CommonsJoinRequestDto } from '../../lib/commons/types';
   import {
+    clearJoinRequestRespondInFlight,
     isJoinRequestRespondInFlight,
     joinRequestRespondInFlight,
+    markJoinRequestRespondInFlight,
     respondToMlsJoinRequest,
   } from '../../lib/squad/squad-join-mls';
+  import { admitMemberToSquad, type AdmitMemberResult } from '../../lib/parent/admit-member';
   import { muteJoinRequester } from '../../lib/squad/squad-join-spam';
   import { getJoinInboxState, type JoinInboxState } from '../../lib/squad/join-inbox';
   import {
@@ -21,7 +24,6 @@
     removePendingJoinRequest,
     syncJoinRequestsForSquad,
   } from '../../stores/squad-join-requests';
-  import { admitMemberToSquad } from '../../lib/parent/admit-member';
   import {
     enqueuePendingAdmit,
     listPendingAdmitForParent,
@@ -104,59 +106,97 @@
 
   async function handleReject(request: CommonsJoinRequestDto) {
     if (!canAct || anyRespondInFlight || isJoinRequestRespondInFlight(request.eventId)) return;
-    const result = await respondToMlsJoinRequest({
-      requestId: request.eventId,
-      squadId: request.squadId,
-      status: 'rejected',
-    });
-    if (!result.ok) {
-      if (result.error) showToast(result.error);
-      return;
+    markJoinRequestRespondInFlight(request.eventId);
+    try {
+      const result = await respondToMlsJoinRequest({
+        requestId: request.eventId,
+        squadId: request.squadId,
+        status: 'rejected',
+        callerOwnsInFlight: true,
+      });
+      if (!result.ok) {
+        if (result.error) showToast(result.error);
+        return;
+      }
+      removePendingJoinRequest(squad.id, request.eventId);
+      showToast(tFn('squad.joinRequests.rejectToast'));
+    } finally {
+      clearJoinRequestRespondInFlight(request.eventId);
     }
-    removePendingJoinRequest(squad.id, request.eventId);
-    showToast(tFn('squad.joinRequests.rejectToast'));
   }
 
   async function handleAccept(request: CommonsJoinRequestDto) {
     if (!canAct || anyRespondInFlight || isJoinRequestRespondInFlight(request.eventId)) return;
-    const respondResult = await respondToMlsJoinRequest({
-      requestId: request.eventId,
-      squadId: request.squadId,
-      status: 'accepted',
-    });
-    if (!respondResult.ok) {
-      if (respondResult.error) showToast(respondResult.error);
-      return;
-    }
 
-    removePendingJoinRequest(squad.id, request.eventId);
-    enqueuePendingAdmit({
-      kind: 'join',
-      parentId: squad.id,
-      memberNpub: request.requesterNpub,
-      requestId: request.eventId,
-    });
-    showToast(tFn('squad.joinRequests.approvedPendingToast'));
-
-    const admitResult = await admitMemberToSquad({
-      parent: squad,
-      memberNpub: request.requesterNpub,
-    });
-    if (admitResult.ok) {
-      clearPendingAdmitForMember(squad.id, request.requesterNpub);
-      const name =
-        getProfileDisplayName($profiles[request.requesterNpub]) ||
-        tFn('squad.joinRequests.memberFallback');
-      showToast(tFn('squad.joinRequests.joinToast', { values: { name } }));
-    } else if (admitResult.error) {
+    markJoinRequestRespondInFlight(request.eventId);
+    try {
+      // Admit first so Welcome is in flight before the requester is told "accepted".
       enqueuePendingAdmit({
         kind: 'join',
         parentId: squad.id,
         memberNpub: request.requesterNpub,
         requestId: request.eventId,
-        lastError: admitResult.error,
-        lastAttemptAt: Date.now(),
       });
+
+      let admitResult: AdmitMemberResult;
+      try {
+        admitResult = await admitMemberToSquad({
+          parent: squad,
+          memberNpub: request.requesterNpub,
+        });
+      } catch (e) {
+        const lastError = e instanceof Error ? e.message : String(e);
+        enqueuePendingAdmit({
+          kind: 'join',
+          parentId: squad.id,
+          memberNpub: request.requesterNpub,
+          requestId: request.eventId,
+          lastError,
+          lastAttemptAt: Date.now(),
+        });
+        admitResult = {
+          ok: false,
+          announcementsOk: false,
+          openChannelsInvited: 0,
+          error: lastError,
+        };
+      }
+
+      if (admitResult.ok) {
+        clearPendingAdmitForMember(squad.id, request.requesterNpub);
+      } else if (admitResult.error) {
+        enqueuePendingAdmit({
+          kind: 'join',
+          parentId: squad.id,
+          memberNpub: request.requesterNpub,
+          requestId: request.eventId,
+          lastError: admitResult.error,
+          lastAttemptAt: Date.now(),
+        });
+      }
+
+      const respondResult = await respondToMlsJoinRequest({
+        requestId: request.eventId,
+        squadId: request.squadId,
+        status: 'accepted',
+        callerOwnsInFlight: true,
+      });
+      if (!respondResult.ok) {
+        if (respondResult.error) showToast(respondResult.error);
+        return;
+      }
+
+      removePendingJoinRequest(squad.id, request.eventId);
+      if (admitResult.ok) {
+        const name =
+          getProfileDisplayName($profiles[request.requesterNpub]) ||
+          tFn('squad.joinRequests.memberFallback');
+        showToast(tFn('squad.joinRequests.joinToast', { values: { name } }));
+      } else {
+        showToast(tFn('squad.joinRequests.approvedPendingToast'));
+      }
+    } finally {
+      clearJoinRequestRespondInFlight(request.eventId);
     }
   }
 

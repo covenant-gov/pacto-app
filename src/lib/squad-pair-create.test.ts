@@ -20,6 +20,10 @@ vi.mock('./pacto-app-inbox', () => ({
   sendSquadInviteDm: vi.fn(),
 }));
 
+vi.mock('./squad/consent-first-invite', () => ({
+  sendConsentFirstSquadInvite: vi.fn().mockResolvedValue({ ok: true, inviteId: 'inv-1' }),
+}));
+
 vi.mock('./squad-hub-nav', () => ({
   activateSquadHub: vi.fn(),
 }));
@@ -35,15 +39,6 @@ vi.mock('./squad/squad-catalog', () => ({
 vi.mock('./squad/join-inbox', () => ({
   initJoinInbox: vi.fn(),
 }));
-
-vi.mock('./squad/skipped-members', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./squad/skipped-members')>();
-  return {
-    ...actual,
-    warnSkippedMembers: vi.fn(actual.warnSkippedMembers),
-    warnPendingInvites: vi.fn(actual.warnPendingInvites),
-  };
-});
 
 vi.mock('../stores/profiles', () => ({
   profiles: createMockWritable<Record<string, { nickname?: string }>>({}),
@@ -95,12 +90,10 @@ import {
 } from './squad-pair-create';
 import type { Squad } from '../stores/squads';
 import { createDefaultParentChannels, type DefaultParentChannelsCreated } from './parent-navbar';
-import { sendSquadInviteDm } from './pacto-app-inbox';
+import { sendConsentFirstSquadInvite } from './squad/consent-first-invite';
 import { persistCreatedSquad } from './squad/squad-catalog';
 import {
-  warnSkippedMembers,
   skippedMembersNotice,
-  warnPendingInvites,
   pendingInvitesNotice,
 } from './squad/skipped-members';
 import { shortNpub } from './squad/join-inbox-announce';
@@ -228,12 +221,13 @@ describe('runSquadPairCreateFlow', () => {
     pendingReadyToast.set(null);
     currentUser.set({ npub: 'me', pubkey: 'pk' });
     vi.mocked(createDefaultParentChannels).mockReset();
-    vi.mocked(sendSquadInviteDm).mockReset().mockResolvedValue(true);
+    vi.mocked(sendConsentFirstSquadInvite).mockReset().mockResolvedValue({
+      ok: true,
+      inviteId: 'inv-1',
+    });
     vi.mocked(persistCreatedSquad)
       .mockReset()
       .mockImplementation(async (_tempId, squad) => squad as Squad);
-    vi.mocked(warnSkippedMembers).mockClear();
-    vi.mocked(warnPendingInvites).mockClear();
   });
 
   afterEach(() => {
@@ -243,31 +237,7 @@ describe('runSquadPairCreateFlow', () => {
     currentUser.set(null);
   });
 
-  it('folds the skipped-members notice into the ready toast text instead of a separate toast', async () => {
-    vi.mocked(createDefaultParentChannels).mockResolvedValue({
-      parentId: 'group-1',
-      channels: [{ name: 'announcements', groupId: 'group-1', order: 0 }],
-      skippedMembers: [{ npub: 'npub-stale', reason: 'Missing required encoding tag' }],
-      pendingInvites: [],
-    });
-
-    runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-stale'], anchor, partner);
-
-    await vi.waitFor(() => {
-      expect(get(pendingReadyToast)?.goTo?.id).toBe('group-1');
-    });
-
-    const toast = get(pendingReadyToast);
-    expect(toast?.text).not.toBe('Pair Name is ready!');
-    expect(toast?.text).toContain('npub-stale');
-    expect(warnSkippedMembers).toHaveBeenCalledWith([
-      { npub: 'npub-stale', reason: 'Missing required encoding tag' },
-    ]);
-    expect(sendSquadInviteDm).toHaveBeenCalledWith('npub-a', expect.anything(), 'me');
-    expect(sendSquadInviteDm).not.toHaveBeenCalledWith('npub-stale', expect.anything(), expect.anything());
-  });
-
-  it('keeps the plain ready-toast text when nobody is skipped', async () => {
+  it('creates a creator-only MLS group then consent-first invites selected members', async () => {
     vi.mocked(createDefaultParentChannels).mockResolvedValue({
       parentId: 'group-2',
       channels: [{ name: 'announcements', groupId: 'group-2', order: 0 }],
@@ -275,79 +245,23 @@ describe('runSquadPairCreateFlow', () => {
       pendingInvites: [],
     });
 
-    runSquadPairCreateFlow('Pair Name', ['npub-a'], anchor, partner);
+    runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-b'], anchor, partner);
 
     await vi.waitFor(() => {
       expect(get(pendingReadyToast)?.goTo?.id).toBe('group-2');
     });
 
+    expect(createDefaultParentChannels).toHaveBeenCalledWith([]);
     expect(get(pendingReadyToast)?.text).toBe('Pair Name is ready!');
-    expect(warnSkippedMembers).not.toHaveBeenCalled();
-  });
-
-  it('folds the pending-invite notice into the ready toast when nobody is skipped', async () => {
-    vi.mocked(createDefaultParentChannels).mockResolvedValue({
-      parentId: 'group-3',
-      channels: [{ name: 'announcements', groupId: 'group-3', order: 0 }],
-      skippedMembers: [],
-      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
-    });
-
-    runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-pending'], anchor, partner);
-
-    await vi.waitFor(() => {
-      expect(get(pendingReadyToast)?.goTo?.id).toBe('group-3');
-    });
-
-    const toast = get(pendingReadyToast);
-    expect(toast?.text).not.toBe('Pair Name is ready!');
-    expect(toast?.text).toContain('npub-pending');
-    expect(warnPendingInvites).toHaveBeenCalledWith([
-      { npub: 'npub-pending', reason: 'Welcome delivery failed' },
-    ]);
-  });
-
-  it('excludes pending-invite npubs from the invite DM, unlike a clean member', async () => {
-    vi.mocked(createDefaultParentChannels).mockResolvedValue({
-      parentId: 'group-5',
-      channels: [{ name: 'announcements', groupId: 'group-5', order: 0 }],
-      skippedMembers: [],
-      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
-    });
-
-    runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-pending'], anchor, partner);
-
-    await vi.waitFor(() => {
-      expect(get(pendingReadyToast)?.goTo?.id).toBe('group-5');
-    });
-
-    expect(sendSquadInviteDm).toHaveBeenCalledWith('npub-a', expect.anything(), 'me');
-    expect(sendSquadInviteDm).not.toHaveBeenCalledWith('npub-pending', expect.anything(), expect.anything());
-  });
-
-  it('keeps both notices when members are skipped and pending, dropping neither', async () => {
-    vi.mocked(createDefaultParentChannels).mockResolvedValue({
-      parentId: 'group-4',
-      channels: [{ name: 'announcements', groupId: 'group-4', order: 0 }],
-      skippedMembers: [{ npub: 'npub-stale', reason: 'Missing required encoding tag' }],
-      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
-    });
-
-    runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-stale', 'npub-pending'], anchor, partner);
-
-    await vi.waitFor(() => {
-      expect(get(pendingReadyToast)?.goTo?.id).toBe('group-4');
-    });
-
-    const toast = get(pendingReadyToast);
-    expect(toast?.text).toContain('npub-stale');
-    expect(toast?.text).toContain('npub-pending');
-    expect(warnSkippedMembers).toHaveBeenCalledWith([
-      { npub: 'npub-stale', reason: 'Missing required encoding tag' },
-    ]);
-    expect(warnPendingInvites).toHaveBeenCalledWith([
-      { npub: 'npub-pending', reason: 'Welcome delivery failed' },
-    ]);
+    expect(sendConsentFirstSquadInvite).toHaveBeenCalledTimes(2);
+    expect(sendConsentFirstSquadInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'group-2', name: 'Pair Name', kind: 'squad-pair' }),
+      'npub-a'
+    );
+    expect(sendConsentFirstSquadInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'group-2' }),
+      'npub-b'
+    );
   });
 });
 
@@ -404,19 +318,20 @@ describe('retryParentAnnouncementsCreate', () => {
 
   beforeEach(() => {
     squads.set([retryParent]);
-    parentPendingCreateMembers.set({ 'parent-1': ['npub-a', 'npub-stale'] });
+    parentPendingCreateMembers.set({ 'parent-1': ['npub-a', 'npub-b'] });
     parentPendingCreateOptions.set({});
     parentRetryingCreateIds.set(new Set());
     pendingReadyToast.set(null);
     currentUser.set({ npub: 'me', pubkey: 'pk' });
     vi.mocked(createDefaultParentChannels).mockReset();
-    vi.mocked(sendSquadInviteDm).mockReset().mockResolvedValue(true);
+    vi.mocked(sendConsentFirstSquadInvite).mockReset().mockResolvedValue({
+      ok: true,
+      inviteId: 'inv-1',
+    });
     vi.mocked(applySquadCreateNetwork).mockReset();
     vi.mocked(persistCreatedSquad)
       .mockReset()
       .mockImplementation(async (_tempId, squad) => squad as Squad);
-    vi.mocked(warnSkippedMembers).mockClear();
-    vi.mocked(warnPendingInvites).mockClear();
   });
 
   afterEach(() => {
@@ -428,55 +343,23 @@ describe('retryParentAnnouncementsCreate', () => {
     currentUser.set(null);
   });
 
-  it('folds the skipped-members notice into the retry ready toast', async () => {
+  it('retries with creator-only create and consent-first invites for pending members', async () => {
     vi.mocked(createDefaultParentChannels).mockResolvedValue({
       parentId: 'group-3',
       channels: retriedChannels,
-      skippedMembers: [{ npub: 'npub-stale', reason: 'Missing required encoding tag' }],
+      skippedMembers: [],
       pendingInvites: [],
     });
 
     await retryParentAnnouncementsCreate(retryParent);
 
-    const toast = get(pendingReadyToast);
-    expect(toast?.text).not.toBe('Alpha is ready!');
-    expect(toast?.text).toContain('npub-stale');
-    expect(warnSkippedMembers).toHaveBeenCalledWith([
-      { npub: 'npub-stale', reason: 'Missing required encoding tag' },
-    ]);
-  });
-
-  it('folds the pending-invite notice into the retry ready toast', async () => {
-    vi.mocked(createDefaultParentChannels).mockResolvedValue({
-      parentId: 'group-3',
-      channels: retriedChannels,
-      skippedMembers: [],
-      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
-    });
-
-    await retryParentAnnouncementsCreate(retryParent);
-
-    const toast = get(pendingReadyToast);
-    expect(toast?.text).not.toBe('Alpha is ready!');
-    expect(toast?.text).toContain('npub-pending');
-    expect(warnPendingInvites).toHaveBeenCalledWith([
-      { npub: 'npub-pending', reason: 'Welcome delivery failed' },
-    ]);
-  });
-
-  it('excludes pending-invite npubs from the retry invite DM, unlike a clean member', async () => {
-    parentPendingCreateMembers.set({ 'parent-1': ['npub-a', 'npub-pending'] });
-    vi.mocked(createDefaultParentChannels).mockResolvedValue({
-      parentId: 'group-3',
-      channels: retriedChannels,
-      skippedMembers: [],
-      pendingInvites: [{ npub: 'npub-pending', reason: 'Welcome delivery failed' }],
-    });
-
-    await retryParentAnnouncementsCreate(retryParent);
-
-    expect(sendSquadInviteDm).toHaveBeenCalledWith('npub-a', expect.anything(), 'me');
-    expect(sendSquadInviteDm).not.toHaveBeenCalledWith('npub-pending', expect.anything(), expect.anything());
+    expect(createDefaultParentChannels).toHaveBeenCalledWith([]);
+    expect(get(pendingReadyToast)?.text).toBe('Alpha is ready!');
+    expect(sendConsentFirstSquadInvite).toHaveBeenCalledTimes(2);
+    expect(sendConsentFirstSquadInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'group-3' }),
+      'npub-a'
+    );
   });
 
   it('returns early when there is no pending member list', async () => {
@@ -509,7 +392,7 @@ describe('retryParentAnnouncementsCreate', () => {
     await pending;
 
     expect(persistCreatedSquad).not.toHaveBeenCalled();
-    expect(sendSquadInviteDm).not.toHaveBeenCalled();
+    expect(sendConsentFirstSquadInvite).not.toHaveBeenCalled();
     expect(get(squads)).toEqual([]);
   });
 
@@ -548,13 +431,13 @@ describe('retryParentAnnouncementsCreate', () => {
 
     await retryParentAnnouncementsCreate(pairParent);
 
-    expect(sendSquadInviteDm).toHaveBeenCalledWith(
-      'npub-a',
+    expect(sendConsentFirstSquadInvite).toHaveBeenCalledWith(
       expect.objectContaining({
+        id: 'group-3',
         kind: 'squad-pair',
         pairedSquads: pairParent.pairedSquads,
       }),
-      'me'
+      'npub-a'
     );
   });
 });

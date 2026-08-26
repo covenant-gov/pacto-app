@@ -94,7 +94,7 @@ async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequest
     const requests = await loadPendingJoinRequestsFromMls(id);
     setPendingForSquad(id, requests);
     recordCatchUpEntriesForJoinRequests(id, requests);
-    if (fanOutError && requests.length === 0) {
+    if (fanOutError) {
       setErrorForSquad(id, fanOutError);
     }
     return requests;

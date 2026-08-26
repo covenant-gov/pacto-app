@@ -45,7 +45,6 @@
     type Squad,
   } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
-  import { sendSquadInviteDm } from '../../lib/pacto-app-inbox';
   import { createDefaultParentChannels } from '../../lib/parent-navbar';
   import { activateSquadHub } from '../../lib/squad-hub-nav';
   import { pendingReadyToast } from '../../stores/toast';
@@ -61,18 +60,13 @@
   import { appendSquadNavId, moveSquadNavIdToGapIndex, orderSquads } from '../../lib/squad/squad-nav-order';
   import { initJoinInbox } from '../../lib/squad/join-inbox';
   import { applySquadCreateNetwork } from '../../lib/squad/squad-create-network';
+  import { sendConsentFirstSquadInvite } from '../../lib/squad/consent-first-invite';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { portal } from '../../lib/utils/portal';
   import { profiles } from '../../stores/profiles';
   import { appConfig } from '../../stores/app-config';
   import { squadRecreateRequest } from '../../stores/squad-recreate';
   import { showCreateFailureToast } from '../../lib/squad-pair-create';
-  import {
-    warnSkippedMembers,
-    skippedMembersNotice,
-    warnPendingInvites,
-    pendingInvitesNotice,
-  } from '../../lib/squad/skipped-members';
 
   const translate = get(t);
   let orderedSquads = $derived(orderSquads($squads, $squadNavOrder));
@@ -391,7 +385,8 @@
     (async () => {
       let createdGroupId: string | null = null;
       try {
-        const { parentId, channels, skippedMembers, pendingInvites } = await createDefaultParentChannels(memberNpubs);
+        // Creator-only MLS group; selected contacts are invited consent-first after create.
+        const { parentId, channels } = await createDefaultParentChannels([]);
         const groupId = parentId;
         createdGroupId = groupId;
         const finalized: Squad = {
@@ -439,15 +434,8 @@
           channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
         if (hubName) lastHubChannelNameBySquadId.update((m) => ({ ...m, [groupId]: hubName }));
 
-        const skippedNotice = skippedMembersNotice(skippedMembers);
-        const pendingNotice = pendingInvitesNotice(pendingInvites);
-        if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
-        if (pendingInvites.length > 0) warnPendingInvites(pendingInvites);
-        const readyNotice = [skippedNotice, pendingNotice].filter(Boolean).join(' ');
         pendingReadyToast.set({
-          text:
-            readyNotice ||
-            translate('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
+          text: translate('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
           goTo: {
             type: 'squad',
             name,
@@ -457,19 +445,10 @@
               channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
           },
         });
-        const myNpub = get(currentUser)?.npub;
-        // Pending npubs have no published Welcome yet, so the card can't be accepted; the
-        // creator's resend is the recovery path.
-        const excludedNpubs = new Set([
-          ...skippedMembers.map((skipped) => skipped.npub),
-          ...pendingInvites.map((pending) => pending.npub),
-        ]);
-        const invitedNpubs = memberNpubs.filter((npub) => !excludedNpubs.has(npub));
-        for (const npub of invitedNpubs) {
-          try {
-            await sendSquadInviteDm(npub, { squadName: name, groupId, iconUrl: options.iconUrl }, myNpub);
-          } catch (e) {
-            console.warn('[Navbar] send squad invite DM failed for', npub.slice(0, 20) + '…', e);
+        for (const npub of memberNpubs) {
+          const result = await sendConsentFirstSquadInvite(finalized, npub);
+          if (!result.ok) {
+            console.warn('[Navbar] consent-first invite failed for', npub.slice(0, 20) + '…', result.error);
           }
         }
         schedulePublicSquadCreateBroadcast(groupId, () => {

@@ -9400,7 +9400,8 @@ async fn run_create_mls_group(
 
 /// Create an MLS group from a group name + member npubs (multi-device aware)
 /// - Validates non-empty group name (channel name; squad display name is a separate
-///   field validated in `squad_catalog::upsert_squad`) and at least one member
+///   field validated in `squad_catalog::upsert_squad`). `member_ids` may be empty
+///   (creator-only group; consent-first invites add humans after create).
 /// - For each member npub, refreshes their latest device keypackage(s)
 /// - A member with zero keypackages after refresh, or whose KeyPackage the MLS engine cannot
 ///   parse (e.g. a legacy event missing the MIP-00/02 encoding tag), is skipped rather than
@@ -9426,7 +9427,7 @@ async fn create_group_chat(
     /*
     Error mapping for UI (Create Group)
     - "Group name must not be empty": validation error. Frontend disables Create until non-empty; if surfaced, show inline status.
-    - "Select at least one member to create a group": validation error. Frontend disables Create until at least one contact is selected; if surfaced, show inline status.
+    - Empty member_ids is allowed (creator-only announcements group).
     - "Failed to refresh device keypackage for {npub}: {error}": hard failure for a specific member during preflight refresh. Abort creation and show this exact string in popup/toast and inline status.
     - Members with zero device keypackages after refresh, or whose KeyPackage the engine rejects,
       are skipped rather than aborting: they show up in the response's `skippedMembers` instead of
@@ -9451,9 +9452,7 @@ async fn create_group_chat(
             crate::app_config::CHANNEL_NAME_MAX_LENGTH
         ));
     }
-    if member_ids.is_empty() {
-        return Err("Select at least one member to create a group".to_string());
-    }
+    // Empty member_ids = creator-only group (consent-first invites add humans later).
 
     // For each member id (npub), refresh keypackages and pick one device to add
     let mut initial_member_devices: Vec<(String, String)> = Vec::with_capacity(member_ids.len());
@@ -9485,8 +9484,8 @@ async fn create_group_chat(
         }
     }
 
-    // If everyone was skipped, abort with a clear error
-    if initial_member_devices.is_empty() {
+    // If members were requested but everyone was skipped, abort with a clear error
+    if initial_member_devices.is_empty() && !preflight_skipped.is_empty() {
         return Err(format!(
             "No device keypackages found for any selected member: {}",
             skipped_members_detail(&preflight_skipped)

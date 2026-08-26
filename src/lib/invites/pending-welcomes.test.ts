@@ -6,9 +6,8 @@ const requireBackupVerifiedMock = vi.fn(() => true);
 const finalizeMock = vi.fn();
 
 // accept-invite.ts drags in squad-catalog / outbound-invite / backup-verification /
-// dm-debug, none of which recordDeclinedWelcomeGroupId ever calls, but importing the
-// module runs their top-level code. Mirror accept-invite.test.ts's mocks so import
-// doesn't reach real Tauri invokes.
+// dm-debug; importing the module runs their top-level code. Mirror
+// accept-invite.test.ts's mocks so import doesn't reach real Tauri invokes.
 vi.mock('../squad/squad-catalog', () => ({
   persistSquadPatch: vi.fn(),
   persistSquad: vi.fn(),
@@ -55,11 +54,9 @@ import {
   MAX_OFFERED_WELCOMES,
   offeredWelcomeFromPendingMls,
   offeredWelcomes,
-  recordDeclinedWelcomeGroupId,
   type OfferedWelcome,
   type OfferedWelcomeInputs,
 } from './pending-welcomes';
-import { declinedWelcomeGroupIds } from '../../stores/invite-decisions';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
   getPendingWelcomeFinalizationByGroupId,
@@ -288,39 +285,6 @@ describe('offeredWelcomes', () => {
     const result = offeredWelcomes(inputs({ welcomes, unmaterialized: [extra] }));
     expect(result[0]).toEqual(extra);
     expect(result).toHaveLength(MAX_OFFERED_WELCOMES + 1);
-  });
-});
-
-describe('recordDeclinedWelcomeGroupId', () => {
-  beforeEach(() => {
-    declinedWelcomeGroupIds.set([]);
-  });
-
-  afterEach(() => {
-    declinedWelcomeGroupIds.set([]);
-  });
-
-  it('appends a group id to the declinedWelcomeGroupIds store', () => {
-    recordDeclinedWelcomeGroupId('group-1');
-    expect(get(declinedWelcomeGroupIds)).toEqual(['group-1']);
-  });
-
-  it('is idempotent for the exact same id', () => {
-    recordDeclinedWelcomeGroupId('group-1');
-    recordDeclinedWelcomeGroupId('group-1');
-    expect(get(declinedWelcomeGroupIds)).toEqual(['group-1']);
-  });
-
-  it('is idempotent across case and whitespace differences', () => {
-    recordDeclinedWelcomeGroupId('group-1');
-    recordDeclinedWelcomeGroupId('  GROUP-1  ');
-    expect(get(declinedWelcomeGroupIds)).toEqual(['group-1']);
-  });
-
-  it('ignores empty or whitespace-only input', () => {
-    recordDeclinedWelcomeGroupId('');
-    recordDeclinedWelcomeGroupId('   ');
-    expect(get(declinedWelcomeGroupIds)).toEqual([]);
   });
 });
 

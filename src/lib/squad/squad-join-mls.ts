@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { get, writable } from 'svelte/store';
-import { sendDmMessage, getDmMessages, getMlsGroupMembers } from '../api/nostr';
+import { sendDmMessage, getDmMessages } from '../api/nostr';
 import { currentUser } from '../../stores/auth';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsJoinRequestDto, CommonsJoinRequestStatus } from '../commons/types';
@@ -254,11 +254,11 @@ export async function syncJoinInboxDms(squadId: string): Promise<JoinInboxDmDto[
 /** Non-holders lack the Join inbox key — inbox sync is expected to fail for them. */
 export function isExpectedNonHolderJoinInboxSyncError(message: string): boolean {
   const lower = message.toLowerCase();
+  // Surface init/stale errors to holders in Settings; only silence true non-holder denials.
   return (
-    lower.includes('holder') ||
-    lower.includes('join inbox') ||
-    lower.includes('not initialized') ||
-    lower.includes('stale')
+    lower.includes('not a holder') ||
+    lower.includes('only join inbox holders') ||
+    (lower.includes('holder') && lower.includes('can perform'))
   );
 }
 
@@ -279,24 +279,14 @@ export async function fanOutJoinInboxDmsToMls(squadId: string): Promise<number> 
   }
   if (dms.length === 0) return 0;
 
+  // Only open pending requests block re-fan-out for a requester (reject → re-request must work).
   const existing = await loadPendingJoinRequestsFromMls(id);
   const known = new Set(existing.map((r) => r.eventId));
-  const knownRequesters = new Set(existing.map((r) => r.requesterNpub));
+  const pendingRequesters = new Set(existing.map((r) => r.requesterNpub));
   const allMsgs = await getDmMessages(id, 200, 0, { virtualBucketFilter: 'join_requests' });
   for (const m of allMsgs) {
     const wire = parseJoinWire(m.content);
     if (wire?.requestId) known.add(wire.requestId);
-    if (wire?.schema === SQUAD_JOIN_REQUEST_SCHEMA && wire.requesterNpub) {
-      knownRequesters.add(wire.requesterNpub);
-    }
-  }
-
-  let memberSet = new Set<string>();
-  try {
-    const members = await getMlsGroupMembers(id);
-    memberSet = new Set(members.members ?? []);
-  } catch {
-    // membership unknown — still fan out; accept path will fail closed for members
   }
 
   const sortedDms = [...dms].sort((a, b) => b.createdAt - a.createdAt);
@@ -305,9 +295,11 @@ export async function fanOutJoinInboxDmsToMls(squadId: string): Promise<number> 
   let forwarded = 0;
   for (const dm of sortedDms) {
     if (known.has(dm.requestId)) continue;
-    if (memberSet.has(dm.requesterNpub)) continue;
+    // Do not skip on raw MLS membership — phantoms / pending leaves must still fan out;
+    // admit handles existing leaves via Restore.
+    if (dm.requesterNpub === me) continue;
     if (isJoinRequesterMuted(id, dm.requesterNpub)) continue;
-    if (knownRequesters.has(dm.requesterNpub)) continue;
+    if (pendingRequesters.has(dm.requesterNpub)) continue;
     if (seenRequestersThisSync.has(dm.requesterNpub)) continue;
     const content = formatMlsJoinRequest({
       requestId: dm.requestId,
@@ -321,7 +313,7 @@ export async function fanOutJoinInboxDmsToMls(squadId: string): Promise<number> 
     try {
       await sendDmMessage(id, content, '', { virtualBucket: 'join_requests' });
       known.add(dm.requestId);
-      knownRequesters.add(dm.requesterNpub);
+      pendingRequesters.add(dm.requesterNpub);
       seenRequestersThisSync.add(dm.requesterNpub);
       forwarded += 1;
     } catch (e) {
@@ -351,13 +343,18 @@ export async function respondToMlsJoinRequest(input: {
   requestId: string;
   squadId: string;
   status: 'accepted' | 'rejected';
+  /** When true, caller already marked in-flight and owns clear (e.g. admit-then-respond). */
+  callerOwnsInFlight?: boolean;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const requestId = input.requestId.trim();
   if (!requestId) return { ok: false, error: 'Missing join request id.' };
-  if (isJoinRequestRespondInFlight(requestId)) {
-    return { ok: false, error: '' };
+  const ownsInFlight = !!input.callerOwnsInFlight;
+  if (!ownsInFlight) {
+    if (isJoinRequestRespondInFlight(requestId)) {
+      return { ok: false, error: '' };
+    }
+    markJoinRequestRespondInFlight(requestId);
   }
-  markJoinRequestRespondInFlight(requestId);
   try {
     const me = get(currentUser)?.npub;
     if (!me) return { ok: false, error: 'Not signed in.' };
@@ -385,7 +382,9 @@ export async function respondToMlsJoinRequest(input: {
   } catch (e: unknown) {
     return { ok: false, error: getInvokeErrorMessage(e, 'Could not update join request.') };
   } finally {
-    clearJoinRequestRespondInFlight(requestId);
+    if (!ownsInFlight) {
+      clearJoinRequestRespondInFlight(requestId);
+    }
   }
 }
 

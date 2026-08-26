@@ -63,7 +63,7 @@ import {
 import { listPendingMlsWelcomes, acceptMlsWelcome, syncMlsGroupsNow } from '../api/nostr';
 import { publishInviteAcceptedClaims } from '../squad/squad-outbound-invite';
 import { squads, type Squad } from '../../stores/squads';
-import { acceptedSquadInviteIds, acceptedChannelInviteMessageIds } from '../../stores/invite-decisions';
+import { acceptedSquadInviteIds, acceptedChannelInviteMessageIds, declinedWelcomeGroupIds } from '../../stores/invite-decisions';
 import { pendingSquadAdmissions, resetPendingSquadAdmissions, upsertPendingSquadAdmission } from '../../stores/pending-squad-admission';
 import { backendDmMessages } from '../../stores/dm';
 import { squadNavOrder } from '../../stores/navigation';
@@ -101,6 +101,7 @@ describe('accept-invite channel persistence', () => {
     resetPendingSquadAdmissions();
     resetMlsHistoryWelcomeForTests();
     setCurrentNpubForPersistence('npub1test');
+    declinedWelcomeGroupIds.set([]);
     resolveOneCatchUpEntryMock.mockClear();
     persistSquadPatchMock.mockReset().mockResolvedValue(parent);
     persistSquadMock.mockReset().mockImplementation(async (squad: Squad) => squad);
@@ -267,6 +268,21 @@ describe('accept-invite channel persistence', () => {
         iconUrl: 'https://cdn.example/a.jpg',
       }),
     );
+  });
+
+  it('clears declined welcome group ids when consent-first Accept starts', async () => {
+    vi.useFakeTimers();
+    declinedWelcomeGroupIds.set(['pending-squad']);
+    vi.mocked(listPendingMlsWelcomes).mockResolvedValue([]);
+    const done = acceptAnnouncementsInvite(
+      { groupId: 'pending-squad', name: 'Pending' },
+      'msg-pending',
+      { inviteId: 'inv-9', admitterNpubs: ['npub1admitter'], invitedByNpub: 'npub1admitter' }
+    );
+    await vi.advanceTimersByTimeAsync(ACCEPT_WELCOME_FAST_PATH_MS + 50);
+    await done;
+    expect(get(declinedWelcomeGroupIds)).toEqual([]);
+    vi.useRealTimers();
   });
 
   it('rejects a consent-first invite without a verifiable invite id', async () => {

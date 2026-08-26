@@ -14,7 +14,7 @@ import { parseJoinInboxResponseDm } from './squad-join-mls';
 import { dmError } from '../utils/dm-debug';
 import { showToast } from '../../stores/toast';
 import { t } from 'svelte-i18n';
-import { getJoinRequestRecord } from '../commons/commons-join-request';
+import { getJoinRequestRecord, clearJoinRequestRecord } from '../commons/commons-join-request';
 import { persistenceKey } from '../../stores/persistence-context';
 
 const completingGroupIds = new Set<string>();
@@ -106,7 +106,7 @@ export async function handleJoinInboxResponseDm(
   senderNpub: string
 ): Promise<void> {
   const parsed = parseJoinInboxResponseDm(content);
-  if (!parsed || parsed.status !== 'accepted') return;
+  if (!parsed) return;
   const request = getJoinRequestRecord(parsed.squadId);
   if (
     !request ||
@@ -115,6 +115,9 @@ export async function handleJoinInboxResponseDm(
   ) {
     return;
   }
+  // Clear cooldown so reject (or accept) does not brick a later re-request.
+  clearJoinRequestRecord(parsed.squadId, parsed.requestId);
+  if (parsed.status !== 'accepted') return;
   rememberApprovedJoin(parsed.squadId, parsed.squadName, parsed.requestId);
   await completeApprovedJoin(parsed.squadId, parsed.squadName, parsed.requestId);
 }

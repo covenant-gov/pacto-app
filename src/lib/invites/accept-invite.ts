@@ -42,6 +42,9 @@ import {
   upsertPendingSquadAdmission,
 } from '../../stores/pending-squad-admission';
 import { t } from 'svelte-i18n';
+import { clearDeclinedWelcomeGroupId, sameMlsGroupId } from './declined-welcomes';
+
+export { sameMlsGroupId } from './declined-welcomes';
 
 function tt(
   key: string,
@@ -84,10 +87,6 @@ export function resetInviteAcceptState(): void {
 export function squadInviteResolvedByMembership(groupId: string): boolean {
   const target = groupId.trim().toLowerCase();
   return get(squads).some((s) => s.id.trim().toLowerCase() === target);
-}
-
-export function sameMlsGroupId(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
 function findPendingWelcomeForGroup(
@@ -295,6 +294,7 @@ export async function acceptAnnouncementsInvite(
 
   const welcome = await resolvePendingWelcomeForGroupInitial(payload.groupId);
   if (welcome) {
+    clearDeclinedWelcomeGroupId(payload.groupId);
     acceptedSquadInviteGroupIds.add(payload.groupId);
     await acceptMlsWelcome(welcome.id);
     await finalizeSquadAfterAnnouncementsWelcome(payload, messageId);
@@ -321,6 +321,9 @@ export async function acceptAnnouncementsInvite(
   if (admitters.length === 0) {
     throw new Error(tt('messaging.inviteCard.noAdmitters'));
   }
+
+  // New Accept after an earlier Decline must not suppress the post-admit Welcome.
+  clearDeclinedWelcomeGroupId(payload.groupId);
 
   upsertPendingSquadAdmission({
     messageId,
