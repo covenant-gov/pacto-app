@@ -5,6 +5,7 @@
 	import { t } from 'svelte-i18n';
 	import { cn } from '$lib/utils.js';
 	import { embedCardClass } from './embed-surface.js';
+	import PollEmbedHeading from './PollEmbedHeading.svelte';
 
 	let {
 		title,
@@ -44,13 +45,8 @@
 </script>
 
 <Card.Root class={embedCardClass}>
-	<Card.Header class="gap-1.5">
-		<p class="col-span-2 m-0 flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-xs leading-none text-muted-foreground">
-			<span class="font-medium tracking-[0.04em] text-mention-accent uppercase">{tag ?? $t('design.chat.pollTag')}</span>
-			<span aria-hidden="true">·</span>
-			<span class="min-w-0 truncate">#{channel}</span>
-		</p>
-		<Card.Title class="col-span-2 text-pretty">{title}</Card.Title>
+	<Card.Header class="grid-cols-[minmax(0,1fr)_auto] gap-1.5">
+		<PollEmbedHeading {title} {channel} {tag} titleClass="col-span-2 text-pretty" />
 		{#if interactive}
 			<Card.Description class="col-span-2 text-xs">{$t('design.chat.selectOne')}</Card.Description>
 		{/if}
