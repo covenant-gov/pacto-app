@@ -15,6 +15,7 @@
     /** Active broadcast count per leaf tag. */
     countsByTag?: Record<string, number>;
     onSelectCategory?: (categoryId: string) => void;
+    onHideCategory?: (categoryId: string, title: string) => void;
   }
 
   let {
@@ -22,6 +23,7 @@
     activeCategoryId = null,
     countsByTag = {},
     onSelectCategory = () => {},
+    onHideCategory,
   }: Props = $props();
 
   const localizedCategories = $derived(categories.map((c) => localizeCommonsTagCategory($t, c)));
@@ -55,6 +57,17 @@
           {/if}
           <span class="commons-browser-frame" aria-hidden="true"></span>
         </button>
+        {#if onHideCategory}
+          <button
+            type="button"
+            class="commons-browser-hide"
+            aria-label={$t('commons.tagBrowser.hideAria', { values: { title: category.title } })}
+            title={$t('commons.tagBrowser.hideAria', { values: { title: category.title } })}
+            onclick={() => onHideCategory(category.id, category.title)}
+          >
+            ×
+          </button>
+        {/if}
       </li>
     {/each}
   </ul>
@@ -74,6 +87,34 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 4px;
+  }
+
+  .commons-browser-grid li {
+    position: relative;
+  }
+
+  .commons-browser-hide {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .commons-browser-hide:hover {
+    background: rgba(0, 0, 0, 0.8);
   }
 
   .commons-browser-tile {

@@ -25,7 +25,19 @@
     commonsFeedSyncing,
     refreshCommonsBroadcasts,
   } from '../../lib/commons/commons-prefetch';
-  import { COMMONS_TAG_GROUPS, getLocalizedCommonsTagCategory } from '../../lib/commons/tag-catalog';
+  import {
+    COMMONS_TAG_GROUPS,
+    COMMONS_TAG_TREE,
+    filterVisibleCommonsCategories,
+    getLocalizedCommonsTagCategory,
+  } from '../../lib/commons/tag-catalog';
+  import {
+    commonsHiddenRevision,
+    getHiddenCommonsBroadcastIds,
+    getHiddenCommonsCategoryIds,
+    hideCommonsCategory,
+  } from '../../lib/commons/commons-hidden';
+  import { showToast } from '../../stores/toast';
   import { activeTopNavTab } from '../../stores/navigation';
   import {
     commonsBroadcastModalClosedNonce,
@@ -49,14 +61,22 @@
   let wasCommonsActive = false;
 
   const feedFilters = $derived({ tags: filterTags, categoryId: filterCategoryId, subjectFilter, audienceFilter });
-  const filteredBroadcasts = $derived(prepareCommonsFeed($commonsBroadcasts, feedFilters));
+  const hiddenBroadcastIds = $derived.by(() => {
+    $commonsHiddenRevision;
+    return getHiddenCommonsBroadcastIds();
+  });
+  const hiddenCategoryIds = $derived.by(() => {
+    $commonsHiddenRevision;
+    return new Set(getHiddenCommonsCategoryIds());
+  });
+  const visibleCategories = $derived(filterVisibleCommonsCategories(COMMONS_TAG_TREE, hiddenCategoryIds));
+  const filteredBroadcasts = $derived(prepareCommonsFeed($commonsBroadcasts, feedFilters, hiddenBroadcastIds));
   const latestBroadcasts = $derived(
-    prepareCommonsFeed($commonsBroadcasts, {
-      tags: [],
-      categoryId: null,
-      subjectFilter,
-      audienceFilter,
-    })
+    prepareCommonsFeed(
+      $commonsBroadcasts,
+      { tags: [], categoryId: null, subjectFilter, audienceFilter },
+      hiddenBroadcastIds
+    )
   );
   const hasTagFilters = $derived(
     filterTags.length > 0 ||
@@ -77,10 +97,12 @@
     return catId ? (getLocalizedCommonsTagCategory($t, catId)?.title ?? catId.toUpperCase()) : null;
   });
 
-  // Active broadcast counts per catalog tag for the grid "live" badges.
+  // Active broadcast counts per catalog tag for the grid "live" badges. Excludes hidden broadcasts.
   const countsByTag = $derived.by(() => {
     const counts: Record<string, number> = {};
-    const active = dedupeCommonsBroadcasts($commonsBroadcasts).filter((b) => isCommonsBroadcastActive(b));
+    const active = dedupeCommonsBroadcasts($commonsBroadcasts).filter(
+      (b) => isCommonsBroadcastActive(b) && !hiddenBroadcastIds.has(b.eventId)
+    );
     const known = new Set(COMMONS_TAG_GROUPS.map((g) => g.tag));
     for (const b of active) {
       for (const tag of b.tags) {
@@ -89,6 +111,11 @@
     }
     return counts;
   });
+
+  function handleHideCategory(categoryId: string, title: string) {
+    hideCommonsCategory(categoryId);
+    showToast($t('commons.tagBrowser.hideToast', { values: { title } }));
+  }
 
   async function loadFeed(options: { silent?: boolean } = {}) {
     const rows = await refreshCommonsBroadcasts(options);
@@ -308,9 +335,11 @@
       {/if}
     {:else if showTileGrid}
       <CommonsTagBrowser
+        categories={visibleCategories}
         activeCategoryId={null}
         {countsByTag}
         onSelectCategory={selectCategory}
+        onHideCategory={handleHideCategory}
       />
     {/if}
   </div>

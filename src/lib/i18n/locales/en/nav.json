@@ -72,5 +72,6 @@
 	"nav.settings.sections.evm": "EVM",
 	"nav.settings.sections.app": "App",
 	"nav.settings.sections.notifications": "Notifications",
+	"nav.settings.sections.commons": "Commons",
 	"nav.settings.sections.dangerzone": "Dangerzone"
 }

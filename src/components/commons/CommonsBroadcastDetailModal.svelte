@@ -10,6 +10,7 @@
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
   import { computeBroadcastPresentation } from '../../lib/commons/broadcast-presentation';
   import { commonsJoinRequestRevision } from '../../lib/commons/commons-join-request';
+  import { hideCommonsBroadcast } from '../../lib/commons/commons-hidden';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
 
@@ -78,6 +79,12 @@
     showToast(tFn('commons.detail.joinToast', { values: { squadLabel } }));
     onClose();
   }
+
+  function handleHide() {
+    hideCommonsBroadcast({ eventId: broadcast.eventId, title, subtitle, tags: broadcast.tags });
+    showToast(tFn('commons.card.hideToast'));
+    onClose();
+  }
 </script>
 
 <Modal
@@ -97,6 +104,15 @@
     {:else}
       <span class="commons-detail-initial" aria-hidden="true">{(title || '?').charAt(0).toUpperCase()}</span>
     {/if}
+    <button
+      type="button"
+      class="commons-detail-hide"
+      aria-label={$t('commons.card.hideAria', { values: { title } })}
+      title={$t('commons.card.hideAria', { values: { title } })}
+      onclick={handleHide}
+    >
+      ×
+    </button>
     <span class="commons-detail-expiry">{formatExpiry(broadcast.expiresAt)}</span>
   </div>
 
@@ -184,6 +200,30 @@
     border-radius: 4px;
     background: rgba(0, 0, 0, 0.65);
     color: #fff;
+  }
+
+  .commons-detail-hide {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 1.125rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .commons-detail-hide:hover {
+    background: rgba(0, 0, 0, 0.8);
   }
 
   .commons-detail-subtitle {

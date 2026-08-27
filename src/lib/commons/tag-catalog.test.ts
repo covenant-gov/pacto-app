@@ -4,6 +4,7 @@ import {
   COMMONS_CATEGORY_TAG_MIN,
   COMMONS_TAG_GROUPS,
   COMMONS_TAG_TREE,
+  filterVisibleCommonsCategories,
   getLocalizedCommonsTagTree,
   type CommonsTagTranslator,
 } from './tag-catalog';
@@ -40,5 +41,18 @@ describe('COMMONS_TAG_TREE', () => {
       }
     }
     expect(seen.size).toBe(COMMONS_TAG_GROUPS.length);
+  });
+});
+
+describe('filterVisibleCommonsCategories', () => {
+  it('drops categories whose id is hidden', () => {
+    const [first, second] = COMMONS_TAG_TREE;
+    const visible = filterVisibleCommonsCategories(COMMONS_TAG_TREE, new Set([first.id]));
+    expect(visible.some((c) => c.id === first.id)).toBe(false);
+    expect(visible.some((c) => c.id === second.id)).toBe(true);
+  });
+
+  it('returns the same list when nothing is hidden', () => {
+    expect(filterVisibleCommonsCategories(COMMONS_TAG_TREE, new Set())).toEqual(COMMONS_TAG_TREE);
   });
 });

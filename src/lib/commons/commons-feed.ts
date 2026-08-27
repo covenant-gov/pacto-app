@@ -90,15 +90,23 @@ function matchesTagFilter(
 export function filterCommonsBroadcasts(
   broadcasts: CommonsBroadcastDto[],
   filters: CommonsFeedFilters,
-  nowSecs = Math.floor(Date.now() / 1000)
+  nowSecs = Math.floor(Date.now() / 1000),
+  hiddenEventIds: ReadonlySet<string> = new Set()
 ): CommonsBroadcastDto[] {
   return broadcasts
     .filter((b) => isCommonsBroadcastActive(b, nowSecs))
     .filter((b) => matchesSubjectFilter(b, filters.subjectFilter))
     .filter((b) => matchesAudienceFilter(b, filters.audienceFilter))
-    .filter((b) => matchesTagFilter(b, filters.tags, filters.categoryId));
+    .filter((b) => matchesTagFilter(b, filters.tags, filters.categoryId))
+    .filter((b) => !hiddenEventIds.has(b.eventId));
 }
 
-export function prepareCommonsFeed(broadcasts: CommonsBroadcastDto[], filters: CommonsFeedFilters): CommonsBroadcastDto[] {
-  return sortCommonsBroadcasts(filterCommonsBroadcasts(dedupeCommonsBroadcasts(broadcasts), filters));
+export function prepareCommonsFeed(
+  broadcasts: CommonsBroadcastDto[],
+  filters: CommonsFeedFilters,
+  hiddenEventIds: ReadonlySet<string> = new Set()
+): CommonsBroadcastDto[] {
+  return sortCommonsBroadcasts(
+    filterCommonsBroadcasts(dedupeCommonsBroadcasts(broadcasts), filters, undefined, hiddenEventIds)
+  );
 }
