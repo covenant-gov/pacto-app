@@ -11,12 +11,12 @@
   let { messageId, text = '', onCopy = () => {}, onReply = () => {} }: Props = $props();
 </script>
 
-<div class="message-actions-menu" role="group" aria-label="Message actions">
+<div class="message-actions-menu" role="group" aria-label={$t('messaging.message.actionsAria')}>
   <button
     type="button"
     class="menu-item"
     role="menuitem"
-    aria-label="Copy message"
+    aria-label={$t('messaging.message.copy')}
     title={$t('messaging.message.copy')}
     onclick={() => onCopy(messageId, text)}
   >
@@ -32,7 +32,7 @@
     type="button"
     class="menu-item"
     role="menuitem"
-    aria-label="Reply to message"
+    aria-label={$t('messaging.message.reply')}
     title={$t('messaging.message.reply')}
     onclick={() => onReply(messageId)}
   >

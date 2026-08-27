@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 vi.mock('../../stores/dm', () => ({
   appendPendingOutboundDmMessage: vi.fn().mockReturnValue('opt-id'),
@@ -100,7 +102,7 @@ describe('wallet-dm-transfer', () => {
     it('shows a toast and skips the optimistic note when there is no active signer', async () => {
       vi.mocked(getActiveEvmSignerAddress).mockResolvedValue(null);
       await mod.finalizeWalletDmTransferAfterBroadcast(params);
-      expect(showToast).toHaveBeenCalledWith(expect.stringContaining('no active EVM address'));
+      expect(showToast).toHaveBeenCalledWith(get(t)('wallet.dmTransfer.noteSkippedNoAddress'));
       expect(appendPendingOutboundDmMessage).not.toHaveBeenCalled();
       expect(walletWaitForTransaction).not.toHaveBeenCalled();
     });
@@ -141,7 +143,7 @@ describe('wallet-dm-transfer', () => {
       await vi.advanceTimersByTimeAsync(15_000 * 25);
       await promise;
 
-      expect(showToast).toHaveBeenCalledWith(expect.stringContaining('still waiting'));
+      expect(showToast).toHaveBeenCalledWith(get(t)('wallet.dmTransfer.awaitingConfirmation'));
       expect(patchOutboundWalletTxByHash).not.toHaveBeenCalled();
     });
 

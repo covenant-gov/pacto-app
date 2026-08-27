@@ -100,16 +100,16 @@
       await reactToMessage(messageId, npub, emoji);
     } catch (e: unknown) {
       clearPendingReactions(messageId);
-      showToast(e instanceof Error ? e.message : 'Could not add reaction');
+      showToast(e instanceof Error ? e.message : $t('errors.dm.reactionFailed'));
     }
   }
 
   function onCopy(_messageId: string, text: string) {
     if (!navigator.clipboard) {
-      showToast('Copy not available on this device');
+      showToast($t('errors.dm.copyUnavailable'));
       return;
     }
-    navigator.clipboard.writeText(text).catch(() => showToast('Could not copy message'));
+    navigator.clipboard.writeText(text).catch(() => showToast($t('errors.dm.copyFailed')));
   }
 </script>
 
@@ -205,7 +205,7 @@
         ids.includes(msg.id) ? ids : [...ids, msg.id]
       );
       if (!msg.mine) {
-        showToast('Payment request declined. The requester was not notified.');
+        showToast($t('wallet.paymentRequestDeclinedToast'));
       }
     }}
   />

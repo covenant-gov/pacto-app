@@ -1,4 +1,5 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import { z } from 'zod';
 import { getAppConfig } from '../lib/api/app-config';
 import { showToast } from './toast';
@@ -46,6 +47,6 @@ export async function loadAppConfig(): Promise<void> {
   } catch (e) {
     console.error('[app-config] Failed to load/validate app config:', e);
     appConfig.set(DEFAULT_APP_CONFIG);
-    showToast('Could not load app configuration. Using defaults.', undefined, undefined, { error: true });
+    showToast(get(t)('errors.appConfigLoadFailed'), undefined, undefined, { error: true });
   }
 }
