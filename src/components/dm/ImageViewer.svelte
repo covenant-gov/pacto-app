@@ -250,7 +250,7 @@
     class="image-viewer-overlay"
     role="dialog"
     aria-modal="true"
-    aria-label="Image viewer"
+    aria-label={$t('messaging.imageViewer.dialogAria')}
     tabindex="-1"
     bind:this={backdropEl}
     onclick={handleBackdropClick}
@@ -260,7 +260,7 @@
       type="button"
       class="viewer-close"
       onclick={(e) => { e.stopPropagation(); close(); }}
-      aria-label="Close image viewer"
+      aria-label={$t('messaging.imageViewer.closeAria')}
       title={$t('messaging.imageViewer.close')}
     >
       <img src={xIcon} alt="" />
@@ -310,7 +310,7 @@
           type="button"
           class="viewer-btn"
           onclick={(e) => { e.stopPropagation(); zoomOut(); }}
-          aria-label="Zoom out"
+          aria-label={$t('messaging.imageViewer.zoomOutAria')}
         >
           −
         </button>
@@ -319,7 +319,7 @@
           type="button"
           class="viewer-btn"
           onclick={(e) => { e.stopPropagation(); zoomIn(); }}
-          aria-label="Zoom in"
+          aria-label={$t('messaging.imageViewer.zoomInAria')}
         >
           +
         </button>
@@ -355,7 +355,7 @@
             <span aria-hidden="true">⋯</span>
           </button>
           {#if menuOpen}
-            <div class="viewer-menu" role="group" aria-label="Image actions">
+            <div class="viewer-menu" role="group" aria-label={$t('messaging.imageViewer.actionsAria')}>
               <button
                 type="button"
                 class="menu-item"

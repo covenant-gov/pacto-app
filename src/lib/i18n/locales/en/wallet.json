@@ -266,5 +266,16 @@
 	"wallet.onChain.failedAria": "Transaction failed: {label}",
 	"wallet.onChain.multiplePending": "{count} pending",
 	"wallet.onChain.multiplePendingAria": "{count} transactions pending",
-	"wallet.onChain.defaultLabel": "Transaction"
+	"wallet.onChain.defaultLabel": "Transaction",
+	"wallet.paymentRequestDeclinedToast": "Payment request declined. The requester was not notified.",
+	"wallet.dmTransfer.noteNotRelayed": "Transfer confirmed, but the payment note could not be relayed.",
+	"wallet.dmTransfer.noteSkippedNoAddress": "Transfer submitted, but the payment note was skipped (no active EVM address).",
+	"wallet.dmTransfer.awaitingConfirmation": "Submitted — still waiting for confirmation. Check the explorer from the chat card.",
+	"wallet.peerExchange.alreadyDeclinedToast": "You already declined this request. Ask them to send a new one.",
+	"wallet.peerExchange.requestMismatchToast": "This request does not match this conversation.",
+	"wallet.peerExchange.selectWalletToast": "Add or select a wallet, then tap Accept to share your address.",
+	"wallet.peerExchange.sendAddressFailedToast": "Could not send your address. Tap Accept to try again.",
+	"wallet.peerExchange.addressSharedToast": "Your address was shared. Waiting for theirs.",
+	"wallet.peerExchange.exchangeFailedToast": "Could not complete wallet exchange.",
+	"wallet.peerExchange.declineSendFailedToast": "Could not send decline."
 }

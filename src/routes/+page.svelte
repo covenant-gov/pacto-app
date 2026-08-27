@@ -726,11 +726,11 @@
     const peerNpub = $activeDmId;
     if (!peerNpub) return;
     if (get(declinedWalletPeerInfoRequestMessageIds).includes(msg.id)) {
-      showToast('You already declined this request. Ask them to send a new one.');
+      showToast($t('wallet.peerExchange.alreadyDeclinedToast'));
       return;
     }
     if (payload.requester_npub !== peerNpub) {
-      showToast('This request does not match this conversation.');
+      showToast($t('wallet.peerExchange.requestMismatchToast'));
       return;
     }
     if (acceptingWalletPeerInfoRequestId) return;
@@ -739,7 +739,7 @@
       const myAddr =
         (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
       if (!myAddr) {
-        showToast('Add or select a wallet, then tap Accept to share your address.');
+        showToast($t('wallet.peerExchange.selectWalletToast'));
         return;
       }
       const me = get(currentUser)?.npub;
@@ -751,7 +751,7 @@
       });
       const ok = await handleDmSend(grantJson);
       if (!ok) {
-        showToast('Could not send your address. Tap Accept to try again.');
+        showToast($t('wallet.peerExchange.sendAddressFailedToast'));
         return;
       }
       acceptedWalletPeerInfoRequestMessageIds.update((ids: string[]) =>
@@ -761,10 +761,10 @@
         ids.filter((id) => id !== msg.id)
       );
       dmWalletPeerExchangeTick.update((t: number) => t + 1);
-      showToast('Your address was shared. Waiting for theirs.');
+      showToast($t('wallet.peerExchange.addressSharedToast'));
     } catch (e: unknown) {
       dmError('Accept wallet peer info failed', e);
-      showToast('Could not complete wallet exchange.');
+      showToast($t('wallet.peerExchange.exchangeFailedToast'));
     } finally {
       acceptingWalletPeerInfoRequestId = null;
     }
@@ -782,7 +782,7 @@
     );
     const declineJson = formatWalletPeerInfoDecline({ request_id: payload.request_id });
     const ok = await handleDmSend(declineJson);
-    if (!ok) showToast('Could not send decline.');
+    if (!ok) showToast($t('wallet.peerExchange.declineSendFailedToast'));
   }
 
   let dmTypingTimeout: ReturnType<typeof setTimeout> | null = null;

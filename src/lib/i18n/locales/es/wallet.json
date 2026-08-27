@@ -255,5 +255,16 @@
 	"wallet.onChain.failedAria": "Transacción fallida: {label}",
 	"wallet.onChain.multiplePending": "{count} pendientes",
 	"wallet.onChain.multiplePendingAria": "{count} transacciones pendientes",
-	"wallet.onChain.defaultLabel": "Transacción"
+	"wallet.onChain.defaultLabel": "Transacción",
+	"wallet.paymentRequestDeclinedToast": "Solicitud de pago rechazada. No se notificó al solicitante.",
+	"wallet.dmTransfer.noteNotRelayed": "Transferencia confirmada, pero no se pudo enviar la nota de pago.",
+	"wallet.dmTransfer.noteSkippedNoAddress": "Transferencia enviada, pero se omitió la nota de pago (sin dirección EVM activa).",
+	"wallet.dmTransfer.awaitingConfirmation": "Enviada — todavía esperando confirmación. Consulta el explorador desde la tarjeta del chat.",
+	"wallet.peerExchange.alreadyDeclinedToast": "Ya rechazaste esta solicitud. Pídeles que envíen una nueva.",
+	"wallet.peerExchange.requestMismatchToast": "Esta solicitud no coincide con esta conversación.",
+	"wallet.peerExchange.selectWalletToast": "Agrega o selecciona una billetera y luego toca Aceptar para compartir tu dirección.",
+	"wallet.peerExchange.sendAddressFailedToast": "No se pudo enviar tu dirección. Toca Aceptar para intentarlo de nuevo.",
+	"wallet.peerExchange.addressSharedToast": "Tu dirección fue compartida. Esperando la del otro usuario.",
+	"wallet.peerExchange.exchangeFailedToast": "No se pudo completar el intercambio de billeteras.",
+	"wallet.peerExchange.declineSendFailedToast": "No se pudo enviar el rechazo."
 }

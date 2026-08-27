@@ -1,11 +1,15 @@
 {
 	"errors.fallback": "Something went wrong",
+	"errors.appConfigLoadFailed": "Could not load app configuration. Using defaults.",
 	"errors.migrationGate": "Please unlock to update account security.",
 	"errors.dm.attachmentFailed": "Failed to send attachment",
+	"errors.dm.copyFailed": "Could not copy message",
+	"errors.dm.copyUnavailable": "Copy not available on this device",
 	"errors.dm.gifFailed": "Failed to send GIF",
 	"errors.dm.invalidNpub": "Please enter a valid npub (starts with npub1).",
 	"errors.dm.invalidRequest": "Invalid request. Please try again.",
 	"errors.dm.notInitialized": "Please log in first.",
+	"errors.dm.reactionFailed": "Could not add reaction",
 	"errors.dm.sendFailed": "Failed to send message",
 	"errors.mls.relayKeyPackageUnreachable": "Couldn't reach the relays to check whether {members} can be added. Nothing was created — try again."
 }

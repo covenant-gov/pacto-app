@@ -143,11 +143,11 @@ async function relayConfirmedWalletTx(
     const ok = await params.sendDm(confirmedContent);
     if (!ok) {
       relayedWalletTxKeys.delete(key);
-      showToast('Transfer confirmed, but the payment note could not be relayed.');
+      showToast(get(t)('wallet.dmTransfer.noteNotRelayed'));
     }
   } catch {
     relayedWalletTxKeys.delete(key);
-    showToast('Transfer confirmed, but the payment note could not be relayed.');
+    showToast(get(t)('wallet.dmTransfer.noteNotRelayed'));
   }
 }
 
@@ -172,7 +172,7 @@ export async function finalizeWalletDmTransferAfterBroadcast(
 ): Promise<void> {
   const fromEvm = await getActiveEvmSignerAddress();
   if (!fromEvm) {
-    showToast('Transfer submitted, but the payment note was skipped (no active EVM address).');
+    showToast(get(t)('wallet.dmTransfer.noteSkippedNoAddress'));
     return;
   }
 
@@ -196,7 +196,7 @@ export async function finalizeWalletDmTransferAfterBroadcast(
   const wait = await waitForReceiptWithRetries(params.network, params.txHash);
   if (!wait.ok) {
     if (wait.parsed?.code === 'RECEIPT_TIMEOUT') {
-      showToast('Submitted — still waiting for confirmation. Check the explorer from the chat card.');
+      showToast(get(t)('wallet.dmTransfer.awaitingConfirmation'));
       return;
     }
     failOnChainJob(jobId);

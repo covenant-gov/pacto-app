@@ -1,11 +1,15 @@
 {
 	"errors.fallback": "Algo salió mal",
+	"errors.appConfigLoadFailed": "No se pudo cargar la configuración de la aplicación. Se usarán los valores predeterminados.",
 	"errors.migrationGate": "Desbloquea para actualizar la seguridad de la cuenta.",
 	"errors.dm.attachmentFailed": "No se pudo enviar el adjunto",
+	"errors.dm.copyFailed": "No se pudo copiar el mensaje",
+	"errors.dm.copyUnavailable": "Copiar no está disponible en este dispositivo",
 	"errors.dm.gifFailed": "No se pudo enviar el GIF",
 	"errors.dm.invalidNpub": "Ingresa un npub válido (comienza con npub1).",
 	"errors.dm.invalidRequest": "Solicitud inválida. Inténtalo de nuevo.",
 	"errors.dm.notInitialized": "Inicia sesión primero.",
+	"errors.dm.reactionFailed": "No se pudo agregar la reacción",
 	"errors.dm.sendFailed": "No se pudo enviar el mensaje",
 	"errors.mls.relayKeyPackageUnreachable": "No se pudo contactar a los relays para verificar si {members} puede unirse. No se creó nada; inténtalo de nuevo."
 }

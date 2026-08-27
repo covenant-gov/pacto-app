@@ -304,7 +304,7 @@
       await tick();
       resizeTextarea();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to send attachment', undefined, undefined, {
+      showToast(err instanceof Error ? err.message : $t('errors.dm.attachmentFailed'), undefined, undefined, {
         error: true,
       });
     } finally {
