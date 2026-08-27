@@ -10,7 +10,6 @@ use alloy::sol_types::SolCall;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::str::FromStr;
-use std::sync::LazyLock;
 use std::time::Duration;
 use tauri::{AppHandle, Runtime};
 
@@ -1490,19 +1489,17 @@ const BUNDLER_MAX_ATTEMPTS: u32 = 3;
 const BUNDLER_RETRY_BASE_DELAY: Duration = Duration::from_millis(250);
 const BUNDLER_RETRY_MAX_DELAY: Duration = Duration::from_secs(2);
 
-/// Bundler JSON-RPC client; connection pool is reused across calls.
-static BUNDLER_HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLock::new(|| {
-    reqwest::Client::builder()
+/// Builds the bundler JSON-RPC client. Built fresh per call (instead of a
+/// cached static) so a Tor routing toggle takes effect on the next call
+/// rather than requiring a restart -- see net_transport.rs.
+fn bundler_http_client() -> Result<reqwest::Client, BundlerRpcError> {
+    crate::net_transport::http_client_builder()
         .timeout(BUNDLER_RPC_TIMEOUT)
         .build()
-        .map_err(|e| e.to_string())
-});
-
-fn bundler_http_client() -> Result<&'static reqwest::Client, BundlerRpcError> {
-    BUNDLER_HTTP_CLIENT.as_ref().map_err(|e| BundlerRpcError {
-        retriable: false,
-        message: e.clone(),
-    })
+        .map_err(|e| BundlerRpcError {
+            retriable: false,
+            message: e.to_string(),
+        })
 }
 
 /// Bundler call failure; `retriable` marks transient transport/HTTP conditions.

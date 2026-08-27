@@ -34,6 +34,8 @@ use voice::AudioRecorder;
 
 mod net;
 
+mod net_transport;
+
 mod blossom;
 
 mod util;
@@ -6121,7 +6123,9 @@ async fn toggle_default_relay<R: Runtime>(
 
 /// Helper to build RelayOptions based on mode
 fn relay_options_for_mode(mode: &str) -> RelayOptions {
-    let opts = RelayOptions::new().reconnect(false);
+    let opts = RelayOptions::new()
+        .reconnect(false)
+        .connection_mode(net_transport::nostr_connection_mode());
     match mode {
         "read" => opts.write(false),
         "write" => opts.read(false),
@@ -7578,6 +7582,11 @@ async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
                 );
             }
         }
+
+        // Apply the persisted "Route Traffic Through Tor" preference now that the
+        // account DB is selected, before `connect()` first populates the relay pool,
+        // so relays are added with the right connection mode from the start (#173).
+        net_transport::apply_persisted_setting(handle).await;
     }
 
     let (evm_private_key, evm_address) = if let Some(m) = crate::mnemonic_seed_get() {
@@ -7683,18 +7692,17 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
     complete_login_from_keys(keys).await
 }
 
-/// Returns `true` if the client has connected, `false` if it was already connected
-#[tauri::command]
-async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
-    let client = get_nostr_client().expect("Nostr client not initialized");
-
+/// Adds default + custom relays to the pool (skipping ones already present),
+/// using the current transport mode (`net_transport::nostr_connection_mode`)
+/// for newly added relays. Shared by `connect()` and by
+/// `rebuild_relay_pool_connection_mode` (Tor toggle), which first empties
+/// the pool so every relay picks up the new mode.
+async fn populate_relay_pool<R: Runtime>(client: &Client, handle: &AppHandle<R>) {
     // Check which relays are already in the pool
     let existing_relays = client.relays().await;
 
     // Get disabled default relays
-    let disabled_defaults = get_disabled_default_relays(&handle)
-        .await
-        .unwrap_or_default();
+    let disabled_defaults = get_disabled_default_relays(handle).await.unwrap_or_default();
 
     // Add default relays (unless disabled or already present). A debug relay
     // override means "route all traffic here", so seeding the public defaults
@@ -7721,7 +7729,12 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
         if !is_disabled {
             match client
                 .pool()
-                .add_relay(*default_url, RelayOptions::new().reconnect(false))
+                .add_relay(
+                    *default_url,
+                    RelayOptions::new()
+                        .reconnect(false)
+                        .connection_mode(net_transport::nostr_connection_mode()),
+                )
                 .await
             {
                 Ok(_) => {
@@ -7769,6 +7782,27 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
         }
         Err(e) => eprintln!("[Relay] Failed to load custom relays: {}", e),
     }
+}
+
+/// Drops every relay from the live pool and re-adds default + custom relays
+/// with the current transport mode, then reconnects. Called by the Tor
+/// routing toggle so already-open relay connections pick up the new
+/// connection mode without an app restart. A no-op if not logged in.
+pub(crate) async fn rebuild_relay_pool_connection_mode<R: Runtime>(handle: &AppHandle<R>) {
+    let Ok(client) = get_nostr_client() else {
+        return;
+    };
+    client.pool().force_remove_all_relays().await;
+    populate_relay_pool(&client, handle).await;
+    client.connect().await;
+}
+
+/// Returns `true` if the client has connected, `false` if it was already connected
+#[tauri::command]
+async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
+    let client = get_nostr_client().expect("Nostr client not initialized");
+
+    populate_relay_pool(&client, &handle).await;
 
     // Connect to all relays in the pool
     client.connect().await;
@@ -10791,6 +10825,7 @@ pub fn run() {
             db::get_sql_setting,
             db::set_sql_setting,
             db::remove_setting,
+            net_transport::set_tor_routing_enabled,
             profile::load_profile,
             profile::update_profile,
             profile::update_status,

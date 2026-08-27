@@ -119,12 +119,14 @@ pub async fn download_with_reporter(
 ) -> Result<Vec<u8>, &'static str> {
     // Create a client with the specified timeout
     let client = if let Some(duration) = timeout {
-        Client::builder()
+        crate::net_transport::http_client_builder()
             .timeout(duration)
             .build()
             .map_err(|_| "Failed to create HTTP client")?
     } else {
-        Client::new()
+        crate::net_transport::http_client_builder()
+            .build()
+            .unwrap_or_default()
     };
     let mut total_size: Option<u64> = None;
 
@@ -336,7 +338,7 @@ async fn fetch_twitter_metadata(url: &str) -> Result<SiteMetadata, String> {
         .replace("=", "%3D");
     let oembed_url = format!("https://publish.twitter.com/oembed?url={}", encoded_url);
 
-    let client = reqwest::Client::builder()
+    let client = crate::net_transport::http_client_builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
@@ -426,7 +428,9 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
 
     let mut html_chunk = Vec::new();
 
-    let client = reqwest::Client::new();
+    let client = crate::net_transport::http_client_builder()
+        .build()
+        .unwrap_or_default();
     let mut response = client
         .get(url)
         .header("Range", "bytes=0-32768")
@@ -603,7 +607,7 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
 /// Returns true if the URL responds with a success status (2xx)
 pub async fn check_url_live(url: &str) -> Result<bool, &'static str> {
     // Create a client with a reasonable timeout for checking
-    let client = Client::builder()
+    let client = crate::net_transport::http_client_builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|_| "Failed to create HTTP client")?;

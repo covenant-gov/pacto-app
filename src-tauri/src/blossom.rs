@@ -192,7 +192,7 @@ where
     }
 
     // Create HTTP client
-    let client = reqwest::Client::builder()
+    let client = crate::net_transport::http_client_builder()
         .timeout(std::time::Duration::from_secs(300)) // 5 minute timeout
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;

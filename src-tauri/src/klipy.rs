@@ -15,7 +15,6 @@
 //! derived from the user's identity.
 
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 use std::time::Duration;
 
 use crate::evm::wallet_security::redact_urls_in_text;
@@ -27,14 +26,17 @@ const DEFAULT_PER_PAGE: u32 = 24;
 const CONTENT_FILTER: &str = "high";
 const ERR_NOT_CONFIGURED: &str = "Klipy is not configured";
 
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
+/// Builds the Klipy JSON HTTP client. Built fresh per call (instead of a
+/// cached static) so a Tor routing toggle takes effect on the next request
+/// rather than requiring a restart -- see net_transport.rs.
+fn http_client() -> reqwest::Client {
+    crate::net_transport::http_client_builder()
         .timeout(Duration::from_secs(15))
         .connect_timeout(Duration::from_secs(10))
         .user_agent("Pacto/1.0")
         .build()
         .expect("failed to build Klipy HTTP client")
-});
+}
 
 /// Precedence logic only — pure so it is testable without touching process env.
 /// A runtime override wins over the compile-time default; blank values on
@@ -268,7 +270,7 @@ fn trending_query_params(page: u32) -> Vec<(&'static str, String)> {
 async fn klipy_get(path: &str, params: &[(&str, String)]) -> Result<String, String> {
     let key = klipy_api_key().ok_or_else(|| ERR_NOT_CONFIGURED.to_string())?;
     let url = klipy_url(&key, path);
-    let resp = HTTP_CLIENT
+    let resp = http_client()
         .get(&url)
         .query(params)
         .send()
@@ -320,7 +322,7 @@ pub async fn klipy_report_share(slug: String, query: Option<String>) -> Result<b
         return Ok(false);
     };
     let url = klipy_url(&key, &format!("gifs/share/{slug}"));
-    match HTTP_CLIENT
+    match http_client()
         .post(&url)
         .json(&ShareBody { q: query })
         .send()
@@ -369,7 +371,7 @@ pub(crate) fn is_klipy_media_url(url: &str) -> bool {
 /// hostile allowlisted-host response from exhausting memory.
 const MAX_MEDIA_BYTES: u64 = 16 * 1024 * 1024;
 
-/// Redirect-hop cap for `MEDIA_CLIENT`'s custom policy — a custom `Policy`
+/// Redirect-hop cap for `media_client`'s custom policy — a custom `Policy`
 /// does not inherit reqwest's default 10-hop limit for free.
 const MAX_MEDIA_REDIRECTS: usize = 10;
 
@@ -379,13 +381,14 @@ fn is_image_content_type(content_type: &str) -> bool {
     content_type.starts_with("image/")
 }
 
-/// Separate from [`HTTP_CLIENT`]: media fetches need a redirect policy that
+/// Separate from [`http_client`]: media fetches need a redirect policy that
 /// re-checks the allowlist on every hop, so an open redirect on an
 /// allowlisted host cannot be used to reach an arbitrary origin. JSON calls
-/// through `HTTP_CLIENT` never follow user-influenced redirects, so they
-/// keep the default policy instead.
-static MEDIA_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
+/// through [`http_client`] never follow user-influenced redirects, so they
+/// keep the default policy instead. Built fresh per call, like
+/// [`http_client`], so a Tor routing toggle takes effect on the next fetch.
+fn media_client() -> reqwest::Client {
+    crate::net_transport::http_client_builder()
         .timeout(Duration::from_secs(15))
         .connect_timeout(Duration::from_secs(10))
         .user_agent("Pacto/1.0")
@@ -401,7 +404,7 @@ static MEDIA_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         }))
         .build()
         .expect("failed to build Klipy media HTTP client")
-});
+}
 
 /// Fetches Klipy-hosted media bytes for rendering a received GIF attachment.
 /// This is the only place a Klipy media byte is ever fetched from: never the
@@ -417,7 +420,7 @@ pub async fn klipy_fetch_media(url: String) -> Result<tauri::ipc::Response, Stri
     if !is_klipy_media_url(&url) {
         return Err("Refusing to fetch: not a Klipy media URL".to_string());
     }
-    let mut resp = MEDIA_CLIENT
+    let mut resp = media_client()
         .get(&url)
         .send()
         .await
