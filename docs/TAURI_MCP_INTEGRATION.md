@@ -237,6 +237,7 @@ If the DOM updates, the screenshot reflects the change, and the typed text appea
 | Plugin not found in production | The bridge is intentionally `debug_assertions` only | Only use MCP against dev/debug builds |
 | `webview_keyboard type` fills only the first PIN digit | Each digit box has `maxlength="1"`; a multi-character `text` value gets truncated | Send one `type` call per digit, targeting that digit's own ref (Fallback flow only) |
 | `ipc_execute_command` returns `Unsupported Tauri command: <name>` | The tool only proxies the bridge plugin's own built-ins, not app commands | Call `window.__TAURI__.core.invoke(...)` via `webview_execute_js` instead (see Step 6's backend-depth note) |
+| Monkey-patching `window.__TAURI_INTERNALS__.invoke` via `webview_execute_js` to spy on IPC calls never fires | `@tauri-apps/api/core`'s bundled `invoke` wrapper resolves its reference at module load, before the patch runs | Verify IPC side effects through `read_logs` (`source: "console"`) against the app's own `dmLog`/console output instead of intercepting `invoke` |
 
 ## Multi-client notes
 
