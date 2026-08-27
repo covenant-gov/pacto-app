@@ -12,6 +12,7 @@
   import { hideCommonsBroadcast } from '../../lib/commons/commons-hidden';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
+  import HideIconButton from '../ui/HideIconButton.svelte';
   import {
     COMMONS_MESSAGE_PREVIEW_MAX,
     isCommonsMessageTruncated,
@@ -130,15 +131,13 @@
     {:else}
       <span class="commons-tile-initial" aria-hidden="true">{(title || '?').charAt(0).toUpperCase()}</span>
     {/if}
-    <button
-      type="button"
-      class="commons-tile-hide"
-      aria-label={$t('commons.card.hideAria', { values: { title } })}
-      title={$t('commons.card.hideAria', { values: { title } })}
-      onclick={handleHide}
-    >
-      ×
-    </button>
+    <div class="commons-tile-hide-wrap">
+      <HideIconButton
+        ariaLabel={$t('commons.card.hideAria', { values: { title } })}
+        title={$t('commons.card.hideAria', { values: { title } })}
+        onclick={handleHide}
+      />
+    </div>
     <span class="commons-tile-expiry">{formatExpiry(broadcast.expiresAt)}</span>
   </div>
 
@@ -258,28 +257,11 @@
     color: #fff;
   }
 
-  .commons-tile-hide {
+  .commons-tile-hide-wrap {
     position: absolute;
     top: 8px;
     left: 8px;
     z-index: 2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    border: none;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    font-size: 1rem;
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  .commons-tile-hide:hover {
-    background: rgba(0, 0, 0, 0.8);
   }
 
   .commons-tile-body {

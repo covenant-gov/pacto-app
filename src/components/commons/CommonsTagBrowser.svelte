@@ -8,6 +8,7 @@
     localizeCommonsTagCategory,
     type CommonsTagCategory,
   } from '../../lib/commons/tag-catalog';
+  import HideIconButton from '../ui/HideIconButton.svelte';
 
   interface Props {
     categories?: CommonsTagCategory[];
@@ -58,15 +59,13 @@
           <span class="commons-browser-frame" aria-hidden="true"></span>
         </button>
         {#if onHideCategory}
-          <button
-            type="button"
-            class="commons-browser-hide"
-            aria-label={$t('commons.tagBrowser.hideAria', { values: { title: category.title } })}
-            title={$t('commons.tagBrowser.hideAria', { values: { title: category.title } })}
-            onclick={() => onHideCategory(category.id, category.title)}
-          >
-            ×
-          </button>
+          <div class="commons-browser-hide-wrap">
+            <HideIconButton
+              ariaLabel={$t('commons.tagBrowser.hideAria', { values: { title: category.title } })}
+              title={$t('commons.tagBrowser.hideAria', { values: { title: category.title } })}
+              onclick={() => onHideCategory(category.id, category.title)}
+            />
+          </div>
         {/if}
       </li>
     {/each}
@@ -93,28 +92,11 @@
     position: relative;
   }
 
-  .commons-browser-hide {
+  .commons-browser-hide-wrap {
     position: absolute;
     top: 10px;
     left: 10px;
     z-index: 5;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    border: none;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    font-size: 1rem;
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  .commons-browser-hide:hover {
-    background: rgba(0, 0, 0, 0.8);
   }
 
   .commons-browser-tile {

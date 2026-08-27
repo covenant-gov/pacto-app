@@ -13,6 +13,7 @@
   import { hideCommonsBroadcast } from '../../lib/commons/commons-hidden';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
+  import HideIconButton from '../ui/HideIconButton.svelte';
 
   interface Props {
     broadcast: CommonsBroadcastDto;
@@ -104,15 +105,14 @@
     {:else}
       <span class="commons-detail-initial" aria-hidden="true">{(title || '?').charAt(0).toUpperCase()}</span>
     {/if}
-    <button
-      type="button"
-      class="commons-detail-hide"
-      aria-label={$t('commons.card.hideAria', { values: { title } })}
-      title={$t('commons.card.hideAria', { values: { title } })}
-      onclick={handleHide}
-    >
-      ×
-    </button>
+    <div class="commons-detail-hide-wrap">
+      <HideIconButton
+        ariaLabel={$t('commons.card.hideAria', { values: { title } })}
+        title={$t('commons.card.hideAria', { values: { title } })}
+        size={26}
+        onclick={handleHide}
+      />
+    </div>
     <span class="commons-detail-expiry">{formatExpiry(broadcast.expiresAt)}</span>
   </div>
 
@@ -202,28 +202,11 @@
     color: #fff;
   }
 
-  .commons-detail-hide {
+  .commons-detail-hide-wrap {
     position: absolute;
     top: 10px;
     left: 10px;
     z-index: 2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: none;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    font-size: 1.125rem;
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  .commons-detail-hide:hover {
-    background: rgba(0, 0, 0, 0.8);
   }
 
   .commons-detail-subtitle {
