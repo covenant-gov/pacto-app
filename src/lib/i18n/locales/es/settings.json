@@ -95,6 +95,8 @@
 	"settings.privacyTitle": "Privacidad",
 	"settings.sendTypingIndicatorsLabel": "Enviar indicadores de escritura",
 	"settings.sendTypingIndicatorsDescription": "Cuando está activado, Pacto notificará a tus contactos cuando estés escribiendo un mensaje para ellos. Desactívalo si prefieres escribir sin que otros sepan que estás componiendo un mensaje.",
+	"settings.webPreviewsLabel": "Vistas previas de enlaces",
+	"settings.webPreviewsDescription": "Cuando está activo, Pacto obtendrá y mostrará automáticamente vistas previas de los enlaces compartidos en los mensajes. Esto puede exponer tu dirección IP a los sitios enlazados. Usa Tor o una VPN si eso te preocupa.",
 	"settings.evmSettingsTitle": "Ajustes EVM",
 	"settings.enabledChainsTitle": "Cadenas habilitadas",
 	"settings.enabledChainsHint": "Habilita las cadenas que uses. Al menos una debe permanecer activa. Afecta Enviar, saldos y la barra lateral de billetera en mensajes directos.",

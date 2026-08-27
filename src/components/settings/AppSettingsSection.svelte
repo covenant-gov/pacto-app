@@ -4,7 +4,6 @@
   import { t } from 'svelte-i18n';
   import { theme, setTheme, THEME_OPTIONS } from '../../stores/theme';
   import { startupCheckEnabled } from '../../stores/startup-check';
-  import { sendTypingIndicatorsEnabled } from '../../stores/typing-indicators';
   import {
     checkForUpdates,
     updateStatus,
@@ -100,11 +99,6 @@
     const target = e.currentTarget as HTMLInputElement;
     startupCheckEnabled.set(target.checked);
   }
-
-  function handleToggleSendTypingIndicators(e: Event): void {
-    const target = e.currentTarget as HTMLInputElement;
-    sendTypingIndicatorsEnabled.set(target.checked);
-  }
 </script>
 
 <SettingsCollapsibleSection sectionId="settings-app" title={$t('settings.appSettingsTitle')}>
@@ -193,22 +187,6 @@
           {$t('settings.devBuildNote')}
         </p>
       {/if}
-    </div>
-
-    <hr class="app-settings-divider" />
-
-    <div class="privacy-section" aria-labelledby="privacy-heading">
-      <h3 id="privacy-heading" class="theme-subheading">{$t('settings.privacyTitle')}</h3>
-
-      <label class="privacy-toggle">
-        <input
-          type="checkbox"
-          checked={$sendTypingIndicatorsEnabled}
-          onchange={handleToggleSendTypingIndicators}
-        />
-        <span>{$t('settings.sendTypingIndicatorsLabel')}</span>
-      </label>
-      <p class="privacy-toggle-description">{$t('settings.sendTypingIndicatorsDescription')}</p>
     </div>
 
     <hr class="app-settings-divider" />
@@ -341,26 +319,6 @@
 
   .startup-check-toggle input {
     accent-color: var(--brand);
-  }
-
-  .privacy-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .privacy-toggle input {
-    accent-color: var(--brand);
-  }
-
-  .privacy-toggle-description {
-    margin: 8px 0 0;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
   }
 
   .dev-build-note {
