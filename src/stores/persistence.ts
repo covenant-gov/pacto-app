@@ -59,6 +59,7 @@ import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 import { normalizeHubChannelName } from './squads';
 import { hydrateLocale } from './locale';
 import { loadStartupCheckPreference } from './startup-check';
+import { loadSendTypingIndicatorsPreference } from './typing-indicators';
 import { loadMlsHistoryWelcome } from './mls-history-welcome';
 
 export {
@@ -161,6 +162,7 @@ export function loadAccountState(npub: string): void {
     const rawSettingsChannelMode = localStorage.getItem(`${SETTINGS_CHANNEL_MODE_PREFIX}_${npub}`);
     settingsChannelMode.set(parseSettingsChannelMode(rawSettingsChannelMode));
     loadStartupCheckPreference(npub);
+    loadSendTypingIndicatorsPreference(npub);
   } catch {
     // ignore parse errors
   }
