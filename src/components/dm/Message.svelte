@@ -15,6 +15,7 @@
   import { t } from 'svelte-i18n';
   import type { Attachment, Reaction, PreviewMetadata, DmMessage } from '../../stores/dm';
   import { observeLinkPreview } from '../../lib/messaging/link-preview-observer';
+  import { webPreviewsEnabled } from '../../stores/web-previews';
   import { outboundDeliveryLabel } from '../../lib/dm/resolve-dm-message-presentation';
 
   interface Props {
@@ -418,7 +419,7 @@
           <FormattedMessageBody content={displayContent} {mentions} {profiles} {rosterNpubs} />
         {/if}
       </div>
-      {#if previewMetadata}
+      {#if previewMetadata && $webPreviewsEnabled}
         <LinkPreview metadata={previewMetadata} />
       {/if}
       {#if attachments && attachments.length > 0}

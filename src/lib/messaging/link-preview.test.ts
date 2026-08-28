@@ -14,6 +14,7 @@ vi.mock('../utils/dm-debug', () => ({
 }));
 
 import { requestLinkPreview, clearLinkPreviewRequests } from './link-preview';
+import { webPreviewsEnabled } from '../../stores/web-previews';
 
 function msg(overrides: Partial<DmMessage> = {}): DmMessage {
   return {
@@ -30,11 +31,41 @@ describe('requestLinkPreview', () => {
     vi.clearAllMocks();
     mockFetchMsgMetadata.mockResolvedValue(true);
     clearLinkPreviewRequests();
+    webPreviewsEnabled.set(true);
   });
 
   it('fetches metadata for a message with a URL and no existing preview', () => {
     requestLinkPreview('chat1', msg());
     expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1');
+  });
+
+  it('does not fetch when the Web Previews setting is disabled, and reports retry-eligible (false)', () => {
+    webPreviewsEnabled.set(false);
+    expect(requestLinkPreview('chat1', msg())).toBe(false);
+    expect(mockFetchMsgMetadata).not.toHaveBeenCalled();
+  });
+
+  it('resumes fetching the same message once the Web Previews setting is re-enabled', () => {
+    webPreviewsEnabled.set(false);
+    requestLinkPreview('chat1', msg());
+    expect(mockFetchMsgMetadata).not.toHaveBeenCalled();
+
+    webPreviewsEnabled.set(true);
+    requestLinkPreview('chat1', msg());
+    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1');
+  });
+
+  it('reports a permanent (true) outcome for messages that will never get a preview, even while disabled', () => {
+    webPreviewsEnabled.set(false);
+    expect(requestLinkPreview('chat1', msg({ content: 'no links here' }))).toBe(true);
+    expect(requestLinkPreview('chat1', msg({ preview_metadata: { domain: 'example.com' } }))).toBe(true);
+  });
+
+  it('toggling the setting alone does not itself trigger a fetch', () => {
+    webPreviewsEnabled.set(false);
+    webPreviewsEnabled.set(true);
+    webPreviewsEnabled.set(false);
+    expect(mockFetchMsgMetadata).not.toHaveBeenCalled();
   });
 
   it('does not fetch for a message without a URL', () => {

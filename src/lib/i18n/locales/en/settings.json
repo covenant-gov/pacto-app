@@ -97,6 +97,8 @@
 	"settings.privacyTitle": "Privacy",
 	"settings.sendTypingIndicatorsLabel": "Send Typing Indicators",
 	"settings.sendTypingIndicatorsDescription": "When enabled, Pacto will notify your contacts when you are typing a message to them. Disable this if you prefer to type without others knowing you are composing a message.",
+	"settings.webPreviewsLabel": "Web Previews",
+	"settings.webPreviewsDescription": "When enabled, Pacto will automatically fetch and display previews for links shared in messages. This may expose your IP address to the linked sites. Use Tor or a VPN if that's a concern.",
 
 	"settings.evmSettingsTitle": "EVM settings",
 	"settings.enabledChainsTitle": "Enabled chains",

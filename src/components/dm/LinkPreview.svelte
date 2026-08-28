@@ -46,12 +46,12 @@
     onclick={handleClick}
   >
     {#if displayImage && !imageError}
-      <img class="link-preview-image" src={displayImage} alt="" loading="lazy" onerror={() => (imageError = true)} />
+      <img class="link-preview-image" src={displayImage} alt="" loading="lazy" referrerpolicy="no-referrer" onerror={() => (imageError = true)} />
     {/if}
     <div class="link-preview-body">
       <div class="link-preview-domain">
         {#if displayFavicon && !faviconError}
-          <img class="link-preview-favicon" src={displayFavicon} alt="" onerror={() => (faviconError = true)} />
+          <img class="link-preview-favicon" src={displayFavicon} alt="" referrerpolicy="no-referrer" onerror={() => (faviconError = true)} />
         {/if}
         <span>{displayDomain}</span>
       </div>

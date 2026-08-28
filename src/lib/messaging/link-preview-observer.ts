@@ -1,4 +1,5 @@
 import { requestLinkPreview } from './link-preview';
+import { webPreviewsEnabled } from '../../stores/web-previews';
 import type { DmMessage } from '../../stores/dm';
 
 export interface LinkPreviewObserverParams {
@@ -12,6 +13,20 @@ export interface LinkPreviewObserverParams {
 let observer: IntersectionObserver | null = null;
 const paramsByNode = new WeakMap<Element, LinkPreviewObserverParams | undefined>();
 const triggered = new WeakSet<Element>();
+/** Nodes that intersected while "Web Previews" was disabled; retried when the setting is re-enabled. */
+const blockedByDisabledSetting = new Set<Element>();
+
+/** Ask `requestLinkPreview` to settle a node: stop watching on any permanent outcome, keep
+ * watching (for a later retry) if the only thing blocking it is the disabled setting. */
+function settleNode(node: Element, params: LinkPreviewObserverParams): void {
+  if (requestLinkPreview(params.chatId, params.message)) {
+    triggered.add(node);
+    blockedByDisabledSetting.delete(node);
+    observer?.unobserve(node);
+  } else {
+    blockedByDisabledSetting.add(node);
+  }
+}
 
 function ensureObserver(): IntersectionObserver | null {
   if (typeof IntersectionObserver === 'undefined') return null;
@@ -20,10 +35,13 @@ function ensureObserver(): IntersectionObserver | null {
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting || triggered.has(entry.target)) continue;
-          triggered.add(entry.target);
           const params = paramsByNode.get(entry.target);
-          if (params) requestLinkPreview(params.chatId, params.message);
-          observer?.unobserve(entry.target);
+          if (!params) {
+            triggered.add(entry.target);
+            observer?.unobserve(entry.target);
+            continue;
+          }
+          settleNode(entry.target, params);
         }
       },
       { rootMargin: '200px 0px', threshold: 0 }
@@ -32,10 +50,23 @@ function ensureObserver(): IntersectionObserver | null {
   return observer;
 }
 
+// Without this, re-enabling the setting would leave every row that intersected while it was off
+// preview-less until it scrolls fully out of view and back (a fresh intersection) or remounts.
+webPreviewsEnabled.subscribe((enabled) => {
+  if (!enabled || blockedByDisabledSetting.size === 0) return;
+  for (const node of blockedByDisabledSetting) {
+    const params = paramsByNode.get(node);
+    if (params) settleNode(node, params);
+    else blockedByDisabledSetting.delete(node);
+  }
+});
+
 /**
  * Svelte action: requests a message's link preview only once its row scrolls into view, instead
- * of eagerly on arrival/load. Fires at most once per node (unobserves after the first
- * intersection); `requestLinkPreview`'s own dedupe set still protects against re-fetching if the
+ * of eagerly on arrival/load. Stops watching a node once its outcome is permanent (queued, or
+ * the message will never get a preview); if the intersection is blocked only because the "Web
+ * Previews" setting is off, keeps watching and retries automatically once the setting is
+ * re-enabled. `requestLinkPreview`'s own dedupe set still protects against re-fetching if the
  * node is re-observed for any reason.
  */
 export function observeLinkPreview(
@@ -53,6 +84,7 @@ export function observeLinkPreview(
     destroy() {
       io?.unobserve(node);
       paramsByNode.delete(node);
+      blockedByDisabledSetting.delete(node);
     },
   };
 }

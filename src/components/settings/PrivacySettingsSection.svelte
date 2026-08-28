@@ -4,6 +4,8 @@
   import { getTorStatus } from '../../lib/api/tor';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { torRoutingEnabled, torAvailable, torStartupError, toggleTorRouting } from '../../stores/tor';
+  import { sendTypingIndicatorsEnabled } from '../../stores/typing-indicators';
+  import { webPreviewsEnabled } from '../../stores/web-previews';
   import torIcon from '../../icons/tor.svg';
 
   let loading = $state(true);
@@ -41,10 +43,40 @@
     saving = false;
     pendingTarget = null;
   }
+
+  function handleToggleSendTypingIndicators(e: Event): void {
+    const target = e.currentTarget as HTMLInputElement;
+    sendTypingIndicatorsEnabled.set(target.checked);
+  }
+
+  function handleToggleWebPreviews(e: Event): void {
+    const target = e.currentTarget as HTMLInputElement;
+    webPreviewsEnabled.set(target.checked);
+  }
 </script>
 
 <section class="privacy-section" aria-labelledby="privacy-heading">
   <h3 id="privacy-heading" class="theme-subheading">{$t('settings.privacyTitle')}</h3>
+
+  <label class="privacy-toggle">
+    <input
+      type="checkbox"
+      checked={$sendTypingIndicatorsEnabled}
+      onchange={handleToggleSendTypingIndicators}
+    />
+    <span>{$t('settings.sendTypingIndicatorsLabel')}</span>
+  </label>
+  <p class="privacy-toggle-description">{$t('settings.sendTypingIndicatorsDescription')}</p>
+
+  <label class="privacy-toggle">
+    <input
+      type="checkbox"
+      checked={$webPreviewsEnabled}
+      onchange={handleToggleWebPreviews}
+    />
+    <span>{$t('settings.webPreviewsLabel')}</span>
+  </label>
+  <p class="privacy-toggle-description">{$t('settings.webPreviewsDescription')}</p>
 
   {#if !$torAvailable}
     <p class="tor-status">{$t('settings.routeTrafficThroughTorUnavailable')}</p>
@@ -89,7 +121,28 @@
   .privacy-section {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 12px;
+  }
+
+  .privacy-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .privacy-toggle input {
+    accent-color: var(--brand);
+  }
+
+  .privacy-toggle-description {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
   }
 
   .theme-subheading {
