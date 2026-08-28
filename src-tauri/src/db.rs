@@ -7260,6 +7260,8 @@ mod link_preview_persistence_tests {
             title: None,
             description: None,
             favicon: None,
+            og_image_cached: None,
+            favicon_cached: None,
         };
         save_link_preview_metadata(app.handle(), &message.id, &metadata).unwrap();
 

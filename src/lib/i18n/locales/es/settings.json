@@ -137,9 +137,12 @@
 
 	"settings.privacyTitle": "Privacidad",
 	"settings.routeTrafficThroughTorLabel": "Enrutar el tráfico a través de Tor",
-	"settings.routeTrafficThroughTorDescription": "Al activarlo, Pacto enruta todo el tráfico TCP (relays de Nostr, subidas a Blossom, vistas previas de enlaces, descargas de imágenes) a través de la red Tor usando un cliente Arti integrado. Esto oculta tu dirección IP ante los relays y los servidores remotos, a costa de conexiones más lentas (los circuitos de Tor añaden latencia).",
+	"settings.routeTrafficThroughTorDescription": "Al activarlo, Pacto enruta el tráfico saliente del backend (conexiones a relays de Nostr, subidas y descargas a Blossom, búsquedas de GIF, llamadas RPC de la billetera, fotos de perfil y vistas previas de enlaces) a través de la red Tor usando un cliente Arti integrado, ocultando tu dirección IP ante esos servidores a costa de conexiones más lentas (los circuitos de Tor añaden latencia). Las imágenes nuevas pueden tardar un momento en aparecer mientras se descargan a través de Tor y se guardan en caché localmente.",
 	"settings.routeTrafficThroughTorDisclaimer": "Tor y el logotipo de Tor son marcas registradas de The Tor Project; todos los derechos reservados. Más información en torproject.org. Pacto no está avalado, patrocinado ni afiliado a The Tor Project.",
 	"settings.routeTrafficThroughTorConnecting": "Conectando a través de Tor…",
+	"settings.routeTrafficThroughTorDisconnecting": "Desconectando de Tor…",
+	"settings.routeTrafficThroughTorUnavailable": "El enrutamiento por Tor no está disponible en esta compilación.",
+	"settings.routeTrafficThroughTorStartupWarning": "Tor no pudo iniciarse automáticamente:",
 	"settings.routeTrafficThroughTorLoadError": "No se pudo cargar el ajuste de enrutamiento por Tor.",
 	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor."
 }

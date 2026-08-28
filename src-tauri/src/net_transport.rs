@@ -1,5 +1,5 @@
 //! Shared outbound-transport gate for the "Route Traffic Through Tor"
-//! preference (#173).
+//! preference.
 //!
 //! Disabled by default. When enabled, an embedded Arti client bootstraps and
 //! serves a loopback-only SOCKS5 proxy; every reqwest client this crate
@@ -7,6 +7,14 @@
 //! directly. Both call [`http_client_builder`] / [`nostr_connection_mode`]
 //! fresh per use rather than caching a client, so a toggle takes effect on
 //! the next connection without a process restart.
+//!
+//! [`http_client_builder`] fails closed: if Tor is supposed to be active but
+//! the local proxy can't be wired into the client, callers get an error
+//! instead of an unproxied `reqwest::Client` that would leak the request.
+//! A failed bootstrap at login behaves the same way -- traffic stays direct
+//! (never silently "half-Tor'd"), the failure is recorded in
+//! [`TorStatusDto::startup_error`], and a bounded background retry
+//! re-attempts the bootstrap a couple of times. See `apply_persisted_setting`.
 //!
 //! See docs/privacy/TOR_TRANSPORT.md.
 
@@ -26,6 +34,14 @@ pub const SETTING_KEY: &str = "route_traffic_through_tor";
 /// In-memory mirror of the persisted setting, applied at login and updated
 /// by `set_tor_routing_enabled`.
 static TOR_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Set when a login-time (or automatic retry) bootstrap attempt fails while
+/// the persisted preference is on. Cleared on the next successful `enable()`.
+/// Surfaced via [`TorStatusDto::startup_error`] so the UI can explain why
+/// `enabled` reads `false` despite the user having turned the setting on,
+/// instead of the frontend trusting the raw persisted value and showing a
+/// toggle that's on while traffic is actually direct.
+static LOGIN_BOOTSTRAP_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 /// Cap on connect-latency samples kept for the rolling average shown in the
 /// status popover -- recent circuit connects, not a lifetime history.
@@ -116,32 +132,39 @@ pub fn nostr_connection_mode() -> ConnectionMode {
 /// A `reqwest::ClientBuilder` pre-wired for the current transport mode.
 /// Callers still set their own timeouts / user agent / etc. Every call site
 /// that previously called `reqwest::Client::builder()` directly should call
-/// this instead so Tor gating stays centralized (see #173).
-pub fn http_client_builder() -> reqwest::ClientBuilder {
+/// this instead so Tor gating stays centralized.
+///
+/// Returns `Err` instead of a bare builder if Tor routing is enabled and
+/// bootstrapped but the local SOCKS proxy can't be attached to the client --
+/// sending the request unproxied in that state would defeat the setting.
+pub fn http_client_builder() -> Result<reqwest::ClientBuilder, String> {
     let builder = reqwest::Client::builder();
     match active_socks_addr() {
-        Some(addr) => match reqwest::Proxy::all(format!("socks5h://{addr}")) {
-            Ok(proxy) => builder.proxy(proxy),
-            Err(e) => {
-                eprintln!("[Tor] Failed to configure local SOCKS proxy for reqwest: {e}");
-                builder
-            }
-        },
-        None => builder,
+        Some(addr) => reqwest::Proxy::all(format!("socks5h://{addr}"))
+            .map(|proxy| builder.proxy(proxy))
+            .map_err(|e| {
+                format!("Tor routing is enabled but the local proxy could not be configured: {e}")
+            }),
+        None => Ok(builder),
     }
 }
 
 /// `Some(addr)` only once Tor routing is enabled *and* the embedded client's
-/// local SOCKS proxy has finished bootstrapping.
-fn active_socks_addr() -> Option<SocketAddr> {
+/// local SOCKS proxy has finished bootstrapping. Crate-visible (not just
+/// `http_client_builder`'s internal use) because `evm/rpc/provider.rs`
+/// needs the raw address too: alloy's JSON-RPC HTTP client pulls in a
+/// different major `reqwest` version than the rest of this crate, so it
+/// can't share a `ClientBuilder` built by `http_client_builder` and
+/// configures its own proxy from this address instead.
+pub(crate) fn active_socks_addr() -> Option<SocketAddr> {
     if !is_enabled() {
         return None;
     }
-    #[cfg(feature = "tor")]
+    #[cfg(all(not(target_os = "android"), feature = "tor"))]
     {
         tor::bootstrapped_addr()
     }
-    #[cfg(not(feature = "tor"))]
+    #[cfg(not(all(not(target_os = "android"), feature = "tor")))]
     {
         None
     }
@@ -150,8 +173,9 @@ fn active_socks_addr() -> Option<SocketAddr> {
 /// Snapshot of live Tor routing status for the settings toggle and the
 /// nav-bar status popover. `bootstrapped`/`bootstrap_fraction`/
 /// `blocked_reason` reflect the embedded client's own health (it can
-/// degrade after initial bootstrap, e.g. on a network change) and are
-/// distinct from `enabled`, which only reflects the persisted preference.
+/// degrade after initial bootstrap, e.g. on a network change). `enabled`
+/// is the live transport state (`is_enabled()`), not the raw persisted
+/// preference -- see `startup_error` below for when they disagree.
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct TorStatusDto {
     /// False on builds without the `tor` feature (e.g. Android), where
@@ -166,6 +190,12 @@ pub struct TorStatusDto {
     pub bytes_down: u64,
     pub avg_connect_latency_ms: Option<u64>,
     pub enabled_seconds: Option<u64>,
+    /// Set when the persisted preference is on but the most recent bootstrap
+    /// attempt (at login or during an automatic retry) failed. `enabled` is
+    /// the source of truth for whether traffic is actually routed through
+    /// Tor right now; this only explains why it can read `false` despite the
+    /// user having turned the setting on.
+    pub startup_error: Option<String>,
 }
 
 #[tauri::command]
@@ -180,13 +210,13 @@ pub fn get_tor_status() -> TorStatusDto {
         }
     };
 
-    #[cfg(feature = "tor")]
+    #[cfg(all(not(target_os = "android"), feature = "tor"))]
     let (available, bootstrapped, bootstrap_fraction, blocked_reason) = match tor::bootstrap_info()
     {
         Some(info) => (true, info.ready_for_traffic, info.fraction, info.blocked_reason),
         None => (true, false, 0.0, None),
     };
-    #[cfg(not(feature = "tor"))]
+    #[cfg(not(all(not(target_os = "android"), feature = "tor")))]
     let (available, bootstrapped, bootstrap_fraction, blocked_reason) = (false, false, 0.0, None);
 
     TorStatusDto {
@@ -200,14 +230,21 @@ pub fn get_tor_status() -> TorStatusDto {
         bytes_down: TOR_STATS.bytes_down.load(Ordering::Relaxed),
         avg_connect_latency_ms,
         enabled_seconds,
+        startup_error: LOGIN_BOOTSTRAP_ERROR.lock().clone(),
     }
 }
 
 /// Read the persisted per-account setting and apply it. Called once after
 /// account login/switch, before the relay pool is first populated, so the
-/// first `connect()` already uses the right connection mode. Bootstrap
-/// failure is logged, not fatal: login still proceeds and relay connectivity
-/// degrades the same way a fully unreachable relay set already does.
+/// first `connect()` already uses the right connection mode.
+///
+/// A bootstrap failure here is not fatal to login, but it is not silently
+/// "fine" either: `TOR_ENABLED` stays `false` (traffic goes direct, exactly
+/// as if routing were off -- never a half-proxied state), the failure is
+/// recorded so `get_tor_status().startup_error` can surface it, and
+/// [`spawn_login_bootstrap_retry`] re-attempts the bootstrap a couple of
+/// times with backoff before giving up (the user can also just toggle the
+/// setting off and back on to retry immediately).
 pub async fn apply_persisted_setting<R: Runtime>(app: &tauri::AppHandle<R>) {
     let enabled = crate::db::get_sql_setting(app.clone(), SETTING_KEY.to_string())
         .unwrap_or(None)
@@ -216,35 +253,98 @@ pub async fn apply_persisted_setting<R: Runtime>(app: &tauri::AppHandle<R>) {
 
     if !enabled {
         TOR_ENABLED.store(false, Ordering::SeqCst);
+        *LOGIN_BOOTSTRAP_ERROR.lock() = None;
         return;
     }
 
     if let Err(e) = enable(app).await {
         eprintln!("[Tor] Failed to bootstrap embedded Tor client at login: {e}");
+        *LOGIN_BOOTSTRAP_ERROR.lock() = Some(e);
+        spawn_login_bootstrap_retry(app.clone());
+    }
+}
+
+/// Retries a failed login-time bootstrap a couple of times with backoff.
+/// Bails out early if routing already ended up enabled through another path
+/// (e.g. the user manually toggled it on while a retry was pending) or the
+/// user disabled the preference before a retry fires -- a retry must never
+/// resurrect a setting the user explicitly turned off in the meantime.
+fn spawn_login_bootstrap_retry<R: Runtime>(app: tauri::AppHandle<R>) {
+    #[cfg(all(not(target_os = "android"), feature = "tor"))]
+    {
+        tokio::spawn(async move {
+            const RETRY_DELAYS: [std::time::Duration; 2] = [
+                std::time::Duration::from_secs(10),
+                std::time::Duration::from_secs(30),
+            ];
+            for delay in RETRY_DELAYS {
+                tokio::time::sleep(delay).await;
+                if is_enabled() {
+                    return;
+                }
+                let still_wanted =
+                    crate::db::get_sql_setting(app.clone(), SETTING_KEY.to_string())
+                        .unwrap_or(None)
+                        .map(|v| v == "true")
+                        .unwrap_or(false);
+                if !still_wanted {
+                    return;
+                }
+                match enable(&app).await {
+                    Ok(()) => {
+                        crate::rebuild_relay_pool_connection_mode(&app).await;
+                        return;
+                    }
+                    Err(e) => {
+                        eprintln!("[Tor] Retry failed to bootstrap embedded Tor client: {e}");
+                        *LOGIN_BOOTSTRAP_ERROR.lock() = Some(e);
+                    }
+                }
+            }
+        });
+    }
+    #[cfg(not(all(not(target_os = "android"), feature = "tor")))]
+    {
+        let _ = app;
     }
 }
 
 /// Persist and apply the "Route Traffic Through Tor" setting. Bootstraps (on
-/// enable) or flips the in-memory flag (on disable), then rebuilds the live
-/// Nostr relay pool -- if logged in -- so already-open relay connections
+/// enable) or tears down the embedded client (on disable), then rebuilds the
+/// live Nostr relay pool -- if logged in -- so already-open relay connections
 /// pick up the new mode without restarting the app.
 #[tauri::command]
 pub async fn set_tor_routing_enabled<R: Runtime>(
     handle: tauri::AppHandle<R>,
     enabled: bool,
 ) -> Result<(), String> {
+    let was_enabled = is_enabled();
+
     if enabled {
         enable(&handle).await?;
     } else {
         TOR_ENABLED.store(false, Ordering::SeqCst);
         TOR_STATS.mark_disabled();
+        shutdown_embedded_client();
     }
 
-    crate::db::set_sql_setting(
+    if let Err(e) = crate::db::set_sql_setting(
         handle.clone(),
         SETTING_KEY.to_string(),
         enabled.to_string(),
-    )?;
+    ) {
+        // Persistence failed: undo the in-memory transport change so it
+        // matches what's actually saved (and what the frontend's optimistic
+        // toggle reverts to on this error) instead of drifting from it.
+        if enabled {
+            TOR_ENABLED.store(false, Ordering::SeqCst);
+            TOR_STATS.mark_disabled();
+            shutdown_embedded_client();
+        } else if was_enabled {
+            let _ = enable(&handle).await;
+        }
+        return Err(e);
+    }
 
     crate::rebuild_relay_pool_connection_mode(&handle).await;
 
@@ -254,25 +354,39 @@ pub async fn set_tor_routing_enabled<R: Runtime>(
 /// Bootstraps the embedded Arti client + local SOCKS proxy (idempotent; a
 /// second call while already bootstrapped is a no-op) and marks Tor routing
 /// enabled. Errors when the `tor` feature isn't compiled in (e.g. Android).
-#[cfg_attr(not(feature = "tor"), allow(unused_variables))]
+#[cfg_attr(
+    not(all(not(target_os = "android"), feature = "tor")),
+    allow(unused_variables)
+)]
 async fn enable<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
-    #[cfg(feature = "tor")]
+    #[cfg(all(not(target_os = "android"), feature = "tor"))]
     {
         tor::ensure_bootstrapped(app).await?;
         TOR_ENABLED.store(true, Ordering::SeqCst);
         TOR_STATS.mark_enabled();
+        *LOGIN_BOOTSTRAP_ERROR.lock() = None;
         Ok(())
     }
-    #[cfg(not(feature = "tor"))]
+    #[cfg(not(all(not(target_os = "android"), feature = "tor")))]
     {
         Err("Tor routing is not available on this build".to_string())
     }
 }
 
-#[cfg(feature = "tor")]
+/// Stops the local SOCKS listener and drops the embedded Tor client so
+/// disabling routing actually stops it instead of leaving it running (and
+/// the loopback listener reachable) in the background until process exit.
+fn shutdown_embedded_client() {
+    #[cfg(all(not(target_os = "android"), feature = "tor"))]
+    tor::shutdown();
+}
+
+#[cfg(all(not(target_os = "android"), feature = "tor"))]
 mod tor {
     use std::net::SocketAddr;
     use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+    use std::time::Duration;
 
     use arti_client::config::{CfgPath, TorClientConfigBuilder};
     use arti_client::{DangerouslyIntoTorAddr, TorClient, TorClientConfig};
@@ -281,15 +395,52 @@ mod tor {
     use fast_socks5::{ReplyError, Socks5Command};
     use tauri::{Manager, Runtime};
     use tokio::net::{TcpListener, TcpStream};
-    use tokio::sync::OnceCell;
+    use tokio::task::JoinHandle;
     use tor_rtcompat::PreferredRuntime;
 
-    static TOR_CLIENT: OnceCell<std::sync::Arc<TorClient<PreferredRuntime>>> = OnceCell::const_new();
-    static SOCKS_ADDR: OnceCell<SocketAddr> = OnceCell::const_new();
+    /// Time budget for the initial Tor circuit bootstrap. Arti retries
+    /// directory fetches with its own backoff rather than failing fast, so
+    /// without a cap a censored/offline network can hang `enable()` --
+    /// and with it `login` / `set_tor_routing_enabled` -- indefinitely.
+    const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(90);
+
+    /// Backoff applied to the local SOCKS listener's accept loop after a
+    /// transient `accept()` error (e.g. temporary fd exhaustion), so a
+    /// persistent error condition degrades to a bounded retry rate instead
+    /// of a hot spin.
+    const ACCEPT_ERROR_BASE_BACKOFF: Duration = Duration::from_millis(50);
+    const ACCEPT_ERROR_MAX_BACKOFF: Duration = Duration::from_secs(5);
+    /// After this many consecutive `accept()` errors the listener is treated
+    /// as unrecoverable (e.g. its underlying fd was closed) and the loop
+    /// shuts itself down rather than spinning forever.
+    const MAX_CONSECUTIVE_ACCEPT_ERRORS: u32 = 10;
+
+    /// Live embedded-client state: the bootstrapped `TorClient`, the local
+    /// SOCKS listener's address, and a handle to its accept-loop task. Every
+    /// field is `None` until the first successful bootstrap, and reset back
+    /// to `None` by [`shutdown`] when routing is disabled so "off" actually
+    /// stops the client and closes the listener rather than leaving both
+    /// running in the background.
+    struct TorState {
+        client: Option<Arc<TorClient<PreferredRuntime>>>,
+        socks_addr: Option<SocketAddr>,
+        accept_task: Option<JoinHandle<()>>,
+    }
+
+    static STATE: parking_lot::Mutex<TorState> = parking_lot::Mutex::new(TorState {
+        client: None,
+        socks_addr: None,
+        accept_task: None,
+    });
+
+    /// Serializes calls to [`ensure_bootstrapped`] so two concurrent enable
+    /// attempts (e.g. the settings toggle and the nav-bar popover) can't
+    /// both start a bootstrap. Never held across the `STATE` lock.
+    static BOOTSTRAP_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     /// The local SOCKS proxy address, once bootstrap has completed.
     pub(super) fn bootstrapped_addr() -> Option<SocketAddr> {
-        SOCKS_ADDR.get().copied()
+        STATE.lock().socks_addr
     }
 
     /// Snapshot of the embedded client's bootstrap health, if it has been
@@ -301,7 +452,8 @@ mod tor {
     }
 
     pub(super) fn bootstrap_info() -> Option<BootstrapInfo> {
-        let client = TOR_CLIENT.get()?;
+        let state = STATE.lock();
+        let client = state.client.as_ref()?;
         let status = client.bootstrap_status();
         Some(BootstrapInfo {
             ready_for_traffic: status.ready_for_traffic(),
@@ -316,19 +468,40 @@ mod tor {
     pub(super) async fn ensure_bootstrapped<R: Runtime>(
         app: &tauri::AppHandle<R>,
     ) -> Result<(), String> {
-        let data_dir = arti_data_dir(app)?;
+        let _guard = BOOTSTRAP_LOCK.lock().await;
 
-        TOR_CLIENT
-            .get_or_try_init(|| init_tor_client(data_dir))
+        if STATE.lock().client.is_some() {
+            return Ok(());
+        }
+
+        let data_dir = arti_data_dir(app)?;
+        let client = tokio::time::timeout(BOOTSTRAP_TIMEOUT, init_tor_client(data_dir))
             .await
+            .map_err(|_| "Timed out waiting for the Tor circuit to bootstrap".to_string())?
             .map_err(|e| format!("Failed to bootstrap Tor: {e}"))?;
 
-        SOCKS_ADDR
-            .get_or_try_init(start_socks_proxy)
+        let (addr, task) = start_socks_proxy(client.clone())
             .await
             .map_err(|e| format!("Failed to start local Tor proxy: {e}"))?;
 
+        let mut state = STATE.lock();
+        state.client = Some(client);
+        state.socks_addr = Some(addr);
+        state.accept_task = Some(task);
         Ok(())
+    }
+
+    /// Stops the local SOCKS listener and drops the embedded Tor client so
+    /// disabling routing stops its background activity (circuit building,
+    /// directory fetches) instead of leaving it running until process exit.
+    /// A later `enable()` re-bootstraps from scratch.
+    pub(super) fn shutdown() {
+        let mut state = STATE.lock();
+        if let Some(task) = state.accept_task.take() {
+            task.abort();
+        }
+        state.socks_addr = None;
+        state.client = None;
     }
 
     fn arti_data_dir<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
@@ -338,9 +511,7 @@ mod tor {
             .map_err(|e| format!("Failed to resolve app data dir: {e}"))
     }
 
-    async fn init_tor_client(
-        data_dir: PathBuf,
-    ) -> Result<std::sync::Arc<TorClient<PreferredRuntime>>, String> {
+    async fn init_tor_client(data_dir: PathBuf) -> Result<Arc<TorClient<PreferredRuntime>>, String> {
         let mut config = TorClientConfigBuilder::default();
 
         // .onion relays (ConnectionTarget::Onion) resolve over the same client.
@@ -363,9 +534,11 @@ mod tor {
     }
 
     /// Binds a loopback-only, ephemeral-port SOCKS5 listener and spawns its
-    /// accept loop. Every accepted connection is proxied through the
-    /// already-bootstrapped `TOR_CLIENT`.
-    async fn start_socks_proxy() -> Result<SocketAddr, String> {
+    /// accept loop. Every accepted connection is proxied through the given,
+    /// already-bootstrapped Tor client.
+    async fn start_socks_proxy(
+        client: Arc<TorClient<PreferredRuntime>>,
+    ) -> Result<(SocketAddr, JoinHandle<()>), String> {
         let listener = TcpListener::bind(("127.0.0.1", 0))
             .await
             .map_err(|e| format!("Failed to bind local SOCKS listener: {e}"))?;
@@ -373,31 +546,53 @@ mod tor {
             .local_addr()
             .map_err(|e| format!("Failed to read local SOCKS listener address: {e}"))?;
 
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
+            let mut consecutive_errors: u32 = 0;
             loop {
                 match listener.accept().await {
                     Ok((socket, _)) => {
+                        consecutive_errors = 0;
+                        let client = client.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = serve_socks_connection(socket).await {
+                            if let Err(e) = serve_socks_connection(socket, client).await {
                                 log::debug!(target: "pacto", "[Tor] SOCKS connection ended: {e}");
                             }
                         });
                     }
                     Err(e) => {
+                        consecutive_errors += 1;
                         log::warn!(target: "pacto", "[Tor] Local SOCKS listener accept error: {e}");
+                        if consecutive_errors >= MAX_CONSECUTIVE_ACCEPT_ERRORS {
+                            log::error!(
+                                target: "pacto",
+                                "[Tor] Local SOCKS listener failing repeatedly ({consecutive_errors} consecutive errors); shutting it down"
+                            );
+                            let mut state = STATE.lock();
+                            state.accept_task = None;
+                            state.socks_addr = None;
+                            state.client = None;
+                            return;
+                        }
+                        let backoff = ACCEPT_ERROR_BASE_BACKOFF
+                            .saturating_mul(1u32 << consecutive_errors.min(6))
+                            .min(ACCEPT_ERROR_MAX_BACKOFF);
+                        tokio::time::sleep(backoff).await;
                     }
                 }
             }
         });
 
-        Ok(addr)
+        Ok((addr, task))
     }
 
     /// Handles a single client connection to the local SOCKS5 proxy: performs
     /// the (unauthenticated, loopback-only) SOCKS5 handshake, dials the
     /// requested target through the embedded Tor client, and then relays
     /// bytes bidirectionally until either side closes.
-    async fn serve_socks_connection(socket: TcpStream) -> Result<(), String> {
+    async fn serve_socks_connection(
+        socket: TcpStream,
+        client: Arc<TorClient<PreferredRuntime>>,
+    ) -> Result<(), String> {
         let _conn_guard = super::TOR_STATS.connection_started();
 
         let (proto, cmd, target_addr) = Socks5ServerProtocol::accept_no_auth(socket)
@@ -412,7 +607,6 @@ mod tor {
             return Err(format!("unsupported SOCKS command: {cmd:?}"));
         }
 
-        let client = TOR_CLIENT.get().ok_or("Tor client not bootstrapped")?;
         let connect_started = std::time::Instant::now();
         let tor_stream = match &target_addr {
             TargetAddr::Ip(addr) => {
@@ -460,26 +654,35 @@ mod tor {
 mod tests {
     use super::*;
 
+    /// `TOR_ENABLED` / `TOR_STATS` are process-wide statics; serialize tests
+    /// that touch them so a thread-per-test runner (`cargo test`, unlike
+    /// `cargo nextest`'s process-per-test) can't interleave them.
+    static TEST_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
     #[test]
     fn disabled_by_default() {
+        let _guard = TEST_LOCK.lock();
         assert!(!is_enabled());
     }
 
     #[test]
     fn direct_mode_when_disabled() {
+        let _guard = TEST_LOCK.lock();
         TOR_ENABLED.store(false, Ordering::SeqCst);
         assert_eq!(nostr_connection_mode(), ConnectionMode::direct());
     }
 
     #[test]
     fn http_client_builder_succeeds_when_disabled() {
+        let _guard = TEST_LOCK.lock();
         TOR_ENABLED.store(false, Ordering::SeqCst);
         // No proxy configured: building a bare client must succeed.
-        assert!(http_client_builder().build().is_ok());
+        assert!(http_client_builder().unwrap().build().is_ok());
     }
 
     #[test]
     fn direct_mode_when_enabled_but_not_yet_bootstrapped() {
+        let _guard = TEST_LOCK.lock();
         // Enabling the flag alone (without a running SOCKS proxy) must never
         // silently claim Tor routing is active -- callers fall back to
         // direct rather than pointing at a proxy that isn't listening.
@@ -491,6 +694,7 @@ mod tests {
 
     #[test]
     fn tor_stats_marks_enabled_and_resets_counters() {
+        let _guard = TEST_LOCK.lock();
         TOR_STATS.add_bytes(100, 200);
         TOR_STATS.record_latency_ms(50);
         TOR_STATS.mark_enabled();
@@ -504,6 +708,7 @@ mod tests {
 
     #[test]
     fn tor_stats_add_bytes_accumulates() {
+        let _guard = TEST_LOCK.lock();
         TOR_STATS.mark_enabled();
         TOR_STATS.add_bytes(10, 20);
         TOR_STATS.add_bytes(5, 5);
@@ -514,10 +719,11 @@ mod tests {
 
     #[test]
     fn tor_stats_connection_guard_tracks_active_count() {
+        let _guard = TEST_LOCK.lock();
         TOR_STATS.mark_enabled();
         assert_eq!(TOR_STATS.active_connections.load(Ordering::SeqCst), 0);
         {
-            let _guard = TOR_STATS.connection_started();
+            let _conn = TOR_STATS.connection_started();
             assert_eq!(TOR_STATS.active_connections.load(Ordering::SeqCst), 1);
         }
         assert_eq!(TOR_STATS.active_connections.load(Ordering::SeqCst), 0);
@@ -526,6 +732,7 @@ mod tests {
 
     #[test]
     fn tor_stats_latency_samples_cap_and_evict_oldest() {
+        let _guard = TEST_LOCK.lock();
         TOR_STATS.mark_enabled();
         for ms in 1..=(LATENCY_SAMPLE_CAP as u64 + 5) {
             TOR_STATS.record_latency_ms(ms);
@@ -540,6 +747,7 @@ mod tests {
 
     #[test]
     fn get_tor_status_reflects_disabled_state() {
+        let _guard = TEST_LOCK.lock();
         TOR_ENABLED.store(false, Ordering::SeqCst);
         TOR_STATS.mark_disabled();
         let status = get_tor_status();
@@ -549,6 +757,7 @@ mod tests {
 
     #[test]
     fn get_tor_status_reports_avg_latency_and_enabled_seconds_once_enabled() {
+        let _guard = TEST_LOCK.lock();
         TOR_ENABLED.store(true, Ordering::SeqCst);
         TOR_STATS.mark_enabled();
         TOR_STATS.record_latency_ms(100);

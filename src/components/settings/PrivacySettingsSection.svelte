@@ -1,25 +1,30 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { getSqlSetting } from '../../lib/api/settings';
+  import { getTorStatus } from '../../lib/api/tor';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
-  import { torRoutingEnabled, toggleTorRouting, TOR_SETTING_KEY } from '../../stores/tor';
+  import { torRoutingEnabled, torAvailable, torStartupError, toggleTorRouting } from '../../stores/tor';
   import torIcon from '../../icons/tor.svg';
 
   let loading = $state(true);
   let saving = $state(false);
+  /** Direction of the in-flight toggle, so the status line while `saving`
+   *  can say "connecting" vs "disconnecting" instead of always the former. */
+  let pendingTarget = $state<boolean | null>(null);
   let error = $state<string | null>(null);
 
   onMount(() => {
-    void loadSetting();
+    void loadStatus();
   });
 
-  async function loadSetting(): Promise<void> {
+  async function loadStatus(): Promise<void> {
     loading = true;
     error = null;
     try {
-      const value = await getSqlSetting(TOR_SETTING_KEY);
-      torRoutingEnabled.set(value === 'true');
+      const status = await getTorStatus();
+      torRoutingEnabled.set(status.enabled);
+      torAvailable.set(status.available);
+      torStartupError.set(status.startup_error);
     } catch (e) {
       error = getInvokeErrorMessage(e, $t('settings.routeTrafficThroughTorLoadError'));
     } finally {
@@ -30,22 +35,37 @@
   async function handleToggle(e: Event): Promise<void> {
     const next = (e.currentTarget as HTMLInputElement).checked;
     saving = true;
+    pendingTarget = next;
     error = null;
     error = await toggleTorRouting(next, $t('settings.routeTrafficThroughTorSaveError'));
     saving = false;
+    pendingTarget = null;
   }
 </script>
 
-<div class="privacy-section" aria-labelledby="privacy-heading">
+<section class="privacy-section" aria-labelledby="privacy-heading">
   <h3 id="privacy-heading" class="theme-subheading">{$t('settings.privacyTitle')}</h3>
 
+  {#if !$torAvailable}
+    <p class="tor-status">{$t('settings.routeTrafficThroughTorUnavailable')}</p>
+  {/if}
+
   <label class="tor-toggle">
-    <input type="checkbox" checked={$torRoutingEnabled} disabled={loading || saving} onchange={handleToggle} />
+    <input
+      type="checkbox"
+      checked={$torRoutingEnabled}
+      disabled={loading || saving || !$torAvailable}
+      onchange={handleToggle}
+    />
     <span>{$t('settings.routeTrafficThroughTorLabel')}</span>
   </label>
 
   {#if saving}
-    <p class="tor-status">{$t('settings.routeTrafficThroughTorConnecting')}</p>
+    <p class="tor-status">
+      {pendingTarget
+        ? $t('settings.routeTrafficThroughTorConnecting')
+        : $t('settings.routeTrafficThroughTorDisconnecting')}
+    </p>
   {/if}
 
   <p class="tor-description">
@@ -54,10 +74,16 @@
   </p>
   <p class="tor-disclaimer">{$t('settings.routeTrafficThroughTorDisclaimer')}</p>
 
-  {#if error}
-    <p class="tor-error">{error}</p>
+  {#if $torStartupError}
+    <p class="tor-error" role="alert">
+      {$t('settings.routeTrafficThroughTorStartupWarning')} {$torStartupError}
+    </p>
   {/if}
-</div>
+
+  {#if error}
+    <p class="tor-error" role="alert">{error}</p>
+  {/if}
+</section>
 
 <style>
   .privacy-section {

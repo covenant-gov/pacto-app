@@ -27,6 +27,7 @@ const CONNECTED_STATUS: TorStatus = {
   bytes_down: 4096,
   avg_connect_latency_ms: 850,
   enabled_seconds: 125,
+  startup_error: null,
 };
 
 afterEach(() => {

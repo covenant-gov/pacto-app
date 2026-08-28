@@ -5,26 +5,51 @@ use alloy::primitives::{Address, Bytes, TxHash};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 
-use super::config::{RECEIPT_WAIT_TIMEOUT, RPC_CONNECT_TIMEOUT};
+use super::config::RECEIPT_WAIT_TIMEOUT;
 use super::errors::{wallet_err_from_send_failure, wallet_err_json, wallet_err_json_with_tx_hash};
 use crate::evm::wallet_security;
+
+/// Builds the client backing every alloy JSON-RPC provider this module
+/// constructs, gated through the shared Tor transport switch. Alloy pins a
+/// different major `reqwest` version (0.13) than the rest of this crate
+/// (0.12, see `Cargo.toml`'s `reqwest013` comment), so this can't reuse
+/// `net_transport::http_client_builder` -- it configures the same local
+/// SOCKS address directly on alloy's own `reqwest` instance instead.
+/// Without this, alloy's `.connect(url)` builds an unproxied client
+/// internally, and wallet RPC calls (balance/gas reads, tx broadcasts,
+/// receipt polling) would leak the caller's real IP alongside their EVM
+/// address even with Tor routing enabled.
+pub(crate) fn tor_aware_http_client() -> Result<reqwest013::Client, String> {
+    let builder = reqwest013::Client::builder();
+    match crate::net_transport::active_socks_addr() {
+        Some(addr) => reqwest013::Proxy::all(format!("socks5h://{addr}"))
+            .map(|proxy| builder.proxy(proxy))
+            .map_err(|e| {
+                format!(
+                    "Tor routing is enabled but the local proxy could not be configured for the wallet RPC client: {e}"
+                )
+            }),
+        None => Ok(builder),
+    }
+    .and_then(|b| b.build().map_err(|e| e.to_string()))
+}
 
 pub async fn connect_read_provider(urls: &[String]) -> Result<impl Provider + Clone, String> {
     let mut last_err = String::new();
     for url_s in urls {
-        if url_s.parse::<url::Url>().is_err() {
-            last_err = "invalid RPC URL".to_string();
-            continue;
-        }
-        match tokio::time::timeout(
-            RPC_CONNECT_TIMEOUT,
-            ProviderBuilder::new().connect(url_s.as_str()),
-        )
-        .await
-        {
-            Ok(Ok(p)) => return Ok(p),
-            Ok(Err(e)) => last_err = wallet_security::redact_urls_in_text(&e.to_string()),
-            Err(_) => last_err = "RPC connect timeout".to_string(),
+        let parsed_url = match url_s.parse::<url::Url>() {
+            Ok(u) => u,
+            Err(_) => {
+                last_err = "invalid RPC URL".to_string();
+                continue;
+            }
+        };
+        match tor_aware_http_client() {
+            Ok(client) => return Ok(ProviderBuilder::new().connect_reqwest(client, parsed_url)),
+            Err(e) => {
+                last_err = wallet_security::redact_urls_in_text(&e);
+                continue;
+            }
         }
     }
     Err(wallet_err_json(
@@ -41,26 +66,28 @@ pub async fn connect_signing_provider(
 ) -> Result<impl Provider + Clone, String> {
     let mut last_err = String::new();
     for url_s in urls {
-        if url_s.parse::<url::Url>().is_err() {
-            last_err = "invalid RPC URL".to_string();
-            continue;
-        }
-        match tokio::time::timeout(
-            RPC_CONNECT_TIMEOUT,
-            ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .with_gas_estimation()
-                .with_blob_gas_estimation()
-                .with_simple_nonce_management()
-                .fetch_chain_id()
-                .wallet(wallet.clone())
-                .connect(url_s.as_str()),
-        )
-        .await
-        {
-            Ok(Ok(p)) => return Ok(p),
-            Ok(Err(e)) => last_err = wallet_security::redact_urls_in_text(&e.to_string()),
-            Err(_) => last_err = "RPC connect timeout".to_string(),
+        let parsed_url = match url_s.parse::<url::Url>() {
+            Ok(u) => u,
+            Err(_) => {
+                last_err = "invalid RPC URL".to_string();
+                continue;
+            }
+        };
+        match tor_aware_http_client() {
+            Ok(client) => {
+                return Ok(ProviderBuilder::new()
+                    .disable_recommended_fillers()
+                    .with_gas_estimation()
+                    .with_blob_gas_estimation()
+                    .with_simple_nonce_management()
+                    .fetch_chain_id()
+                    .wallet(wallet.clone())
+                    .connect_reqwest(client, parsed_url));
+            }
+            Err(e) => {
+                last_err = wallet_security::redact_urls_in_text(&e);
+                continue;
+            }
         }
     }
     Err(wallet_err_json(

@@ -7585,7 +7585,7 @@ async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
 
         // Apply the persisted "Route Traffic Through Tor" preference now that the
         // account DB is selected, before `connect()` first populates the relay pool,
-        // so relays are added with the right connection mode from the start (#173).
+        // so relays are added with the right connection mode from the start.
         net_transport::apply_persisted_setting(handle).await;
     }
 

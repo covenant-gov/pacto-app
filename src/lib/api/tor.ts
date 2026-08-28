@@ -11,12 +11,15 @@ export async function setTorRoutingEnabled(enabled: boolean): Promise<void> {
 }
 
 /**
- * Live status snapshot for the nav-bar popover. `bytes_up`/`bytes_down` and
- * `active_connections` are self-tracked by the backend's loopback SOCKS
- * relay (Arti exposes no traffic counters); `avg_connect_latency_ms` is the
- * rolling average of recent `TorClient::connect()` calls. `bootstrapped` can
- * go false again after a successful bootstrap (e.g. a network change) even
- * while `enabled` stays true.
+ * Live status snapshot for the nav-bar popover and the settings toggle.
+ * `bytes_up`/`bytes_down` and `active_connections` are self-tracked by the
+ * backend's loopback SOCKS relay (Arti exposes no traffic counters);
+ * `avg_connect_latency_ms` is the rolling average of recent
+ * `TorClient::connect()` calls. `bootstrapped` can go false again after a
+ * successful bootstrap (e.g. a network change) even while `enabled` stays
+ * true. `enabled` is the live transport state, not the raw persisted
+ * preference -- it can read `false` even when the user turned the setting
+ * on, if `startup_error` is set (the last bootstrap attempt failed).
  */
 export interface TorStatus {
   available: boolean;
@@ -29,6 +32,7 @@ export interface TorStatus {
   bytes_down: number;
   avg_connect_latency_ms: number | null;
   enabled_seconds: number | null;
+  startup_error: string | null;
 }
 
 /** Backend: `get_tor_status`. Cheap in-memory read, safe to poll while a status popover is open. */

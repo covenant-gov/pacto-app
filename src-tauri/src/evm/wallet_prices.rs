@@ -210,7 +210,7 @@ fn answer_to_f64(answer: u128, decimals: u8) -> Result<f64, String> {
 }
 
 async fn eth_call(rpc_url: &str, to: &str, data: &str) -> Result<Vec<u8>, String> {
-    let client = crate::net_transport::http_client_builder()
+    let client = crate::net_transport::http_client_builder()?
         .timeout(HTTP_TIMEOUT)
         .user_agent("PactoWallet/1.0")
         .build()

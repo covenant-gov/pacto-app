@@ -185,21 +185,25 @@ async fn fetch_network_snapshot(
     let mut snapshot: Option<(U256, Vec<(String, U256, u8)>)> = None;
 
     'next_url: for url_s in &urls {
-        if url_s.parse::<url::Url>().is_err() {
-            last_err = "invalid RPC URL".to_string();
-            continue;
-        }
+        let parsed_url = match url_s.parse::<url::Url>() {
+            Ok(u) => u,
+            Err(_) => {
+                last_err = "invalid RPC URL".to_string();
+                continue;
+            }
+        };
 
-        let provider = match ProviderBuilder::new().connect(url_s.as_str()).await {
-            Ok(p) => p,
+        let client = match super::rpc::provider::tor_aware_http_client() {
+            Ok(c) => c,
             Err(e) => {
-                last_err = wallet_security::redact_urls_in_text(&format!("{}", e));
+                last_err = wallet_security::redact_urls_in_text(&e);
                 if !is_retryable_wallet_rpc_error(&last_err) {
                     return Err(format!("{}: RPC connect: {}", net.key, last_err));
                 }
                 continue;
             }
         };
+        let provider = ProviderBuilder::new().connect_reqwest(client, parsed_url);
 
         let eth_raw = match provider.get_balance(owner).await {
             Ok(v) => v,
@@ -413,21 +417,25 @@ pub async fn get_evm_native_balance(
     let mut eth_raw: Option<U256> = None;
 
     'next_url: for url_s in &urls {
-        if url_s.parse::<url::Url>().is_err() {
-            last_err = "invalid RPC URL".to_string();
-            continue;
-        }
+        let parsed_url = match url_s.parse::<url::Url>() {
+            Ok(u) => u,
+            Err(_) => {
+                last_err = "invalid RPC URL".to_string();
+                continue;
+            }
+        };
 
-        let provider = match ProviderBuilder::new().connect(url_s.as_str()).await {
-            Ok(p) => p,
+        let client = match super::rpc::provider::tor_aware_http_client() {
+            Ok(c) => c,
             Err(e) => {
-                last_err = wallet_security::redact_urls_in_text(&format!("{}", e));
+                last_err = wallet_security::redact_urls_in_text(&e);
                 if !is_retryable_wallet_rpc_error(&last_err) {
                     return Err(format!("{}: RPC connect: {}", net.key, last_err));
                 }
                 continue;
             }
         };
+        let provider = ProviderBuilder::new().connect_reqwest(client, parsed_url);
 
         match provider.get_balance(owner).await {
             Ok(v) => {
@@ -493,21 +501,25 @@ pub async fn get_evm_erc20_balance(
     let mut out: Option<EvmErc20Balance> = None;
 
     'next_url: for url_s in &urls {
-        if url_s.parse::<url::Url>().is_err() {
-            last_err = "invalid RPC URL".to_string();
-            continue;
-        }
+        let parsed_url = match url_s.parse::<url::Url>() {
+            Ok(u) => u,
+            Err(_) => {
+                last_err = "invalid RPC URL".to_string();
+                continue;
+            }
+        };
 
-        let provider = match ProviderBuilder::new().connect(url_s.as_str()).await {
-            Ok(p) => p,
+        let client = match super::rpc::provider::tor_aware_http_client() {
+            Ok(c) => c,
             Err(e) => {
-                last_err = wallet_security::redact_urls_in_text(&format!("{}", e));
+                last_err = wallet_security::redact_urls_in_text(&e);
                 if !is_retryable_wallet_rpc_error(&last_err) {
                     return Err(format!("{}: RPC connect: {}", net.key, last_err));
                 }
                 continue;
             }
         };
+        let provider = ProviderBuilder::new().connect_reqwest(client, parsed_url);
 
         let bal = match erc20_balance(&provider, token, owner).await {
             Ok(v) => v,

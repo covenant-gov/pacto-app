@@ -54,7 +54,7 @@ futures-util = "0.3.31"
 tauri = { version = "2.9.1", features = ["protocol-asset", "image-png", "test"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
-reqwest = { version = "0.12.24", features = ["rustls-tls", "stream", "blocking", "multipart"] }
+reqwest = { version = "0.12.24", features = ["rustls-tls", "socks", "stream", "blocking", "multipart"] }
 scraper = "0.24.0"
 aes = "0.8.4"
 aes-gcm = "0.10.3"
@@ -105,6 +105,12 @@ url = "2.5"
 # Use alloy 1.x: 0.15.x `alloy-consensus` does not build against serde 1.0.228+.
 # `reqwest` + `reqwest-rustls-tls` enable the JSON-RPC HTTP client (default-features = false drops them otherwise → "No transports enabled").
 alloy = { version = "1.0.41", default-features = false, features = ["provider-http", "signer-local", "sol-types", "rpc-types", "contract", "reqwest", "reqwest-rustls-tls"] }
+# Pins the same reqwest major version `alloy-transport-http` resolves
+# internally (via alloy's own `reqwest` feature) purely so Cargo's
+# per-resolved-version feature unification adds `socks` to it too --
+# without this, alloy's JSON-RPC HTTP provider can't be pointed at the
+# local embedded Tor SOCKS proxy. See `evm/rpc/provider.rs`.
+reqwest013 = { package = "reqwest", version = "0.13", features = ["socks"] }
 alloy-rlp = "0.3"
 time = "0.3"
 rustls = "0.23"

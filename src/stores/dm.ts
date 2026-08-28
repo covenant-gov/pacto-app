@@ -227,6 +227,10 @@ export interface PreviewMetadata {
   title?: string | null;
   description?: string | null;
   favicon?: string | null;
+  /** Local path once the backend has fetched and cached `og_image` (only attempted while Tor routing is enabled). */
+  og_image_cached?: string | null;
+  /** Local path once the backend has fetched and cached `favicon` (only attempted while Tor routing is enabled). */
+  favicon_cached?: string | null;
 }
 
 export interface DmMessage {

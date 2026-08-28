@@ -1494,6 +1494,10 @@ const BUNDLER_RETRY_MAX_DELAY: Duration = Duration::from_secs(2);
 /// rather than requiring a restart -- see net_transport.rs.
 fn bundler_http_client() -> Result<reqwest::Client, BundlerRpcError> {
     crate::net_transport::http_client_builder()
+        .map_err(|e| BundlerRpcError {
+            retriable: false,
+            message: e,
+        })?
         .timeout(BUNDLER_RPC_TIMEOUT)
         .build()
         .map_err(|e| BundlerRpcError {

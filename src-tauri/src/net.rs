@@ -120,13 +120,15 @@ pub async fn download_with_reporter(
     // Create a client with the specified timeout
     let client = if let Some(duration) = timeout {
         crate::net_transport::http_client_builder()
+            .map_err(|_| "Failed to create HTTP client")?
             .timeout(duration)
             .build()
             .map_err(|_| "Failed to create HTTP client")?
     } else {
         crate::net_transport::http_client_builder()
+            .map_err(|_| "Failed to create HTTP client")?
             .build()
-            .unwrap_or_default()
+            .map_err(|_| "Failed to create HTTP client")?
     };
     let mut total_size: Option<u64> = None;
 
@@ -327,6 +329,18 @@ pub struct SiteMetadata {
     pub title: Option<String>,
     pub description: Option<String>,
     pub favicon: Option<String>,
+    /// Local path once `og_image` has been fetched and cached by the backend
+    /// (only attempted while Tor routing is enabled -- see
+    /// `message::fetch_msg_metadata`). `#[serde(default)]` so existing
+    /// stored previews (persisted as a JSON tag) without this field still
+    /// deserialize. `None` means "render `og_image` directly" to the
+    /// frontend, which is exactly what it already did before this field
+    /// existed.
+    #[serde(default)]
+    pub og_image_cached: Option<String>,
+    /// Same as `og_image_cached`, for `favicon`.
+    #[serde(default)]
+    pub favicon_cached: Option<String>,
 }
 
 /// Fetch metadata specifically for Twitter/X posts using their oEmbed API
@@ -339,6 +353,7 @@ async fn fetch_twitter_metadata(url: &str) -> Result<SiteMetadata, String> {
     let oembed_url = format!("https://publish.twitter.com/oembed?url={}", encoded_url);
 
     let client = crate::net_transport::http_client_builder()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
@@ -397,6 +412,8 @@ async fn fetch_twitter_metadata(url: &str) -> Result<SiteMetadata, String> {
         title: Some(format!("{} on X", author_name)),
         description: Some(format!("Post by {}", author_name)),
         favicon: Some("https://abs.twimg.com/favicons/twitter.3.ico".to_string()),
+        og_image_cached: None,
+        favicon_cached: None,
     };
 
     Ok(metadata)
@@ -428,9 +445,9 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
 
     let mut html_chunk = Vec::new();
 
-    let client = crate::net_transport::http_client_builder()
+    let client = crate::net_transport::http_client_builder()?
         .build()
-        .unwrap_or_default();
+        .map_err(|e| e.to_string())?;
     let mut response = client
         .get(url)
         .header("Range", "bytes=0-32768")
@@ -471,6 +488,8 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
         title: None,
         description: None,
         favicon: None,
+        og_image_cached: None,
+        favicon_cached: None,
     };
 
     // Process favicon links
@@ -608,6 +627,7 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
 pub async fn check_url_live(url: &str) -> Result<bool, &'static str> {
     // Create a client with a reasonable timeout for checking
     let client = crate::net_transport::http_client_builder()
+        .map_err(|_| "Failed to create HTTP client")?
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|_| "Failed to create HTTP client")?;
@@ -630,5 +650,36 @@ pub async fn check_url_live(url: &str) -> Result<bool, &'static str> {
                 Err(_) => Ok(false), // URL is not accessible
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `SiteMetadata` is persisted as a JSON tag on the message event (see
+    /// `db::save_link_preview_metadata`), so already-stored previews from
+    /// before `og_image_cached`/`favicon_cached` existed must still
+    /// deserialize -- `#[serde(default)]` on both fields is what makes that
+    /// hold; without it, an old blob would fail to deserialize entirely
+    /// (serde requires present fields by default, even for `Option<T>`).
+    #[test]
+    fn site_metadata_deserializes_old_json_missing_cached_fields() {
+        let old_json = r#"{
+            "domain": "example.com",
+            "og_title": "Example",
+            "og_description": null,
+            "og_image": "https://example.com/img.png",
+            "og_url": null,
+            "og_type": null,
+            "title": null,
+            "description": null,
+            "favicon": "https://example.com/favicon.ico"
+        }"#;
+        let metadata: SiteMetadata =
+            serde_json::from_str(old_json).expect("old preview JSON without cached fields must still parse");
+        assert_eq!(metadata.og_image_cached, None);
+        assert_eq!(metadata.favicon_cached, None);
+        assert_eq!(metadata.og_image.as_deref(), Some("https://example.com/img.png"));
     }
 }
