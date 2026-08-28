@@ -129,6 +129,7 @@ import { resetStickerPacksStore } from '../../stores/stickers';
 import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
 import { TYPING_INDICATORS_PREFIX } from '../../stores/typing-indicators';
 import { WEB_PREVIEWS_PREFIX } from '../../stores/web-previews';
+import { BIOMETRIC_UNLOCK_PREFIX } from '../../stores/biometric-unlock';
 import { backupVerified } from '../../stores/backup-verification';
 import {
   MLS_HISTORY_WELCOME_PREFIX,
@@ -173,6 +174,7 @@ const SCOPED_KEY_PREFIXES = [
   STARTUP_CHECK_PREFIX,
   TYPING_INDICATORS_PREFIX,
   WEB_PREVIEWS_PREFIX,
+  BIOMETRIC_UNLOCK_PREFIX,
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
   MUTINY_PROCESS_TX_PREFIX,

@@ -15,6 +15,9 @@ importers:
 
   .:
     dependencies:
+      '@choochmeque/tauri-plugin-biometry-api':
+        specifier: ^0.2.8
+        version: 0.2.8
       '@internationalized/date':
         specifier: ^3.12.3
         version: 3.12.3
@@ -349,6 +352,9 @@ packages:
   '@capsizecss/unpack@4.0.1':
     resolution: {integrity: sha512-CuNiSqg7+e1cO/GjffyMOm5Tt2jUF9CWHHnvQ/UkqvtkGfHdgwEC0wpmq7fkN3gxwpRnrAN0WzO3vREKmNolMQ==}
     engines: {node: '>=18'}
+
+  '@choochmeque/tauri-plugin-biometry-api@0.2.8':
+    resolution: {integrity: sha512-rPxbjUggKK7nTPOdIQQS5GMzCoToB3L5JHK5HZeA3HBDiSDP5uWK7mZ45i9Do/1lB07DRNSNGJZ1UMA2yhqkcQ==}
 
   '@clack/core@1.4.3':
     resolution: {integrity: sha512-/kr3UWNtdJfxZtPgDqUOmG2pvwlmcLGheex5yiZKdwbzZJxhV+HMNR9QNmyY5cGwTNV6LrR7Jtp+KjhUAP1qBQ==}
@@ -4382,6 +4388,10 @@ snapshots:
   '@capsizecss/unpack@4.0.1':
     dependencies:
       fontkitten: 1.0.3
+
+  '@choochmeque/tauri-plugin-biometry-api@0.2.8':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
 
   '@clack/core@1.4.3':
     dependencies:

@@ -192,3 +192,9 @@ source ~/.zshrc
 pnpm setup
 source ~/.zshrc
 ```
+
+### Touch ID unlock toggle never appears in Settings > Security
+
+Biometric-unlock storage (`tauri-plugin-biometry`'s `setData`/`getData`) uses a macOS Keychain API (`SecAccessControl` + `kSecUseDataProtectionKeychain`) that requires the app to be signed with a real Apple Developer Team ID. This project's macOS signing (`tauri.conf.json`'s `bundle.macOS.signingIdentity: "-"`) is ad-hoc-only — the same signing used for both local dev (`pnpm tauri dev`, `make dev-sandbox`) and the current CI release build (`.github/workflows/release.yaml` configures no Apple credentials). Ad-hoc signing never has a Team ID, so the app's own capability probe (`canPersistBiometricUnlockData` in `src/lib/api/biometry.ts`) always fails and the toggle stays hidden, everywhere, until this repo has a real Apple Developer ID Application certificate wired into signing (Apple Developer Program enrollment, then updating `bundle.macOS` and `release.yaml`).
+
+A failed probe fails silently and hides the toggle by design — it is not a build error to fix. Windows Hello is unaffected: its storage backend is WebAuthn/Windows Credential Manager, which has no such requirement.

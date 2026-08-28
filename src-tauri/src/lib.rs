@@ -7961,6 +7961,137 @@ async fn decrypt<R: Runtime>(
     Ok(res)
 }
 
+/// Export the current session's decryption key as lowercase hex, so the frontend can hand it
+/// to the OS biometric-gated secure storage (`setData`) during biometric-unlock enrollment.
+/// Requires an active unlocked session (a PIN unlock/create/import already ran in this process).
+/// This is no more sensitive than the existing `decrypt` command already handing the frontend
+/// the decrypted nsec itself post-unlock — the webview already holds plaintext secrets in memory
+/// at this point in the login flow.
+#[tauri::command]
+fn export_encryption_key_material() -> Result<String, String> {
+    let key = session::current_encryption_key().ok_or_else(|| "Not unlocked".to_string())?;
+    Ok(hex::encode(key))
+}
+
+/// Parse a 64-hex-char string into a 32-byte key. Pure/no I/O so it's unit-testable without an
+/// `AppHandle`.
+fn parse_biometric_key_hex(key_hex: &str) -> Result<[u8; 32], String> {
+    let bytes = hex::decode(key_hex.trim()).map_err(|_| "Invalid biometric key material".to_string())?;
+    bytes.try_into().map_err(|_| "Invalid biometric key material".to_string())
+}
+
+/// If a Nostr client is already loaded (idle auto-lock only clears the session key, not the
+/// client/`STATE` — see `SessionManager::clear`), reuse it instead of rebuilding, mirroring
+/// `login`'s already-loaded-client branch so a lock-screen biometric unlock doesn't wipe
+/// in-memory chat/profile state or bump `LOGIN_GENERATION` under a live session. Returns
+/// `Ok(None)` when no client is loaded yet, so the caller falls through to a cold-start unlock.
+async fn reuse_loaded_client_if_matching(keys: &Keys) -> Result<Option<LoginKeyPair>, String> {
+    let client = match get_nostr_client() {
+        Ok(c) => c,
+        Err(_) => return Ok(None),
+    };
+    let signer = client.signer().await.map_err(|e| e.to_string())?;
+    let prev_npub = signer
+        .get_public_key()
+        .await
+        .map_err(|e| e.to_string())?
+        .to_bech32()
+        .map_err(|e| e.to_string())?;
+    let new_npub = keys.public_key.to_bech32().map_err(|e| e.to_string())?;
+    if prev_npub != new_npub {
+        return Err("A different key is already loaded. Restart the app.".to_string());
+    }
+    let (evm_private_key, evm_address) =
+        evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
+            .map(|t| (Some(t.0), Some(t.1)))
+            .unwrap_or((None, None));
+    Ok(Some(LoginKeyPair {
+        public: prev_npub,
+        private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
+        evm_private_key,
+        evm_address,
+    }))
+}
+
+/// Unlock using key material recovered from OS biometric-gated storage (Touch ID / Windows
+/// Hello), instead of deriving the key from a typed PIN. `key_hex` is exactly what
+/// `export_encryption_key_material` produced at enrollment time.
+///
+/// The key is validated by decrypting the stored `pkey` *before* it is installed into the
+/// global session, so a bad/stale/corrupted stored blob never makes `check_session` briefly
+/// report `unlocked: true` for key material that doesn't actually decrypt anything. Once
+/// installed, the account's persisted idle-lock timeout is restored (mirrors the PIN-unlock
+/// paths in `migration.rs`) before an already-loaded client is reused or a fresh one is built.
+#[tauri::command]
+async fn unlock_with_biometric_key<R: Runtime>(
+    handle: AppHandle<R>,
+    key_hex: String,
+) -> Result<LoginKeyPair, String> {
+    let key = parse_biometric_key_hex(&key_hex)?;
+
+    let encrypted_pkey = match db::get_pkey(handle.clone()) {
+        Ok(Some(v)) if !v.is_empty() => v,
+        _ => return Err("No stored key found".to_string()),
+    };
+
+    let nsec = crypto::decrypt_with_key(&encrypted_pkey, &key)
+        .map_err(|()| "Biometric key material is no longer valid. Use your PIN.".to_string())?;
+
+    let keys = Keys::parse(&nsec).map_err(|_| "Invalid stored key".to_string())?;
+
+    session::set_encryption_key(key);
+    if let Ok(conn) = account_manager::get_db_connection(&handle) {
+        session::load_timeout_ms_from_conn(&conn);
+        account_manager::return_db_connection(conn);
+    }
+
+    match reuse_loaded_client_if_matching(&keys).await {
+        Ok(Some(pair)) => Ok(pair),
+        Ok(None) => complete_login_from_keys(keys).await,
+        Err(e) => {
+            session::clear_encryption_key();
+            Err(e)
+        }
+    }
+}
+
+#[cfg(test)]
+mod biometric_unlock_tests {
+    use super::parse_biometric_key_hex;
+
+    #[test]
+    fn parse_biometric_key_hex_round_trips_valid_key() {
+        let key = [0x42u8; 32];
+        let key_hex = hex::encode(key);
+        assert_eq!(parse_biometric_key_hex(&key_hex).unwrap(), key);
+    }
+
+    #[test]
+    fn parse_biometric_key_hex_trims_whitespace() {
+        let key = [0x07u8; 32];
+        let key_hex = format!("  {}\n", hex::encode(key));
+        assert_eq!(parse_biometric_key_hex(&key_hex).unwrap(), key);
+    }
+
+    #[test]
+    fn parse_biometric_key_hex_rejects_too_short() {
+        let short_hex = hex::encode([0u8; 16]);
+        assert!(parse_biometric_key_hex(&short_hex).is_err());
+    }
+
+    #[test]
+    fn parse_biometric_key_hex_rejects_too_long() {
+        let long_hex = hex::encode([0u8; 64]);
+        assert!(parse_biometric_key_hex(&long_hex).is_err());
+    }
+
+    #[test]
+    fn parse_biometric_key_hex_rejects_non_hex() {
+        let not_hex = "z".repeat(64);
+        assert!(parse_biometric_key_hex(&not_hex).is_err());
+    }
+}
+
 #[tauri::command]
 async fn start_recording() -> Result<(), String> {
     #[cfg(target_os = "android")]
@@ -10595,7 +10726,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_deep_link::init());
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_biometry::init());
 
     // MCP Bridge plugin for AI-assisted debugging (desktop debug builds only).
     // Loopback-only, on the branch-derived base port so parallel sandboxes do
@@ -11035,6 +11167,9 @@ pub fn run() {
             session::session_heartbeat,
             session::get_session_timeout,
             session::set_session_timeout,
+            // Biometric unlock commands
+            export_encryption_key_material,
+            unlock_with_biometric_key,
             // Image cache commands
             image_cache::get_or_cache_image,
             image_cache::clear_image_cache,

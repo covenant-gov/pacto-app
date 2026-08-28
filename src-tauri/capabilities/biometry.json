@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "biometry",
+  "description": "Biometric unlock (Touch ID / Windows Hello) for the returning-user PIN screen. Not granted on Linux: the plugin has no OS biometric API to wrap there.",
+  "windows": ["main"],
+  "platforms": ["macOS", "windows"],
+  "permissions": ["biometry:default"]
+}

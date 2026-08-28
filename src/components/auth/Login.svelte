@@ -5,9 +5,12 @@
   import WelcomeScreen from './WelcomeScreen.svelte';
   import KeyImport from './KeyImport.svelte';
   import PinInput from './PinInput.svelte';
+  import BiometricUnlockPrompt from './BiometricUnlockPrompt.svelte';
   import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError, checkSession, isAuthenticated, currentUser } from '../../stores/auth';
   import { appConfig } from '../../stores/app-config';
   import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
+  import { getCurrentAccount } from '../../lib/api/auth';
+  import { canOfferBiometricUnlock } from '../../stores/biometric-unlock';
 
   type AuthStep = 'checking' | 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
 
@@ -16,6 +19,9 @@
   let firstPin: string = $state('');
   let error: string | null = $state(null);
   let unlockInFlight = $state(false);
+  let biometricNpub: string | null = $state(null);
+  let biometricLabel: 'touchId' | 'windowsHello' | 'generic' = $state('generic');
+  let showBiometricPrompt = $state(false);
 
   let pinDigitCount = $derived($appConfig.pinDigitCount);
 
@@ -29,6 +35,19 @@
         isAuthenticated.set(true);
       }
       currentStep = status === 'needs-pin' ? 'pin-unlock' : 'welcome';
+
+      if (status === 'needs-pin') {
+        // Never block the PIN path on this probe; default to PIN on any failure.
+        try {
+          const npub = await getCurrentAccount();
+          const availability = await canOfferBiometricUnlock(npub);
+          biometricNpub = npub;
+          biometricLabel = availability.label;
+          showBiometricPrompt = availability.available;
+        } catch {
+          showBiometricPrompt = false;
+        }
+      }
     } catch {
       currentStep = 'welcome';
     }
@@ -185,14 +204,22 @@
     </div>
   {:else if currentStep === 'pin-unlock'}
     <div class="pin-screen">
-      <PinInput
-        title={$t('auth.pinEnterTitle')}
-        onComplete={handlePinUnlock}
-        onErrorClear={() => { error = null; clearAuthError(); }}
-        isProcessing={$authLoading}
-        {pinDigitCount}
-        {error}
-      />
+      {#if showBiometricPrompt && biometricNpub}
+        <BiometricUnlockPrompt
+          npub={biometricNpub}
+          label={biometricLabel}
+          onUsePinInstead={() => { showBiometricPrompt = false; error = null; clearAuthError(); }}
+        />
+      {:else}
+        <PinInput
+          title={$t('auth.pinEnterTitle')}
+          onComplete={handlePinUnlock}
+          onErrorClear={() => { error = null; clearAuthError(); }}
+          isProcessing={$authLoading}
+          {pinDigitCount}
+          {error}
+        />
+      {/if}
     </div>
   {/if}
 </div>

@@ -155,3 +155,19 @@ export async function exportEvmAccountKeyPlaintext(accountId: string): Promise<s
   return await invoke<string>('export_evm_account_key_plaintext', { accountId });
 }
 
+/**
+ * Export the current session's decryption key as hex, for biometric-unlock
+ * enrollment (`setData`). Only valid post-unlock.
+ */
+export async function exportEncryptionKeyMaterial(): Promise<string> {
+  return await invoke<string>('export_encryption_key_material');
+}
+
+/**
+ * Unlock using key material recovered from OS biometric storage instead of a
+ * typed PIN.
+ */
+export async function unlockWithBiometricKey(keyHex: string): Promise<LoginKeyPair> {
+  return await invoke<LoginKeyPair>('unlock_with_biometric_key', { keyHex });
+}
+
