@@ -29,11 +29,11 @@
     queueProfileSync,
     fetchMessages,
     markAsRead,
-    startTyping,
     setNickname,
     syncMlsGroupsNow,
     addParentTreasurySafe,
   } from '../lib/api/nostr';
+  import { notifyTyping } from '../lib/dm/typing-notifier';
   import { sendGifMessage } from '../lib/api/klipy';
   import { startDeleteDmChat } from '../lib/dm/delete-dm-chat';
   import { shouldApplyDmOpenLoad } from '../lib/dm/should-apply-dm-open-load';
@@ -785,16 +785,8 @@
     if (!ok) showToast($t('wallet.peerExchange.declineSendFailedToast'));
   }
 
-  let dmTypingTimeout: ReturnType<typeof setTimeout> | null = null;
-
   function handleDmTyping() {
-    const npub = $activeDmId;
-    if (!npub) return;
-    if (dmTypingTimeout) clearTimeout(dmTypingTimeout);
-    dmTypingTimeout = setTimeout(() => {
-      dmTypingTimeout = null;
-      startTyping(npub).catch(() => {});
-    }, 400);
+    notifyTyping($activeDmId);
   }
 
   async function handleDmSend(content: string, repliedTo?: string): Promise<boolean> {

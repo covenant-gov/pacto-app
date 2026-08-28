@@ -94,6 +94,9 @@
 	"settings.timeout30Minutes": "30 minutes",
 	"settings.timeout1Hour": "1 hour",
 	"settings.timeoutNever": "Never",
+	"settings.privacyTitle": "Privacy",
+	"settings.sendTypingIndicatorsLabel": "Send Typing Indicators",
+	"settings.sendTypingIndicatorsDescription": "When enabled, Pacto will notify your contacts when you are typing a message to them. Disable this if you prefer to type without others knowing you are composing a message.",
 
 	"settings.evmSettingsTitle": "EVM settings",
 	"settings.enabledChainsTitle": "Enabled chains",
