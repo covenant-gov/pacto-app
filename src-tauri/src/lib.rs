@@ -10826,6 +10826,7 @@ pub fn run() {
             db::set_sql_setting,
             db::remove_setting,
             net_transport::set_tor_routing_enabled,
+            net_transport::get_tor_status,
             profile::load_profile,
             profile::update_profile,
             profile::update_status,

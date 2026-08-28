@@ -61,9 +61,11 @@ onion-service-client enabled) with cache/state directories under
 server (`fast-socks5`) on an OS-assigned ephemeral port bound to
 `127.0.0.1`. Every accepted SOCKS connection is dialed through
 `TorClient::connect()` (`IntoTorAddr` for domains, `DangerouslyIntoTorAddr`
-for raw IPs) and relayed bidirectionally with `fast_socks5::server::transfer`.
-Both HTTP and Nostr relay traffic point at this one proxy — there is no
-per-caller Tor client, only one shared circuit pool.
+for raw IPs) and relayed bidirectionally with `tokio::io::copy_bidirectional`
+(what `fast_socks5::server::transfer` wraps internally; called directly so
+the byte counts it returns can feed the live status stats below). Both HTTP
+and Nostr relay traffic point at this one proxy — there is no per-caller Tor
+client, only one shared circuit pool.
 
 ---
 
@@ -144,6 +146,34 @@ If any step shows a direct connection to a relay, Blossom host, image/link
 preview host, or Klipy while the setting is on, that is a real bypass of the
 `net_transport` chokepoint — file it against whichever call site skipped
 `http_client_builder()` / `nostr_connection_mode()`.
+
+---
+
+## 5. Live status (nav-bar popover)
+
+Clicking the onion badge that appears in the top nav bar while routing is
+enabled opens a popover backed by the `get_tor_status` Tauri command
+(`net_transport::get_tor_status`, polled every 2s while the popover is
+open — see `TorStatusIndicator.svelte`). Arti's public API exposes no
+traffic or per-circuit latency counters, so the figures are self-measured:
+
+- **State** — `TorClient::bootstrap_status()`'s `ready_for_traffic()` /
+  `as_frac()` / `blocked()`. This can change after the initial bootstrap
+  (e.g. a network change), unlike `enabled`, which only reflects the
+  persisted preference.
+- **Active connections**, **bytes up/down** — tracked by `TorStats` in
+  `net_transport.rs`, updated from the SOCKS relay loop:
+  `tokio::io::copy_bidirectional`'s return value feeds the byte counters,
+  and a `TorConnectionGuard` (RAII, decrements on drop) tracks the open
+  count so an errored stream never leaks a phantom connection.
+- **Avg. connect latency** — a rolling average (last 20 samples) of how
+  long each `TorClient::connect()` call took, timed at the SOCKS relay's own
+  call site. This is a real connect-time measurement, not a synthetic ping
+  (Tor has no ICMP equivalent through the circuit).
+
+All counters reset (`TorStats::mark_enabled`) whenever routing transitions
+from disabled to enabled, so the popover always reads "since Tor was last
+turned on".
 
 ---
 

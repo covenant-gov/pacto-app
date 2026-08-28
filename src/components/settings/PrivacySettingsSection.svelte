@@ -2,12 +2,10 @@
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { getSqlSetting } from '../../lib/api/settings';
-  import { setTorRoutingEnabled } from '../../lib/api/tor';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
+  import { torRoutingEnabled, toggleTorRouting, TOR_SETTING_KEY } from '../../stores/tor';
+  import torIcon from '../../icons/tor.svg';
 
-  const TOR_SETTING_KEY = 'route_traffic_through_tor';
-
-  let enabled = $state(false);
   let loading = $state(true);
   let saving = $state(false);
   let error = $state<string | null>(null);
@@ -21,7 +19,7 @@
     error = null;
     try {
       const value = await getSqlSetting(TOR_SETTING_KEY);
-      enabled = value === 'true';
+      torRoutingEnabled.set(value === 'true');
     } catch (e) {
       error = getInvokeErrorMessage(e, $t('settings.routeTrafficThroughTorLoadError'));
     } finally {
@@ -29,21 +27,12 @@
     }
   }
 
-  /** Optimistically flips the toggle, reverting and surfacing an error if the backend rejects. */
   async function handleToggle(e: Event): Promise<void> {
     const next = (e.currentTarget as HTMLInputElement).checked;
-    const previous = enabled;
-    enabled = next;
     saving = true;
     error = null;
-    try {
-      await setTorRoutingEnabled(next);
-    } catch (err) {
-      enabled = previous;
-      error = getInvokeErrorMessage(err, $t('settings.routeTrafficThroughTorSaveError'));
-    } finally {
-      saving = false;
-    }
+    error = await toggleTorRouting(next, $t('settings.routeTrafficThroughTorSaveError'));
+    saving = false;
   }
 </script>
 
@@ -51,7 +40,7 @@
   <h3 id="privacy-heading" class="theme-subheading">{$t('settings.privacyTitle')}</h3>
 
   <label class="tor-toggle">
-    <input type="checkbox" checked={enabled} disabled={loading || saving} onchange={handleToggle} />
+    <input type="checkbox" checked={$torRoutingEnabled} disabled={loading || saving} onchange={handleToggle} />
     <span>{$t('settings.routeTrafficThroughTorLabel')}</span>
   </label>
 
@@ -59,7 +48,10 @@
     <p class="tor-status">{$t('settings.routeTrafficThroughTorConnecting')}</p>
   {/if}
 
-  <p class="tor-description">{$t('settings.routeTrafficThroughTorDescription')}</p>
+  <p class="tor-description">
+    <img class="tor-logo" src={torIcon} alt="" />
+    {$t('settings.routeTrafficThroughTorDescription')}
+  </p>
   <p class="tor-disclaimer">{$t('settings.routeTrafficThroughTorDisclaimer')}</p>
 
   {#if error}
@@ -107,9 +99,19 @@
   }
 
   .tor-description {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
     margin: 0;
     color: var(--text-secondary);
     font-size: 0.875rem;
+  }
+
+  .tor-logo {
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    flex-shrink: 0;
   }
 
   .tor-disclaimer {
