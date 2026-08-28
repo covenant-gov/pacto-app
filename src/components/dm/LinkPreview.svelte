@@ -2,6 +2,7 @@
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { t } from 'svelte-i18n';
   import type { PreviewMetadata } from '../../stores/dm';
+  import { cachedOrRemoteImageSrc } from '../../lib/utils/profile';
 
   interface Props {
     metadata?: PreviewMetadata | null;
@@ -11,16 +12,9 @@
 
   let displayTitle = $derived(metadata?.og_title || metadata?.title || '');
   let displayDescription = $derived(metadata?.og_description || metadata?.description || '');
-  function isHttpUrl(url: string | null | undefined): boolean {
-    try {
-      const parsed = new URL(url ?? '');
-      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-    } catch {
-      return false;
-    }
-  }
 
-  let displayImage = $derived(isHttpUrl(metadata?.og_image) ? (metadata?.og_image ?? '') : '');
+  let displayImage = $derived(cachedOrRemoteImageSrc(metadata?.og_image, metadata?.og_image_cached) ?? '');
+  let displayFavicon = $derived(cachedOrRemoteImageSrc(metadata?.favicon, metadata?.favicon_cached) ?? '');
   let linkUrl = $derived(metadata?.og_url || metadata?.domain || '');
   let displayDomain = $derived((metadata?.domain ?? '').replace(/^https?:\/\//, '').replace(/\/$/, ''));
   let hasContent = $derived(Boolean(displayTitle || displayDescription || displayImage));
@@ -56,8 +50,8 @@
     {/if}
     <div class="link-preview-body">
       <div class="link-preview-domain">
-        {#if metadata?.favicon && isHttpUrl(metadata.favicon) && !faviconError}
-          <img class="link-preview-favicon" src={metadata.favicon} alt="" onerror={() => (faviconError = true)} />
+        {#if displayFavicon && !faviconError}
+          <img class="link-preview-favicon" src={displayFavicon} alt="" onerror={() => (faviconError = true)} />
         {/if}
         <span>{displayDomain}</span>
       </div>

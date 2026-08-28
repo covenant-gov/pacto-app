@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { getProfileDisplayName, getProfileAvatarSrc, getProfileBannerSrc } from './profile';
+import { getProfileDisplayName, getProfileAvatarSrc, getProfileBannerSrc, cachedOrRemoteImageSrc } from './profile';
+import { torRoutingEnabled } from '../../stores/tor';
 import type { NostrProfile } from '../api/nostr';
 
 vi.mock('@tauri-apps/api/core');
@@ -13,6 +14,7 @@ beforeEach(() => {
   vi.stubGlobal('window', {
     __TAURI__: undefined,
   });
+  torRoutingEnabled.set(false);
 });
 
 function makeProfile(overrides?: Partial<NostrProfile>): NostrProfile {
@@ -90,6 +92,23 @@ describe('getProfileAvatarSrc', () => {
     const profile = makeProfile({ avatar: '/path/to/avatar.png' });
     expect(getProfileAvatarSrc(profile)).toBeNull();
   });
+
+  it('when Tor is enabled, never returns the remote URL even if no cached path exists yet', () => {
+    torRoutingEnabled.set(true);
+    const profile = makeProfile({ avatar: 'https://example.com/avatar.png' });
+    expect(getProfileAvatarSrc(profile)).toBeNull();
+  });
+
+  it('when Tor is enabled, uses the cached path in Tauri instead of the remote URL', () => {
+    torRoutingEnabled.set(true);
+    vi.stubGlobal('window', { __TAURI__: {} });
+    const profile = makeProfile({
+      avatar: 'https://example.com/avatar.png',
+      avatar_cached: '/cached/avatar.png',
+    });
+    expect(getProfileAvatarSrc(profile)).toBe('asset:///cached/avatar.png');
+    expect(mockedConvertFileSrc).toHaveBeenCalledWith('/cached/avatar.png');
+  });
 });
 
 describe('getProfileBannerSrc', () => {
@@ -111,5 +130,42 @@ describe('getProfileBannerSrc', () => {
     const profile = makeProfile({ banner_cached: '/cached/banner.png' });
     expect(getProfileBannerSrc(profile)).toBe('asset:///cached/banner.png');
     expect(mockedConvertFileSrc).toHaveBeenCalledWith('/cached/banner.png');
+  });
+
+  it('when Tor is enabled, never returns the remote URL even if no cached path exists yet', () => {
+    torRoutingEnabled.set(true);
+    const profile = makeProfile({ banner: 'https://example.com/banner.png' });
+    expect(getProfileBannerSrc(profile)).toBeNull();
+  });
+});
+
+describe('cachedOrRemoteImageSrc', () => {
+  it('prefers the remote URL over a cached path when Tor is disabled', () => {
+    vi.stubGlobal('window', { __TAURI__: {} });
+    expect(cachedOrRemoteImageSrc('https://example.com/img.png', '/cached/img.png')).toBe(
+      'https://example.com/img.png'
+    );
+  });
+
+  it('falls back to the cached path when there is no http(s) remote URL', () => {
+    vi.stubGlobal('window', { __TAURI__: {} });
+    expect(cachedOrRemoteImageSrc(null, '/cached/img.png')).toBe('asset:///cached/img.png');
+  });
+
+  it('returns null when neither a remote URL nor a cached path is available', () => {
+    expect(cachedOrRemoteImageSrc(null, null)).toBeNull();
+  });
+
+  it('never returns the remote URL while Tor routing is enabled, even without a cached path', () => {
+    torRoutingEnabled.set(true);
+    expect(cachedOrRemoteImageSrc('https://example.com/img.png', null)).toBeNull();
+  });
+
+  it('returns the cached path while Tor routing is enabled, ignoring the remote URL', () => {
+    torRoutingEnabled.set(true);
+    vi.stubGlobal('window', { __TAURI__: {} });
+    expect(cachedOrRemoteImageSrc('https://example.com/img.png', '/cached/img.png')).toBe(
+      'asset:///cached/img.png'
+    );
   });
 });

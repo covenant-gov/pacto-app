@@ -18,6 +18,7 @@
   } from '../../stores/app';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
   import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
+  import TorStatusIndicator from './TorStatusIndicator.svelte';
 
   const tabs: TopNavTab[] = ['commons', 'dms', 'squads', 'catchup'];
 
@@ -75,6 +76,7 @@
       </button>
     {/each}
   </div>
+  <TorStatusIndicator />
 </div>
 
 <style>
@@ -82,6 +84,7 @@
     height: 48px;
     min-height: 48px;
     width: 100%;
+    box-sizing: border-box;
     background-color: var(--bg-elevated);
     border-bottom: 1px solid var(--border-subtle);
     display: flex;

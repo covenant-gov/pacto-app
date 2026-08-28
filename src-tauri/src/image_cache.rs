@@ -39,15 +39,17 @@ static DOWNLOADS_IN_PROGRESS: Lazy<Mutex<HashSet<String>>> =
 /// Maximum entries in DOWNLOADS_IN_PROGRESS before forced cleanup
 const MAX_IN_PROGRESS_ENTRIES: usize = 100;
 
-/// HTTP client for downloading images
-static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-    reqwest::Client::builder()
+/// Builds an HTTP client for downloading images. Built fresh per call
+/// (instead of a cached static) so a Tor routing toggle takes effect on the
+/// next download rather than requiring a restart -- see net_transport.rs.
+fn http_client() -> Result<reqwest::Client, String> {
+    crate::net_transport::http_client_builder()?
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
         .user_agent("Vector/1.0")
         .build()
-        .expect("Failed to create HTTP client")
-});
+        .map_err(|e| format!("Failed to create HTTP client: {e}"))
+}
 
 /// Supported image types for validation
 const VALID_IMAGE_SIGNATURES: &[(&[u8], &str)] = &[
@@ -72,6 +74,9 @@ pub enum ImageType {
     Banner,
     /// Inline images from URLs posted in chat messages
     InlineImage,
+    /// A link preview's `og:image` or favicon, cached only while Tor routing
+    /// is enabled -- see `message::fetch_msg_metadata`.
+    LinkPreview,
 }
 
 impl ImageType {
@@ -81,6 +86,7 @@ impl ImageType {
             ImageType::Avatar => "avatars",
             ImageType::Banner => "banners",
             ImageType::InlineImage => "inline_images",
+            ImageType::LinkPreview => "link_preview_images",
         }
     }
 }
@@ -317,7 +323,14 @@ pub async fn cache_image<R: Runtime>(
     // Download the image
     debug!("[ImageCache] Downloading {} for {:?}", url, image_type);
 
-    let response = match HTTP_CLIENT.get(url).send().await {
+    let client = match http_client() {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("[ImageCache] Failed to build HTTP client for {}: {}", url, e);
+            return CacheResult::Failed(e);
+        }
+    };
+    let response = match client.get(url).send().await {
         Ok(resp) => resp,
         Err(e) => {
             warn!("[ImageCache] Failed to download {}: {}", url, e);

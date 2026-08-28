@@ -26,6 +26,7 @@ import {
   tryCompletePendingApprovedJoins,
 } from '../lib/squad/join-request-finalize';
 import { loadBackupVerified } from './backup-verification';
+import { loadTorRoutingEnabled } from './tor';
 import {
   SQUAD_DASHBOARD_MODE_PREFIX,
   parseSquadDashboardChannelMode,
@@ -72,6 +73,7 @@ export {
 export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
   void loadBackupVerified();
+  void loadTorRoutingEnabled();
   loadMlsHistoryWelcome(npub);
   loadPendingSquadAdmissions(npub);
   loadPendingWelcomeFinalizations(npub);

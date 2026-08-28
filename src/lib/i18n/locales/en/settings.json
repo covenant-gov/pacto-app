@@ -140,5 +140,16 @@
 	"settings.toast.relayNotFound": "Relay not found.",
 	"settings.toast.couldNotRemoveRelay": "Could not remove relay.",
 	"settings.toast.personalRpcAdded": "Personal RPC added.",
-	"settings.toast.personalRpcRemoved": "Personal RPC removed."
+	"settings.toast.personalRpcRemoved": "Personal RPC removed.",
+
+	"settings.privacyTitle": "Privacy",
+	"settings.routeTrafficThroughTorLabel": "Route Traffic Through Tor",
+	"settings.routeTrafficThroughTorDescription": "When enabled, Pacto routes outbound backend traffic (Nostr relay connections, Blossom uploads and downloads, GIF search, wallet RPC calls, profile pictures, and link previews) through the Tor network using an embedded Arti client, hiding your IP address from those servers at the cost of slower connections (Tor circuits add latency). Newly-seen images may take a moment to appear while they are fetched through Tor and cached locally.",
+	"settings.routeTrafficThroughTorDisclaimer": "Tor and the Tor logo are trademarks of The Tor Project; all rights reserved. More information at torproject.org. Pacto is not endorsed or sponsored by, or affiliated with, The Tor Project.",
+	"settings.routeTrafficThroughTorConnecting": "Connecting via Tor…",
+	"settings.routeTrafficThroughTorDisconnecting": "Disconnecting from Tor…",
+	"settings.routeTrafficThroughTorUnavailable": "Tor routing is not available on this build.",
+	"settings.routeTrafficThroughTorStartupWarning": "Tor could not start automatically:",
+	"settings.routeTrafficThroughTorLoadError": "Could not load the Tor routing setting.",
+	"settings.routeTrafficThroughTorSaveError": "Could not apply the Tor routing setting."
 }

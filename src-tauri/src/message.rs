@@ -10,6 +10,7 @@ use tokio::sync::Mutex as TokioMutex;
 use crate::crypto;
 use crate::db::{self, save_chat};
 use crate::get_nostr_client;
+use crate::image_cache::{self, CacheResult, ImageType};
 use crate::net;
 use crate::nostr_tags;
 use crate::util::{self, calculate_file_hash};
@@ -3602,6 +3603,7 @@ pub async fn fetch_msg_metadata(chat_id: String, msg_id: String) -> bool {
     for url in urls.into_iter().take(MAX_URLS_TO_TRY) {
         match net::fetch_site_metadata(&url).await {
             Ok(metadata) => {
+                let mut metadata = metadata;
                 let has_content = metadata.og_title.is_some()
                     || metadata.og_description.is_some()
                     || metadata.og_image.is_some()
@@ -3610,6 +3612,38 @@ pub async fn fetch_msg_metadata(chat_id: String, msg_id: String) -> bool {
 
                 // Extracted metadata!
                 if has_content {
+                    let handle = TAURI_APP.get().unwrap();
+
+                    // Cache the preview image/favicon through the backend's
+                    // Tor-aware client only while Tor routing is enabled --
+                    // rendering the raw remote URL as `<img src>` fetches it
+                    // through the webview's own network stack, bypassing the
+                    // SOCKS proxy entirely. When Tor is off this is skipped
+                    // so link previews keep working exactly as before (the
+                    // webview fetches the remote URL directly).
+                    if crate::net_transport::is_enabled() {
+                        if let Some(img_url) = metadata.og_image.clone() {
+                            if let CacheResult::Cached(path) | CacheResult::AlreadyCached(path) =
+                                image_cache::cache_image(handle, &img_url, ImageType::LinkPreview)
+                                    .await
+                            {
+                                metadata.og_image_cached = Some(path);
+                            }
+                        }
+                        if let Some(favicon_url) = metadata.favicon.clone() {
+                            if let CacheResult::Cached(path) | CacheResult::AlreadyCached(path) =
+                                image_cache::cache_image(
+                                    handle,
+                                    &favicon_url,
+                                    ImageType::LinkPreview,
+                                )
+                                .await
+                            {
+                                metadata.favicon_cached = Some(path);
+                            }
+                        }
+                    }
+
                     // Re-fetch the message and add our metadata
                     let mut state = STATE.lock().await;
                     let msg = state
@@ -3621,7 +3655,6 @@ pub async fn fetch_msg_metadata(chat_id: String, msg_id: String) -> bool {
                     msg.preview_metadata = Some(metadata);
 
                     // Update the renderer
-                    let handle = TAURI_APP.get().unwrap();
                     handle
                         .emit(
                             "message_update",

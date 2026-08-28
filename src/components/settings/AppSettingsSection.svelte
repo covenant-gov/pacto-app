@@ -13,6 +13,7 @@
   } from '../../lib/updater/update-check';
   import UpdateAvailablePanel from '../updater/UpdateAvailablePanel.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
+  import PrivacySettingsSection from './PrivacySettingsSection.svelte';
   import { getSessionTimeout, setSessionTimeout } from '../../lib/api/auth';
   import { locale, setLocale, LOCALE_OPTIONS } from '../../stores/locale';
 
@@ -235,6 +236,10 @@
         <p class="timeout-status" class:timeout-status--error={savedTimeoutMessage === tFn('settings.timeoutFailedToSave')}>{savedTimeoutMessage}</p>
       {/if}
     </div>
+
+    <hr class="app-settings-divider" />
+
+    <PrivacySettingsSection />
   </div>
 </SettingsCollapsibleSection>
 
