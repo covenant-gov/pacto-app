@@ -7,11 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Use an eye-off icon for the commons hide action instead of an x
+- Statically link liblzma to stop macos startup crash
+- Report tor traffic live instead of only at connection close (privacy)
+- Gate whisper import behind feature flag in cmds/storage and cmds/voice
+
+
+### Documentation
+- Research concord protocol migration feasibility
+
+
+### Features
+- Hide commons broadcasts and default categories the user is not interested in
+
+
+### Refactor
+- Split tauri commands out of lib.rs into domain modules
+
+
+### Testing
+- Cover progressive byte reporting in copy_and_count (privacy)
+
+## v0.7.1
+
+### Bug Fixes
 - Sandbox cargo-test profile writes to a disposable temp dir (#348)
 - Create new squad sticker packs instead of failing with pack_id is empty (#349)
 - Consent-first mls acceptance (#346)
 - Parallelize rust ci tests with cargo-nextest, report timing (#350)
 - Close Tor routing leaks, cover avatars and link previews (privacy)
+
+
+### Chores
+- Bump version to 0.7.1 (release)
 
 
 ### Documentation
