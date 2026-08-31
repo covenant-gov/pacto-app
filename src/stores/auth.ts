@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import { invoke } from '@tauri-apps/api/core';
-import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount, checkSession as apiCheckSession, sessionHeartbeat as apiSessionHeartbeat } from '../lib/api/auth';
+import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount, checkSession as apiCheckSession, sessionHeartbeat as apiSessionHeartbeat, unlockWithBiometricKey } from '../lib/api/auth';
 import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validateRecoveryPhraseForImport } from '../lib/api/encryption';
 import { dmLog } from '../lib/utils/dm-debug';
 import { runPostLoginNetworkSync } from '../lib/app/post-login-sync';
@@ -9,8 +10,10 @@ import { closeWalletSidebar } from './dm';
 import { loadAccountState } from './persistence';
 import { markBackupVerified, loadBackupVerified } from './backup-verification';
 import { clearAccountState } from '../lib/utils/clear-account-state';
-import { isMigrationGateError } from '../lib/utils/tauri-errors';
+import { isMigrationGateError, getInvokeErrorMessage } from '../lib/utils/tauri-errors';
 import { awaitGateBeforeAuth, freezeGate } from '../lib/updater/update-gate';
+import { getBiometricUnlockData, removeBiometricUnlockData } from '../lib/api/biometry';
+import { biometricUnlockEnabled } from './biometric-unlock';
 
 async function maybeApplyLocalDevDefaults(npub: string): Promise<void> {
   if (!import.meta.env.DEV) return;
@@ -355,6 +358,43 @@ export async function unlockWithPin(pin: string): Promise<void> {
   } catch (error: unknown) {
     console.error('Unlock failed:', error);
     authError.set(error instanceof Error ? error.message : 'Incorrect PIN or failed to decrypt');
+    throw error;
+  } finally {
+    authLoading.set(false);
+  }
+}
+
+/**
+ * Unlock account using key material recovered from OS biometric storage
+ * (Touch ID / Windows Hello) instead of a typed PIN.
+ * @param npub - the account to unlock; used to look up the stored key material
+ */
+export async function unlockWithBiometrics(npub: string): Promise<void> {
+  authLoading.set(true);
+  authError.set(null);
+
+  try {
+    if ((await awaitGateBeforeAuth()) === 'blocked') return;
+
+    const reason = get(t)('auth.biometricUnlockPromptReason');
+    const keyHex = await getBiometricUnlockData(npub, reason);
+    const keys = await unlockWithBiometricKey(keyHex).catch((error: unknown) => {
+      // Only a rejection here proves the backend-validated key no longer decrypts
+      // (stale/corrupted stored blob): revoke so the user re-enrolls after a PIN
+      // unlock. A cancelled or unavailable OS prompt above leaves a valid
+      // enrollment untouched so the user can simply retry.
+      void removeBiometricUnlockData(npub).catch(() => {});
+      biometricUnlockEnabled.set(false);
+      throw error;
+    });
+    const unlockedNpub = await getCurrentAccount();
+
+    await completePostLoginSession(unlockedNpub, keys.public);
+
+    dmLog('unlockWithBiometrics: done');
+  } catch (error: unknown) {
+    console.error('Biometric unlock failed:', error);
+    authError.set(getInvokeErrorMessage(error, 'Biometric unlock failed'));
     throw error;
   } finally {
     authLoading.set(false);

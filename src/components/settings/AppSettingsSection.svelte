@@ -15,6 +15,9 @@
   import PrivacySettingsSection from './PrivacySettingsSection.svelte';
   import { getSessionTimeout, setSessionTimeout } from '../../lib/api/auth';
   import { locale, setLocale, LOCALE_OPTIONS } from '../../stores/locale';
+  import { currentUser } from '../../stores/auth';
+  import { biometricUnlockEnabled, enrollBiometricUnlock, disableBiometricUnlock } from '../../stores/biometric-unlock';
+  import { getBiometricStatus, hasBiometricUnlockData, biometryLabel, isKeychainUnavailableError, canPersistBiometricUnlockData, type BiometryLabel } from '../../lib/api/biometry';
 
   const tFn = get(t);
 
@@ -68,11 +71,30 @@
   let savingTimeout = $state(false);
   let savedTimeoutMessage: string | null = $state(null);
 
+  let biometricAvailable = $state(false);
+  let biometricLabelKind: BiometryLabel = $state('generic');
+  let biometricBusy = $state(false);
+  let biometricToggleError: string | null = $state(null);
+
   onMount(async () => {
     try {
       selectedTimeout = await getSessionTimeout();
     } catch (error) {
       console.error('Failed to load session timeout:', error);
+    }
+
+    const npub = get(currentUser)?.npub;
+    if (npub) {
+      const status = await getBiometricStatus();
+      biometricLabelKind = biometryLabel(status.biometryType);
+      // Windows Hello's setData always shows an interactive prompt, so the capability probe
+      // below only ever runs for Touch ID, where setData is silent. See canPersistBiometricUnlockData.
+      const storageUsable =
+        biometricLabelKind !== 'touchId' || (await canPersistBiometricUnlockData());
+      biometricAvailable = status.isAvailable && storageUsable;
+      if (biometricAvailable) {
+        biometricUnlockEnabled.set(await hasBiometricUnlockData(npub));
+      }
     }
   });
 
@@ -92,6 +114,29 @@
       savedTimeoutMessage = tFn('settings.timeoutFailedToSave');
     } finally {
       savingTimeout = false;
+    }
+  }
+
+  async function handleToggleBiometricUnlock(checked: boolean): Promise<void> {
+    const npub = get(currentUser)?.npub;
+    if (!npub || biometricBusy) return;
+    biometricBusy = true;
+    biometricToggleError = null;
+    try {
+      if (checked) {
+        await enrollBiometricUnlock(npub);
+      } else {
+        await disableBiometricUnlock(npub);
+      }
+    } catch (error) {
+      console.error(`Failed to ${checked ? 'enable' : 'disable'} biometric unlock:`, error);
+      biometricToggleError = isKeychainUnavailableError(error)
+        ? tFn('settings.biometricUnlockKeychainUnavailable')
+        : checked
+          ? tFn('settings.biometricUnlockEnableFailed')
+          : tFn('settings.biometricUnlockDisableFailed');
+    } finally {
+      biometricBusy = false;
     }
   }
 
@@ -212,6 +257,41 @@
       </div>
       {#if savedTimeoutMessage}
         <p class="timeout-status" class:timeout-status--error={savedTimeoutMessage === tFn('settings.timeoutFailedToSave')}>{savedTimeoutMessage}</p>
+      {/if}
+
+      {#if biometricAvailable}
+        <label class="startup-check-toggle">
+          <input
+            type="checkbox"
+            checked={$biometricUnlockEnabled}
+            disabled={biometricBusy}
+            onchange={(e) => {
+              const inputEl = e.currentTarget as HTMLInputElement;
+              const desired = inputEl.checked;
+              void handleToggleBiometricUnlock(desired).then(() => {
+                // handleToggleBiometricUnlock never rethrows; re-sync the checkbox to the
+                // actual store value so a failed enroll/disable doesn't leave the DOM
+                // claiming a state that was never reached.
+                inputEl.checked = get(biometricUnlockEnabled);
+              });
+            }}
+          />
+          <span>
+            {biometricLabelKind === 'touchId'
+              ? $t('settings.biometricUnlockTouchId')
+              : biometricLabelKind === 'windowsHello'
+                ? $t('settings.biometricUnlockWindowsHello')
+                : $t('settings.biometricUnlockGeneric')}
+          </span>
+        </label>
+        {#if biometricBusy}
+          <p class="timeout-status">
+            {$biometricUnlockEnabled ? $t('settings.biometricUnlockDisabling') : $t('settings.biometricUnlockEnabling')}
+          </p>
+        {/if}
+        {#if biometricToggleError}
+          <p class="timeout-status timeout-status--error">{biometricToggleError}</p>
+        {/if}
       {/if}
     </div>
 

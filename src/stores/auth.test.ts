@@ -11,6 +11,7 @@ import {
   createAccount,
   importAccount,
   unlockWithPin,
+  unlockWithBiometrics,
   logout,
   clearAuthError,
   checkSession,
@@ -30,6 +31,7 @@ import {
   getCurrentAccount,
   checkSession as apiCheckSession,
   sessionHeartbeat as apiSessionHeartbeat,
+  unlockWithBiometricKey,
 } from '../lib/api/auth';
 import {
   hasStoredKey,
@@ -48,6 +50,8 @@ import {
   backupVerificationModalOpen,
 } from './backup-verification';
 import { awaitGateBeforeAuth, freezeGate } from '../lib/updater/update-gate';
+import { getBiometricUnlockData, removeBiometricUnlockData } from '../lib/api/biometry';
+import { biometricUnlockEnabled } from './biometric-unlock';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -67,6 +71,12 @@ vi.mock('../lib/api/auth', () => ({
   getCurrentAccount: vi.fn(),
   checkSession: vi.fn(),
   sessionHeartbeat: vi.fn(),
+  unlockWithBiometricKey: vi.fn(),
+}));
+
+vi.mock('../lib/api/biometry', () => ({
+  getBiometricUnlockData: vi.fn(),
+  removeBiometricUnlockData: vi.fn(),
 }));
 
 vi.mock('../lib/api/encryption', () => ({
@@ -124,6 +134,10 @@ describe('auth', () => {
     vi.mocked(invoke).mockReset();
     vi.mocked(awaitGateBeforeAuth).mockReset().mockResolvedValue('clear');
     vi.mocked(freezeGate).mockReset();
+    vi.mocked(unlockWithBiometricKey).mockReset();
+    vi.mocked(getBiometricUnlockData).mockReset();
+    vi.mocked(removeBiometricUnlockData).mockReset();
+    biometricUnlockEnabled.set(false);
     backupVerified.set(null);
     backupVerificationModalOpen.set(false);
   });
@@ -429,6 +443,84 @@ describe('auth', () => {
       expect(loadAndDecryptKey).not.toHaveBeenCalled();
       expect(login).not.toHaveBeenCalled();
       expect(runPostLoginNetworkSync).not.toHaveBeenCalled();
+      expect(freezeGate).not.toHaveBeenCalled();
+      expect(get(authLoading)).toBe(false);
+    });
+  });
+
+  describe('unlockWithBiometrics', () => {
+    it('unlocks an existing account via biometric key material', async () => {
+      vi.mocked(getBiometricUnlockData).mockResolvedValue('deadbeef');
+      vi.mocked(unlockWithBiometricKey).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      await unlockWithBiometrics(npub);
+
+      expect(getBiometricUnlockData).toHaveBeenCalledWith(npub, 'Unlock Pacto');
+      expect(unlockWithBiometricKey).toHaveBeenCalledWith('deadbeef');
+      expect(get(isAuthenticated)).toBe(true);
+      expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
+      expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
+      expect(freezeGate).toHaveBeenCalledTimes(1);
+    });
+
+    it('on a stale-key rejection from the backend, revokes the enrollment, sets auth error, and rethrows', async () => {
+      biometricUnlockEnabled.set(true);
+      vi.mocked(getBiometricUnlockData).mockResolvedValue('deadbeef');
+      // Tauri rejects `invoke` with the deserialized `Err` payload -- a plain string, not an
+      // `Error` instance, matching the actual backend rejection shape for this command.
+      vi.mocked(unlockWithBiometricKey).mockRejectedValue(
+        'Biometric key material is no longer valid. Use your PIN.'
+      );
+      vi.mocked(removeBiometricUnlockData).mockResolvedValue(undefined);
+
+      await expect(unlockWithBiometrics(npub)).rejects.toBe(
+        'Biometric key material is no longer valid. Use your PIN.'
+      );
+
+      expect(get(authError)).toBe('Biometric key material is no longer valid. Use your PIN.');
+      expect(get(isAuthenticated)).toBe(false);
+      await Promise.resolve();
+      expect(removeBiometricUnlockData).toHaveBeenCalledWith(npub);
+      expect(get(biometricUnlockEnabled)).toBe(false);
+    });
+
+    it('on a cancelled OS prompt, leaves a valid enrollment intact', async () => {
+      biometricUnlockEnabled.set(true);
+      vi.mocked(getBiometricUnlockData).mockRejectedValue('[userCancel] - user cancelled');
+
+      await expect(unlockWithBiometrics(npub)).rejects.toBe('[userCancel] - user cancelled');
+
+      expect(get(authError)).toBe('[userCancel] - user cancelled');
+      expect(get(isAuthenticated)).toBe(false);
+      expect(unlockWithBiometricKey).not.toHaveBeenCalled();
+      expect(removeBiometricUnlockData).not.toHaveBeenCalled();
+      expect(get(biometricUnlockEnabled)).toBe(true);
+    });
+
+    it('when getCurrentAccount rejects after a valid key unlock, leaves the enrollment intact', async () => {
+      biometricUnlockEnabled.set(true);
+      vi.mocked(getBiometricUnlockData).mockResolvedValue('deadbeef');
+      vi.mocked(unlockWithBiometricKey).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockRejectedValue('backend unavailable');
+
+      await expect(unlockWithBiometrics(npub)).rejects.toBe('backend unavailable');
+
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+      expect(removeBiometricUnlockData).not.toHaveBeenCalled();
+      expect(get(biometricUnlockEnabled)).toBe(true);
+    });
+
+    it('does not authenticate and issues no backend call when the gate is blocked', async () => {
+      vi.mocked(awaitGateBeforeAuth).mockResolvedValue('blocked');
+
+      await unlockWithBiometrics(npub);
+
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+      expect(getBiometricUnlockData).not.toHaveBeenCalled();
+      expect(unlockWithBiometricKey).not.toHaveBeenCalled();
       expect(freezeGate).not.toHaveBeenCalled();
       expect(get(authLoading)).toBe(false);
     });

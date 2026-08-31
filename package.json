@@ -29,6 +29,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@choochmeque/tauri-plugin-biometry-api": "^0.2.8",
     "@internationalized/date": "^3.12.3",
     "@lucide/svelte": "^1.31.0",
     "@tauri-apps/api": "^2.11.1",

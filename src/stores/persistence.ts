@@ -62,6 +62,7 @@ import { hydrateLocale } from './locale';
 import { loadStartupCheckPreference } from './startup-check';
 import { loadSendTypingIndicatorsPreference } from './typing-indicators';
 import { loadWebPreviewsPreference } from './web-previews';
+import { loadBiometricUnlockPreference } from './biometric-unlock';
 import { loadMlsHistoryWelcome } from './mls-history-welcome';
 
 export {
@@ -172,6 +173,7 @@ export function loadAccountState(npub: string): void {
   loadStartupCheckPreference(npub);
   loadSendTypingIndicatorsPreference(npub);
   loadWebPreviewsPreference(npub);
+  loadBiometricUnlockPreference(npub);
   loadDeferredSquadRosterKeyParentIds();
   hydrateWalletSummaryCacheFromDisk(npub);
   hydrateTreasurySafesCacheFromDisk(npub);
