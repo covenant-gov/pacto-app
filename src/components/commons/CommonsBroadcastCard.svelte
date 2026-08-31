@@ -9,8 +9,10 @@
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
   import { computeBroadcastPresentation } from '../../lib/commons/broadcast-presentation';
   import { commonsJoinRequestRevision } from '../../lib/commons/commons-join-request';
+  import { hideCommonsBroadcast } from '../../lib/commons/commons-hidden';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
+  import HideIconButton from '../ui/HideIconButton.svelte';
   import {
     COMMONS_MESSAGE_PREVIEW_MAX,
     isCommonsMessageTruncated,
@@ -103,6 +105,12 @@
     actionError = '';
     showToast(tFn('commons.card.joinToast', { values: { squadLabel } }));
   }
+
+  function handleHide(e: MouseEvent) {
+    e.stopPropagation();
+    hideCommonsBroadcast({ eventId: broadcast.eventId, title, subtitle, tags: broadcast.tags });
+    showToast(tFn('commons.card.hideToast'));
+  }
 </script>
 
 <div
@@ -123,6 +131,13 @@
     {:else}
       <span class="commons-tile-initial" aria-hidden="true">{(title || '?').charAt(0).toUpperCase()}</span>
     {/if}
+    <div class="commons-tile-hide-wrap">
+      <HideIconButton
+        ariaLabel={$t('commons.card.hideAria', { values: { title } })}
+        title={$t('commons.card.hideAria', { values: { title } })}
+        onclick={handleHide}
+      />
+    </div>
     <span class="commons-tile-expiry">{formatExpiry(broadcast.expiresAt)}</span>
   </div>
 
@@ -240,6 +255,13 @@
     border-radius: 4px;
     background: rgba(0, 0, 0, 0.6);
     color: #fff;
+  }
+
+  .commons-tile-hide-wrap {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
   }
 
   .commons-tile-body {

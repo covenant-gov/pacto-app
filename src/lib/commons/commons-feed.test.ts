@@ -33,6 +33,16 @@ describe('filterCommonsBroadcasts', () => {
     expect(list).toHaveLength(0);
   });
 
+  it('excludes hidden broadcast ids', () => {
+    const list = filterCommonsBroadcasts(
+      [row({ eventId: 'a' }), row({ eventId: 'b' })],
+      DEFAULT_COMMONS_FEED_FILTERS,
+      now,
+      new Set(['a'])
+    );
+    expect(list.map((b) => b.eventId)).toEqual(['b']);
+  });
+
   it('filters by subject', () => {
     const squads = filterCommonsBroadcasts(
       [
@@ -148,5 +158,14 @@ describe('prepareCommonsFeed', () => {
     );
     expect(list).toHaveLength(1);
     expect(list[0].eventId).toBe('new');
+  });
+
+  it('excludes hidden broadcast ids', () => {
+    const list = prepareCommonsFeed(
+      [row({ eventId: 'a', authorNpub: 'npub1a' }), row({ eventId: 'b', authorNpub: 'npub1b' })],
+      DEFAULT_COMMONS_FEED_FILTERS,
+      new Set(['a'])
+    );
+    expect(list.map((b) => b.eventId)).toEqual(['b']);
   });
 });

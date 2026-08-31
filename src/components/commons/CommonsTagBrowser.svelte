@@ -8,6 +8,7 @@
     localizeCommonsTagCategory,
     type CommonsTagCategory,
   } from '../../lib/commons/tag-catalog';
+  import HideIconButton from '../ui/HideIconButton.svelte';
 
   interface Props {
     categories?: CommonsTagCategory[];
@@ -15,6 +16,7 @@
     /** Active broadcast count per leaf tag. */
     countsByTag?: Record<string, number>;
     onSelectCategory?: (categoryId: string) => void;
+    onHideCategory?: (categoryId: string, title: string) => void;
   }
 
   let {
@@ -22,6 +24,7 @@
     activeCategoryId = null,
     countsByTag = {},
     onSelectCategory = () => {},
+    onHideCategory,
   }: Props = $props();
 
   const localizedCategories = $derived(categories.map((c) => localizeCommonsTagCategory($t, c)));
@@ -55,6 +58,15 @@
           {/if}
           <span class="commons-browser-frame" aria-hidden="true"></span>
         </button>
+        {#if onHideCategory}
+          <div class="commons-browser-hide-wrap">
+            <HideIconButton
+              ariaLabel={$t('commons.tagBrowser.hideAria', { values: { title: category.title } })}
+              title={$t('commons.tagBrowser.hideAria', { values: { title: category.title } })}
+              onclick={() => onHideCategory(category.id, category.title)}
+            />
+          </div>
+        {/if}
       </li>
     {/each}
   </ul>
@@ -74,6 +86,17 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 4px;
+  }
+
+  .commons-browser-grid li {
+    position: relative;
+  }
+
+  .commons-browser-hide-wrap {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 5;
   }
 
   .commons-browser-tile {

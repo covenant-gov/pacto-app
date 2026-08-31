@@ -344,6 +344,14 @@ export function commonsCategoryTagSlugs(category: CommonsTagCategory): string[] 
   return category.children.map((c) => c.tag);
 }
 
+/** Drop user-hidden category tiles from the browse grid. */
+export function filterVisibleCommonsCategories(
+  categories: CommonsTagCategory[],
+  hiddenCategoryIds: ReadonlySet<string>
+): CommonsTagCategory[] {
+  return hiddenCategoryIds.size === 0 ? categories : categories.filter((c) => !hiddenCategoryIds.has(c.id));
+}
+
 export function findCommonsTagGroup(tag: string): CommonsTagGroup | null {
   const normalized = normalizeCommonsTag(tag);
   if (!normalized) return null;
