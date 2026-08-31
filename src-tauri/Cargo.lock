@@ -7115,6 +7115,7 @@ dependencies = [
  "k256",
  "lazy_static",
  "libc",
+ "liblzma-sys",
  "log",
  "mdk-core",
  "mdk-sqlite-storage",

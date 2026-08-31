@@ -355,6 +355,40 @@ jobs:
       - name: Check release binary symbols
         run: ./scripts/check-release-symbols.sh
 
+  macos-dylib-check:
+    # Regression gate for the 0.7.1 startup crash: the shipped binary linked
+    # against a Homebrew-only /opt/homebrew/*/liblzma.5.dylib path baked in
+    # by the build machine, so dyld aborted at launch on Macs without that
+    # exact Homebrew package installed. Builds the same crate/feature set as
+    # the release workflow and fails if the binary references anything
+    # outside macOS system paths or the app's own @rpath.
+    #
+    # Disabled for now: macos-latest runners are billed at a much higher
+    # rate than Linux, and this job does a full --release build of the
+    # heaviest native deps (whisper-rs-sys/CMake, aws-lc-sys) on every PR.
+    # Re-enable (or move to a scheduled/tag-only run) if the liblzma-sys
+    # `static` fix doesn't hold, or before shipping another native macOS
+    # dependency.
+    if: false
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build release binary
+        working-directory: src-tauri
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Check linked dylib paths
+        run: ./scripts/check-macos-dylib-paths.sh src-tauri/target/aarch64-apple-darwin/release/pacto
+
   scripts-test:
     runs-on: ubuntu-latest
     steps:
