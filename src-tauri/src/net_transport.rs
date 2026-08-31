@@ -618,7 +618,7 @@ mod tor {
             TargetAddr::Domain(host, port) => client.connect((host.as_str(), *port)).await,
         };
 
-        let mut tor_stream = match tor_stream {
+        let tor_stream = match tor_stream {
             Ok(stream) => {
                 super::TOR_STATS.record_latency_ms(connect_started.elapsed().as_millis() as u64);
                 stream
@@ -633,20 +633,58 @@ mod tor {
         // for a CONNECT proxy; clients (reqwest, async-wsocket) don't act on
         // it, so an unspecified address is fine here.
         let bind_addr: SocketAddr = "0.0.0.0:0".parse().expect("valid socket addr literal");
-        let mut inbound = proto
+        let inbound = proto
             .reply_success(bind_addr)
             .await
             .map_err(|e| e.to_string())?;
 
-        // `tokio::io::copy_bidirectional` is what `fast_socks5::server::transfer`
-        // wraps internally; calling it directly gets us the byte counts each
-        // direction copied, which double as the traffic figures for the status
-        // popover.
-        match tokio::io::copy_bidirectional(&mut inbound, &mut tor_stream).await {
-            Ok((up, down)) => super::TOR_STATS.add_bytes(up, down),
-            Err(e) => log::debug!(target: "pacto", "[Tor] transfer error: {e}"),
+        // Report each chunk to the live traffic counters as it's copied,
+        // not just a final total once the stream closes -- Nostr relay
+        // connections proxied through here are long-lived websockets that
+        // stay open for the whole session, so a completion-only count
+        // left the status popover frozen at 0 B while Tor was actively
+        // carrying traffic.
+        let (inbound_r, inbound_w) = tokio::io::split(inbound);
+        let (tor_r, tor_w) = tokio::io::split(tor_stream);
+        let up = copy_and_count(inbound_r, tor_w, |n| super::TOR_STATS.add_bytes(n, 0));
+        let down = copy_and_count(tor_r, inbound_w, |n| super::TOR_STATS.add_bytes(0, n));
+        if let Err(e) = tokio::try_join!(up, down) {
+            log::debug!(target: "pacto", "[Tor] transfer error: {e}");
         }
         Ok(())
+    }
+
+    /// Copies `reader` into `writer` like `tokio::io::copy`, but invokes
+    /// `report` with each chunk's byte count as it's copied rather than
+    /// only when the stream ends -- see the `serve_socks_connection`
+    /// caller for why live reporting matters here.
+    async fn copy_and_count<R, W>(
+        mut reader: R,
+        mut writer: W,
+        report: impl Fn(u64),
+    ) -> std::io::Result<()>
+    where
+        R: tokio::io::AsyncRead + Unpin,
+        W: tokio::io::AsyncWrite + Unpin,
+    {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = reader.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            writer.write_all(&buf[..n]).await?;
+            // `write_all` only hands bytes to the writer's internal buffer
+            // (e.g. arti's `DataStream` frames writes into Tor cells); an
+            // explicit flush is what actually pushes a small, immediately-
+            // useful chunk (an HTTP request, a websocket frame) out to the
+            // peer instead of leaving it queued until more data arrives or
+            // the stream closes.
+            writer.flush().await?;
+            report(n as u64);
+        }
+        writer.shutdown().await
     }
 }
 
