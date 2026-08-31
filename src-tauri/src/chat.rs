@@ -372,7 +372,7 @@ pub async fn mark_as_read(chat_id: String, message_id: Option<String>) -> bool {
     // Update the unread counter and save to DB if the marking was successful
     if result {
         // Update the badge count
-        crate::update_unread_counter(handle.clone()).await;
+        crate::cmds::chat::update_unread_counter(handle.clone()).await;
         crate::catch_up::resolve_chat_message_entries_for_handle(handle, &chat_id).await;
 
         // Save the updated chat to the DB
@@ -432,7 +432,7 @@ pub async fn set_notification_level(chat_id: String, level: NotificationLevel) -
     );
 
     // Immediate (non-debounced) recompute so badges move in the same interaction (R17).
-    crate::update_unread_counter(handle.clone()).await;
+    crate::cmds::chat::update_unread_counter(handle.clone()).await;
 
     true
 }

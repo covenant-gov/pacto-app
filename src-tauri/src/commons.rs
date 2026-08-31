@@ -546,7 +546,7 @@ pub async fn commons_publish_broadcast<R: Runtime>(
         )
         .await
         .map_err(|e| e.to_string())?;
-    crate::record_send_outcome(&event, &send_output);
+    crate::cmds::relays::record_send_outcome(&event, &send_output);
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
     ensure_commons_broadcasts_table(&conn)?;
@@ -765,7 +765,7 @@ pub async fn commons_cancel_broadcast<R: Runtime>(
         )
         .await
         .map_err(|e| e.to_string())?;
-    crate::record_send_outcome(&event, &send_output);
+    crate::cmds::relays::record_send_outcome(&event, &send_output);
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
     ensure_commons_broadcasts_table(&conn)?;

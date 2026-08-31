@@ -1210,7 +1210,7 @@ pub async fn join_inbox_send_join_response<R: Runtime>(
         )
         .await
         .map_err(|e| e.to_string())?;
-    crate::record_send_outcome(&gift_wrap, &send_output);
+    crate::cmds::relays::record_send_outcome(&gift_wrap, &send_output);
     Ok(())
 }
 

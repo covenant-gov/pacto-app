@@ -196,7 +196,7 @@ async fn login_full_depth<R: Runtime>(
         return Ok(serde_json::json!({ "success": true, "npub": npub }));
     }
 
-    let keypair = crate::login_with_recovery_phrase(phrase).await?;
+    let keypair = crate::cmds::auth::login_with_recovery_phrase(phrase).await?;
 
     let pkey_ciphertext =
         crate::migration::encrypt_with_password(&handle, &keypair.private, &pin).await?;
@@ -212,12 +212,12 @@ async fn login_full_depth<R: Runtime>(
         if crate::account_manager::get_current_account().is_err() {
             return;
         }
-        if let Err(e) = crate::regenerate_device_keypackage(true).await {
+        if let Err(e) = crate::cmds::mls_groups::regenerate_device_keypackage(true).await {
             eprintln!("[dev_login] Device KeyPackage bootstrap failed: {}", e);
         }
     });
 
-    crate::connect(handle.clone()).await;
+    crate::cmds::auth::connect(handle.clone()).await;
 
     if let (Some(evm_private_key), Some(evm_address)) =
         (keypair.evm_private_key.clone(), keypair.evm_address.clone())

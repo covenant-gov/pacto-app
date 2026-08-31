@@ -795,7 +795,7 @@ pub async fn toggle_blocked(npub: String) -> bool {
 
     let _ = handle.emit("profile_update", &updated);
     db::set_profile(handle.clone(), updated).await.unwrap();
-    let _ = crate::update_unread_counter(handle.clone()).await;
+    let _ = crate::cmds::chat::update_unread_counter(handle.clone()).await;
     new_blocked
 }
 
