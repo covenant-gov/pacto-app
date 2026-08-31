@@ -1525,7 +1525,7 @@ impl MlsService {
             };
 
             match client.send_event(&remove_evolution_event).await {
-                Ok(output) => crate::record_send_outcome(&remove_evolution_event, &output),
+                Ok(output) => crate::cmds::relays::record_send_outcome(&remove_evolution_event, &output),
                 Err(e) => {
                     eprintln!("[MLS] Restoration: failed to publish remove commit: {}", e);
                     // The remove commit is staged locally the moment `remove_members()`
@@ -1612,7 +1612,7 @@ impl MlsService {
 
             // Publish evolution event (commit) to the relay
             match client.send_event(&evolution_event).await {
-                Ok(output) => crate::record_send_outcome(&evolution_event, &output),
+                Ok(output) => crate::cmds::relays::record_send_outcome(&evolution_event, &output),
                 Err(e) => {
                     eprintln!("[MLS] Failed to publish commit: {}", e);
                     return Err(MlsError::NetworkError(format!(
@@ -1788,7 +1788,7 @@ impl MlsService {
             let send_output = client.send_event(evolution_event).await.map_err(|e| {
                 MlsError::NetworkError(format!("Failed to publish leave proposal: {}", e))
             })?;
-            crate::record_send_outcome(evolution_event, &send_output);
+            crate::cmds::relays::record_send_outcome(evolution_event, &send_output);
         }
 
         // Remove the group from local metadata: a concurrent create_group/add_member_device for
@@ -1922,7 +1922,7 @@ impl MlsService {
 
         // Publish evolution event (commit) to the relay
         match client.send_event(&evolution_event).await {
-            Ok(output) => crate::record_send_outcome(&evolution_event, &output),
+            Ok(output) => crate::cmds::relays::record_send_outcome(&evolution_event, &output),
             Err(e) => {
                 eprintln!("[MLS] Failed to publish commit: {}", e);
                 return Err(MlsError::NetworkError(format!(
@@ -2042,7 +2042,7 @@ impl MlsService {
         let send_output = client.send_event(&evolution_event).await.map_err(|e| {
             MlsError::NetworkError(format!("Failed to publish leave commit: {}", e))
         })?;
-        crate::record_send_outcome(&evolution_event, &send_output);
+        crate::cmds::relays::record_send_outcome(&evolution_event, &send_output);
 
         {
             let engine = self.engine()?;
@@ -2060,7 +2060,7 @@ impl MlsService {
                 .ok();
         }
 
-        if let Err(e) = crate::sync_mls_group_participants(wire_group_id.to_string()).await {
+        if let Err(e) = crate::cmds::mls_groups::sync_mls_group_participants(wire_group_id.to_string()).await {
             eprintln!(
                 "[MLS] Failed to sync participants after leave finalize ({}): {}",
                 wire_group_id, e
@@ -2104,7 +2104,7 @@ impl MlsService {
         let send_output = send_output.ok_or_else(|| {
             MlsError::NetworkError(format!("Failed to publish auto-commit: {}", publish_error))
         })?;
-        crate::record_send_outcome(evolution_event, &send_output);
+        crate::cmds::relays::record_send_outcome(evolution_event, &send_output);
 
         let mut merge_error = String::new();
         let mut merged = false;
@@ -2140,7 +2140,7 @@ impl MlsService {
                 .ok();
         }
 
-        if let Err(e) = crate::sync_mls_group_participants(wire_group_id.to_string()).await {
+        if let Err(e) = crate::cmds::mls_groups::sync_mls_group_participants(wire_group_id.to_string()).await {
             eprintln!(
                 "[MLS] Failed to sync participants after auto-commit ({}): {}",
                 wire_group_id, e
@@ -3512,7 +3512,7 @@ pub async fn send_mls_message(
                         &wrapper_with_expiry,
                     )
                     .await
-                    .inspect(|output| crate::record_send_outcome(&wrapper_with_expiry, output))
+                    .inspect(|output| crate::cmds::relays::record_send_outcome(&wrapper_with_expiry, output))
             } else {
                 // Send normal wrapper without expiration
                 client
@@ -3521,7 +3521,7 @@ pub async fn send_mls_message(
                         &mls_wrapper,
                     )
                     .await
-                    .inspect(|output| crate::record_send_outcome(&mls_wrapper, output))
+                    .inspect(|output| crate::cmds::relays::record_send_outcome(&mls_wrapper, output))
             };
 
             // Update pending message based on send result

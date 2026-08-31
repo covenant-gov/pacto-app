@@ -292,7 +292,7 @@ fn spawn_login_bootstrap_retry<R: Runtime>(app: tauri::AppHandle<R>) {
                 }
                 match enable(&app).await {
                     Ok(()) => {
-                        crate::rebuild_relay_pool_connection_mode(&app).await;
+                        crate::cmds::auth::rebuild_relay_pool_connection_mode(&app).await;
                         return;
                     }
                     Err(e) => {
@@ -346,7 +346,7 @@ pub async fn set_tor_routing_enabled<R: Runtime>(
         return Err(e);
     }
 
-    crate::rebuild_relay_pool_connection_mode(&handle).await;
+    crate::cmds::auth::rebuild_relay_pool_connection_mode(&handle).await;
 
     Ok(())
 }

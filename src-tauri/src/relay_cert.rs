@@ -243,7 +243,7 @@ async fn capture_leaf_der(host: &str, port: u16) -> Option<Vec<u8>> {
 }
 
 /// Certificates already fetched this process, keyed by
-/// [`crate::normalize_relay_url`] -- the same normalization every other
+/// [`crate::cmds::relays::normalize_relay_url`] -- the same normalization every other
 /// diagnostics static in the crate uses (KTD7).
 static RELAY_CERTIFICATES: std::sync::LazyLock<RwLock<HashMap<String, RelayCertificate>>> =
     std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -258,7 +258,7 @@ static RELAY_CERTIFICATES: std::sync::LazyLock<RwLock<HashMap<String, RelayCerti
 /// than surfacing as a distinct command error.
 pub(crate) async fn fetch_certificate(url: &str) -> Option<RelayCertificate> {
     let (host, port) = wss_host_port(url)?;
-    let key = crate::normalize_relay_url(url);
+    let key = crate::cmds::relays::normalize_relay_url(url);
 
     if let Some(cached) = RELAY_CERTIFICATES.read().get(&key).cloned() {
         return Some(cached);
@@ -585,8 +585,8 @@ mod tests {
             .expect_err("the real relay pool must reject an expired self-signed certificate");
 
         assert_eq!(
-            crate::classify_relay_error(&err).code,
-            crate::RelayFailureCode::TlsFailed,
+            crate::cmds::relays::classify_relay_error(&err).code,
+            crate::cmds::relays::RelayFailureCode::TlsFailed,
             "the permissive verifier in this module must be unreachable from the real relay pool"
         );
 
@@ -664,9 +664,9 @@ mod tests {
 
     #[test]
     fn logout_clears_the_certificate_cache() {
-        let _guard = crate::DIAGNOSTICS_TEST_LOCK.lock();
+        let _guard = crate::cmds::relays::DIAGNOSTICS_TEST_LOCK.lock();
         let url = "wss://logout-clears-relay-cert-cache.example";
-        let normalized = crate::normalize_relay_url(url);
+        let normalized = crate::cmds::relays::normalize_relay_url(url);
         let fixture = RelayCertificate {
             subject: "CN=fixture".to_string(),
             issuer: "CN=fixture".to_string(),
