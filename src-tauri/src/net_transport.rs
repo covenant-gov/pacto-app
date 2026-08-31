@@ -686,6 +686,43 @@ mod tor {
         }
         writer.shutdown().await
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::copy_and_count;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        /// Counts must land while the stream is still open, not only once
+        /// it closes -- long-lived relay websockets never reach the close
+        /// path, so a completion-only count would leave the popover frozen
+        /// (the exact regression this helper replaced).
+        #[tokio::test]
+        async fn reports_each_chunk_before_the_stream_closes() {
+            let (mut src, reader) = tokio::io::duplex(64);
+            let (writer, mut sink) = tokio::io::duplex(64);
+            let reported = AtomicUsize::new(0);
+
+            let copy = copy_and_count(reader, writer, |n| {
+                reported.fetch_add(n as usize, Ordering::SeqCst);
+            });
+            let drive = async {
+                for _ in 0..3 {
+                    src.write_all(b"ping").await.unwrap();
+                    let mut echoed = [0u8; 4];
+                    sink.read_exact(&mut echoed).await.unwrap();
+                    // The report from this chunk must already be visible --
+                    // proof it isn't buffered until the stream closes.
+                    assert!(reported.load(Ordering::SeqCst) > 0);
+                }
+                assert_eq!(reported.load(Ordering::SeqCst), 12);
+                src.shutdown().await.unwrap();
+            };
+
+            let (copied, ()) = tokio::join!(copy, drive);
+            copied.unwrap();
+        }
+    }
 }
 
 #[cfg(test)]
