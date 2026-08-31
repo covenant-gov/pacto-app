@@ -1,6 +1,8 @@
 //! Local storage inspection and attachment cache clearing.
 use nostr_sdk::prelude::*;
-use crate::{audio, db, format_bytes, image_cache, whisper, STATE, TAURI_APP};
+use crate::{audio, db, format_bytes, image_cache, STATE, TAURI_APP};
+#[cfg(all(not(target_os = "android"), feature = "whisper"))]
+use crate::whisper;
 
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
