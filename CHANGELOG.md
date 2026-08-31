@@ -7,11 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Sandbox cargo-test profile writes to a disposable temp dir (#348)
+- Create new squad sticker packs instead of failing with pack_id is empty (#349)
+- Consent-first mls acceptance (#346)
+- Parallelize rust ci tests with cargo-nextest, report timing (#350)
+- Close Tor routing leaks, cover avatars and link previews (privacy)
+
+
+### Documentation
+- Publish pacto design-system rules (#269) (ui)
+- Note invoke-spy limitation in tauri mcp troubleshooting
+- Document tor transport architecture (privacy)
+
+
+### Features
+- Gov guide built into hats tree display (#345)
+- Add a presentational squad layout playground (#273) (shell)
+- Add send-typing-indicators privacy setting
+- Route traffic through an embedded Tor client (privacy)
+- Add route-traffic-through-tor toggle to privacy settings (settings)
+- Show live tor status and add a disconnect toggle in the nav bar (privacy)
+- Add web-previews setting to gate link-preview fetching and rendering
+- Add opt-in biometric unlock via touch id and windows hello
+
+## v0.7.0
+
+### Bug Fixes
 - Ad-hoc sign macOS app builds (#307)
 - Clear make build warnings by deleting dead code, not suppressing it (#306)
 - Create squads when a member's key package is stale, and say so when creation fails (#313)
 - Stop reclassifying failed MLS welcome retries as transient (#336)
 - Stop mls welcome-delivery failures from orphaning groups (#339)
+
+
+### Chores
+- Bump version to 0.7.0 (#344) (release)
 
 
 ### Features

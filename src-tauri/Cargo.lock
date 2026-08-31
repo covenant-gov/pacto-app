@@ -7087,7 +7087,7 @@ dependencies = [
 
 [[package]]
 name = "pacto"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "aes 0.8.4",
  "aes-gcm",
