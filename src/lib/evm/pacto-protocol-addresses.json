@@ -1,11 +1,24 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/full-system.json (de1e0c0). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor deployments/11155111/full-system.json (34518d4); navePirataRegistry matches pacto-gov (not the sponsor artifact’s registry). EIP-7702: eip7702-account.json (0x33F920B5…, unchanged).",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/full-system.json (de1e0c0). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor deployments/11155111/full-system.json (34518d4); navePirataRegistry matches pacto-gov (not the sponsor artifact’s registry). Sepolia globalUsernameSponsor: pacto-username-nft deployments/11155111/full-system.json (policyVersion 3). EIP-7702: eip7702-account.json (0x33F920B5…, unchanged).",
   "version": 1,
   "networks": {
     "sepolia": {
       "chainId": 11155111,
       "meta": {
         "deployer": "0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38"
+      },
+      "globalUsernameSponsor": {
+        "usernameSystemFactory": "0x142f50bb42950158124EBa4491325deFF618e697",
+        "pactoUsernameNft": "0xa604Eb5Df00F23f12321c9eeBa0e92e9Ca4491f2",
+        "globalSponsorPool": "0x6713Cb2a0aaEFA0F53d55669D6CEF7D2dD570054",
+        "bootstrapMintPool": "0x8187d8209307b73731A767B58487D302dB61f13f",
+        "sponsorPolicyRegistry": "0xf6583a6554b8e369249EaD33F3277baf4D94577f",
+        "bootstrapClaimPolicy": "0x3EAd3052aABc27f2e37FcA7C0d5D2Fe01FC6520d",
+        "pactoGlobalPaymaster": "0x1C2eb4Ac1cD57aF67ad8B20838A28FB23d39d5b8",
+        "nostrClaimLink": "0xCc0de30d2926995FB6458De7808E41E2a17B0e29",
+        "policyVersion": 3,
+        "allowed7702Implementation": "0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60",
+        "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
       },
       "squadSponsor": {
         "factory": "0xD8bdc2e5Ca92e129E84207380076c1F18AA3aA95",

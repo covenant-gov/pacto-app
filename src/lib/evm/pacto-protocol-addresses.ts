@@ -34,9 +34,24 @@ export type Erc4337ProtocolAddresses = {
   accountImplementation?: string;
 };
 
+export type GlobalUsernameSponsorProtocolAddresses = {
+  usernameSystemFactory: string;
+  pactoUsernameNft: string;
+  globalSponsorPool: string;
+  bootstrapMintPool: string;
+  sponsorPolicyRegistry: string;
+  bootstrapClaimPolicy: string;
+  pactoGlobalPaymaster: string;
+  nostrClaimLink: string;
+  policyVersion: number;
+  allowed7702Implementation: string;
+  entryPoint: string;
+};
+
 export type PactoProtocolNetworkBook = {
   chainId: number;
   meta?: { deployer?: string };
+  globalUsernameSponsor?: GlobalUsernameSponsorProtocolAddresses;
   squadSponsor?: SquadSponsorProtocolAddresses;
   pactoGov?: PactoGovProtocolAddresses;
   safe?: SafeProtocolAddresses;

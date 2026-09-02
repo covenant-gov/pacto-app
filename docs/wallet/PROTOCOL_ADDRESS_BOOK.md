@@ -8,15 +8,18 @@ Covenant / Pacto **deploy infra** (factories, paymaster, Safe bundle, Hats maste
 
 | Section | Used by |
 |---------|---------|
+| `globalUsernameSponsor` | Username NFT claim / rotation; global + bootstrap paymaster path (account-global; not squad) |
 | `squadSponsor` | Squad sponsor deploy, deposit, summary reads |
 | `pactoGov` | Nave Pirata deploy, Hats reads, squad admin deploy; Sepolia also pins `warGameRegistry` |
 | `safe` | Standalone Safe deploy (pacto-gov 1.4.x bundle on Sepolia) |
 | `erc4337.accountImplementation` | EIP-7702 set-code target for sponsored gov UserOps (roster EOA); optional `PACTO_ERC4337_ACCOUNT_IMPL` override |
 | `meta.deployer` | Reference only (upstream deployer; not a runtime signer) |
 
+`globalUsernameSponsor` pins Sepolia from pacto-username-nft `deployments/11155111/full-system.json` (includes `nostrClaimLink`, `policyVersion`, bootstrap pool/policy, global pool/paymaster). Rust accessor: `global_username_sponsor_addresses(net_key)`.
+
 `erc4337.accountImplementation` / `PACTO_ERC4337_ACCOUNT_IMPL` is the shared EIP-7702 account bytecode the roster EOA set-codes to for paymaster-sponsored UserOps (must match EntryPoint v0.7 and the paymaster `ALLOWED_7702_IMPLEMENTATION`). Sepolia pins Pacto `PactoSimple7702Account` from upstream `deployments/11155111/eip7702-account.json`. Details: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 
-**Sepolia** (`chainId` 11155111) `squadSponsor` + `erc4337` come from pacto-squad-sponsor `deployments/11155111/{full-system,eip7702-account}.json`.
+**Sepolia** (`chainId` 11155111) `squadSponsor` + `erc4337` come from pacto-squad-sponsor `deployments/11155111/{full-system,eip7702-account}.json`. `globalUsernameSponsor` comes from pacto-username-nft `deployments/11155111/full-system.json`.
 
 ## Rust (Alloy UX)
 
@@ -24,6 +27,7 @@ Covenant / Pacto **deploy infra** (factories, paymaster, Safe bundle, Hats maste
 
 - `pacto_gov_deploy_addresses(net_key)`
 - `squad_sponsor_deploy_addresses(net_key)`
+- `global_username_sponsor_addresses(net_key)`
 - `safe_factory_addresses(net_key, chain_id)`
 
 Resolution order for each field: **`PACTO_*` env override** (optional) → **JSON book** → error (required fields) or safe-global defaults (Safe only).
@@ -46,4 +50,5 @@ JSON-RPC URLs are **not** in the address book. Set **`ALCHEMY_RPC_KEY`** in `.en
 
 - [PACTO_GOV.md](./PACTO_GOV.md) — upstream repo
 - [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) — sponsor repo
+- [covenant-gov/pacto-username-nft](https://github.com/covenant-gov/pacto-username-nft) — username NFT + global/bootstrap sponsor
 - [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) — manual deploy checklists (RPC + `.env` for keys only)

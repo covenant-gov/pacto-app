@@ -30,10 +30,27 @@ struct Root {
 struct NetworkBook {
     #[allow(dead_code)]
     chain_id: u64,
+    global_username_sponsor: Option<GlobalUsernameSponsorBook>,
     squad_sponsor: Option<SquadSponsorBook>,
     pacto_gov: Option<PactoGovBook>,
     safe: Option<SafeBook>,
     erc4337: Option<Erc4337Book>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GlobalUsernameSponsorBook {
+    username_system_factory: String,
+    pacto_username_nft: String,
+    global_sponsor_pool: String,
+    bootstrap_mint_pool: String,
+    sponsor_policy_registry: String,
+    bootstrap_claim_policy: String,
+    pacto_global_paymaster: String,
+    nostr_claim_link: String,
+    policy_version: u64,
+    allowed7702_implementation: String,
+    entry_point: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -333,6 +350,107 @@ pub fn squad_sponsor_deploy_addresses(
     })
 }
 
+#[derive(Clone, Debug)]
+pub struct GlobalUsernameSponsorAddresses {
+    pub username_system_factory: Address,
+    pub pacto_username_nft: Address,
+    pub global_sponsor_pool: Address,
+    pub bootstrap_mint_pool: Address,
+    pub sponsor_policy_registry: Address,
+    pub bootstrap_claim_policy: Address,
+    pub pacto_global_paymaster: Address,
+    pub nostr_claim_link: Address,
+    pub policy_version: u64,
+    pub allowed_7702_implementation: Address,
+    pub entry_point: Address,
+}
+
+fn resolve_policy_version(net_key: &str, book_value: Option<u64>) -> Result<u64, String> {
+    let net_upper = net_suffix(net_key);
+    let primary = "PACTO_USERNAME_POLICY_VERSION";
+    let suffixed = format!("{}_{}", primary, net_upper);
+    if let Ok(raw) = std::env::var(&suffixed).or_else(|_| std::env::var(primary)) {
+        return raw
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| format!("Invalid {primary} (expected u64)."));
+    }
+    book_value.ok_or_else(|| {
+        format!(
+            "Missing globalUsernameSponsor.policyVersion for network `{net_key}`. Add it to src/lib/evm/pacto-protocol-addresses.json or set {primary}."
+        )
+    })
+}
+
+pub fn global_username_sponsor_addresses(
+    net_key: &str,
+) -> Result<GlobalUsernameSponsorAddresses, String> {
+    let book = book_for(net_key).and_then(|n| n.global_username_sponsor.as_ref());
+    Ok(GlobalUsernameSponsorAddresses {
+        username_system_factory: resolve_required(
+            "PACTO_USERNAME_SYSTEM_FACTORY",
+            net_key,
+            book.map(|b| b.username_system_factory.as_str()),
+            "globalUsernameSponsor.usernameSystemFactory",
+        )?,
+        pacto_username_nft: resolve_required(
+            "PACTO_USERNAME_NFT",
+            net_key,
+            book.map(|b| b.pacto_username_nft.as_str()),
+            "globalUsernameSponsor.pactoUsernameNft",
+        )?,
+        global_sponsor_pool: resolve_required(
+            "PACTO_GLOBAL_SPONSOR_POOL",
+            net_key,
+            book.map(|b| b.global_sponsor_pool.as_str()),
+            "globalUsernameSponsor.globalSponsorPool",
+        )?,
+        bootstrap_mint_pool: resolve_required(
+            "PACTO_BOOTSTRAP_MINT_POOL",
+            net_key,
+            book.map(|b| b.bootstrap_mint_pool.as_str()),
+            "globalUsernameSponsor.bootstrapMintPool",
+        )?,
+        sponsor_policy_registry: resolve_required(
+            "PACTO_SPONSOR_POLICY_REGISTRY",
+            net_key,
+            book.map(|b| b.sponsor_policy_registry.as_str()),
+            "globalUsernameSponsor.sponsorPolicyRegistry",
+        )?,
+        bootstrap_claim_policy: resolve_required(
+            "PACTO_BOOTSTRAP_CLAIM_POLICY",
+            net_key,
+            book.map(|b| b.bootstrap_claim_policy.as_str()),
+            "globalUsernameSponsor.bootstrapClaimPolicy",
+        )?,
+        pacto_global_paymaster: resolve_required(
+            "PACTO_GLOBAL_PAYMASTER",
+            net_key,
+            book.map(|b| b.pacto_global_paymaster.as_str()),
+            "globalUsernameSponsor.pactoGlobalPaymaster",
+        )?,
+        nostr_claim_link: resolve_required(
+            "PACTO_NOSTR_CLAIM_LINK",
+            net_key,
+            book.map(|b| b.nostr_claim_link.as_str()),
+            "globalUsernameSponsor.nostrClaimLink",
+        )?,
+        policy_version: resolve_policy_version(net_key, book.map(|b| b.policy_version))?,
+        allowed_7702_implementation: resolve_required(
+            "PACTO_USERNAME_7702_IMPLEMENTATION",
+            net_key,
+            book.map(|b| b.allowed7702_implementation.as_str()),
+            "globalUsernameSponsor.allowed7702Implementation",
+        )?,
+        entry_point: resolve_required(
+            "PACTO_USERNAME_ENTRY_POINT",
+            net_key,
+            book.map(|b| b.entry_point.as_str()),
+            "globalUsernameSponsor.entryPoint",
+        )?,
+    })
+}
+
 /// Safe factory bundle: env override, then protocol book, then safe-global defaults for chain id.
 pub fn safe_factory_addresses(net_key: &str, chain_id: u64) -> Option<SafeFactoryAddresses> {
     let env_factory = env_addr_optional("PACTO_SAFE_PROXY_FACTORY", net_key);
@@ -402,6 +520,52 @@ mod tests {
         assert_eq!(
             gov.master_quartermaster,
             address!("0xFDA42686358503Cf89Bc94f6BD108CB4Af274d74")
+        );
+    }
+
+    #[test]
+    fn sepolia_book_loads_global_username_sponsor() {
+        let g = global_username_sponsor_addresses("sepolia").expect("username book");
+        assert_eq!(
+            g.username_system_factory,
+            address!("0x142f50bb42950158124EBa4491325deFF618e697")
+        );
+        assert_eq!(
+            g.pacto_username_nft,
+            address!("0xa604Eb5Df00F23f12321c9eeBa0e92e9Ca4491f2")
+        );
+        assert_eq!(
+            g.global_sponsor_pool,
+            address!("0x6713Cb2a0aaEFA0F53d55669D6CEF7D2dD570054")
+        );
+        assert_eq!(
+            g.bootstrap_mint_pool,
+            address!("0x8187d8209307b73731A767B58487D302dB61f13f")
+        );
+        assert_eq!(
+            g.sponsor_policy_registry,
+            address!("0xf6583a6554b8e369249EaD33F3277baf4D94577f")
+        );
+        assert_eq!(
+            g.bootstrap_claim_policy,
+            address!("0x3EAd3052aABc27f2e37FcA7C0d5D2Fe01FC6520d")
+        );
+        assert_eq!(
+            g.pacto_global_paymaster,
+            address!("0x1C2eb4Ac1cD57aF67ad8B20838A28FB23d39d5b8")
+        );
+        assert_eq!(
+            g.nostr_claim_link,
+            address!("0xCc0de30d2926995FB6458De7808E41E2a17B0e29")
+        );
+        assert_eq!(g.policy_version, 3);
+        assert_eq!(
+            g.entry_point,
+            address!("0x0000000071727De22E5E9d8BAf0edAc6f37da032")
+        );
+        assert_eq!(
+            g.allowed_7702_implementation,
+            address!("0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60")
         );
     }
 
