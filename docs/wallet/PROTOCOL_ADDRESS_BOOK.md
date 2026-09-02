@@ -15,7 +15,7 @@ Covenant / Pacto **deploy infra** (factories, paymaster, Safe bundle, Hats maste
 | `erc4337.accountImplementation` | EIP-7702 set-code target for sponsored gov UserOps (roster EOA); optional `PACTO_ERC4337_ACCOUNT_IMPL` override |
 | `meta.deployer` | Reference only (upstream deployer; not a runtime signer) |
 
-`globalUsernameSponsor` pins Sepolia from pacto-username-nft `deployments/11155111/full-system.json` (includes `nostrClaimLink`, `policyVersion`, bootstrap pool/policy, global pool/paymaster). Rust accessor: `global_username_sponsor_addresses(net_key)`. Claim/rotation backend: [USERNAME_NFT.md](./USERNAME_NFT.md).
+`globalUsernameSponsor` pins Sepolia from pacto-username-nft `deployments/11155111/full-system.json` (includes `nostrClaimLink`, `policyVersion`, bootstrap pool/policy, global pool/paymaster). Rust accessor: `global_username_sponsor_addresses(net_key)`. Claim/rotation backend: [USERNAME_NFT.md](./USERNAME_NFT.md). Ops fund + Sepolia smoke: [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §10.
 
 `erc4337.accountImplementation` / `PACTO_ERC4337_ACCOUNT_IMPL` is the shared EIP-7702 account bytecode the roster EOA set-codes to for paymaster-sponsored UserOps (must match EntryPoint v0.7 and the paymaster `ALLOWED_7702_IMPLEMENTATION`). Sepolia pins Pacto `PactoSimple7702Account` from upstream `deployments/11155111/eip7702-account.json`. Details: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 

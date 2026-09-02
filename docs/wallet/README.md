@@ -20,7 +20,7 @@ These files are **tracked in git** and are intended for references from **source
 | [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) | Upstream [covenant-gov/pacto-squad-sponsor](https://github.com/covenant-gov/pacto-squad-sponsor); deploy, summary read, `squad_infra`. |
 | [PROTOCOL_ADDRESS_BOOK.md](./PROTOCOL_ADDRESS_BOOK.md) | Tracked JSON: sponsor / gov / Safe deploy addresses per network (`pacto-protocol-addresses.json`). |
 | [USERNAME_NFT.md](./USERNAME_NFT.md) | Username NFT claim/rotation: bootstrap → EOA → global member; kind 31337; Tauri commands. |
-| [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) | **Single** Sepolia operator checklist: sponsor, gov, Safe, announce sync, advanced, allowlist, inbox/roster. |
+| [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) | **Single** Sepolia operator checklist: squad sponsor, gov, Safe, announce sync, advanced, allowlist, inbox/roster, Username NFT (§10). |
 | [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md) | In-app **Settings** page: scroll sections (Profile, Nostr, EVM, App). |
 
 **Maintainers — alpha-only migrations (remove before beta / public v1):** WalletBar token-dropdown → watched-token list — [`docs/legacy-fixes/LF-002-wallet-bar-token-filter-migration.md`](../legacy-fixes/LF-002-wallet-bar-token-filter-migration.md). EVM address repair — [`docs/legacy-fixes/LF-001-evm-address-repair.md`](../legacy-fixes/LF-001-evm-address-repair.md). Full catalog: [`docs/legacy-fixes/CATALOG.md`](../legacy-fixes/CATALOG.md).

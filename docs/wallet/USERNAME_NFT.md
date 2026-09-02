@@ -48,16 +48,17 @@ Writes: `username_claim`, `username_initiate_address_transfer`, `username_claim_
 
 SQLite cache: `username_claims` (username, npubHash, tokenId, link event id, policyVersion).
 
+## Verified badge
+
+Requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` with `evmAddress` equal to the active roster EVM.
+
 ## Operator smoke (Sepolia)
 
-1. Pin addresses in `pacto-protocol-addresses.json` (`globalUsernameSponsor`)
-2. Fund bootstrap + global pools and paymaster EntryPoint deposit (upstream scripts)
-3. Configure Pimlico / bundler
-4. `username_claim` with empty EOA balance → bootstrap UserOp
-5. Rotate address with empty EOA → global member UserOp
+Runnable checklist: **[OPERATOR_SMOKE.md §10](./OPERATOR_SMOKE.md#10-username-nft-global--bootstrap-sponsor)** (fund both pools + global paymaster → Commons CTA → bootstrap claim → badge → global member rotation → regressions). Ops funding commands and path-divergence notes live there.
 
 ## Related
 
+- [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §10
 - [PROTOCOL_ADDRESS_BOOK.md](./PROTOCOL_ADDRESS_BOOK.md)
 - [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) — shared ERC-4337 / 7702 transport
 - Upstream [DESKTOP_CLIENT_INTEGRATION.md](https://github.com/covenant-gov/pacto-username-nft/blob/main/docs/DESKTOP_CLIENT_INTEGRATION.md)

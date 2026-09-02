@@ -18,6 +18,8 @@ import {
   squadSettingsNetworkFocusNonce,
   squadSettingsNetworkFocusSlot,
   focusSquadSettingsNetworkEditor,
+  profileUsernameFocusNonce,
+  focusProfileUsername,
   showMembersPanel,
   lastOpenedSquadId,
   lastOpenedChannelId,
@@ -72,6 +74,7 @@ describe('navigation', () => {
     squadSettingsRpcFocusNonce.set(0);
     squadSettingsNetworkFocusNonce.set(0);
     squadSettingsNetworkFocusSlot.set('primary');
+    profileUsernameFocusNonce.set(0);
     showMembersPanel.set(false);
     lastOpenedSquadId.set(null);
     lastOpenedChannelId.set(null);
@@ -230,5 +233,19 @@ describe('navigation', () => {
     bumpGovernanceProcessNonce('');
     bumpGovernanceProcessNonce('   ');
     expect(get(governanceProcessNonceByParentId)).toEqual({ p1: 2 });
+  });
+
+  it('focusProfileUsername opens profile and bumps the username focus nonce', () => {
+    activeView.set('hub');
+    activeChannelId.set('some-channel');
+    activeHubChannelName.set('general');
+    expect(get(profileUsernameFocusNonce)).toBe(0);
+    focusProfileUsername();
+    expect(get(activeView)).toBe('profile');
+    expect(get(activeChannelId)).toBeNull();
+    expect(get(activeHubChannelName)).toBeNull();
+    expect(get(profileUsernameFocusNonce)).toBe(1);
+    focusProfileUsername();
+    expect(get(profileUsernameFocusNonce)).toBe(2);
   });
 });

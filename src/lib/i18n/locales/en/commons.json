@@ -129,5 +129,13 @@
 	"commons.hiddenSection.emptyCategories": "No hidden categories.",
 	"commons.hiddenSection.unhide": "Unhide",
 	"commons.hiddenSection.unhideAria": "Unhide {title}",
-	"commons.hiddenSection.unhideToast": "{title} unhidden."
+	"commons.hiddenSection.unhideToast": "{title} unhidden.",
+	"commons.earlyAdopter.ariaLabel": "Pacto Early Adopter",
+	"commons.earlyAdopter.title": "Pacto Early Adopter",
+	"commons.earlyAdopter.lead": "Claim a unique username on Sepolia and unlock your verified checkmark.",
+	"commons.earlyAdopter.cta": "Claim username",
+	"commons.earlyAdopter.ctaAria": "Open profile to claim your username",
+	"commons.earlyAdopter.claimed": "@{username}",
+	"commons.earlyAdopter.verified": "Verified",
+	"commons.earlyAdopter.loading": "Checking username…"
 }

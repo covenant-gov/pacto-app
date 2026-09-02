@@ -1855,7 +1855,7 @@ fn upsert_username_claim_conn(
             username = excluded.username,
             npub_hash = excluded.npub_hash,
             token_id = excluded.token_id,
-            link_event_id = excluded.link_event_id,
+            link_event_id = COALESCE(excluded.link_event_id, username_claims.link_event_id),
             policy_version = excluded.policy_version,
             network = excluded.network,
             updated_at_ms = excluded.updated_at_ms",

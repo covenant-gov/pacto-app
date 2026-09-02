@@ -6,6 +6,7 @@
   import CommonsTagBrowser from './CommonsTagBrowser.svelte';
   import CommonsTagMenu from './CommonsTagMenu.svelte';
   import CommonsPersonalPanel from './CommonsPersonalPanel.svelte';
+  import CommonsEarlyAdopterCta from './CommonsEarlyAdopterCta.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import CommonsBroadcastCard from './CommonsBroadcastCard.svelte';
   import type { CommonsBroadcastDto } from '../../lib/commons/types';
@@ -253,6 +254,8 @@
         void loadFeed({ silent: true });
       }}
     />
+
+    <CommonsEarlyAdopterCta />
 
     <CommonsTopFilters
       bind:tags={filterTags}
