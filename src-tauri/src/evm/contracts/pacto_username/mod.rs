@@ -25,6 +25,10 @@ sol! {
 
         function canBootstrapClaim(address member, bytes32 npubHash) external view returns (bool canClaim);
 
+        function mintFee() external view returns (uint256 fee);
+
+        function usedNonce(bytes32 npubHash) external view returns (uint256 nonce);
+
         function hashClaimBinding(
             bytes32 npubHash,
             address evmAddress,

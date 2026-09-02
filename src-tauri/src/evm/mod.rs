@@ -3,13 +3,15 @@
 
 pub mod access_control;
 pub mod advanced_contract_call;
+pub mod claim_binding;
 pub mod contract_call_params;
 pub mod contracts;
 pub mod evm_accounts;
 pub mod evm_keys;
+pub mod global_paymaster;
+pub mod global_sponsor_userop;
 pub mod gov_module_write;
 pub mod gov_read;
-pub mod global_paymaster;
 pub mod hats_read;
 pub mod member_governance_read;
 pub mod mutiny_ops;
@@ -24,6 +26,8 @@ pub mod safe_deploy;
 pub mod sponsor_path;
 pub mod sponsor_paymaster;
 pub mod sponsor_userop;
+pub mod username;
+pub mod username_nostr_link;
 pub mod squad_admin_deploy;
 pub mod squad_admin_write;
 pub mod squad_allowlist;

@@ -1788,6 +1788,147 @@ pub fn list_squad_sponsored_fee_usage<R: Runtime>(
     result
 }
 
+/// Cached Username NFT claim for the active account.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsernameClaimRow {
+    pub npub: String,
+    pub username: String,
+    pub npub_hash: String,
+    pub token_id: String,
+    pub link_event_id: Option<String>,
+    pub policy_version: i64,
+    pub network: String,
+    pub updated_at_ms: i64,
+}
+
+/// Fields required to upsert a successful username claim / rotation cache row.
+pub struct UsernameClaimUpsert {
+    pub username: String,
+    pub npub_hash: String,
+    pub token_id: String,
+    pub link_event_id: Option<String>,
+    pub policy_version: i64,
+    pub network: String,
+}
+
+fn upsert_username_claim_conn(
+    conn: &rusqlite::Connection,
+    npub: &str,
+    row: &UsernameClaimUpsert,
+) -> Result<(), String> {
+    let npub = npub.trim();
+    if npub.is_empty() {
+        return Err("npub is required".to_string());
+    }
+    let username = row.username.trim();
+    if username.is_empty() {
+        return Err("username is required".to_string());
+    }
+    let npub_hash = row.npub_hash.trim();
+    if npub_hash.is_empty() {
+        return Err("npub_hash is required".to_string());
+    }
+    let token_id = row.token_id.trim();
+    if token_id.is_empty() {
+        return Err("token_id is required".to_string());
+    }
+    let network = row.network.trim();
+    if network.is_empty() {
+        return Err("network is required".to_string());
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let link = row
+        .link_event_id
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    conn.execute(
+        "INSERT INTO username_claims (
+            npub, username, npub_hash, token_id, link_event_id,
+            policy_version, network, updated_at_ms
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(npub) DO UPDATE SET
+            username = excluded.username,
+            npub_hash = excluded.npub_hash,
+            token_id = excluded.token_id,
+            link_event_id = excluded.link_event_id,
+            policy_version = excluded.policy_version,
+            network = excluded.network,
+            updated_at_ms = excluded.updated_at_ms",
+        rusqlite::params![
+            npub,
+            username,
+            npub_hash,
+            token_id,
+            link,
+            row.policy_version,
+            network,
+            now,
+        ],
+    )
+    .map_err(|e| format!("Failed to upsert username_claims: {e}"))?;
+    Ok(())
+}
+
+fn get_username_claim_conn(
+    conn: &rusqlite::Connection,
+    npub: &str,
+) -> Result<Option<UsernameClaimRow>, String> {
+    let npub = npub.trim();
+    if npub.is_empty() {
+        return Ok(None);
+    }
+    let mut stmt = conn
+        .prepare(
+            "SELECT npub, username, npub_hash, token_id, link_event_id,
+                    policy_version, network, updated_at_ms
+             FROM username_claims WHERE npub = ?1",
+        )
+        .map_err(|e| format!("Failed to prepare username_claims read: {e}"))?;
+    let mut rows = stmt
+        .query(rusqlite::params![npub])
+        .map_err(|e| format!("Failed to query username_claims: {e}"))?;
+    match rows.next() {
+        Ok(Some(row)) => Ok(Some(UsernameClaimRow {
+            npub: row.get(0).map_err(|e| e.to_string())?,
+            username: row.get(1).map_err(|e| e.to_string())?,
+            npub_hash: row.get(2).map_err(|e| e.to_string())?,
+            token_id: row.get(3).map_err(|e| e.to_string())?,
+            link_event_id: row.get(4).map_err(|e| e.to_string())?,
+            policy_version: row.get(5).map_err(|e| e.to_string())?,
+            network: row.get(6).map_err(|e| e.to_string())?,
+            updated_at_ms: row.get(7).map_err(|e| e.to_string())?,
+        })),
+        Ok(None) => Ok(None),
+        Err(e) => Err(format!("Failed to read username_claims: {e}")),
+    }
+}
+
+pub fn upsert_username_claim<R: Runtime>(
+    handle: &AppHandle<R>,
+    row: &UsernameClaimUpsert,
+) -> Result<(), String> {
+    let npub = crate::account_manager::get_current_account()?;
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = upsert_username_claim_conn(&conn, &npub, row);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
+pub fn get_username_claim<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<Option<UsernameClaimRow>, String> {
+    let npub = crate::account_manager::get_current_account()?;
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = get_username_claim_conn(&conn, &npub);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
 #[cfg(test)]
 mod sponsored_fee_usage_tests {
     use super::{

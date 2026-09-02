@@ -78,7 +78,7 @@ pub fn bundler_rpc_url(network_key: &str) -> Result<Option<String>, String> {
     bundler_rpc_url_with_stored(network_key, None)
 }
 
-fn bundler_rpc_url_with_stored(
+pub(crate) fn bundler_rpc_url_with_stored(
     network_key: &str,
     stored_key: Option<&str>,
 ) -> Result<Option<String>, String> {
@@ -191,7 +191,7 @@ fn stored_pimlico_key_raw<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn load_stored_pimlico_key<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+pub(crate) fn load_stored_pimlico_key<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     stored_pimlico_key_raw(app).and_then(|k| validate_pimlico_api_key(&k).ok())
 }
 
@@ -791,7 +791,7 @@ async fn sign_and_send_user_op<P: Provider, S: Signer + Sync>(
 }
 
 /// Dummy 65-byte ECDSA for `eth_estimateUserOperationGas` (content ignored; length must match).
-fn dummy_userop_signature() -> Vec<u8> {
+pub(crate) fn dummy_userop_signature() -> Vec<u8> {
     let mut ecdsa = vec![0u8; 65];
     ecdsa[31] = 0x01;
     ecdsa[63] = 0x01;
@@ -800,25 +800,25 @@ fn dummy_userop_signature() -> Vec<u8> {
 }
 
 /// Fields of the ERC-4337 v0.7 UserOperation JSON sent to the bundler.
-struct UserOpParams<'a> {
-    sender: Address,
-    nonce: U256,
-    call_data: &'a [u8],
-    call_gas_limit: u128,
-    verification_gas_limit: u128,
-    pre_verification_gas: u128,
-    max_fee_per_gas: u128,
-    max_priority_fee_per_gas: u128,
-    paymaster: Address,
-    paymaster_verification_gas_limit: u128,
-    paymaster_post_op_gas_limit: u128,
-    paymaster_and_data: &'a [u8],
-    signature: &'a [u8],
-    eip7702_auth: Option<Value>,
+pub(crate) struct UserOpParams<'a> {
+    pub(crate) sender: Address,
+    pub(crate) nonce: U256,
+    pub(crate) call_data: &'a [u8],
+    pub(crate) call_gas_limit: u128,
+    pub(crate) verification_gas_limit: u128,
+    pub(crate) pre_verification_gas: u128,
+    pub(crate) max_fee_per_gas: u128,
+    pub(crate) max_priority_fee_per_gas: u128,
+    pub(crate) paymaster: Address,
+    pub(crate) paymaster_verification_gas_limit: u128,
+    pub(crate) paymaster_post_op_gas_limit: u128,
+    pub(crate) paymaster_and_data: &'a [u8],
+    pub(crate) signature: &'a [u8],
+    pub(crate) eip7702_auth: Option<Value>,
 }
 
 /// Serializes the UserOperation for `eth_sendUserOperation` / `eth_estimateUserOperationGas` (v0.7).
-fn user_op_json(p: UserOpParams) -> Result<Value, String> {
+pub(crate) fn user_op_json(p: UserOpParams) -> Result<Value, String> {
     Ok(json!({
         "sender": format!("{:#x}", p.sender),
         "nonce": format!("{:#x}", p.nonce),
@@ -840,7 +840,7 @@ fn user_op_json(p: UserOpParams) -> Result<Value, String> {
 }
 
 /// `paymasterData` is `paymasterAndData` past its fixed header; short input is a bug, not a panic.
-fn paymaster_data(paymaster_and_data: &[u8]) -> Result<&[u8], String> {
+pub(crate) fn paymaster_data(paymaster_and_data: &[u8]) -> Result<&[u8], String> {
     paymaster_and_data
         .get(PAYMASTER_DATA_OFFSET..)
         .ok_or_else(|| {
@@ -852,7 +852,7 @@ fn paymaster_data(paymaster_and_data: &[u8]) -> Result<&[u8], String> {
         })
 }
 
-fn pack_u128s(hi: u128, lo: u128) -> B256 {
+pub(crate) fn pack_u128s(hi: u128, lo: u128) -> B256 {
     let mut buf = [0u8; 32];
     buf[..16].copy_from_slice(&hi.to_be_bytes());
     buf[16..].copy_from_slice(&lo.to_be_bytes());
@@ -875,26 +875,26 @@ pub(crate) fn call_gas_with_margin(estimate: u128) -> u128 {
     estimate * CALL_GAS_MARGIN_BPS / 10_000
 }
 
-fn apply_userop_gas_margin(estimate: u128) -> u128 {
+pub(crate) fn apply_userop_gas_margin(estimate: u128) -> u128 {
     call_gas_with_margin(estimate)
 }
 
 /// 1.2× headroom, never above 2.0× estimate (bundler verification efficiency floor).
-fn apply_verification_gas_margin(estimate: u128) -> u128 {
+pub(crate) fn apply_verification_gas_margin(estimate: u128) -> u128 {
     let padded = call_gas_with_margin(estimate);
     let cap = estimate.saturating_mul(VERIFICATION_GAS_MAX_PAD_BPS) / 10_000;
     padded.min(cap).max(estimate)
 }
 
 /// Raise RPC tip/max-fee to bundler floors; ensure maxFee ≥ maxPriorityFee.
-fn clamp_userop_eip1559_fees(priority: u128, max_fee: u128) -> (u128, u128) {
+pub(crate) fn clamp_userop_eip1559_fees(priority: u128, max_fee: u128) -> (u128, u128) {
     let priority = priority.max(FALLBACK_MAX_PRIORITY_FEE);
     let max_fee = max_fee.max(priority);
     (priority, max_fee)
 }
 
 /// Shared paymaster must hold EntryPoint deposit ≥ UserOp maxCost (bundler precheck).
-async fn paymaster_entry_point_deposit_preflight<P: Provider>(
+pub(crate) async fn paymaster_entry_point_deposit_preflight<P: Provider>(
     provider: &P,
     entry_point: Address,
     paymaster: Address,
@@ -936,7 +936,7 @@ pub(crate) async fn estimate_call_gas<P: Provider>(
 
 /// EntryPoint v0.7 maxCost bound: maxFeePerGas × every gas limit charged for the UserOp
 /// (verification, call, preVerification, paymaster verification and postOp).
-fn userop_max_cost_wei(
+pub(crate) fn userop_max_cost_wei(
     call_gas_limit: u128,
     verification_gas_limit: u128,
     pre_verification_gas: u128,
@@ -952,7 +952,7 @@ fn userop_max_cost_wei(
     U256::from(max_fee_per_gas) * total_gas
 }
 
-async fn sign_eip7702_authorization<S: Signer + Sync>(
+pub(crate) async fn sign_eip7702_authorization<S: Signer + Sync>(
     signer: &S,
     chain_id: u64,
     implementation: Address,
@@ -1007,7 +1007,7 @@ fn encode_eip7702_authorization(chain_id: u64, implementation: Address, nonce: u
     out
 }
 
-async fn bundler_send_user_operation(
+pub(crate) async fn bundler_send_user_operation(
     bundler_url: &str,
     user_op: &Value,
     entry_point: Address,
@@ -1044,15 +1044,15 @@ async fn bundler_send_user_operation(
 
 /// Gas limits returned by `eth_estimateUserOperationGas` (EntryPoint v0.7).
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct EstimatedUserOpGas {
-    call_gas_limit: u128,
-    verification_gas_limit: u128,
-    pre_verification_gas: u128,
-    paymaster_verification_gas_limit: u128,
-    paymaster_post_op_gas_limit: u128,
+pub(crate) struct EstimatedUserOpGas {
+    pub(crate) call_gas_limit: u128,
+    pub(crate) verification_gas_limit: u128,
+    pub(crate) pre_verification_gas: u128,
+    pub(crate) paymaster_verification_gas_limit: u128,
+    pub(crate) paymaster_post_op_gas_limit: u128,
 }
 
-async fn bundler_estimate_user_operation_gas(
+pub(crate) async fn bundler_estimate_user_operation_gas(
     bundler_url: &str,
     user_op: &Value,
     entry_point: Address,

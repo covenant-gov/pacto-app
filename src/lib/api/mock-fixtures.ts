@@ -135,6 +135,41 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
   get_bundler_status: () => ({ source: 'none', hasStoredKey: false }),
   set_pimlico_api_key: () => undefined,
   clear_pimlico_api_key: () => undefined,
+  username_name_available: () => true,
+  username_can_bootstrap_claim: () => true,
+  username_npub_of: () => '0x' + '00'.repeat(32),
+  username_record_of: () => ({
+    name: '',
+    evmAddress: '0x0000000000000000000000000000000000000000',
+    pendingAddress: '0x0000000000000000000000000000000000000000',
+    tokenId: '0',
+  }),
+  username_eligible_member: () => ({
+    npubHash: '0x' + '00'.repeat(32),
+    tokenId: '0',
+  }),
+  username_is_pending_transfer: () => false,
+  username_bootstrap_spendable_pool_wei: () => '0',
+  username_global_spendable_pool_wei: () => '0',
+  username_mint_fee: () => '0',
+  username_used_nonce: () => '0',
+  username_get_cached_claim: () => null,
+  username_claim: () => ({
+    ok: false,
+    message: 'Username claim is only available in the desktop app.',
+  }),
+  username_initiate_address_transfer: () => ({
+    ok: false,
+    message: 'Username transfer is only available in the desktop app.',
+  }),
+  username_claim_address_transfer: () => ({
+    ok: false,
+    message: 'Username transfer is only available in the desktop app.',
+  }),
+  username_cancel_address_transfer: () => ({
+    ok: false,
+    message: 'Username transfer is only available in the desktop app.',
+  }),
   wallet_get_usd_spot_prices: () => ({
     ok: false,
     message: 'USD prices are only available in the desktop app.',

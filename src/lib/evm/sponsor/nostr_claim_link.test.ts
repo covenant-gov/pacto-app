@@ -15,6 +15,7 @@ const golden = JSON.parse(readFileSync(join(here, 'claim-link.golden.json'), 'ut
   salt: Hex;
   npubHash: Hex;
   nostrClaimDigest: Hex;
+  nostrSignature: string;
 };
 
 describe('nostr_claim_link', () => {
@@ -32,5 +33,9 @@ describe('nostr_claim_link', () => {
       salt: golden.salt,
     });
     expect(digest.toLowerCase()).toBe(golden.nostrClaimDigest.toLowerCase());
+  });
+
+  it('golden nostrSignature is 64 bytes hex', () => {
+    expect(golden.nostrSignature).toMatch(/^[0-9a-f]{128}$/i);
   });
 });
