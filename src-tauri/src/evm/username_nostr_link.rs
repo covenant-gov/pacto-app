@@ -24,17 +24,17 @@ pub async fn publish_username_claim_link(
     let nonce_s = nonce.to_string();
     let issued_s = issued_at.to_string();
 
-    let builder = EventBuilder::new(
-        Kind::from_u16(PACTO_USERNAME_CLAIM_KIND),
-        username,
-    )
-    .tag(nostr_tags::custom_tag("name", [username]))
-    .tag(nostr_tags::custom_tag("evm", [evm_checksum.as_str()]))
-    .tag(nostr_tags::custom_tag("npub-hash", [npub_hash_hex.as_str()]))
-    .tag(nostr_tags::custom_tag("nonce", [nonce_s.as_str()]))
-    .tag(nostr_tags::custom_tag("issued-at", [issued_s.as_str()]))
-    .tag(nostr_tags::custom_tag("salt", [salt_hex.as_str()]))
-    .tag(nostr_tags::d_tag([npub_hash_hex.as_str()]));
+    let builder = EventBuilder::new(Kind::from_u16(PACTO_USERNAME_CLAIM_KIND), username)
+        .tag(nostr_tags::custom_tag("name", [username]))
+        .tag(nostr_tags::custom_tag("evm", [evm_checksum.as_str()]))
+        .tag(nostr_tags::custom_tag(
+            "npub-hash",
+            [npub_hash_hex.as_str()],
+        ))
+        .tag(nostr_tags::custom_tag("nonce", [nonce_s.as_str()]))
+        .tag(nostr_tags::custom_tag("issued-at", [issued_s.as_str()]))
+        .tag(nostr_tags::custom_tag("salt", [salt_hex.as_str()]))
+        .tag(nostr_tags::d_tag([npub_hash_hex.as_str()]));
 
     let event = nostr_sign::sign_with(builder, keys)?;
     let event_id = event.id.to_hex();

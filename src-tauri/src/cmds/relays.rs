@@ -1,14 +1,19 @@
 //! Relay lifecycle commands: connectivity probing, failure classification, custom/default
 //! relay CRUD, metrics/logs diagnostics, and the background connection monitor.
+use crate::{
+    current_login_generation, db, evm, extract_mention_notification_body,
+    get_blossom_media_servers, get_file_type_description, get_nostr_client, handle_event_guarded,
+    net_transport, nostr_sign, nostr_tags, notification, relay_cert, wait_for_populated_relay_pool,
+    MlsService, STATE, TAURI_APP,
+};
 use nostr_sdk::prelude::*;
-use crate::{current_login_generation, db, evm, extract_mention_notification_body, get_blossom_media_servers, get_file_type_description, get_nostr_client, handle_event_guarded, net_transport, nostr_sign, nostr_tags, notification, relay_cert, wait_for_populated_relay_pool, MlsService, STATE, TAURI_APP};
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, VecDeque};
 use std::sync::RwLock;
 
+use lazy_static::lazy_static;
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::Mutex;
-use lazy_static::lazy_static;
 
 #[tauri::command]
 pub(crate) async fn notifs() -> Result<bool, String> {
@@ -832,7 +837,11 @@ pub(crate) static DIAGNOSTICS_TEST_LOCK: parking_lot::Mutex<()> = parking_lot::M
 /// caller (a monitor task) spawned. A mismatch means a stale monitor loop left running for a
 /// previous account is writing -- skip rather than attribute the failure to the current one
 /// (KTD9).
-pub(crate) fn store_relay_failure_if_current(url: &str, failure: RelayFailure, captured_generation: u64) {
+pub(crate) fn store_relay_failure_if_current(
+    url: &str,
+    failure: RelayFailure,
+    captured_generation: u64,
+) {
     if captured_generation != current_login_generation() {
         return;
     }
@@ -890,7 +899,12 @@ pub(crate) fn add_relay_log(url: &str, level: &str, message: &str) {
     }
 }
 
-pub(crate) fn add_relay_log_if_current(url: &str, level: &str, message: &str, captured_generation: u64) {
+pub(crate) fn add_relay_log_if_current(
+    url: &str,
+    level: &str,
+    message: &str,
+    captured_generation: u64,
+) {
     if captured_generation != current_login_generation() {
         return;
     }
@@ -1445,7 +1459,9 @@ pub(crate) struct RelayCertificateView {
 /// unreachable host, and a stalled handshake past its deadline are all
 /// indistinguishable to the panel, so none of them is surfaced as `Err`.
 #[tauri::command]
-pub(crate) async fn get_relay_certificate(url: String) -> Result<Option<RelayCertificateView>, String> {
+pub(crate) async fn get_relay_certificate(
+    url: String,
+) -> Result<Option<RelayCertificateView>, String> {
     let Some(certificate) = relay_cert::fetch_certificate(&url).await else {
         return Ok(None);
     };
@@ -1973,7 +1989,9 @@ pub(crate) fn validate_relay_url(url: &str) -> Result<String, String> {
 
 /// Get the list of custom relays from settings
 #[tauri::command]
-pub(crate) async fn get_custom_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<CustomRelay>, String> {
+pub(crate) async fn get_custom_relays<R: Runtime>(
+    handle: AppHandle<R>,
+) -> Result<Vec<CustomRelay>, String> {
     // Check if an account is selected
     if crate::account_manager::get_current_account().is_err() {
         return Ok(vec![]);
@@ -2326,7 +2344,10 @@ lazy_static! {
 
 /// Whether a relay is allowed to start a new single-relay reconnect fetch, given the set of
 /// relay URLs that currently have one in flight.
-pub(crate) fn relay_fetch_may_start(in_flight: &std::collections::HashSet<String>, url: &str) -> bool {
+pub(crate) fn relay_fetch_may_start(
+    in_flight: &std::collections::HashSet<String>,
+    url: &str,
+) -> bool {
     !in_flight.contains(url)
 }
 
@@ -2439,8 +2460,12 @@ pub(crate) async fn monitor_relay_connections() -> Result<bool, String> {
                                     // fetch_messages handles both DM and MLS group syncing for single-relay reconnections.
                                     // `guard` is held across the await and dropped afterward, so a panic mid-fetch still
                                     // releases the RELAY_FETCH_IN_FLIGHT slot via unwind.
-                                    crate::cmds::chat::fetch_messages(handle_inner, false, Some(url_string.clone()))
-                                        .await;
+                                    crate::cmds::chat::fetch_messages(
+                                        handle_inner,
+                                        false,
+                                        Some(url_string.clone()),
+                                    )
+                                    .await;
                                     drop(guard);
                                 });
                             } else {

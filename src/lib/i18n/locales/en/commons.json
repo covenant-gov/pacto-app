@@ -137,5 +137,7 @@
 	"commons.earlyAdopter.ctaAria": "Open profile to claim your username",
 	"commons.earlyAdopter.claimed": "@{username}",
 	"commons.earlyAdopter.verified": "Verified",
-	"commons.earlyAdopter.loading": "Checking username…"
+	"commons.earlyAdopter.loading": "Checking username…",
+	"commons.earlyAdopter.error": "Could not load username status.",
+	"commons.earlyAdopter.retry": "Retry"
 }

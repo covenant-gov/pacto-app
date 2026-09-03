@@ -256,7 +256,8 @@ mod tests {
 
     #[test]
     fn join_inbox_meta_derives_announcements_bucket() {
-        let content = r#"{"schema":"pacto.squad.join_inbox.meta.v1","inboxNpub":"npub1x","keyEpoch":1}"#;
+        let content =
+            r#"{"schema":"pacto.squad.join_inbox.meta.v1","inboxNpub":"npub1x","keyEpoch":1}"#;
         let bucket =
             normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
         assert_eq!(bucket.as_deref(), Some("announcements"));

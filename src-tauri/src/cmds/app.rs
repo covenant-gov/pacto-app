@@ -1,6 +1,6 @@
 //! Misc app-level commands: EVM hash signing, platform feature flags, maintenance, relaunch.
-use nostr_sdk::prelude::*;
 use crate::{audio, evm, image_cache, session};
+use nostr_sdk::prelude::*;
 
 use tauri::{AppHandle, Manager, Runtime};
 

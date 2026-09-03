@@ -110,8 +110,11 @@ export const hasPendingUsernameTransfer = derived(usernameState, ($s) => {
 });
 
 export function resetUsernameState(): void {
+  refreshGen += 1;
   usernameState.set({ ...initialState });
 }
+
+let refreshGen = 0;
 
 function ensurePubkeyHex(pubkey: string): Hex {
   const raw = pubkey.trim();
@@ -126,6 +129,8 @@ export async function refreshUsernameState(): Promise<void> {
     return;
   }
 
+  const gen = ++refreshGen;
+
   usernameState.update((s) => ({
     ...s,
     status: s.status === 'ready' ? 'ready' : 'loading',
@@ -137,14 +142,16 @@ export async function refreshUsernameState(): Promise<void> {
       usernameGetCachedClaim(),
       getActiveSquadEvmSignerAddress(),
     ]);
+    if (gen !== refreshGen) return;
 
     let npubHash = cached?.npubHash?.trim() || '';
     if (!npubHash) {
       npubHash = npubHashFromPubkey(ensurePubkeyHex(user.pubkey));
     }
 
-    let record: UsernameRecordDto | null = null;
-    let pendingTransfer = false;
+    const prev = get(usernameState);
+    let record: UsernameRecordDto | null = prev.record;
+    let pendingTransfer = prev.pendingTransfer;
     try {
       const [rec, pending] = await Promise.all([
         usernameRecordOf(USERNAME_NETWORK, npubHash),
@@ -153,8 +160,9 @@ export async function refreshUsernameState(): Promise<void> {
       record = rec;
       pendingTransfer = pending;
     } catch {
-      // Chain reads can fail offline; keep cache.
+      // Chain reads can fail offline; keep last-known record + cache.
     }
+    if (gen !== refreshGen) return;
 
     usernameState.set({
       status: 'ready',
@@ -166,6 +174,7 @@ export async function refreshUsernameState(): Promise<void> {
       error: null,
     });
   } catch (e) {
+    if (gen !== refreshGen) return;
     usernameState.update((s) => ({
       ...s,
       status: 'error',

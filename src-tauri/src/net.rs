@@ -676,10 +676,13 @@ mod tests {
             "description": null,
             "favicon": "https://example.com/favicon.ico"
         }"#;
-        let metadata: SiteMetadata =
-            serde_json::from_str(old_json).expect("old preview JSON without cached fields must still parse");
+        let metadata: SiteMetadata = serde_json::from_str(old_json)
+            .expect("old preview JSON without cached fields must still parse");
         assert_eq!(metadata.og_image_cached, None);
         assert_eq!(metadata.favicon_cached, None);
-        assert_eq!(metadata.og_image.as_deref(), Some("https://example.com/img.png"));
+        assert_eq!(
+            metadata.og_image.as_deref(),
+            Some("https://example.com/img.png")
+        );
     }
 }

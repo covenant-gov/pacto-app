@@ -1,8 +1,8 @@
 //! Voice message recording and Whisper transcription commands.
-use nostr_sdk::prelude::*;
+use crate::voice::AudioRecorder;
 #[cfg(all(not(target_os = "android"), feature = "whisper"))]
 use crate::{audio, whisper};
-use crate::voice::AudioRecorder;
+use nostr_sdk::prelude::*;
 
 use tauri::{AppHandle, Runtime};
 

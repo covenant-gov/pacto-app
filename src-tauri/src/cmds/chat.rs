@@ -2,14 +2,20 @@
 //! DM deletion, and the gift-wrap intake path (`handle_event`) plus the account-wide
 //! forward/backward/catch-up sync state machine that backs `fetch_messages`.
 
+use crate::{
+    db, get_file_type_description, get_nostr_client, handle_event_guarded, mls, nostr_sign,
+    nostr_tags, notification, process_rumor, save_chat_messages, trusted_relays,
+    wait_for_populated_relay_pool, ChatState, ChatType, ConversationType, Message, MlsService,
+    Reaction, RumorContext, RumorEvent, RumorProcessingResult, StoredEvent, SyncMode, STATE,
+    TAURI_APP, WRAPPER_ID_CACHE,
+};
 use crate::{profile, Profile};
-use nostr_sdk::prelude::*;
-use crate::{db, get_file_type_description, get_nostr_client, handle_event_guarded, mls, notification, nostr_sign, nostr_tags, process_rumor, save_chat_messages, trusted_relays, wait_for_populated_relay_pool, ChatState, ChatType, ConversationType, Message, MlsService, Reaction, RumorContext, RumorEvent, RumorProcessingResult, STATE, StoredEvent, SyncMode, TAURI_APP, WRAPPER_ID_CACHE};
-use tauri::{AppHandle, Emitter, Manager, Runtime};
-use tokio::sync::Mutex;
-use lazy_static::lazy_static;
 #[cfg(test)]
 use crate::{Chat, NotificationLevel};
+use lazy_static::lazy_static;
+use nostr_sdk::prelude::*;
+use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tokio::sync::Mutex;
 
 /// Grace period after a Finished account-wide sync before a `fetch_messages(false)` call
 /// (wake/reconnect trigger) is worth re-checking for missed events.
@@ -66,7 +72,11 @@ pub(crate) fn should_enter_catch_up(
 /// entry (`apply_overlap = true`, to re-cover the boundary) or the previous slice's `until`
 /// on every later slice of the same walk (`apply_overlap = false`). Returns
 /// `(since, until, is_last_slice)`; `is_last_slice` is true once the slice reaches `now`.
-pub(crate) fn catch_up_window(window_start: u64, now: u64, apply_overlap: bool) -> (u64, u64, bool) {
+pub(crate) fn catch_up_window(
+    window_start: u64,
+    now: u64,
+    apply_overlap: bool,
+) -> (u64, u64, bool) {
     let raw_since = if apply_overlap {
         window_start.saturating_sub(CATCH_UP_OVERLAP_SECS)
     } else {
@@ -866,7 +876,11 @@ mod fetch_messages_state_machine_tests {
 }
 
 #[tauri::command]
-pub(crate) async fn fetch_messages<R: Runtime>(handle: AppHandle<R>, init: bool, relay_url: Option<String>) {
+pub(crate) async fn fetch_messages<R: Runtime>(
+    handle: AppHandle<R>,
+    init: bool,
+    relay_url: Option<String>,
+) {
     let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Grab our pubkey
@@ -1331,7 +1345,10 @@ pub(crate) async fn fetch_messages<R: Runtime>(handle: AppHandle<R>, init: bool,
 /// Removes attachments with empty file hash from all messages
 /// Also removes messages that have ONLY corrupted attachments (no content)
 /// This cleans up corrupted uploads that resulted in 0-byte files
-pub(crate) async fn cleanup_empty_file_attachments<R: Runtime>(handle: &AppHandle<R>, state: &mut ChatState) {
+pub(crate) async fn cleanup_empty_file_attachments<R: Runtime>(
+    handle: &AppHandle<R>,
+    state: &mut ChatState,
+) {
     const EMPTY_FILE_HASH: &str =
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     let mut cleaned_count = 0;
@@ -1704,7 +1721,10 @@ pub(crate) async fn evict_chat_messages(chat_id: String, keep_count: usize) -> R
 /// Returns as soon as SQLite work finishes. In-memory `STATE` cleanup is best-effort
 /// and must not block the invoke when sync holds the lock.
 #[tauri::command]
-pub(crate) async fn delete_dm_chat<R: Runtime>(handle: AppHandle<R>, chat_id: String) -> Result<(), String> {
+pub(crate) async fn delete_dm_chat<R: Runtime>(
+    handle: AppHandle<R>,
+    chat_id: String,
+) -> Result<(), String> {
     let deleted_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -2239,7 +2259,11 @@ pub(crate) fn wallet_tx_hash_from_announcement_content(content: &str) -> Option<
     Some(h.to_lowercase())
 }
 
-pub(crate) fn dm_chat_has_wallet_tx_hash(state: &ChatState, peer_npub: &str, tx_hash_lower: &str) -> bool {
+pub(crate) fn dm_chat_has_wallet_tx_hash(
+    state: &ChatState,
+    peer_npub: &str,
+    tx_hash_lower: &str,
+) -> bool {
     for chat in &state.chats {
         if chat.chat_type != ChatType::DirectMessage || chat.id != peer_npub {
             continue;
@@ -2790,8 +2814,9 @@ pub(crate) async fn list_group_cursors() -> Result<serde_json::Value, String> {
 /// Last per-chat counts emitted to the frontend, so `update_unread_counter`
 /// can emit only the chats whose count actually changed (R14's single
 /// authority, without re-sending every chat on every recompute).
-pub(crate) static LAST_UNREAD_COUNTS: std::sync::LazyLock<Mutex<std::collections::HashMap<String, u32>>> =
-    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+pub(crate) static LAST_UNREAD_COUNTS: std::sync::LazyLock<
+    Mutex<std::collections::HashMap<String, u32>>,
+> = std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
 /// Guards against scheduling more than one pending debounced recompute at
 /// once (KTD9): a burst of MLS messages spawns a single delayed task, not
@@ -2803,7 +2828,8 @@ pub(crate) static UNREAD_RECOMPUTE_PENDING: std::sync::atomic::AtomicBool =
 /// and explicit actions (mark-as-read, a level change) call
 /// `update_unread_counter` directly instead, so they are never delayed by
 /// this window (R17's "moves badges in the same interaction").
-pub(crate) const UNREAD_RECOMPUTE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(500);
+pub(crate) const UNREAD_RECOMPUTE_DEBOUNCE: std::time::Duration =
+    std::time::Duration::from_millis(500);
 
 /// Returns the entries in `current` that differ from `last` (added, or a
 /// changed value) plus a zero entry for every id in `last` no longer in

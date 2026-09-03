@@ -5,7 +5,10 @@
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { ZERO_ADDRESS } from '../../lib/wallet/assets';
   import { requireBackupVerified } from '../../stores/backup-verification';
-  import { profileUsernameFocusNonce } from '../../stores/navigation';
+  import {
+    consumeProfileUsernameFocus,
+    profileUsernameFocusNonce,
+  } from '../../stores/navigation';
   import { showToast } from '../../stores/toast';
   import {
     USERNAME_NETWORK,
@@ -24,7 +27,6 @@
   let draftName = $state('');
   let availability: 'idle' | 'checking' | 'available' | 'taken' | 'invalid' = $state('idle');
   let newAddress = $state('');
-  let lastFocusNonce = $state(0);
 
   const username = $derived($claimedUsername);
   const verified = $derived($isUsernameVerified);
@@ -43,9 +45,9 @@
   });
 
   $effect(() => {
-    const nonce = $profileUsernameFocusNonce;
-    if (nonce <= lastFocusNonce) return;
-    lastFocusNonce = nonce;
+    // Subscribe so remounts re-run when the store nonce bumps.
+    void $profileUsernameFocusNonce;
+    if (!consumeProfileUsernameFocus()) return;
     queueMicrotask(() => {
       document
         .getElementById('settings-profile-username')

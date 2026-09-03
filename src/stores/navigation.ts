@@ -84,6 +84,22 @@ export function focusSquadSettingsNetworkEditor(slot: SquadNetworkSlot = 'primar
 /** Bumped to open Profile → username block from Commons Early Adopter CTA. */
 export const profileUsernameFocusNonce = writable(0);
 
+/** Survives ProfileUsernameBlock remount so scroll only runs when the nonce advances. */
+let lastConsumedProfileUsernameFocusNonce = 0;
+
+/** Returns true once per nonce bump (safe across component remounts). */
+export function consumeProfileUsernameFocus(): boolean {
+  const nonce = get(profileUsernameFocusNonce);
+  if (nonce <= lastConsumedProfileUsernameFocusNonce) return false;
+  lastConsumedProfileUsernameFocusNonce = nonce;
+  return true;
+}
+
+/** Test helper — reset focus consumption between cases. */
+export function resetProfileUsernameFocusConsumption(): void {
+  lastConsumedProfileUsernameFocusNonce = 0;
+}
+
 export function focusProfileUsername() {
   activeChannelId.set(null);
   activeHubChannelName.set(null);

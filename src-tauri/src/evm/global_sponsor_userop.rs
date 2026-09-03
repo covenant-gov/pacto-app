@@ -382,10 +382,13 @@ async fn username_lane_preflight<P: Provider>(
                     None,
                 ));
             }
-            let on_chain_version: U256 =
-                eth_call_decode(provider, addrs.sponsor_policy_registry, &policyVersionCall {})
-                    .await
-                    .map_err(|e| wallet_err_json("USERNAME_POLICY_READ", e, None))?;
+            let on_chain_version: U256 = eth_call_decode(
+                provider,
+                addrs.sponsor_policy_registry,
+                &policyVersionCall {},
+            )
+            .await
+            .map_err(|e| wallet_err_json("USERNAME_POLICY_READ", e, None))?;
             let catalog = U256::from(addrs.policy_version);
             if on_chain_version > catalog {
                 return Err(wallet_err_json(
@@ -607,7 +610,7 @@ async fn sign_and_send_global_user_op<P: Provider, S: Signer + Sync>(
 
 #[cfg(test)]
 mod tests {
-    use super::{assert_lane_matches_selector, CLAIM_USERNAME_SELECTOR, UsernameSponsorLane};
+    use super::{assert_lane_matches_selector, UsernameSponsorLane, CLAIM_USERNAME_SELECTOR};
 
     #[test]
     fn member_lane_rejects_claim_selector() {

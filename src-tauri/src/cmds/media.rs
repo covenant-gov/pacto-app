@@ -1,8 +1,11 @@
 //! Attachment commands: blurhash previews, download, and save-to-disk.
 
 use crate::util;
+use crate::{
+    calculate_file_hash, crypto, db, net, save_chat_messages, Attachment, ChatType, Message, STATE,
+    TAURI_APP,
+};
 use nostr_sdk::prelude::*;
-use crate::{calculate_file_hash, crypto, db, net, save_chat_messages, Attachment, ChatType, Message, STATE, TAURI_APP};
 use tauri::{AppHandle, Emitter, Manager};
 
 /// Decrypts and saves an attachment to disk
@@ -93,7 +96,10 @@ mod remote_plaintext_attachment_tests {
 }
 
 #[tauri::command]
-pub(crate) async fn generate_blurhash_preview(npub: String, msg_id: String) -> Result<String, String> {
+pub(crate) async fn generate_blurhash_preview(
+    npub: String,
+    msg_id: String,
+) -> Result<String, String> {
     // Get the first attachment from the message by searching through chats
     let img_meta = {
         let state = STATE.lock().await;
@@ -142,7 +148,11 @@ pub(crate) fn decode_blurhash(blurhash: String, width: u32, height: u32) -> Stri
 }
 
 #[tauri::command]
-pub(crate) async fn download_attachment(npub: String, msg_id: String, attachment_id: String) -> bool {
+pub(crate) async fn download_attachment(
+    npub: String,
+    msg_id: String,
+    attachment_id: String,
+) -> bool {
     let handle = TAURI_APP.get().unwrap();
 
     // Grab the attachment's metadata by searching through chats

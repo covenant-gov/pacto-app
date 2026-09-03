@@ -16,6 +16,7 @@
   const loading = $derived(
     $usernameState.status === 'idle' || $usernameState.status === 'loading',
   );
+  const errored = $derived($usernameState.status === 'error');
   const username = $derived($claimedUsername);
   const verified = $derived($isUsernameVerified);
 </script>
@@ -27,6 +28,19 @@
         <h2 class="commons-early-adopter-title">{$t('commons.earlyAdopter.title')}</h2>
         <p class="commons-early-adopter-lead">{$t('commons.earlyAdopter.loading')}</p>
       </div>
+    {:else if errored && !username}
+      <div class="commons-early-adopter-copy">
+        <h2 class="commons-early-adopter-title">{$t('commons.earlyAdopter.title')}</h2>
+        <p class="commons-early-adopter-lead">{$t('commons.earlyAdopter.error')}</p>
+      </div>
+      <button
+        type="button"
+        class="commons-early-adopter-cta commons-early-adopter-cta--muted"
+        aria-label={$t('commons.earlyAdopter.retry')}
+        onclick={() => void refreshUsernameState()}
+      >
+        {$t('commons.earlyAdopter.retry')}
+      </button>
     {:else if username}
       <button
         type="button"
@@ -145,6 +159,11 @@
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
+  }
+
+  .commons-early-adopter-cta--muted {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .commons-early-adopter-cta:hover {

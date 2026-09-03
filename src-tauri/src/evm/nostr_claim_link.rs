@@ -78,20 +78,16 @@ mod tests {
 
     #[test]
     fn npub_hash_matches_claim_link_golden() {
-        let pubkey =
-            b256!("0x391823cee659f38512ccde6c2bb6f4e32e917478ee2e96d4f5e05656e7adb2ae");
-        let expected =
-            b256!("0x540d126644e922328318f1870ba0c9de3b2d5c0c271e27af7efea3e44025fdc1");
+        let pubkey = b256!("0x391823cee659f38512ccde6c2bb6f4e32e917478ee2e96d4f5e05656e7adb2ae");
+        let expected = b256!("0x540d126644e922328318f1870ba0c9de3b2d5c0c271e27af7efea3e44025fdc1");
         assert_eq!(npub_hash_from_pubkey(pubkey), expected);
     }
 
     #[test]
     fn hash_nostr_claim_matches_claim_link_golden() {
-        let pubkey =
-            b256!("0x391823cee659f38512ccde6c2bb6f4e32e917478ee2e96d4f5e05656e7adb2ae");
+        let pubkey = b256!("0x391823cee659f38512ccde6c2bb6f4e32e917478ee2e96d4f5e05656e7adb2ae");
         let evm = address!("0xe05fcC23807536bEe418f142D19fa0d21BB0cfF7");
-        let salt =
-            b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
+        let salt = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let digest = hash_nostr_claim(
             pubkey,
             evm,
@@ -100,18 +96,15 @@ mod tests {
             U256::from(1_735_689_600u64),
             salt,
         );
-        let expected =
-            b256!("0x3bb29eb179f3f41047a8bd46613518f22b27436826c9d2f5b8e6f42f9162cf6e");
+        let expected = b256!("0x3bb29eb179f3f41047a8bd46613518f22b27436826c9d2f5b8e6f42f9162cf6e");
         assert_eq!(digest, expected);
     }
 
     #[test]
     fn golden_nostr_signature_verifies() {
-        let pubkey =
-            b256!("0x391823cee659f38512ccde6c2bb6f4e32e917478ee2e96d4f5e05656e7adb2ae");
+        let pubkey = b256!("0x391823cee659f38512ccde6c2bb6f4e32e917478ee2e96d4f5e05656e7adb2ae");
         let evm = address!("0xe05fcC23807536bEe418f142D19fa0d21BB0cfF7");
-        let salt =
-            b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
+        let salt = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let digest = hash_nostr_claim(
             pubkey,
             evm,
@@ -130,10 +123,35 @@ mod tests {
         let secret = [0x42u8; 32];
         let signing_key = SigningKey::from_bytes(&secret).expect("sk");
         let pubkey = B256::from_slice(signing_key.verifying_key().to_bytes().as_slice());
-        let digest =
-            b256!("0x3bb29eb179f3f41047a8bd46613518f22b27436826c9d2f5b8e6f42f9162cf6e");
+        let digest = b256!("0x3bb29eb179f3f41047a8bd46613518f22b27436826c9d2f5b8e6f42f9162cf6e");
         let sig = sign_nostr_claim(&secret, digest).expect("sign");
         assert!(verify_nostr_claim(pubkey, digest, &sig));
+    }
+
+    #[test]
+    fn verify_nostr_claim_rejects_wrong_key_mutated_digest_and_truncated_sig() {
+        let secret = [0x42u8; 32];
+        let signing_key = SigningKey::from_bytes(&secret).expect("sk");
+        let pubkey = B256::from_slice(signing_key.verifying_key().to_bytes().as_slice());
+        let digest = b256!("0x3bb29eb179f3f41047a8bd46613518f22b27436826c9d2f5b8e6f42f9162cf6e");
+        let sig = sign_nostr_claim(&secret, digest).expect("sign");
+
+        let other_secret = [0x43u8; 32];
+        let other_pk = B256::from_slice(
+            SigningKey::from_bytes(&other_secret)
+                .expect("sk")
+                .verifying_key()
+                .to_bytes()
+                .as_slice(),
+        );
+        assert!(!verify_nostr_claim(other_pk, digest, &sig));
+
+        let mut mutated = digest;
+        mutated.0[0] ^= 0xff;
+        assert!(!verify_nostr_claim(pubkey, mutated, &sig));
+
+        assert!(!verify_nostr_claim(pubkey, digest, &sig[..32]));
+        assert!(!verify_nostr_claim(pubkey, digest, &[]));
     }
 
     #[test]

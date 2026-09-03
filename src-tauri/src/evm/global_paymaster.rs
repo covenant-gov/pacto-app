@@ -57,8 +57,7 @@ mod tests {
     #[test]
     fn encode_global_paymaster_and_data_matches_golden_vector() {
         let paymaster = address!("0x1C2eb4Ac1cD57aF67ad8B20838A28FB23d39d5b8");
-        let npub_hash =
-            b256!("0x540d126644e922328318f1870ba0c9de3b2d5c0c271e27af7efea3e44025fdc1");
+        let npub_hash = b256!("0x540d126644e922328318f1870ba0c9de3b2d5c0c271e27af7efea3e44025fdc1");
         let member = address!("0xe05fcC23807536bEe418f142D19fa0d21BB0cfF7");
         let encoded = encode_global_paymaster_and_data(
             paymaster,

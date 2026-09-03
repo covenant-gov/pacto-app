@@ -873,10 +873,11 @@ mod relay_failure_diagnostics_tests {
     use super::{clear_nostr_client, current_login_generation};
     use crate::cmds::auth::clear_relay_diagnostics_on_logout;
     use crate::cmds::relays::{
-        add_relay_log, add_relay_log_if_current, clear_relay_failure, clear_relay_failure_if_current,
-        normalize_relay_url, relay_failure_for, store_relay_failure_if_current, update_relay_metrics,
-        update_relay_metrics_if_current, RelayFailure, RelayFailureCode, RelayInfo,
-        DIAGNOSTICS_TEST_LOCK, RELAY_FAILURES, RELAY_LOGS, RELAY_METRICS,
+        add_relay_log, add_relay_log_if_current, clear_relay_failure,
+        clear_relay_failure_if_current, normalize_relay_url, relay_failure_for,
+        store_relay_failure_if_current, update_relay_metrics, update_relay_metrics_if_current,
+        RelayFailure, RelayFailureCode, RelayInfo, DIAGNOSTICS_TEST_LOCK, RELAY_FAILURES,
+        RELAY_LOGS, RELAY_METRICS,
     };
 
     fn failure(code: RelayFailureCode) -> RelayFailure {

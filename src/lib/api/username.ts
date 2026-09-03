@@ -48,6 +48,25 @@ export type UsernameTransferResult = {
   pendingAddress?: string;
 };
 
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && !!(window as { __TAURI__?: unknown }).__TAURI__;
+}
+
+function inVitest(): boolean {
+  return (
+    (typeof import.meta.env !== 'undefined' && !!import.meta.env.VITEST) ||
+    (typeof process !== 'undefined' && !!process.env?.VITEST)
+  );
+}
+
+/** Writes require the desktop app; vitest mocks invoke and skips this gate. */
+function requireDesktopUsernameWrite(): void {
+  if (inVitest()) return;
+  if (!isTauri()) {
+    throw new Error('Username writes are only available in the desktop app.');
+  }
+}
+
 export async function usernameNameAvailable(
   network: string,
   name: string,
@@ -141,6 +160,7 @@ export async function usernameClaim(
   name: string,
   rpcUrls?: string[],
 ): Promise<UsernameClaimResult> {
+  requireDesktopUsernameWrite();
   return invoke<UsernameClaimResult>('username_claim', { network, name, rpcUrls });
 }
 
@@ -150,6 +170,7 @@ export async function usernameInitiateAddressTransfer(
   newAddress: string,
   rpcUrls?: string[],
 ): Promise<UsernameTransferResult> {
+  requireDesktopUsernameWrite();
   return invoke<UsernameTransferResult>('username_initiate_address_transfer', {
     network,
     npubHash,
@@ -163,6 +184,7 @@ export async function usernameClaimAddressTransfer(
   npubHash: string,
   rpcUrls?: string[],
 ): Promise<UsernameTransferResult> {
+  requireDesktopUsernameWrite();
   return invoke<UsernameTransferResult>('username_claim_address_transfer', {
     network,
     npubHash,
@@ -175,6 +197,7 @@ export async function usernameCancelAddressTransfer(
   npubHash: string,
   rpcUrls?: string[],
 ): Promise<UsernameTransferResult> {
+  requireDesktopUsernameWrite();
   return invoke<UsernameTransferResult>('username_cancel_address_transfer', {
     network,
     npubHash,

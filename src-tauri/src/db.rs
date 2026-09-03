@@ -1807,7 +1807,10 @@ pub struct UsernameClaimUpsert {
     pub username: String,
     pub npub_hash: String,
     pub token_id: String,
+    /// `Some(id)` sets the link; `None` preserves existing unless `invalidate_link_event_id`.
     pub link_event_id: Option<String>,
+    /// When true, force `link_event_id` to NULL (used after address rotation if republish fails).
+    pub invalidate_link_event_id: bool,
     pub policy_version: i64,
     pub network: String,
 }
@@ -1841,11 +1844,19 @@ fn upsert_username_claim_conn(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    let link = row
-        .link_event_id
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty());
+    let link = if row.invalidate_link_event_id {
+        None
+    } else {
+        row.link_event_id
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+    };
+    let invalidate = if row.invalidate_link_event_id {
+        1i64
+    } else {
+        0i64
+    };
     conn.execute(
         "INSERT INTO username_claims (
             npub, username, npub_hash, token_id, link_event_id,
@@ -1855,7 +1866,10 @@ fn upsert_username_claim_conn(
             username = excluded.username,
             npub_hash = excluded.npub_hash,
             token_id = excluded.token_id,
-            link_event_id = COALESCE(excluded.link_event_id, username_claims.link_event_id),
+            link_event_id = CASE
+                WHEN ?9 = 1 THEN NULL
+                ELSE COALESCE(excluded.link_event_id, username_claims.link_event_id)
+            END,
             policy_version = excluded.policy_version,
             network = excluded.network,
             updated_at_ms = excluded.updated_at_ms",
@@ -1868,6 +1882,7 @@ fn upsert_username_claim_conn(
             row.policy_version,
             network,
             now,
+            invalidate,
         ],
     )
     .map_err(|e| format!("Failed to upsert username_claims: {e}"))?;
@@ -1927,6 +1942,64 @@ pub fn get_username_claim<R: Runtime>(
     let result = get_username_claim_conn(&conn, &npub);
     crate::account_manager::return_db_connection(conn);
     result
+}
+
+#[cfg(test)]
+mod username_claims_cache_tests {
+    use super::{
+        get_username_claim_conn, upsert_username_claim_conn, UsernameClaimUpsert,
+    };
+
+    fn sample(link: Option<&str>, invalidate: bool) -> UsernameClaimUpsert {
+        UsernameClaimUpsert {
+            username: "alice".into(),
+            npub_hash: "0x".to_string() + &"ab".repeat(32),
+            token_id: "1".into(),
+            link_event_id: link.map(|s| s.to_string()),
+            invalidate_link_event_id: invalidate,
+            policy_version: 3,
+            network: "sepolia".into(),
+        }
+    }
+
+    #[test]
+    fn upsert_get_and_coalesce_preserve_link_event_id() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(Some("evt-1"), false))
+            .expect("insert");
+        let row = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert_eq!(row.username, "alice");
+        assert_eq!(row.link_event_id.as_deref(), Some("evt-1"));
+
+        // Rotation-style upsert with None preserves the prior link.
+        let mut rotate = sample(None, false);
+        rotate.username = "alice".into();
+        rotate.token_id = "1".into();
+        upsert_username_claim_conn(&conn, "npub1alice", &rotate).expect("preserve");
+        let preserved = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert_eq!(preserved.link_event_id.as_deref(), Some("evt-1"));
+
+        // Explicit set overwrites.
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(Some("evt-2"), false))
+            .expect("set");
+        let updated = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert_eq!(updated.link_event_id.as_deref(), Some("evt-2"));
+
+        // Invalidate clears even when link_event_id is None.
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(None, true)).expect("clear");
+        let cleared = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert!(cleared.link_event_id.is_none());
+    }
 }
 
 #[cfg(test)]

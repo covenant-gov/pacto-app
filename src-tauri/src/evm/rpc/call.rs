@@ -135,6 +135,8 @@ mod tests {
             r#"HTTP error 429 with body: {"error":{"code":-32005,"message":"Rate limit exceeded"}}"#
         ));
         assert!(is_retryable_gov_rpc_error("jsonrpc error code -32005"));
-        assert!(!is_retryable_gov_rpc_error("execution reverted: Unauthorized"));
+        assert!(!is_retryable_gov_rpc_error(
+            "execution reverted: Unauthorized"
+        ));
     }
 }

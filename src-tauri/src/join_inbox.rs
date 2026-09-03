@@ -531,7 +531,9 @@ pub async fn inbox_keys_for_holder<R: Runtime>(
         let (secret_inbox, secret_epoch, enc) = read_secret_row(&conn, squad_id)?;
         crate::account_manager::return_db_connection(conn);
         if secret_inbox != inbox_npub || secret_epoch != key_epoch {
-            return Err("Local Join inbox key is stale — ask a holder to re-share or rotate".into());
+            return Err(
+                "Local Join inbox key is stale — ask a holder to re-share or rotate".into(),
+            );
         }
         (inbox_npub, holders, key_epoch, enc)
     };
@@ -578,7 +580,13 @@ pub async fn join_inbox_init<R: Runtime>(
             let has = has_secret_row(&conn, &squad_id)?;
             crate::account_manager::return_db_connection(conn);
             let state = state_dto(
-                &squad_id, &inbox_npub, &holders, key_epoch, updated_at, has, &me,
+                &squad_id,
+                &inbox_npub,
+                &holders,
+                key_epoch,
+                updated_at,
+                has,
+                &me,
             );
             return Ok(JoinInboxPublishBundle {
                 state,
@@ -606,10 +614,23 @@ pub async fn join_inbox_init<R: Runtime>(
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
     store_secret_encrypted(&conn, &squad_id, &inbox_npub, key_epoch, &enc)?;
-    upsert_meta_row(&conn, &squad_id, &inbox_npub, &holders, key_epoch, updated_at)?;
+    upsert_meta_row(
+        &conn,
+        &squad_id,
+        &inbox_npub,
+        &holders,
+        key_epoch,
+        updated_at,
+    )?;
     let meta = meta_content(&squad_id, &inbox_npub, &holders, key_epoch, updated_at)?;
     let state = state_dto(
-        &squad_id, &inbox_npub, &holders, key_epoch, updated_at, true, &me,
+        &squad_id,
+        &inbox_npub,
+        &holders,
+        key_epoch,
+        updated_at,
+        true,
+        &me,
     );
     crate::account_manager::return_db_connection(conn);
     Ok(JoinInboxPublishBundle {
@@ -636,7 +657,13 @@ pub async fn join_inbox_get_state<R: Runtime>(
     crate::account_manager::return_db_connection(conn);
     Ok(row.map(|(inbox_npub, holders, key_epoch, updated_at)| {
         state_dto(
-            &squad_id, &inbox_npub, &holders, key_epoch, updated_at, has, &me,
+            &squad_id,
+            &inbox_npub,
+            &holders,
+            key_epoch,
+            updated_at,
+            has,
+            &me,
         )
     }))
 }
@@ -661,7 +688,13 @@ pub async fn join_inbox_reclaim_if_split<R: Runtime>(
     if !has_secret_row(&conn, &squad_id)? {
         let has = false;
         let state = state_dto(
-            &squad_id, &meta_inbox, &holders, meta_epoch, updated_at, has, &me,
+            &squad_id,
+            &meta_inbox,
+            &holders,
+            meta_epoch,
+            updated_at,
+            has,
+            &me,
         );
         crate::account_manager::return_db_connection(conn);
         return Ok(JoinInboxPublishBundle {
@@ -675,7 +708,13 @@ pub async fn join_inbox_reclaim_if_split<R: Runtime>(
     if !is_same_epoch_split(&secret_inbox, secret_epoch, &meta_inbox, meta_epoch) {
         let has = true;
         let state = state_dto(
-            &squad_id, &meta_inbox, &holders, meta_epoch, updated_at, has, &me,
+            &squad_id,
+            &meta_inbox,
+            &holders,
+            meta_epoch,
+            updated_at,
+            has,
+            &me,
         );
         crate::account_manager::return_db_connection(conn);
         return Ok(JoinInboxPublishBundle {
@@ -765,7 +804,13 @@ pub async fn join_inbox_add_holder<R: Runtime>(
         let has = true;
         let updated_at = unix_now_secs();
         let state = state_dto(
-            &squad_id, &inbox_npub, &holders, key_epoch, updated_at, has, &me,
+            &squad_id,
+            &inbox_npub,
+            &holders,
+            key_epoch,
+            updated_at,
+            has,
+            &me,
         );
         crate::account_manager::return_db_connection(conn);
         return Ok(JoinInboxPublishBundle {
@@ -778,13 +823,26 @@ pub async fn join_inbox_add_holder<R: Runtime>(
     holders.push(holder_npub.clone());
     let updated_at = unix_now_secs();
     let (_bn, _epoch, enc) = read_secret_row(&conn, &squad_id)?;
-    upsert_meta_row(&conn, &squad_id, &inbox_npub, &holders, key_epoch, updated_at)?;
+    upsert_meta_row(
+        &conn,
+        &squad_id,
+        &inbox_npub,
+        &holders,
+        key_epoch,
+        updated_at,
+    )?;
     let meta = meta_content(&squad_id, &inbox_npub, &holders, key_epoch, updated_at)?;
     crate::account_manager::return_db_connection(conn);
     let nsec = decrypt_nsec(enc).await?;
     let share = key_share_content(&squad_id, &inbox_npub, key_epoch, &nsec)?;
     let state = state_dto(
-        &squad_id, &inbox_npub, &holders, key_epoch, updated_at, true, &me,
+        &squad_id,
+        &inbox_npub,
+        &holders,
+        key_epoch,
+        updated_at,
+        true,
+        &me,
     );
     Ok(JoinInboxPublishBundle {
         state,
@@ -829,7 +887,14 @@ pub async fn join_inbox_remove_holder<R: Runtime>(
         return Err("Npub is not a Join inbox holder".into());
     }
     let updated_at = unix_now_secs();
-    upsert_meta_row(&conn, &squad_id, &inbox_npub, &holders, key_epoch, updated_at)?;
+    upsert_meta_row(
+        &conn,
+        &squad_id,
+        &inbox_npub,
+        &holders,
+        key_epoch,
+        updated_at,
+    )?;
     if holder_npub == me {
         delete_secret(&conn, &squad_id)?;
     }
@@ -837,7 +902,13 @@ pub async fn join_inbox_remove_holder<R: Runtime>(
     let prompt = rotate_prompt_content(&squad_id, key_epoch, &holder_npub, updated_at)?;
     let has = has_secret_row(&conn, &squad_id)?;
     let state = state_dto(
-        &squad_id, &inbox_npub, &holders, key_epoch, updated_at, has, &me,
+        &squad_id,
+        &inbox_npub,
+        &holders,
+        key_epoch,
+        updated_at,
+        has,
+        &me,
     );
     crate::account_manager::return_db_connection(conn);
     Ok(JoinInboxPublishBundle {
@@ -894,7 +965,14 @@ pub async fn join_inbox_rotate_key<R: Runtime>(
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
     store_secret_encrypted(&conn, &squad_id, &inbox_npub, key_epoch, &enc)?;
-    upsert_meta_row(&conn, &squad_id, &inbox_npub, &holders, key_epoch, updated_at)?;
+    upsert_meta_row(
+        &conn,
+        &squad_id,
+        &inbox_npub,
+        &holders,
+        key_epoch,
+        updated_at,
+    )?;
 
     let meta = meta_content(&squad_id, &inbox_npub, &holders, key_epoch, updated_at)?;
     let rotated = key_rotated_content(&squad_id, &inbox_npub, key_epoch, &me, updated_at)?;
@@ -908,7 +986,13 @@ pub async fn join_inbox_rotate_key<R: Runtime>(
         })
         .collect();
     let state = state_dto(
-        &squad_id, &inbox_npub, &holders, key_epoch, updated_at, true, &me,
+        &squad_id,
+        &inbox_npub,
+        &holders,
+        key_epoch,
+        updated_at,
+        true,
+        &me,
     );
     crate::account_manager::return_db_connection(conn);
     Ok(JoinInboxPublishBundle {
@@ -1321,7 +1405,10 @@ mod tests {
         let keys = Keys::generate();
         let npub = keys.public_key().to_bech32().unwrap();
         let hex = keys.public_key().to_hex();
-        assert_eq!(normalize_creator_npub(&npub).as_deref(), Some(npub.as_str()));
+        assert_eq!(
+            normalize_creator_npub(&npub).as_deref(),
+            Some(npub.as_str())
+        );
         assert_eq!(normalize_creator_npub(&hex).as_deref(), Some(npub.as_str()));
         assert_eq!(normalize_creator_npub(""), None);
         assert_eq!(normalize_creator_npub("not-a-key"), None);

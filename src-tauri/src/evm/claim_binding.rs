@@ -92,9 +92,10 @@ mod tests {
 
     #[test]
     fn claim_binding_typehash_matches_upstream() {
+        // Pinned keccak256(CLAIM_BINDING_TYPE_STRING); catches domain/type-string typos.
         assert_eq!(
             *CLAIM_BINDING_TYPEHASH,
-            keccak256(CLAIM_BINDING_TYPE_STRING)
+            b256!("0x4e725b9394351ca3e26128b54bfe1a4fb0f23cb669f963fc2adf52ca9134ee18")
         );
     }
 
@@ -103,21 +104,12 @@ mod tests {
         let pk = "0x00000000000000000000000000000000000000000000000000000000000a11ce";
         let signer: PrivateKeySigner = pk.parse().expect("pk");
         let nft = address!("0x1111111111111111111111111111111111111111");
-        let npub_hash =
-            b256!("0x540d126644e922328318f1870ba0c9de3b2d5c0c271e27af7efea3e44025fdc1");
-        let salt =
-            b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
+        let npub_hash = b256!("0x540d126644e922328318f1870ba0c9de3b2d5c0c271e27af7efea3e44025fdc1");
+        let salt = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let nonce = U256::from(1u64);
         let issued_at = U256::from(1_735_689_600u64);
         let sig = sign_claim_binding(
-            &signer,
-            11_155_111,
-            nft,
-            npub_hash,
-            "daopunk",
-            nonce,
-            issued_at,
-            salt,
+            &signer, 11_155_111, nft, npub_hash, "daopunk", nonce, issued_at, salt,
         )
         .expect("sign");
         assert_eq!(sig.len(), 65);

@@ -4,6 +4,7 @@ import {
   computeUsernameVerified,
   claimedUsernameFromState,
   resetUsernameState,
+  refreshUsernameState,
   usernameState,
   isUsernameVerified,
   claimedUsername,
@@ -12,6 +13,12 @@ import {
   type UsernameState,
 } from './username';
 import { currentUser } from './auth';
+import {
+  usernameGetCachedClaim,
+  usernameRecordOf,
+  usernameIsPendingTransfer,
+} from '../lib/api/username';
+import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
 
 vi.mock('../lib/api/username', () => ({
   usernameGetCachedClaim: vi.fn(),
@@ -28,8 +35,45 @@ vi.mock('../lib/wallet/evm-accounts', () => ({
   getActiveSquadEvmSignerAddress: vi.fn(),
 }));
 
+vi.mock('../lib/evm/sponsor/nostr_claim_link', () => ({
+  npubHashFromPubkey: vi.fn(() => '0x' + 'ab'.repeat(32)),
+}));
+
+const mockGetCached = vi.mocked(usernameGetCachedClaim);
+const mockRecordOf = vi.mocked(usernameRecordOf);
+const mockPending = vi.mocked(usernameIsPendingTransfer);
+const mockActiveEvm = vi.mocked(getActiveSquadEvmSignerAddress);
+
 const EVM = '0x1111111111111111111111111111111111111111';
 const OTHER = '0x2222222222222222222222222222222222222222';
+const NPUB_HASH = '0x' + 'ab'.repeat(32);
+
+function readyState(overrides: Partial<UsernameState> = {}): UsernameState {
+  return {
+    status: 'ready',
+    cached: {
+      npub: 'npub1',
+      username: 'alice',
+      npubHash: NPUB_HASH,
+      tokenId: '1',
+      linkEventId: 'evt1',
+      policyVersion: 3,
+      network: 'sepolia',
+      updatedAtMs: 1,
+    },
+    record: {
+      name: 'alice',
+      evmAddress: EVM,
+      pendingAddress: '0x0000000000000000000000000000000000000000',
+      tokenId: '1',
+    },
+    pendingTransfer: false,
+    activeEvm: EVM,
+    busy: false,
+    error: null,
+    ...overrides,
+  };
+}
 
 describe('computeUsernameVerified', () => {
   it('requires linkEventId, non-zero token, name, and matching evm', () => {
@@ -106,6 +150,33 @@ describe('computeUsernameVerified', () => {
       }),
     ).toBe(true);
   });
+
+  it('is unverified after rotation until a fresh linkEventId is present', () => {
+    expect(
+      computeUsernameVerified({
+        linkEventId: null,
+        record: {
+          name: 'alice',
+          evmAddress: OTHER,
+          pendingAddress: '0x0000000000000000000000000000000000000000',
+          tokenId: '1',
+        },
+        activeEvm: OTHER,
+      }),
+    ).toBe(false);
+    expect(
+      computeUsernameVerified({
+        linkEventId: 'evt-after-rotation',
+        record: {
+          name: 'alice',
+          evmAddress: OTHER,
+          pendingAddress: '0x0000000000000000000000000000000000000000',
+          tokenId: '1',
+        },
+        activeEvm: OTHER,
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('claimedUsernameFromState', () => {
@@ -164,29 +235,7 @@ describe('username derived stores', () => {
 
   it('isUsernameVerified tracks state', () => {
     expect(get(isUsernameVerified)).toBe(false);
-    usernameState.set({
-      status: 'ready',
-      cached: {
-        npub: 'npub1',
-        username: 'alice',
-        npubHash: '0xab',
-        tokenId: '1',
-        linkEventId: 'evt1',
-        policyVersion: 3,
-        network: 'sepolia',
-        updatedAtMs: 1,
-      },
-      record: {
-        name: 'alice',
-        evmAddress: EVM,
-        pendingAddress: '0x0000000000000000000000000000000000000000',
-        tokenId: '1',
-      },
-      pendingTransfer: false,
-      activeEvm: EVM,
-      busy: false,
-      error: null,
-    });
+    usernameState.set(readyState());
     expect(get(isUsernameVerified)).toBe(true);
     expect(get(claimedUsername)).toBe('alice');
     expect(get(hasPendingUsernameTransfer)).toBe(false);
@@ -211,5 +260,97 @@ describe('username derived stores', () => {
       },
     }));
     expect(get(hasPendingUsernameTransfer)).toBe(true);
+  });
+});
+
+describe('refreshUsernameState', () => {
+  beforeEach(() => {
+    resetUsernameState();
+    currentUser.set({
+      pubkey: 'aa'.repeat(32),
+      npub: 'npub1test',
+    } as never);
+    mockGetCached.mockReset();
+    mockRecordOf.mockReset();
+    mockPending.mockReset();
+    mockActiveEvm.mockReset();
+  });
+
+  afterEach(() => {
+    resetUsernameState();
+    currentUser.set(null);
+  });
+
+  it('a stale refresh does not clobber a newer one', async () => {
+    const { promise, resolve: resolveFirst } = Promise.withResolvers<{
+      name: string;
+      evmAddress: string;
+      pendingAddress: string;
+      tokenId: string;
+    }>();
+
+    mockGetCached.mockResolvedValue({
+      npub: 'npub1',
+      username: 'alice',
+      npubHash: NPUB_HASH,
+      tokenId: '1',
+      linkEventId: 'evt1',
+      policyVersion: 3,
+      network: 'sepolia',
+      updatedAtMs: 1,
+    });
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockPending.mockResolvedValue(false);
+
+    let recordCalls = 0;
+    mockRecordOf.mockImplementation(() => {
+      recordCalls += 1;
+      if (recordCalls === 1) return promise;
+      return Promise.resolve({
+        name: 'alice',
+        evmAddress: OTHER,
+        pendingAddress: '0x0000000000000000000000000000000000000000',
+        tokenId: '1',
+      });
+    });
+
+    const first = refreshUsernameState();
+    // Let the first refresh pass cache/EVM awaits and park on recordOf.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await refreshUsernameState();
+    expect(get(usernameState).record?.evmAddress).toBe(OTHER);
+
+    resolveFirst({
+      name: 'alice',
+      evmAddress: EVM,
+      pendingAddress: '0x0000000000000000000000000000000000000000',
+      tokenId: '1',
+    });
+    await first;
+    expect(get(usernameState).record?.evmAddress).toBe(OTHER);
+  });
+
+  it('preserves last-known record when chain reads fail', async () => {
+    usernameState.set(readyState());
+    mockGetCached.mockResolvedValue({
+      npub: 'npub1',
+      username: 'alice',
+      npubHash: NPUB_HASH,
+      tokenId: '1',
+      linkEventId: 'evt1',
+      policyVersion: 3,
+      network: 'sepolia',
+      updatedAtMs: 1,
+    });
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockRecordOf.mockRejectedValueOnce(new Error('rpc down'));
+    mockPending.mockRejectedValueOnce(new Error('rpc down'));
+
+    await refreshUsernameState();
+    expect(get(usernameState).status).toBe('ready');
+    expect(get(usernameState).record?.evmAddress).toBe(EVM);
+    expect(get(usernameState).record?.name).toBe('alice');
   });
 });

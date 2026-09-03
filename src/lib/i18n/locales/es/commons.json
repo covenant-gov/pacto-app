@@ -137,5 +137,7 @@
 	"commons.earlyAdopter.ctaAria": "Abrir perfil para reclamar tu nombre de usuario",
 	"commons.earlyAdopter.claimed": "@{username}",
 	"commons.earlyAdopter.verified": "Verificado",
-	"commons.earlyAdopter.loading": "Comprobando nombre…"
+	"commons.earlyAdopter.loading": "Comprobando nombre…",
+	"commons.earlyAdopter.error": "No se pudo cargar el estado del nombre.",
+	"commons.earlyAdopter.retry": "Reintentar"
 }

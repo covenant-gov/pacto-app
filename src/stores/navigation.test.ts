@@ -20,6 +20,8 @@ import {
   focusSquadSettingsNetworkEditor,
   profileUsernameFocusNonce,
   focusProfileUsername,
+  consumeProfileUsernameFocus,
+  resetProfileUsernameFocusConsumption,
   showMembersPanel,
   lastOpenedSquadId,
   lastOpenedChannelId,
@@ -75,6 +77,7 @@ describe('navigation', () => {
     squadSettingsNetworkFocusNonce.set(0);
     squadSettingsNetworkFocusSlot.set('primary');
     profileUsernameFocusNonce.set(0);
+    resetProfileUsernameFocusConsumption();
     showMembersPanel.set(false);
     lastOpenedSquadId.set(null);
     lastOpenedChannelId.set(null);
@@ -247,5 +250,16 @@ describe('navigation', () => {
     expect(get(profileUsernameFocusNonce)).toBe(1);
     focusProfileUsername();
     expect(get(profileUsernameFocusNonce)).toBe(2);
+  });
+
+  it('consumeProfileUsernameFocus only returns true once per bump', () => {
+    resetProfileUsernameFocusConsumption();
+    profileUsernameFocusNonce.set(0);
+    expect(consumeProfileUsernameFocus()).toBe(false);
+    focusProfileUsername();
+    expect(consumeProfileUsernameFocus()).toBe(true);
+    expect(consumeProfileUsernameFocus()).toBe(false);
+    focusProfileUsername();
+    expect(consumeProfileUsernameFocus()).toBe(true);
   });
 });

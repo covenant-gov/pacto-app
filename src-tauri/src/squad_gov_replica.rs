@@ -3,7 +3,7 @@
 //! refresh hints and never write this table.
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Runtime, command};
+use tauri::{command, AppHandle, Runtime};
 
 use crate::db::{is_author_mls_member_for_chat, side_effect_parent_matches_chat};
 
@@ -245,8 +245,14 @@ mod tests {
     #[test]
     fn newer_block_replaces_older() {
         let conn = mem_db();
-        assert!(upsert_if_newer(&conn, &row(10, r#"{"memberHatByAddress":{"0xa":"Captain"}}"#)).unwrap());
-        assert!(!upsert_if_newer(&conn, &row(9, r#"{"memberHatByAddress":{"0xb":"Crew"}}"#)).unwrap());
+        assert!(upsert_if_newer(
+            &conn,
+            &row(10, r#"{"memberHatByAddress":{"0xa":"Captain"}}"#)
+        )
+        .unwrap());
+        assert!(
+            !upsert_if_newer(&conn, &row(9, r#"{"memberHatByAddress":{"0xb":"Crew"}}"#)).unwrap()
+        );
         let stored: String = conn
             .query_row(
                 "SELECT snapshot_json FROM squad_gov_replica WHERE parent_id = 'g1'",
@@ -255,7 +261,9 @@ mod tests {
             )
             .unwrap();
         assert!(stored.contains("0xa"));
-        assert!(upsert_if_newer(&conn, &row(11, r#"{"memberHatByAddress":{"0xc":"Crew"}}"#)).unwrap());
+        assert!(
+            upsert_if_newer(&conn, &row(11, r#"{"memberHatByAddress":{"0xc":"Crew"}}"#)).unwrap()
+        );
     }
 
     #[test]

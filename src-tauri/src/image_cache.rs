@@ -326,7 +326,10 @@ pub async fn cache_image<R: Runtime>(
     let client = match http_client() {
         Ok(c) => c,
         Err(e) => {
-            warn!("[ImageCache] Failed to build HTTP client for {}: {}", url, e);
+            warn!(
+                "[ImageCache] Failed to build HTTP client for {}: {}",
+                url, e
+            );
             return CacheResult::Failed(e);
         }
     };
