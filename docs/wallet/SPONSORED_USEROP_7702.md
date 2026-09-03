@@ -113,6 +113,21 @@ Operator Sepolia checklist (empty-code roster):
 4. Bundler accept → receipt success; badge shows claimed name.
 5. If estimate fails after L1 OK: classify via L2–L4 against squad golden path — do not re-fund bootstrap pool.
 
+## Isolated claim harness (Tauri-free)
+
+Local-only Sepolia probe that walks L0 → build `claim("test")` → L1 `eth_call` → sponsored 7702 UserOp **without** Commons/UI or roster ETH. Not in CI.
+
+```bash
+cd src-tauri && cargo run --bin username_claim_harness --features username-claim-harness
+# optional replay: -- --mnemonic 'twelve words…'
+```
+
+Requires `ALCHEMY_RPC_KEY` + `PIMLICO_API_KEY` in repo-root `.env`. Stdout stages:
+
+- **L1 fail** → named NFT selector / stop (fix claim fields before UserOp).
+- **L1 OK + estimate fail** → L2–L4 transport (`reason: 0x` after L1 is the current Sepolia finding); field-diff vs squad UserOp.
+- **Mint OK** → `recordOf` / tx hash; next compare `global_sponsor_userop` → Tauri `username_claim` → Commons CTA.
+
 ## Related
 
 - [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) — squad path + gas margins

@@ -135,6 +135,10 @@ mod dev_login;
 #[cfg(feature = "relay-free-harness")]
 pub mod harness;
 
+/// Local Sepolia username NFT claim harness (not CI). See `src/bin/username_claim_harness.rs`.
+#[cfg(feature = "username-claim-harness")]
+pub mod username_claim_harness;
+
 /// # Blossom Media Servers
 ///
 /// Two ordered lists with automatic failover: the first server that accepts wins.

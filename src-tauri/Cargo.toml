@@ -24,11 +24,19 @@ local-relay-tls = ["dep:tokio-tungstenite"]
 # `default` and never linked into a release build -- it exists purely to
 # drive the library crate's real ingest path from a headless CI job.
 relay-free-harness = []
+# Local Sepolia username claim harness (Alchemy + Pimlico). Never in default /
+# CI — opt-in: `cargo run --bin username_claim_harness --features username-claim-harness`.
+username-claim-harness = []
 
 [[bin]]
 name = "relay-free-harness"
 path = "src/bin/relay_free_harness.rs"
 required-features = ["relay-free-harness"]
+
+[[bin]]
+name = "username_claim_harness"
+path = "src/bin/username_claim_harness.rs"
+required-features = ["username-claim-harness"]
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
