@@ -276,6 +276,9 @@ Also: Pimlico / bundler (shared prerequisites above); backup verified in-app bef
 | `CLAIM_ON_MEMBER_PATH` | Client tried `claim()` on member lane — claim is bootstrap-only |
 | `USERNAME_POLICY_STALE` | Catalog `policyVersion` ≠ on-chain registry (expect **3** on Sepolia) |
 | `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Save Pimlico on Status (or `PIMLICO_API_KEY` / `BUNDLER_RPC_URL`) |
+| `GOV_CALL_REVERTED` / vague simulation toast | Bundler reject detail is on process stderr as `[pacto_wallet] bundler …` (demo: `make logs LOG_CLIENT=<n>` for the client that ran the write). Empty `reason: 0x` → check preceding `[pacto_wallet] username UserOp … eip7702_auth=` / `code_len=` lines and any `claim eth_call preflight` selector — not another bootstrap pool deposit |
+| `USERNAME_CLAIM_REVERTED` / `USERNAME_INVALID_*` / `USERNAME_BINDING_EXPIRED` | Direct `claim()` eth_call failed — fix claim fields/signatures / use chain `issuedAt` before blaming UserOp/7702. See [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) L1 |
+| `USERNAME_7702_MISMATCH` / `USERNAME_7702_SENDER` | Paymaster allowlist ≠ client impl, or roster EOA has unexpected code (wrong 7702 stub / non-delegation bytecode) |
 | Verified badge missing after mint | Kind 31337 missing or `record.evmAddress` ≠ active roster EVM — refresh claim cache / check relays |
 | Squad pool drained on username claim | Bug — username must not call squad sponsor; file with UserOp paymaster address |
 

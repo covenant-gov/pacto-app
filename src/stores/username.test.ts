@@ -10,6 +10,9 @@ import {
   claimedUsername,
   hasPendingUsernameTransfer,
   isValidUsernameFormat,
+  ensurePubkeyHex,
+  normalizeUsernameInput,
+  claimUsername,
   type UsernameState,
 } from './username';
 import { currentUser } from './auth';
@@ -17,8 +20,10 @@ import {
   usernameGetCachedClaim,
   usernameRecordOf,
   usernameIsPendingTransfer,
+  usernameClaim,
 } from '../lib/api/username';
 import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
+import { npubHashFromPubkey } from '../lib/evm/sponsor/nostr_claim_link';
 
 vi.mock('../lib/api/username', () => ({
   usernameGetCachedClaim: vi.fn(),
@@ -43,6 +48,8 @@ const mockGetCached = vi.mocked(usernameGetCachedClaim);
 const mockRecordOf = vi.mocked(usernameRecordOf);
 const mockPending = vi.mocked(usernameIsPendingTransfer);
 const mockActiveEvm = vi.mocked(getActiveSquadEvmSignerAddress);
+const mockClaim = vi.mocked(usernameClaim);
+const mockNpubHash = vi.mocked(npubHashFromPubkey);
 
 const EVM = '0x1111111111111111111111111111111111111111';
 const OTHER = '0x2222222222222222222222222222222222222222';
@@ -214,11 +221,29 @@ describe('isValidUsernameFormat', () => {
     expect(isValidUsernameFormat('daopunk')).toBe(true);
   });
 
+  it('accepts mixed case after normalize', () => {
+    expect(isValidUsernameFormat('Dao')).toBe(true);
+    expect(normalizeUsernameInput('  DaoPunk  ')).toBe('daopunk');
+  });
+
   it('rejects invalid shapes', () => {
     expect(isValidUsernameFormat('ab')).toBe(false);
-    expect(isValidUsernameFormat('Dao')).toBe(false);
     expect(isValidUsernameFormat('dao1')).toBe(false);
     expect(isValidUsernameFormat('a'.repeat(33))).toBe(false);
+  });
+});
+
+describe('ensurePubkeyHex', () => {
+  it('accepts 64 hex with or without 0x', () => {
+    const hex = 'aa'.repeat(32);
+    expect(ensurePubkeyHex(hex)).toBe(`0x${hex}`);
+    expect(ensurePubkeyHex(`0x${hex}`)).toBe(`0x${hex}`);
+  });
+
+  it('rejects bech32 npub', () => {
+    expect(() => ensurePubkeyHex('npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq')).toThrow(
+      /got npub/,
+    );
   });
 });
 
@@ -352,5 +377,84 @@ describe('refreshUsernameState', () => {
     expect(get(usernameState).status).toBe('ready');
     expect(get(usernameState).record?.evmAddress).toBe(EVM);
     expect(get(usernameState).record?.name).toBe('alice');
+  });
+
+  it('errors when session pubkey is bech32 npub and cache has no hash', async () => {
+    currentUser.set({
+      pubkey: 'npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+      npub: 'npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+    } as never);
+    mockGetCached.mockResolvedValue(null);
+    mockActiveEvm.mockResolvedValue(EVM);
+
+    await refreshUsernameState();
+    expect(get(usernameState).status).toBe('error');
+    expect(get(usernameState).error).toMatch(/pubkey must be 32 bytes hex/);
+    expect(mockNpubHash).not.toHaveBeenCalled();
+  });
+
+  it('hashes hex pubkey when cache has no npubHash', async () => {
+    const hex = 'cc'.repeat(32);
+    currentUser.set({ pubkey: hex, npub: 'npub1test' } as never);
+    mockGetCached.mockResolvedValue(null);
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockRecordOf.mockResolvedValue({
+      name: '',
+      evmAddress: '0x0000000000000000000000000000000000000000',
+      pendingAddress: '0x0000000000000000000000000000000000000000',
+      tokenId: '0',
+    });
+    mockPending.mockResolvedValue(false);
+
+    await refreshUsernameState();
+    expect(get(usernameState).status).toBe('ready');
+    expect(mockNpubHash).toHaveBeenCalledWith(`0x${hex}`);
+  });
+});
+
+describe('claimUsername', () => {
+  beforeEach(() => {
+    resetUsernameState();
+    currentUser.set({
+      pubkey: 'aa'.repeat(32),
+      npub: 'npub1test',
+    } as never);
+    mockGetCached.mockReset();
+    mockRecordOf.mockReset();
+    mockPending.mockReset();
+    mockActiveEvm.mockReset();
+    mockClaim.mockReset();
+  });
+
+  afterEach(() => {
+    resetUsernameState();
+    currentUser.set(null);
+  });
+
+  it('lowercases the name before invoke', async () => {
+    mockClaim.mockResolvedValue({
+      network: 'sepolia',
+      chainId: 11155111,
+      path: 'bootstrap',
+      username: 'dao',
+      npubHash: NPUB_HASH,
+      tokenId: '1',
+      linkEventId: 'evt',
+      userOpHash: '0x1',
+      evmAddress: EVM,
+      policyVersion: 1,
+    });
+    mockGetCached.mockResolvedValue(null);
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockRecordOf.mockResolvedValue({
+      name: 'dao',
+      evmAddress: EVM,
+      pendingAddress: '0x0000000000000000000000000000000000000000',
+      tokenId: '1',
+    });
+    mockPending.mockResolvedValue(false);
+
+    await claimUsername('  Dao  ');
+    expect(mockClaim).toHaveBeenCalledWith('sepolia', 'dao');
   });
 });

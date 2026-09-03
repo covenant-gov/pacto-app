@@ -20,6 +20,7 @@
     initiateUsernameAddressTransfer,
     isUsernameVerified,
     isValidUsernameFormat,
+    normalizeUsernameInput,
     refreshUsernameState,
     usernameState,
   } from '../../stores/username';
@@ -56,7 +57,7 @@
   });
 
   $effect(() => {
-    const name = draftName.trim();
+    const name = normalizeUsernameInput(draftName);
     if (!name) {
       availability = 'idle';
       return;
@@ -96,7 +97,7 @@
 
   async function onClaim() {
     if (!requireBackupVerified()) return;
-    const name = draftName.trim();
+    const name = normalizeUsernameInput(draftName);
     if (!isValidUsernameFormat(name) || availability === 'taken') return;
     try {
       const result = await claimUsername(name);

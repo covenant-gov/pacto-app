@@ -116,10 +116,22 @@ export function resetUsernameState(): void {
 
 let refreshGen = 0;
 
-function ensurePubkeyHex(pubkey: string): Hex {
+/** Require 32-byte hex pubkey (optional 0x). Rejects bech32 npub. */
+export function ensurePubkeyHex(pubkey: string): Hex {
   const raw = pubkey.trim();
-  if (raw.startsWith('0x') || raw.startsWith('0X')) return raw as Hex;
-  return `0x${raw}` as Hex;
+  if (raw.toLowerCase().startsWith('npub1')) {
+    throw new Error('pubkey must be 32 bytes hex (got npub)');
+  }
+  const body = raw.startsWith('0x') || raw.startsWith('0X') ? raw.slice(2) : raw;
+  if (!/^[0-9a-fA-F]{64}$/.test(body)) {
+    throw new Error('pubkey must be 32 bytes hex');
+  }
+  return `0x${body.toLowerCase()}` as Hex;
+}
+
+/** On-chain username: trim + lowercase (Kind 0 display name is separate). */
+export function normalizeUsernameInput(name: string): string {
+  return name.trim().toLowerCase();
 }
 
 export async function refreshUsernameState(): Promise<void> {
@@ -199,7 +211,8 @@ async function withBusyWrite<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export async function claimUsername(name: string): Promise<UsernameClaimResult> {
-  return withBusyWrite(() => usernameClaim(USERNAME_NETWORK, name.trim()));
+  const normalized = normalizeUsernameInput(name);
+  return withBusyWrite(() => usernameClaim(USERNAME_NETWORK, normalized));
 }
 
 function resolveNpubHash(): string {
@@ -230,5 +243,5 @@ export async function cancelUsernameAddressTransfer(): Promise<UsernameTransferR
 }
 
 export function isValidUsernameFormat(name: string): boolean {
-  return /^[a-z]{3,32}$/.test(name.trim());
+  return /^[a-z]{3,32}$/.test(normalizeUsernameInput(name));
 }

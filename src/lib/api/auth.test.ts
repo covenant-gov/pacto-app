@@ -30,26 +30,50 @@ beforeEach(() => {
 
 describe('auth command wrappers', () => {
   it('login sends login with importKey', async () => {
-    mockedInvoke.mockResolvedValueOnce({ public: 'npub', private: 'nsec' });
+    mockedInvoke.mockResolvedValueOnce({
+      public: 'npub',
+      pubkey_hex: 'aa'.repeat(32),
+      private: 'nsec',
+    });
     const result = await login('nsec1');
     expect(mockedInvoke).toHaveBeenCalledWith('login', { importKey: 'nsec1' });
-    expect(result).toEqual({ public: 'npub', private: 'nsec' });
+    expect(result).toEqual({
+      public: 'npub',
+      pubkey_hex: 'aa'.repeat(32),
+      private: 'nsec',
+    });
   });
 
   it('loginWithRecoveryPhrase sends login_with_recovery_phrase with mnemonic', async () => {
-    mockedInvoke.mockResolvedValueOnce({ public: 'npub', private: 'nsec' });
+    mockedInvoke.mockResolvedValueOnce({
+      public: 'npub',
+      pubkey_hex: 'aa'.repeat(32),
+      private: 'nsec',
+    });
     const result = await loginWithRecoveryPhrase('abandon abandon ... art');
     expect(mockedInvoke).toHaveBeenCalledWith('login_with_recovery_phrase', {
       mnemonic: 'abandon abandon ... art',
     });
-    expect(result).toEqual({ public: 'npub', private: 'nsec' });
+    expect(result).toEqual({
+      public: 'npub',
+      pubkey_hex: 'aa'.repeat(32),
+      private: 'nsec',
+    });
   });
 
   it('createAccount sends create_account', async () => {
-    mockedInvoke.mockResolvedValueOnce({ public: 'npub', private: 'nsec' });
+    mockedInvoke.mockResolvedValueOnce({
+      public: 'npub',
+      pubkey_hex: 'aa'.repeat(32),
+      private: 'nsec',
+    });
     const result = await createAccount();
     expect(mockedInvoke).toHaveBeenCalledWith('create_account');
-    expect(result).toEqual({ public: 'npub', private: 'nsec' });
+    expect(result).toEqual({
+      public: 'npub',
+      pubkey_hex: 'aa'.repeat(32),
+      private: 'nsec',
+    });
   });
 
   it('connect sends connect', async () => {

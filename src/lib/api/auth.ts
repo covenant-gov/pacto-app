@@ -4,6 +4,8 @@ import { updateProfile } from "./nostr";
 // Type definitions matching Rust structs
 export interface LoginKeyPair {
   public: string;
+  /** X-only pubkey, 64 hex chars (no 0x). */
+  pubkey_hex: string;
   private: string;
   evm_private_key?: string | null;
   evm_address?: string | null;

@@ -13,7 +13,10 @@ use tauri::{AppHandle, Manager, Runtime};
 
 #[derive(serde::Serialize, Clone)]
 pub(crate) struct LoginKeyPair {
+    /// Bech32 npub.
     pub(crate) public: String,
+    /// X-only pubkey as 64 hex chars (no 0x); for npubHash / claim digests.
+    pub(crate) pubkey_hex: String,
     pub(crate) private: String,
     /// EVM private key (hex with 0x), derived from Nostr secret. Present for new/imported accounts.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,6 +102,7 @@ pub(crate) async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair,
 
     Ok(LoginKeyPair {
         public: npub,
+        pubkey_hex: keys.public_key.to_hex(),
         private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
         evm_private_key,
         evm_address,
@@ -158,6 +162,7 @@ pub(crate) async fn login(import_key: String) -> Result<LoginKeyPair, String> {
                 .unwrap_or((None, None));
         return Ok(LoginKeyPair {
             public: prev_npub,
+            pubkey_hex: new_keys.public_key.to_hex(),
             private: new_keys
                 .secret_key()
                 .to_bech32()
@@ -709,6 +714,7 @@ pub(crate) async fn create_account() -> Result<LoginKeyPair, String> {
 
     Ok(LoginKeyPair {
         public: npub,
+        pubkey_hex: keys.public_key.to_hex(),
         private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
         evm_private_key,
         evm_address,
@@ -754,6 +760,7 @@ pub(crate) async fn reuse_loaded_client_if_matching(
             .unwrap_or((None, None));
     Ok(Some(LoginKeyPair {
         public: prev_npub,
+        pubkey_hex: keys.public_key.to_hex(),
         private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
         evm_private_key,
         evm_address,

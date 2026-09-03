@@ -21,6 +21,8 @@ export interface DevLoginSuccess {
   skipped?: false;
   success: true;
   npub: string;
+  /** X-only pubkey, 64 hex chars (no 0x). */
+  pubkey_hex: string;
 }
 
 export type DevLoginResult = DevLoginSkipped | DevLoginSuccess;

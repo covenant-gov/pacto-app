@@ -1,6 +1,8 @@
 //! `username_claim` Tauri command.
 
+use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{Bytes, B256, U256};
+use alloy::providers::Provider;
 use alloy::sol_types::SolCall;
 use rand::RngCore;
 use tauri::{AppHandle, Runtime};
@@ -11,15 +13,17 @@ use super::helpers::{
     require_rpc_urls, send_eoa_call, username_addrs, validate_username, InFlightGuard,
 };
 use crate::db::{self, UsernameClaimUpsert};
-use crate::evm::claim_binding::sign_claim_binding;
+use crate::evm::claim_binding::{claim_binding_signing_hash, sign_claim_binding};
 use crate::evm::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiCall as bootstrapSpendableCall;
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
-    canBootstrapClaimCall, claimCall, mintFeeCall, nameAvailableCall, npubOfCall, recordOfCall,
-    usedNonceCall,
+    canBootstrapClaimCall, claimCall, hashClaimBindingCall, mintFeeCall, nameAvailableCall,
+    npubOfCall, recordOfCall, usedNonceCall,
 };
 use crate::evm::contracts::pacto_username::ISponsorPolicyRegistry::policyVersionCall;
 use crate::evm::global_sponsor_userop::{send_sponsored_username_userop, UsernameSponsorLane};
-use crate::evm::nostr_claim_link::{hash_nostr_claim, npub_hash_from_pubkey, sign_nostr_claim};
+use crate::evm::nostr_claim_link::{
+    hash_nostr_claim, npub_hash_from_pubkey, sign_nostr_claim, verify_nostr_claim,
+};
 use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::rpc::signer::{load_embedded_signer, require_treasury_signing_allowed};
 use crate::evm::rpc::{connect_read_provider, wallet_err_json, wallet_err_json_with_tx_hash};
@@ -141,12 +145,9 @@ pub async fn username_claim<R: Runtime>(
     }
 
     let nonce = used + U256::from(1u64);
-    let issued_at = U256::from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0),
-    );
+    // NFT BindingExpired: issuedAt must sit in [block.timestamp - 7d, block.timestamp + 5m].
+    // Prefer chain time so a skewed laptop clock does not fail every claim.
+    let issued_at = claim_issued_at(&provider).await?;
     let mut salt_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut salt_bytes);
     let salt = B256::from(salt_bytes);
@@ -156,10 +157,51 @@ pub async fn username_claim<R: Runtime>(
             .await
             .map_err(|e| wallet_err_json("NOSTR_PUBLISH", e, None))?;
 
+    let on_chain_binding = eth_call_decode(
+        &provider,
+        nft,
+        &hashClaimBindingCall {
+            npubHash: npub_hash,
+            evmAddress: member,
+            name: username.clone(),
+            nonce,
+            issuedAt: issued_at,
+            salt,
+        },
+    )
+    .await
+    .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
+    let local_binding = claim_binding_signing_hash(
+        net.chain_id,
+        nft,
+        npub_hash,
+        member,
+        &username,
+        nonce,
+        issued_at,
+        salt,
+    );
+    if on_chain_binding != local_binding {
+        return Err(wallet_err_json(
+            "USERNAME_BINDING_MISMATCH",
+            format!(
+                "local ClaimBinding digest {local_binding:#x} != on-chain hashClaimBinding {on_chain_binding:#x} (domain/chainId/verifyingContract)"
+            ),
+            None,
+        ));
+    }
+
     let nostr_digest = hash_nostr_claim(pubkey, member, &username, nonce, issued_at, salt);
     let secret = keys.secret_key().to_secret_bytes();
     let nostr_sig = sign_nostr_claim(&secret, nostr_digest)
         .map_err(|e| wallet_err_json("NOSTR_SIGN", e, None))?;
+    if !verify_nostr_claim(pubkey, nostr_digest, &nostr_sig) {
+        return Err(wallet_err_json(
+            "NOSTR_SIGN",
+            "BIP-340 signature does not verify against claim pubkey (secret/pubkey mismatch)",
+            None,
+        ));
+    }
     let evm_sig = sign_claim_binding(
         &signer,
         net.chain_id,
@@ -171,6 +213,7 @@ pub async fn username_claim<R: Runtime>(
         salt,
     )
     .map_err(|e| wallet_err_json("EVM_SIGN", e, None))?;
+
 
     let calldata = claimCall {
         name: username.clone(),
@@ -282,4 +325,22 @@ pub async fn username_claim<R: Runtime>(
         evm_address: format!("{member:#x}"),
         policy_version,
     })
+}
+
+/// `issuedAt` for ClaimBinding / Nostr claim — chain clock, not wall clock.
+async fn claim_issued_at<P: Provider>(provider: &P) -> Result<U256, String> {
+    let block = provider
+        .get_block_by_number(BlockNumberOrTag::Latest)
+        .await
+        .map_err(|e| {
+            wallet_err_json(
+                "USERNAME_READ",
+                crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
+                None,
+            )
+        })?
+        .ok_or_else(|| {
+            wallet_err_json("USERNAME_READ", "latest block missing for claim issuedAt", None)
+        })?;
+    Ok(U256::from(block.header.timestamp))
 }

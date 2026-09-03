@@ -114,4 +114,5 @@ EOA deploy affordability / deposit gas-reserve UX is a separate follow-on (not r
 
 ## Related
 
+- Shared sponsored UserOp / EIP-7702 debug order (L0–L4) and Sepolia fund matrix: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md)
 - Nave Pirata / governance stack: [PACTO_GOV.md](./PACTO_GOV.md)

@@ -18,6 +18,7 @@ These files are **tracked in git** and are intended for references from **source
 | [PACTO_GOV.md](./PACTO_GOV.md) | Upstream [covenant-gov/pacto-gov](https://github.com/covenant-gov/pacto-gov); Alloy bindings and env deploy addresses. |
 | [../governance/ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) | Roster ↔ Hats / Squad Admin **ACL** (access control): capabilities, fail-closed signing preflight, UI snapshot. |
 | [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) | Upstream [covenant-gov/pacto-squad-sponsor](https://github.com/covenant-gov/pacto-squad-sponsor); deploy, summary read, `squad_infra`. |
+| [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) | Shared ERC-4337 / EIP-7702 transport; L0–L4 debug order; Sepolia fund matrix; squad vs username sponsors. |
 | [PROTOCOL_ADDRESS_BOOK.md](./PROTOCOL_ADDRESS_BOOK.md) | Tracked JSON: sponsor / gov / Safe deploy addresses per network (`pacto-protocol-addresses.json`). |
 | [USERNAME_NFT.md](./USERNAME_NFT.md) | Username NFT claim/rotation: bootstrap → EOA → global member; kind 31337; Tauri commands. |
 | [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) | **Single** Sepolia operator checklist: squad sponsor, gov, Safe, announce sync, advanced, allowlist, inbox/roster, Username NFT (§10). |

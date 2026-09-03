@@ -3,6 +3,7 @@ import type { NostrProfile } from './nostr';
 
 const MOCK_NPUB = 'npub1mock0000000000000000000000000000000000000000000000000000mock';
 const MOCK_NSEC = 'nsec1mock0000000000000000000000000000000000000000000000000000mock';
+const MOCK_PUBKEY_HEX = 'aa'.repeat(32);
 
 /** Lightweight in-memory state so the create-account/login flow can complete in the browser build. */
 const mockState = {
@@ -13,12 +14,17 @@ const mockState = {
 };
 
 export const authFixtures: Record<string, MockCommandHandler> = {
-  login: () => ({ public: MOCK_NPUB, private: MOCK_NSEC }),
-  login_with_recovery_phrase: () => ({ public: MOCK_NPUB, private: MOCK_NSEC }),
+  login: () => ({ public: MOCK_NPUB, pubkey_hex: MOCK_PUBKEY_HEX, private: MOCK_NSEC }),
+  login_with_recovery_phrase: () => ({
+    public: MOCK_NPUB,
+    pubkey_hex: MOCK_PUBKEY_HEX,
+    private: MOCK_NSEC,
+  }),
   create_account: () => {
     mockState.sessionUnlocked = true;
     return {
       public: MOCK_NPUB,
+      pubkey_hex: MOCK_PUBKEY_HEX,
       private: MOCK_NSEC,
       evm_private_key: '0xmockedprivatekey',
       evm_address: '0xMockedAddress',

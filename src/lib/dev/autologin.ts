@@ -25,5 +25,5 @@ export async function runDevAutologin(): Promise<void> {
 
   if (result.skipped) return;
 
-  await adoptDevSession({ npub: result.npub, pubkey: result.npub });
+  await adoptDevSession({ npub: result.npub, pubkey: result.pubkey_hex });
 }

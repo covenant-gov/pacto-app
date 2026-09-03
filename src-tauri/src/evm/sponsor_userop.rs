@@ -1086,10 +1086,17 @@ pub(crate) async fn bundler_estimate_user_operation_gas(
     parse_estimate_user_op_gas_response(&res)
 }
 
+/// Operator stderr for demo `make logs` / `tauri dev` (no env_logger). `redacted` must already
+/// pass through [`crate::evm::wallet_security::redact_urls_in_text`].
+fn eprintln_bundler_reject(op: &str, classified_code: &str, redacted: &str) {
+    eprintln!("[pacto_wallet] bundler {op} rejected code={classified_code} detail={redacted}");
+}
+
 fn parse_estimate_user_op_gas_response(res: &Value) -> Result<EstimatedUserOpGas, String> {
     if let Some(err) = res.get("error") {
         let raw = crate::evm::wallet_security::redact_urls_in_text(&err.to_string());
         let (code, message) = classify_bundler_userop_reject(&raw);
+        eprintln_bundler_reject("estimateUserOperationGas", code, &raw);
         return Err(wallet_err_json(code, message, None));
     }
     let result = res.get("result").ok_or_else(|| {
@@ -1200,6 +1207,7 @@ fn parse_send_user_op_response(res: &Value) -> Result<String, String> {
         .map(|e| crate::evm::wallet_security::redact_urls_in_text(&e.to_string()))
         .unwrap_or_else(|| "eth_sendUserOperation failed".into());
     let (code, message) = classify_bundler_userop_reject(&raw);
+    eprintln_bundler_reject("sendUserOperation", code, &raw);
     Err(wallet_err_json(code, message, None))
 }
 
@@ -1761,6 +1769,70 @@ mod tests {
     }
 
     #[test]
+    fn user_op_json_shared_keys_stable_for_username_and_squad() {
+        // Both send_sponsored_* paths must serialize the same ERC-4337 / 7702 key set
+        // via user_op_json (Layer 2 field-diff baseline).
+        const REQUIRED: &[&str] = &[
+            "sender",
+            "nonce",
+            "factory",
+            "factoryData",
+            "callData",
+            "callGasLimit",
+            "verificationGasLimit",
+            "preVerificationGas",
+            "maxFeePerGas",
+            "maxPriorityFeePerGas",
+            "paymaster",
+            "paymasterVerificationGasLimit",
+            "paymasterPostOpGasLimit",
+            "paymasterData",
+            "signature",
+            "eip7702Auth",
+        ];
+        let member = address!("0x3333333333333333333333333333333333333333");
+        let paymaster = address!("0x1C2eb4Ac1cD57aF67ad8B20838A28FB23d39d5b8");
+        let paymaster_and_data = {
+            let mut v = vec![0u8; PAYMASTER_DATA_OFFSET];
+            v.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);
+            v
+        };
+        let auth = json!({
+            "chainId": "0xaa36a7",
+            "address": "0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60",
+            "nonce": "0x0",
+            "yParity": "0x0",
+            "r": format!("0x{}", "11".repeat(32)),
+            "s": format!("0x{}", "22".repeat(32)),
+        });
+        let op = user_op_json(UserOpParams {
+            sender: member,
+            nonce: U256::ZERO,
+            call_data: &[0xb6, 0x1d, 0x27, 0xf6],
+            call_gas_limit: 1_500_000,
+            verification_gas_limit: 100_000,
+            pre_verification_gas: 80_000,
+            max_fee_per_gas: 30_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            paymaster,
+            paymaster_verification_gas_limit: 200_000,
+            paymaster_post_op_gas_limit: 60_000,
+            paymaster_and_data: &paymaster_and_data,
+            signature: &[0xbb; 65],
+            eip7702_auth: Some(auth.clone()),
+        })
+        .unwrap();
+        let obj = op.as_object().expect("object");
+        for key in REQUIRED {
+            assert!(obj.contains_key(*key), "missing UserOp key {key}");
+        }
+        assert_eq!(obj.len(), REQUIRED.len(), "unexpected extra UserOp keys: {obj:?}");
+        assert_eq!(op["eip7702Auth"], auth);
+        assert!(op["factory"].is_null());
+        assert_eq!(op["signature"].as_str().unwrap().len(), 2 + 65 * 2);
+    }
+
+    #[test]
     fn parse_estimate_user_op_gas_response_reads_v07_fields() {
         let res = json!({
             "jsonrpc": "2.0",
@@ -1794,6 +1866,18 @@ mod tests {
         });
         let err = parse_estimate_user_op_gas_response(&res).unwrap_err();
         assert!(err.contains("PAYMASTER_GAS_EFFICIENCY"));
+
+        let sim = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {
+                "code": -32521,
+                "message": "UserOperation reverted during simulation with reason: 0xdeadbeef"
+            }
+        });
+        let err = parse_estimate_user_op_gas_response(&sim).unwrap_err();
+        assert!(err.contains("GOV_CALL_REVERTED"));
+        assert!(err.contains("Sponsored UserOp call reverted during simulation."));
     }
 
     #[test]
@@ -1887,6 +1971,22 @@ mod tests {
         let err = parse_send_user_op_response(&missing).unwrap_err();
         assert!(err.contains("PAYMASTER_REJECTED"));
         assert!(err.contains("eth_sendUserOperation failed"));
+
+        let sim = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {
+                "code": -32521,
+                "message": "UserOperation reverted during simulation",
+                "data": "https://api.pimlico.io/v2/11155111/rpc?apikey=secret-key"
+            }
+        });
+        let err = parse_send_user_op_response(&sim).unwrap_err();
+        assert!(err.contains("GOV_CALL_REVERTED"));
+        assert!(err.contains("Sponsored UserOp call reverted during simulation."));
+        // Classified toast must not echo bundler URL secrets (detail only on stderr).
+        assert!(!err.contains("secret-key"));
+        assert!(!err.contains("apikey="));
     }
 
     #[test]
