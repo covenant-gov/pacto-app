@@ -1,7 +1,6 @@
 //! Profile sync queueing commands plus the Guy Fawkes Day badge check.
-use nostr_sdk::prelude::*;
 use crate::{get_nostr_client, profile_sync, trusted_relays};
-
+use nostr_sdk::prelude::*;
 
 // Guy Fawkes Day 2025 - V for Vector Badge (Event Ended)
 pub(crate) const FAWKES_DAY_START: u64 = 1762300800; // 2025-11-05 00:00:00 UTC
@@ -66,7 +65,10 @@ pub(crate) async fn queue_profile_sync(
 }
 
 #[tauri::command]
-pub(crate) async fn queue_chat_profiles_sync(chat_id: String, is_opening: bool) -> Result<(), String> {
+pub(crate) async fn queue_chat_profiles_sync(
+    chat_id: String,
+    is_opening: bool,
+) -> Result<(), String> {
     profile_sync::queue_chat_profiles(chat_id, is_opening).await;
     Ok(())
 }

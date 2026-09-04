@@ -265,7 +265,7 @@ export async function createAccount(pin: string): Promise<void> {
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
-      pubkey: keys.public
+      pubkey: keys.pubkey_hex
     });
     freezeGate();
     await maybeApplyLocalDevDefaults(npub);
@@ -313,7 +313,7 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
 
     // Get current account npub from backend
     const npub = await getCurrentAccount();
-    await completePostLoginSession(npub, keys.public);
+    await completePostLoginSession(npub, keys.pubkey_hex);
     await markBackupVerified(true);
     authLoading.set(false);
 
@@ -349,7 +349,7 @@ export async function unlockWithPin(pin: string): Promise<void> {
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
-      pubkey: keys.public
+      pubkey: keys.pubkey_hex
     });
     freezeGate();
     await maybeApplyLocalDevDefaults(npub);
@@ -389,7 +389,7 @@ export async function unlockWithBiometrics(npub: string): Promise<void> {
     });
     const unlockedNpub = await getCurrentAccount();
 
-    await completePostLoginSession(unlockedNpub, keys.public);
+    await completePostLoginSession(unlockedNpub, keys.pubkey_hex);
 
     dmLog('unlockWithBiometrics: done');
   } catch (error: unknown) {

@@ -8,7 +8,7 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 - [ ] Set **`ALCHEMY_RPC_KEY`** (builds Sepolia and other chain URLs automatically). Protocol factory / paymaster / EIP-7702 account addresses ship in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md). After changing the address book, **fully restart** `pnpm tauri:dev` (Rust embeds the JSON at compile time; frontend HMR does not reload it).
 - [ ] For **sponsored** gov writes (roster 0 ETH): save a Pimlico key on **#dashboard → Status → Sponsored gas** (applies without restart). Optional **`PIMLICO_API_KEY`** in `.env` is a fallback; optional **`BUNDLER_RPC_URL`** overrides both — do **not** point it at Alchemy’s AA endpoint. EIP-7702 impl is pinned as `erc4337.accountImplementation` (`PactoSimple7702Account`); override with `PACTO_ERC4337_ACCOUNT_IMPL` only for experiments. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 - [ ] Smoke identities: **funded Default (DM)** for deploy/deposit gas; **new empty roster key** (0 ETH) as captain after gov+sponsor; enough Sepolia ETH to **seed the sponsor pool**; throwaway `parentId`.
-- [ ] **Once per chain (after factory cutover):** fund the **current** shared paymaster **EntryPoint deposit** (`paymaster.deposit()`) and **stake** (`factory.addPaymasterStake`, ≥0.1 ETH, delay ≥1 day) — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). Separate from squad pool deposits. Current Sepolia cutover ([`34518d4`](https://github.com/covenant-gov/pacto-squad-sponsor/commit/34518d42fe187201ca9d5937aada77c227f31c51)) is factory `0xD8bdc2e5…aA95` / paymaster `0xc7c3Ea95…2BA1`. After a factory redeploy, **recreate** squad sponsor clones on the **new** factory and fund the clone pool — old clones stay initialized with the old paymaster (`0x78197483…` / factory `0xb758DB17…`) and must not receive UserOps. Confirm clone `paymaster()` / `factory()` match the address book before sponsored writes.
+- [ ] **Once per chain (after factory cutover):** fund the **current** shared paymaster **EntryPoint deposit** (`paymaster.deposit()`) and **stake** (`factory.addPaymasterStake`, ≥0.1 ETH, delay ≥1 day) — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). Separate from squad pool deposits. Current Sepolia cutover (SS-3 / [pacto-aa#1](https://github.com/covenant-gov/pacto-aa/issues/1) APP-1) is factory `0x9F6b1936…e4d7` / paymaster `0xD84337C1…BcC3` with EIP-7702 `0x2E9156de…f45`. After a factory redeploy, **recreate** squad sponsor clones on the **new** factory and fund the clone pool — old clones stay initialized with superseded paymasters (`0xc7c3Ea95…` / `0x78197483…` / factories `0xD8bdc2e5…` / `0xb758DB17…`) and must not receive UserOps. Confirm clone `paymaster()` / `factory()` match the address book before sponsored writes.
 - [ ] Logged-in profile; wallet unlocked.
 - [ ] Test squad/network with **`#announcements`** and **`#personal-alerts`**; use a **throwaway `parentId`** (one sponsor clone per parent on-chain).
 - [ ] Devtools helpers live in `src/lib/governance/api.ts`, `src/lib/wallet/backend-wallet.ts` — prefer in-app wizards when available.
@@ -218,6 +218,73 @@ Two accounts helpful: **requester** (not in squad) and **holder** (creator or ad
 - [ ] Repeat join DMs from same requester dedupe to one pending row.
 
 See [`../communities/JOIN_INBOX.md`](../communities/JOIN_INBOX.md).
+
+---
+
+## 10. Username NFT (global / bootstrap sponsor)
+
+Account-global username claim + address rotation on Sepolia. **Gas path (pacto-app):** bootstrap → EOA → global member → fail. **No squad sponsor** on this path — do not confuse with §1 “Bootstrap crew” (gov hats / squad paymaster). Upstream [DESKTOP_CLIENT_INTEGRATION.md](https://github.com/covenant-gov/pacto-username-nft/blob/main/docs/DESKTOP_CLIENT_INTEGRATION.md) still diagrams a squad arm; pacto-app intentionally diverges (see [USERNAME_NFT.md](./USERNAME_NFT.md)).
+
+Addresses live under `networks.sepolia.globalUsernameSponsor` in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) ([PROTOCOL_ADDRESS_BOOK.md](./PROTOCOL_ADDRESS_BOOK.md)). After address-book changes, **fully restart** Tauri.
+
+**After a full-system username-nft redeploy:** pin the new `full-system.json`, fund pools/PM, then require harness SUCCESS before calling cutover done — [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) + [pacto-username-nft#5](https://github.com/covenant-gov/pacto-username-nft/issues/5).
+
+### Ops fund (once per environment)
+
+Pools and paymaster are **separate** from squad sponsor § prerequisites.
+
+```bash
+# BootstrapMintPool
+cast send 0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B "deposit()" \
+  --value 1ether --rpc-url "$SEPOLIA_RPC" --private-key "$OPS_KEY"
+
+# GlobalSponsorPool
+cast send 0x4EfeE104cF969bF70F342DFCd234f73A3bebEbeD "deposit()" \
+  --value 1ether --rpc-url "$SEPOLIA_RPC" --private-key "$OPS_KEY"
+
+# Confirm spendable (non-zero before sponsored UI smoke)
+cast call 0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B "spendablePoolWei()(uint256)" --rpc-url "$SEPOLIA_RPC"
+cast call 0x4EfeE104cF969bF70F342DFCd234f73A3bebEbeD "spendablePoolWei()(uint256)" --rpc-url "$SEPOLIA_RPC"
+```
+
+**PactoGlobalPaymaster** `0x04Fc205adA4c0c5C5024546E87972C4c4bB30D0F`: fund EntryPoint deposit (+ stake if required) via upstream pacto-username-nft `pnpm fund:paymaster:sepolia` (see that repo’s §10). EIP-7702 **activation** gas is ops-funded separately — not drawn from either pool.
+
+Also: Pimlico / bundler (shared prerequisites above); backup verified in-app before claim/rotate.
+
+### Happy path
+
+- [ ] `globalUsernameSponsor` pinned (`pactoUsernameNft` `0x09e08dB9…`, `protocolRegistry` `0xAF6119…`, `allowed7702Implementation` `0x2E9156de…`, `policyVersion` **3**); Tauri restarted if the JSON changed.
+- [ ] Bootstrap + global pools funded; global paymaster EntryPoint deposit OK; bundler curl passes.
+- [ ] Smoke identity: roster/primary EVM with **0 ETH** (sponsored paths); logged in, wallet unlocked, backup verified.
+- [ ] **Commons** → **Pacto Early Adopter** CTA → deep-links to Profile `#settings-profile-username` (no mint UI on Commons).
+- [ ] **Claim** any non-empty name (≤64 UTF-8 bytes, case-sensitive) with 0 ETH → path **`bootstrap`**; UserOp on explorer; bootstrap pool spendable decreases.
+- [ ] **Badge:** Profile / Commons show `@username` with verified check when kind **31337** link is cached **and** on-chain `recordOf` EVM matches the active roster address.
+- [ ] **Rotation:** initiate address transfer → claim transfer with 0 ETH → path **`global_member`** (not bootstrap); global pool spendable decreases.
+- [ ] Optional: claim or rotate with funded EOA → path **`eoa`** (no UserOp).
+
+### Regressions
+
+- [ ] §1 squad sponsor still works on a throwaway squad — username writes never use squad pools / squad paymaster.
+- [ ] After mint, another bootstrap claim (or bootstrap-lane UserOp) fails (`npubOf != 0` / `BOOTSTRAP_AFTER_MINT`).
+- [ ] Member path rejects `claim()` selector `0x9824550d` (`CLAIM_ON_MEMBER_PATH`) — unit coverage in `global_sponsor_userop` / `pacto_actions`; live attempt not required if CI green.
+
+| Symptom | Likely cause |
+|---------|----------------|
+| `USERNAME_SPONSOR_CONFIG` | Missing / stale `globalUsernameSponsor` in address book — restart Tauri after pin |
+| Claim disabled / path fail with 0 ETH | Bootstrap pool empty or `canBootstrapClaim` false — fund `0x8187…`, check name + npub eligibility |
+| `USERNAME_POOL_LOW` / empty spendable | Fund the matching pool (`deposit()`); paymaster needs ~115% headroom |
+| `PAYMASTER_DEPOSIT_LOW` / validation fail on UserOp | Fund **global** paymaster EntryPoint deposit — not the squad paymaster |
+| `BOOTSTRAP_AFTER_MINT` | Already minted on this EVM — use EOA or global member for further writes |
+| `CLAIM_ON_MEMBER_PATH` | Client tried `claim()` on member lane — claim is bootstrap-only |
+| `USERNAME_POLICY_STALE` | Catalog `policyVersion` ≠ on-chain registry (expect **3** on Sepolia) |
+| `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Save Pimlico on Status (or `PIMLICO_API_KEY` / `BUNDLER_RPC_URL`) |
+| `GOV_CALL_REVERTED` / vague simulation toast | Bundler reject detail is on process stderr as `[pacto_wallet] bundler …` (demo: `make logs LOG_CLIENT=<n>` for the client that ran the write). Empty `reason: 0x` → check preceding `[pacto_wallet] username UserOp … eip7702_auth=` / `code_len=` lines and any `claim eth_call preflight` selector — not another bootstrap pool deposit |
+| `USERNAME_CLAIM_REVERTED` / `USERNAME_INVALID_*` / `USERNAME_BINDING_EXPIRED` | Direct `claim()` eth_call failed — fix claim fields/signatures / use chain `issuedAt` before blaming UserOp/7702. See [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) L1 |
+| `USERNAME_7702_MISMATCH` / `USERNAME_7702_SENDER` | Paymaster allowlist ≠ client impl, or roster EOA has unexpected code (wrong 7702 stub / non-delegation bytecode) |
+| Verified badge missing after mint | Kind 31337 missing or `record.evmAddress` ≠ active roster EVM — refresh claim cache / check relays |
+| Squad pool drained on username claim | Bug — username must not call squad sponsor; file with UserOp paymaster address |
+
+See [USERNAME_NFT.md](./USERNAME_NFT.md) and upstream [DESKTOP_CLIENT_INTEGRATION.md](https://github.com/covenant-gov/pacto-username-nft/blob/main/docs/DESKTOP_CLIENT_INTEGRATION.md).
 
 ---
 

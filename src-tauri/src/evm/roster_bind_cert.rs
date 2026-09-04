@@ -128,13 +128,7 @@ pub(crate) fn require_verified_bind_cert_for_upsert(
     if sig_trim.is_empty() {
         return Err("bind cert signature required".to_string());
     }
-    verify_squad_roster_bind_cert(
-        parent_id,
-        member_npub,
-        evm_address,
-        issued as u64,
-        sig_trim,
-    )?;
+    verify_squad_roster_bind_cert(parent_id, member_npub, evm_address, issued as u64, sig_trim)?;
     Ok((issued, sig_trim.to_string()))
 }
 
@@ -355,14 +349,8 @@ mod tests {
 
     #[test]
     fn require_verified_bind_cert_rejects_none_none() {
-        let err = require_verified_bind_cert_for_upsert(
-            "g1",
-            "npub1alice",
-            ANVIL_ADDR,
-            None,
-            None,
-        )
-        .expect_err("unsigned upsert must fail");
+        let err = require_verified_bind_cert_for_upsert("g1", "npub1alice", ANVIL_ADDR, None, None)
+            .expect_err("unsigned upsert must fail");
         assert!(err.contains("bind cert"));
     }
 
@@ -375,6 +363,9 @@ mod tests {
             .unwrap_or(0)
             .saturating_add(MAX_ISSUED_AT_SKEW_SECS + 60);
         let sig = sign_roster_bind_cert(&signer, "ann-gid", "npub1alice", future).unwrap();
-        assert!(verify_squad_roster_bind_cert("ann-gid", "npub1alice", ANVIL_ADDR, future, &sig).is_err());
+        assert!(
+            verify_squad_roster_bind_cert("ann-gid", "npub1alice", ANVIL_ADDR, future, &sig)
+                .is_err()
+        );
     }
 }

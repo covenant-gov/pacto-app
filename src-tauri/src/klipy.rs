@@ -329,12 +329,7 @@ pub async fn klipy_report_share(slug: String, query: Option<String>) -> Result<b
             return Ok(false);
         }
     };
-    match client
-        .post(&url)
-        .json(&ShareBody { q: query })
-        .send()
-        .await
-    {
+    match client.post(&url).json(&ShareBody { q: query }).send().await {
         Ok(resp) if resp.status().is_success() => Ok(true),
         Ok(resp) => {
             log::warn!(

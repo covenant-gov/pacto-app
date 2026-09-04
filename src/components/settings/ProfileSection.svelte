@@ -13,6 +13,7 @@
   import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
   import AvatarPicker from '../ui/AvatarPicker.svelte';
+  import ProfileUsernameBlock from './ProfileUsernameBlock.svelte';
   import { requireBackupVerified } from '../../stores/backup-verification';
 
   let userNpub = $derived($currentUser?.npub || '');
@@ -207,6 +208,8 @@
             {#if profile.nip05}
               <p class="nip05">✓ {profile.nip05}</p>
             {/if}
+
+            <ProfileUsernameBlock />
 
             {#if profile.about}
               <p class="about">{profile.about}</p>

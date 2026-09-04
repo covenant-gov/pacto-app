@@ -171,16 +171,13 @@ pub async fn get_evm_block_number(
     rpc_urls: Option<Vec<String>>,
 ) -> Result<String, String> {
     let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    let n = provider
-        .get_block_number()
-        .await
-        .map_err(|e| {
-            wallet_err_json(
-                "RPC_HEAD",
-                wallet_security::redact_urls_in_text(&e.to_string()),
-                None,
-            )
-        })?;
+    let n = provider.get_block_number().await.map_err(|e| {
+        wallet_err_json(
+            "RPC_HEAD",
+            wallet_security::redact_urls_in_text(&e.to_string()),
+            None,
+        )
+    })?;
     Ok(n.to_string())
 }
 

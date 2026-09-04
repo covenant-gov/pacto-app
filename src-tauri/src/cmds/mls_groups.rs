@@ -1,6 +1,10 @@
 //! MLS group commands: create/invite/remove members, welcomes, sync, and group metadata.
+use crate::{
+    db, get_nostr_client, handle_event_guarded, mls, mls_store_reset_state, notification,
+    require_key_derivation_version_2, session, trusted_relays, MlsService, NotificationLevel,
+    STATE, TAURI_APP,
+};
 use nostr_sdk::prelude::*;
-use crate::{db, get_nostr_client, handle_event_guarded, mls, mls_store_reset_state, notification, require_key_derivation_version_2, session, trusted_relays, MlsService, NotificationLevel, STATE, TAURI_APP};
 
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -346,7 +350,9 @@ pub(crate) async fn keypackage_ref_still_usable(
 
 /// Re-fetch pending pre-reset welcomes by id. Forward sync is time-windowed,
 /// so clearing `discarded_giftwraps` alone cannot recover an old invitation.
-pub(crate) async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
+pub(crate) async fn replay_reset_pending_welcomes<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<(), String> {
     let ids = mls_store_reset_state::pending_wrapper_ids(handle)?;
     if ids.is_empty() {
         return Ok(());
@@ -1187,8 +1193,8 @@ pub(crate) async fn get_mls_group_metadata() -> Result<Vec<serde_json::Value>, S
 }
 
 #[tauri::command]
-pub(crate) fn get_mls_store_reset_state() -> Result<Vec<mls_store_reset_state::MlsStoreResetGroupState>, String>
-{
+pub(crate) fn get_mls_store_reset_state(
+) -> Result<Vec<mls_store_reset_state::MlsStoreResetGroupState>, String> {
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
     mls_store_reset_state::reset_group_states(handle)
 }
@@ -1389,7 +1395,9 @@ pub(crate) async fn leave_mls_group(group_id: String) -> Result<(), String> {
 /// from one dual publish collapses into a single entry; separate rotations do not, so a
 /// contact who has republished multiple times may still return more than one entry.
 #[tauri::command]
-pub(crate) async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, String)>, String> {
+pub(crate) async fn refresh_keypackages_for_contact(
+    npub: String,
+) -> Result<Vec<(String, String)>, String> {
     // Resolve contact pubkey
     let contact_pubkey = PublicKey::from_bech32(&npub).map_err(|e| e.to_string())?;
 

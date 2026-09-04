@@ -66,7 +66,7 @@ Alchemy’s AA bundler echoes estimate ceilings and rejects with a verification-
 
 ### Protocol paymaster float and stake (once per chain)
 
-Squad **sponsor pool** deposits (Treasury UI / `sponsor.pool().deposit()`) are **not** the same as the shared paymaster’s EntryPoint **deposit** or **stake**. Addresses: [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) Sepolia `squadSponsor` (source: upstream [`deployments/11155111/full-system.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/full-system.json)). EIP-7702 account: upstream [`deployments/11155111/eip7702-account.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/eip7702-account.json).
+Squad **sponsor pool** deposits (Treasury UI / `sponsor.pool().deposit()`) are **not** the same as the shared paymaster’s EntryPoint **deposit** or **stake**. Addresses: [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) Sepolia `squadSponsor` (source: upstream [`deployments/11155111/full-system.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/full-system.json)). EIP-7702 account: [pacto-aa `deployments/11155111/eip7702-account.json`](https://github.com/covenant-gov/pacto-aa/blob/dev/deployments/11155111/eip7702-account.json).
 
 | Bucket | Who funds | Role |
 |--------|-----------|------|
@@ -74,13 +74,13 @@ Squad **sponsor pool** deposits (Treasury UI / `sponsor.pool().deposit()`) are *
 | Paymaster EntryPoint deposit | protocol / any wallet | Bundler prepaid gas (`paymaster.deposit()`) |
 | Paymaster EntryPoint stake | protocol (FCFS `paymasterStaker` via factory) | Bundler reputation / ERC-7562; typical Sepolia floor **≥ 0.1 ETH**, delay ≥ **1 day** |
 
-**Greenfield cutover:** a factory redeploy creates a new paymaster. Existing clones were initialized with the old paymaster — **recreate** the squad sponsor for the parent and replace stale `squad_infra` sponsor rows (no dual-read of old clones). Restart `pnpm tauri:dev` after address-book changes so Rust recompiles the embedded JSON. Sponsored writes preflight `clone.paymaster() ==` address book (`SPONSOR_PAYMASTER_MISMATCH` if not). Paymaster also requires EIP-7702 stubs to delegate to the allowlisted `PactoSimple7702Account` (`SS_Invalid7702Implementation` otherwise). Current Sepolia addresses: pacto-squad-sponsor [`34518d4`](https://github.com/covenant-gov/pacto-squad-sponsor/commit/34518d42fe187201ca9d5937aada77c227f31c51) `full-system.json`. Do **not** send UserOps at retired paymaster `0x78197483…` / factory `0xb758DB17…`.
+**Greenfield cutover:** a factory redeploy creates a new paymaster. Existing clones were initialized with the old paymaster — **recreate** the squad sponsor for the parent and replace stale `squad_infra` sponsor rows (no dual-read of old clones). Restart `pnpm tauri:dev` after address-book changes so Rust recompiles the embedded JSON. Sponsored writes preflight `clone.paymaster() ==` address book (`SPONSOR_PAYMASTER_MISMATCH` if not). Paymaster also requires EIP-7702 stubs to delegate to the allowlisted `PactoSimple7702Account` (`SS_Invalid7702Implementation` otherwise). Current Sepolia addresses: pacto-squad-sponsor SS-3 `full-system.json` (factory `0x9F6b1936…` / paymaster `0xD84337C1…`; registry-backed allowlist via username `PactoProtocolRegistry` `0xAF61198b…`). Do **not** send UserOps at retired paymasters `0xc7c3Ea95…` / `0x78197483…` or factories `0xD8bdc2e5…` / `0xb758DB17…`.
 
 Dev/protocol ops (no product UI) — Sepolia addrs from the current address book:
 
 ```bash
-FACTORY=0xD8bdc2e5Ca92e129E84207380076c1F18AA3aA95
-PAYMASTER=0xc7c3Ea95734CcCa62C7FFf4d12Be2B5b8cC92BA1
+FACTORY=0x9F6b1936e1817A074033591bb55DC65CBB29e4d7
+PAYMASTER=0xD84337C18dB089DF78c69Ea0df619bD48EEBBcC3
 EP=0x0000000071727De22E5E9d8BAf0edAc6f37da032
 
 # EP deposit (anyone)
@@ -98,7 +98,7 @@ Unlock / withdraw stake or EP deposit: factory `unlockPaymasterStake` / `withdra
 
 | Address | Source | Notes |
 |---------|--------|--------|
-| `0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60` | Pacto `PactoSimple7702Account` ([pacto-squad-sponsor#12](https://github.com/covenant-gov/pacto-squad-sponsor/pull/12)) | `entryPoint()` = EP v0.7; bare ECDSA over `userOpHash`; `execute(address,uint256,bytes)`; paymaster `ALLOWED_7702_IMPLEMENTATION` |
+| `0x2E9156deE65d7946305C334824e2648Ff9128f45` | Pacto `PactoSimple7702Account` ([pacto-aa](https://github.com/covenant-gov/pacto-aa); IERC721/1155 receiver) | `entryPoint()` = EP v0.7; bare ECDSA over `userOpHash`; `execute(address,uint256,bytes)`; global + squad PMs read allowlist from `PactoProtocolRegistry` |
 
 Sponsored UserOps against this impl must use **EntryPoint nonce key `0`**, **bare ECDSA `sign_hash(userOpHash)`** (65-byte signature — not EIP-191 `personal_sign`, not Alchemy MAv2 packing). Gas limits come from a **two-pass** bundler **`eth_estimateUserOperationGas`** (placeholders, then re-estimate with measured limits), then a **1.2×** margin on call / preVerification / postOp; account and paymaster **verification** pads stay ≤ **2.0×**. Estimate placeholders use **500k** `callGasLimit` by default and **1.5M** for Hats/Safe execute selectors (`executeMutiny`, `captainResign`, treasury `execute`, crew add/remove/bootstrap, `executeOffboard`). Account-OOG on the 500k ceiling retries once at 1.5M. `PAYMASTER_REJECTED` is only the unclassified leftover; call OOG / simulation revert / AA33 map to `USEROP_CALL_GAS`, `GOV_CALL_REVERTED` (or `MUTINY_*` when the revert selector is known), and `PAYMASTER_VALIDATION`. Paymaster requires `sender == member` for 7702 senders and that the set-code target matches the allowlisted impl.
 
@@ -106,7 +106,7 @@ Do **not** use eth-infinitism `Simple7702Account` at `0xe6Cae83BdE06E4c305530e19
 
 ## Manual smoke (Sepolia)
 
-See **[OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md)** and **[ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md)**. After the `34518d4` address-book pin: full-restart Tauri, recreate squad sponsor clones on the **new** factory, fund the clone pool, then **0 ETH roster → sponsored Bootstrap crew** (section 1).
+See **[OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md)** and **[ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md)**. After the SS-3 address-book pin: full-restart Tauri, recreate squad sponsor clones on the **new** factory (`0x9F6b1936…`), fund the clone pool, then **0 ETH roster → sponsored Bootstrap crew** (section 1).
 
 ## Out of scope here
 
@@ -114,4 +114,5 @@ EOA deploy affordability / deposit gas-reserve UX is a separate follow-on (not r
 
 ## Related
 
+- Shared sponsored UserOp / EIP-7702 debug order (L0–L4) and Sepolia fund matrix: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md)
 - Nave Pirata / governance stack: [PACTO_GOV.md](./PACTO_GOV.md)

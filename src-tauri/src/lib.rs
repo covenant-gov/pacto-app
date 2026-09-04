@@ -135,6 +135,10 @@ mod dev_login;
 #[cfg(feature = "relay-free-harness")]
 pub mod harness;
 
+/// Local Sepolia username NFT claim harness (not CI). See `src/bin/username_claim_harness.rs`.
+#[cfg(feature = "username-claim-harness")]
+pub mod username_claim_harness;
+
 /// # Blossom Media Servers
 ///
 /// Two ordered lists with automatic failover: the first server that accepts wins.
@@ -873,10 +877,11 @@ mod relay_failure_diagnostics_tests {
     use super::{clear_nostr_client, current_login_generation};
     use crate::cmds::auth::clear_relay_diagnostics_on_logout;
     use crate::cmds::relays::{
-        add_relay_log, add_relay_log_if_current, clear_relay_failure, clear_relay_failure_if_current,
-        normalize_relay_url, relay_failure_for, store_relay_failure_if_current, update_relay_metrics,
-        update_relay_metrics_if_current, RelayFailure, RelayFailureCode, RelayInfo,
-        DIAGNOSTICS_TEST_LOCK, RELAY_FAILURES, RELAY_LOGS, RELAY_METRICS,
+        add_relay_log, add_relay_log_if_current, clear_relay_failure,
+        clear_relay_failure_if_current, normalize_relay_url, relay_failure_for,
+        store_relay_failure_if_current, update_relay_metrics, update_relay_metrics_if_current,
+        RelayFailure, RelayFailureCode, RelayInfo, DIAGNOSTICS_TEST_LOCK, RELAY_FAILURES,
+        RELAY_LOGS, RELAY_METRICS,
     };
 
     fn failure(code: RelayFailureCode) -> RelayFailure {
@@ -1559,6 +1564,20 @@ pub fn run() {
             evm::sponsor_userop::get_bundler_status,
             evm::sponsor_userop::set_pimlico_api_key,
             evm::sponsor_userop::clear_pimlico_api_key,
+            evm::username::username_name_available,
+            evm::username::username_can_bootstrap_claim,
+            evm::username::username_npub_of,
+            evm::username::username_record_of,
+            evm::username::username_eligible_member,
+            evm::username::username_is_pending_transfer,
+            evm::username::username_bootstrap_spendable_pool_wei,
+            evm::username::username_global_spendable_pool_wei,
+            evm::username::username_used_nonce,
+            evm::username::username_get_cached_claim,
+            evm::username::username_claim,
+            evm::username::username_initiate_address_transfer,
+            evm::username::username_claim_address_transfer,
+            evm::username::username_cancel_address_transfer,
             evm::squad_sponsor_ext::get_squad_sponsor_ext_status,
             evm::squad_sponsor_ext::squad_sponsor_set_permitted_address,
             evm::squad_admin_deploy::deploy_squad_admin_for_parent,

@@ -72,12 +72,17 @@ describe('runDevAutologin', () => {
 
   it('hydrates the session on a successful backend login', async () => {
     walletSidebarOpen.set(true);
-    vi.mocked(invoke).mockResolvedValue({ success: true, npub: 'npub1devsandbox' });
+    const pubkeyHex = 'bb'.repeat(32);
+    vi.mocked(invoke).mockResolvedValue({
+      success: true,
+      npub: 'npub1devsandbox',
+      pubkey_hex: pubkeyHex,
+    });
 
     await runDevAutologin();
 
     expect(get(isAuthenticated)).toBe(true);
-    expect(get(currentUser)).toEqual({ npub: 'npub1devsandbox', pubkey: 'npub1devsandbox' });
+    expect(get(currentUser)).toEqual({ npub: 'npub1devsandbox', pubkey: pubkeyHex });
     expect(loadAccountState).toHaveBeenCalledWith('npub1devsandbox');
     expect(get(walletSidebarOpen)).toBe(false);
     expect(freezeGate).toHaveBeenCalledTimes(1);

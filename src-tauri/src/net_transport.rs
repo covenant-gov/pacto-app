@@ -213,7 +213,12 @@ pub fn get_tor_status() -> TorStatusDto {
     #[cfg(all(not(target_os = "android"), feature = "tor"))]
     let (available, bootstrapped, bootstrap_fraction, blocked_reason) = match tor::bootstrap_info()
     {
-        Some(info) => (true, info.ready_for_traffic, info.fraction, info.blocked_reason),
+        Some(info) => (
+            true,
+            info.ready_for_traffic,
+            info.fraction,
+            info.blocked_reason,
+        ),
         None => (true, false, 0.0, None),
     };
     #[cfg(not(all(not(target_os = "android"), feature = "tor")))]
@@ -282,11 +287,10 @@ fn spawn_login_bootstrap_retry<R: Runtime>(app: tauri::AppHandle<R>) {
                 if is_enabled() {
                     return;
                 }
-                let still_wanted =
-                    crate::db::get_sql_setting(app.clone(), SETTING_KEY.to_string())
-                        .unwrap_or(None)
-                        .map(|v| v == "true")
-                        .unwrap_or(false);
+                let still_wanted = crate::db::get_sql_setting(app.clone(), SETTING_KEY.to_string())
+                    .unwrap_or(None)
+                    .map(|v| v == "true")
+                    .unwrap_or(false);
                 if !still_wanted {
                     return;
                 }
@@ -328,11 +332,9 @@ pub async fn set_tor_routing_enabled<R: Runtime>(
         shutdown_embedded_client();
     }
 
-    if let Err(e) = crate::db::set_sql_setting(
-        handle.clone(),
-        SETTING_KEY.to_string(),
-        enabled.to_string(),
-    ) {
+    if let Err(e) =
+        crate::db::set_sql_setting(handle.clone(), SETTING_KEY.to_string(), enabled.to_string())
+    {
         // Persistence failed: undo the in-memory transport change so it
         // matches what's actually saved (and what the frontend's optimistic
         // toggle reverts to on this error) instead of drifting from it.
@@ -511,7 +513,9 @@ mod tor {
             .map_err(|e| format!("Failed to resolve app data dir: {e}"))
     }
 
-    async fn init_tor_client(data_dir: PathBuf) -> Result<Arc<TorClient<PreferredRuntime>>, String> {
+    async fn init_tor_client(
+        data_dir: PathBuf,
+    ) -> Result<Arc<TorClient<PreferredRuntime>>, String> {
         let mut config = TorClientConfigBuilder::default();
 
         // .onion relays (ConnectionTarget::Onion) resolve over the same client.

@@ -2,13 +2,21 @@
 //! encrypt/decrypt, and relay-pool population on connect.
 
 use crate::Profile;
+use crate::{
+    account_manager, clear_encryption_key, clear_nostr_client, crypto, db, evm, get_nostr_client,
+    mnemonic_seed_clear, mnemonic_seed_get, mnemonic_seed_set, net_transport, nostr_tags,
+    relay_cert, session, set_nostr_client, trusted_relays, SyncMode, PENDING_INVITE, STATE,
+    TAURI_APP,
+};
 use nostr_sdk::prelude::*;
-use crate::{account_manager, clear_encryption_key, clear_nostr_client, crypto, db, evm, get_nostr_client, mnemonic_seed_clear, mnemonic_seed_get, mnemonic_seed_set, net_transport, nostr_tags, relay_cert, session, set_nostr_client, trusted_relays, PENDING_INVITE, STATE, SyncMode, TAURI_APP};
 use tauri::{AppHandle, Manager, Runtime};
 
 #[derive(serde::Serialize, Clone)]
 pub(crate) struct LoginKeyPair {
+    /// Bech32 npub.
     pub(crate) public: String,
+    /// X-only pubkey as 64 hex chars (no 0x); for npubHash / claim digests.
+    pub(crate) pubkey_hex: String,
     pub(crate) private: String,
     /// EVM private key (hex with 0x), derived from Nostr secret. Present for new/imported accounts.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,6 +102,7 @@ pub(crate) async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair,
 
     Ok(LoginKeyPair {
         public: npub,
+        pubkey_hex: keys.public_key.to_hex(),
         private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
         evm_private_key,
         evm_address,
@@ -153,6 +162,7 @@ pub(crate) async fn login(import_key: String) -> Result<LoginKeyPair, String> {
                 .unwrap_or((None, None));
         return Ok(LoginKeyPair {
             public: prev_npub,
+            pubkey_hex: new_keys.public_key.to_hex(),
             private: new_keys
                 .secret_key()
                 .to_bech32()
@@ -183,7 +193,9 @@ pub(crate) async fn populate_relay_pool<R: Runtime>(client: &Client, handle: &Ap
     let existing_relays = client.relays().await;
 
     // Get disabled default relays
-    let disabled_defaults = crate::cmds::relays::get_disabled_default_relays(handle).await.unwrap_or_default();
+    let disabled_defaults = crate::cmds::relays::get_disabled_default_relays(handle)
+        .await
+        .unwrap_or_default();
 
     // Add default relays (unless disabled or already present). A debug relay
     // override means "route all traffic here", so seeding the public defaults
@@ -224,7 +236,11 @@ pub(crate) async fn populate_relay_pool<R: Runtime>(client: &Client, handle: &Ap
                 }
                 Err(e) => {
                     eprintln!("[Relay] Failed to add default relay {}: {}", default_url, e);
-                    crate::cmds::relays::add_relay_log(default_url, "error", &format!("Failed to add: {}", e));
+                    crate::cmds::relays::add_relay_log(
+                        default_url,
+                        "error",
+                        &format!("Failed to add: {}", e),
+                    );
                 }
             }
         } else {
@@ -239,7 +255,10 @@ pub(crate) async fn populate_relay_pool<R: Runtime>(client: &Client, handle: &Ap
                 if relay.enabled {
                     match client
                         .pool()
-                        .add_relay(&relay.url, crate::cmds::relays::relay_options_for_mode(&relay.mode))
+                        .add_relay(
+                            &relay.url,
+                            crate::cmds::relays::relay_options_for_mode(&relay.mode),
+                        )
                         .await
                     {
                         Ok(_) => {
@@ -255,7 +274,11 @@ pub(crate) async fn populate_relay_pool<R: Runtime>(client: &Client, handle: &Ap
                         }
                         Err(e) => {
                             eprintln!("[Relay] Failed to add custom relay {}: {}", relay.url, e);
-                            crate::cmds::relays::add_relay_log(&relay.url, "error", &format!("Failed to add: {}", e));
+                            crate::cmds::relays::add_relay_log(
+                                &relay.url,
+                                "error",
+                                &format!("Failed to add: {}", e),
+                            );
                         }
                     }
                 }
@@ -691,6 +714,7 @@ pub(crate) async fn create_account() -> Result<LoginKeyPair, String> {
 
     Ok(LoginKeyPair {
         public: npub,
+        pubkey_hex: keys.public_key.to_hex(),
         private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
         evm_private_key,
         evm_address,
@@ -700,8 +724,11 @@ pub(crate) async fn create_account() -> Result<LoginKeyPair, String> {
 /// Parse a 64-hex-char string into a 32-byte key. Pure/no I/O so it's unit-testable without an
 /// `AppHandle`.
 pub(crate) fn parse_biometric_key_hex(key_hex: &str) -> Result<[u8; 32], String> {
-    let bytes = hex::decode(key_hex.trim()).map_err(|_| "Invalid biometric key material".to_string())?;
-    bytes.try_into().map_err(|_| "Invalid biometric key material".to_string())
+    let bytes =
+        hex::decode(key_hex.trim()).map_err(|_| "Invalid biometric key material".to_string())?;
+    bytes
+        .try_into()
+        .map_err(|_| "Invalid biometric key material".to_string())
 }
 
 /// If a Nostr client is already loaded (idle auto-lock only clears the session key, not the
@@ -709,7 +736,9 @@ pub(crate) fn parse_biometric_key_hex(key_hex: &str) -> Result<[u8; 32], String>
 /// `login`'s already-loaded-client branch so a lock-screen biometric unlock doesn't wipe
 /// in-memory chat/profile state or bump `LOGIN_GENERATION` under a live session. Returns
 /// `Ok(None)` when no client is loaded yet, so the caller falls through to a cold-start unlock.
-pub(crate) async fn reuse_loaded_client_if_matching(keys: &Keys) -> Result<Option<LoginKeyPair>, String> {
+pub(crate) async fn reuse_loaded_client_if_matching(
+    keys: &Keys,
+) -> Result<Option<LoginKeyPair>, String> {
     let client = match get_nostr_client() {
         Ok(c) => c,
         Err(_) => return Ok(None),
@@ -731,6 +760,7 @@ pub(crate) async fn reuse_loaded_client_if_matching(keys: &Keys) -> Result<Optio
             .unwrap_or((None, None));
     Ok(Some(LoginKeyPair {
         public: prev_npub,
+        pubkey_hex: keys.public_key.to_hex(),
         private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
         evm_private_key,
         evm_address,

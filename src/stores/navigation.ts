@@ -1,4 +1,5 @@
 import { get, writable } from 'svelte/store';
+import { setSettingsSectionCollapsed } from '../lib/settings/settings-section-collapse';
 import { SETTINGS_CHANNEL_ID } from '../lib/squad/hub-channel-names';
 import type { SquadNetworkSlot } from '../lib/squad/squad-network';
 import { persistenceKey } from './persistence-context';
@@ -78,6 +79,33 @@ export function focusSquadSettingsNetworkEditor(slot: SquadNetworkSlot = 'primar
   openSquadSettingsChannel('squad');
   squadSettingsNetworkFocusSlot.set(slot);
   squadSettingsNetworkFocusNonce.update((n) => n + 1);
+}
+
+/** Bumped to open Profile → username block from Commons Early Adopter CTA. */
+export const profileUsernameFocusNonce = writable(0);
+
+/** Survives ProfileUsernameBlock remount so scroll only runs when the nonce advances. */
+let lastConsumedProfileUsernameFocusNonce = 0;
+
+/** Returns true once per nonce bump (safe across component remounts). */
+export function consumeProfileUsernameFocus(): boolean {
+  const nonce = get(profileUsernameFocusNonce);
+  if (nonce <= lastConsumedProfileUsernameFocusNonce) return false;
+  lastConsumedProfileUsernameFocusNonce = nonce;
+  return true;
+}
+
+/** Test helper — reset focus consumption between cases. */
+export function resetProfileUsernameFocusConsumption(): void {
+  lastConsumedProfileUsernameFocusNonce = 0;
+}
+
+export function focusProfileUsername() {
+  activeChannelId.set(null);
+  activeHubChannelName.set(null);
+  activeView.set('profile');
+  setSettingsSectionCollapsed('settings-profile', false);
+  profileUsernameFocusNonce.update((n) => n + 1);
 }
 
 /** Bumped when the Rust SQLite poll replica changes for a parent (local or remote MLS ingest). */

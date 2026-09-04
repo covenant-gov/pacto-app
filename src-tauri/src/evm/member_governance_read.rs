@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use alloy::eips::BlockNumberOrTag;
-use alloy::primitives::{Address, B256, TxHash, U256};
+use alloy::primitives::{Address, TxHash, B256, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEvent;
@@ -352,13 +352,14 @@ pub async fn get_hat_wearers_for_ids<R: Runtime>(
     };
 
     let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    let latest = provider
-        .get_block_number()
-        .await
-        .map_err(hats_logs_err)?;
+    let latest = provider.get_block_number().await.map_err(hats_logs_err)?;
 
     let mut from_block = latest.saturating_sub(HAT_LOG_DEFAULT_LOOKBACK);
-    if let Some(raw) = from_tx_hash.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(raw) = from_tx_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let hash = parse_tx_hash(raw)?;
         if let Some(receipt) = provider
             .get_transaction_receipt(hash)
@@ -381,16 +382,15 @@ pub async fn get_hat_wearers_for_ids<R: Runtime>(
     let mut cursor = from_block;
     let mut chunks = 0u64;
     while cursor <= latest && chunks < HAT_LOG_MAX_CHUNKS {
-        let end = cursor.saturating_add(HAT_LOG_BLOCK_CHUNK.saturating_sub(1)).min(latest);
+        let end = cursor
+            .saturating_add(HAT_LOG_BLOCK_CHUNK.saturating_sub(1))
+            .min(latest);
         let filter = Filter::new()
             .address(hats)
             .event_signature(TransferHat::SIGNATURE_HASH)
             .from_block(BlockNumberOrTag::Number(cursor))
             .to_block(BlockNumberOrTag::Number(end));
-        let chunk = provider
-            .get_logs(&filter)
-            .await
-            .map_err(hats_logs_err)?;
+        let chunk = provider.get_logs(&filter).await.map_err(hats_logs_err)?;
         logs.extend(chunk);
         chunks += 1;
         if end == latest {

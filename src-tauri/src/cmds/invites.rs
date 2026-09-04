@@ -1,6 +1,9 @@
 //! Invite code issuance, redemption, and invited-user counts.
+use crate::{
+    db, get_nostr_client, nostr_tags, session, trusted_relays, PendingInviteAcceptance,
+    PENDING_INVITE, TAURI_APP,
+};
 use nostr_sdk::prelude::*;
-use crate::{db, get_nostr_client, nostr_tags, session, trusted_relays, PendingInviteAcceptance, PENDING_INVITE, TAURI_APP};
 
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};

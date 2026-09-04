@@ -193,7 +193,11 @@ async fn login_full_depth<R: Runtime>(
     {
         mark_backup_verified(&handle);
         let _ = crate::sandbox_handle::record_npub(&npub);
-        return Ok(serde_json::json!({ "success": true, "npub": npub }));
+        return Ok(serde_json::json!({
+            "success": true,
+            "npub": npub,
+            "pubkey_hex": keys.public_key.to_hex(),
+        }));
     }
 
     let keypair = crate::cmds::auth::login_with_recovery_phrase(phrase).await?;
@@ -230,7 +234,11 @@ async fn login_full_depth<R: Runtime>(
 
     mark_backup_verified(&handle);
     let _ = crate::sandbox_handle::record_npub(&keypair.public);
-    Ok(serde_json::json!({ "success": true, "npub": keypair.public }))
+    Ok(serde_json::json!({
+        "success": true,
+        "npub": keypair.public,
+        "pubkey_hex": keypair.pubkey_hex,
+    }))
 }
 
 /// Debug-only headless login for automated end-to-end tests and agent-driven

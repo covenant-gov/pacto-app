@@ -108,7 +108,8 @@ describe('auth', () => {
   const npub = 'npub1test';
   const keys = {
     private: 'nsec1private',
-    public: 'pubkey',
+    public: 'npub1test',
+    pubkey_hex: 'aa'.repeat(32),
     evm_private_key: '0xevmprivate',
     evm_address: '0xevmaddress',
   };
@@ -318,7 +319,7 @@ describe('auth', () => {
       expect(encryptAndSaveKey).toHaveBeenCalledWith(keys.private, '123456');
       expect(encryptAndSaveEvmKey).toHaveBeenCalledWith(keys.evm_private_key, keys.evm_address, '123456');
       expect(get(isAuthenticated)).toBe(true);
-      expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
+      expect(get(currentUser)).toEqual({ npub, pubkey: keys.pubkey_hex });
       expect(get(activeTopNavTab)).toBe(DEFAULT_TOP_NAV_TAB);
       expect(loadAccountState).toHaveBeenCalledWith(npub);
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
@@ -365,7 +366,7 @@ describe('auth', () => {
 
       expect(encryptAndSaveKey).toHaveBeenCalledWith(keys.private, '123456');
       expect(get(isAuthenticated)).toBe(true);
-      expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
+      expect(get(currentUser)).toEqual({ npub, pubkey: keys.pubkey_hex });
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
       expect(get(backupVerified)).toBe(true);
       expect(get(backupVerificationModalOpen)).toBe(false);
@@ -411,7 +412,7 @@ describe('auth', () => {
 
       expect(login).toHaveBeenCalledWith(keys.private);
       expect(get(isAuthenticated)).toBe(true);
-      expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
+      expect(get(currentUser)).toEqual({ npub, pubkey: keys.pubkey_hex });
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
       expect(get(backupVerified)).toBe(null);
       expect(get(backupVerificationModalOpen)).toBe(false);
@@ -459,7 +460,7 @@ describe('auth', () => {
       expect(getBiometricUnlockData).toHaveBeenCalledWith(npub, 'Unlock Pacto');
       expect(unlockWithBiometricKey).toHaveBeenCalledWith('deadbeef');
       expect(get(isAuthenticated)).toBe(true);
-      expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
+      expect(get(currentUser)).toEqual({ npub, pubkey: keys.pubkey_hex });
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
       expect(freezeGate).toHaveBeenCalledTimes(1);
     });
