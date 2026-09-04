@@ -16,7 +16,7 @@ use crate::db::{self, UsernameClaimUpsert};
 use crate::evm::claim_binding::{claim_binding_signing_hash, sign_claim_binding};
 use crate::evm::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiCall as bootstrapSpendableCall;
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
-    canBootstrapClaimCall, claimCall, hashClaimBindingCall, mintFeeCall, nameAvailableCall,
+    canBootstrapClaimCall, claimCall, hashClaimBindingCall, nameAvailableCall,
     npubOfCall, recordOfCall, usedNonceCall,
 };
 use crate::evm::contracts::pacto_username::ISponsorPolicyRegistry::policyVersionCall;
@@ -95,9 +95,6 @@ pub async fn username_claim<R: Runtime>(
     .await
     .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
 
-    let mint_fee: U256 = eth_call_decode(&provider, nft, &mintFeeCall {})
-        .await
-        .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
     let used: U256 = eth_call_decode(
         &provider,
         nft,
@@ -130,7 +127,7 @@ pub async fn username_claim<R: Runtime>(
         evmSignature: Bytes::from(vec![0u8; 65]),
     }
     .abi_encode();
-    let eoa_cost = estimate_eoa_cost_wei(&provider, member, nft, &rough_calldata, mint_fee).await;
+    let eoa_cost = estimate_eoa_cost_wei(&provider, member, nft, &rough_calldata).await;
     let bootstrap_pool_ok = can_bootstrap && !bootstrap_pool.is_zero();
     let eoa_can_pay = balance >= eoa_cost;
     let path = select_username_sponsor_path(true, bootstrap_pool_ok, eoa_can_pay, false);
@@ -259,7 +256,7 @@ pub async fn username_claim<R: Runtime>(
             )
         }
         UsernameSponsorPath::Eoa => {
-            let tx = send_eoa_call(app.clone(), net, &urls, nft, calldata, mint_fee).await?;
+            let tx = send_eoa_call(app.clone(), net, &urls, nft, calldata).await?;
             ("eoa".to_string(), Some(tx), None)
         }
         UsernameSponsorPath::GlobalMember | UsernameSponsorPath::Fail => {

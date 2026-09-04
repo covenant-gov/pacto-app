@@ -4,6 +4,7 @@
 use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{Address, Bytes, Uint, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder};
+use alloy::rpc::types::state::{AccountOverride, StateOverridesBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
@@ -11,13 +12,15 @@ use bip39::Mnemonic;
 use nostr_sdk::nips::nip06::FromMnemonic;
 use nostr_sdk::prelude::Keys;
 use rand::RngCore;
+use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::evm::claim_binding::{claim_binding_signing_hash, sign_claim_binding};
 use crate::evm::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiCall as bootstrapSpendableCall;
 use crate::evm::contracts::pacto_username::IPactoGlobalPaymaster::ALLOWED_7702_IMPLEMENTATIONCall;
+use crate::evm::contracts::pacto_username::IPactoProtocolRegistry::usernameNftCall;
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
-    canBootstrapClaimCall, claimCall, hashClaimBindingCall, mintFeeCall, nameAvailableCall,
+    canBootstrapClaimCall, claimCall, hashClaimBindingCall, nameAvailableCall,
     npubOfCall, recordOfCall, usedNonceCall,
 };
 use crate::evm::global_paymaster::{
@@ -31,7 +34,7 @@ use crate::evm::nostr_claim_link::{
 use crate::evm::pacto_chain_config::{
     erc4337_account_implementation, global_username_sponsor_addresses,
 };
-use crate::evm::rpc::call::{eth_call_decode, eth_call_from};
+use crate::evm::rpc::call::{eth_call_decode, eth_call_from, eth_call_from_with_overrides};
 use crate::evm::rpc::errors::extract_revert_selector;
 use crate::evm::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
 use crate::evm::sponsor_userop::{
@@ -108,13 +111,30 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
             .map_err(|e| format!("alchemy url parse: {e}"))?,
     );
     let addrs = global_username_sponsor_addresses(NETWORK)?;
-    let account_impl = erc4337_account_implementation(NETWORK)
-        .or(Some(addrs.allowed_7702_implementation))
-        .ok_or_else(|| "missing EIP-7702 account implementation".to_string())?;
+    // Prefer book allowlist (same as send_sponsored_username_userop), then erc4337 pin.
+    let account_impl = if !addrs.allowed_7702_implementation.is_zero() {
+        addrs.allowed_7702_implementation
+    } else {
+        erc4337_account_implementation(NETWORK)
+            .ok_or_else(|| "missing EIP-7702 account implementation".to_string())?
+    };
     let nft = addrs.pacto_username_nft;
 
     // --- L0 ---
     eprintln!("[username_claim_harness] stage=1 L0 reads");
+    let registry_nft: Address = eth_call_decode(
+        &provider,
+        addrs.protocol_registry,
+        &usernameNftCall {},
+    )
+    .await
+    .map_err(|e| format!("protocolRegistry.usernameNft: {e}"))?;
+    if registry_nft != nft {
+        return Err(format!(
+            "L0 FAIL: book pactoUsernameNft {nft:#x} != REGISTRY.usernameNft() {registry_nft:#x}"
+        ));
+    }
+    eprintln!("[username_claim_harness] L0 registry_nft_ok={nft:#x}");
     let available: bool = eth_call_decode(
         &provider,
         nft,
@@ -148,9 +168,6 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
     )
     .await
     .map_err(|e| format!("usedNonce: {e}"))?;
-    let mint_fee: U256 = eth_call_decode(&provider, nft, &mintFeeCall {})
-        .await
-        .map_err(|e| format!("mintFee: {e}"))?;
     let bootstrap_pool: U256 =
         eth_call_decode(&provider, addrs.bootstrap_mint_pool, &bootstrapSpendableCall {})
             .await
@@ -173,8 +190,8 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
     .map_err(|e| format!("ALLOWED_7702: {e}"))?;
 
     eprintln!(
-        "[username_claim_harness] L0 name_ok={} can_bootstrap={} used_nonce={} mint_fee={} bootstrap_pool={} pm_ep_deposit={} allowed_7702={allowed_7702:#x} account_impl={account_impl:#x}",
-        available, can_bootstrap, used, mint_fee, bootstrap_pool, pm_deposit
+        "[username_claim_harness] L0 name_ok={} can_bootstrap={} used_nonce={} bootstrap_pool={} pm_ep_deposit={} allowed_7702={allowed_7702:#x} account_impl={account_impl:#x}",
+        available, can_bootstrap, used, bootstrap_pool, pm_deposit
     );
     if !can_bootstrap {
         return Err("L0 FAIL: canBootstrapClaim=false".into());
@@ -287,6 +304,43 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         }
     }
 
+    let execute_calldata = IAccountExecute::executeCall {
+        dest: nft,
+        value: U256::ZERO,
+        data: Bytes::from(claim_calldata),
+    }
+    .abi_encode();
+
+    // --- L1.5 execute under EIP-7702 stub (state override) ---
+    let stub_code_hex = format!("0xef0100{}", hex::encode(account_impl));
+    let state_overrides = StateOverridesBuilder::default()
+        .append(
+            member,
+            AccountOverride::default().with_7702_delegation_designator(account_impl),
+        )
+        .build();
+    eprintln!(
+        "[username_claim_harness] stage=3.5 L1.5 execute under 7702 stub to=member from=prefer_entry_point stub_code={stub_code_hex} execute_len={}",
+        execute_calldata.len()
+    );
+    let l15 = run_l15_execute_eth_call(
+        &provider,
+        member,
+        addrs.entry_point,
+        account_impl,
+        &execute_calldata,
+        state_overrides,
+    )
+    .await;
+    match l15 {
+        Ok(from_label) => {
+            eprintln!("[username_claim_harness] L1.5 OK from={from_label}");
+        }
+        Err(e) => {
+            return Err(e);
+        }
+    }
+
     // --- Sponsored UserOp ---
     eprintln!("[username_claim_harness] stage=4 sponsored UserOp (no EOA ETH)");
     let code = provider
@@ -314,13 +368,6 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
             "none"
         }
     );
-
-    let execute_calldata = IAccountExecute::executeCall {
-        dest: nft,
-        value: U256::ZERO,
-        data: Bytes::from(claim_calldata),
-    }
-    .abi_encode();
 
     let (max_priority, max_fee) = match provider.estimate_eip1559_fees().await {
         Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
@@ -394,8 +441,16 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         bundler_estimate_user_operation_gas(&bundler_url, &estimate_op, addrs.entry_point)
             .await
             .map_err(|e| {
+                dump_tenderly_simulator_recipe(
+                    member,
+                    account_impl,
+                    &execute_calldata,
+                    &estimate_op,
+                    addrs.entry_point,
+                    addrs.pacto_global_paymaster,
+                );
                 format!(
-                    "L4 STOP after L1 OK (estimate pass 1): {}. Work-backward: field-diff UserOp vs squad golden path (eip7702Auth, paymasterData policy=0, execute selector). App: global_sponsor_userop → username_claim → Commons.",
+                    "L4 STOP after L1+L1.5 OK (estimate pass 1): {}. No txHash until send — use Simulator dump above (not Tenderly Explorer). Work-backward: field-diff UserOp vs squad (eip7702Auth, paymasterData policy=0, execute). App: global_sponsor_userop → username_claim → Commons.",
                     wallet_security::redact_urls_in_text(&e)
                 )
             })?;
@@ -427,8 +482,16 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         bundler_estimate_user_operation_gas(&bundler_url, &calibrate_op, addrs.entry_point)
             .await
             .map_err(|e| {
+                dump_tenderly_simulator_recipe(
+                    member,
+                    account_impl,
+                    &execute_calldata,
+                    &calibrate_op,
+                    addrs.entry_point,
+                    addrs.pacto_global_paymaster,
+                );
                 format!(
-                    "L4 STOP after L1 OK (estimate pass 2): {}",
+                    "L4 STOP after L1+L1.5 OK (estimate pass 2): {}. No txHash — use Simulator dump above.",
                     wallet_security::redact_urls_in_text(&e)
                 )
             })?;
@@ -536,6 +599,148 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         "[username_claim_harness] work-backward next: compare global_sponsor_userop preflight → username_claim Tauri → Commons CTA"
     );
     Ok(())
+}
+
+/// Alchemy `eth_call` of `execute(claim)` on member with EIP-7702 stub override.
+/// Prefers `from=EntryPoint`; falls back to `from=member`.
+async fn run_l15_execute_eth_call<P: Provider>(
+    provider: &P,
+    member: Address,
+    entry_point: Address,
+    account_impl: Address,
+    execute_calldata: &[u8],
+    state_overrides: alloy::rpc::types::state::StateOverride,
+) -> Result<&'static str, String> {
+    let attempts = [
+        (entry_point, "entry_point"),
+        (member, "member"),
+    ];
+    let mut last_detail = String::new();
+    let mut last_sel = String::from("none");
+    for (from, label) in attempts {
+        eprintln!("[username_claim_harness] L1.5 trying from={label} ({from:#x})");
+        match eth_call_from_with_overrides(
+            provider,
+            member,
+            Some(from),
+            Some(CLAIM_ETH_CALL_GAS),
+            execute_calldata.to_vec(),
+            Some(state_overrides.clone()),
+        )
+        .await
+        {
+            Ok(_) => return Ok(label),
+            Err(e) => {
+                let sel = extract_revert_selector(&e).unwrap_or_else(|| "none".into());
+                let detail = wallet_security::redact_urls_in_text(&e);
+                eprintln!(
+                    "[username_claim_harness] L1.5 FAIL from={label} selector={sel} detail={detail}"
+                );
+                last_sel = sel;
+                last_detail = detail;
+            }
+        }
+    }
+    dump_tenderly_simulator_recipe(
+        member,
+        account_impl,
+        execute_calldata,
+        &serde_json::json!({
+            "sender": format!("{member:#x}"),
+            "nonce": "n/a",
+            "callGasLimit": format!("{CLAIM_ETH_CALL_GAS:#x}"),
+            "verificationGasLimit": "n/a",
+            "preVerificationGas": "n/a",
+            "maxFeePerGas": "n/a",
+            "maxPriorityFeePerGas": "n/a",
+            "paymasterData": "0x",
+            "eip7702Auth": true,
+        }),
+        entry_point,
+        Address::ZERO,
+    );
+    eprintln!(
+        "[username_claim_harness] STOP — L1.5 execute/7702 path failed (selector={last_sel}). \
+If L1 bare claim OK and this is empty revert: username NFT `_safeMint` calls `onERC721Received` on the 7702 EOA; \
+empty account fallback returns no IERC721Receiver magic → bubbled empty revert (cast trace). \
+Fix: PactoSimple7702Account must implement onERC721Received; redeploy account impl + pin ALLOWED_7702 / erc4337 (not full-system). \
+Paste RECIPE A into Tenderly Simulator (not Explorer)."
+    );
+    Err(format!(
+        "L1.5 STOP selector={last_sel} detail={last_detail}"
+    ))
+}
+
+/// Redacted UserOp + Tenderly Simulator paste recipe (no keys/mnemonics). Estimate failures have no txHash.
+fn dump_tenderly_simulator_recipe(
+    member: Address,
+    account_impl: Address,
+    execute_calldata: &[u8],
+    user_op: &Value,
+    entry_point: Address,
+    paymaster: Address,
+) {
+    let stub = format!("0xef0100{}", hex::encode(account_impl));
+    let call_data_hex = format!("0x{}", hex::encode(execute_calldata));
+    let sender = user_op
+        .get("sender")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
+    let nonce = user_op
+        .get("nonce")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let call_gas = user_op.get("callGasLimit").cloned().unwrap_or(Value::Null);
+    let ver_gas = user_op
+        .get("verificationGasLimit")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let pre_gas = user_op
+        .get("preVerificationGas")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let max_fee = user_op.get("maxFeePerGas").cloned().unwrap_or(Value::Null);
+    let max_prio = user_op
+        .get("maxPriorityFeePerGas")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let pm_data = user_op
+        .get("paymasterData")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0x");
+    let pm_bytes = pm_data.trim_start_matches("0x");
+    let pm_len = pm_bytes.len() / 2;
+    let pm_head = if pm_bytes.len() >= 8 {
+        &pm_bytes[..8]
+    } else {
+        pm_bytes
+    };
+    let pm_tail = if pm_bytes.len() >= 8 {
+        &pm_bytes[pm_bytes.len() - 8..]
+    } else {
+        ""
+    };
+    let eip7702_present = user_op
+        .get("eip7702Auth")
+        .map(|v| !v.is_null())
+        .unwrap_or(false);
+
+    eprintln!("========== Tenderly Simulator dump (no L1 txHash — estimate/L1.5 only) ==========");
+    eprintln!("chain=sepolia entryPoint={entry_point:#x} paymaster={paymaster:#x}");
+    eprintln!("sender={sender} nonce={nonce} eip7702Auth={eip7702_present}");
+    eprintln!(
+        "gas call={call_gas} verification={ver_gas} preVerification={pre_gas} maxFee={max_fee} maxPriority={max_prio}"
+    );
+    eprintln!("callData={call_data_hex}");
+    eprintln!("paymasterData len={pm_len} first4=0x{pm_head} last4=0x{pm_tail}");
+    eprintln!(
+        "RECIPE A: Simulate call to={member:#x} data=<callData above> from={entry_point:#x} with state override code={stub} on {member:#x} (Sepolia)."
+    );
+    eprintln!(
+        "RECIPE B: Attribute EntryPoint validate/handle frames with this UserOp (dummy sig on estimate is normal) — account vs paymaster vs EP."
+    );
+    eprintln!("Do not use Tenderly Explorer — there is no transaction hash until bundler send.");
+    eprintln!("============================================================================");
 }
 
 fn load_dotenv() {

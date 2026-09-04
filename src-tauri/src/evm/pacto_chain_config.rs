@@ -40,6 +40,7 @@ struct NetworkBook {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GlobalUsernameSponsorBook {
+    protocol_registry: String,
     username_system_factory: String,
     pacto_username_nft: String,
     global_sponsor_pool: String,
@@ -352,6 +353,7 @@ pub fn squad_sponsor_deploy_addresses(
 
 #[derive(Clone, Debug)]
 pub struct GlobalUsernameSponsorAddresses {
+    pub protocol_registry: Address,
     pub username_system_factory: Address,
     pub pacto_username_nft: Address,
     pub global_sponsor_pool: Address,
@@ -387,6 +389,12 @@ pub fn global_username_sponsor_addresses(
 ) -> Result<GlobalUsernameSponsorAddresses, String> {
     let book = book_for(net_key).and_then(|n| n.global_username_sponsor.as_ref());
     Ok(GlobalUsernameSponsorAddresses {
+        protocol_registry: resolve_required(
+            "PACTO_PROTOCOL_REGISTRY",
+            net_key,
+            book.map(|b| b.protocol_registry.as_str()),
+            "globalUsernameSponsor.protocolRegistry",
+        )?,
         username_system_factory: resolve_required(
             "PACTO_USERNAME_SYSTEM_FACTORY",
             net_key,
@@ -497,11 +505,11 @@ mod tests {
         let sp = squad_sponsor_deploy_addresses("sepolia").expect("sponsor book");
         assert_eq!(
             sp.squad_sponsor_factory,
-            address!("0xD8bdc2e5Ca92e129E84207380076c1F18AA3aA95")
+            address!("0x9F6b1936e1817A074033591bb55DC65CBB29e4d7")
         );
         assert_eq!(
             sp.pacto_sponsor_paymaster,
-            address!("0xc7c3Ea95734CcCa62C7FFf4d12Be2B5b8cC92BA1")
+            address!("0xD84337C18dB089DF78c69Ea0df619bD48EEBBcC3")
         );
 
         let gov = pacto_gov_deploy_addresses("sepolia").expect("gov book");
@@ -527,32 +535,36 @@ mod tests {
     fn sepolia_book_loads_global_username_sponsor() {
         let g = global_username_sponsor_addresses("sepolia").expect("username book");
         assert_eq!(
+            g.protocol_registry,
+            address!("0xAF61198bf3b9D8d49FA82888121c187720D6Cfe8")
+        );
+        assert_eq!(
             g.username_system_factory,
-            address!("0x142f50bb42950158124EBa4491325deFF618e697")
+            address!("0x83BEDd6Ef7FBe62a8aCe6521137e86670D1Fd2E3")
         );
         assert_eq!(
             g.pacto_username_nft,
-            address!("0xa604Eb5Df00F23f12321c9eeBa0e92e9Ca4491f2")
+            address!("0x09e08dB9B4275979Bb2aE8C86f3bB5d406c120d1")
         );
         assert_eq!(
             g.global_sponsor_pool,
-            address!("0x6713Cb2a0aaEFA0F53d55669D6CEF7D2dD570054")
+            address!("0x4EfeE104cF969bF70F342DFCd234f73A3bebEbeD")
         );
         assert_eq!(
             g.bootstrap_mint_pool,
-            address!("0x8187d8209307b73731A767B58487D302dB61f13f")
+            address!("0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B")
         );
         assert_eq!(
             g.sponsor_policy_registry,
-            address!("0xf6583a6554b8e369249EaD33F3277baf4D94577f")
+            address!("0xd479edB2cfE051310553716d8628c92C81cBD0db")
         );
         assert_eq!(
             g.bootstrap_claim_policy,
-            address!("0x3EAd3052aABc27f2e37FcA7C0d5D2Fe01FC6520d")
+            address!("0x2BAC17B2aE2aA068bEa3064A3553EDee5D60aB6e")
         );
         assert_eq!(
             g.pacto_global_paymaster,
-            address!("0x1C2eb4Ac1cD57aF67ad8B20838A28FB23d39d5b8")
+            address!("0x04Fc205adA4c0c5C5024546E87972C4c4bB30D0F")
         );
         assert_eq!(
             g.nostr_claim_link,
@@ -565,7 +577,7 @@ mod tests {
         );
         assert_eq!(
             g.allowed_7702_implementation,
-            address!("0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60")
+            address!("0x2E9156deE65d7946305C334824e2648Ff9128f45")
         );
     }
 

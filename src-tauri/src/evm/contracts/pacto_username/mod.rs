@@ -25,8 +25,6 @@ sol! {
 
         function canBootstrapClaim(address member, bytes32 npubHash) external view returns (bool canClaim);
 
-        function mintFee() external view returns (uint256 fee);
-
         function usedNonce(bytes32 npubHash) external view returns (uint256 nonce);
 
         function hashClaimBinding(
@@ -91,5 +89,9 @@ sol! {
             address member,
             uint256 value
         ) external view returns (bool sponsorable);
+    }
+
+    interface IPactoProtocolRegistry {
+        function usernameNft() external view returns (address usernameNftAddress);
     }
 }

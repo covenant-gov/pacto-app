@@ -157,7 +157,6 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
   username_is_pending_transfer: () => false,
   username_bootstrap_spendable_pool_wei: () => '0',
   username_global_spendable_pool_wei: () => '0',
-  username_mint_fee: () => '0',
   username_used_nonce: () => '0',
   username_get_cached_claim: () => null,
   username_claim: () => ({

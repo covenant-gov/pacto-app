@@ -1,6 +1,7 @@
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, Bytes, U256};
 use alloy::providers::Provider;
+use alloy::rpc::types::state::StateOverride;
 use alloy::rpc::types::TransactionRequest;
 use alloy::sol_types::SolCall;
 use alloy::transports::{TransportError, TransportErrorKind};
@@ -66,6 +67,18 @@ pub async fn eth_call_from<P: Provider>(
     gas: Option<u64>,
     calldata: Vec<u8>,
 ) -> Result<Bytes, String> {
+    eth_call_from_with_overrides(provider, to, from, gas, calldata, None).await
+}
+
+/// `eth_call` with optional EIP-1193 `stateOverride` (e.g. EIP-7702 delegation stub on an EOA).
+pub async fn eth_call_from_with_overrides<P: Provider>(
+    provider: &P,
+    to: Address,
+    from: Option<Address>,
+    gas: Option<u64>,
+    calldata: Vec<u8>,
+    state_overrides: Option<StateOverride>,
+) -> Result<Bytes, String> {
     let mut tx = TransactionRequest::default()
         .with_to(to)
         .with_input(Bytes::from(calldata));
@@ -76,7 +89,11 @@ pub async fn eth_call_from<P: Provider>(
         tx = tx.with_gas_limit(gas);
     }
 
-    provider.call(tx).await.map(|b| b).map_err(|e| {
+    let mut call = provider.call(tx);
+    if let Some(overrides) = state_overrides {
+        call = call.overrides(overrides);
+    }
+    call.await.map(|b| b).map_err(|e| {
         wallet_err_json(
             "ETH_CALL_FAILED",
             wallet_security::redact_urls_in_text(&format_eth_call_error(&e)),

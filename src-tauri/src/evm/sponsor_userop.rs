@@ -1799,7 +1799,7 @@ mod tests {
         };
         let auth = json!({
             "chainId": "0xaa36a7",
-            "address": "0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60",
+            "address": "0x2E9156deE65d7946305C334824e2648Ff9128f45",
             "nonce": "0x0",
             "yParity": "0x0",
             "r": format!("0x{}", "11".repeat(32)),
@@ -2342,7 +2342,7 @@ mod tests {
             "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
                 .parse()
                 .unwrap();
-        let implementation = address!("0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60");
+        let implementation = address!("0x2E9156deE65d7946305C334824e2648Ff9128f45");
         let chain_id = 11_155_111u64;
         let nonce = 0u64;
 

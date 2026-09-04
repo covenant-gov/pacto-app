@@ -88,19 +88,21 @@ pub fn require_rpc_urls(
     Ok(urls)
 }
 
+/// Trimmed on-chain username. Chain accepts any non-reserved unique string (NIP-01 style);
+/// client only rejects empty / oversized payloads for UX and gas sanity.
 pub fn validate_username(name: &str) -> Result<String, String> {
     let n = name.trim();
-    if n.len() < 3 || n.len() > 32 {
+    if n.is_empty() {
         return Err(wallet_err_json(
             "INVALID_USERNAME",
-            "username must be 3..=32 lowercase a-z characters",
+            "username must not be empty",
             None,
         ));
     }
-    if !n.bytes().all(|b| b.is_ascii_lowercase()) {
+    if n.len() > 64 {
         return Err(wallet_err_json(
             "INVALID_USERNAME",
-            "username must be lowercase a-z only",
+            "username must be at most 64 bytes (UTF-8)",
             None,
         ));
     }
@@ -184,7 +186,6 @@ pub async fn estimate_eoa_cost_wei<P: Provider>(
     from: Address,
     to: Address,
     calldata: &[u8],
-    value: U256,
 ) -> U256 {
     let gas = estimate_call_gas(provider, from, to, calldata)
         .await
@@ -195,7 +196,7 @@ pub async fn estimate_eoa_cost_wei<P: Provider>(
         .await
         .map(|fees| fees.max_fee_per_gas)
         .unwrap_or(FALLBACK_MAX_FEE);
-    value + U256::from(gas) * U256::from(max_fee)
+    U256::from(gas) * U256::from(max_fee)
 }
 
 pub async fn send_eoa_call<R: Runtime>(
@@ -204,13 +205,12 @@ pub async fn send_eoa_call<R: Runtime>(
     urls: &[String],
     to: Address,
     calldata: Vec<u8>,
-    value: U256,
 ) -> Result<String, String> {
     let (_signer, wallet) = load_embedded_signer(app).await?;
     let provider = connect_signing_provider(urls, wallet).await?;
     let tx = contract_call_request(to, calldata)
         .with_chain_id(net.chain_id)
-        .with_value(value);
+        .with_value(U256::ZERO);
     let receipt = send_and_confirm(
         &provider,
         tx,
@@ -235,7 +235,7 @@ pub async fn send_member_or_eoa_write<R: Runtime>(
     let path = select_username_sponsor_path(false, false, eoa_can_pay, global_member_ok);
     match path {
         UsernameSponsorPath::Eoa => {
-            let tx = send_eoa_call(app, net, urls, nft, calldata, U256::ZERO).await?;
+            let tx = send_eoa_call(app, net, urls, nft, calldata).await?;
             Ok((path, Some(tx), None))
         }
         UsernameSponsorPath::GlobalMember => {
@@ -329,7 +329,7 @@ pub async fn finalize_member_write<R: Runtime, P: Provider>(
     let balance = roster_native_balance_wei(provider, member)
         .await
         .map_err(|e| wallet_err_json("BALANCE_LOOKUP", e, None))?;
-    let eoa_cost = estimate_eoa_cost_wei(provider, member, nft, &calldata, U256::ZERO).await;
+    let eoa_cost = estimate_eoa_cost_wei(provider, member, nft, &calldata).await;
     let eoa_can_pay = balance >= eoa_cost;
     send_member_or_eoa_write(
         app,
@@ -379,17 +379,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validate_username_accepts_lowercase() {
+    fn validate_username_accepts_any_string() {
         assert_eq!(validate_username("dao").unwrap(), "dao");
-        assert_eq!(validate_username("  daopunk  ").unwrap(), "daopunk");
+        assert_eq!(validate_username("  Dao-Punk_1  ").unwrap(), "Dao-Punk_1");
+        assert_eq!(validate_username("ab").unwrap(), "ab");
     }
 
     #[test]
-    fn validate_username_rejects_bad() {
-        assert!(validate_username("ab").is_err());
-        assert!(validate_username("Dao").is_err());
-        assert!(validate_username("dao1").is_err());
-        assert!(validate_username(&"a".repeat(33)).is_err());
+    fn validate_username_rejects_empty_or_oversized() {
+        assert!(validate_username("").is_err());
+        assert!(validate_username("   ").is_err());
+        assert!(validate_username(&"a".repeat(65)).is_err());
     }
 
     #[test]

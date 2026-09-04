@@ -216,20 +216,21 @@ describe('claimedUsernameFromState', () => {
 });
 
 describe('isValidUsernameFormat', () => {
-  it('accepts lowercase 3–32 a-z', () => {
+  it('accepts any non-empty trimmed string up to 64 bytes', () => {
     expect(isValidUsernameFormat('dao')).toBe(true);
-    expect(isValidUsernameFormat('daopunk')).toBe(true);
+    expect(isValidUsernameFormat('Dao-Punk_1')).toBe(true);
+    expect(isValidUsernameFormat('ab')).toBe(true);
   });
 
-  it('accepts mixed case after normalize', () => {
-    expect(isValidUsernameFormat('Dao')).toBe(true);
-    expect(normalizeUsernameInput('  DaoPunk  ')).toBe('daopunk');
+  it('trims without lowercasing', () => {
+    expect(isValidUsernameFormat('  DaoPunk  ')).toBe(true);
+    expect(normalizeUsernameInput('  DaoPunk  ')).toBe('DaoPunk');
   });
 
-  it('rejects invalid shapes', () => {
-    expect(isValidUsernameFormat('ab')).toBe(false);
-    expect(isValidUsernameFormat('dao1')).toBe(false);
-    expect(isValidUsernameFormat('a'.repeat(33))).toBe(false);
+  it('rejects empty or oversized', () => {
+    expect(isValidUsernameFormat('')).toBe(false);
+    expect(isValidUsernameFormat('   ')).toBe(false);
+    expect(isValidUsernameFormat('a'.repeat(65))).toBe(false);
   });
 });
 
@@ -431,12 +432,12 @@ describe('claimUsername', () => {
     currentUser.set(null);
   });
 
-  it('lowercases the name before invoke', async () => {
+  it('trims the name before invoke without lowercasing', async () => {
     mockClaim.mockResolvedValue({
       network: 'sepolia',
       chainId: 11155111,
       path: 'bootstrap',
-      username: 'dao',
+      username: 'Dao',
       npubHash: NPUB_HASH,
       tokenId: '1',
       linkEventId: 'evt',
@@ -447,7 +448,7 @@ describe('claimUsername', () => {
     mockGetCached.mockResolvedValue(null);
     mockActiveEvm.mockResolvedValue(EVM);
     mockRecordOf.mockResolvedValue({
-      name: 'dao',
+      name: 'Dao',
       evmAddress: EVM,
       pendingAddress: '0x0000000000000000000000000000000000000000',
       tokenId: '1',
@@ -455,6 +456,6 @@ describe('claimUsername', () => {
     mockPending.mockResolvedValue(false);
 
     await claimUsername('  Dao  ');
-    expect(mockClaim).toHaveBeenCalledWith('sepolia', 'dao');
+    expect(mockClaim).toHaveBeenCalledWith('sepolia', 'Dao');
   });
 });

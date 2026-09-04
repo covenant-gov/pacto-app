@@ -11,7 +11,7 @@ use crate::db::{self, UsernameClaimRow};
 use crate::evm::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiCall as bootstrapSpendableCall;
 use crate::evm::contracts::pacto_username::IGlobalSponsorPool::spendablePoolWeiCall as globalSpendableCall;
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
-    canBootstrapClaimCall, eligibleMemberCall, isPendingTransferCall, mintFeeCall,
+    canBootstrapClaimCall, eligibleMemberCall, isPendingTransferCall,
     nameAvailableCall, npubOfCall, recordOfCall, usedNonceCall,
 };
 use crate::evm::rpc::call::eth_call_decode;
@@ -197,21 +197,6 @@ pub async fn username_global_spendable_pool_wei(
     .await
     .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
     Ok(wei.to_string())
-}
-
-#[tauri::command]
-pub async fn username_mint_fee(
-    network: String,
-    rpc_urls: Option<Vec<String>>,
-) -> Result<String, String> {
-    let net = require_network(&network)?;
-    let urls = require_rpc_urls(net, rpc_urls)?;
-    let addrs = username_addrs(&net.key)?;
-    let provider = connect_read_provider(&urls).await?;
-    let fee: U256 = eth_call_decode(&provider, addrs.pacto_username_nft, &mintFeeCall {})
-        .await
-        .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
-    Ok(fee.to_string())
 }
 
 #[tauri::command]

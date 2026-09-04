@@ -35,6 +35,7 @@ export type Erc4337ProtocolAddresses = {
 };
 
 export type GlobalUsernameSponsorProtocolAddresses = {
+  protocolRegistry: string;
   usernameSystemFactory: string;
   pactoUsernameNft: string;
   globalSponsorPool: string;

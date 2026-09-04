@@ -139,10 +139,6 @@ export async function usernameGlobalSpendablePoolWei(
   return invoke<string>('username_global_spendable_pool_wei', { network, rpcUrls });
 }
 
-export async function usernameMintFee(network: string, rpcUrls?: string[]): Promise<string> {
-  return invoke<string>('username_mint_fee', { network, rpcUrls });
-}
-
 export async function usernameUsedNonce(
   network: string,
   npubHash: string,

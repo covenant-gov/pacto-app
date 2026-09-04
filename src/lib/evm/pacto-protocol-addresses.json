@@ -1,5 +1,5 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/full-system.json (de1e0c0). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor deployments/11155111/full-system.json (34518d4); navePirataRegistry matches pacto-gov (not the sponsor artifact’s registry). Sepolia globalUsernameSponsor: pacto-username-nft deployments/11155111/full-system.json (policyVersion 3). EIP-7702: eip7702-account.json (0x33F920B5…, unchanged).",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/full-system.json (de1e0c0). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor SS-3 cutover deployments/11155111/full-system.json (factory 0x9F6b1936… / PM 0xD84337C1…); navePirataRegistry matches pacto-gov (not the sponsor artifact’s registry). Sepolia globalUsernameSponsor: pacto-username-nft deployments/11155111/full-system.json (APP-1 / pacto-app#377; NFT 0x09e08dB9…, policy registry 0xd479edB2…). EIP-7702: pacto-aa deployments/11155111/eip7702-account.json (0x2E9156de…).",
   "version": 1,
   "networks": {
     "sepolia": {
@@ -8,21 +8,22 @@
         "deployer": "0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38"
       },
       "globalUsernameSponsor": {
-        "usernameSystemFactory": "0x142f50bb42950158124EBa4491325deFF618e697",
-        "pactoUsernameNft": "0xa604Eb5Df00F23f12321c9eeBa0e92e9Ca4491f2",
-        "globalSponsorPool": "0x6713Cb2a0aaEFA0F53d55669D6CEF7D2dD570054",
-        "bootstrapMintPool": "0x8187d8209307b73731A767B58487D302dB61f13f",
-        "sponsorPolicyRegistry": "0xf6583a6554b8e369249EaD33F3277baf4D94577f",
-        "bootstrapClaimPolicy": "0x3EAd3052aABc27f2e37FcA7C0d5D2Fe01FC6520d",
-        "pactoGlobalPaymaster": "0x1C2eb4Ac1cD57aF67ad8B20838A28FB23d39d5b8",
+        "protocolRegistry": "0xAF61198bf3b9D8d49FA82888121c187720D6Cfe8",
+        "usernameSystemFactory": "0x83BEDd6Ef7FBe62a8aCe6521137e86670D1Fd2E3",
+        "pactoUsernameNft": "0x09e08dB9B4275979Bb2aE8C86f3bB5d406c120d1",
+        "globalSponsorPool": "0x4EfeE104cF969bF70F342DFCd234f73A3bebEbeD",
+        "bootstrapMintPool": "0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B",
+        "sponsorPolicyRegistry": "0xd479edB2cfE051310553716d8628c92C81cBD0db",
+        "bootstrapClaimPolicy": "0x2BAC17B2aE2aA068bEa3064A3553EDee5D60aB6e",
+        "pactoGlobalPaymaster": "0x04Fc205adA4c0c5C5024546E87972C4c4bB30D0F",
         "nostrClaimLink": "0xCc0de30d2926995FB6458De7808E41E2a17B0e29",
         "policyVersion": 3,
-        "allowed7702Implementation": "0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60",
+        "allowed7702Implementation": "0x2E9156deE65d7946305C334824e2648Ff9128f45",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
       },
       "squadSponsor": {
-        "factory": "0xD8bdc2e5Ca92e129E84207380076c1F18AA3aA95",
-        "paymaster": "0xc7c3Ea95734CcCa62C7FFf4d12Be2B5b8cC92BA1",
+        "factory": "0x9F6b1936e1817A074033591bb55DC65CBB29e4d7",
+        "paymaster": "0xD84337C18dB089DF78c69Ea0df619bD48EEBBcC3",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
         "navePirataRegistry": "0xf6747bE3425139FCe92B67fA482331D7435bd483"
       },
@@ -45,7 +46,7 @@
         "fallbackHandler": "0x017062a1dE2FE6b99BE3d9d37841FeD19F573804"
       },
       "erc4337": {
-        "accountImplementation": "0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60"
+        "accountImplementation": "0x2E9156deE65d7946305C334824e2648Ff9128f45"
       }
     }
   }

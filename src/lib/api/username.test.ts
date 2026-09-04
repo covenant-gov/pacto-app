@@ -11,7 +11,6 @@ import {
   usernameGlobalSpendablePoolWei,
   usernameInitiateAddressTransfer,
   usernameIsPendingTransfer,
-  usernameMintFee,
   usernameNameAvailable,
   usernameNpubOf,
   usernameRecordOf,
@@ -76,7 +75,7 @@ describe('username API shapes', () => {
     await usernameIsPendingTransfer('sepolia', '0xabc');
   });
 
-  it('pool and fee reads', async () => {
+  it('pool and nonce reads', async () => {
     mockedInvoke.mockResolvedValueOnce('0');
     await usernameBootstrapSpendablePoolWei('sepolia');
     expect(mockedInvoke).toHaveBeenCalledWith('username_bootstrap_spendable_pool_wei', {
@@ -86,8 +85,6 @@ describe('username API shapes', () => {
 
     mockedInvoke.mockResolvedValueOnce('0');
     await usernameGlobalSpendablePoolWei('sepolia');
-    mockedInvoke.mockResolvedValueOnce('0');
-    await usernameMintFee('sepolia');
     mockedInvoke.mockResolvedValueOnce('0');
     await usernameUsedNonce('sepolia', '0xabc');
   });

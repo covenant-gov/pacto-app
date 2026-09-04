@@ -648,7 +648,7 @@ fn eprintln_username_userop_context(
     );
 }
 
-/// Direct NFT `claim` simulation as the roster EOA (no 7702). Surfaces typed revert selectors.
+/// Direct NFT `claim` as roster EOA (no 7702 / no `execute` wrapper). UserOp sim can still fail after this passes.
 async fn preflight_claim_eth_call<P: Provider>(
     provider: &P,
     member: Address,
@@ -715,7 +715,6 @@ fn classify_username_claim_revert(sel: &str) -> Option<(&'static str, &'static s
         "a08dc9f6" => Some(("USERNAME_TAKEN", "claim rejected: name unavailable")),
         "87e0b147" => Some(("USERNAME_NPUB_CLAIMED", "claim rejected: npub already claimed")),
         "057e4afc" => Some(("ALREADY_CLAIMED", "claim rejected: address already claimed")),
-        "15a5e0fb" => Some(("USERNAME_MINT_FEE", "claim rejected: insufficient mint fee")),
         "b2613b41" => Some((
             "USERNAME_INVALID_EVM_SIG",
             "claim rejected: invalid EIP-712 ClaimBinding signature",
@@ -867,7 +866,7 @@ mod tests {
 
     #[test]
     fn eip7702_delegation_impl_parses_designated_code() {
-        let impl_addr = address!("0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60");
+        let impl_addr = address!("0x2E9156deE65d7946305C334824e2648Ff9128f45");
         let mut code = vec![0xef, 0x01, 0x00];
         code.extend_from_slice(impl_addr.as_slice());
         assert_eq!(eip7702_delegation_impl(&code), Some(impl_addr));

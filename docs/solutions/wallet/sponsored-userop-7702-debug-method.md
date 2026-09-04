@@ -29,7 +29,7 @@ Follow **[`docs/wallet/SPONSORED_USEROP_7702.md`](../../wallet/SPONSORED_USEROP_
 
 | Layer | Status | Evidence |
 |-------|--------|----------|
-| L0 | OK | BootstrapMintPool spendable > 0; global PM EP deposit + stake; `ALLOWED_7702` matches book; NFT `mintFee` 0. GlobalSponsorPool empty (rotation-only; not blocking first claim). Squad PM funded but irrelevant. |
+| L0 | OK | BootstrapMintPool spendable > 0; global PM EP deposit + stake; `ALLOWED_7702` matches book. GlobalSponsorPool empty (rotation-only; not blocking first claim). Squad PM funded but irrelevant. |
 | L1 | Fixed client-side | Structured eth_call revert data; `issuedAt` from chain time; ClaimBinding parity + local BIP-340 verify before UserOp; NFT selector → named wallet codes. |
 | L2–L4 | Smoke ready | Shared UserOp key-set unit test; operator Sepolia claim after L1 OK (see playbook Layer 2 smoke). |
 

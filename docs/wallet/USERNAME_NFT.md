@@ -9,7 +9,7 @@ Order: **bootstrap → EOA → global member → fail**. No squad sponsor arm on
 | Path | When | Paymaster |
 |------|------|-----------|
 | Bootstrap | First `claim()` (`npubOf == 0`) and bootstrap pool funded | `PactoGlobalPaymaster`, payload `policy = 0` |
-| EOA | Roster/primary EVM has ETH (`msg.value >= mintFee` on claim) | none |
+| EOA | Roster/primary EVM has ETH for gas (no mint fee) | none |
 | Global member | Post-mint; `eligibleMember` + global pool | same paymaster, `policy = 0` only |
 
 Member path rejects `claim()`; bootstrap rejects writes after mint.
@@ -47,7 +47,7 @@ Content = username. Tags (relay/UX only; chain does not parse them):
 
 Typed wrappers: `src/lib/api/username.ts`.
 
-Reads: `username_name_available`, `username_can_bootstrap_claim`, `username_npub_of`, `username_record_of`, `username_eligible_member`, `username_is_pending_transfer`, `username_*_spendable_pool_wei`, `username_mint_fee`, `username_used_nonce`, `username_get_cached_claim`.
+Reads: `username_name_available`, `username_can_bootstrap_claim`, `username_npub_of`, `username_record_of`, `username_eligible_member`, `username_is_pending_transfer`, `username_*_spendable_pool_wei`, `username_used_nonce`, `username_get_cached_claim`.
 
 Writes: `username_claim`, `username_initiate_address_transfer`, `username_claim_address_transfer`, `username_cancel_address_transfer`.
 
@@ -55,7 +55,7 @@ SQLite cache: `username_claims` (username, npubHash, tokenId, link event id, pol
 
 ## Username vs display name
 
-- **Claimed username** (on-chain NFT): lowercase `[a-z]{3,32}` only. Client normalizes input with trim + lowercase before claim; Kind 0 **display name** stays free-form and is not the on-chain name.
+- **Claimed username** (on-chain NFT): any non-empty string up to **64 UTF-8 bytes** client-side (chain: unique + not reserved; NIP-01 style — no charset). Trim only; **do not** force lowercase (names are case-sensitive on-chain). Kind 0 **display name** stays free-form and is not the on-chain name.
 - **Session pubkey for `npubHash`:** `currentUser.pubkey` must be the 32-byte hex x-only key (`LoginKeyPair.pubkey_hex`), not the bech32 npub. Hash is `sha256(0x02 || pubkey)`.
 
 ## Verified badge

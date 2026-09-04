@@ -129,9 +129,9 @@ export function ensurePubkeyHex(pubkey: string): Hex {
   return `0x${body.toLowerCase()}` as Hex;
 }
 
-/** On-chain username: trim + lowercase (Kind 0 display name is separate). */
+/** On-chain username: trim only (case and charset are significant; Kind 0 display name is separate). */
 export function normalizeUsernameInput(name: string): string {
-  return name.trim().toLowerCase();
+  return name.trim();
 }
 
 export async function refreshUsernameState(): Promise<void> {
@@ -242,6 +242,9 @@ export async function cancelUsernameAddressTransfer(): Promise<UsernameTransferR
   return withBusyWrite(() => usernameCancelAddressTransfer(USERNAME_NETWORK, hash));
 }
 
+/** Non-empty after trim; at most 64 UTF-8 bytes (chain has no charset rules). */
 export function isValidUsernameFormat(name: string): boolean {
-  return /^[a-z]{3,32}$/.test(normalizeUsernameInput(name));
+  const n = normalizeUsernameInput(name);
+  if (!n) return false;
+  return new TextEncoder().encode(n).length <= 64;
 }

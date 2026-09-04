@@ -1572,7 +1572,6 @@ pub fn run() {
             evm::username::username_is_pending_transfer,
             evm::username::username_bootstrap_spendable_pool_wei,
             evm::username::username_global_spendable_pool_wei,
-            evm::username::username_mint_fee,
             evm::username::username_used_nonce,
             evm::username::username_get_cached_claim,
             evm::username::username_claim,
