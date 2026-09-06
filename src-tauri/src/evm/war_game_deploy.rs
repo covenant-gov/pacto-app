@@ -1,6 +1,5 @@
 //! Sepolia war-game stack: Nave Pirata `WarGame`, hats-native round sponsor, persist `pacto_gov_wargame`.
 
-use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, B256, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
@@ -17,6 +16,7 @@ use super::contracts::pacto_gov::INavePirataFactory::{deployNavePirataCall, Stac
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::{
     createWarGameSponsorCall, WarGameSponsorCreated,
 };
+use super::deploy_gas_router::{send_factory_call, FactoryRouteContext};
 use super::gov_read::rpc_urls_or_default;
 use super::nave_pirata_deploy::{
     ensure_captain_for_parent_deploy, nave_pirata_addresses_from_receipt,
@@ -30,8 +30,8 @@ use super::rpc::signer::{
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
 use super::rpc::{
-    connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
-    parse_salt_nonce, send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
+    connect_read_provider, parse_address, parse_salt_nonce, wallet_err_json,
+    wallet_err_json_with_tx_hash,
 };
 use super::squad_sponsor_common::{
     parse_deposit_wei, parse_signer_wallet, read_squad_record_opt, require_parent_member,
@@ -359,15 +359,34 @@ fn war_game_sponsor_from_receipt(
     Err("no WarGameSponsorCreated log in receipt".into())
 }
 
-async fn send_value_call<P: Provider>(
-    provider: &P,
-    to: Address,
+async fn send_factory_call_for_wargame<R: Runtime>(
+    app: AppHandle<R>,
+    net: &wallet_chain_config::WalletNetworkConfig,
+    signing_parent: &str,
+    pay_signer: Address,
+    pay_wallet: alloy::network::EthereumWallet,
+    factory: Address,
     calldata: Vec<u8>,
     value: U256,
+    rpc_urls: Option<Vec<String>>,
     timeout_msg: &str,
 ) -> Result<TransactionReceipt, String> {
-    let tx = contract_call_request(to, calldata).with_value(value);
-    send_and_confirm(provider, tx, timeout_msg).await
+    let outcome = send_factory_call(
+        app,
+        net,
+        FactoryRouteContext {
+            roster_parent_id: Some(signing_parent),
+            eoa_pay_signer: pay_signer,
+            eoa_wallet: pay_wallet,
+        },
+        factory,
+        calldata,
+        value,
+        rpc_urls,
+        timeout_msg,
+    )
+    .await?;
+    Ok(outcome.receipt)
 }
 
 #[tauri::command]
@@ -453,8 +472,8 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
     let roster_addr = roster_signer.address();
     let _write_locks = with_gov_write_locks(pay_addr, roster_addr).await;
 
-    let pay_provider = connect_signing_provider(&urls, pay_wallet).await?;
-    let rpc_chain_id = pay_provider.get_chain_id().await.map_err(|e| {
+    let read_provider = connect_read_provider(&urls).await?;
+    let rpc_chain_id = read_provider.get_chain_id().await.map_err(|e| {
         wallet_err_json(
             "RPC_CHAIN_ID",
             crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
@@ -474,7 +493,6 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
 
     let factory_sponsor = sponsor_addrs.squad_sponsor_factory;
     let factory_gov = gov_addrs.nave_pirata_factory;
-    let read_provider = connect_read_provider(&urls).await?;
 
     let prior_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
         .ok()
@@ -523,9 +541,16 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
             parent_squad_id,
         );
         let deploy_calldata = deployNavePirataCall { _params: params }.abi_encode();
-        let deploy_receipt = send_and_confirm(
-            &pay_provider,
-            contract_call_request(factory_gov, deploy_calldata),
+        let deploy_receipt = send_factory_call_for_wargame(
+            app.clone(),
+            &net,
+            signing_parent.as_str(),
+            pay_addr,
+            pay_wallet.clone(),
+            factory_gov,
+            deploy_calldata,
+            U256::ZERO,
+            rpc_urls.clone(),
             "Timed out waiting for war-game stack confirmation.",
         )
         .await?;
@@ -566,11 +591,16 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
         customEligibleHats: vec![],
     }
     .abi_encode();
-    let round_receipt = send_value_call(
-        &pay_provider,
+    let round_receipt = send_factory_call_for_wargame(
+        app.clone(),
+        &net,
+        signing_parent.as_str(),
+        pay_addr,
+        pay_wallet,
         factory_sponsor,
         round_calldata,
         deposit,
+        rpc_urls.clone(),
         "Timed out waiting for war-game sponsor confirmation.",
     )
     .await?;

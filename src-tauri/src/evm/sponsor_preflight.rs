@@ -267,6 +267,59 @@ pub async fn assert_global_gov_module_preflight<P: Provider>(
     Ok(eligible)
 }
 
+/// Hard preflight before a global factory-target UserOp.
+pub async fn assert_global_factory_preflight<P: Provider>(
+    provider: &P,
+    addrs: &GlobalUsernameSponsorAddresses,
+    member: Address,
+    factory: Address,
+    estimated_max_cost_wei: U256,
+) -> Result<EligibleMember, String> {
+    let eligible = read_eligible_member(provider, addrs.pacto_username_nft, member)
+        .await?
+        .ok_or_else(|| {
+            wallet_err_json(
+                "USERNAME_LANE",
+                "member is not an eligible username holder for global sponsorship",
+                None,
+            )
+        })?;
+    if !factory_target_allowed(
+        provider,
+        addrs.sponsor_policy_registry,
+        addrs.policy_version,
+        factory,
+    )
+    .await?
+    {
+        return Err(wallet_err_json(
+            "SPONSOR_POLICY_READ",
+            format!("factory target {factory:#x} is not allowed by sponsor policy registry"),
+            None,
+        ));
+    }
+    if !policy_version_fresh(provider, addrs.sponsor_policy_registry, addrs.policy_version).await? {
+        return Err(wallet_err_json(
+            "USERNAME_POLICY_STALE",
+            format!(
+                "local catalog policyVersion {} is behind on-chain registry",
+                addrs.policy_version
+            ),
+            None,
+        ));
+    }
+    if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei)
+        .await?
+    {
+        return Err(wallet_err_json(
+            "USERNAME_POOL_LOW",
+            "global sponsor pool spendable balance is below required headroom",
+            None,
+        ));
+    }
+    Ok(eligible)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

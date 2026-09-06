@@ -8,6 +8,7 @@ pub mod contract_call_params;
 pub mod contracts;
 pub mod evm_accounts;
 pub mod evm_keys;
+pub mod deploy_gas_router;
 pub mod global_paymaster;
 pub mod global_sponsor_userop;
 pub mod gov_module_write;

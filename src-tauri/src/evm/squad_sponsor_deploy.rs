@@ -3,7 +3,6 @@
 //! `squadId` on-chain is `keccak256(parent_id UTF-8 bytes)` where `parent_id` is the squad/network root id.
 //! Deployment infra addresses: `pacto_chain_config` (`PACTO_*` env vars; see `.env.example`).
 
-use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, B256, U256};
 use alloy::sol_types::SolCall;
 use serde::Serialize;
@@ -16,6 +15,7 @@ use super::contracts::pacto_sponsor::ISquadSponsorFactory::{
     createSquadSponsorCall, createSquadSponsorExtCall, squadsCall,
 };
 use super::contracts::pacto_sponsor::SquadVariant;
+use super::deploy_gas_router::{send_factory_call, FactoryRouteContext};
 use super::gov_read::parse_top_hat_id;
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
@@ -25,8 +25,7 @@ use super::rpc::signer::{
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
 use super::rpc::{
-    connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
-    wallet_err_json, wallet_err_json_with_tx_hash,
+    connect_read_provider, wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::squad_sponsor_common::{
     parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
@@ -438,7 +437,7 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
     };
 
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), variant.default_signer_mode())?;
-    let (_signer, wallet) = if signer_mode == "default" {
+    let (pay_signer, pay_wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?
     } else {
@@ -448,10 +447,23 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
             None => load_squad_roster_embedded_signer(app.clone(), pid).await?,
         }
     };
-    let provider = connect_signing_provider(&urls, wallet).await?;
 
-    let tx = contract_call_request(factory, calldata).with_value(deposit);
-    let receipt = send_and_confirm(&provider, tx, variant.confirm_timeout_message()).await?;
+    let outcome = send_factory_call(
+        app.clone(),
+        net,
+        FactoryRouteContext {
+            roster_parent_id: Some(pid),
+            eoa_pay_signer: pay_signer.address(),
+            eoa_wallet: pay_wallet,
+        },
+        factory,
+        calldata,
+        deposit,
+        rpc_urls.clone(),
+        variant.confirm_timeout_message(),
+    )
+    .await?;
+    let receipt = outcome.receipt;
 
     let (sponsor, onchain_variant, linked_hat) =
         read_squad_record(&read_provider, factory, squad_id)

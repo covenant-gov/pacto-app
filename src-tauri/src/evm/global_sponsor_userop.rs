@@ -23,7 +23,9 @@ use super::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::{load_embedded_signer, load_squad_roster_embedded_signer};
 use super::rpc::{connect_read_provider, wallet_err_json};
-use super::sponsor_preflight::assert_global_gov_module_preflight;
+use super::sponsor_preflight::{
+    assert_global_factory_preflight, assert_global_gov_module_preflight,
+};
 use super::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use super::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
 use super::sponsor_userop::{
@@ -73,6 +75,7 @@ pub enum UsernameSponsorLane {
 enum GlobalPreflightLane {
     Username(UsernameSponsorLane),
     GovModule,
+    FactoryTarget,
 }
 
 /// claim() selector from pacto_actions / alloy — 0x9824550d
@@ -228,6 +231,7 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
         member,
         inner_to: to,
         inner_selector: selector,
+        inner_value: U256::ZERO,
         nonce,
         execute_calldata,
         max_fee,
@@ -386,6 +390,181 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
         member,
         inner_to: to,
         inner_selector: selector,
+        inner_value: U256::ZERO,
+        nonce,
+        execute_calldata,
+        max_fee,
+        max_priority,
+        eip7702_auth,
+    };
+
+    eprintln_global_userop_context(&ctx, code.len(), account_impl);
+
+    let estimated = estimate_global_sponsored_gas(&bundler, &ctx, placeholders).await?;
+    let limits = FinalGasLimits {
+        call_gas_limit: apply_userop_gas_margin(estimated.call_gas_limit),
+        verification_gas_limit: apply_verification_gas_margin(estimated.verification_gas_limit),
+        pre_verification_gas: apply_userop_gas_margin(estimated.pre_verification_gas),
+        paymaster_verification_gas_limit: apply_verification_gas_margin(
+            estimated.paymaster_verification_gas_limit,
+        ),
+        paymaster_post_op_gas_limit: apply_userop_gas_margin(estimated.paymaster_post_op_gas_limit),
+    };
+    let user_op_hash =
+        sign_and_send_global_user_op(&read_provider, &signer, &bundler, &ctx, limits).await?;
+    Ok(SponsoredUserOpSend {
+        user_op_hash,
+        bundler_url: bundler,
+    })
+}
+
+/// Global-paymaster sponsored factory deploy (roster EOA + factory policy).
+pub async fn send_sponsored_global_factory_userop<R: Runtime>(
+    app: AppHandle<R>,
+    network: &str,
+    parent_id: &str,
+    factory: Address,
+    calldata: Vec<u8>,
+    value_wei: U256,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<SponsoredUserOpSend, String> {
+    let net_key = network.to_lowercase();
+    let selector = calldata_selector(&calldata)?;
+
+    let stored_key = load_stored_pimlico_key(&app);
+    let bundler = bundler_rpc_url_with_stored(&net_key, stored_key.as_deref())?.ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_CONFIG",
+            "Save a Pimlico API key on Status, or set PIMLICO_API_KEY (or BUNDLER_RPC_URL), for an EntryPoint v0.7 bundler.",
+            None,
+        )
+    })?;
+
+    let addrs = pacto_chain_config::global_username_sponsor_addresses(&net_key)
+        .map_err(|e| wallet_err_json("USERNAME_SPONSOR_CONFIG", e, None))?;
+    let account_impl = if !addrs.allowed_7702_implementation.is_zero() {
+        addrs.allowed_7702_implementation
+    } else {
+        erc4337_account_implementation(network).ok_or_else(|| {
+            wallet_err_json(
+                "ERC4337_ACCOUNT_CONFIG",
+                "Missing EIP-7702 account implementation for this network (globalUsernameSponsor.allowed7702Implementation, or erc4337.accountImplementation / PACTO_ERC4337_ACCOUNT_IMPL).",
+                None,
+            )
+        })?
+    };
+
+    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
+        return Err(wallet_err_json(
+            "UNSUPPORTED_NETWORK",
+            format!("Unknown network: {network}"),
+            None,
+        ));
+    };
+    let urls = rpc_urls_or_default(net, rpc_urls);
+    if urls.is_empty() {
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
+    }
+
+    let (signer, _wallet) = load_squad_roster_embedded_signer(app.clone(), parent_id).await?;
+    let member = signer.address();
+    let read_provider = connect_read_provider(&urls).await?;
+
+    if !value_wei.is_zero() {
+        let balance = super::sponsor_userop::roster_native_balance_wei(&read_provider, member)
+            .await?;
+        if balance < value_wei {
+            return Err(wallet_err_json(
+                "INSUFFICIENT_FUNDS",
+                format!(
+                    "roster key holds {balance} wei but this factory call needs {value_wei} wei msg.value (gas may still be sponsored)"
+                ),
+                None,
+            ));
+        }
+    }
+
+    let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
+        Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
+        Err(_) => {
+            log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
+            (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
+        }
+    };
+
+    let placeholders = factory_target_gas_ceilings(&calldata);
+    let placeholder_max_cost = userop_max_cost_wei(
+        placeholders.call,
+        placeholders.verification,
+        placeholders.pre_verification,
+        max_fee,
+        placeholders.pm_verification,
+        placeholders.pm_post,
+    );
+
+    paymaster_entry_point_deposit_preflight(
+        &read_provider,
+        addrs.entry_point,
+        addrs.pacto_global_paymaster,
+        placeholder_max_cost,
+    )
+    .await?;
+    let eligible = assert_global_factory_preflight(
+        &read_provider,
+        &addrs,
+        member,
+        factory,
+        placeholder_max_cost,
+    )
+    .await?;
+
+    let execute_calldata = IAccountExecute::executeCall {
+        dest: factory,
+        value: value_wei,
+        data: Bytes::from(calldata.clone()),
+    }
+    .abi_encode();
+
+    let code = read_provider.get_code_at(member).await.map_err(|e| {
+        wallet_err_json(
+            "RPC_CODE",
+            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
+            None,
+        )
+    })?;
+
+    let nonce: U256 = eth_call_decode(
+        &read_provider,
+        addrs.entry_point,
+        &IEntryPointV07::getNonceCall {
+            sender: member,
+            key: Uint::<192, 3>::from(0u64),
+        },
+    )
+    .await
+    .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
+
+    ensure_paymaster_7702_impl(&read_provider, addrs.pacto_global_paymaster, account_impl).await?;
+    let eip7702_auth = resolve_eip7702_auth_for_sender(
+        &read_provider,
+        &signer,
+        member,
+        code.as_ref(),
+        net.chain_id,
+        account_impl,
+    )
+    .await?;
+
+    let ctx = GlobalSponsoredSendParts {
+        entry_point: addrs.entry_point,
+        paymaster: addrs.pacto_global_paymaster,
+        addrs,
+        preflight_lane: GlobalPreflightLane::FactoryTarget,
+        npub_hash: eligible.npub_hash,
+        member,
+        inner_to: factory,
+        inner_selector: selector,
+        inner_value: value_wei,
         nonce,
         execute_calldata,
         max_fee,
@@ -422,6 +601,7 @@ struct GlobalSponsoredSendParts {
     member: Address,
     inner_to: Address,
     inner_selector: [u8; 4],
+    inner_value: U256,
     nonce: U256,
     execute_calldata: Vec<u8>,
     max_fee: u128,
@@ -464,6 +644,24 @@ fn gov_module_gas_ceilings(calldata: &[u8]) -> GasCeilings {
         pre_verification: 80_000,
         pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
         pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+    }
+}
+
+fn factory_target_gas_ceilings(calldata: &[u8]) -> GasCeilings {
+    GasCeilings {
+        call: factory_target_call_gas_ceiling(calldata),
+        verification: DEFAULT_VERIFICATION_GAS_LIMIT,
+        pre_verification: 80_000,
+        pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+    }
+}
+
+fn factory_target_call_gas_ceiling(calldata: &[u8]) -> u128 {
+    if calldata.len() >= 4 {
+        HEAVY_CALL_GAS_LIMIT
+    } else {
+        FALLBACK_CALL_GAS_LIMIT
     }
 }
 
@@ -769,6 +967,30 @@ async fn sign_and_send_global_user_op<P: Provider, S: Signer + Sync>(
             )
             .await?;
         }
+        GlobalPreflightLane::FactoryTarget => {
+            assert_global_factory_preflight(
+                provider,
+                &ctx.addrs,
+                ctx.member,
+                ctx.inner_to,
+                final_max_cost,
+            )
+            .await?;
+            if !ctx.inner_value.is_zero() {
+                let balance =
+                    super::sponsor_userop::roster_native_balance_wei(provider, ctx.member).await?;
+                if balance < ctx.inner_value {
+                    return Err(wallet_err_json(
+                        "INSUFFICIENT_FUNDS",
+                        format!(
+                            "roster key holds {balance} wei but this factory call needs {} wei msg.value",
+                            ctx.inner_value
+                        ),
+                        None,
+                    ));
+                }
+            }
+        }
     }
 
     let account_gas_limits = pack_u128s(limits.verification_gas_limit, limits.call_gas_limit);
@@ -824,6 +1046,7 @@ fn preflight_lane_label(lane: GlobalPreflightLane) -> &'static str {
         GlobalPreflightLane::Username(UsernameSponsorLane::Bootstrap) => "bootstrap",
         GlobalPreflightLane::Username(UsernameSponsorLane::Member) => "member",
         GlobalPreflightLane::GovModule => "gov_module",
+        GlobalPreflightLane::FactoryTarget => "factory_target",
     }
 }
 
