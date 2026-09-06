@@ -26,6 +26,7 @@ pub mod safe_deploy;
 pub mod sponsor_path;
 pub mod sponsor_paymaster;
 pub mod sponsor_policy_registry;
+pub mod sponsor_preflight;
 pub mod sponsor_userop;
 pub mod squad_admin_deploy;
 pub mod squad_admin_write;
