@@ -23,14 +23,18 @@
   import { parseEther } from 'viem';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
   import SquadDeployNetworkField from './SquadDeployNetworkField.svelte';
+  import SquadRosterEvmGatePanel from './SquadRosterEvmGatePanel.svelte';
+  import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
 
   let {
     parentId,
+    announcementsGroupId = null,
     squadNetwork = null,
     onClose,
     onComplete,
   }: {
     parentId: string;
+    announcementsGroupId?: string | null;
     /** Established squad network; when set the picker is pinned to it. */
     squadNetwork?: SupportedChainId | null;
     onClose: () => void;
@@ -51,7 +55,7 @@
   /** Seeds the picker once; user can still change it before squadNetwork pins. */
   // svelte-ignore state_referenced_locally
   let deployNetwork: SupportedChainId | '' = $state(squadNetwork ?? '');
-  let initialDepositEth = $state('');
+  let initialDepositEth = $state('0');
   let deployError = $state('');
   let deploying = $state(false);
   let closed = false;
@@ -65,10 +69,11 @@
   let defaultBalance: SignerBalance = $state(emptyBalance());
   let squadBalance: SignerBalance = $state(emptyBalance());
 
-  function parsePositiveDepositWei(amountTrimmed: string): bigint | null {
+  function parseOptionalDepositWei(amountTrimmed: string): bigint | null {
+    if (!amountTrimmed) return 0n;
     try {
       const wei = parseEther(amountTrimmed.replace(/,/g, ''));
-      return wei > 0n ? wei : null;
+      return wei >= 0n ? wei : null;
     } catch {
       return null;
     }
@@ -79,10 +84,13 @@
     addressesLoading = true;
     defaultBalance = loadingBalance();
     squadBalance = loadingBalance();
+    const rosterLookupId =
+      listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId).parentId ||
+      parentId.trim();
     try {
       const [defaultAddr, squadAddr, profileAddr] = await Promise.all([
         getActiveSquadEvmSignerAddress(),
-        resolveSquadRosterEvmAddress(parentId.trim()),
+        resolveSquadRosterEvmAddress(rosterLookupId),
         getEvmAddress(),
       ]);
       if (closed || seq !== refreshSeq) return;
@@ -128,12 +136,19 @@
 
   $effect(() => {
     void parentId;
+    void announcementsGroupId;
     void deployNetwork;
     void refreshAll();
   });
 
+  const rosterLookupId = $derived(
+    listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId).parentId ||
+      parentId.trim(),
+  );
+
   const defaultCanonical = $derived(canonicalAddress(defaultSignerAddress));
   const squadCanonical = $derived(canonicalAddress(squadSignerAddress));
+  const needsSquadEvmGate = $derived(!addressesLoading && !squadCanonical);
   const signersAreSame = $derived(
     defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical,
   );
@@ -145,19 +160,15 @@
   );
 
   const depositTrimmed = $derived(initialDepositEth.trim());
-  const depositWei = $derived(parsePositiveDepositWei(depositTrimmed));
+  const depositWei = $derived(parseOptionalDepositWei(depositTrimmed));
   const depositInvalidFormat = $derived.by(() => {
     if (depositTrimmed.length === 0) return false;
-    try {
-      parseEther(depositTrimmed.replace(/,/g, ''));
-      return depositWei === null;
-    } catch {
-      return true;
-    }
+    return depositWei === null;
   });
 
   const depositExceedsBalance = $derived(
     depositWei !== null &&
+      depositWei > 0n &&
       !selectedBalance.loading &&
       !selectedBalance.error &&
       amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw),
@@ -201,9 +212,9 @@
       deployError = tFn('governance.deploySquadSponsorExt.error.payerUnavailable');
       return;
     }
-    const initialDepositWei = depositWei?.toString();
-    if (!initialDepositWei) {
-      deployError = tFn('governance.deploySquadSponsorExt.error.depositGreaterThanZero');
+    const initialDepositWei = depositWei === null ? null : depositWei.toString();
+    if (initialDepositWei === null) {
+      deployError = tFn('governance.deploySquadSponsorExt.deposit.error.invalid');
       return;
     }
     if (depositExceedsBalance) {
@@ -246,6 +257,9 @@
     {$t('governance.deploySquadSponsorExt.description')}
   </p>
 
+  {#if needsSquadEvmGate}
+    <SquadRosterEvmGatePanel rosterLookupId={rosterLookupId} onBound={refreshAll} />
+  {:else}
   <div class="sponsor-deploy-field">
     <SquadDeployNetworkField
       id="sponsor-ext-deploy-network"
@@ -337,7 +351,6 @@
       oninput={onDepositInput}
       disabled={ownerUnavailable || payerUnavailable || deploying}
       autocomplete="off"
-      required
       aria-invalid={depositInvalidFormat || depositExceedsBalance ? 'true' : undefined}
     />
     {#if depositInvalidFormat}
@@ -348,10 +361,15 @@
       </p>
     {:else if depositWei !== null}
       <p class="sponsor-deploy-hint">
-        {$t('governance.deploySquadSponsorExt.deposit.hint', { values: { payer: shortAddress(payFromEffective === 'default' ? defaultCanonical : squadCanonical), owner: shortAddress(squadCanonical) } })}
+        {#if depositWei === 0n}
+          {$t('governance.deploySquadSponsorExt.deposit.hintOptional')}
+        {:else}
+          {$t('governance.deploySquadSponsorExt.deposit.hint', { values: { payer: shortAddress(payFromEffective === 'default' ? defaultCanonical : squadCanonical), owner: shortAddress(squadCanonical) } })}
+        {/if}
       </p>
     {/if}
   </div>
+  {/if}
 
   {#if deployError}
     <p class="input-error" role="alert">{deployError}</p>
@@ -359,8 +377,12 @@
 
   <div class="modal-actions">
     <button type="button" class="btn-secondary" onclick={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
-    <button type="button" class="btn-primary" onclick={confirmDeploy} disabled={!canDeploy}>
-      {deploying ? $t('governance.common.deploying') : $t('governance.common.deployOnChain')}
+    <button type="button" class="btn-primary btn-primary-action" onclick={confirmDeploy} disabled={!canDeploy}>
+      {deploying
+        ? $t('governance.common.deploying')
+        : needsSquadEvmGate
+          ? $t('governance.deployGate.assignButton')
+          : $t('governance.common.deployOnChain')}
     </button>
   </div>
 </Modal>
@@ -458,5 +480,10 @@
     margin: 6px 0 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
+  }
+
+  .btn-primary-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

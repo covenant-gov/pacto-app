@@ -253,7 +253,7 @@ Also: Pimlico / bundler (shared prerequisites above); backup verified in-app bef
 
 ### Happy path
 
-- [ ] `globalUsernameSponsor` pinned (`pactoUsernameNft` `0x09e08dB9…`, `protocolRegistry` `0xAF6119…`, `allowed7702Implementation` `0x2E9156de…`, `policyVersion` **3**); Tauri restarted if the JSON changed.
+- [ ] `globalUsernameSponsor` pinned (`pactoUsernameNft` `0x09e08dB9…`, `sponsorPolicyRegistry` `0x1350F096…`, `allowed7702Implementation` `0x2E9156de…`, `policyVersion` **4**); Tauri restarted if the JSON changed.
 - [ ] Bootstrap + global pools funded; global paymaster EntryPoint deposit OK; bundler curl passes.
 - [ ] Smoke identity: roster/primary EVM with **0 ETH** (sponsored paths); logged in, wallet unlocked, backup verified.
 - [ ] **Commons** → **Pacto Early Adopter** CTA → deep-links to Profile `#settings-profile-username` (no mint UI on Commons).
@@ -276,7 +276,7 @@ Also: Pimlico / bundler (shared prerequisites above); backup verified in-app bef
 | `PAYMASTER_DEPOSIT_LOW` / validation fail on UserOp | Fund **global** paymaster EntryPoint deposit — not the squad paymaster |
 | `BOOTSTRAP_AFTER_MINT` | Already minted on this EVM — use EOA or global member for further writes |
 | `CLAIM_ON_MEMBER_PATH` | Client tried `claim()` on member lane — claim is bootstrap-only |
-| `USERNAME_POLICY_STALE` | Catalog `policyVersion` ≠ on-chain registry (expect **3** on Sepolia) |
+| `USERNAME_POLICY_STALE` | Catalog `policyVersion` ≠ on-chain registry (expect **4** on Sepolia after policy v2 cutover) |
 | `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Save Pimlico on Status (or `PIMLICO_API_KEY` / `BUNDLER_RPC_URL`) |
 | `GOV_CALL_REVERTED` / vague simulation toast | Bundler reject detail is on process stderr as `[pacto_wallet] bundler …` (demo: `make logs LOG_CLIENT=<n>` for the client that ran the write). Empty `reason: 0x` → check preceding `[pacto_wallet] username UserOp … eip7702_auth=` / `code_len=` lines and any `claim eth_call preflight` selector — not another bootstrap pool deposit |
 | `USERNAME_CLAIM_REVERTED` / `USERNAME_INVALID_*` / `USERNAME_BINDING_EXPIRED` | Direct `claim()` eth_call failed — fix claim fields/signatures / use chain `issuedAt` before blaming UserOp/7702. See [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) L1 |
@@ -285,6 +285,37 @@ Also: Pimlico / bundler (shared prerequisites above); backup verified in-app bef
 | Squad pool drained on username claim | Bug — username must not call squad sponsor; file with UserOp paymaster address |
 
 See [USERNAME_NFT.md](./USERNAME_NFT.md) and upstream [DESKTOP_CLIENT_INTEGRATION.md](https://github.com/covenant-gov/pacto-username-nft/blob/main/docs/DESKTOP_CLIENT_INTEGRATION.md).
+
+---
+
+## 11. Zero-ETH username onboarding (global topHat)
+
+End-to-end for an **`eligibleMember`** with **0 ETH** on the roster EOA. Requires policy v2 registry wired (`pnpm wire-sponsor-policy:sepolia` in pacto-gov) and address book `policyVersion` **4** + `sponsorPolicyRegistry` / `navePirataFactory` pins from pacto-gov#37. UserOp debug: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
+
+### Prerequisites
+
+- [ ] §10 bootstrap + global pools funded; global paymaster EntryPoint deposit OK; Pimlico/bundler configured.
+- [ ] Test identity: username NFT claimed (`eligibleMember` true on roster EVM); roster holds **0 ETH**.
+- [ ] Fresh squad parent (no prior `pacto_gov` / sponsor rows) for a clean deploy path.
+
+### Happy path
+
+- [ ] **Deploy Pacto Gov + squad sponsor** (Launchpad): initial sponsor deposit **0** → `deployNavePirata` succeeds via **global** factory sponsorship (`funded_by: global_sponsored` in logs / no roster ETH spent on gas).
+- [ ] Optional **bootstrap crew** in same wizard → quartermaster `bootstrapCrew` succeeds via global gov-module sponsorship when roster still has 0 ETH.
+- [ ] **Deploy squad sponsor** step with **0 deposit** → `createSquadSponsor` succeeds (global or EOA per payer); clone exists with empty pool.
+- [ ] Fund **squad sponsor pool** from Governance → Sponsor treasury (any positive deposit).
+- [ ] Post-deploy gov write (e.g. crew vote or treasury action) → next write uses **squad pool** (`funded_by: sponsored`), not global — confirms parent-scoped precedence.
+
+### Cross-squad check (optional)
+
+- [ ] Identity is guest-eligible on squad **A** sponsor only; captain/deploy in squad **B** without B sponsor → gov write or deploy in B bills **global** pool, never squad A's pool.
+
+### Regressions
+
+- [ ] Non–NFT captain on a throwaway squad: deploy still requires payer EOA ETH (no global path).
+- [ ] §10 username claim/rotation paths unchanged (no squad pool use).
+
+See [USERNAME_NFT.md](./USERNAME_NFT.md), [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md), [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md).
 
 ---
 

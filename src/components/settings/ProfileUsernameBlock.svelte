@@ -2,6 +2,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { usernameNameAvailable } from '../../lib/api/username';
+  import { usernameClaimErrorMessage } from '../../lib/username/username-claim-errors';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { ZERO_ADDRESS } from '../../lib/wallet/assets';
   import { requireBackupVerified } from '../../stores/backup-verification';
@@ -107,7 +108,7 @@
       );
       draftName = '';
     } catch (e) {
-      showToast(getInvokeErrorMessage(e), undefined, undefined, { error: true });
+      showToast(usernameClaimErrorMessage(e), undefined, undefined, { error: true });
     }
   }
 

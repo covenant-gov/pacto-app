@@ -12,15 +12,13 @@ use super::access_control::{require_capability, GovCapability, GovStack};
 use super::contracts::pacto_gov::INavePirataFactory::{
     deploySquadAdminExtStandaloneCall, deploySquadAdminStandaloneCaptainHatCall,
 };
+use super::deploy_gas_router::{send_factory_call, FactoryRouteContext};
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
-use super::rpc::{
-    connect_signing_provider, contract_call_request, parse_address, send_and_confirm,
-    wallet_err_json, wallet_err_json_with_tx_hash,
-};
+use super::rpc::{parse_address, wallet_err_json, wallet_err_json_with_tx_hash};
 use super::squad_sponsor_common::require_parent_member;
 use super::wallet_chain_config;
 use crate::db;
@@ -237,14 +235,22 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
         _ => unreachable!(),
     };
 
-    let provider = connect_signing_provider(&urls, wallet).await?;
-    let tx = contract_call_request(factory, calldata);
-    let receipt = send_and_confirm(
-        &provider,
-        tx,
+    let outcome = send_factory_call(
+        app.clone(),
+        &net,
+        FactoryRouteContext {
+            roster_parent_id: Some(pid),
+            eoa_pay_signer: signer.address(),
+            eoa_wallet: wallet,
+        },
+        factory,
+        calldata,
+        U256::ZERO,
+        rpc_urls.clone(),
         "Timed out waiting for squad admin deploy confirmation.",
     )
     .await?;
+    let receipt = outcome.receipt;
 
     let (proxy, implementation, owner_out, captain_hat_out) = match variant_key {
         "ext_standalone" => {

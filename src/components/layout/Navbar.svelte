@@ -25,10 +25,6 @@
     activeTopNavTab,
     activeDmTab,
     activeDmId,
-    lastOpenedSquadId,
-    lastOpenedChannelId,
-    lastChannelBySquadId,
-    lastHubChannelNameBySquadId,
     squadNavOrder,
     composingNewChat,
     dmList,
@@ -420,19 +416,6 @@
           delete next[tempId];
           return next;
         });
-        if (get(activeSquadId) === tempId) {
-          activeSquadId.set(groupId);
-          activeChannelId.set(groupId);
-          const hub =
-            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? null;
-          activeHubChannelName.set(hub);
-        }
-        lastOpenedSquadId.set(groupId);
-        lastOpenedChannelId.set(groupId);
-        lastChannelBySquadId.update((m) => ({ ...m, [groupId]: groupId }));
-        const hubName =
-          channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
-        if (hubName) lastHubChannelNameBySquadId.update((m) => ({ ...m, [groupId]: hubName }));
 
         pendingReadyToast.set({
           text: translate('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),

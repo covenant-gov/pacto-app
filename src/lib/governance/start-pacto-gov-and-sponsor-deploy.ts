@@ -142,6 +142,13 @@ async function runBootstrapCrewStep(params: {
   }
 }
 
+function normalizeInitialDepositWei(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return '0';
+  if (!/^\d+$/.test(trimmed)) return null;
+  return trimmed;
+}
+
 /** Sequential Nave Pirata → hats sponsor → optional bootstrapCrew. */
 export function startPactoGovAndSponsorDeploy(params: {
   parentId: string;
@@ -191,9 +198,9 @@ export function startPactoGovAndSponsorDeploy(params: {
     return false;
   }
 
-  const depositWei = params.initialDepositWei.trim();
-  if (!depositWei || !/^\d+$/.test(depositWei) || depositWei === '0') {
-    const message = 'Enter a positive initial sponsor deposit.';
+  const depositWei = normalizeInitialDepositWei(params.initialDepositWei);
+  if (depositWei === null) {
+    const message = 'Enter a valid initial sponsor deposit (0 or more wei).';
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -388,9 +395,9 @@ export function startHatsSponsorOnlyDeploy(params: {
     return false;
   }
 
-  const depositWei = params.initialDepositWei.trim();
-  if (!depositWei || !/^\d+$/.test(depositWei) || depositWei === '0') {
-    const message = 'Enter a positive initial sponsor deposit.';
+  const depositWei = normalizeInitialDepositWei(params.initialDepositWei);
+  if (depositWei === null) {
+    const message = 'Enter a valid initial sponsor deposit (0 or more wei).';
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;

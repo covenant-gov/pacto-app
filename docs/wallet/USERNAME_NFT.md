@@ -14,6 +14,23 @@ Order: **bootstrap → EOA → global member → fail**. No squad sponsor arm on
 
 Member path rejects `claim()`; bootstrap rejects writes after mint.
 
+## Global topHat sponsorship (gov writes + factory deploys)
+
+Separate from the **username claim** path above. Applies when the roster EOA is an **`eligibleMember`** on the Username NFT and the action is a **parent-scoped** pacto-gov module write or a **factory deploy** (`deployNavePirata`, squad sponsor create, squad admin, war-game sponsor, Safe proxy).
+
+| Tier | When | Paymaster |
+|------|------|-----------|
+| Squad pool | This `parent_id` has sponsor infra + roster `isEligible` on **this parent's** clone + pool headroom | `PactoSponsorPaymaster` (squad UserOp) |
+| Global topHat | No squad path for **this parent**; factory/gov module registered on `SponsorPolicyRegistry`; global pool headroom | `PactoGlobalPaymaster` (`funded_by: global_sponsored`) |
+| EOA | Roster (or deploy payer) has ETH for gas; `msg.value` on factory calls still requires signer ETH | none |
+| Fail | Eligible but no pool and no EOA | `SPONSOR_PATH_UNAVAILABLE` |
+
+**Parent scoping:** squad pools are per-parent. Guest eligibility on squad A's sponsor clone does **not** bill squad A when the user deploys or writes in squad B — B with no sponsor routes to **global** (if eligible), not A's pool.
+
+**Policy surface:** username actions use selector allowlists (`policy = 0` on the global paymaster). Gov-module writes use `moduleToTopHat` + `isTopHatSponsored`. Factory deploys use `isContractAllowed(factory)` (catalog: `PACTO_FACTORY_ACTIONS`, `policyVersion` **4** on Sepolia).
+
+Zero-ETH onboarding smoke: [OPERATOR_SMOKE.md §11](./OPERATOR_SMOKE.md#11-zero-eth-username-onboarding-global-tophat). Squad pool precedence after deploy: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). UserOp debug: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
+
 ## Dual attestation (claim)
 
 Shared binding tuple: `(pubkey, npubHash, evmAddress, name, nonce, issuedAt, salt)`.
@@ -68,7 +85,7 @@ Runnable checklist: **[OPERATOR_SMOKE.md §10](./OPERATOR_SMOKE.md#10-username-n
 
 ## Related
 
-- [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §10
+- [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §10–§11
 - [PROTOCOL_ADDRESS_BOOK.md](./PROTOCOL_ADDRESS_BOOK.md)
 - [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) — L0–L4 method; fund matrix (GlobalSponsorPool empty is rotation-only)
 - [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) — squad paymaster path (not used for username)

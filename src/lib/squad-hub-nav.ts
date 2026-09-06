@@ -149,7 +149,15 @@ function applyHubChannelSelection(squad: Squad): void {
 export function syncSquadsHubSelection(): void {
   if (get(activeTopNavTab) !== 'squads') return;
   const list = get(squads);
-  if (list.length === 0) return;
+
+  if (list.length === 0) {
+    if (get(activeSquadId)) {
+      activeSquadId.set(null);
+      activeChannelId.set(null);
+      activeHubChannelName.set(null);
+    }
+    return;
+  }
 
   const existingId = get(activeSquadId);
   if (existingId) {

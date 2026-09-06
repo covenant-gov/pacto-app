@@ -17,6 +17,7 @@ use super::contracts::pacto_gov::read_bindings::INavePirataRegistry::NavePirataR
 use super::contracts::pacto_gov::INavePirataFactory::{
     deployNavePirataCall, CrewVoteMode, DeployParams, SquadParams, StackKind,
 };
+use super::deploy_gas_router::{send_factory_call, FactoryRouteContext};
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
 use super::rpc::signer::{
@@ -24,8 +25,8 @@ use super::rpc::signer::{
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
 use super::rpc::{
-    connect_signing_provider, contract_call_request, parse_address, parse_salt_nonce,
-    send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
+    connect_read_provider, parse_address, parse_salt_nonce, wallet_err_json,
+    wallet_err_json_with_tx_hash,
 };
 use super::squad_sponsor_common::{parse_signer_wallet, require_parent_member};
 use super::wallet_chain_config;
@@ -463,16 +464,16 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 
     let signing_parent = roster_signing_parent_id(&app, pid, alt)?;
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "squad")?;
-    let (_signer, wallet) = if signer_mode == "default" {
+    let (pay_signer, pay_wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?
     } else {
         require_roster_treasury_signing_allowed(app.clone(), signing_parent.as_str()).await?;
         load_squad_roster_embedded_signer(app.clone(), signing_parent.as_str()).await?
     };
-    let provider = connect_signing_provider(&urls, wallet).await?;
 
-    let rpc_chain_id = provider.get_chain_id().await.map_err(|e| {
+    let read_provider = connect_read_provider(&urls).await?;
+    let rpc_chain_id = read_provider.get_chain_id().await.map_err(|e| {
         wallet_err_json(
             "RPC_CHAIN_ID",
             crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
@@ -490,8 +491,22 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
         ));
     }
 
-    let tx = contract_call_request(factory, calldata);
-    let receipt = send_and_confirm(&provider, tx, "Timed out waiting for confirmation.").await?;
+    let outcome = send_factory_call(
+        app.clone(),
+        &net,
+        FactoryRouteContext {
+            roster_parent_id: Some(signing_parent.as_str()),
+            eoa_pay_signer: pay_signer.address(),
+            eoa_wallet: pay_wallet,
+        },
+        factory,
+        calldata,
+        U256::ZERO,
+        rpc_urls.clone(),
+        "Timed out waiting for confirmation.",
+    )
+    .await?;
+    let receipt = outcome.receipt;
 
     let (top_hat, _captain_out, safe_a, qm_a, mm_a, ta_a, admin_a) =
         nave_pirata_addresses_from_receipt(&receipt, factory, addrs.nave_pirata_registry).map_err(

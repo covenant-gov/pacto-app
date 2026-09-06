@@ -83,6 +83,10 @@ sol! {
 
         function isSelectorAllowed(address target, bytes4 selector) external view returns (bool allowed);
 
+        function isTopHatSponsored(uint256 topHatId) external view returns (bool sponsored);
+
+        function moduleToTopHat(address module) external view returns (uint256 topHatId);
+
         function isSponsorable(
             address target,
             bytes calldata callData,

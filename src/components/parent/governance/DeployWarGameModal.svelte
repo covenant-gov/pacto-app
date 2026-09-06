@@ -14,6 +14,8 @@
     validateSquadParams,
   } from '../../../lib/governance/squad-params';
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
+  import SquadRosterEvmGatePanel from './SquadRosterEvmGatePanel.svelte';
+  import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
   import { WAR_GAME_PUBLIC_RULES_URL } from '../../../lib/governance/war-game-links';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import { getAddress, isAddress, parseEther } from 'viem';
@@ -76,27 +78,30 @@
     }
   });
 
-  $effect(() => {
-    const pid = parentId.trim();
-    let cancelled = false;
+  const rosterLookupId = $derived(
+    listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId).parentId ||
+      parentId.trim(),
+  );
+  const needsSquadEvmGate = $derived(!resolvingDeployer && !myRosterEvm);
+
+  async function refreshRosterEvm() {
     resolvingDeployer = true;
     myRosterEvm = '';
-    void resolveSquadRosterEvmAddress(pid)
-      .then((raw) => {
-        if (cancelled) return;
-        if (raw?.trim() && isAddress(raw.trim() as `0x${string}`)) {
-          myRosterEvm = getAddress(raw.trim() as `0x${string}`);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) myRosterEvm = '';
-      })
-      .finally(() => {
-        if (!cancelled) resolvingDeployer = false;
-      });
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const raw = await resolveSquadRosterEvmAddress(rosterLookupId);
+      if (raw?.trim() && isAddress(raw.trim() as `0x${string}`)) {
+        myRosterEvm = getAddress(raw.trim() as `0x${string}`);
+      }
+    } catch {
+      myRosterEvm = '';
+    } finally {
+      resolvingDeployer = false;
+    }
+  }
+
+  $effect(() => {
+    void rosterLookupId;
+    void refreshRosterEvm();
   });
 
   function executeDeploy() {
@@ -174,16 +179,15 @@
     </p>
   </div>
 
+  {#if needsSquadEvmGate}
+    <SquadRosterEvmGatePanel rosterLookupId={rosterLookupId} onBound={refreshRosterEvm} />
+  {:else}
   <div class="war-game-deploy-field">
     <span class="war-game-deploy-label">{$t('governance.deployWarGame.captainLabel')}</span>
-    {#if myRosterEvm}
-      <p class="war-game-deploy-pinned">
-        <code>{shortAddress(myRosterEvm)}</code>
-        <span class="war-game-deploy-pinned-note">{$t('governance.deployWarGame.captainYou')}</span>
-      </p>
-    {:else}
-      <p class="war-game-deploy-hint muted">{$t('governance.deployWarGame.captainNoEvmHint')}</p>
-    {/if}
+    <p class="war-game-deploy-pinned">
+      <code>{shortAddress(myRosterEvm)}</code>
+      <span class="war-game-deploy-pinned-note">{$t('governance.deployWarGame.captainYou')}</span>
+    </p>
   </div>
 
   <fieldset class="war-game-deploy-field" disabled={deploying}>
@@ -230,6 +234,7 @@
   {#if redeploy}
     <p class="war-game-deploy-hint muted">{$t('governance.deployWarGame.redeployHint')}</p>
   {/if}
+  {/if}
 
   {#if deployError}
     <p class="input-error" role="alert">{deployError}</p>
@@ -239,7 +244,7 @@
     <button type="button" class="btn-secondary" onclick={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
     <button
       type="button"
-      class="btn-primary"
+      class="btn-primary btn-primary-action"
       disabled={
         deploying ||
         resolvingDeployer ||
@@ -249,7 +254,11 @@
       }
       onclick={executeDeploy}
     >
-      {deploying ? $t('governance.common.deploying') : $t('governance.common.execute')}
+      {deploying
+        ? $t('governance.common.deploying')
+        : needsSquadEvmGate
+          ? $t('governance.deployGate.assignButton')
+          : $t('governance.common.execute')}
     </button>
   </div>
 </Modal>
@@ -303,5 +312,9 @@
     gap: 8px;
     margin: 4px 0;
     font-size: 0.875rem;
+  }
+  .btn-primary-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

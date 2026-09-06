@@ -4,7 +4,6 @@
 use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{Address, Bytes, Uint, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder};
-use alloy::rpc::types::state::{AccountOverride, StateOverridesBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
@@ -27,15 +26,15 @@ use crate::evm::global_paymaster::{
     encode_global_paymaster_and_data, required_global_pool_balance,
     DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT, DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
 };
-use crate::evm::global_sponsor_userop::wallet_err_from_claim_eth_call_failure;
+use crate::evm::global_sponsor_userop::eip7702_delegation_impl;
+use crate::evm::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use crate::evm::nostr_claim_link::{
     hash_nostr_claim, npub_hash_from_pubkey, sign_nostr_claim, verify_nostr_claim,
 };
 use crate::evm::pacto_chain_config::{
     erc4337_account_implementation, global_username_sponsor_addresses,
 };
-use crate::evm::rpc::call::{eth_call_decode, eth_call_from, eth_call_from_with_overrides};
-use crate::evm::rpc::errors::extract_revert_selector;
+use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
 use crate::evm::sponsor_userop::{
     apply_userop_gas_margin, apply_verification_gas_margin, bundler_estimate_user_operation_gas,
@@ -75,7 +74,6 @@ alloy::sol! {
 
 const NETWORK: &str = "sepolia";
 const CLAIM_NAME: &str = "test";
-const CLAIM_ETH_CALL_GAS: u64 = 8_000_000;
 const CHAIN_ID: u64 = 11_155_111;
 
 /// Run the harness. Optional `--mnemonic "twelve words…"`.
@@ -276,78 +274,36 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
     }
     .abi_encode();
 
-    // --- L1 eth_call ---
-    eprintln!("[username_claim_harness] stage=3 eth_call claim from=roster rpc_host=eth-sepolia.g.alchemy.com");
-    match eth_call_from(
-        &provider,
-        nft,
-        Some(member),
-        Some(CLAIM_ETH_CALL_GAS),
-        claim_calldata.clone(),
-    )
-    .await
-    {
-        Ok(_) => eprintln!("[username_claim_harness] L1 OK eth_call succeeded"),
-        Err(e) => {
-            let mapped = wallet_err_from_claim_eth_call_failure(&e);
-            let sel = extract_revert_selector(&e)
-                .or_else(|| extract_revert_selector(&mapped))
-                .unwrap_or_else(|| "none".into());
-            eprintln!(
-                "[username_claim_harness] L1 FAIL selector={sel} detail={}",
-                wallet_security::redact_urls_in_text(&mapped)
-            );
-            eprintln!(
-                "[username_claim_harness] STOP — fix claim fields from selector before UserOp. Next app layer: global_sponsor_userop preflight / commands_claim."
-            );
-            return Err(mapped);
-        }
-    }
-
     let execute_calldata = IAccountExecute::executeCall {
         dest: nft,
         value: U256::ZERO,
-        data: Bytes::from(claim_calldata),
+        data: Bytes::from(claim_calldata.clone()),
     }
     .abi_encode();
 
-    // --- L1.5 execute under EIP-7702 stub (state override) ---
-    let stub_code_hex = format!("0xef0100{}", hex::encode(account_impl));
-    let state_overrides = StateOverridesBuilder::default()
-        .append(
-            member,
-            AccountOverride::default().with_7702_delegation_designator(account_impl),
-        )
-        .build();
-    eprintln!(
-        "[username_claim_harness] stage=3.5 L1.5 execute under 7702 stub to=member from=prefer_entry_point stub_code={stub_code_hex} execute_len={}",
-        execute_calldata.len()
-    );
-    let l15 = run_l15_execute_eth_call(
-        &provider,
-        member,
-        addrs.entry_point,
-        account_impl,
-        &execute_calldata,
-        state_overrides,
-    )
-    .await;
-    match l15 {
-        Ok(from_label) => {
-            eprintln!("[username_claim_harness] L1.5 OK from={from_label}");
-        }
-        Err(e) => {
-            return Err(e);
-        }
-    }
-
-    // --- Sponsored UserOp ---
-    eprintln!("[username_claim_harness] stage=4 sponsored UserOp (no EOA ETH)");
     let code = provider
         .get_code_at(member)
         .await
         .map_err(|e| format!("get_code: {e}"))?;
-    let eip7702_auth = if code.is_empty() {
+
+    eprintln!("[username_claim_harness] stage=3 L1+L1.5 preflight (shared with global_sponsor_userop)");
+    preflight_bootstrap_claim_userop_path(
+        &provider,
+        member,
+        nft,
+        addrs.entry_point,
+        account_impl,
+        &claim_calldata,
+        &execute_calldata,
+        code.as_ref(),
+    )
+    .await?;
+
+    // --- Sponsored UserOp ---
+    eprintln!("[username_claim_harness] stage=4 sponsored UserOp (no EOA ETH)");
+    let eip7702_auth = if code.is_empty() || eip7702_delegation_impl(code.as_ref())
+        .is_some_and(|impl_addr| impl_addr != account_impl)
+    {
         let eoa_nonce = provider
             .get_transaction_count(member)
             .await
@@ -599,76 +555,6 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         "[username_claim_harness] work-backward next: compare global_sponsor_userop preflight → username_claim Tauri → Commons CTA"
     );
     Ok(())
-}
-
-/// Alchemy `eth_call` of `execute(claim)` on member with EIP-7702 stub override.
-/// Prefers `from=EntryPoint`; falls back to `from=member`.
-async fn run_l15_execute_eth_call<P: Provider>(
-    provider: &P,
-    member: Address,
-    entry_point: Address,
-    account_impl: Address,
-    execute_calldata: &[u8],
-    state_overrides: alloy::rpc::types::state::StateOverride,
-) -> Result<&'static str, String> {
-    let attempts = [
-        (entry_point, "entry_point"),
-        (member, "member"),
-    ];
-    let mut last_detail = String::new();
-    let mut last_sel = String::from("none");
-    for (from, label) in attempts {
-        eprintln!("[username_claim_harness] L1.5 trying from={label} ({from:#x})");
-        match eth_call_from_with_overrides(
-            provider,
-            member,
-            Some(from),
-            Some(CLAIM_ETH_CALL_GAS),
-            execute_calldata.to_vec(),
-            Some(state_overrides.clone()),
-        )
-        .await
-        {
-            Ok(_) => return Ok(label),
-            Err(e) => {
-                let sel = extract_revert_selector(&e).unwrap_or_else(|| "none".into());
-                let detail = wallet_security::redact_urls_in_text(&e);
-                eprintln!(
-                    "[username_claim_harness] L1.5 FAIL from={label} selector={sel} detail={detail}"
-                );
-                last_sel = sel;
-                last_detail = detail;
-            }
-        }
-    }
-    dump_tenderly_simulator_recipe(
-        member,
-        account_impl,
-        execute_calldata,
-        &serde_json::json!({
-            "sender": format!("{member:#x}"),
-            "nonce": "n/a",
-            "callGasLimit": format!("{CLAIM_ETH_CALL_GAS:#x}"),
-            "verificationGasLimit": "n/a",
-            "preVerificationGas": "n/a",
-            "maxFeePerGas": "n/a",
-            "maxPriorityFeePerGas": "n/a",
-            "paymasterData": "0x",
-            "eip7702Auth": true,
-        }),
-        entry_point,
-        Address::ZERO,
-    );
-    eprintln!(
-        "[username_claim_harness] STOP — L1.5 execute/7702 path failed (selector={last_sel}). \
-If L1 bare claim OK and this is empty revert: username NFT `_safeMint` calls `onERC721Received` on the 7702 EOA; \
-empty account fallback returns no IERC721Receiver magic → bubbled empty revert (cast trace). \
-Fix: PactoSimple7702Account must implement onERC721Received; redeploy account impl + pin ALLOWED_7702 / erc4337 (not full-system). \
-Paste RECIPE A into Tenderly Simulator (not Explorer)."
-    );
-    Err(format!(
-        "L1.5 STOP selector={last_sel} detail={last_detail}"
-    ))
 }
 
 /// Redacted UserOp + Tenderly Simulator paste recipe (no keys/mnemonics). Estimate failures have no txHash.

@@ -279,4 +279,23 @@ describe('restoreSquadsHubSelection', () => {
     const resolved = resolveEffectiveHubChannel(squad, SQUAD_WARGAME_CHANNEL_ID, {}, {});
     expect(resolved.channelId).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
   });
+
+  it('clears active squad when catalog is empty', () => {
+    activeSquadId.set('creating-squad-99');
+    activeChannelId.set('creating-squad-99');
+    syncSquadsHubSelection();
+    expect(get(activeSquadId)).toBeNull();
+    expect(get(activeChannelId)).toBeNull();
+  });
+
+  it('reassigns stale creating-squad id to first catalog row', () => {
+    squads.set([
+      { ...regular, id: 'grp-real', channels: [{ name: 'announcements', groupId: 'grp-real', order: 0 }] },
+    ]);
+    activeSquadId.set('creating-squad-99');
+    activeChannelId.set('creating-squad-99');
+    syncSquadsHubSelection();
+    expect(get(activeSquadId)).toBe('grp-real');
+    expect(get(activeChannelId)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+  });
 });

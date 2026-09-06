@@ -20,10 +20,13 @@ use super::global_paymaster::{
 };
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
-use super::rpc::call::{eth_call_decode, eth_call_from};
-use super::rpc::errors::extract_revert_selector;
-use super::rpc::signer::load_embedded_signer;
+use super::rpc::call::eth_call_decode;
+use super::rpc::signer::{load_embedded_signer, load_squad_roster_embedded_signer};
 use super::rpc::{connect_read_provider, wallet_err_json};
+use super::sponsor_preflight::{
+    assert_global_factory_preflight, assert_global_gov_module_preflight,
+};
+use super::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use super::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
 use super::sponsor_userop::{
     apply_userop_gas_margin, apply_verification_gas_margin, bundler_estimate_user_operation_gas,
@@ -66,6 +69,13 @@ alloy::sol! {
 pub enum UsernameSponsorLane {
     Bootstrap,
     Member,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlobalPreflightLane {
+    Username(UsernameSponsorLane),
+    GovModule,
+    FactoryTarget,
 }
 
 /// claim() selector from pacto_actions / alloy — 0x9824550d
@@ -161,17 +171,34 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
     )
     .await?;
 
-    // Discriminate NFT claim revert (typed selector) from account/7702 UserOp sim failures.
-    if lane == UsernameSponsorLane::Bootstrap {
-        preflight_claim_eth_call(&read_provider, member, to, &calldata).await?;
-    }
-
     let execute_calldata = IAccountExecute::executeCall {
         dest: to,
         value: U256::ZERO,
         data: Bytes::from(calldata.clone()),
     }
     .abi_encode();
+
+    let code = read_provider.get_code_at(member).await.map_err(|e| {
+        wallet_err_json(
+            "RPC_CODE",
+            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
+            None,
+        )
+    })?;
+
+    if lane == UsernameSponsorLane::Bootstrap {
+        preflight_bootstrap_claim_userop_path(
+            &read_provider,
+            member,
+            to,
+            addrs.entry_point,
+            account_impl,
+            &calldata,
+            &execute_calldata,
+            code.as_ref(),
+        )
+        .await?;
+    }
 
     let nonce: U256 = eth_call_decode(
         &read_provider,
@@ -184,13 +211,6 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
     .await
     .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
 
-    let code = read_provider.get_code_at(member).await.map_err(|e| {
-        wallet_err_json(
-            "RPC_CODE",
-            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
-    })?;
     ensure_paymaster_7702_impl(&read_provider, addrs.pacto_global_paymaster, account_impl).await?;
     let eip7702_auth = resolve_eip7702_auth_for_sender(
         &read_provider,
@@ -206,11 +226,12 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
         entry_point: addrs.entry_point,
         paymaster: addrs.pacto_global_paymaster,
         addrs,
-        lane,
+        preflight_lane: GlobalPreflightLane::Username(lane),
         npub_hash,
         member,
         inner_to: to,
         inner_selector: selector,
+        inner_value: U256::ZERO,
         nonce,
         execute_calldata,
         max_fee,
@@ -218,7 +239,340 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
         eip7702_auth,
     };
 
-    eprintln_username_userop_context(&ctx, code.len(), account_impl);
+    eprintln_global_userop_context(&ctx, code.len(), account_impl);
+
+    let estimated = estimate_global_sponsored_gas(&bundler, &ctx, placeholders).await?;
+    let limits = FinalGasLimits {
+        call_gas_limit: apply_userop_gas_margin(estimated.call_gas_limit),
+        verification_gas_limit: apply_verification_gas_margin(estimated.verification_gas_limit),
+        pre_verification_gas: apply_userop_gas_margin(estimated.pre_verification_gas),
+        paymaster_verification_gas_limit: apply_verification_gas_margin(
+            estimated.paymaster_verification_gas_limit,
+        ),
+        paymaster_post_op_gas_limit: apply_userop_gas_margin(estimated.paymaster_post_op_gas_limit),
+    };
+    let user_op_hash =
+        sign_and_send_global_user_op(&read_provider, &signer, &bundler, &ctx, limits).await?;
+    Ok(SponsoredUserOpSend {
+        user_op_hash,
+        bundler_url: bundler,
+    })
+}
+
+/// Global-paymaster sponsored gov-module write (roster EOA + topHat policy).
+pub async fn send_sponsored_global_gov_userop<R: Runtime>(
+    app: AppHandle<R>,
+    network: &str,
+    parent_id: &str,
+    to: Address,
+    calldata: Vec<u8>,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<SponsoredUserOpSend, String> {
+    let net_key = network.to_lowercase();
+    let selector = calldata_selector(&calldata)?;
+
+    let stored_key = load_stored_pimlico_key(&app);
+    let bundler = bundler_rpc_url_with_stored(&net_key, stored_key.as_deref())?.ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_CONFIG",
+            "Save a Pimlico API key on Status, or set PIMLICO_API_KEY (or BUNDLER_RPC_URL), for an EntryPoint v0.7 bundler.",
+            None,
+        )
+    })?;
+
+    let addrs = pacto_chain_config::global_username_sponsor_addresses(&net_key)
+        .map_err(|e| wallet_err_json("USERNAME_SPONSOR_CONFIG", e, None))?;
+    let account_impl = if !addrs.allowed_7702_implementation.is_zero() {
+        addrs.allowed_7702_implementation
+    } else {
+        erc4337_account_implementation(network).ok_or_else(|| {
+            wallet_err_json(
+                "ERC4337_ACCOUNT_CONFIG",
+                "Missing EIP-7702 account implementation for this network (globalUsernameSponsor.allowed7702Implementation, or erc4337.accountImplementation / PACTO_ERC4337_ACCOUNT_IMPL).",
+                None,
+            )
+        })?
+    };
+
+    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
+        return Err(wallet_err_json(
+            "UNSUPPORTED_NETWORK",
+            format!("Unknown network: {network}"),
+            None,
+        ));
+    };
+    let urls = rpc_urls_or_default(net, rpc_urls);
+    if urls.is_empty() {
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
+    }
+
+    let (signer, _wallet) = load_squad_roster_embedded_signer(app.clone(), parent_id).await?;
+    let member = signer.address();
+    let read_provider = connect_read_provider(&urls).await?;
+
+    let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
+        Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
+        Err(_) => {
+            log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
+            (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
+        }
+    };
+
+    let placeholders = gov_module_gas_ceilings(&calldata);
+    let placeholder_max_cost = userop_max_cost_wei(
+        placeholders.call,
+        placeholders.verification,
+        placeholders.pre_verification,
+        max_fee,
+        placeholders.pm_verification,
+        placeholders.pm_post,
+    );
+
+    paymaster_entry_point_deposit_preflight(
+        &read_provider,
+        addrs.entry_point,
+        addrs.pacto_global_paymaster,
+        placeholder_max_cost,
+    )
+    .await?;
+    let eligible = assert_global_gov_module_preflight(
+        &read_provider,
+        &addrs,
+        member,
+        to,
+        placeholder_max_cost,
+    )
+    .await?;
+
+    let execute_calldata = IAccountExecute::executeCall {
+        dest: to,
+        value: U256::ZERO,
+        data: Bytes::from(calldata.clone()),
+    }
+    .abi_encode();
+
+    let code = read_provider.get_code_at(member).await.map_err(|e| {
+        wallet_err_json(
+            "RPC_CODE",
+            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
+            None,
+        )
+    })?;
+
+    let nonce: U256 = eth_call_decode(
+        &read_provider,
+        addrs.entry_point,
+        &IEntryPointV07::getNonceCall {
+            sender: member,
+            key: Uint::<192, 3>::from(0u64),
+        },
+    )
+    .await
+    .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
+
+    ensure_paymaster_7702_impl(&read_provider, addrs.pacto_global_paymaster, account_impl).await?;
+    let eip7702_auth = resolve_eip7702_auth_for_sender(
+        &read_provider,
+        &signer,
+        member,
+        code.as_ref(),
+        net.chain_id,
+        account_impl,
+    )
+    .await?;
+
+    let ctx = GlobalSponsoredSendParts {
+        entry_point: addrs.entry_point,
+        paymaster: addrs.pacto_global_paymaster,
+        addrs,
+        preflight_lane: GlobalPreflightLane::GovModule,
+        npub_hash: eligible.npub_hash,
+        member,
+        inner_to: to,
+        inner_selector: selector,
+        inner_value: U256::ZERO,
+        nonce,
+        execute_calldata,
+        max_fee,
+        max_priority,
+        eip7702_auth,
+    };
+
+    eprintln_global_userop_context(&ctx, code.len(), account_impl);
+
+    let estimated = estimate_global_sponsored_gas(&bundler, &ctx, placeholders).await?;
+    let limits = FinalGasLimits {
+        call_gas_limit: apply_userop_gas_margin(estimated.call_gas_limit),
+        verification_gas_limit: apply_verification_gas_margin(estimated.verification_gas_limit),
+        pre_verification_gas: apply_userop_gas_margin(estimated.pre_verification_gas),
+        paymaster_verification_gas_limit: apply_verification_gas_margin(
+            estimated.paymaster_verification_gas_limit,
+        ),
+        paymaster_post_op_gas_limit: apply_userop_gas_margin(estimated.paymaster_post_op_gas_limit),
+    };
+    let user_op_hash =
+        sign_and_send_global_user_op(&read_provider, &signer, &bundler, &ctx, limits).await?;
+    Ok(SponsoredUserOpSend {
+        user_op_hash,
+        bundler_url: bundler,
+    })
+}
+
+/// Global-paymaster sponsored factory deploy (roster EOA + factory policy).
+pub async fn send_sponsored_global_factory_userop<R: Runtime>(
+    app: AppHandle<R>,
+    network: &str,
+    parent_id: &str,
+    factory: Address,
+    calldata: Vec<u8>,
+    value_wei: U256,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<SponsoredUserOpSend, String> {
+    let net_key = network.to_lowercase();
+    let selector = calldata_selector(&calldata)?;
+
+    let stored_key = load_stored_pimlico_key(&app);
+    let bundler = bundler_rpc_url_with_stored(&net_key, stored_key.as_deref())?.ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_CONFIG",
+            "Save a Pimlico API key on Status, or set PIMLICO_API_KEY (or BUNDLER_RPC_URL), for an EntryPoint v0.7 bundler.",
+            None,
+        )
+    })?;
+
+    let addrs = pacto_chain_config::global_username_sponsor_addresses(&net_key)
+        .map_err(|e| wallet_err_json("USERNAME_SPONSOR_CONFIG", e, None))?;
+    let account_impl = if !addrs.allowed_7702_implementation.is_zero() {
+        addrs.allowed_7702_implementation
+    } else {
+        erc4337_account_implementation(network).ok_or_else(|| {
+            wallet_err_json(
+                "ERC4337_ACCOUNT_CONFIG",
+                "Missing EIP-7702 account implementation for this network (globalUsernameSponsor.allowed7702Implementation, or erc4337.accountImplementation / PACTO_ERC4337_ACCOUNT_IMPL).",
+                None,
+            )
+        })?
+    };
+
+    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
+        return Err(wallet_err_json(
+            "UNSUPPORTED_NETWORK",
+            format!("Unknown network: {network}"),
+            None,
+        ));
+    };
+    let urls = rpc_urls_or_default(net, rpc_urls);
+    if urls.is_empty() {
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
+    }
+
+    let (signer, _wallet) = load_squad_roster_embedded_signer(app.clone(), parent_id).await?;
+    let member = signer.address();
+    let read_provider = connect_read_provider(&urls).await?;
+
+    if !value_wei.is_zero() {
+        let balance = super::sponsor_userop::roster_native_balance_wei(&read_provider, member)
+            .await?;
+        if balance < value_wei {
+            return Err(wallet_err_json(
+                "INSUFFICIENT_FUNDS",
+                format!(
+                    "roster key holds {balance} wei but this factory call needs {value_wei} wei msg.value (gas may still be sponsored)"
+                ),
+                None,
+            ));
+        }
+    }
+
+    let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
+        Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
+        Err(_) => {
+            log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
+            (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
+        }
+    };
+
+    let placeholders = factory_target_gas_ceilings(&calldata);
+    let placeholder_max_cost = userop_max_cost_wei(
+        placeholders.call,
+        placeholders.verification,
+        placeholders.pre_verification,
+        max_fee,
+        placeholders.pm_verification,
+        placeholders.pm_post,
+    );
+
+    paymaster_entry_point_deposit_preflight(
+        &read_provider,
+        addrs.entry_point,
+        addrs.pacto_global_paymaster,
+        placeholder_max_cost,
+    )
+    .await?;
+    let eligible = assert_global_factory_preflight(
+        &read_provider,
+        &addrs,
+        member,
+        factory,
+        placeholder_max_cost,
+    )
+    .await?;
+
+    let execute_calldata = IAccountExecute::executeCall {
+        dest: factory,
+        value: value_wei,
+        data: Bytes::from(calldata.clone()),
+    }
+    .abi_encode();
+
+    let code = read_provider.get_code_at(member).await.map_err(|e| {
+        wallet_err_json(
+            "RPC_CODE",
+            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
+            None,
+        )
+    })?;
+
+    let nonce: U256 = eth_call_decode(
+        &read_provider,
+        addrs.entry_point,
+        &IEntryPointV07::getNonceCall {
+            sender: member,
+            key: Uint::<192, 3>::from(0u64),
+        },
+    )
+    .await
+    .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
+
+    ensure_paymaster_7702_impl(&read_provider, addrs.pacto_global_paymaster, account_impl).await?;
+    let eip7702_auth = resolve_eip7702_auth_for_sender(
+        &read_provider,
+        &signer,
+        member,
+        code.as_ref(),
+        net.chain_id,
+        account_impl,
+    )
+    .await?;
+
+    let ctx = GlobalSponsoredSendParts {
+        entry_point: addrs.entry_point,
+        paymaster: addrs.pacto_global_paymaster,
+        addrs,
+        preflight_lane: GlobalPreflightLane::FactoryTarget,
+        npub_hash: eligible.npub_hash,
+        member,
+        inner_to: factory,
+        inner_selector: selector,
+        inner_value: value_wei,
+        nonce,
+        execute_calldata,
+        max_fee,
+        max_priority,
+        eip7702_auth,
+    };
+
+    eprintln_global_userop_context(&ctx, code.len(), account_impl);
 
     let estimated = estimate_global_sponsored_gas(&bundler, &ctx, placeholders).await?;
     let limits = FinalGasLimits {
@@ -242,11 +596,12 @@ struct GlobalSponsoredSendParts {
     entry_point: Address,
     paymaster: Address,
     addrs: GlobalUsernameSponsorAddresses,
-    lane: UsernameSponsorLane,
+    preflight_lane: GlobalPreflightLane,
     npub_hash: B256,
     member: Address,
     inner_to: Address,
     inner_selector: [u8; 4],
+    inner_value: U256,
     nonce: U256,
     execute_calldata: Vec<u8>,
     max_fee: u128,
@@ -279,6 +634,42 @@ fn placeholder_gas_ceilings(calldata: &[u8]) -> GasCeilings {
         pre_verification: 80_000,
         pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
         pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+    }
+}
+
+fn gov_module_gas_ceilings(calldata: &[u8]) -> GasCeilings {
+    GasCeilings {
+        call: gov_module_call_gas_ceiling(calldata),
+        verification: DEFAULT_VERIFICATION_GAS_LIMIT,
+        pre_verification: 80_000,
+        pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+    }
+}
+
+fn factory_target_gas_ceilings(calldata: &[u8]) -> GasCeilings {
+    GasCeilings {
+        call: factory_target_call_gas_ceiling(calldata),
+        verification: DEFAULT_VERIFICATION_GAS_LIMIT,
+        pre_verification: 80_000,
+        pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+    }
+}
+
+fn factory_target_call_gas_ceiling(calldata: &[u8]) -> u128 {
+    if calldata.len() >= 4 {
+        HEAVY_CALL_GAS_LIMIT
+    } else {
+        FALLBACK_CALL_GAS_LIMIT
+    }
+}
+
+fn gov_module_call_gas_ceiling(calldata: &[u8]) -> u128 {
+    if calldata.len() >= 4 {
+        HEAVY_CALL_GAS_LIMIT
+    } else {
+        FALLBACK_CALL_GAS_LIMIT
     }
 }
 
@@ -552,17 +943,55 @@ async fn sign_and_send_global_user_op<P: Provider, S: Signer + Sync>(
         final_max_cost,
     )
     .await?;
-    username_lane_preflight(
-        provider,
-        &ctx.addrs,
-        ctx.lane,
-        ctx.member,
-        ctx.inner_to,
-        ctx.inner_selector,
-        ctx.npub_hash,
-        final_max_cost,
-    )
-    .await?;
+    match ctx.preflight_lane {
+        GlobalPreflightLane::Username(lane) => {
+            username_lane_preflight(
+                provider,
+                &ctx.addrs,
+                lane,
+                ctx.member,
+                ctx.inner_to,
+                ctx.inner_selector,
+                ctx.npub_hash,
+                final_max_cost,
+            )
+            .await?;
+        }
+        GlobalPreflightLane::GovModule => {
+            assert_global_gov_module_preflight(
+                provider,
+                &ctx.addrs,
+                ctx.member,
+                ctx.inner_to,
+                final_max_cost,
+            )
+            .await?;
+        }
+        GlobalPreflightLane::FactoryTarget => {
+            assert_global_factory_preflight(
+                provider,
+                &ctx.addrs,
+                ctx.member,
+                ctx.inner_to,
+                final_max_cost,
+            )
+            .await?;
+            if !ctx.inner_value.is_zero() {
+                let balance =
+                    super::sponsor_userop::roster_native_balance_wei(provider, ctx.member).await?;
+                if balance < ctx.inner_value {
+                    return Err(wallet_err_json(
+                        "INSUFFICIENT_FUNDS",
+                        format!(
+                            "roster key holds {balance} wei but this factory call needs {} wei msg.value",
+                            ctx.inner_value
+                        ),
+                        None,
+                    ));
+                }
+            }
+        }
+    }
 
     let account_gas_limits = pack_u128s(limits.verification_gas_limit, limits.call_gas_limit);
     let gas_fees = pack_u128s(ctx.max_priority, ctx.max_fee);
@@ -612,15 +1041,17 @@ async fn sign_and_send_global_user_op<P: Provider, S: Signer + Sync>(
     bundler_send_user_operation(bundler_url, &user_op, ctx.entry_point).await
 }
 
-fn lane_label(lane: UsernameSponsorLane) -> &'static str {
+fn preflight_lane_label(lane: GlobalPreflightLane) -> &'static str {
     match lane {
-        UsernameSponsorLane::Bootstrap => "bootstrap",
-        UsernameSponsorLane::Member => "member",
+        GlobalPreflightLane::Username(UsernameSponsorLane::Bootstrap) => "bootstrap",
+        GlobalPreflightLane::Username(UsernameSponsorLane::Member) => "member",
+        GlobalPreflightLane::GovModule => "gov_module",
+        GlobalPreflightLane::FactoryTarget => "factory_target",
     }
 }
 
 /// Operator stderr before bundler estimate (demo `make logs`).
-fn eprintln_username_userop_context(
+fn eprintln_global_userop_context(
     ctx: &GlobalSponsoredSendParts,
     code_len: usize,
     account_impl: Address,
@@ -632,8 +1063,8 @@ fn eprintln_username_userop_context(
         npub_prefix.as_str()
     };
     eprintln!(
-        "[pacto_wallet] username UserOp lane={} member={:#x} nft={:#x} selector=0x{} code_len={} eip7702_auth={} account_impl={:#x} npub_hash_prefix={}",
-        lane_label(ctx.lane),
+        "[pacto_wallet] global UserOp lane={} member={:#x} target={:#x} selector=0x{} code_len={} eip7702_auth={} account_impl={:#x} npub_hash_prefix={}",
+        preflight_lane_label(ctx.preflight_lane),
         ctx.member,
         ctx.inner_to,
         hex::encode(ctx.inner_selector),
@@ -646,91 +1077,6 @@ fn eprintln_username_userop_context(
         account_impl,
         npub_prefix,
     );
-}
-
-/// Direct NFT `claim` as roster EOA (no 7702 / no `execute` wrapper). UserOp sim can still fail after this passes.
-async fn preflight_claim_eth_call<P: Provider>(
-    provider: &P,
-    member: Address,
-    nft: Address,
-    claim_calldata: &[u8],
-) -> Result<(), String> {
-    // BIP-340 verify is gas-heavy; leave headroom so OOG is not mistaken for empty revert.
-    const CLAIM_ETH_CALL_GAS: u64 = 8_000_000;
-    match eth_call_from(
-        provider,
-        nft,
-        Some(member),
-        Some(CLAIM_ETH_CALL_GAS),
-        claim_calldata.to_vec(),
-    )
-    .await
-    {
-        Ok(_) => Ok(()),
-        Err(e) => Err(wallet_err_from_claim_eth_call_failure(&e)),
-    }
-}
-
-/// Map a failed claim `eth_call` into a wallet error that keeps the revert selector when present.
-pub(crate) fn wallet_err_from_claim_eth_call_failure(raw_err: &str) -> String {
-    let redacted = crate::evm::wallet_security::redact_urls_in_text(raw_err);
-    let selector = extract_revert_selector(&redacted);
-    eprintln!(
-        "[pacto_wallet] claim eth_call preflight failed selector={} detail={}",
-        selector
-            .as_deref()
-            .map(|s| format!("0x{s}"))
-            .unwrap_or_else(|| "none".into()),
-        redacted
-    );
-    if let Some(sel) = selector.as_deref() {
-        if let Some((code, msg)) = classify_username_claim_revert(sel) {
-            return wallet_err_json(
-                code,
-                format!("{msg} (selector 0x{sel}). Detail: {redacted}"),
-                None,
-            );
-        }
-        return wallet_err_json(
-            "USERNAME_CLAIM_REVERTED",
-            format!(
-                "claim() eth_call reverted with selector 0x{sel} (NFT-side; not EIP-7702/UserOp). Detail: {redacted}"
-            ),
-            None,
-        );
-    }
-    wallet_err_json(
-        "USERNAME_CLAIM_REVERTED",
-        format!(
-            "claim() eth_call reverted with empty or unknown data (unexpected for typed NFT errors). Detail: {redacted}"
-        ),
-        None,
-    )
-}
-
-/// NFT custom-error selectors → structured wallet codes (Layer 1).
-fn classify_username_claim_revert(sel: &str) -> Option<(&'static str, &'static str)> {
-    match sel {
-        "356848bf" => Some(("USERNAME_INVALID_NAME", "claim rejected: invalid name / empty pubkey")),
-        "a08dc9f6" => Some(("USERNAME_TAKEN", "claim rejected: name unavailable")),
-        "87e0b147" => Some(("USERNAME_NPUB_CLAIMED", "claim rejected: npub already claimed")),
-        "057e4afc" => Some(("ALREADY_CLAIMED", "claim rejected: address already claimed")),
-        "b2613b41" => Some((
-            "USERNAME_INVALID_EVM_SIG",
-            "claim rejected: invalid EIP-712 ClaimBinding signature",
-        )),
-        "8bb09e51" => Some(("USERNAME_INVALID_NPUB_HASH", "claim rejected: npubHash ≠ sha256(0x02||pubkey)")),
-        "bb8d46ae" => Some((
-            "USERNAME_INVALID_NOSTR_SIG",
-            "claim rejected: invalid BIP-340 Nostr claim signature",
-        )),
-        "97276890" => Some((
-            "USERNAME_BINDING_EXPIRED",
-            "claim rejected: issuedAt outside chain clock window (±5m / 7d)",
-        )),
-        "8dd24e09" => Some(("USERNAME_NONCE_USED", "claim rejected: nonce already used")),
-        _ => None,
-    }
 }
 
 async fn ensure_paymaster_7702_impl<P: Provider>(
@@ -766,7 +1112,7 @@ pub(crate) fn eip7702_delegation_impl(code: &[u8]) -> Option<Address> {
     Some(Address::from_slice(&code[3..23]))
 }
 
-/// Empty code → sign 7702 auth; already-delegated to `account_impl` → no auth; else fail closed.
+/// Empty code or stale delegation → sign 7702 auth; correct impl → no auth.
 async fn resolve_eip7702_auth_for_sender<P: Provider, S: Signer + Sync>(
     provider: &P,
     signer: &S,
@@ -775,43 +1121,49 @@ async fn resolve_eip7702_auth_for_sender<P: Provider, S: Signer + Sync>(
     chain_id: u64,
     account_impl: Address,
 ) -> Result<Option<Value>, String> {
-    if code.is_empty() {
-        let eoa_nonce = provider.get_transaction_count(member).await.map_err(|e| {
-            wallet_err_json(
-                "RPC_NONCE",
-                crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
+    let needs_auth = match eip7702_delegation_impl(code) {
+        None if code.is_empty() => true,
+        None => {
+            return Err(wallet_err_json(
+                "USERNAME_7702_SENDER",
+                format!(
+                    "roster EOA {member:#x} has non-empty code (len {}) that is not an EIP-7702 stub; sponsored UserOp execute cannot run",
+                    code.len()
+                ),
                 None,
-            )
-        })?;
-        let auth = sign_eip7702_authorization(signer, chain_id, account_impl, eoa_nonce).await?;
-        return Ok(Some(auth));
+            ));
+        }
+        Some(impl_addr) if impl_addr == account_impl => false,
+        Some(_stale) => {
+            eprintln!(
+                "[pacto_wallet] username eip7702_auth=upgrade member={:#x} stale_impl→{:#x}",
+                member,
+                account_impl
+            );
+            true
+        }
+    };
+    if !needs_auth {
+        return Ok(None);
     }
-    match eip7702_delegation_impl(code) {
-        Some(impl_addr) if impl_addr == account_impl => Ok(None),
-        Some(impl_addr) => Err(wallet_err_json(
-            "USERNAME_7702_SENDER",
-            format!(
-                "roster EOA already delegates via EIP-7702 to {impl_addr:#x}, expected {account_impl:#x}; clear unexpected code or use a fresh roster key"
-            ),
+    let eoa_nonce = provider.get_transaction_count(member).await.map_err(|e| {
+        wallet_err_json(
+            "RPC_NONCE",
+            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
             None,
-        )),
-        None => Err(wallet_err_json(
-            "USERNAME_7702_SENDER",
-            format!(
-                "roster EOA {member:#x} has non-empty code (len {}) that is not an EIP-7702 stub; sponsored UserOp execute cannot run",
-                code.len()
-            ),
-            None,
-        )),
-    }
+        )
+    })?;
+    let auth = sign_eip7702_authorization(signer, chain_id, account_impl, eoa_nonce).await?;
+    Ok(Some(auth))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        assert_lane_matches_selector, eip7702_delegation_impl, wallet_err_from_claim_eth_call_failure,
-        UsernameSponsorLane, CLAIM_USERNAME_SELECTOR,
+        assert_lane_matches_selector, eip7702_delegation_impl, UsernameSponsorLane,
+        CLAIM_USERNAME_SELECTOR,
     };
+    use crate::evm::username_claim_preflight::wallet_err_from_claim_eth_call_failure;
     use alloy::primitives::address;
 
     #[test]

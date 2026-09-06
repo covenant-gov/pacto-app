@@ -210,6 +210,7 @@
   {#if DeployPactoGovModalComponent}
     <DeployPactoGovModalComponent
       parentId={parentId.trim()}
+      announcementsGroupId={announcementsGroupId?.trim() || null}
       {squadNetwork}
       {captainMemberOptions}
       onClose={onClosePactoGovDeploy}
@@ -262,6 +263,7 @@
   {#if DeployExtSponsorComponent}
     <DeployExtSponsorComponent
       parentId={parentId.trim()}
+      announcementsGroupId={announcementsGroupId?.trim() || null}
       {squadNetwork}
       onClose={onCloseExtSponsorDeploy}
       onComplete={onExtSponsorComplete}

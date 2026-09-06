@@ -16,6 +16,7 @@ import { npubHashFromPubkey } from '../lib/evm/sponsor/nostr_claim_link';
 import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
 import { ZERO_ADDRESS } from '../lib/wallet/assets';
 import { getInvokeErrorMessage } from '../lib/utils/tauri-errors';
+import { usernameClaimErrorMessage } from '../lib/username/username-claim-errors';
 import { currentUser } from './auth';
 import type { Hex } from 'viem';
 
@@ -204,7 +205,7 @@ async function withBusyWrite<T>(fn: () => Promise<T>): Promise<T> {
     usernameState.update((s) => ({ ...s, busy: false }));
     return result;
   } catch (e) {
-    const message = getInvokeErrorMessage(e);
+    const message = usernameClaimErrorMessage(e);
     usernameState.update((s) => ({ ...s, busy: false, error: message }));
     throw e;
   }

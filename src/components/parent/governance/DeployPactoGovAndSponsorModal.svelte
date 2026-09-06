@@ -32,6 +32,7 @@
     validateSquadParams,
   } from '../../../lib/governance/squad-params';
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
+  import SquadRosterEvmGatePanel from './SquadRosterEvmGatePanel.svelte';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
   import { walletBuildAndSendTransaction } from '../../../lib/wallet/backend-wallet';
   import { waitForOnChainConfirmationInBackground } from '../../../lib/evm/on-chain-background';
@@ -71,7 +72,7 @@
   let resolvingAddresses = $state(true);
   let deployError = $state('');
   let fundTransferEth = $state('');
-  let initialDepositEth = $state('');
+  let initialDepositEth = $state('0');
   let bootstrapCrew = $state(false);
   let progressStep: '' | 'fund' | 'gov' | 'sponsor' | 'bootstrap' = $state('');
   let signerWallet = $state<SquadSponsorDeploySignerWallet>('squad');
@@ -173,6 +174,11 @@
   const signersAreSame = $derived(
     defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical,
   );
+  const rosterLookupId = $derived(
+    listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId).parentId ||
+      parentId.trim(),
+  );
+  const needsSquadEvmGate = $derived(!resolvingAddresses && !squadCanonical);
   /** Default only funds the squad key; on-chain deploy always signs as squad/captain. */
   const needsFundTransfer = $derived(!signersAreSame && signerWallet === 'default');
   const payFromEffective = $derived(
@@ -211,13 +217,27 @@
     }
   });
 
+  const depositWei = $derived.by(() => {
+    if (!depositTrimmed) return 0n;
+    try {
+      return parseEther(depositTrimmed.replace(/,/g, ''));
+    } catch {
+      return null;
+    }
+  });
+
+  const depositInvalidFormat = $derived(
+    depositTrimmed.length > 0 && depositWei === null,
+  );
+
   const depositExceedsBalance = $derived(
-    needsFundTransfer
-      ? depositExceedsTransfer
-      : depositTrimmed.length > 0 &&
-          !selectedBalance.loading &&
-          !selectedBalance.error &&
-          amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw),
+    depositWei !== null &&
+      depositWei > 0n &&
+      !selectedBalance.loading &&
+      !selectedBalance.error &&
+      (needsFundTransfer
+        ? depositExceedsTransfer
+        : amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw)),
   );
 
   const bootstrapAllowed = $derived(
@@ -309,23 +329,24 @@
       }
     }
 
+    let depositAmount: bigint;
     let depositWei: string;
     try {
-      const wei = parseEther(depositTrimmed.replace(/,/g, '') || '0');
-      if (wei <= 0n) {
-        deployError = tFn('governance.deployGovAndSponsor.deposit.error.greaterThanZero');
+      depositAmount = depositTrimmed ? parseEther(depositTrimmed.replace(/,/g, '')) : 0n;
+      if (depositAmount < 0n) {
+        deployError = tFn('governance.deployGovAndSponsor.deposit.error.invalid');
         return;
       }
-      if (transferWei != null && wei >= transferWei) {
+      if (transferWei != null && depositAmount > 0n && depositAmount >= transferWei) {
         deployError = tFn('governance.deployGovAndSponsor.deposit.error.mustBeLessThanTransfer');
         return;
       }
-      depositWei = wei.toString();
+      depositWei = depositAmount.toString();
     } catch {
       deployError = tFn('governance.deployGovAndSponsor.deposit.error.invalid');
       return;
     }
-    if (depositExceedsBalance) {
+    if (depositAmount > 0n && depositExceedsBalance) {
       deployError = needsFundTransfer
         ? tFn('governance.deployGovAndSponsor.deposit.error.lessThanTransferGas')
         : tFn('governance.deployGovAndSponsor.deposit.error.gasRoom');
@@ -452,6 +473,7 @@
     deploying ||
       !squadNetwork ||
       resolvingAddresses ||
+      depositInvalidFormat ||
       depositExceedsBalance ||
       transferExceedsDefault ||
       !squadCanonical ||
@@ -486,6 +508,9 @@
     {/if}
   </div>
 
+  {#if needsSquadEvmGate}
+    <SquadRosterEvmGatePanel rosterLookupId={rosterLookupId} onBound={refreshSigners} />
+  {:else}
   {#if signersAreSame}
     <div class="signer-single" aria-live="polite">
       <span class="label">{$t('governance.deployGovAndSponsor.labels.payFrom')}</span>
@@ -621,7 +646,9 @@
       oninput={onDepositInput}
       disabled={deploying}
     />
-    {#if depositExceedsBalance}
+    {#if depositInvalidFormat}
+      <p class="input-error" role="alert">{$t('governance.deployGovAndSponsor.deposit.error.invalid')}</p>
+    {:else if depositExceedsBalance}
       <p class="input-error" role="alert">
         {#if needsFundTransfer}
           {$t('governance.deployGovAndSponsor.deposit.error.exceedsTransfer')}
@@ -629,6 +656,8 @@
           {$t('governance.deployGovAndSponsor.deposit.error.exceedsBalance', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedBalance.symbol } })}
         {/if}
       </p>
+    {:else}
+      <p class="hint muted">{$t('governance.deployGovAndSponsor.deposit.hint')}</p>
     {/if}
   </div>
 
@@ -680,6 +709,7 @@
       {/if}
     {/if}
   </div>
+  {/if}
 
   {#if progressStep}
     <p class="muted" role="status">
@@ -701,8 +731,12 @@
 
   <div class="modal-actions">
     <button type="button" class="btn-secondary" onclick={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
-    <button type="button" class="btn-primary" disabled={deployDisabled} onclick={executeDeploy}>
-      {deploying ? $t('governance.common.deploying') : $t('governance.common.deploy')}
+    <button type="button" class="btn-primary btn-primary-action" disabled={deployDisabled} onclick={executeDeploy}>
+      {deploying
+        ? $t('governance.common.deploying')
+        : needsSquadEvmGate
+          ? $t('governance.deployGate.assignButton')
+          : $t('governance.common.deploy')}
     </button>
   </div>
 </Modal>
@@ -884,5 +918,9 @@
     margin: 6px 0 0;
     font-size: 0.8125rem;
     color: var(--danger, #e53e3e);
+  }
+  .btn-primary-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>
