@@ -28,7 +28,7 @@ use super::rpc::{
     connect_read_provider, wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::squad_sponsor_common::{
-    parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
+    parse_optional_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
     squad_id_from_parent_id, squad_variant_label,
 };
 use super::squad_sponsor_hats_wire::{hats_factory_slot, wire_parent_ext_hats, HatsFactorySlot};
@@ -37,19 +37,6 @@ use crate::db;
 
 /// Captain-gated. An unwired parent Ext is hats-wired via `postInitialize`, not a second create.
 const DEPLOY_REQUIRED_CAPABILITY: GovCapability = GovCapability::CaptainResign;
-
-pub(crate) fn parse_required_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
-    let deposit =
-        parse_deposit_wei(raw).map_err(|e| wallet_err_json("INVALID_DEPOSIT", e, None))?;
-    if deposit.is_zero() {
-        return Err(wallet_err_json(
-            "INVALID_DEPOSIT",
-            "initial deposit must be greater than zero",
-            None,
-        ));
-    }
-    Ok(deposit)
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -327,7 +314,8 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
         }
     };
 
-    let deposit = parse_required_deposit_wei(initial_deposit_wei.as_deref())?;
+    let deposit = parse_optional_deposit_wei(initial_deposit_wei.as_deref())
+        .map_err(|e| wallet_err_json("INVALID_DEPOSIT", e, None))?;
     let squad_id = squad_id_from_parent_id(pid);
     let factory = addrs.squad_sponsor_factory;
 
@@ -579,16 +567,16 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
 mod tests {
     use super::{
         already_deployed_onchain_err, checked_top_hat_id, onchain_variant_result_label,
-        parse_required_deposit_wei, reconcile_payload_extras, resolve_hats_registry,
-        sponsor_preflight_decision, sponsor_provider_payload, squad_id_from_parent_id,
-        SponsorDeployVariant, SponsorPreflight, DEPLOY_REQUIRED_CAPABILITY,
+        reconcile_payload_extras, resolve_hats_registry, sponsor_preflight_decision,
+        sponsor_provider_payload, squad_id_from_parent_id, SponsorDeployVariant, SponsorPreflight,
+        DEPLOY_REQUIRED_CAPABILITY,
     };
     use crate::evm::access_control::GovCapability;
     use crate::evm::contracts::pacto_sponsor::ISquadSponsorFactory::{
         createSquadSponsorCall, createSquadSponsorExtCall,
     };
     use crate::evm::contracts::pacto_sponsor::SquadVariant;
-    use crate::evm::squad_sponsor_common::parse_signer_wallet;
+    use crate::evm::squad_sponsor_common::{parse_optional_deposit_wei, parse_signer_wallet};
     use alloy::primitives::{Address, U256};
     use alloy::sol_types::SolCall;
 
@@ -930,13 +918,25 @@ mod tests {
     }
 
     #[test]
-    fn parse_required_deposit_wei_rejects_empty_and_zero() {
-        assert!(parse_required_deposit_wei(None).is_err());
-        assert!(parse_required_deposit_wei(Some("")).is_err());
-        assert!(parse_required_deposit_wei(Some("0")).is_err());
-        assert!(parse_required_deposit_wei(Some("0x0")).is_err());
+    fn parse_optional_deposit_wei_accepts_empty_and_zero() {
         assert_eq!(
-            parse_required_deposit_wei(Some("1000")).unwrap(),
+            parse_optional_deposit_wei(None).unwrap(),
+            U256::ZERO
+        );
+        assert_eq!(
+            parse_optional_deposit_wei(Some("")).unwrap(),
+            U256::ZERO
+        );
+        assert_eq!(
+            parse_optional_deposit_wei(Some("0")).unwrap(),
+            U256::ZERO
+        );
+        assert_eq!(
+            parse_optional_deposit_wei(Some("0x0")).unwrap(),
+            U256::ZERO
+        );
+        assert_eq!(
+            parse_optional_deposit_wei(Some("1000")).unwrap(),
             U256::from(1000u64)
         );
     }

@@ -72,7 +72,7 @@
   let resolvingAddresses = $state(true);
   let deployError = $state('');
   let fundTransferEth = $state('');
-  let initialDepositEth = $state('');
+  let initialDepositEth = $state('0');
   let bootstrapCrew = $state(false);
   let progressStep: '' | 'fund' | 'gov' | 'sponsor' | 'bootstrap' = $state('');
   let signerWallet = $state<SquadSponsorDeploySignerWallet>('squad');
@@ -217,13 +217,27 @@
     }
   });
 
+  const depositWei = $derived.by(() => {
+    if (!depositTrimmed) return 0n;
+    try {
+      return parseEther(depositTrimmed.replace(/,/g, ''));
+    } catch {
+      return null;
+    }
+  });
+
+  const depositInvalidFormat = $derived(
+    depositTrimmed.length > 0 && depositWei === null,
+  );
+
   const depositExceedsBalance = $derived(
-    needsFundTransfer
-      ? depositExceedsTransfer
-      : depositTrimmed.length > 0 &&
-          !selectedBalance.loading &&
-          !selectedBalance.error &&
-          amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw),
+    depositWei !== null &&
+      depositWei > 0n &&
+      !selectedBalance.loading &&
+      !selectedBalance.error &&
+      (needsFundTransfer
+        ? depositExceedsTransfer
+        : amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw)),
   );
 
   const bootstrapAllowed = $derived(
@@ -315,23 +329,24 @@
       }
     }
 
+    let depositAmount: bigint;
     let depositWei: string;
     try {
-      const wei = parseEther(depositTrimmed.replace(/,/g, '') || '0');
-      if (wei <= 0n) {
-        deployError = tFn('governance.deployGovAndSponsor.deposit.error.greaterThanZero');
+      depositAmount = depositTrimmed ? parseEther(depositTrimmed.replace(/,/g, '')) : 0n;
+      if (depositAmount < 0n) {
+        deployError = tFn('governance.deployGovAndSponsor.deposit.error.invalid');
         return;
       }
-      if (transferWei != null && wei >= transferWei) {
+      if (transferWei != null && depositAmount > 0n && depositAmount >= transferWei) {
         deployError = tFn('governance.deployGovAndSponsor.deposit.error.mustBeLessThanTransfer');
         return;
       }
-      depositWei = wei.toString();
+      depositWei = depositAmount.toString();
     } catch {
       deployError = tFn('governance.deployGovAndSponsor.deposit.error.invalid');
       return;
     }
-    if (depositExceedsBalance) {
+    if (depositAmount > 0n && depositExceedsBalance) {
       deployError = needsFundTransfer
         ? tFn('governance.deployGovAndSponsor.deposit.error.lessThanTransferGas')
         : tFn('governance.deployGovAndSponsor.deposit.error.gasRoom');
@@ -458,6 +473,7 @@
     deploying ||
       !squadNetwork ||
       resolvingAddresses ||
+      depositInvalidFormat ||
       depositExceedsBalance ||
       transferExceedsDefault ||
       !squadCanonical ||
@@ -630,7 +646,9 @@
       oninput={onDepositInput}
       disabled={deploying}
     />
-    {#if depositExceedsBalance}
+    {#if depositInvalidFormat}
+      <p class="input-error" role="alert">{$t('governance.deployGovAndSponsor.deposit.error.invalid')}</p>
+    {:else if depositExceedsBalance}
       <p class="input-error" role="alert">
         {#if needsFundTransfer}
           {$t('governance.deployGovAndSponsor.deposit.error.exceedsTransfer')}
@@ -638,6 +656,8 @@
           {$t('governance.deployGovAndSponsor.deposit.error.exceedsBalance', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedBalance.symbol } })}
         {/if}
       </p>
+    {:else}
+      <p class="hint muted">{$t('governance.deployGovAndSponsor.deposit.hint')}</p>
     {/if}
   </div>
 

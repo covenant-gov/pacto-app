@@ -55,7 +55,7 @@
   /** Seeds the picker once; user can still change it before squadNetwork pins. */
   // svelte-ignore state_referenced_locally
   let deployNetwork: SupportedChainId | '' = $state(squadNetwork ?? '');
-  let initialDepositEth = $state('');
+  let initialDepositEth = $state('0');
   let deployError = $state('');
   let deploying = $state(false);
   let closed = false;
@@ -69,10 +69,11 @@
   let defaultBalance: SignerBalance = $state(emptyBalance());
   let squadBalance: SignerBalance = $state(emptyBalance());
 
-  function parsePositiveDepositWei(amountTrimmed: string): bigint | null {
+  function parseOptionalDepositWei(amountTrimmed: string): bigint | null {
+    if (!amountTrimmed) return 0n;
     try {
       const wei = parseEther(amountTrimmed.replace(/,/g, ''));
-      return wei > 0n ? wei : null;
+      return wei >= 0n ? wei : null;
     } catch {
       return null;
     }
@@ -159,19 +160,15 @@
   );
 
   const depositTrimmed = $derived(initialDepositEth.trim());
-  const depositWei = $derived(parsePositiveDepositWei(depositTrimmed));
+  const depositWei = $derived(parseOptionalDepositWei(depositTrimmed));
   const depositInvalidFormat = $derived.by(() => {
     if (depositTrimmed.length === 0) return false;
-    try {
-      parseEther(depositTrimmed.replace(/,/g, ''));
-      return depositWei === null;
-    } catch {
-      return true;
-    }
+    return depositWei === null;
   });
 
   const depositExceedsBalance = $derived(
     depositWei !== null &&
+      depositWei > 0n &&
       !selectedBalance.loading &&
       !selectedBalance.error &&
       amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw),
@@ -215,9 +212,9 @@
       deployError = tFn('governance.deploySquadSponsorExt.error.payerUnavailable');
       return;
     }
-    const initialDepositWei = depositWei?.toString();
-    if (!initialDepositWei) {
-      deployError = tFn('governance.deploySquadSponsorExt.error.depositGreaterThanZero');
+    const initialDepositWei = depositWei === null ? null : depositWei.toString();
+    if (initialDepositWei === null) {
+      deployError = tFn('governance.deploySquadSponsorExt.deposit.error.invalid');
       return;
     }
     if (depositExceedsBalance) {
@@ -354,7 +351,6 @@
       oninput={onDepositInput}
       disabled={ownerUnavailable || payerUnavailable || deploying}
       autocomplete="off"
-      required
       aria-invalid={depositInvalidFormat || depositExceedsBalance ? 'true' : undefined}
     />
     {#if depositInvalidFormat}
@@ -365,7 +361,11 @@
       </p>
     {:else if depositWei !== null}
       <p class="sponsor-deploy-hint">
-        {$t('governance.deploySquadSponsorExt.deposit.hint', { values: { payer: shortAddress(payFromEffective === 'default' ? defaultCanonical : squadCanonical), owner: shortAddress(squadCanonical) } })}
+        {#if depositWei === 0n}
+          {$t('governance.deploySquadSponsorExt.deposit.hintOptional')}
+        {:else}
+          {$t('governance.deploySquadSponsorExt.deposit.hint', { values: { payer: shortAddress(payFromEffective === 'default' ? defaultCanonical : squadCanonical), owner: shortAddress(squadCanonical) } })}
+        {/if}
       </p>
     {/if}
   </div>

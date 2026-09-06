@@ -34,8 +34,8 @@ use super::rpc::{
     wallet_err_json_with_tx_hash,
 };
 use super::squad_sponsor_common::{
-    parse_deposit_wei, parse_signer_wallet, read_squad_record_opt, require_parent_member,
-    squad_id_from_parent_id,
+    parse_optional_deposit_wei, parse_signer_wallet, read_squad_record_opt,
+    require_parent_member, squad_id_from_parent_id,
 };
 use super::wallet_chain_config;
 use super::wallet_chain_config::WalletNetworkConfig;
@@ -75,14 +75,6 @@ fn require_sepolia_network(network: &str) -> Result<&'static WalletNetworkConfig
         .ok_or_else(|| wallet_err_json("UNSUPPORTED_NETWORK", "Unknown network: sepolia", None))
 }
 
-fn parse_optional_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
-    match raw.map(str::trim).filter(|s| !s.is_empty()) {
-        None => Ok(U256::ZERO),
-        Some(s) => {
-            parse_deposit_wei(Some(s)).map_err(|e| wallet_err_json("INVALID_DEPOSIT", e, None))
-        }
-    }
-}
 
 fn retired_sponsor_from_prior_payload(payload: Option<&str>, new_sponsor: &str) -> Option<String> {
     let raw = payload.map(str::trim).filter(|s| !s.is_empty())?;
@@ -415,7 +407,8 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
     require_parent_member(&app, pid).await?;
 
     let net = require_sepolia_network(&network)?;
-    let deposit = parse_optional_deposit_wei(initial_deposit_wei.as_deref())?;
+    let deposit = parse_optional_deposit_wei(initial_deposit_wei.as_deref())
+        .map_err(|e| wallet_err_json("INVALID_DEPOSIT", e, None))?;
 
     let gov_addrs = pacto_chain_config::pacto_gov_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
