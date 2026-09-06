@@ -23,14 +23,18 @@
   import { parseEther } from 'viem';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
   import SquadDeployNetworkField from './SquadDeployNetworkField.svelte';
+  import SquadRosterEvmGatePanel from './SquadRosterEvmGatePanel.svelte';
+  import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
 
   let {
     parentId,
+    announcementsGroupId = null,
     squadNetwork = null,
     onClose,
     onComplete,
   }: {
     parentId: string;
+    announcementsGroupId?: string | null;
     /** Established squad network; when set the picker is pinned to it. */
     squadNetwork?: SupportedChainId | null;
     onClose: () => void;
@@ -79,10 +83,13 @@
     addressesLoading = true;
     defaultBalance = loadingBalance();
     squadBalance = loadingBalance();
+    const rosterLookupId =
+      listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId).parentId ||
+      parentId.trim();
     try {
       const [defaultAddr, squadAddr, profileAddr] = await Promise.all([
         getActiveSquadEvmSignerAddress(),
-        resolveSquadRosterEvmAddress(parentId.trim()),
+        resolveSquadRosterEvmAddress(rosterLookupId),
         getEvmAddress(),
       ]);
       if (closed || seq !== refreshSeq) return;
@@ -128,12 +135,19 @@
 
   $effect(() => {
     void parentId;
+    void announcementsGroupId;
     void deployNetwork;
     void refreshAll();
   });
 
+  const rosterLookupId = $derived(
+    listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId).parentId ||
+      parentId.trim(),
+  );
+
   const defaultCanonical = $derived(canonicalAddress(defaultSignerAddress));
   const squadCanonical = $derived(canonicalAddress(squadSignerAddress));
+  const needsSquadEvmGate = $derived(!addressesLoading && !squadCanonical);
   const signersAreSame = $derived(
     defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical,
   );
@@ -246,6 +260,9 @@
     {$t('governance.deploySquadSponsorExt.description')}
   </p>
 
+  {#if needsSquadEvmGate}
+    <SquadRosterEvmGatePanel rosterLookupId={rosterLookupId} onBound={refreshAll} />
+  {:else}
   <div class="sponsor-deploy-field">
     <SquadDeployNetworkField
       id="sponsor-ext-deploy-network"
@@ -352,6 +369,7 @@
       </p>
     {/if}
   </div>
+  {/if}
 
   {#if deployError}
     <p class="input-error" role="alert">{deployError}</p>
@@ -359,8 +377,12 @@
 
   <div class="modal-actions">
     <button type="button" class="btn-secondary" onclick={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
-    <button type="button" class="btn-primary" onclick={confirmDeploy} disabled={!canDeploy}>
-      {deploying ? $t('governance.common.deploying') : $t('governance.common.deployOnChain')}
+    <button type="button" class="btn-primary btn-primary-action" onclick={confirmDeploy} disabled={!canDeploy}>
+      {deploying
+        ? $t('governance.common.deploying')
+        : needsSquadEvmGate
+          ? $t('governance.deployGate.assignButton')
+          : $t('governance.common.deployOnChain')}
     </button>
   </div>
 </Modal>
@@ -458,5 +480,10 @@
     margin: 6px 0 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
+  }
+
+  .btn-primary-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

@@ -14,17 +14,21 @@
     validateSquadParams,
   } from '../../../lib/governance/squad-params';
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
+  import SquadRosterEvmGatePanel from './SquadRosterEvmGatePanel.svelte';
+  import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
   import { getAddress, isAddress } from 'viem';
   import { shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
 
   let {
     parentId,
+    announcementsGroupId = null,
     squadNetwork = null,
-    captainMemberOptions = [],
+    captainMemberOptions: _captainMemberOptions = [],
     onClose,
     onComplete,
   }: {
     parentId: string;
+    announcementsGroupId?: string | null;
     squadNetwork?: SupportedChainId | null;
     /** Kept for parent wiring; captain is always the deployer's roster EVM. */
     captainMemberOptions?: PactoGovCaptainOption[];
@@ -56,11 +60,17 @@
       }),
   );
 
-  onMount(async () => {
+  const rosterLookupId = $derived(
+    listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId).parentId ||
+      parentId.trim(),
+  );
+  const needsSquadEvmGate = $derived(!resolvingDeployer && !captainAddress);
+
+  async function refreshCaptain() {
     resolvingDeployer = true;
     captainAddress = '';
     try {
-      const raw = await resolveSquadRosterEvmAddress(parentId.trim());
+      const raw = await resolveSquadRosterEvmAddress(rosterLookupId);
       if (raw?.trim() && isAddress(raw.trim() as `0x${string}`)) {
         captainAddress = getAddress(raw.trim() as `0x${string}`);
       }
@@ -69,6 +79,10 @@
     } finally {
       resolvingDeployer = false;
     }
+  }
+
+  onMount(() => {
+    void refreshCaptain();
   });
 
   function executeDeploy() {
@@ -134,23 +148,15 @@
     {/if}
   </div>
 
+  {#if needsSquadEvmGate}
+    <SquadRosterEvmGatePanel rosterLookupId={rosterLookupId} onBound={refreshCaptain} />
+  {:else}
   <div class="pacto-gov-deploy-field">
     <span class="pacto-gov-deploy-label">{$t('governance.deployPactoGov.captainLabel')}</span>
-    {#if resolvingDeployer}
-      <p class="pacto-gov-deploy-hint muted">{$t('governance.common.loadingSquadAssignedEvm')}</p>
-    {:else if captainAddress}
-      <p class="pacto-gov-deploy-pinned">
-        <code>{shortAddress(captainAddress)}</code>
-        <span class="pacto-gov-deploy-pinned-note">{$t('governance.common.yourSquadAssignedEvm')}</span>
-      </p>
-    {:else}
-      <p class="pacto-gov-deploy-hint muted">
-        {$t('governance.deployPactoGov.captainNoEvmHint')}
-        {#if captainMemberOptions.length === 0}
-          {$t('governance.deployPactoGov.captainDashboardHint')}
-        {/if}
-      </p>
-    {/if}
+    <p class="pacto-gov-deploy-pinned">
+      <code>{shortAddress(captainAddress)}</code>
+      <span class="pacto-gov-deploy-pinned-note">{$t('governance.common.yourSquadAssignedEvm')}</span>
+    </p>
   </div>
 
   <SquadParamsCustomizeFields
@@ -160,6 +166,7 @@
     bind:crewVoteMode
     bind:quorumBps
   />
+  {/if}
 
   {#if deployError}
     <p class="input-error" role="alert">{deployError}</p>
@@ -169,11 +176,13 @@
     <button type="button" class="btn-secondary" onclick={onClose}>{$t('governance.common.cancel')}</button>
     <button
       type="button"
-      class="btn-primary"
+      class="btn-primary btn-primary-action"
       disabled={!squadNetwork || resolvingDeployer || !captainAddress || customizeInvalid}
       onclick={executeDeploy}
     >
-      {$t('governance.common.execute')}
+      {needsSquadEvmGate
+        ? $t('governance.deployGate.assignButton')
+        : $t('governance.common.execute')}
     </button>
   </div>
 </Modal>
@@ -212,14 +221,6 @@
     color: var(--text-muted);
     font-size: 0.8125rem;
   }
-  .pacto-gov-deploy-hint {
-    margin: 6px 0 0;
-    font-size: 0.8125rem;
-    line-height: 1.4;
-  }
-  .muted {
-    color: var(--text-muted);
-  }
   .input-error {
     margin: 0 0 12px;
     font-size: 0.875rem;
@@ -230,5 +231,9 @@
     justify-content: flex-end;
     gap: 8px;
     margin-top: 8px;
+  }
+  .btn-primary-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

@@ -32,6 +32,7 @@
     validateSquadParams,
   } from '../../../lib/governance/squad-params';
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
+  import SquadRosterEvmGatePanel from './SquadRosterEvmGatePanel.svelte';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
   import { walletBuildAndSendTransaction } from '../../../lib/wallet/backend-wallet';
   import { waitForOnChainConfirmationInBackground } from '../../../lib/evm/on-chain-background';
@@ -173,6 +174,11 @@
   const signersAreSame = $derived(
     defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical,
   );
+  const rosterLookupId = $derived(
+    listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId).parentId ||
+      parentId.trim(),
+  );
+  const needsSquadEvmGate = $derived(!resolvingAddresses && !squadCanonical);
   /** Default only funds the squad key; on-chain deploy always signs as squad/captain. */
   const needsFundTransfer = $derived(!signersAreSame && signerWallet === 'default');
   const payFromEffective = $derived(
@@ -486,6 +492,9 @@
     {/if}
   </div>
 
+  {#if needsSquadEvmGate}
+    <SquadRosterEvmGatePanel rosterLookupId={rosterLookupId} onBound={refreshSigners} />
+  {:else}
   {#if signersAreSame}
     <div class="signer-single" aria-live="polite">
       <span class="label">{$t('governance.deployGovAndSponsor.labels.payFrom')}</span>
@@ -680,6 +689,7 @@
       {/if}
     {/if}
   </div>
+  {/if}
 
   {#if progressStep}
     <p class="muted" role="status">
@@ -701,8 +711,12 @@
 
   <div class="modal-actions">
     <button type="button" class="btn-secondary" onclick={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
-    <button type="button" class="btn-primary" disabled={deployDisabled} onclick={executeDeploy}>
-      {deploying ? $t('governance.common.deploying') : $t('governance.common.deploy')}
+    <button type="button" class="btn-primary btn-primary-action" disabled={deployDisabled} onclick={executeDeploy}>
+      {deploying
+        ? $t('governance.common.deploying')
+        : needsSquadEvmGate
+          ? $t('governance.deployGate.assignButton')
+          : $t('governance.common.deploy')}
     </button>
   </div>
 </Modal>
@@ -884,5 +898,9 @@
     margin: 6px 0 0;
     font-size: 0.8125rem;
     color: var(--danger, #e53e3e);
+  }
+  .btn-primary-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

@@ -39,6 +39,7 @@ pub mod squad_sponsor_withdraw;
 pub mod treasury_authority_write;
 pub mod treasury_proposals_read;
 pub mod username;
+pub mod username_claim_preflight;
 pub mod username_nostr_link;
 pub mod wallet_chain_config;
 pub mod wallet_ops;

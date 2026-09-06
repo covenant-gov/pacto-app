@@ -20,10 +20,10 @@ use super::global_paymaster::{
 };
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
-use super::rpc::call::{eth_call_decode, eth_call_from};
-use super::rpc::errors::extract_revert_selector;
+use super::rpc::call::eth_call_decode;
 use super::rpc::signer::load_embedded_signer;
 use super::rpc::{connect_read_provider, wallet_err_json};
+use super::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use super::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
 use super::sponsor_userop::{
     apply_userop_gas_margin, apply_verification_gas_margin, bundler_estimate_user_operation_gas,
@@ -161,17 +161,34 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
     )
     .await?;
 
-    // Discriminate NFT claim revert (typed selector) from account/7702 UserOp sim failures.
-    if lane == UsernameSponsorLane::Bootstrap {
-        preflight_claim_eth_call(&read_provider, member, to, &calldata).await?;
-    }
-
     let execute_calldata = IAccountExecute::executeCall {
         dest: to,
         value: U256::ZERO,
         data: Bytes::from(calldata.clone()),
     }
     .abi_encode();
+
+    let code = read_provider.get_code_at(member).await.map_err(|e| {
+        wallet_err_json(
+            "RPC_CODE",
+            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
+            None,
+        )
+    })?;
+
+    if lane == UsernameSponsorLane::Bootstrap {
+        preflight_bootstrap_claim_userop_path(
+            &read_provider,
+            member,
+            to,
+            addrs.entry_point,
+            account_impl,
+            &calldata,
+            &execute_calldata,
+            code.as_ref(),
+        )
+        .await?;
+    }
 
     let nonce: U256 = eth_call_decode(
         &read_provider,
@@ -184,13 +201,6 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
     .await
     .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
 
-    let code = read_provider.get_code_at(member).await.map_err(|e| {
-        wallet_err_json(
-            "RPC_CODE",
-            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
-    })?;
     ensure_paymaster_7702_impl(&read_provider, addrs.pacto_global_paymaster, account_impl).await?;
     let eip7702_auth = resolve_eip7702_auth_for_sender(
         &read_provider,
@@ -648,91 +658,6 @@ fn eprintln_username_userop_context(
     );
 }
 
-/// Direct NFT `claim` as roster EOA (no 7702 / no `execute` wrapper). UserOp sim can still fail after this passes.
-async fn preflight_claim_eth_call<P: Provider>(
-    provider: &P,
-    member: Address,
-    nft: Address,
-    claim_calldata: &[u8],
-) -> Result<(), String> {
-    // BIP-340 verify is gas-heavy; leave headroom so OOG is not mistaken for empty revert.
-    const CLAIM_ETH_CALL_GAS: u64 = 8_000_000;
-    match eth_call_from(
-        provider,
-        nft,
-        Some(member),
-        Some(CLAIM_ETH_CALL_GAS),
-        claim_calldata.to_vec(),
-    )
-    .await
-    {
-        Ok(_) => Ok(()),
-        Err(e) => Err(wallet_err_from_claim_eth_call_failure(&e)),
-    }
-}
-
-/// Map a failed claim `eth_call` into a wallet error that keeps the revert selector when present.
-pub(crate) fn wallet_err_from_claim_eth_call_failure(raw_err: &str) -> String {
-    let redacted = crate::evm::wallet_security::redact_urls_in_text(raw_err);
-    let selector = extract_revert_selector(&redacted);
-    eprintln!(
-        "[pacto_wallet] claim eth_call preflight failed selector={} detail={}",
-        selector
-            .as_deref()
-            .map(|s| format!("0x{s}"))
-            .unwrap_or_else(|| "none".into()),
-        redacted
-    );
-    if let Some(sel) = selector.as_deref() {
-        if let Some((code, msg)) = classify_username_claim_revert(sel) {
-            return wallet_err_json(
-                code,
-                format!("{msg} (selector 0x{sel}). Detail: {redacted}"),
-                None,
-            );
-        }
-        return wallet_err_json(
-            "USERNAME_CLAIM_REVERTED",
-            format!(
-                "claim() eth_call reverted with selector 0x{sel} (NFT-side; not EIP-7702/UserOp). Detail: {redacted}"
-            ),
-            None,
-        );
-    }
-    wallet_err_json(
-        "USERNAME_CLAIM_REVERTED",
-        format!(
-            "claim() eth_call reverted with empty or unknown data (unexpected for typed NFT errors). Detail: {redacted}"
-        ),
-        None,
-    )
-}
-
-/// NFT custom-error selectors → structured wallet codes (Layer 1).
-fn classify_username_claim_revert(sel: &str) -> Option<(&'static str, &'static str)> {
-    match sel {
-        "356848bf" => Some(("USERNAME_INVALID_NAME", "claim rejected: invalid name / empty pubkey")),
-        "a08dc9f6" => Some(("USERNAME_TAKEN", "claim rejected: name unavailable")),
-        "87e0b147" => Some(("USERNAME_NPUB_CLAIMED", "claim rejected: npub already claimed")),
-        "057e4afc" => Some(("ALREADY_CLAIMED", "claim rejected: address already claimed")),
-        "b2613b41" => Some((
-            "USERNAME_INVALID_EVM_SIG",
-            "claim rejected: invalid EIP-712 ClaimBinding signature",
-        )),
-        "8bb09e51" => Some(("USERNAME_INVALID_NPUB_HASH", "claim rejected: npubHash ≠ sha256(0x02||pubkey)")),
-        "bb8d46ae" => Some((
-            "USERNAME_INVALID_NOSTR_SIG",
-            "claim rejected: invalid BIP-340 Nostr claim signature",
-        )),
-        "97276890" => Some((
-            "USERNAME_BINDING_EXPIRED",
-            "claim rejected: issuedAt outside chain clock window (±5m / 7d)",
-        )),
-        "8dd24e09" => Some(("USERNAME_NONCE_USED", "claim rejected: nonce already used")),
-        _ => None,
-    }
-}
-
 async fn ensure_paymaster_7702_impl<P: Provider>(
     provider: &P,
     paymaster: Address,
@@ -766,7 +691,7 @@ pub(crate) fn eip7702_delegation_impl(code: &[u8]) -> Option<Address> {
     Some(Address::from_slice(&code[3..23]))
 }
 
-/// Empty code → sign 7702 auth; already-delegated to `account_impl` → no auth; else fail closed.
+/// Empty code or stale delegation → sign 7702 auth; correct impl → no auth.
 async fn resolve_eip7702_auth_for_sender<P: Provider, S: Signer + Sync>(
     provider: &P,
     signer: &S,
@@ -775,43 +700,49 @@ async fn resolve_eip7702_auth_for_sender<P: Provider, S: Signer + Sync>(
     chain_id: u64,
     account_impl: Address,
 ) -> Result<Option<Value>, String> {
-    if code.is_empty() {
-        let eoa_nonce = provider.get_transaction_count(member).await.map_err(|e| {
-            wallet_err_json(
-                "RPC_NONCE",
-                crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
+    let needs_auth = match eip7702_delegation_impl(code) {
+        None if code.is_empty() => true,
+        None => {
+            return Err(wallet_err_json(
+                "USERNAME_7702_SENDER",
+                format!(
+                    "roster EOA {member:#x} has non-empty code (len {}) that is not an EIP-7702 stub; sponsored UserOp execute cannot run",
+                    code.len()
+                ),
                 None,
-            )
-        })?;
-        let auth = sign_eip7702_authorization(signer, chain_id, account_impl, eoa_nonce).await?;
-        return Ok(Some(auth));
+            ));
+        }
+        Some(impl_addr) if impl_addr == account_impl => false,
+        Some(_stale) => {
+            eprintln!(
+                "[pacto_wallet] username eip7702_auth=upgrade member={:#x} stale_impl→{:#x}",
+                member,
+                account_impl
+            );
+            true
+        }
+    };
+    if !needs_auth {
+        return Ok(None);
     }
-    match eip7702_delegation_impl(code) {
-        Some(impl_addr) if impl_addr == account_impl => Ok(None),
-        Some(impl_addr) => Err(wallet_err_json(
-            "USERNAME_7702_SENDER",
-            format!(
-                "roster EOA already delegates via EIP-7702 to {impl_addr:#x}, expected {account_impl:#x}; clear unexpected code or use a fresh roster key"
-            ),
+    let eoa_nonce = provider.get_transaction_count(member).await.map_err(|e| {
+        wallet_err_json(
+            "RPC_NONCE",
+            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
             None,
-        )),
-        None => Err(wallet_err_json(
-            "USERNAME_7702_SENDER",
-            format!(
-                "roster EOA {member:#x} has non-empty code (len {}) that is not an EIP-7702 stub; sponsored UserOp execute cannot run",
-                code.len()
-            ),
-            None,
-        )),
-    }
+        )
+    })?;
+    let auth = sign_eip7702_authorization(signer, chain_id, account_impl, eoa_nonce).await?;
+    Ok(Some(auth))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        assert_lane_matches_selector, eip7702_delegation_impl, wallet_err_from_claim_eth_call_failure,
-        UsernameSponsorLane, CLAIM_USERNAME_SELECTOR,
+        assert_lane_matches_selector, eip7702_delegation_impl, UsernameSponsorLane,
+        CLAIM_USERNAME_SELECTOR,
     };
+    use crate::evm::username_claim_preflight::wallet_err_from_claim_eth_call_failure;
     use alloy::primitives::address;
 
     #[test]
