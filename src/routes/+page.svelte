@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Component } from 'svelte';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import Navbar from '../components/layout/Navbar.svelte';
@@ -9,9 +8,8 @@
   import PersonalBroadcastModal from '../components/commons/PersonalBroadcastModal.svelte';
   import UpdateAvailableModal from '../components/updater/UpdateAvailableModal.svelte';
   import ParentNavbar from '../components/layout/ParentNavbar.svelte';
-  import ParentDashboard from '../components/parent/ParentDashboard.svelte';
-  import SquadSettingsView from '../components/parent/SquadSettingsView.svelte';
-    import Profile from '../components/profile/Profile.svelte';
+  import SquadHubMain from '../components/layout/SquadHubMain.svelte';
+  import Profile from '../components/profile/Profile.svelte';
   import MessengerNavbar from '../components/dm/MessengerNavbar.svelte';
   import MessengerChatView from '../components/dm/MessengerChatView.svelte';
   import DmThread from '../components/dm/DmThread.svelte';
@@ -20,7 +18,6 @@
   import ResizableSidebar from '../components/ui/ResizableSidebar.svelte';
   import Toast from '../components/ui/Toast.svelte';
   import OnChainActivityChip from '../components/ui/OnChainActivityChip.svelte';
-  import { createLazyComponent } from '../lib/ui/lazy-svelte-component';
   import {
     getDmMessages,
     getChatMessageCount,
@@ -95,12 +92,7 @@
     pinnedDmNpubs,
     blockedDmNpubs,
     dmSendError,
-    SETTINGS_CHANNEL_ID,
-    SQUAD_WARGAME_CHANNEL_ID,
     isVirtualHubChannelId,
-    isSquadDashboardChromeChannelId,
-    treasurySafesByParentId,
-    squadInfraByParentId,
     type DmMessage,
     type DmTab,
     type DmEntry,
@@ -130,19 +122,13 @@
   } from '../lib/governance/api';
   import { withPactoGovProviderPayloadTxHash } from '../lib/governance/pacto-gov-payload';
   import {
-    rememberHubDashboard,
-    retainHubDashboardsForParent,
-    hubDashboardKeepAliveKey,
-    type HubDashboardKeepAlive,
-  } from '../lib/dashboard/hub-dashboard-keep-alive';
-  import {
     buildStandaloneSafeProviderPayload,
     isPactoGovTreasurySafe,
     pactoGovPayloadFromInfra,
   } from '../lib/governance/standalone-safe-payload';
   import { resolveAutomatedAnnounceGroupId, getAnnouncementsChannel } from '../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../lib/mls/virtual-channel-bucket';
-  import { resolveOpenHubParent, syncSquadsHubSelection, resolveEffectiveHubChannel, parentIdForChannelGroup } from '../lib/squad-hub-nav';
+  import { syncSquadsHubSelection, parentIdForChannelGroup } from '../lib/squad-hub-nav';
   import { portal } from '../lib/utils/portal';
   import { subscribeAppEvents } from '../lib/app/tauri-subscriptions';
   import { backupVerificationModalOpen } from '../stores/backup-verification';
@@ -150,10 +136,8 @@
   import BackupBanner from '../components/backup/BackupBanner.svelte';
   import {
     scheduleAllSquadsHubWarmup,
-    scheduleHubParentPrefetch,
     ensureMlsAutomationReplayed,
   } from '../lib/app/hub-prefetch';
-  import { scheduleDashboardPrefetch } from '../lib/app/dashboard-prefetch';
   import {
     syncSquadInfraForParent as mergeSquadInfraForParent,
     syncTreasurySafesForParent as mergeTreasurySafesForParent,
@@ -168,68 +152,6 @@
   import { declineWelcomeForGroup } from '../lib/invites/pending-welcomes-store';
   import { clearPendingSquadAdmissionByGroupId } from '../stores/pending-squad-admission';
   import { parseSquadInviteMessage } from '../lib/api/nostr';
-
-  const loadChatView = createLazyComponent(() => import('../components/channel/ChatView.svelte'));
-
-  let ChatViewComponent: Component | null = null;
-  let chatViewLoadToken = 0;
-
-  $: openHubParent = resolveOpenHubParent($squads, $activeSquadId);
-  $: effectiveHubChannel = (() => {
-    void $squadInfraByParentId;
-    return resolveEffectiveHubChannel(
-      openHubParent,
-      $activeChannelId,
-      $lastChannelBySquadId,
-      $lastHubChannelNameBySquadId,
-    );
-  })();
-
-  $: showParentDashboard =
-    openHubParent != null &&
-    (!effectiveHubChannel.channelId ||
-      isSquadDashboardChromeChannelId(effectiveHubChannel.channelId));
-  $: currentHubWarGame = effectiveHubChannel.channelId === SQUAD_WARGAME_CHANNEL_ID;
-  $: currentHubDashboardKey = openHubParent
-    ? hubDashboardKeepAliveKey(openHubParent.id, currentHubWarGame)
-    : '';
-  let visitedHubDashboards: HubDashboardKeepAlive[] = [];
-  $: if (openHubParent) {
-    visitedHubDashboards = showParentDashboard
-      ? rememberHubDashboard(visitedHubDashboards, openHubParent.id, currentHubWarGame)
-      : retainHubDashboardsForParent(visitedHubDashboards, openHubParent.id);
-  } else if (visitedHubDashboards.length > 0) {
-    visitedHubDashboards = [];
-  }
-  $: showSquadSettings =
-    openHubParent != null && effectiveHubChannel.channelId === SETTINGS_CHANNEL_ID;
-  $: showMlsChatView =
-    openHubParent != null &&
-    !!effectiveHubChannel.channelId &&
-    !isVirtualHubChannelId(effectiveHubChannel.channelId);
-
-  $: if ($activeTopNavTab === 'squads' && $squads.length > 0) {
-    void $squadInfraByParentId;
-    syncSquadsHubSelection();
-  }
-
-  $: if (
-    $activeTopNavTab === 'squads' &&
-    openHubParent &&
-    effectiveHubChannel.channelId &&
-    ($activeChannelId !== effectiveHubChannel.channelId ||
-      $activeHubChannelName !== effectiveHubChannel.hubChannelName)
-  ) {
-    activeChannelId.set(effectiveHubChannel.channelId);
-    activeHubChannelName.set(effectiveHubChannel.hubChannelName);
-  }
-
-  $: if (showMlsChatView) {
-    const token = ++chatViewLoadToken;
-    void loadChatView().then((component) => {
-      if (token === chatViewLoadToken) ChatViewComponent = component;
-    });
-  }
 
   const PAGE_SIZE = 100;
 
@@ -470,15 +392,6 @@
     await mergeSquadInfraForParent(params.parentId);
   }
 
-  $: dashboardParentId = isSquadDashboardChromeChannelId(effectiveHubChannel.channelId)
-    ? openHubParent?.id ?? null
-    : null;
-  $: if ($activeTopNavTab === 'squads' && openHubParent) {
-    scheduleHubParentPrefetch(openHubParent);
-  }
-  $: if (dashboardParentId && openHubParent) {
-    scheduleDashboardPrefetch(openHubParent);
-  }
   $: if ($isAuthenticated && $currentUser && $squads.length > 0) {
     scheduleAllSquadsHubWarmup($squads);
   }
@@ -1111,97 +1024,55 @@
       {:else}
         <div class="parent-area">
           <ParentNavbar />
-          <div class="parent-main">
-          {#if openHubParent && visitedHubDashboards.length > 0}
-            {#each visitedHubDashboards as hub (hub.key)}
-              <div
-                class="hub-dashboard-keep-alive"
-                hidden={!(showParentDashboard && currentHubDashboardKey === hub.key)}
-              >
-              <ParentDashboard
-              parent={openHubParent}
-              warGameStack={hub.warGameStack}
-              treasurySafes={$treasurySafesByParentId[openHubParent.id] ?? []}
-              squadInfraRows={(() => {
-                const id = openHubParent.id;
-                return Object.prototype.hasOwnProperty.call($squadInfraByParentId, id)
-                  ? ($squadInfraByParentId[id] ?? [])
-                  : undefined;
-              })()}
-              onConfirmImportSafe={async (params: {
-                safeAddress: string;
-                chain: string;
-                label: string;
-                entryId: string;
-                txHash?: string;
-              }) => {
-                const p = openHubParent;
-                await addParentTreasurySafe(p.id, params.safeAddress, {
+          <SquadHubMain
+            onConfirmImportSafe={async (p, params) => {
+              await addParentTreasurySafe(p.id, params.safeAddress, {
+                chain: params.chain,
+                label: params.label,
+                entryId: params.entryId,
+              });
+              try {
+                await syncGovernanceAfterTreasurySafe(p, {
+                  safeAddress: params.safeAddress,
                   chain: params.chain,
-                  label: params.label,
                   entryId: params.entryId,
+                  label: params.label,
+                  txHash: params.txHash,
                 });
-                try {
-                  await syncGovernanceAfterTreasurySafe(p, {
-                    safeAddress: params.safeAddress,
-                    chain: params.chain,
-                    entryId: params.entryId,
-                    label: params.label,
-                    txHash: params.txHash,
-                  });
-                } catch (e) {
-                  showToast(getInvokeErrorMessage(e, 'Treasury saved but governance sync failed.'));
-                }
-                const gid = resolveAutomatedAnnounceGroupId(p);
-                if (gid) {
-                  const chainKey = parseSupportedChainId(params.chain);
-                  const txHex = params.txHash?.trim();
-                  const explorerTxUrl =
-                    txHex && txHex.length > 0 ? getExplorerTxUrl(chainKey, txHex) : null;
-                  await sendDmMessage(
-                    gid,
-                    buildAnnounceContent({
-                      type: ANNOUNCE_TYPE_SAFE_UPDATED,
-                      payload: {
-                        squad_id: p.id,
-                        safe_address: params.safeAddress,
-                        chain: params.chain,
-                        label: params.label || undefined,
-                        entry_id: params.entryId,
-                        tx_hash: txHex || undefined,
-                        explorer_tx_url: explorerTxUrl ?? undefined,
-                      },
-                    }),
-                    '',
-                    { virtualBucket: 'inbox' },
-                  );
-                }
-                await mergeTreasurySafesForParent(p.id);
-                await mergeSquadInfraForParent(p.id);
-              }}
-              onPactoGovDeployComplete={finalizePactoGovDeploy}
-              onSponsorDeployComplete={finalizeSponsorDeploy}
-              onSquadAdminDeployComplete={finalizeSquadAdminDeploy}
-            />
-              </div>
-            {/each}
-          {/if}
-          {#if showSquadSettings && openHubParent}
-            {#key `${openHubParent.id}:${SETTINGS_CHANNEL_ID}`}
-              <SquadSettingsView parent={openHubParent} />
-            {/key}
-          {:else if showMlsChatView}
-            {#if ChatViewComponent}
-              <svelte:component this={ChatViewComponent} />
-            {:else}
-              <p class="surface-loading muted" role="status">{$t('app.loading.channel')}</p>
-            {/if}
-          {:else if $activeSquadId && !openHubParent}
-            <p class="surface-loading muted" role="status">{$t('app.loading.squad')}</p>
-          {:else if !showParentDashboard}
-            <p class="surface-loading muted" role="status">{$t('app.selectSquadChannel')}</p>
-          {/if}
-          </div>
+              } catch (e) {
+                showToast(getInvokeErrorMessage(e, 'Treasury saved but governance sync failed.'));
+              }
+              const gid = resolveAutomatedAnnounceGroupId(p);
+              if (gid) {
+                const chainKey = parseSupportedChainId(params.chain);
+                const txHex = params.txHash?.trim();
+                const explorerTxUrl =
+                  txHex && txHex.length > 0 ? getExplorerTxUrl(chainKey, txHex) : null;
+                await sendDmMessage(
+                  gid,
+                  buildAnnounceContent({
+                    type: ANNOUNCE_TYPE_SAFE_UPDATED,
+                    payload: {
+                      squad_id: p.id,
+                      safe_address: params.safeAddress,
+                      chain: params.chain,
+                      label: params.label || undefined,
+                      entry_id: params.entryId,
+                      tx_hash: txHex || undefined,
+                      explorer_tx_url: explorerTxUrl ?? undefined,
+                    },
+                  }),
+                  '',
+                  { virtualBucket: 'inbox' },
+                );
+              }
+              await mergeTreasurySafesForParent(p.id);
+              await mergeSquadInfraForParent(p.id);
+            }}
+            onPactoGovDeployComplete={finalizePactoGovDeploy}
+            onSponsorDeployComplete={finalizeSponsorDeploy}
+            onSquadAdminDeployComplete={finalizeSquadAdminDeploy}
+          />
         </div>
       {/if}
     </div>
@@ -1258,36 +1129,6 @@
     min-height: 0;
     display: flex;
     flex-direction: row;
-  }
-
-  .parent-main {
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .hub-dashboard-keep-alive {
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .hub-dashboard-keep-alive[hidden] {
-    display: none;
-  }
-
-  .surface-loading {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--text-muted);
   }
 
   .dm-area {

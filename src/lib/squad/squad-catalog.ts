@@ -11,7 +11,26 @@ import type { PairedSquads, SquadKind, SquadVisibility } from '../squad-pair';
 import { restoreSquadsHubSelection } from '../squad-hub-nav';
 import { squadNavOrder } from '../../stores/navigation';
 import { reconcileSquadNavOrder, replaceSquadNavId, appendSquadNavId } from './squad-nav-order';
+import { channelDefaultsFromSquad, remapActiveSquadNavigation } from './squad-navigation';
 import { dmError } from '../utils/dm-debug';
+
+function isInFlightSquadId(id: string): boolean {
+  return id.startsWith('creating-squad-') || id.startsWith('creating-squad-pair-');
+}
+
+function inFlightSquads(list: Squad[]): Squad[] {
+  return list.filter((s) => isInFlightSquadId(s.id));
+}
+
+function mergeListedWithInFlight(listed: Squad[], inFlight: Squad[]): Squad[] {
+  if (inFlight.length === 0) return listed;
+  const listedIds = new Set(listed.map((s) => s.id));
+  const merged = [...listed];
+  for (const placeholder of inFlight) {
+    if (!listedIds.has(placeholder.id)) merged.push(placeholder);
+  }
+  return merged;
+}
 
 interface SquadChannelWire {
   name: string;
@@ -130,10 +149,15 @@ async function listSquadsWithRetry(): Promise<Squad[] | null> {
 
 /** Load squads from SQLite into the store; restores hub selection after prefs are loaded. */
 export async function hydrateSquadsFromDb(): Promise<void> {
+  const inFlight = inFlightSquads(get(squads));
   const listed = await listSquadsWithRetry();
   if (listed) {
-    squads.set(listed);
-    squadNavOrder.update((order) => reconcileSquadNavOrder(order, listed));
+    const merged = mergeListedWithInFlight(listed, inFlight);
+    squads.set(merged);
+    squadNavOrder.update((order) => reconcileSquadNavOrder(order, merged));
+  } else if (inFlight.length > 0) {
+    squads.set(inFlight);
+    squadNavOrder.update((order) => reconcileSquadNavOrder(order, inFlight));
   } else {
     squads.set([]);
     squadNavOrder.update((order) => reconcileSquadNavOrder(order, []));
@@ -165,6 +189,7 @@ export async function persistCreatedSquad(tempId: string, squad: Squad): Promise
   const saved = await persistSquad(squad);
   squads.update((list) => list.filter((s) => s.id !== tempId));
   squadNavOrder.update((order) => replaceSquadNavId(order, tempId, saved.id));
+  remapActiveSquadNavigation(tempId, saved.id, channelDefaultsFromSquad(saved));
   return saved;
 }
 

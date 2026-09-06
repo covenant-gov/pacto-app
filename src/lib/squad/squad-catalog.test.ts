@@ -314,4 +314,20 @@ describe('squad-catalog', () => {
     expect(get(squads).map((s) => s.id)).toEqual(['grp-real']);
     expect(get(squadNavOrder)).toEqual(['grp-real']);
   });
+
+  it('hydrateSquadsFromDb preserves in-flight create placeholders', async () => {
+    squads.set([
+      {
+        id: 'creating-squad-99',
+        name: 'Pending',
+        channels: [],
+        kind: 'squad',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    vi.mocked(invoke).mockResolvedValue([]);
+    await hydrateSquadsFromDb();
+    expect(get(squads).map((s) => s.id)).toEqual(['creating-squad-99']);
+  });
 });
