@@ -219,6 +219,54 @@ pub async fn global_gov_module_path_ok<P: Provider>(
     global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei).await
 }
 
+/// Hard preflight before a global gov-module UserOp (router uses the soft `*_ok` probes).
+pub async fn assert_global_gov_module_preflight<P: Provider>(
+    provider: &P,
+    addrs: &GlobalUsernameSponsorAddresses,
+    member: Address,
+    module: Address,
+    estimated_max_cost_wei: U256,
+) -> Result<EligibleMember, String> {
+    let eligible = read_eligible_member(provider, addrs.pacto_username_nft, member)
+        .await?
+        .ok_or_else(|| {
+            wallet_err_json(
+                "USERNAME_LANE",
+                "member is not an eligible username holder for global sponsorship",
+                None,
+            )
+        })?;
+    let status =
+        gov_module_tophat_status(provider, addrs.sponsor_policy_registry, module).await?;
+    if !gov_module_tophat_ok(status) {
+        return Err(wallet_err_json(
+            "SPONSOR_POLICY_READ",
+            format!("gov module {module:#x} is not sponsored under a registered topHat"),
+            None,
+        ));
+    }
+    if !policy_version_fresh(provider, addrs.sponsor_policy_registry, addrs.policy_version).await? {
+        return Err(wallet_err_json(
+            "USERNAME_POLICY_STALE",
+            format!(
+                "local catalog policyVersion {} is behind on-chain registry",
+                addrs.policy_version
+            ),
+            None,
+        ));
+    }
+    if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei)
+        .await?
+    {
+        return Err(wallet_err_json(
+            "USERNAME_POOL_LOW",
+            "global sponsor pool spendable balance is below required headroom",
+            None,
+        ));
+    }
+    Ok(eligible)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

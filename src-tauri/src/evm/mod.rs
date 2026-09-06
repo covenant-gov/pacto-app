@@ -12,6 +12,7 @@ pub mod global_paymaster;
 pub mod global_sponsor_userop;
 pub mod gov_module_write;
 pub mod gov_read;
+pub mod gov_sponsor_path;
 pub mod hats_read;
 pub mod member_governance_read;
 pub mod mutiny_ops;
