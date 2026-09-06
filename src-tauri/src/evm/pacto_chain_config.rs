@@ -515,7 +515,7 @@ mod tests {
         let gov = pacto_gov_deploy_addresses("sepolia").expect("gov book");
         assert_eq!(
             gov.nave_pirata_factory,
-            address!("0xba54955cF9eab7F546c3a1c1fCE2584996626ef0")
+            address!("0xd540B03A83d3Fc78922cAb9742e67B8B272bC2b9")
         );
         assert_eq!(
             gov.nave_pirata_registry,
@@ -556,7 +556,7 @@ mod tests {
         );
         assert_eq!(
             g.sponsor_policy_registry,
-            address!("0xd479edB2cfE051310553716d8628c92C81cBD0db")
+            address!("0x1350F096FA383e0D73C02fc13797F207295ef248")
         );
         assert_eq!(
             g.bootstrap_claim_policy,
@@ -570,7 +570,7 @@ mod tests {
             g.nostr_claim_link,
             address!("0xCc0de30d2926995FB6458De7808E41E2a17B0e29")
         );
-        assert_eq!(g.policy_version, 3);
+        assert_eq!(g.policy_version, 4);
         assert_eq!(
             g.entry_point,
             address!("0x0000000071727De22E5E9d8BAf0edAc6f37da032")

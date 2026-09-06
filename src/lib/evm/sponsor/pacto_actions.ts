@@ -22,7 +22,7 @@ export type PactoAction = {
 };
 
 /** Local catalog version; bump when member-policy selectors change. */
-export const PACTO_ACTIONS_POLICY_VERSION = 3 as const;
+export const PACTO_ACTIONS_POLICY_VERSION = 4 as const;
 
 export const PACTO_ACTIONS: readonly PactoAction[] = [
   {

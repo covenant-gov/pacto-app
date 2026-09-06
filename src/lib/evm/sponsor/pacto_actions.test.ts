@@ -9,7 +9,7 @@ import {
 
 describe('pacto_actions', () => {
   it('pins catalog policyVersion to the Sepolia address book', () => {
-    expect(PACTO_ACTIONS_POLICY_VERSION).toBe(3);
+    expect(PACTO_ACTIONS_POLICY_VERSION).toBe(4);
     expect(bookPolicyVersion('sepolia')).toBe(PACTO_ACTIONS_POLICY_VERSION);
   });
 
@@ -32,12 +32,13 @@ describe('pacto_actions', () => {
   });
 
   it('assertCatalogPolicyVersion allows equal or newer local catalog', () => {
+    expect(() => assertCatalogPolicyVersion(4)).not.toThrow();
     expect(() => assertCatalogPolicyVersion(3)).not.toThrow();
     expect(() => assertCatalogPolicyVersion(2)).not.toThrow();
-    expect(() => assertCatalogPolicyVersion(3n)).not.toThrow();
+    expect(() => assertCatalogPolicyVersion(4n)).not.toThrow();
   });
 
   it('assertCatalogPolicyVersion fails when local catalog is behind', () => {
-    expect(() => assertCatalogPolicyVersion(4)).toThrowError(/behind on-chain 4/);
+    expect(() => assertCatalogPolicyVersion(5)).toThrowError(/behind on-chain 5/);
   });
 });

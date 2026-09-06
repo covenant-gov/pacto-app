@@ -1,5 +1,5 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/full-system.json (de1e0c0). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor SS-3 cutover deployments/11155111/full-system.json (factory 0x9F6b1936… / PM 0xD84337C1…); navePirataRegistry matches pacto-gov (not the sponsor artifact’s registry). Sepolia globalUsernameSponsor: pacto-username-nft deployments/11155111/full-system.json (APP-1 / pacto-app#377; NFT 0x09e08dB9…, policy registry 0xd479edB2…). EIP-7702: pacto-aa deployments/11155111/eip7702-account.json (0x2E9156de…).",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/infra.json (pacto-gov#37; factory 0xd540B03A…). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor SS-3 cutover deployments/11155111/full-system.json (factory 0x9F6b1936… / PM 0xD84337C1…); navePirataRegistry matches pacto-gov (not the sponsor artifact’s registry). Sepolia globalUsernameSponsor: pacto-username-nft policy v2 cutover (registry 0x1350F096…, policyVersion 4). EIP-7702: pacto-aa deployments/11155111/eip7702-account.json (0x2E9156de…).",
   "version": 1,
   "networks": {
     "sepolia": {
@@ -13,11 +13,11 @@
         "pactoUsernameNft": "0x09e08dB9B4275979Bb2aE8C86f3bB5d406c120d1",
         "globalSponsorPool": "0x4EfeE104cF969bF70F342DFCd234f73A3bebEbeD",
         "bootstrapMintPool": "0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B",
-        "sponsorPolicyRegistry": "0xd479edB2cfE051310553716d8628c92C81cBD0db",
+        "sponsorPolicyRegistry": "0x1350F096FA383e0D73C02fc13797F207295ef248",
         "bootstrapClaimPolicy": "0x2BAC17B2aE2aA068bEa3064A3553EDee5D60aB6e",
         "pactoGlobalPaymaster": "0x04Fc205adA4c0c5C5024546E87972C4c4bB30D0F",
         "nostrClaimLink": "0xCc0de30d2926995FB6458De7808E41E2a17B0e29",
-        "policyVersion": 3,
+        "policyVersion": 4,
         "allowed7702Implementation": "0x2E9156deE65d7946305C334824e2648Ff9128f45",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
       },
@@ -28,7 +28,7 @@
         "navePirataRegistry": "0xf6747bE3425139FCe92B67fA482331D7435bd483"
       },
       "pactoGov": {
-        "navePirataFactory": "0xba54955cF9eab7F546c3a1c1fCE2584996626ef0",
+        "navePirataFactory": "0xd540B03A83d3Fc78922cAb9742e67B8B272bC2b9",
         "navePirataRegistry": "0xf6747bE3425139FCe92B67fA482331D7435bd483",
         "warGameRegistry": "0xE415A9290964ce40f58c6f1B15183cAE565471e7",
         "masterQuartermaster": "0xFDA42686358503Cf89Bc94f6BD108CB4Af274d74",
