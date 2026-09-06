@@ -224,6 +224,7 @@ fn is_soft_sponsor_config_error(err: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::evm::gov_sponsor_path::{select_gov_sponsor_path, GovSponsorPath};
     use super::*;
 
     #[test]
@@ -231,5 +232,25 @@ mod tests {
         let soft = |code: &str| format!(r#"{{"code":"{code}","message":"x"}}"#);
         assert!(is_soft_sponsor_config_error(&soft("BUNDLER_CONFIG")));
         assert!(!is_soft_sponsor_config_error(&soft("INSUFFICIENT_FUNDS")));
+    }
+
+    #[test]
+    fn factory_router_skips_squad_arm() {
+        assert_eq!(
+            select_gov_sponsor_path(true, false, true, true),
+            GovSponsorPath::GlobalTopHat
+        );
+        assert_eq!(
+            select_gov_sponsor_path(true, false, false, true),
+            GovSponsorPath::Eoa
+        );
+        assert_eq!(
+            select_gov_sponsor_path(false, false, false, true),
+            GovSponsorPath::Eoa
+        );
+        assert_eq!(
+            select_gov_sponsor_path(false, false, true, false),
+            GovSponsorPath::Fail
+        );
     }
 }

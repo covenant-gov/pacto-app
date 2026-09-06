@@ -98,4 +98,26 @@ mod tests {
             GovSponsorPath::Fail
         );
     }
+
+    /// `squad_path_ok` is parent-scoped. Guest eligibility on parent A's clone must not
+    /// enable the squad arm when the write/deploy targets parent B without B sponsor infra.
+    #[test]
+    fn cross_squad_isolation_parent_b_without_sponsor_uses_global_not_squad_a() {
+        assert_eq!(
+            select_gov_sponsor_path(true, false, true, true),
+            GovSponsorPath::GlobalTopHat
+        );
+        assert_eq!(
+            select_gov_sponsor_path(true, false, true, false),
+            GovSponsorPath::GlobalTopHat
+        );
+        assert_ne!(
+            select_gov_sponsor_path(true, false, true, true),
+            GovSponsorPath::Squad
+        );
+        assert_eq!(
+            select_gov_sponsor_path(true, false, false, false),
+            GovSponsorPath::Fail
+        );
+    }
 }

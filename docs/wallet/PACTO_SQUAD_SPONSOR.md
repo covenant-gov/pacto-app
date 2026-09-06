@@ -18,19 +18,32 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 
 **On-chain squad key:** `squadId = keccak256(utf8(parent_id))` where `parent_id` is the squad or network root id in the app.
 
-**Default path:** Launchpad **Deploy Pacto Gov + squad sponsor** — Nave Pirata first, then `createSquadSponsor(squadId, topHatId, registry, [])` so eligibility is captain/crew hat wearers. Optional `bootstrapCrew` in the same wizard. If gov already exists and sponsor is missing, the same wizard finishes hats sponsor only (empty parent slot → `createSquadSponsor`; already-wired Ext or a hats clone stays `ALREADY_DEPLOYED`).
+**Default path:** Launchpad **Deploy Pacto Gov + squad sponsor** — Nave Pirata first, then `createSquadSponsor(squadId, topHatId, registry, [])` so eligibility is captain/crew hat wearers. **Initial pool deposit is optional (0 ETH)** — fund later from Governance → Sponsor treasury. Optional `bootstrapCrew` in the same wizard. If gov already exists and sponsor is missing, the same wizard finishes hats sponsor only (empty parent slot → `createSquadSponsor`; already-wired Ext or a hats clone stays `ALREADY_DEPLOYED`).
 
 **Advanced Ext:** Launchpad / Advanced **Deploy squad sponsor (Ext)** — `createSquadSponsorExt(squadId, addressOwner)` with `addressOwner` = roster EVM; gas/deposit may come from Default. An unwired Ext can later hats-wire via `postInitialize` onto NavePirataRegistry. War-game deploy does **not** create that parent Ext.
 
-## Sponsored UserOps (gov writes)
+## Sponsored gas (gov writes + eligible factory deploys)
 
-**Who pays gas?** For post-deploy gov module writes (`gov_module_write`), Pacto checks whether the **squad roster key** can cover the tx:
+### Gov module writes
 
-1. **Roster has enough ETH** → send a normal EOA transaction (user pays gas).
-2. **Roster cannot cover gas** (and a squad sponsor is deployed) → build a sponsored EntryPoint v0.7 UserOp; the squad’s paymaster / pool pays gas instead.
-3. **No ETH and no sponsor / bundler config** → write fails (`SPONSOR_PATH_UNAVAILABLE` or similar).
+**Who pays gas?** For post-deploy gov module writes (`gov_module_write`), Pacto routes by eligibility and parent-scoped infra:
 
-Deploy and deposit themselves are **not** sponsored — only those gov writes. See also [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) (Sponsored gov writes).
+1. **Eligible username member** (`eligibleMember`): **squad pool (this parent)** → **global topHat pool** → **EOA** → fail (`SPONSOR_PATH_UNAVAILABLE`).
+2. **Non-eligible:** **EOA** when funded → **squad pool** when roster is broke and sponsor exists → fail.
+
+Squad sponsorship is **per-parent** — guest eligibility on squad A never bills squad A for operations in squad B.
+
+### Factory deploys
+
+`deploy_gas_router` uses the same eligible-member ordering with **no squad arm** (factories bill global topHat when eligible, else EOA). `msg.value` on create calls (optional squad sponsor deposit) still requires signer ETH; gas may be globally sponsored. Initial sponsor deposit **may be zero**; fund the clone pool later via Treasury.
+
+Deploy modules wired: Nave Pirata, hats/ext squad sponsor, squad admin standalone, war-game sponsor, Safe proxy (when `parent_id` is set for roster/global path).
+
+See [USERNAME_NFT.md](./USERNAME_NFT.md) (global topHat tiers) and [OPERATOR_SMOKE.md §11](./OPERATOR_SMOKE.md#11-zero-eth-username-onboarding-global-tophat).
+
+### Legacy note (pre–topHat router)
+
+Previously only gov writes could fall back to squad UserOps; deploy always required payer ETH. That v1 limitation is removed for eligible members with a funded global pool.
 
 **Wallet model:** Pacto signs with the embedded **roster EOA** only. There is no “pick EOA vs smart-contract wallet” switch and no support for an external SCW (e.g. Safe) as the roster signer. On the sponsored path, if that EOA still has empty code, the client attaches an **EIP-7702** authorization so the bundler can temporarily set-code it to a shared account implementation (AA-compatible `execute`). That is not a different wallet product — same key, temporary bytecode for the UserOp. If the address already has code, 7702 auth is skipped.
 
