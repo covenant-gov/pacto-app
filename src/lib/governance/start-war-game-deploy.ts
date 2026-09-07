@@ -84,8 +84,8 @@ export function startWarGameDeploy(params: {
   }
 
   const depositWei = params.initialDepositWei.trim();
-  if (!depositWei || depositWei === '0') {
-    const message = 'Enter an initial deposit greater than zero.';
+  if (depositWei && depositWei !== '0' && !/^\d+$/.test(depositWei)) {
+    const message = 'Enter a valid initial sponsor deposit (0 or more wei).';
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -120,7 +120,7 @@ export function startWarGameDeploy(params: {
         metadataUri: `pacto://squad/${parentId}/wargame`,
         altParentId,
         squadParams: params.squadParams ?? null,
-        initialDepositWei: depositWei,
+        initialDepositWei: depositWei && depositWei !== '0' ? depositWei : '0',
         signerWallet: params.signerWallet ?? 'default',
       }),
     onSuccess: async (result) => {

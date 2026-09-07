@@ -89,6 +89,18 @@ Squad Admin executor flags (`FULL`, `PAUSE`, custom tags) appear on the capabili
 
 Do not require deployer EVM == roster owner. Default may fund; hats and Ext ownership stay on the roster address.
 
+### Deploy launchpad scenarios
+
+| Scenario | Sponsor deploy | Pacto Gov deploy | Wire Ext sponsor |
+|----------|----------------|------------------|------------------|
+| **A — Gov first** | Any parent member may deploy hats-linked sponsor | N/A (already deployed) | N/A |
+| **B — Admin Ext first** | Per A/C once gov exists | **`SquadAdminExt.owner` only** | N/A until gov + unwired Ext |
+| **C — Sponsor Ext first** | Ext create: any member before gov | **`SquadSponsorExt.addressOwner` only** | **`addressOwner` only** after gov |
+
+After Pacto Gov is deployed, Ext-first create paths are closed; unwired Ext sponsors wire via `postInitialize` (gas eligibility migrates address → hats on-chain — no app migration step). Admin Ext stays address-gated after post-init into the gov hats tree.
+
+Launchpad enablement reads on-chain `owner()` / `addressOwner()` (fail-closed to payload only when RPC read fails).
+
 ## Sponsored gov writes (ERC-4337)
 
 **Gov module writes** (`send_gov_module_call` / `gov_module_write`): roster EOA when funded; else parent-scoped squad UserOp; for **eligible username members**, global topHat UserOp when squad path is unavailable for **this parent**; else fail closed.

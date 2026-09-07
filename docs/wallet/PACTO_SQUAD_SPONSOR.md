@@ -20,7 +20,7 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 
 **Default path:** Launchpad **Deploy Pacto Gov + squad sponsor** — Nave Pirata first, then `createSquadSponsor(squadId, topHatId, registry, [])` so eligibility is captain/crew hat wearers. **Initial pool deposit is optional (0 ETH)** — fund later from Governance → Sponsor treasury. Optional `bootstrapCrew` in the same wizard. If gov already exists and sponsor is missing, the same wizard finishes hats sponsor only (empty parent slot → `createSquadSponsor`; already-wired Ext or a hats clone stays `ALREADY_DEPLOYED`).
 
-**Advanced Ext:** Launchpad / Advanced **Deploy squad sponsor (Ext)** — `createSquadSponsorExt(squadId, addressOwner)` with `addressOwner` = roster EVM; gas/deposit may come from Default. An unwired Ext can later hats-wire via `postInitialize` onto NavePirataRegistry. War-game deploy does **not** create that parent Ext.
+**Advanced Ext:** Launchpad **Advanced → Deploy squad sponsor (Ext)** — `createSquadSponsorExt(squadId, addressOwner)` with `addressOwner` = roster EVM; any parent member may deploy before Pacto Gov exists. Gas/deposit may come from Default; initial deposit is optional. An unwired Ext can later hats-wire via `postInitialize` (**`addressOwner` only**). After Pacto Gov exists, any member may deploy a hats-linked sponsor on an empty slot (Scenario A). War-game deploy does **not** create that parent Ext.
 
 ## Sponsored gas (gov writes + eligible factory deploys)
 

@@ -9,7 +9,6 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Runtime};
 
-use super::access_control::{require_capability, GovCapability, GovStack};
 use super::contracts::pacto_sponsor::ISquadSponsorExt::{addressOwnerCall, hatsWiredCall};
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::{
     createSquadSponsorCall, createSquadSponsorExtCall, squadsCall,
@@ -35,8 +34,7 @@ use super::squad_sponsor_hats_wire::{hats_factory_slot, wire_parent_ext_hats, Ha
 use super::wallet_chain_config;
 use crate::db;
 
-/// Captain-gated. An unwired parent Ext is hats-wired via `postInitialize`, not a second create.
-const DEPLOY_REQUIRED_CAPABILITY: GovCapability = GovCapability::CaptainResign;
+/// Unwired parent Ext is hats-wired via `postInitialize`, not a second create.
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -269,16 +267,18 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
         ));
     }
     require_parent_member(&app, pid).await?;
-    require_capability(
-        &app,
-        pid,
-        DEPLOY_REQUIRED_CAPABILITY,
-        rpc_urls.clone(),
-        GovStack::Live,
-    )
-    .await?;
 
-    // Hats inputs validate against the persisted gov infra before any network work.
+    if matches!(variant, SponsorDeployVariant::Ext)
+        && db::parent_has_pacto_gov_infra_row(&app, pid).unwrap_or(false)
+    {
+        return Err(wallet_err_json(
+            "PACTO_GOV_EXISTS",
+            "Deploy Ext sponsor before Pacto Gov only.",
+            None,
+        ));
+    }
+
+    // Hats create: any parent member. Ext create: any parent member. Wire: owner check later.
     let hats_top_hat = match &variant {
         SponsorDeployVariant::Ext => None,
         SponsorDeployVariant::Hats { top_hat_id } => {
@@ -343,6 +343,18 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
         match hats_factory_slot(record.sponsor, record.variant, wired) {
             HatsFactorySlot::Empty => {}
             HatsFactorySlot::Wire => {
+                require_roster_treasury_signing_allowed(app.clone(), pid).await?;
+                let (roster_signer, _) =
+                    load_squad_roster_embedded_signer(app.clone(), pid).await?;
+                let owner = super::infra_owner::read_sponsor_address_owner(
+                    &read_provider,
+                    record.sponsor,
+                )
+                .await?;
+                super::infra_owner::require_roster_is_sponsor_owner(
+                    roster_signer.address(),
+                    owner,
+                )?;
                 return wire_parent_ext_hats(
                     app,
                     pid,
@@ -569,9 +581,7 @@ mod tests {
         already_deployed_onchain_err, checked_top_hat_id, onchain_variant_result_label,
         reconcile_payload_extras, resolve_hats_registry, sponsor_preflight_decision,
         sponsor_provider_payload, squad_id_from_parent_id, SponsorDeployVariant, SponsorPreflight,
-        DEPLOY_REQUIRED_CAPABILITY,
     };
-    use crate::evm::access_control::GovCapability;
     use crate::evm::contracts::pacto_sponsor::ISquadSponsorFactory::{
         createSquadSponsorCall, createSquadSponsorExtCall,
     };
@@ -588,11 +598,15 @@ mod tests {
     }
 
     #[test]
-    fn deploy_gate_is_captain_capability() {
-        // Both variants gate on the captain hat; a member-only Ext deploy would
-        // permanently block the hats-first path.
-        assert_eq!(DEPLOY_REQUIRED_CAPABILITY, GovCapability::CaptainResign);
-        assert_eq!(DEPLOY_REQUIRED_CAPABILITY.as_str(), "captainResign");
+    fn hats_and_ext_deploy_use_parent_member_gate_not_captain() {
+        assert_eq!(SponsorDeployVariant::Ext.result_label(), "ext");
+        assert_eq!(
+            SponsorDeployVariant::Hats {
+                top_hat_id: "1".to_string(),
+            }
+            .result_label(),
+            "hats"
+        );
     }
 
     #[test]

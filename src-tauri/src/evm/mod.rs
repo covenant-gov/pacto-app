@@ -15,6 +15,8 @@ pub mod gov_module_write;
 pub mod gov_read;
 pub mod gov_sponsor_path;
 pub mod hats_read;
+pub mod infra_owner;
+pub mod deploy_launchpad_state;
 pub mod member_governance_read;
 pub mod mutiny_ops;
 pub mod nave_pirata_deploy;

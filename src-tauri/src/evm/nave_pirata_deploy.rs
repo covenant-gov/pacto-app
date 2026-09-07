@@ -28,6 +28,9 @@ use super::rpc::{
     connect_read_provider, parse_address, parse_salt_nonce, wallet_err_json,
     wallet_err_json_with_tx_hash,
 };
+use super::infra_owner::{
+    require_roster_matches_owners_for_gov_deploy, resolve_ext_infra_owners_on_chain,
+};
 use super::squad_sponsor_common::{parse_signer_wallet, require_parent_member};
 use super::wallet_chain_config;
 use alloy::sol_types::SolEvent;
@@ -473,6 +476,19 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     };
 
     let read_provider = connect_read_provider(&urls).await?;
+    if let Ok(sponsor_addrs) = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key) {
+        let ext_owners = super::infra_owner::resolve_ext_infra_owners_on_chain(
+            &app,
+            pid,
+            &read_provider,
+            sponsor_addrs.squad_sponsor_factory,
+        )
+        .await?;
+        super::infra_owner::require_roster_matches_owners_for_gov_deploy(
+            captain_addr,
+            &ext_owners,
+        )?;
+    }
     let rpc_chain_id = read_provider.get_chain_id().await.map_err(|e| {
         wallet_err_json(
             "RPC_CHAIN_ID",

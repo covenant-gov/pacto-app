@@ -13,6 +13,7 @@
     PactoGovDeployComplete,
   } from '../../../lib/governance/start-pacto-gov-deploy';
   import type { CombinedGovSponsorDeployComplete } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
+  import type { LaunchpadRouteAction } from '../../../lib/governance/launchpad-cta';
   import { openSquadSettings } from '../../../lib/navigation/open-squad-dashboard';
   import ParentDashboardModals from './ParentDashboardModals.svelte';
 
@@ -28,10 +29,8 @@
     squadAdminNetwork?: SupportedChainId;
     /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
     squadNetwork?: SupportedChainId | null;
-    /** Sponsor clone address when sponsor infra is deployed. */
-    sponsorAddress?: string;
-    /** Pacto Gov reference (Safe / proxy / top hat) when deployed. */
-    pactoGovAddress?: string;
+    /** Ext sponsor exists but is not hats-wired yet (wire / finish path). */
+    sponsorUnwiredExt?: boolean;
     /** Top hat id of the deployed Pacto Gov row ('' before gov deploy). */
     pactoGovTopHatId?: string;
     quartermaster?: string;
@@ -87,8 +86,7 @@
     squadAdminProxy = '',
     squadAdminNetwork = DEFAULT_CHAIN_ID,
     squadNetwork = null,
-    sponsorAddress = '',
-    pactoGovAddress = '',
+    sponsorUnwiredExt = false,
     pactoGovTopHatId = '',
     quartermaster = '',
     memberEvmOptions = [],
@@ -116,8 +114,10 @@
   let setSafeError = $state('');
   let setSafeSaving = $state(false);
 
-  /** Combined wizard finishes the hats sponsor only when gov exists without a sponsor. */
-  const existingTopHatId = $derived(hasPactoGov && !hasSponsor ? pactoGovTopHatId : '');
+  /** Hats sponsor deploy or Ext wire when gov exists and sponsor is missing or unwired. */
+  const existingTopHatId = $derived(
+    hasPactoGov && (!hasSponsor || sponsorUnwiredExt) ? pactoGovTopHatId : '',
+  );
 
   export function openLaunchpad(): void {
     if (!requireBackupVerified()) return;
@@ -154,7 +154,7 @@
 
   export function openGovAndSponsorDeploy(): void {
     if (!requireBackupVerified()) return;
-    if (hasSponsor) {
+    if (hasSponsor && !sponsorUnwiredExt) {
       showToast(tFn('governance.squadSponsor.alreadyDeployed'));
       return;
     }
@@ -176,6 +176,26 @@
     }
     if (parentId?.trim()) {
       showExtSponsorDeploy = true;
+    }
+  }
+
+  function handleLaunchpadAction(action: LaunchpadRouteAction): void {
+    switch (action) {
+      case 'gov-and-sponsor':
+        openGovAndSponsorDeploy();
+        break;
+      case 'pacto-gov':
+        openPactoGovDeploy();
+        break;
+      case 'ext-sponsor':
+        openExtSponsorDeploy();
+        break;
+      case 'hats-sponsor':
+        openGovAndSponsorDeploy();
+        break;
+      case 'squad-admin':
+        openSquadAdminDeploy();
+        break;
     }
   }
 
@@ -356,15 +376,11 @@
   {parentId}
   {announcementsGroupId}
   {treasurySafeCount}
-  {hasSponsor}
-  {hasPactoGov}
-  {hasSquadAdmin}
   {warGameStack}
   {squadAdminProxy}
   {squadAdminNetwork}
   {squadNetwork}
-  {sponsorAddress}
-  {pactoGovAddress}
+  onLaunchpadAction={handleLaunchpadAction}
   {captainMemberOptions}
   {memberEvmOptions}
   {existingTopHatId}
@@ -391,10 +407,6 @@
   onCloseSquadRolesModal={() => (showSquadRolesModal = false)}
   onCloseSetSafe={closeSetSafeModal}
   onConfirmSetSafe={confirmSetSafe}
-  onDeploySquadAdmin={openSquadAdminDeploy}
-  onDeployPactoGov={openPactoGovDeploy}
-  onDeployGovAndSponsor={openGovAndSponsorDeploy}
-  onDeployExtSponsor={openExtSponsorDeploy}
   onDeploySafeSuccess={handleDeploySafeSuccess}
   onPactoGovComplete={handlePactoGovComplete}
   onGovAndSponsorComplete={handleGovAndSponsorComplete}

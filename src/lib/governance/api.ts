@@ -213,6 +213,54 @@ export interface SquadSponsorDeployResultDto {
   infraRowId: string;
 }
 
+export type LaunchpadDeployOptionId =
+  | 'full-gov'
+  | 'pacto-gov'
+  | 'sponsor-ext'
+  | 'sponsor-hats'
+  | 'sponsor-wire'
+  | 'squad-admin-ext';
+
+/** Mirrors `LaunchpadComponentStatus` from Tauri (`serde(rename_all = "camelCase")`). */
+export interface LaunchpadComponentStatusDto {
+  deployed: boolean;
+  deployedAddress?: string | null;
+  variant?: string | null;
+  addressOwner?: string | null;
+  owner?: string | null;
+  hatsWired?: boolean | null;
+}
+
+/** Mirrors `LaunchpadDeployOption` from Tauri (`serde(rename_all = "camelCase")`). */
+export interface LaunchpadDeployOptionDto {
+  id: LaunchpadDeployOptionId;
+  deployed: boolean;
+  enabled: boolean;
+  disabledReason?: string | null;
+  deployedAddress?: string | null;
+}
+
+/** Mirrors `SquadDeployLaunchpadState` from Tauri (`serde(rename_all = "camelCase")`). */
+export interface SquadDeployLaunchpadStateDto {
+  myRosterEvm: string | null;
+  pactoGov: LaunchpadComponentStatusDto;
+  sponsor: LaunchpadComponentStatusDto;
+  admin: LaunchpadComponentStatusDto;
+  options: LaunchpadDeployOptionDto[];
+}
+
+/** Backend: `get_squad_deploy_launchpad_state`. */
+export async function getSquadDeployLaunchpadState(params: {
+  parentId: string;
+  network: string;
+}): Promise<SquadDeployLaunchpadStateDto> {
+  return (await invoke('get_squad_deploy_launchpad_state', {
+    parentId: params.parentId.trim(),
+    network: params.network,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as SquadDeployLaunchpadStateDto;
+}
+
 /** Backend: `deploy_squad_sponsor_for_parent`. */
 export type SquadSponsorDeploySignerWallet = 'default' | 'squad';
 

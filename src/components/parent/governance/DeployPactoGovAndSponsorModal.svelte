@@ -33,12 +33,18 @@
   } from '../../../lib/governance/squad-params';
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
   import SquadRosterEvmGatePanel from './SquadRosterEvmGatePanel.svelte';
+  import SponsorInitialDepositField from './SponsorInitialDepositField.svelte';
+  import UsernameNftSponsorNote from './UsernameNftSponsorNote.svelte';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
   import { walletBuildAndSendTransaction } from '../../../lib/wallet/backend-wallet';
   import { waitForOnChainConfirmationInBackground } from '../../../lib/evm/on-chain-background';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
   import { formatEther, parseEther } from 'viem';
+  import {
+    fetchUsernameNftDeployEligibility,
+    type UsernameNftEligibility,
+  } from '../../../lib/governance/username-nft-eligibility';
 
   let {
     parentId,
@@ -72,7 +78,8 @@
   let resolvingAddresses = $state(true);
   let deployError = $state('');
   let fundTransferEth = $state('');
-  let initialDepositEth = $state('0');
+  let includeDeposit = $state(false);
+  let initialDepositEth = $state('0.01');
   let bootstrapCrew = $state(false);
   let progressStep: '' | 'fund' | 'gov' | 'sponsor' | 'bootstrap' = $state('');
   let signerWallet = $state<SquadSponsorDeploySignerWallet>('squad');
@@ -89,6 +96,10 @@
   let proposalExpirySecs = $state(PRODUCTION_SQUAD_PARAMS.proposalExpirySecs);
   let crewVoteMode = $state(PRODUCTION_SQUAD_PARAMS.crewVoteMode);
   let quorumBps = $state(PRODUCTION_SQUAD_PARAMS.quorumBps);
+  let nftEligibility: UsernameNftEligibility = $state({
+    squadSignerEligible: false,
+    captainEligible: false,
+  });
 
   const sponsorOnly = $derived(!!existingTopHatId.trim());
 
@@ -196,7 +207,7 @@
   );
 
   const transferTrimmed = $derived(fundTransferEth.trim());
-  const depositTrimmed = $derived(initialDepositEth.trim());
+  const depositTrimmed = $derived(includeDeposit ? initialDepositEth.trim() : '');
 
   const transferExceedsDefault = $derived(
     needsFundTransfer &&
@@ -227,7 +238,7 @@
   });
 
   const depositInvalidFormat = $derived(
-    depositTrimmed.length > 0 && depositWei === null,
+    includeDeposit && depositTrimmed.length > 0 && depositWei === null,
   );
 
   const depositExceedsBalance = $derived(
@@ -272,10 +283,26 @@
     fundTransferEth = normalizeLeadingDotDecimalInput(el.value);
   }
 
-  function onDepositInput(e: Event) {
-    const el = e.currentTarget as HTMLInputElement;
-    initialDepositEth = normalizeLeadingDotDecimalInput(el.value);
+  async function refreshNftEligibility() {
+    const network = squadNetwork?.trim();
+    if (!network || !squadSignerAddress) {
+      nftEligibility = { squadSignerEligible: false, captainEligible: false };
+      return;
+    }
+    nftEligibility = await fetchUsernameNftDeployEligibility({
+      network,
+      parentId: parentId.trim(),
+      squadSignerAddress,
+      captainAddress: captainAddress || squadSignerAddress,
+    });
   }
+
+  $effect(() => {
+    void squadNetwork;
+    void squadSignerAddress;
+    void captainAddress;
+    void refreshNftEligibility();
+  });
 
   async function executeDeploy() {
     if (deploying) return;
@@ -585,6 +612,8 @@
         </label>
       </div>
 
+      <UsernameNftSponsorNote payFrom={signerWallet} eligibility={nftEligibility} />
+
       {#if needsFundTransfer}
         <div class="fund-transfer" aria-live="polite">
           <label class="label" for="gov-sponsor-fund-transfer">{$t('governance.deployGovAndSponsor.transfer.label')}</label>
@@ -634,31 +663,27 @@
   </div>
 
   <div class="field">
-    <label class="label" for="gov-sponsor-deposit">{$t('governance.deployGovAndSponsor.deposit.label')}</label>
-    <input
-      id="gov-sponsor-deposit"
-      class="input"
-      class:input-invalid={depositExceedsBalance}
-      type="text"
-      inputmode="decimal"
-      placeholder={$t('governance.deployGovAndSponsor.deposit.placeholder')}
-      value={initialDepositEth}
-      oninput={onDepositInput}
+    <SponsorInitialDepositField
+      bind:includeDeposit
+      bind:depositEth={initialDepositEth}
       disabled={deploying}
+      inputId="gov-sponsor-deposit"
+      depositExceedsBalance={depositExceedsBalance}
+      checkboxKey="governance.deployGovAndSponsor.deposit.checkbox"
+      labelKey="governance.deployGovAndSponsor.deposit.label"
+      placeholderKey="governance.deployGovAndSponsor.deposit.placeholder"
+      hintKey="governance.deployGovAndSponsor.deposit.hint"
+      hintOptionalKey="governance.deployGovAndSponsor.deposit.hintOptional"
+      errorInvalidKey="governance.deployGovAndSponsor.deposit.error.invalid"
+      errorExceedsKey={needsFundTransfer
+        ? 'governance.deployGovAndSponsor.deposit.error.exceedsTransfer'
+        : 'governance.deployGovAndSponsor.deposit.error.exceedsBalance'}
+      exceedsBalanceValues={
+        needsFundTransfer
+          ? {}
+          : { balance: selectedBalance.balanceDecimal, symbol: selectedBalance.symbol }
+      }
     />
-    {#if depositInvalidFormat}
-      <p class="input-error" role="alert">{$t('governance.deployGovAndSponsor.deposit.error.invalid')}</p>
-    {:else if depositExceedsBalance}
-      <p class="input-error" role="alert">
-        {#if needsFundTransfer}
-          {$t('governance.deployGovAndSponsor.deposit.error.exceedsTransfer')}
-        {:else}
-          {$t('governance.deployGovAndSponsor.deposit.error.exceedsBalance', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedBalance.symbol } })}
-        {/if}
-      </p>
-    {:else}
-      <p class="hint muted">{$t('governance.deployGovAndSponsor.deposit.hint')}</p>
-    {/if}
   </div>
 
   {#if !sponsorOnly}

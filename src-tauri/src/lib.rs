@@ -1554,6 +1554,7 @@ pub fn run() {
             evm::squad_allowlist::evm_send_squad_allowlisted_contract_call,
             evm::safe_deploy::safe_deploy_proxy,
             evm::nave_pirata_deploy::deploy_nave_pirata_for_parent,
+            evm::deploy_launchpad_state::get_squad_deploy_launchpad_state,
             evm::war_game_deploy::deploy_war_game_for_parent,
             evm::squad_sponsor_deploy::deploy_squad_sponsor_for_parent,
             evm::squad_sponsor_deploy::deploy_squad_sponsor_hats_for_parent,

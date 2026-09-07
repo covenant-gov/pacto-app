@@ -50,16 +50,38 @@ describe('startWarGameDeploy', () => {
     expect(mockedRun).not.toHaveBeenCalled();
   });
 
-  it('rejects zero deposit', () => {
+  it('accepts zero deposit', async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      txHash: '0xabc',
+      chain: 'sepolia',
+      chainId: 11155111,
+      topHatId: '1',
+      safeAddress: '0x2',
+      quartermaster: '0x3',
+      mutinyModule: '0x4',
+      treasuryAuthority: '0x5',
+      squadAdminProxy: '0x6',
+      round: '1',
+      gameSquadId: '0x7',
+      sponsorAddress: '0x8',
+      retiredSponsor: null,
+      providerPayload: '{}',
+      infraRowId: 'pacto-gov-wargame-parent-1',
+    });
+    const onComplete = vi.fn();
     expect(
       startWarGameDeploy({
         parentId: PARENT,
         captain: CAPTAIN,
         initialDepositWei: '0',
-        onComplete: vi.fn(),
+        onComplete,
       }),
-    ).toBe(false);
-    expect(mockedRun).not.toHaveBeenCalled();
+    ).toBe(true);
+    await vi.waitFor(() => expect(onComplete).toHaveBeenCalled());
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'deploy_war_game_for_parent',
+      expect.objectContaining({ initialDepositWei: '0' }),
+    );
   });
 
   it('invokes deploy_war_game_for_parent on sepolia', async () => {
