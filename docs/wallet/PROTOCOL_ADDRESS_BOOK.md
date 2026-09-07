@@ -15,7 +15,11 @@ Covenant / Pacto **deploy infra** (factories, paymaster, Safe bundle, Hats maste
 | `erc4337.accountImplementation` | EIP-7702 set-code target for sponsored gov UserOps (roster EOA); optional `PACTO_ERC4337_ACCOUNT_IMPL` override |
 | `meta.deployer` | Reference only (upstream deployer; not a runtime signer) |
 
-`globalUsernameSponsor` pins Sepolia from pacto-username-nft `deployments/11155111/full-system.json` (includes `protocolRegistry`, `nostrClaimLink`, `policyVersion`, bootstrap pool/policy, global pool/paymaster). Rust accessor: `global_username_sponsor_addresses(net_key)`. Claim/rotation backend: [USERNAME_NFT.md](./USERNAME_NFT.md). Ops fund + Sepolia smoke: [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §10.
+`globalUsernameSponsor` pins Sepolia from pacto-username-nft `deployments/11155111/full-system.json` (includes `protocolRegistry`, `nostrClaimLink`, `policyVersion`, bootstrap pool/policy, global pool/paymaster). **`policyVersion` must match on-chain `SponsorPolicyRegistry.policyVersion()`** (currently **9** on Sepolia). Rust accessor: `global_username_sponsor_addresses(net_key)`. Claim/rotation backend: [USERNAME_NFT.md](./USERNAME_NFT.md). Ops fund + Sepolia smoke: [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §10.
+
+### Sepolia pactoGov pins
+
+Registry, war-game, and role-hat aux addresses come from pacto-gov **`deployments/11155111/infra.json`** (paired with `navePirataFactory`). Master impls, Hats, and Safe bundle stay from pacto-gov `full-system.json` / `external.json`. Do **not** mix `infra.json` factory with legacy `full-system.json` registry.
 
 ### Cutover after username-nft redeploy
 
@@ -27,7 +31,7 @@ Covenant / Pacto **deploy infra** (factories, paymaster, Safe bundle, Hats maste
 
 `erc4337.accountImplementation` / `PACTO_ERC4337_ACCOUNT_IMPL` is the shared EIP-7702 account bytecode the roster EOA set-codes to for paymaster-sponsored UserOps (must match EntryPoint v0.7 and the registry-backed paymaster allowlist). Sepolia pins Pacto `PactoSimple7702Account` from [pacto-aa](https://github.com/covenant-gov/pacto-aa) `deployments/11155111/eip7702-account.json` (`0x2E9156de…`). Details: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 
-**Sepolia** (`chainId` 11155111) `squadSponsor` comes from pacto-squad-sponsor `deployments/11155111/full-system.json` (SS-3). `erc4337` comes from pacto-aa `eip7702-account.json`. `globalUsernameSponsor` comes from pacto-username-nft `deployments/11155111/full-system.json`.
+**Sepolia** (`chainId` 11155111) `squadSponsor` factory/paymaster from pacto-squad-sponsor `deployments/11155111/full-system.json` (SS-3); `navePirataRegistry` matches pacto-gov `infra.json`. `pactoGov` deploy aux from pacto-gov `infra.json`. `erc4337` from pacto-aa `eip7702-account.json`. `globalUsernameSponsor` from pacto-username-nft `full-system.json` (`policyVersion` tracks on-chain registry).
 
 ## Rust (Alloy UX)
 

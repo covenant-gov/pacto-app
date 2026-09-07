@@ -14,13 +14,13 @@ describe('pacto-protocol-addresses', () => {
       '0x2E9156deE65d7946305C334824e2648Ff9128f45',
     );
     expect(sepolia?.squadSponsor?.navePirataRegistry).toBe(
-      '0xf6747bE3425139FCe92B67fA482331D7435bd483',
+      '0xb4e9349540ed00A7a76Da52e1BBe562D9587ba23',
     );
     expect(sepolia?.pactoGov?.navePirataFactory).toBe('0xd540B03A83d3Fc78922cAb9742e67B8B272bC2b9');
     expect(sepolia?.pactoGov?.navePirataRegistry).toBe(
-      '0xf6747bE3425139FCe92B67fA482331D7435bd483',
+      '0xb4e9349540ed00A7a76Da52e1BBe562D9587ba23',
     );
-    expect(sepolia?.pactoGov?.warGameRegistry).toBe('0xE415A9290964ce40f58c6f1B15183cAE565471e7');
+    expect(sepolia?.pactoGov?.warGameRegistry).toBe('0x2F2BbEdAc920B890A90414C03c4bf6627a9035E9');
   });
 
   it('exposes the book version', () => {
@@ -53,7 +53,7 @@ describe('pacto-protocol-addresses', () => {
     expect(g?.nostrClaimLink).toBe('0xCc0de30d2926995FB6458De7808E41E2a17B0e29');
     expect(g?.bootstrapMintPool).toBe('0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B');
     expect(g?.sponsorPolicyRegistry).toBe('0x1350F096FA383e0D73C02fc13797F207295ef248');
-    expect(g?.policyVersion).toBe(4);
+    expect(g?.policyVersion).toBe(9);
     expect(g?.entryPoint).toBe('0x0000000071727De22E5E9d8BAf0edAc6f37da032');
     expect(g?.allowed7702Implementation).toBe(
       '0x2E9156deE65d7946305C334824e2648Ff9128f45',

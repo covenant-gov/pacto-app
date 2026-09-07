@@ -519,11 +519,11 @@ mod tests {
         );
         assert_eq!(
             gov.nave_pirata_registry,
-            Some(address!("0xf6747bE3425139FCe92B67fA482331D7435bd483"))
+            Some(address!("0xb4e9349540ed00A7a76Da52e1BBe562D9587ba23"))
         );
         assert_eq!(
             gov.war_game_registry,
-            Some(address!("0xE415A9290964ce40f58c6f1B15183cAE565471e7"))
+            Some(address!("0x2F2BbEdAc920B890A90414C03c4bf6627a9035E9"))
         );
         assert_eq!(
             gov.master_quartermaster,
@@ -570,7 +570,7 @@ mod tests {
             g.nostr_claim_link,
             address!("0xCc0de30d2926995FB6458De7808E41E2a17B0e29")
         );
-        assert_eq!(g.policy_version, 4);
+        assert_eq!(g.policy_version, 9);
         assert_eq!(
             g.entry_point,
             address!("0x0000000071727De22E5E9d8BAf0edAc6f37da032")

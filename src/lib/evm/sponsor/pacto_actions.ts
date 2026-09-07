@@ -50,7 +50,7 @@ export type PactoFactoryAction = {
 };
 
 /** Local catalog version; bump when policy tiers or factory selectors change. */
-export const PACTO_ACTIONS_POLICY_VERSION = 4 as const;
+export const PACTO_ACTIONS_POLICY_VERSION = 9 as const;
 
 export const PACTO_USERNAME_ACTIONS: readonly PactoAction[] = [
   {

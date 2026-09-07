@@ -1,5 +1,5 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov: pacto-gov deployments/11155111/infra.json (pacto-gov#37; factory 0xd540B03A…). Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor SS-3 cutover deployments/11155111/full-system.json (factory 0x9F6b1936… / PM 0xD84337C1…); navePirataRegistry matches pacto-gov (not the sponsor artifact’s registry). Sepolia globalUsernameSponsor: pacto-username-nft policy v2 cutover (registry 0x1350F096…, policyVersion 4). EIP-7702: pacto-aa deployments/11155111/eip7702-account.json (0x2E9156de…).",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia pactoGov deploy aux: pacto-gov deployments/11155111/infra.json (factory 0xd540B03A…, registry 0xb4e93495…); master impls/Hats/Safe from full-system.json. Sepolia squadSponsor factory/paymaster: pacto-squad-sponsor SS-3 deployments/11155111/full-system.json; navePirataRegistry matches pacto-gov infra (not sponsor artifact). Sepolia globalUsernameSponsor: pacto-username-nft full-system.json (registry 0x1350F096…, policyVersion 9 on-chain 2026-03). EIP-7702: pacto-aa deployments/11155111/eip7702-account.json (0x2E9156de…).",
   "version": 1,
   "networks": {
     "sepolia": {
@@ -17,7 +17,7 @@
         "bootstrapClaimPolicy": "0x2BAC17B2aE2aA068bEa3064A3553EDee5D60aB6e",
         "pactoGlobalPaymaster": "0x04Fc205adA4c0c5C5024546E87972C4c4bB30D0F",
         "nostrClaimLink": "0xCc0de30d2926995FB6458De7808E41E2a17B0e29",
-        "policyVersion": 4,
+        "policyVersion": 9,
         "allowed7702Implementation": "0x2E9156deE65d7946305C334824e2648Ff9128f45",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
       },
@@ -25,20 +25,20 @@
         "factory": "0x9F6b1936e1817A074033591bb55DC65CBB29e4d7",
         "paymaster": "0xD84337C18dB089DF78c69Ea0df619bD48EEBBcC3",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-        "navePirataRegistry": "0xf6747bE3425139FCe92B67fA482331D7435bd483"
+        "navePirataRegistry": "0xb4e9349540ed00A7a76Da52e1BBe562D9587ba23"
       },
       "pactoGov": {
         "navePirataFactory": "0xd540B03A83d3Fc78922cAb9742e67B8B272bC2b9",
-        "navePirataRegistry": "0xf6747bE3425139FCe92B67fA482331D7435bd483",
-        "warGameRegistry": "0xE415A9290964ce40f58c6f1B15183cAE565471e7",
+        "navePirataRegistry": "0xb4e9349540ed00A7a76Da52e1BBe562D9587ba23",
+        "warGameRegistry": "0x2F2BbEdAc920B890A90414C03c4bf6627a9035E9",
         "masterQuartermaster": "0xFDA42686358503Cf89Bc94f6BD108CB4Af274d74",
         "masterMutiny": "0x65Cd5237C3D53F18596c42c0a0EAFf5ee8C02De9",
         "masterTreasuryAuthority": "0xC99D96a139FB041A225430079f4B7b0DfF2969E5",
         "masterSquadAdminImpl": "0xDa0623659Ab5BE47F3b0b4Fa3E5831Ee4Bf81d88",
         "masterSquadAdminExtImpl": "0x16951FF10742E378041021A60307C50CDC6Ad328",
         "hats": "0x3bc1A0Ad72417f2d411118085256fC53CBdDd137",
-        "roleHatClonesFactory": "0x7155dcAbDB0a78D33dA900506bca749FcD993a89",
-        "roleHatUpgrader": "0x87bFdcd00D38b5c4F7847EEfB6D555eDd3cD2508"
+        "roleHatClonesFactory": "0x01bB8ea760F4F970ef30004D44d275fD5426a4c5",
+        "roleHatUpgrader": "0x2E54f375DA3829d9C286eC57A4F3218f25A0C2Ff"
       },
       "safe": {
         "proxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",
