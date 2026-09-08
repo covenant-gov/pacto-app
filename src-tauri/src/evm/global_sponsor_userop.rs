@@ -11,9 +11,7 @@ use super::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiCall a
 use super::contracts::pacto_username::IGlobalSponsorPool::spendablePoolWeiCall as globalSpendablePoolWeiCall;
 use super::contracts::pacto_username::IPactoGlobalPaymaster::ALLOWED_7702_IMPLEMENTATIONCall;
 use super::contracts::pacto_username::IPactoUsernameNFT::{eligibleMemberCall, npubOfCall};
-use super::contracts::pacto_username::ISponsorPolicyRegistry::{
-    isSelectorAllowedCall, policyVersionCall,
-};
+use super::contracts::pacto_username::ISponsorPolicyRegistry::isSelectorAllowedCall;
 use super::global_paymaster::{
     encode_global_paymaster_and_data, required_global_pool_balance,
     DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT, DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
@@ -774,23 +772,6 @@ async fn username_lane_preflight<P: Provider>(
                 return Err(wallet_err_json(
                     "USERNAME_LANE",
                     "npubHash does not match eligibleMember for this EVM address",
-                    None,
-                ));
-            }
-            let on_chain_version: U256 = eth_call_decode(
-                provider,
-                addrs.sponsor_policy_registry,
-                &policyVersionCall {},
-            )
-            .await
-            .map_err(|e| wallet_err_json("USERNAME_POLICY_READ", e, None))?;
-            let catalog = U256::from(addrs.policy_version);
-            if on_chain_version > catalog {
-                return Err(wallet_err_json(
-                    "USERNAME_POLICY_STALE",
-                    format!(
-                        "local catalog policyVersion {catalog} is behind on-chain {on_chain_version}"
-                    ),
                     None,
                 ));
             }

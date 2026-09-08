@@ -53,7 +53,6 @@ describe('pacto-protocol-addresses', () => {
     expect(g?.nostrClaimLink).toBe('0xCc0de30d2926995FB6458De7808E41E2a17B0e29');
     expect(g?.bootstrapMintPool).toBe('0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B');
     expect(g?.sponsorPolicyRegistry).toBe('0x1350F096FA383e0D73C02fc13797F207295ef248');
-    expect(g?.policyVersion).toBe(9);
     expect(g?.entryPoint).toBe('0x0000000071727De22E5E9d8BAf0edAc6f37da032');
     expect(g?.allowed7702Implementation).toBe(
       '0x2E9156deE65d7946305C334824e2648Ff9128f45',

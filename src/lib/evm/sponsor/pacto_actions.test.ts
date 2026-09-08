@@ -1,22 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  assertCatalogPolicyVersion,
-  bookPolicyVersion,
   factoryTargetAddress,
   getPactoAction,
   getPactoFactoryAction,
   PACTO_ACTIONS,
-  PACTO_ACTIONS_POLICY_VERSION,
   PACTO_FACTORY_ACTIONS,
   PACTO_USERNAME_ACTIONS,
 } from './pacto_actions';
 
 describe('pacto_actions', () => {
-  it('pins catalog policyVersion to the Sepolia address book', () => {
-    expect(PACTO_ACTIONS_POLICY_VERSION).toBe(9);
-    expect(bookPolicyVersion('sepolia')).toBe(PACTO_ACTIONS_POLICY_VERSION);
-  });
-
   it('maps claim to bootstrap and rotation to member', () => {
     expect(getPactoAction('claimUsername').lane).toBe('bootstrap');
     expect(getPactoAction('claimUsername').selector).toBe('0x9824550d');
@@ -62,16 +54,5 @@ describe('pacto_actions', () => {
 
   it('keeps PACTO_ACTIONS as an alias for username actions', () => {
     expect(PACTO_ACTIONS).toBe(PACTO_USERNAME_ACTIONS);
-  });
-
-  it('assertCatalogPolicyVersion allows equal or newer local catalog', () => {
-    expect(() => assertCatalogPolicyVersion(9)).not.toThrow();
-    expect(() => assertCatalogPolicyVersion(8)).not.toThrow();
-    expect(() => assertCatalogPolicyVersion(4)).not.toThrow();
-    expect(() => assertCatalogPolicyVersion(9n)).not.toThrow();
-  });
-
-  it('assertCatalogPolicyVersion fails when local catalog is behind', () => {
-    expect(() => assertCatalogPolicyVersion(10)).toThrowError(/behind on-chain 10/);
   });
 });

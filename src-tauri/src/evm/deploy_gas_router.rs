@@ -19,7 +19,7 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wait_for_transaction_receipt, wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::sponsor_preflight::{global_factory_path_ok, policy_version_fresh, read_eligible_member};
+use super::sponsor_preflight::{global_factory_path_ok, read_eligible_member};
 use super::sponsor_userop::{
     call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
     roster_native_balance_wei, wait_for_user_operation_receipt, FALLBACK_MAX_FEE,
@@ -62,9 +62,6 @@ pub async fn send_factory_call<R: Runtime>(
     let pay_balance = roster_native_balance_wei(&read_provider, ctx.eoa_pay_signer).await?;
     let eoa_can_pay = pay_balance >= eoa_total;
 
-    let mut catalog_policy_version: Option<u64> = None;
-    let mut sponsor_policy_registry: Option<Address> = None;
-
     let (eligible_member, global_factory_ok) = match ctx.roster_parent_id {
         Some(pid) => {
             let (roster_signer, _) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
@@ -72,8 +69,6 @@ pub async fn send_factory_call<R: Runtime>(
             let global_addrs = pacto_chain_config::global_username_sponsor_addresses(&net.key);
             match global_addrs.as_ref() {
                 Ok(addrs) => {
-                    catalog_policy_version = Some(addrs.policy_version);
-                    sponsor_policy_registry = Some(addrs.sponsor_policy_registry);
                     let eligible = read_eligible_member(
                         &read_provider,
                         addrs.pacto_username_nft,
@@ -148,19 +143,6 @@ pub async fn send_factory_call<R: Runtime>(
 
     if selected == GovSponsorPath::Fail {
         if eligible_member {
-            if let (Some(catalog), Some(registry)) =
-                (catalog_policy_version, sponsor_policy_registry)
-            {
-                if !policy_version_fresh(&read_provider, registry, catalog).await? {
-                    return Err(wallet_err_json(
-                        "USERNAME_POLICY_STALE",
-                        format!(
-                            "local catalog policyVersion {catalog} is behind on-chain registry"
-                        ),
-                        None,
-                    ));
-                }
-            }
             return Err(wallet_err_json(
                 "SPONSOR_PATH_UNAVAILABLE",
                 format!(
@@ -252,14 +234,6 @@ mod tests {
         fallback_paths_after, select_gov_sponsor_path, GovSponsorPath,
     };
     use super::*;
-
-    #[test]
-    fn catalog_policy_version_must_cover_on_chain_for_preflight() {
-        // Mirrors policy_version_fresh: on_chain <= catalog.
-        let on_chain = 9u64;
-        assert!(!(on_chain <= 4u64));
-        assert!(on_chain <= 9u64);
-    }
 
     #[test]
     fn soft_sponsor_config_classification() {

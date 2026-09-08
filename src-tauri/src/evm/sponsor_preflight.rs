@@ -5,9 +5,7 @@ use alloy::providers::Provider;
 
 use super::contracts::pacto_username::IPactoUsernameNFT::eligibleMemberCall;
 use super::contracts::pacto_username::IGlobalSponsorPool::spendablePoolWeiCall as globalSpendablePoolWeiCall;
-use super::contracts::pacto_username::ISponsorPolicyRegistry::{
-    isContractAllowedCall, policyVersionCall,
-};
+use super::contracts::pacto_username::ISponsorPolicyRegistry::isContractAllowedCall;
 use super::contracts::pacto_sponsor::ISquadSponsorBase::spendablePoolWeiCall as squadSpendablePoolWeiCall;
 use super::global_paymaster::required_global_pool_balance;
 use super::pacto_chain_config::GlobalUsernameSponsorAddresses;
@@ -100,26 +98,11 @@ pub async fn squad_pool_headroom_ok<P: Provider>(
     Ok(squad_pool_covers_cost(spendable, estimated_max_cost_wei))
 }
 
-pub async fn policy_version_fresh<P: Provider>(
-    provider: &P,
-    registry: Address,
-    catalog_policy_version: u64,
-) -> Result<bool, String> {
-    let on_chain: U256 = eth_call_decode(provider, registry, &policyVersionCall {})
-        .await
-        .map_err(|e| wallet_err_json("SPONSOR_POLICY_READ", e, None))?;
-    Ok(on_chain <= U256::from(catalog_policy_version))
-}
-
 pub async fn factory_target_allowed<P: Provider>(
     provider: &P,
     registry: Address,
-    catalog_policy_version: u64,
     factory: Address,
 ) -> Result<bool, String> {
-    if !policy_version_fresh(provider, registry, catalog_policy_version).await? {
-        return Ok(false);
-    }
     let allowed: bool = eth_call_decode(
         provider,
         registry,
@@ -187,7 +170,6 @@ pub async fn global_factory_path_ok<P: Provider>(
     if !factory_target_allowed(
         provider,
         addrs.sponsor_policy_registry,
-        addrs.policy_version,
         factory,
     )
     .await?
@@ -245,16 +227,6 @@ pub async fn assert_global_gov_module_preflight<P: Provider>(
             None,
         ));
     }
-    if !policy_version_fresh(provider, addrs.sponsor_policy_registry, addrs.policy_version).await? {
-        return Err(wallet_err_json(
-            "USERNAME_POLICY_STALE",
-            format!(
-                "local catalog policyVersion {} is behind on-chain registry",
-                addrs.policy_version
-            ),
-            None,
-        ));
-    }
     if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei)
         .await?
     {
@@ -287,7 +259,6 @@ pub async fn assert_global_factory_preflight<P: Provider>(
     if !factory_target_allowed(
         provider,
         addrs.sponsor_policy_registry,
-        addrs.policy_version,
         factory,
     )
     .await?
@@ -295,16 +266,6 @@ pub async fn assert_global_factory_preflight<P: Provider>(
         return Err(wallet_err_json(
             "SPONSOR_POLICY_READ",
             format!("factory target {factory:#x} is not allowed by sponsor policy registry"),
-            None,
-        ));
-    }
-    if !policy_version_fresh(provider, addrs.sponsor_policy_registry, addrs.policy_version).await? {
-        return Err(wallet_err_json(
-            "USERNAME_POLICY_STALE",
-            format!(
-                "local catalog policyVersion {} is behind on-chain registry",
-                addrs.policy_version
-            ),
             None,
         ));
     }

@@ -27,7 +27,7 @@ Separate from the **username claim** path above. Applies when the roster EOA is 
 
 **Parent scoping:** squad pools are per-parent. Guest eligibility on squad A's sponsor clone does **not** bill squad A when the user deploys or writes in squad B — B with no sponsor routes to **global** (if eligible), not A's pool.
 
-**Policy surface:** username actions use selector allowlists (`policy = 0` on the global paymaster). Gov-module writes use `moduleToTopHat` + `isTopHatSponsored`. Factory deploys use `isContractAllowed(factory)` (catalog: `PACTO_FACTORY_ACTIONS`, `policyVersion` **9** on Sepolia).
+**Policy surface:** username actions use selector allowlists (`policy = 0` on the global paymaster). Gov-module writes use `moduleToTopHat` + `isTopHatSponsored`. Factory deploys use `isContractAllowed(factory)` (catalog: `PACTO_FACTORY_ACTIONS`).
 
 Zero-ETH onboarding smoke: [OPERATOR_SMOKE.md §11](./OPERATOR_SMOKE.md#11-zero-eth-username-onboarding-global-tophat). Squad pool precedence after deploy: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). UserOp debug: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
 

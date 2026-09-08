@@ -49,7 +49,6 @@ struct GlobalUsernameSponsorBook {
     bootstrap_claim_policy: String,
     pacto_global_paymaster: String,
     nostr_claim_link: String,
-    policy_version: u64,
     allowed7702_implementation: String,
     entry_point: String,
 }
@@ -362,26 +361,8 @@ pub struct GlobalUsernameSponsorAddresses {
     pub bootstrap_claim_policy: Address,
     pub pacto_global_paymaster: Address,
     pub nostr_claim_link: Address,
-    pub policy_version: u64,
     pub allowed_7702_implementation: Address,
     pub entry_point: Address,
-}
-
-fn resolve_policy_version(net_key: &str, book_value: Option<u64>) -> Result<u64, String> {
-    let net_upper = net_suffix(net_key);
-    let primary = "PACTO_USERNAME_POLICY_VERSION";
-    let suffixed = format!("{}_{}", primary, net_upper);
-    if let Ok(raw) = std::env::var(&suffixed).or_else(|_| std::env::var(primary)) {
-        return raw
-            .trim()
-            .parse::<u64>()
-            .map_err(|_| format!("Invalid {primary} (expected u64)."));
-    }
-    book_value.ok_or_else(|| {
-        format!(
-            "Missing globalUsernameSponsor.policyVersion for network `{net_key}`. Add it to src/lib/evm/pacto-protocol-addresses.json or set {primary}."
-        )
-    })
 }
 
 pub fn global_username_sponsor_addresses(
@@ -443,7 +424,6 @@ pub fn global_username_sponsor_addresses(
             book.map(|b| b.nostr_claim_link.as_str()),
             "globalUsernameSponsor.nostrClaimLink",
         )?,
-        policy_version: resolve_policy_version(net_key, book.map(|b| b.policy_version))?,
         allowed_7702_implementation: resolve_required(
             "PACTO_USERNAME_7702_IMPLEMENTATION",
             net_key,
@@ -570,7 +550,6 @@ mod tests {
             g.nostr_claim_link,
             address!("0xCc0de30d2926995FB6458De7808E41E2a17B0e29")
         );
-        assert_eq!(g.policy_version, 9);
         assert_eq!(
             g.entry_point,
             address!("0x0000000071727De22E5E9d8BAf0edAc6f37da032")

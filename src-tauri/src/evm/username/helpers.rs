@@ -11,7 +11,7 @@ use nostr_sdk::prelude::Keys;
 use once_cell::sync::Lazy;
 use tauri::{AppHandle, Runtime};
 
-use super::dto::{UsernameRecordDto, PACTO_ACTIONS_POLICY_VERSION};
+use super::dto::UsernameRecordDto;
 use crate::db::{self, UsernameClaimUpsert};
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{eligibleMemberCall, recordOfCall};
 use crate::evm::contracts::pacto_username::ISponsorPolicyRegistry::policyVersionCall;
@@ -294,23 +294,12 @@ pub async fn member_eligibility_ok<P: Provider>(
     ))
 }
 
-pub async fn assert_policy_version_ok<P: Provider>(
-    provider: &P,
-    registry: Address,
-) -> Result<(), String> {
-    let on_chain_policy: U256 = eth_call_decode(provider, registry, &policyVersionCall {})
+/// On-chain registry `policyVersion` for claim-cache metadata (not a client gate).
+pub async fn read_registry_policy_version<P: Provider>(provider: &P, registry: Address) -> u64 {
+    let on_chain: U256 = eth_call_decode(provider, registry, &policyVersionCall {})
         .await
-        .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
-    if on_chain_policy > U256::from(PACTO_ACTIONS_POLICY_VERSION) {
-        return Err(wallet_err_json(
-            "POLICY_VERSION",
-            format!(
-                "local catalog policyVersion {PACTO_ACTIONS_POLICY_VERSION} is behind on-chain {on_chain_policy}"
-            ),
-            None,
-        ));
-    }
-    Ok(())
+        .unwrap_or(U256::ZERO);
+    on_chain.try_into().unwrap_or(0)
 }
 
 /// Balance + EOA cost estimate + member/EOA send for transfer writes.
@@ -351,10 +340,11 @@ pub async fn refresh_claim_cache_after_initiate<R: Runtime, P: Provider>(
     app: &AppHandle<R>,
     provider: &P,
     nft: Address,
+    registry: Address,
     hash: B256,
-    policy_version: u64,
     network: &str,
 ) {
+    let policy_version = read_registry_policy_version(provider, registry).await;
     let record = eth_call_decode(provider, nft, &recordOfCall { npubHash: hash })
         .await
         .ok();
