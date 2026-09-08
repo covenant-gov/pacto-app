@@ -27,6 +27,7 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
+use super::global_sponsored_fee_ledger::{self, LANE_GOV_MODULE};
 use super::global_sponsor_userop::send_sponsored_global_gov_userop;
 use super::global_userop_cost::{global_userop_placeholder_max_cost, GlobalUseropPlaceholderLane};
 use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
@@ -186,6 +187,7 @@ pub async fn send_gov_module_call<R: Runtime>(
                             to,
                             &calldata,
                             &send,
+                            SponsoredGovFeeLedger::Squad,
                         )
                         .await;
                     }
@@ -227,11 +229,9 @@ pub async fn send_gov_module_call<R: Runtime>(
                             to,
                             &calldata,
                             &send,
+                            SponsoredGovFeeLedger::Global,
                         )
-                        .await
-                        .map(|(tx_hash, chain, chain_id, _)| {
-                            (tx_hash, chain, chain_id, "global_sponsored".to_string())
-                        });
+                        .await;
                     }
                     Err(e) => {
                         if is_soft_sponsor_config_error(&e) {
@@ -289,6 +289,12 @@ pub async fn send_gov_module_call<R: Runtime>(
     ))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SponsoredGovFeeLedger {
+    Squad,
+    Global,
+}
+
 async fn finish_sponsored_gov_write<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
@@ -298,6 +304,7 @@ async fn finish_sponsored_gov_write<R: Runtime>(
     to: Address,
     calldata: &[u8],
     send: &SponsoredUserOpSend,
+    ledger: SponsoredGovFeeLedger,
 ) -> Result<(String, String, u64, String), String> {
     let receipt = wait_for_user_operation_receipt(&send.bundler_url, &send.user_op_hash).await?;
     if !receipt.success {
@@ -312,18 +319,37 @@ async fn finish_sponsored_gov_write<R: Runtime>(
         ));
     }
     if let Some(amount_wei) = receipt.actual_gas_cost_wei.as_ref() {
-        persist_sponsored_fee_usage(
-            app,
-            parent_id,
-            chain,
-            chain_id,
-            signer,
-            to,
-            calldata,
-            &send.user_op_hash,
-            &receipt.tx_hash,
-            amount_wei,
-        );
+        match ledger {
+            SponsoredGovFeeLedger::Squad => {
+                persist_squad_sponsored_fee_usage(
+                    app,
+                    parent_id,
+                    chain,
+                    chain_id,
+                    signer,
+                    to,
+                    calldata,
+                    &send.user_op_hash,
+                    &receipt.tx_hash,
+                    amount_wei,
+                );
+            }
+            SponsoredGovFeeLedger::Global => {
+                global_sponsored_fee_ledger::persist_global_sponsored_fee_usage(
+                    app,
+                    LANE_GOV_MODULE,
+                    Some(parent_id),
+                    chain,
+                    chain_id,
+                    signer,
+                    to,
+                    calldata,
+                    &send.user_op_hash,
+                    &receipt.tx_hash,
+                    amount_wei,
+                );
+            }
+        }
     } else {
         log::warn!(
             target: "pacto_wallet",
@@ -331,11 +357,15 @@ async fn finish_sponsored_gov_write<R: Runtime>(
             send.user_op_hash
         );
     }
+    let funded_by = match ledger {
+        SponsoredGovFeeLedger::Squad => "sponsored",
+        SponsoredGovFeeLedger::Global => "global_sponsored",
+    };
     Ok((
         receipt.tx_hash,
         chain.to_string(),
         chain_id,
-        "sponsored".to_string(),
+        funded_by.to_string(),
     ))
 }
 
@@ -374,7 +404,7 @@ fn calldata_selector_hex(calldata: &[u8]) -> String {
 }
 
 /// Best-effort human label for known pacto-gov module selectors.
-fn gov_call_action_label(calldata: &[u8]) -> (String, String) {
+pub(crate) fn gov_call_action_label(calldata: &[u8]) -> (String, String) {
     let selector = calldata_selector_hex(calldata);
     if calldata.len() < 4 {
         return (selector.clone(), selector);
@@ -424,7 +454,7 @@ fn gov_call_action_label(calldata: &[u8]) -> (String, String) {
     (selector, name.to_string())
 }
 
-fn persist_sponsored_fee_usage<R: Runtime>(
+fn persist_squad_sponsored_fee_usage<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
     chain: &str,

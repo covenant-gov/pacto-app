@@ -1403,6 +1403,7 @@ pub fn run() {
             db::upsert_squad_tracked_token,
             db::remove_squad_tracked_token,
             db::list_squad_sponsored_fee_usage,
+            db::list_global_sponsored_fee_usage,
             db::upsert_squad_infra,
             dashboard_poll::list_dashboard_polls,
             dashboard_poll::send_dashboard_poll_create,

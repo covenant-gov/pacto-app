@@ -31,6 +31,8 @@ Separate from the **username claim** path above. Applies when the roster EOA is 
 
 Zero-ETH onboarding smoke: [OPERATOR_SMOKE.md §11](./OPERATOR_SMOKE.md#11-zero-eth-username-onboarding-global-tophat). Squad pool precedence after deploy: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). UserOp debug: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
 
+**Spend ledger:** successful global UserOps write to `global_sponsored_fee_usage` (`list_global_sponsored_fee_usage`, account-scoped). Squad pool spend stays in `squad_sponsored_fee_usage` — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md#sponsored-fee-ledger).
+
 ## Dual attestation (claim)
 
 Shared binding tuple: `(pubkey, npubHash, evmAddress, name, nonce, issuedAt, salt)`.

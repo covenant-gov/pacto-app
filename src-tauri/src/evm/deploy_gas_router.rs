@@ -9,6 +9,7 @@ use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use tauri::{AppHandle, Runtime};
 
+use super::global_sponsored_fee_ledger::{self, LANE_FACTORY};
 use super::global_sponsor_userop::send_sponsored_global_factory_userop;
 use super::global_userop_cost::{global_userop_placeholder_max_cost, GlobalUseropPlaceholderLane};
 use super::gov_read::rpc_urls_or_default;
@@ -126,7 +127,18 @@ pub async fn send_factory_call<R: Runtime>(
         .await
         {
             Ok(send) => {
-                return finish_sponsored_factory_call(&read_provider, &send, confirm_timeout)
+                let actor = ctx.eoa_pay_signer;
+                return finish_sponsored_factory_call(
+                    &app,
+                    pid,
+                    net,
+                    actor,
+                    factory,
+                    &calldata,
+                    &read_provider,
+                    &send,
+                    confirm_timeout,
+                )
                     .await
                     .map(|receipt| FactoryCallOutcome {
                         receipt,
@@ -177,7 +189,13 @@ pub async fn send_factory_call<R: Runtime>(
     })
 }
 
-async fn finish_sponsored_factory_call<P: Provider>(
+async fn finish_sponsored_factory_call<R: Runtime, P: Provider>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    net: &WalletNetworkConfig,
+    actor: Address,
+    factory: Address,
+    calldata: &[u8],
     provider: &P,
     send: &super::sponsor_userop::SponsoredUserOpSend,
     confirm_timeout: &str,
@@ -195,6 +213,27 @@ async fn finish_sponsored_factory_call<P: Provider>(
             None,
             userop_receipt.tx_hash.clone(),
         ));
+    }
+    if let Some(amount_wei) = userop_receipt.actual_gas_cost_wei.as_ref() {
+        global_sponsored_fee_ledger::persist_global_sponsored_fee_usage(
+            app,
+            LANE_FACTORY,
+            Some(parent_id),
+            &net.key,
+            net.chain_id,
+            actor,
+            factory,
+            calldata,
+            &send.user_op_hash,
+            &userop_receipt.tx_hash,
+            amount_wei,
+        );
+    } else {
+        log::warn!(
+            target: "pacto_wallet",
+            "sponsored factory UserOp {} succeeded without actualGasCost; skipping global fee ledger row",
+            send.user_op_hash
+        );
     }
     let hash = TxHash::from_str(userop_receipt.tx_hash.as_str()).map_err(|_| {
             wallet_err_json(

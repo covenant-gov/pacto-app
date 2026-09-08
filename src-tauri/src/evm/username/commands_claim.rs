@@ -20,6 +20,7 @@ use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
     canBootstrapClaimCall, claimCall, hashClaimBindingCall, nameAvailableCall,
     npubOfCall, recordOfCall, usedNonceCall,
 };
+use crate::evm::global_sponsored_fee_ledger::{self, LANE_USERNAME_BOOTSTRAP};
 use crate::evm::global_sponsor_userop::{send_sponsored_username_userop, UsernameSponsorLane};
 use crate::evm::nostr_claim_link::{
     hash_nostr_claim, npub_hash_from_pubkey, sign_nostr_claim, verify_nostr_claim,
@@ -230,7 +231,7 @@ pub async fn username_claim<R: Runtime>(
                 app.clone(),
                 &net.key,
                 nft,
-                calldata,
+                calldata.clone(),
                 UsernameSponsorLane::Bootstrap,
                 npub_hash,
                 rpc_urls.clone(),
@@ -248,6 +249,27 @@ pub async fn username_claim<R: Runtime>(
                     None,
                     receipt.tx_hash.clone(),
                 ));
+            }
+            if let Some(amount_wei) = receipt.actual_gas_cost_wei.as_ref() {
+                global_sponsored_fee_ledger::persist_global_sponsored_fee_usage(
+                    &app,
+                    LANE_USERNAME_BOOTSTRAP,
+                    None,
+                    &net.key,
+                    net.chain_id,
+                    member,
+                    nft,
+                    &calldata,
+                    &send.user_op_hash,
+                    &receipt.tx_hash,
+                    amount_wei,
+                );
+            } else {
+                log::warn!(
+                    target: "pacto_wallet",
+                    "bootstrap claim UserOp {} succeeded without actualGasCost; skipping global fee ledger row",
+                    send.user_op_hash
+                );
             }
             (
                 "bootstrap".to_string(),

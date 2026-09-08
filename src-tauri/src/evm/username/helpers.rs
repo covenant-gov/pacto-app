@@ -15,6 +15,7 @@ use super::dto::UsernameRecordDto;
 use crate::db::{self, UsernameClaimUpsert};
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{eligibleMemberCall, recordOfCall};
 use crate::evm::contracts::pacto_username::ISponsorPolicyRegistry::policyVersionCall;
+use crate::evm::global_sponsored_fee_ledger::{self, LANE_USERNAME_MEMBER};
 use crate::evm::global_sponsor_userop::{send_sponsored_username_userop, UsernameSponsorLane};
 use crate::evm::gov_read::rpc_urls_or_default;
 use crate::evm::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
@@ -240,10 +241,10 @@ pub async fn send_member_or_eoa_write<R: Runtime>(
         }
         UsernameSponsorPath::GlobalMember => {
             let send = send_sponsored_username_userop(
-                app,
+                app.clone(),
                 &net.key,
                 nft,
-                calldata,
+                calldata.clone(),
                 UsernameSponsorLane::Member,
                 npub_hash,
                 rpc_urls,
@@ -261,6 +262,27 @@ pub async fn send_member_or_eoa_write<R: Runtime>(
                     None,
                     receipt.tx_hash.clone(),
                 ));
+            }
+            if let Some(amount_wei) = receipt.actual_gas_cost_wei.as_ref() {
+                global_sponsored_fee_ledger::persist_global_sponsored_fee_usage(
+                    &app,
+                    LANE_USERNAME_MEMBER,
+                    None,
+                    &net.key,
+                    net.chain_id,
+                    member,
+                    nft,
+                    &calldata,
+                    &send.user_op_hash,
+                    &receipt.tx_hash,
+                    amount_wei,
+                );
+            } else {
+                log::warn!(
+                    target: "pacto_wallet",
+                    "username member UserOp {} succeeded without actualGasCost; skipping global fee ledger row",
+                    send.user_op_hash
+                );
             }
             Ok((path, Some(receipt.tx_hash), Some(send.user_op_hash)))
         }
