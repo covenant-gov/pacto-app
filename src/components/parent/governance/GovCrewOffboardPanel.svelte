@@ -2,7 +2,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import GovCtaButton from './GovCtaButton.svelte';
-  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
+  import GovGateBanner from './GovGateBanner.svelte';
   import {
     quartermasterCrewOffboardVote,
     quartermasterExecuteOffboard,
@@ -149,7 +149,7 @@
   </p>
 
   {#if mutinyActive}
-    <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+    <GovGateBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
   {/if}
 
   {#if offboardActive && offboard}

@@ -3,9 +3,14 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import GovCtaButton from './GovCtaButton.svelte';
-  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
+  import GovGateBanner from './GovGateBanner.svelte';
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
-  import { MUTINY_ACTIVE_BANNER_KEY } from '../../../lib/governance/governance-privilege';
+  import {
+    isHatRequiredReason,
+    LINK_EVM_BANNER_KEY,
+    MUTINY_ACTIVE_BANNER_KEY,
+    OFFBOARD_ACTIVE_BANNER_KEY,
+  } from '../../../lib/governance/governance-privilege';
   import {
     HATS_TREE_ACTIONS_KEY,
     type HatsTreeActionsApi,
@@ -38,6 +43,7 @@
         })
       : null,
   );
+  let needsLinkEvm = $derived(!resolved?.privilege.myAddress.trim());
 
   function open(action: HatsTreeCommandAction) {
     if (onOpen) {
@@ -50,6 +56,12 @@
 
 {#if resolved && gates && kind === 'treasury' && resolved.treasuryAuthority}
   <div class="hats-tree-node-actions">
+    {#if needsLinkEvm}
+      <GovGateBanner reason={LINK_EVM_BANNER_KEY} />
+    {/if}
+    {#if !gates.treasury.enabled && isHatRequiredReason(gates.treasury.reason)}
+      <GovGateBanner reason={gates.treasury.reason} />
+    {/if}
     <GovCtaButton
       compact
       label={tFn('governance.action.submitProposal')}
@@ -68,7 +80,10 @@
 {:else if resolved && gates && kind === 'mutiny' && resolved.mutinyModule}
   <div class="hats-tree-node-actions">
     {#if gates.mutinyActive}
-      <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+      <GovGateBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+    {/if}
+    {#if gates.offboardActive && !gates.mutinyActive}
+      <GovGateBanner reason={OFFBOARD_ACTIVE_BANNER_KEY} />
     {/if}
     <GovCtaButton
       compact
@@ -88,7 +103,10 @@
 {:else if resolved && gates && kind === 'quartermaster' && resolved.quartermaster}
   <div class="hats-tree-node-actions">
     {#if gates.mutinyActive}
-      <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+      <GovGateBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+    {/if}
+    {#if gates.offboardActive && !gates.mutinyActive}
+      <GovGateBanner reason={OFFBOARD_ACTIVE_BANNER_KEY} />
     {/if}
     <GovCtaButton
       compact

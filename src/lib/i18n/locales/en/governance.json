@@ -351,6 +351,7 @@
 	"governance.gate.cannotOffboardWhileMutiny": "A mutiny is active. Resolve it before opening an offboard.",
 	"governance.gate.mutinyAlreadyActive": "A mutiny is already active.",
 	"governance.gate.offboardAlreadyActive": "A crew-led offboard is already open.",
+	"governance.gate.offboardActiveLimited": "A crew-led offboard is open. Governance actions are limited.",
 	"governance.gate.rosterFrozenOffboard": "A crew-led offboard is open — captain crew changes are frozen until it ends.",
 	"governance.gate.cannotOffboardSelf": "You cannot open an offboard against yourself.",
 	"governance.gate.linkSquadEvmAddressToAct": "Bind your squad EVM in #settings → Alerts before acting.",

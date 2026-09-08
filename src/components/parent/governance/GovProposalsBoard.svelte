@@ -3,7 +3,7 @@
   import RpcReadErrorCard from '../dashboard/RpcReadErrorCard.svelte';
   import { rpcReadErrorKind, uniqueRpcReadErrorKinds } from '../../../lib/squad/rpc-read-error';
   import GovProcessCardView from './GovProcessCard.svelte';
-  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
+  import GovGateBanner from './GovGateBanner.svelte';
   import {
     quartermasterExecuteAddCrew,
     quartermasterExecuteOffboard,
@@ -24,7 +24,10 @@
     gateQuartermasterExecute,
     gateRequiresCaptain,
     gateRequiresCrew,
+    isHatRequiredReason,
+    LINK_EVM_BANNER_KEY,
     MUTINY_ACTIVE_BANNER_KEY,
+    OFFBOARD_ACTIVE_BANNER_KEY,
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
@@ -36,7 +39,7 @@
   } from '../../../lib/governance/gov-process';
   import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
   import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
-  import { parseQuorumBps } from '../../../lib/governance/crew-offboard';
+  import { isCrewOffboardActive, parseQuorumBps } from '../../../lib/governance/crew-offboard';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { hasPendingJob, pendingOnChainJobs } from '../../../stores/pending-on-chain';
   import {
@@ -104,6 +107,8 @@
   const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
   let mutinyActive = $derived(isMutinyActive(mutinyStatus));
+  let offboardActive = $derived(isCrewOffboardActive(qmStatus));
+  let needsLinkEvm = $derived(!privilege.myAddress.trim());
   let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
   let crewVoteGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCrew(privilege));
   let captainVoteGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCaptain(privilege));
@@ -327,8 +332,20 @@
     />
   </div>
 
+  {#if needsLinkEvm}
+    <GovGateBanner reason={LINK_EVM_BANNER_KEY} />
+  {/if}
+  {#if !crewVoteGate.enabled && isHatRequiredReason(crewVoteGate.reason)}
+    <GovGateBanner reason={crewVoteGate.reason} />
+  {/if}
+  {#if !captainVoteGate.enabled && isHatRequiredReason(captainVoteGate.reason)}
+    <GovGateBanner reason={captainVoteGate.reason} />
+  {/if}
   {#if mutinyActive}
-    <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+    <GovGateBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+  {/if}
+  {#if offboardActive && !mutinyActive}
+    <GovGateBanner reason={OFFBOARD_ACTIVE_BANNER_KEY} />
   {/if}
 
   {#if boardLoading}

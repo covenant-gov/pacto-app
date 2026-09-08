@@ -2,12 +2,20 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import GovCtaButton from './GovCtaButton.svelte';
-  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
+  import GovGateBanner from './GovGateBanner.svelte';
   import GovBootstrapCrewModal from './GovBootstrapCrewModal.svelte';
   import GovCaptainRosterModal from './GovCaptainRosterModal.svelte';
   import GovCaptainResignModal from './GovCaptainResignModal.svelte';
   import { mutinyCaptainResign, type MutinyStatusDto, type QuartermasterStatusDto } from '../../../lib/governance/api';
-  import { isHatRequiredReason, MUTINY_ACTIVE_BANNER_KEY, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+  import {
+    CAPTAIN_ON_SAFE_BANNER_KEY,
+    isCaptainOnSafeReason,
+    isHatRequiredReason,
+    LINK_EVM_BANNER_KEY,
+    MUTINY_ACTIVE_BANNER_KEY,
+    OFFBOARD_ACTIVE_BANNER_KEY,
+    type GovernancePrivilege,
+  } from '../../../lib/governance/governance-privilege';
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { pickRandomRosterCaptain, labeledWearerOptions } from '../../../lib/governance/war-game-captain';
@@ -71,10 +79,12 @@
   let qmGate = $derived(gates.qmRoster);
   let execGate = $derived(gates.exec);
   let mutinyActive = $derived(gates.mutinyActive);
+  let offboardActive = $derived(gates.offboardActive);
   let resignGate = $derived(gates.resign);
   let randomizeGate = $derived(gates.randomize);
   let bootstrapAvailable = $derived(gates.bootstrapAvailable);
   let bootstrapGate = $derived(gates.bootstrap);
+  let needsLinkEvm = $derived(!privilege.myAddress.trim());
   let randomizeExclude = $derived([privilege.myAddress, ...captainWearers]);
   let randomizePool = $derived(labeledWearerOptions(crewWearers, memberEvmOptions));
   let addCrewOptions = $derived(
@@ -99,11 +109,19 @@
 </script>
 
 <div class="captain-actions">
-  {#if !captainGate.enabled && isHatRequiredReason(captainGate.reason)}
-    <GovHatRequiredBanner reason={captainGate.reason} />
+  {#if needsLinkEvm}
+    <GovGateBanner reason={LINK_EVM_BANNER_KEY} />
+  {/if}
+  {#if !captainGate.enabled && isCaptainOnSafeReason(captainGate.reason)}
+    <GovGateBanner reason={CAPTAIN_ON_SAFE_BANNER_KEY} />
+  {:else if !captainGate.enabled && isHatRequiredReason(captainGate.reason)}
+    <GovGateBanner reason={captainGate.reason} />
   {/if}
   {#if mutinyActive}
-    <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+    <GovGateBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+  {/if}
+  {#if offboardActive && !mutinyActive}
+    <GovGateBanner reason={OFFBOARD_ACTIVE_BANNER_KEY} />
   {/if}
   <div class="row">
     {#if quartermaster}

@@ -9,7 +9,10 @@ import {
   hideCtaInlineReason,
   isHatRequiredReason,
   isMutinyLockedReason,
+  isOffboardLockedReason,
+  isPanelBannerReason,
   MUTINY_ACTIVE_BANNER_KEY,
+  OFFBOARD_ACTIVE_BANNER_KEY,
   localizeAclReason,
   resolveGovernancePrivilege,
 } from './governance-privilege';
@@ -160,6 +163,13 @@ describe('governance gates', () => {
     expect(isMutinyLockedReason('governance.gate.cannotResignWhileMutiny')).toBe(true);
     expect(hideCtaInlineReason(MUTINY_ACTIVE_BANNER_KEY)).toBe(true);
     expect(hideCtaInlineReason('governance.gate.cannotOffboardWhileMutiny')).toBe(true);
+    expect(isOffboardLockedReason(OFFBOARD_ACTIVE_BANNER_KEY)).toBe(true);
+    expect(isOffboardLockedReason('governance.gate.rosterFrozenOffboard')).toBe(true);
+    expect(isPanelBannerReason('governance.gate.requiresCrew')).toBe(true);
+    expect(isPanelBannerReason('governance.gate.linkSquadEvmAddressToSign')).toBe(true);
+    expect(isPanelBannerReason('governance.gate.captainHatOnSafe')).toBe(true);
+    expect(isPanelBannerReason('governance.status.loading')).toBe(true);
+    expect(isPanelBannerReason('governance.gate.bootstrapOnlyEmptyRoster')).toBe(false);
   });
 
   it('falls back to hat checks without capability flags', () => {

@@ -16,7 +16,7 @@
   import { scheduleDeadlineTimeout } from '../../../lib/utils/deadline-timeout';
   import ProposalActionSummary from './ProposalActionSummary.svelte';
   import GovCtaButton from './GovCtaButton.svelte';
-  import { isMutinyLockedReason, type CtaGate } from '../../../lib/governance/governance-privilege';
+  import { hideCtaInlineReason, type CtaGate } from '../../../lib/governance/governance-privilege';
 
   interface Props {
     card: GovProcessCard;
@@ -370,7 +370,7 @@
       >
         {$t('governance.common.execute')}
       </button>
-      {#if !execUi.executeEnabled && execUi.disabledReasonKey && !isMutinyLockedReason(execUi.disabledReasonKey)}
+      {#if !execUi.executeEnabled && execUi.disabledReasonKey && !hideCtaInlineReason(execUi.disabledReasonKey)}
         <p class="execute-reason muted">{executeTitle}</p>
       {/if}
     </div>
@@ -386,7 +386,7 @@
       >
         {$t('governance.common.expire')}
       </button>
-      {#if !execUi.expireEnabled && execUi.expireReasonKey && !isMutinyLockedReason(execUi.expireReasonKey)}
+      {#if !execUi.expireEnabled && execUi.expireReasonKey && !hideCtaInlineReason(execUi.expireReasonKey)}
         <p class="execute-reason muted">{expireTitle}</p>
       {/if}
     </div>

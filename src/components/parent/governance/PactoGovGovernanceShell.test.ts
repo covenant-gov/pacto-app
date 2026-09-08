@@ -9,6 +9,7 @@ import type { SquadCapabilitiesDto } from '../../../lib/governance/api';
 import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
 import { bumpGovernanceProcessNonce, governanceProcessNonceByParentId } from '../../../stores/navigation';
 import { ACL_SNAPSHOT_RETRY_MS } from '../../../lib/governance/acl-snapshot-key';
+import { clearAllGovModuleReads } from '../../../lib/governance/gov-module-read-cache';
 
 vi.mock('../../../lib/governance/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../lib/governance/api')>();
@@ -71,6 +72,7 @@ function capabilitiesSnapshot(overrides: Partial<SquadCapabilitiesDto> = {}): Sq
 
 describe('PactoGovGovernanceShell capability preflight gating', () => {
   beforeEach(() => {
+    clearAllGovModuleReads();
     mockedGetSquadCapabilities.mockReset();
     mockedGetMutinyStatus.mockReset();
     mockedGetQuartermasterStatus.mockReset();
@@ -280,6 +282,69 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     );
     expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.queryAllByText(mutinyCopy)).toHaveLength(1);
+    expect(document.querySelectorAll('.gov-cta-reason')).toHaveLength(0);
+
+    const addCrew = screen.getByRole('button', { name: 'Add crew' }) as HTMLButtonElement;
+    const removeCrew = screen.getByRole('button', { name: 'Remove crew' }) as HTMLButtonElement;
+    const resign = screen.getByRole('button', { name: 'Resign captain' }) as HTMLButtonElement;
+    expect(addCrew.disabled).toBe(true);
+    expect(removeCrew.disabled).toBe(true);
+    expect(resign.disabled).toBe(true);
+  });
+
+  it('shows one offboard alert on Captain instead of per-button copy', async () => {
+    mockedGetSquadCapabilities.mockResolvedValue(capabilitiesSnapshot());
+    mockedGetMutinyStatus.mockResolvedValue({
+      activeMutinyId: '0',
+      proposedNewCaptain: '',
+      startedAt: 0,
+      deadline: 0,
+      snapshot: 0,
+      yeas: 0,
+      executed: false,
+      captain: CAPTAIN_ADDRESS,
+    });
+    mockedGetQuartermasterStatus.mockResolvedValue({
+      crewChangeDelaySecs: '0',
+      mutinyActive: false,
+      activeCrewOffboardId: '4',
+      crewOffboardExpirySecs: '300',
+      crewOffboardQuorumBps: '3000',
+      offboard: {
+        offboardId: '4',
+        target: CREW_ADDRESS,
+        proposer: CREW_ADDRESS,
+        deadline: 999_999_999,
+        snapshot: 3,
+        yeas: 1,
+        nays: 0,
+        executed: false,
+      },
+    });
+
+    render(PactoGovGovernanceShell, {
+      props: {
+        payload: {
+          ...basePayload(),
+          quartermaster: '0xqm00000000000000000000000000000000001',
+          mutinyModule: '0xmutiny00000000000000000000000000000001',
+        },
+        network: 'sepolia',
+        parentId: 'parent1',
+        myAddress: CAPTAIN_ADDRESS,
+        captainWearers: [CAPTAIN_ADDRESS],
+        crewWearers: [],
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole('tab', { name: 'Captain' }));
+
+    const offboardCopy = 'A crew-led offboard is open. Governance actions are limited.';
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe(offboardCopy),
+    );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.queryAllByText(offboardCopy)).toHaveLength(1);
     expect(document.querySelectorAll('.gov-cta-reason')).toHaveLength(0);
 
     const addCrew = screen.getByRole('button', { name: 'Add crew' }) as HTMLButtonElement;

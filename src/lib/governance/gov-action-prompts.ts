@@ -20,6 +20,7 @@ import {
   gateRequiresCaptain,
   gateRequiresCrew,
   MUTINY_ACTIVE_BANNER_KEY,
+  OFFBOARD_ACTIVE_BANNER_KEY,
   type GovernancePrivilege,
 } from './governance-privilege';
 
@@ -78,7 +79,7 @@ export function deriveGovActionPrompts(params: {
   const rosterFrozen = params.mutinyMode || isCrewOffboardActive(params.crewOffboard);
   const rosterFreezeReason = isMutinyActive(params.mutinyStatus)
     ? MUTINY_ACTIVE_BANNER_KEY
-    : 'governance.gate.rosterFrozenOffboard';
+    : OFFBOARD_ACTIVE_BANNER_KEY;
   const qmExecGate = gateQuartermasterExecute(params.privilege, rosterFrozen, rosterFreezeReason);
   const execPrivilegeKey = execGate.enabled ? '' : execGate.reason;
   const qmPrivilegeKey = qmExecGate.enabled ? '' : qmExecGate.reason;

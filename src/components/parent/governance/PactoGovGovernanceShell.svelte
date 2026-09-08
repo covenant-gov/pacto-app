@@ -28,6 +28,7 @@
   import {
     resolveGovernancePrivilege,
     MUTINY_ACTIVE_BANNER_KEY,
+    OFFBOARD_ACTIVE_BANNER_KEY,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
@@ -131,7 +132,7 @@
   let rosterFreezeReason = $derived(
     isMutinyActive(mutinyStatus)
       ? MUTINY_ACTIVE_BANNER_KEY
-      : 'governance.gate.rosterFrozenOffboard',
+      : OFFBOARD_ACTIVE_BANNER_KEY,
   );
   let crewMemberOptions = $derived(
     govMemberOptions({

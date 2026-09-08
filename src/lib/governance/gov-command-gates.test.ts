@@ -126,6 +126,31 @@ describe('buildGovCommandGates', () => {
     expect(gates.qmRoster.reason).toBe('governance.gate.mutinyActiveLimited');
   });
 
+  it('blocks captain roster writes while offboard is active', () => {
+    const gates = buildGovCommandGates({
+      privilege: privilege({ wearsCaptain: true, wearsCrew: true }),
+      capabilitiesPending: false,
+      qmStatus: qm({
+        activeCrewOffboardId: '4',
+        offboard: {
+          offboardId: '4',
+          target: OTHER,
+          proposer: ADDR,
+          deadline: 999_999_999,
+          snapshot: 3,
+          yeas: 1,
+          nays: 0,
+          executed: false,
+        },
+      }),
+    });
+    expect(gates.offboardActive).toBe(true);
+    expect(gates.startMutiny.reason).toBe('governance.gate.offboardActiveLimited');
+    expect(gates.proposeOffboard.reason).toBe('governance.gate.offboardActiveLimited');
+    expect(gates.qmRoster.reason).toBe('governance.gate.offboardActiveLimited');
+    expect(gates.resign.reason).toBe('governance.gate.offboardActiveLimited');
+  });
+
   it('exposes bootstrap only when the quartermaster reports it available', () => {
     expect(
       buildGovCommandGates({

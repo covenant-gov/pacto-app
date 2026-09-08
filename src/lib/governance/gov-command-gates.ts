@@ -7,6 +7,7 @@ import {
   gateRequiresCaptainOrCrew,
   gateRequiresCrew,
   MUTINY_ACTIVE_BANNER_KEY,
+  OFFBOARD_ACTIVE_BANNER_KEY,
   type CtaGate,
   type GovernancePrivilege,
 } from './governance-privilege';
@@ -62,7 +63,7 @@ export function buildGovCommandGates(input: {
   const rosterFrozen = !!qmStatus?.mutinyActive || offboardActive;
   const rosterFreezeReason = qmStatus?.mutinyActive
     ? MUTINY_ACTIVE_BANNER_KEY
-    : 'governance.gate.rosterFrozenOffboard';
+    : OFFBOARD_ACTIVE_BANNER_KEY;
   const qmRoster = capabilitiesPending
     ? PENDING_GATE
     : gateBlockedByMutinyMode(privilege, rosterFrozen, rosterFreezeReason);
@@ -75,15 +76,17 @@ export function buildGovCommandGates(input: {
 
   let startMutiny: CtaGate = crew;
   if (mutinyActive) startMutiny = { enabled: false, reason: MUTINY_ACTIVE_BANNER_KEY };
-  else if (offboardActive) startMutiny = { enabled: false, reason: 'governance.gate.cannotStartMutinyWhileOffboard' };
+  else if (offboardActive) startMutiny = { enabled: false, reason: OFFBOARD_ACTIVE_BANNER_KEY };
 
   let proposeOffboard: CtaGate = crew;
-  if (offboardActive) proposeOffboard = { enabled: false, reason: 'governance.gate.offboardAlreadyActive' };
+  if (offboardActive) proposeOffboard = { enabled: false, reason: OFFBOARD_ACTIVE_BANNER_KEY };
   else if (mutinyActive) proposeOffboard = { enabled: false, reason: MUTINY_ACTIVE_BANNER_KEY };
 
   const resign: CtaGate = mutinyActive
     ? { enabled: false, reason: MUTINY_ACTIVE_BANNER_KEY }
-    : captain;
+    : offboardActive
+      ? { enabled: false, reason: OFFBOARD_ACTIVE_BANNER_KEY }
+      : captain;
 
   let randomize: CtaGate = captain;
   if (mutinyActive) randomize = { enabled: false, reason: MUTINY_ACTIVE_BANNER_KEY };

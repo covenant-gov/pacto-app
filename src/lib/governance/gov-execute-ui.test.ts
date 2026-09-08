@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { govExecuteUiState } from './gov-execute-ui';
-import { MUTINY_ACTIVE_BANNER_KEY } from './governance-privilege';
+import { MUTINY_ACTIVE_BANNER_KEY, OFFBOARD_ACTIVE_BANNER_KEY } from './governance-privilege';
 import type { GovProcessCard } from './gov-process';
 import type { MutinyStatusDto, TreasuryProposalDto } from './api';
 
@@ -87,6 +87,22 @@ describe('govExecuteUiState', () => {
       showExecute: true,
       executeEnabled: false,
       disabledReasonKey: MUTINY_ACTIVE_BANNER_KEY,
+      unlockAtSec: 100,
+    });
+  });
+
+  it('crew: offboard freeze privilege deny while unlocked keeps Execute visible-disabled', () => {
+    const card = crewCard({ executableAt: 100, status: 'executable' });
+    expect(
+      govExecuteUiState({
+        card,
+        privilegeReasonKey: OFFBOARD_ACTIVE_BANNER_KEY,
+        nowSec: 100,
+      }),
+    ).toMatchObject({
+      showExecute: true,
+      executeEnabled: false,
+      disabledReasonKey: OFFBOARD_ACTIVE_BANNER_KEY,
       unlockAtSec: 100,
     });
   });
