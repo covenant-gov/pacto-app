@@ -14,7 +14,10 @@ use super::contracts::pacto_username::IPactoUsernameNFT::{eligibleMemberCall, np
 use super::contracts::pacto_username::ISponsorPolicyRegistry::isSelectorAllowedCall;
 use super::global_paymaster::{
     encode_global_paymaster_and_data, required_global_pool_balance,
-    DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT, DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+};
+use super::global_userop_cost::{
+    global_userop_gas_ceilings, global_userop_placeholder_max_cost_wei, GlobalUseropGasCeilings,
+    GlobalUseropPlaceholderLane,
 };
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
@@ -25,14 +28,13 @@ use super::sponsor_preflight::{
     assert_global_factory_preflight, assert_global_gov_module_preflight,
 };
 use super::username_claim_preflight::preflight_bootstrap_claim_userop_path;
-use super::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
 use super::sponsor_userop::{
     apply_userop_gas_margin, apply_verification_gas_margin, bundler_estimate_user_operation_gas,
     bundler_rpc_url_with_stored, bundler_send_user_operation, clamp_userop_eip1559_fees,
     dummy_userop_signature, erc4337_account_implementation, load_stored_pimlico_key, pack_u128s,
     paymaster_data, paymaster_entry_point_deposit_preflight, sign_eip7702_authorization,
     user_op_json, userop_max_cost_wei, EstimatedUserOpGas, SponsoredUserOpSend, UserOpParams,
-    FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE, FALLBACK_MAX_PRIORITY_FEE, HEAVY_CALL_GAS_LIMIT,
+    FALLBACK_MAX_FEE, FALLBACK_MAX_PRIORITY_FEE,
 };
 use super::wallet_chain_config;
 
@@ -77,7 +79,7 @@ enum GlobalPreflightLane {
 }
 
 /// claim() selector from pacto_actions / alloy — 0x9824550d
-pub const CLAIM_USERNAME_SELECTOR: [u8; 4] = [0x98, 0x24, 0x55, 0x0d];
+pub use super::global_userop_cost::CLAIM_USERNAME_SELECTOR;
 
 /// Attempt a global-paymaster sponsored UserOp; returns EntryPoint userOp hash + accepting bundler.
 pub async fn send_sponsored_username_userop<R: Runtime>(
@@ -140,14 +142,11 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
         }
     };
 
-    let placeholders = placeholder_gas_ceilings(&calldata);
-    let placeholder_max_cost = userop_max_cost_wei(
-        placeholders.call,
-        placeholders.verification,
-        placeholders.pre_verification,
+    let placeholders = username_placeholder_ceilings(&calldata, lane);
+    let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
+        &calldata,
+        username_placeholder_lane(lane),
         max_fee,
-        placeholders.pm_verification,
-        placeholders.pm_post,
     );
 
     paymaster_entry_point_deposit_preflight(
@@ -316,14 +315,11 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
         }
     };
 
-    let placeholders = gov_module_gas_ceilings(&calldata);
-    let placeholder_max_cost = userop_max_cost_wei(
-        placeholders.call,
-        placeholders.verification,
-        placeholders.pre_verification,
+    let placeholders = global_userop_gas_ceilings(&calldata, GlobalUseropPlaceholderLane::GovModule);
+    let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
+        &calldata,
+        GlobalUseropPlaceholderLane::GovModule,
         max_fee,
-        placeholders.pm_verification,
-        placeholders.pm_post,
     );
 
     paymaster_entry_point_deposit_preflight(
@@ -490,14 +486,12 @@ pub async fn send_sponsored_global_factory_userop<R: Runtime>(
         }
     };
 
-    let placeholders = factory_target_gas_ceilings(&calldata);
-    let placeholder_max_cost = userop_max_cost_wei(
-        placeholders.call,
-        placeholders.verification,
-        placeholders.pre_verification,
+    let placeholders =
+        global_userop_gas_ceilings(&calldata, GlobalUseropPlaceholderLane::FactoryTarget);
+    let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
+        &calldata,
+        GlobalUseropPlaceholderLane::FactoryTarget,
         max_fee,
-        placeholders.pm_verification,
-        placeholders.pm_post,
     );
 
     paymaster_entry_point_deposit_preflight(
@@ -608,15 +602,6 @@ struct GlobalSponsoredSendParts {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct GasCeilings {
-    call: u128,
-    verification: u128,
-    pre_verification: u128,
-    pm_verification: u128,
-    pm_post: u128,
-}
-
-#[derive(Clone, Copy, Debug)]
 struct FinalGasLimits {
     call_gas_limit: u128,
     verification_gas_limit: u128,
@@ -625,58 +610,18 @@ struct FinalGasLimits {
     paymaster_post_op_gas_limit: u128,
 }
 
-fn placeholder_gas_ceilings(calldata: &[u8]) -> GasCeilings {
-    GasCeilings {
-        call: username_call_gas_ceiling(calldata),
-        verification: DEFAULT_VERIFICATION_GAS_LIMIT,
-        pre_verification: 80_000,
-        pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+fn username_placeholder_lane(lane: UsernameSponsorLane) -> GlobalUseropPlaceholderLane {
+    match lane {
+        UsernameSponsorLane::Bootstrap => GlobalUseropPlaceholderLane::UsernameBootstrap,
+        UsernameSponsorLane::Member => GlobalUseropPlaceholderLane::UsernameMember,
     }
 }
 
-fn gov_module_gas_ceilings(calldata: &[u8]) -> GasCeilings {
-    GasCeilings {
-        call: gov_module_call_gas_ceiling(calldata),
-        verification: DEFAULT_VERIFICATION_GAS_LIMIT,
-        pre_verification: 80_000,
-        pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
-    }
-}
-
-fn factory_target_gas_ceilings(calldata: &[u8]) -> GasCeilings {
-    GasCeilings {
-        call: factory_target_call_gas_ceiling(calldata),
-        verification: DEFAULT_VERIFICATION_GAS_LIMIT,
-        pre_verification: 80_000,
-        pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
-    }
-}
-
-fn factory_target_call_gas_ceiling(calldata: &[u8]) -> u128 {
-    if calldata.len() >= 4 {
-        HEAVY_CALL_GAS_LIMIT
-    } else {
-        FALLBACK_CALL_GAS_LIMIT
-    }
-}
-
-fn gov_module_call_gas_ceiling(calldata: &[u8]) -> u128 {
-    if calldata.len() >= 4 {
-        HEAVY_CALL_GAS_LIMIT
-    } else {
-        FALLBACK_CALL_GAS_LIMIT
-    }
-}
-
-fn username_call_gas_ceiling(calldata: &[u8]) -> u128 {
-    if calldata.len() >= 4 && calldata[..4] == CLAIM_USERNAME_SELECTOR {
-        HEAVY_CALL_GAS_LIMIT
-    } else {
-        FALLBACK_CALL_GAS_LIMIT
-    }
+fn username_placeholder_ceilings(
+    calldata: &[u8],
+    lane: UsernameSponsorLane,
+) -> GlobalUseropGasCeilings {
+    global_userop_gas_ceilings(calldata, username_placeholder_lane(lane))
 }
 
 fn calldata_selector(calldata: &[u8]) -> Result<[u8; 4], String> {
@@ -836,7 +781,7 @@ async fn pool_headroom_preflight<P: Provider>(
 async fn estimate_global_sponsored_gas(
     bundler_url: &str,
     ctx: &GlobalSponsoredSendParts,
-    ceilings: GasCeilings,
+    ceilings: GlobalUseropGasCeilings,
 ) -> Result<EstimatedUserOpGas, String> {
     let dummy_sig = dummy_userop_signature();
     let mut paymaster_and_data = encode_global_paymaster_and_data(

@@ -1576,6 +1576,34 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
     })
 }
 
+/// Structured `wallet_err_json` code when present.
+pub(crate) fn wallet_error_code(err: &str) -> Option<String> {
+    let parsed: Value = serde_json::from_str(err).ok()?;
+    parsed.get("code")?.as_str().map(str::to_string)
+}
+
+/// Bundler / account-impl config gaps fixable without on-chain pool funding.
+pub(crate) fn is_soft_sponsor_config_error(err: &str) -> bool {
+    matches!(
+        wallet_error_code(err).as_deref(),
+        Some("BUNDLER_CONFIG" | "ERC4337_ACCOUNT_CONFIG")
+    )
+}
+
+/// Preflight failures that EOA fallback cannot fix; surface to the user instead of continuing.
+pub(crate) fn is_hard_sponsor_preflight_error(err: &str) -> bool {
+    matches!(
+        wallet_error_code(err).as_deref(),
+        Some(
+            "USERNAME_POOL_LOW"
+                | "SPONSOR_POOL_LOW"
+                | "PAYMASTER_DEPOSIT_LOW"
+                | "PAYMASTER_STAKE_LOW"
+                | "SPONSOR_POLICY_READ"
+        )
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1588,8 +1616,9 @@ mod tests {
         parse_send_user_op_response, parse_sponsored_user_op_receipt,
         parse_war_game_userop_context, paymaster_data, pimlico_bundler_rpc_url,
         pimlico_chain_id_for_network, receipt_transaction_hash, resolve_sponsored_squad_id,
-        retriable_bundler_status, user_op_json, userop_max_cost_wei, validate_pimlico_api_key,
-        SponsoredUserOpReceipt, UserOpParams, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_PRIORITY_FEE,
+        retriable_bundler_status,     user_op_json, userop_max_cost_wei, validate_pimlico_api_key,
+    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
+    SponsoredUserOpReceipt, UserOpParams, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_PRIORITY_FEE,
         HEAVY_CALL_GAS_LIMIT,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
@@ -1599,6 +1628,15 @@ mod tests {
     use reqwest::StatusCode;
     use serde_json::json;
     use std::time::Duration;
+
+    #[test]
+    fn hard_sponsor_preflight_classification() {
+        let err = |code: &str| format!(r#"{{"code":"{code}","message":"x"}}"#);
+        assert!(is_hard_sponsor_preflight_error(&err("USERNAME_POOL_LOW")));
+        assert!(is_hard_sponsor_preflight_error(&err("PAYMASTER_DEPOSIT_LOW")));
+        assert!(!is_hard_sponsor_preflight_error(&err("BUNDLER_CONFIG")));
+        assert!(is_soft_sponsor_config_error(&err("BUNDLER_CONFIG")));
+    }
 
     #[test]
     fn pack_u128s_puts_hi_lo() {

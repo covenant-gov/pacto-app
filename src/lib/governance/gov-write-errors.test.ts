@@ -41,6 +41,9 @@ describe('govWriteErrorMessage', () => {
     expect(govWriteErrorMessage('{"code":"SPONSOR_POOL_LOW","message":"x"}', 'Vote')).toBe(
       'governance.error.sponsorPoolLow',
     );
+    expect(govWriteErrorMessage('{"code":"USERNAME_POOL_LOW","message":"x"}', 'Vote')).toBe(
+      'governance.error.globalPoolLow',
+    );
     expect(govWriteErrorMessage('{"code":"SPONSOR_INELIGIBLE","message":"x"}', 'Vote')).toBe(
       'governance.error.sponsorIneligible',
     );

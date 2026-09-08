@@ -4,7 +4,6 @@ use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use alloy::sol_types::SolCall;
-use serde_json::Value;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
@@ -29,6 +28,7 @@ use super::rpc::{
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::global_sponsor_userop::send_sponsored_global_gov_userop;
+use super::global_userop_cost::{global_userop_placeholder_max_cost, GlobalUseropPlaceholderLane};
 use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
 use super::pacto_chain_config;
 use super::sponsor_preflight::{
@@ -36,6 +36,7 @@ use super::sponsor_preflight::{
 };
 use super::sponsor_userop::{
     call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
+    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
     resolve_sponsored_squad_id, roster_native_balance_wei, send_sponsored_gov_userop,
     wait_for_user_operation_receipt, SponsoredUserOpSend, FALLBACK_MAX_FEE,
 };
@@ -137,12 +138,18 @@ pub async fn send_gov_module_call<R: Runtime>(
 
     let global_tophat_ok = match global_addrs.as_ref() {
         Ok(addrs) => {
+            let placeholder_max_cost = global_userop_placeholder_max_cost(
+                &read_provider,
+                &calldata,
+                GlobalUseropPlaceholderLane::GovModule,
+            )
+            .await;
             global_gov_module_path_ok(
                 &read_provider,
                 addrs,
                 signer.address(),
                 to,
-                required,
+                placeholder_max_cost,
             )
             .await?
         }
@@ -192,6 +199,9 @@ pub async fn send_gov_module_call<R: Runtime>(
                                 None,
                             ));
                         }
+                        if is_hard_sponsor_preflight_error(&e) {
+                            return Err(e);
+                        }
                         continue;
                     }
                 }
@@ -232,6 +242,9 @@ pub async fn send_gov_module_call<R: Runtime>(
                                 ),
                                 None,
                             ));
+                        }
+                        if is_hard_sponsor_preflight_error(&e) {
+                            return Err(e);
                         }
                         continue;
                     }
@@ -349,17 +362,7 @@ async fn estimate_eoa_cost_wei<P: Provider>(
 /// Stable `code` of a structured wallet error JSON; unparseable errors have no code and
 /// are treated as hard failures by callers.
 fn wallet_error_code(err: &str) -> Option<String> {
-    let parsed: Value = serde_json::from_str(err).ok()?;
-    parsed.get("code")?.as_str().map(str::to_string)
-}
-
-/// Soft sponsor-path config gaps the user can fix by funding the roster key or completing
-/// bundler/account config.
-fn is_soft_sponsor_config_error(err: &str) -> bool {
-    matches!(
-        wallet_error_code(err).as_deref(),
-        Some("BUNDLER_CONFIG" | "ERC4337_ACCOUNT_CONFIG")
-    )
+    super::sponsor_userop::wallet_error_code(err)
 }
 
 fn calldata_selector_hex(calldata: &[u8]) -> String {
@@ -509,11 +512,11 @@ pub fn explicit_parent_id(parent_id: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        explicit_parent_id, gov_call_action_label, is_soft_sponsor_config_error,
-        wallet_error_code,
+        explicit_parent_id, gov_call_action_label, wallet_error_code,
     };
     use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::castVoteCall;
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::bootstrapCrewCall;
+    use crate::evm::sponsor_userop::{is_hard_sponsor_preflight_error, is_soft_sponsor_config_error};
     use alloy::primitives::U256;
     use alloy::sol_types::SolCall;
 
@@ -533,6 +536,9 @@ mod tests {
         )));
         assert!(!is_soft_sponsor_config_error(&soft("SPONSOR_POOL_LOW")));
         assert!(!is_soft_sponsor_config_error(&soft("PAYMASTER_REJECTED")));
+        assert!(is_hard_sponsor_preflight_error(&soft("USERNAME_POOL_LOW")));
+        assert!(is_hard_sponsor_preflight_error(&soft("SPONSOR_POOL_LOW")));
+        assert!(!is_hard_sponsor_preflight_error(&soft("BUNDLER_CONFIG")));
         // Unparseable payloads and missing codes are hard errors.
         assert!(!is_soft_sponsor_config_error(
             "BUNDLER_CONFIG as plain text"

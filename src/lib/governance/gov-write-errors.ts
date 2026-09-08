@@ -5,6 +5,7 @@ import { getInvokeErrorMessage } from '../utils/tauri-errors';
 
 const CODE_TO_I18N: Record<string, string> = {
   SPONSOR_POOL_LOW: 'governance.error.sponsorPoolLow',
+  USERNAME_POOL_LOW: 'governance.error.globalPoolLow',
   SPONSOR_INELIGIBLE: 'governance.error.sponsorIneligible',
   SPONSOR_PATH_UNAVAILABLE: 'governance.error.sponsorPathUnavailable',
   SPONSOR_REQUIRED: 'governance.error.sponsorRequired',

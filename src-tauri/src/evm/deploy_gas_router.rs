@@ -7,10 +7,10 @@ use std::str::FromStr;
 use alloy::primitives::{Address, TxHash, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
-use serde_json::Value;
 use tauri::{AppHandle, Runtime};
 
 use super::global_sponsor_userop::send_sponsored_global_factory_userop;
+use super::global_userop_cost::{global_userop_placeholder_max_cost, GlobalUseropPlaceholderLane};
 use super::gov_read::rpc_urls_or_default;
 use super::gov_sponsor_path::{select_gov_sponsor_path, GovSponsorPath};
 use super::pacto_chain_config;
@@ -22,7 +22,8 @@ use super::rpc::{
 use super::sponsor_preflight::{global_factory_path_ok, read_eligible_member};
 use super::sponsor_userop::{
     call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
-    roster_native_balance_wei, wait_for_user_operation_receipt, FALLBACK_MAX_FEE,
+    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, roster_native_balance_wei,
+    wait_for_user_operation_receipt, FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config::WalletNetworkConfig;
 
@@ -77,12 +78,18 @@ pub async fn send_factory_call<R: Runtime>(
                     .await?
                     .is_some();
                     let global_ok = if eligible {
+                        let placeholder_max_cost = global_userop_placeholder_max_cost(
+                            &read_provider,
+                            &calldata,
+                            GlobalUseropPlaceholderLane::FactoryTarget,
+                        )
+                        .await;
                         global_factory_path_ok(
                             &read_provider,
                             addrs,
                             roster,
                             factory,
-                            gas_required,
+                            placeholder_max_cost,
                         )
                         .await?
                     } else {
@@ -135,6 +142,7 @@ pub async fn send_factory_call<R: Runtime>(
                     None,
                 ));
             }
+            Err(e) if is_hard_sponsor_preflight_error(&e) => return Err(e),
             Err(_) => {
                 // Fall through to self-funded EOA when global sponsorship fails at runtime.
             }
@@ -216,23 +224,12 @@ async fn estimate_eoa_gas_cost_wei<P: Provider>(
     U256::from(gas) * U256::from(max_fee)
 }
 
-fn wallet_error_code(err: &str) -> Option<String> {
-    let parsed: Value = serde_json::from_str(err).ok()?;
-    parsed.get("code")?.as_str().map(str::to_string)
-}
-
-fn is_soft_sponsor_config_error(err: &str) -> bool {
-    matches!(
-        wallet_error_code(err).as_deref(),
-        Some("BUNDLER_CONFIG" | "ERC4337_ACCOUNT_CONFIG")
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use crate::evm::gov_sponsor_path::{
         fallback_paths_after, select_gov_sponsor_path, GovSponsorPath,
     };
+    use crate::evm::sponsor_userop::is_soft_sponsor_config_error;
     use super::*;
 
     #[test]

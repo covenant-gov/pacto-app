@@ -230,11 +230,12 @@ pub async fn assert_global_gov_module_preflight<P: Provider>(
     if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei)
         .await?
     {
-        return Err(wallet_err_json(
-            "USERNAME_POOL_LOW",
-            "global sponsor pool spendable balance is below required headroom",
-            None,
-        ));
+        return Err(global_pool_headroom_error(
+            provider,
+            addrs.global_sponsor_pool,
+            estimated_max_cost_wei,
+        )
+        .await);
     }
     Ok(eligible)
 }
@@ -272,13 +273,32 @@ pub async fn assert_global_factory_preflight<P: Provider>(
     if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei)
         .await?
     {
-        return Err(wallet_err_json(
-            "USERNAME_POOL_LOW",
-            "global sponsor pool spendable balance is below required headroom",
-            None,
-        ));
+        return Err(global_pool_headroom_error(
+            provider,
+            addrs.global_sponsor_pool,
+            estimated_max_cost_wei,
+        )
+        .await);
     }
     Ok(eligible)
+}
+
+async fn global_pool_headroom_error<P: Provider>(
+    provider: &P,
+    pool: Address,
+    estimated_max_cost_wei: U256,
+) -> String {
+    let spendable = read_global_pool_spendable(provider, pool)
+        .await
+        .unwrap_or(U256::ZERO);
+    let need = required_global_pool_balance(estimated_max_cost_wei);
+    wallet_err_json(
+        "USERNAME_POOL_LOW",
+        format!(
+            "global sponsor pool spendable {spendable} wei is below required headroom {need} wei for this UserOp"
+        ),
+        None,
+    )
 }
 
 #[cfg(test)]
