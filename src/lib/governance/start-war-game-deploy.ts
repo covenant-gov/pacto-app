@@ -1,3 +1,5 @@
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import {
   deployWarGameForParent,
   quartermasterBootstrapCrew,
@@ -85,7 +87,7 @@ export function startWarGameDeploy(params: {
 
   const depositWei = params.initialDepositWei.trim();
   if (depositWei && depositWei !== '0' && !/^\d+$/.test(depositWei)) {
-    const message = 'Enter a valid initial sponsor deposit (0 or more wei).';
+    const message = get(t)('governance.deployGovAndSponsor.deposit.error.nonNegativeWei');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;

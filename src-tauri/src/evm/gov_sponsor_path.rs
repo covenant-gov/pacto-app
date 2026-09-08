@@ -39,6 +39,42 @@ pub fn select_gov_sponsor_path(
     GovSponsorPath::Fail
 }
 
+/// Remaining arms to try after a sponsored path fails at runtime (non-soft).
+pub fn fallback_paths_after(eligible_member: bool, attempted: GovSponsorPath) -> Vec<GovSponsorPath> {
+    match (eligible_member, attempted) {
+        (true, GovSponsorPath::Squad) => {
+            vec![GovSponsorPath::GlobalTopHat, GovSponsorPath::Eoa]
+        }
+        (true, GovSponsorPath::GlobalTopHat) => vec![GovSponsorPath::Eoa],
+        _ => vec![],
+    }
+}
+
+/// Primary path plus runtime fallbacks, deduped in priority order.
+pub fn gov_path_attempt_order(
+    eligible_member: bool,
+    squad_path_ok: bool,
+    global_tophat_ok: bool,
+    eoa_can_pay: bool,
+) -> Vec<GovSponsorPath> {
+    let primary = select_gov_sponsor_path(
+        eligible_member,
+        squad_path_ok,
+        global_tophat_ok,
+        eoa_can_pay,
+    );
+    if primary == GovSponsorPath::Fail {
+        return vec![GovSponsorPath::Fail];
+    }
+    let mut paths = vec![primary];
+    for path in fallback_paths_after(eligible_member, primary) {
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    paths
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +154,51 @@ mod tests {
         assert_eq!(
             select_gov_sponsor_path(true, false, false, false),
             GovSponsorPath::Fail
+        );
+    }
+
+    #[test]
+    fn eligible_fallback_after_squad_includes_global_then_eoa() {
+        assert_eq!(
+            fallback_paths_after(true, GovSponsorPath::Squad),
+            vec![GovSponsorPath::GlobalTopHat, GovSponsorPath::Eoa]
+        );
+    }
+
+    #[test]
+    fn eligible_fallback_after_global_is_eoa_only() {
+        assert_eq!(
+            fallback_paths_after(true, GovSponsorPath::GlobalTopHat),
+            vec![GovSponsorPath::Eoa]
+        );
+    }
+
+    #[test]
+    fn non_eligible_squad_failure_has_no_fallback() {
+        assert!(fallback_paths_after(false, GovSponsorPath::Squad).is_empty());
+    }
+
+    #[test]
+    fn attempt_order_dedupes_primary_with_fallbacks() {
+        assert_eq!(
+            gov_path_attempt_order(true, true, true, true),
+            vec![
+                GovSponsorPath::Squad,
+                GovSponsorPath::GlobalTopHat,
+                GovSponsorPath::Eoa,
+            ]
+        );
+        assert_eq!(
+            gov_path_attempt_order(true, false, true, true),
+            vec![GovSponsorPath::GlobalTopHat, GovSponsorPath::Eoa]
+        );
+        assert_eq!(
+            gov_path_attempt_order(false, true, false, false),
+            vec![GovSponsorPath::Squad]
+        );
+        assert_eq!(
+            gov_path_attempt_order(true, false, false, false),
+            vec![GovSponsorPath::Fail]
         );
     }
 }

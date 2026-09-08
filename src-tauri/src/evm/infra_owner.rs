@@ -102,7 +102,7 @@ pub async fn resolve_ext_infra_owners_on_chain<R: Runtime, P: Provider>(
     {
         if !record.sponsor.is_zero() && matches!(record.variant, SquadVariant::EXT) {
             owners.sponsor_address_owner =
-                read_sponsor_address_owner(provider, record.sponsor).await.ok();
+                Some(read_sponsor_address_owner(provider, record.sponsor).await?);
         }
     }
     let rows = crate::db::list_squad_infra(app.clone(), pid.to_string())?;
@@ -138,4 +138,53 @@ pub async fn roster_evm_for_parent<R: Runtime>(
     let member = crate::account_manager::get_current_account()?;
     let raw = crate::db::roster_evm_address_for_member(app, pid, member.as_str())?;
     Ok(raw.and_then(|s| parse_address(s.trim()).ok()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::address;
+
+    #[test]
+    fn gov_deploy_gate_allows_when_no_ext_owners() {
+        let roster = address!("0x1111111111111111111111111111111111111111");
+        let owners = ExtInfraOwners::default();
+        assert!(require_roster_matches_owners_for_gov_deploy(roster, &owners).is_ok());
+    }
+
+    #[test]
+    fn gov_deploy_gate_allows_when_roster_matches_sponsor_owner() {
+        let roster = address!("0x1111111111111111111111111111111111111111");
+        let owners = ExtInfraOwners {
+            sponsor_address_owner: Some(roster),
+            admin_ext_owner: None,
+        };
+        assert!(require_roster_matches_owners_for_gov_deploy(roster, &owners).is_ok());
+    }
+
+    #[test]
+    fn gov_deploy_gate_rejects_when_sponsor_owner_differs() {
+        let roster = address!("0x1111111111111111111111111111111111111111");
+        let other = address!("0x2222222222222222222222222222222222222222");
+        let owners = ExtInfraOwners {
+            sponsor_address_owner: Some(other),
+            admin_ext_owner: None,
+        };
+        let err = require_roster_matches_owners_for_gov_deploy(roster, &owners)
+            .expect_err("expected NOT_INFRA_OWNER");
+        assert!(err.contains("NOT_INFRA_OWNER"));
+    }
+
+    #[test]
+    fn gov_deploy_gate_rejects_when_admin_owner_differs() {
+        let roster = address!("0x1111111111111111111111111111111111111111");
+        let other = address!("0x2222222222222222222222222222222222222222");
+        let owners = ExtInfraOwners {
+            sponsor_address_owner: None,
+            admin_ext_owner: Some(other),
+        };
+        let err = require_roster_matches_owners_for_gov_deploy(roster, &owners)
+            .expect_err("expected NOT_INFRA_OWNER");
+        assert!(err.contains("NOT_INFRA_OWNER"));
+    }
 }

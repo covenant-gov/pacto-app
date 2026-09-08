@@ -1,3 +1,5 @@
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import {
   deployNavePirataForParent,
   deploySquadSponsorHatsForParent,
@@ -200,7 +202,7 @@ export function startPactoGovAndSponsorDeploy(params: {
 
   const depositWei = normalizeInitialDepositWei(params.initialDepositWei);
   if (depositWei === null) {
-    const message = 'Enter a valid initial sponsor deposit (0 or more wei).';
+    const message = get(t)('governance.deployGovAndSponsor.deposit.error.nonNegativeWei');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -397,7 +399,7 @@ export function startHatsSponsorOnlyDeploy(params: {
 
   const depositWei = normalizeInitialDepositWei(params.initialDepositWei);
   if (depositWei === null) {
-    const message = 'Enter a valid initial sponsor deposit (0 or more wei).';
+    const message = get(t)('governance.deployGovAndSponsor.deposit.error.nonNegativeWei');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;

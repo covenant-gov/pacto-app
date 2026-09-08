@@ -29,7 +29,7 @@ use super::rpc::{
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::global_sponsor_userop::send_sponsored_global_gov_userop;
-use super::gov_sponsor_path::{select_gov_sponsor_path, GovSponsorPath};
+use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
 use super::pacto_chain_config;
 use super::sponsor_preflight::{
     global_gov_module_path_ok, read_eligible_member, squad_sponsor_path_ok,
@@ -117,22 +117,22 @@ pub async fn send_gov_module_call<R: Runtime>(
         Err(_) => false,
     };
 
-    let squad_path_ok = if has_sponsor_infra {
-        let sp = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)?;
-        let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
-            .map_err(|e| wallet_err_json("WARGAME_READ", e, None))?;
-        let squad_id = resolve_sponsored_squad_id(pid, to, wargame_payload.as_deref());
-        squad_sponsor_path_ok(
-            &read_provider,
-            sp.squad_sponsor_factory,
-            sp.pacto_sponsor_paymaster,
-            squad_id,
-            signer.address(),
-            required,
-        )
-        .await?
-    } else {
-        false
+    let squad_path_ok = match pacto_chain_config::squad_sponsor_deploy_addresses(&net.key) {
+        Ok(sp) => {
+            let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
+                .map_err(|e| wallet_err_json("WARGAME_READ", e, None))?;
+            let squad_id = resolve_sponsored_squad_id(pid, to, wargame_payload.as_deref());
+            squad_sponsor_path_ok(
+                &read_provider,
+                sp.squad_sponsor_factory,
+                sp.pacto_sponsor_paymaster,
+                squad_id,
+                signer.address(),
+                required,
+            )
+            .await?
+        }
+        Err(_) => false,
     };
 
     let global_tophat_ok = match global_addrs.as_ref() {
@@ -149,110 +149,114 @@ pub async fn send_gov_module_call<R: Runtime>(
         Err(_) => false,
     };
 
-    match select_gov_sponsor_path(
+    let path_order = gov_path_attempt_order(
         eligible_member,
         squad_path_ok,
         global_tophat_ok,
         eoa_can_pay,
-    ) {
-        GovSponsorPath::Squad => {
-            match send_sponsored_gov_userop(
-                app.clone(),
-                &net.key,
-                pid,
-                to,
-                calldata.clone(),
-                rpc_urls_override.clone(),
-            )
-            .await
-            {
-                Ok(send) => {
-                    return finish_sponsored_gov_write(
-                        &app,
-                        pid,
-                        &net.key,
-                        net.chain_id,
-                        signer.address(),
-                        to,
-                        &calldata,
-                        &send,
-                    )
-                    .await;
-                }
-                Err(e) => {
-                    if is_soft_sponsor_config_error(&e) {
-                        return Err(wallet_err_json(
-                            "SPONSOR_PATH_UNAVAILABLE",
-                            format!(
-                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or save a Pimlico API key on Status (optional PIMLICO_API_KEY / BUNDLER_RPC_URL fallback) so the Rust backend can reach an EntryPoint v0.7 bundler."
-                            ),
-                            None,
-                        ));
+    );
+
+    for path in path_order {
+        match path {
+            GovSponsorPath::Squad => {
+                match send_sponsored_gov_userop(
+                    app.clone(),
+                    &net.key,
+                    pid,
+                    to,
+                    calldata.clone(),
+                    rpc_urls_override.clone(),
+                )
+                .await
+                {
+                    Ok(send) => {
+                        return finish_sponsored_gov_write(
+                            &app,
+                            pid,
+                            &net.key,
+                            net.chain_id,
+                            signer.address(),
+                            to,
+                            &calldata,
+                            &send,
+                        )
+                        .await;
                     }
-                    return Err(e);
+                    Err(e) => {
+                        if is_soft_sponsor_config_error(&e) {
+                            return Err(wallet_err_json(
+                                "SPONSOR_PATH_UNAVAILABLE",
+                                format!(
+                                    "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or save a Pimlico API key on Status (optional PIMLICO_API_KEY / BUNDLER_RPC_URL fallback) so the Rust backend can reach an EntryPoint v0.7 bundler."
+                                ),
+                                None,
+                            ));
+                        }
+                        continue;
+                    }
                 }
             }
-        }
-        GovSponsorPath::GlobalTopHat => {
-            match send_sponsored_global_gov_userop(
-                app.clone(),
-                &net.key,
-                pid,
-                to,
-                calldata.clone(),
-                rpc_urls_override.clone(),
-            )
-            .await
-            {
-                Ok(send) => {
-                    return finish_sponsored_gov_write(
-                        &app,
-                        pid,
-                        &net.key,
-                        net.chain_id,
-                        signer.address(),
-                        to,
-                        &calldata,
-                        &send,
-                    )
-                    .await
-                    .map(|(tx_hash, chain, chain_id, _)| {
-                        (tx_hash, chain, chain_id, "global_sponsored".to_string())
-                    });
-                }
-                Err(e) => {
-                    if is_soft_sponsor_config_error(&e) {
-                        return Err(wallet_err_json(
-                            "SPONSOR_PATH_UNAVAILABLE",
-                            format!(
-                                "No squad sponsor pool is available and the global sponsored path is not fully configured ({e}). Fund the roster key, fund the global pool, or save a Pimlico API key on Status."
-                            ),
-                            None,
-                        ));
+            GovSponsorPath::GlobalTopHat => {
+                match send_sponsored_global_gov_userop(
+                    app.clone(),
+                    &net.key,
+                    pid,
+                    to,
+                    calldata.clone(),
+                    rpc_urls_override.clone(),
+                )
+                .await
+                {
+                    Ok(send) => {
+                        return finish_sponsored_gov_write(
+                            &app,
+                            pid,
+                            &net.key,
+                            net.chain_id,
+                            signer.address(),
+                            to,
+                            &calldata,
+                            &send,
+                        )
+                        .await
+                        .map(|(tx_hash, chain, chain_id, _)| {
+                            (tx_hash, chain, chain_id, "global_sponsored".to_string())
+                        });
                     }
-                    return Err(e);
+                    Err(e) => {
+                        if is_soft_sponsor_config_error(&e) {
+                            return Err(wallet_err_json(
+                                "SPONSOR_PATH_UNAVAILABLE",
+                                format!(
+                                    "No squad sponsor pool is available and the global sponsored path is not fully configured ({e}). Fund the roster key, fund the global pool, or save a Pimlico API key on Status."
+                                ),
+                                None,
+                            ));
+                        }
+                        continue;
+                    }
                 }
             }
-        }
-        GovSponsorPath::Fail => {
-            if eligible_member {
+            GovSponsorPath::Fail => {
+                if eligible_member {
+                    return Err(wallet_err_json(
+                        "SPONSOR_PATH_UNAVAILABLE",
+                        format!(
+                            "eligible username member has no gas path for this write (squad pool ok={squad_path_ok}, global topHat ok={global_tophat_ok}, eoa can pay={eoa_can_pay})"
+                        ),
+                        None,
+                    ));
+                }
                 return Err(wallet_err_json(
-                    "SPONSOR_PATH_UNAVAILABLE",
+                    "INSUFFICIENT_FUNDS",
                     format!(
-                        "eligible username member has no gas path for this write (squad pool ok={squad_path_ok}, global topHat ok={global_tophat_ok}, eoa can pay={eoa_can_pay})"
+                        "roster key holds {balance} wei but this write needs ~{required} wei for gas, and no squad sponsor is deployed. Fund the roster key or deploy a squad sponsor first."
                     ),
                     None,
                 ));
             }
-            return Err(wallet_err_json(
-                "INSUFFICIENT_FUNDS",
-                format!(
-                    "roster key holds {balance} wei but this write needs ~{required} wei for gas, and no squad sponsor is deployed. Fund the roster key or deploy a squad sponsor first."
-                ),
-                None,
-            ));
+            GovSponsorPath::Eoa => break,
         }
-        GovSponsorPath::Eoa => {}
     }
 
     let provider = connect_signing_provider(&urls, wallet).await?;

@@ -1,5 +1,7 @@
 //! Launchpad deploy option state: infra status, owner gates, and action enablement.
 
+use std::collections::HashMap;
+
 use alloy::primitives::Address;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
@@ -36,7 +38,8 @@ pub struct LaunchpadDeployOption {
     pub id: String,
     pub deployed: bool,
     pub enabled: bool,
-    pub disabled_reason: Option<String>,
+    pub disabled_reason_key: Option<String>,
+    pub disabled_reason_values: Option<HashMap<String, String>>,
     pub deployed_address: Option<String>,
 }
 
@@ -69,13 +72,40 @@ fn addresses_match(a: Option<Address>, b: Option<Address>) -> bool {
     }
 }
 
-fn owner_gate_reason(required: &[Address], label: &str) -> String {
-    let addrs = required
+fn disabled_reason(key: &str) -> (Option<String>, Option<HashMap<String, String>>) {
+    (Some(key.to_string()), None)
+}
+
+fn disabled_reason_with_addresses(
+    key: &str,
+    addrs: &[Address],
+) -> (Option<String>, Option<HashMap<String, String>>) {
+    let addresses = addrs
         .iter()
         .map(|a| format!("{:#x}", a))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("Only the {} ({}) can perform this action.", label, addrs)
+    let mut values = HashMap::new();
+    values.insert("addresses".to_string(), addresses);
+    (Some(key.to_string()), Some(values))
+}
+
+fn launchpad_option(
+    id: &str,
+    deployed: bool,
+    enabled: bool,
+    disabled_key: Option<String>,
+    disabled_values: Option<HashMap<String, String>>,
+    deployed_address: Option<String>,
+) -> LaunchpadDeployOption {
+    LaunchpadDeployOption {
+        id: id.to_string(),
+        deployed,
+        enabled,
+        disabled_reason_key: disabled_key,
+        disabled_reason_values: disabled_values,
+        deployed_address,
+    }
 }
 
 #[tauri::command]
@@ -251,22 +281,23 @@ pub async fn get_squad_deploy_launchpad_state<R: Runtime>(
 
     // Full governance
     let full_enabled = !has_pacto_gov && !has_sponsor && !has_admin;
-    options.push(LaunchpadDeployOption {
-        id: "full-gov".to_string(),
-        deployed: false,
-        enabled: full_enabled,
-        disabled_reason: if full_enabled {
-            None
-        } else {
-            Some("Full governance is only available before any infra is deployed.".to_string())
-        },
-        deployed_address: None,
-    });
+    let (full_disabled_key, full_disabled_values) = if full_enabled {
+        (None, None)
+    } else {
+        disabled_reason("governance.launchpad.reason.fullGovBlocked")
+    };
+    options.push(launchpad_option(
+        "full-gov",
+        false,
+        full_enabled,
+        full_disabled_key,
+        full_disabled_values,
+        None,
+    ));
 
     // Pacto Gov
-    let mut pacto_gov_disabled: Option<String> = None;
-    if has_pacto_gov {
-        pacto_gov_disabled = Some("Pacto Gov is already deployed.".to_string());
+    let (pacto_gov_disabled_key, pacto_gov_disabled_values) = if has_pacto_gov {
+        disabled_reason("governance.launchpad.reason.pactoGovAlreadyDeployed")
     } else if !gov_owner_ok {
         let mut req = Vec::new();
         if let Some(o) = ext_owners.sponsor_address_owner {
@@ -275,88 +306,95 @@ pub async fn get_squad_deploy_launchpad_state<R: Runtime>(
         if let Some(o) = ext_owners.admin_ext_owner {
             req.push(o);
         }
-        pacto_gov_disabled = Some(owner_gate_reason(&req, "infra owner"));
-    }
-    options.push(LaunchpadDeployOption {
-        id: "pacto-gov".to_string(),
-        deployed: has_pacto_gov,
-        enabled: pacto_gov_disabled.is_none(),
-        disabled_reason: pacto_gov_disabled,
-        deployed_address: pacto_gov_status.deployed_address.clone(),
-    });
+        disabled_reason_with_addresses("governance.launchpad.reason.notInfraOwner", &req)
+    } else {
+        (None, None)
+    };
+    options.push(launchpad_option(
+        "pacto-gov",
+        has_pacto_gov,
+        pacto_gov_disabled_key.is_none(),
+        pacto_gov_disabled_key,
+        pacto_gov_disabled_values,
+        pacto_gov_status.deployed_address.clone(),
+    ));
 
     // Squad Sponsor Ext create
-    let ext_sponsor_disabled = if has_pacto_gov {
-        Some("Deploy Ext sponsor before Pacto Gov only.".to_string())
+    let (ext_sponsor_disabled_key, ext_sponsor_disabled_values) = if has_pacto_gov {
+        disabled_reason("governance.launchpad.reason.extSponsorBeforeGovOnly")
     } else if has_sponsor {
-        Some("Squad sponsor is already deployed.".to_string())
+        disabled_reason("governance.launchpad.reason.sponsorAlreadyDeployed")
     } else {
-        None
+        (None, None)
     };
-    options.push(LaunchpadDeployOption {
-        id: "sponsor-ext".to_string(),
-        deployed: has_sponsor,
-        enabled: ext_sponsor_disabled.is_none(),
-        disabled_reason: ext_sponsor_disabled,
-        deployed_address: sponsor_status.deployed_address.clone(),
-    });
+    options.push(launchpad_option(
+        "sponsor-ext",
+        has_sponsor,
+        ext_sponsor_disabled_key.is_none(),
+        ext_sponsor_disabled_key,
+        ext_sponsor_disabled_values,
+        sponsor_status.deployed_address.clone(),
+    ));
 
     // Hats sponsor create (gov first, no unwired ext)
-    let hats_disabled = if !has_pacto_gov {
-        Some("Deploy Pacto Gov before a hats-linked sponsor.".to_string())
+    let (hats_disabled_key, hats_disabled_values) = if !has_pacto_gov {
+        disabled_reason("governance.launchpad.reason.deployGovBeforeHatsSponsor")
     } else if has_sponsor && hats_wired {
-        Some("Squad sponsor is already deployed.".to_string())
+        disabled_reason("governance.launchpad.reason.sponsorAlreadyDeployed")
     } else if unwired_ext {
-        Some("Wire the existing Ext sponsor instead.".to_string())
+        disabled_reason("governance.launchpad.reason.wireExtSponsorInstead")
     } else {
-        None
+        (None, None)
     };
-    options.push(LaunchpadDeployOption {
-        id: "sponsor-hats".to_string(),
-        deployed: has_sponsor && hats_wired,
-        enabled: hats_disabled.is_none(),
-        disabled_reason: hats_disabled,
-        deployed_address: if has_sponsor && hats_wired {
+    options.push(launchpad_option(
+        "sponsor-hats",
+        has_sponsor && hats_wired,
+        hats_disabled_key.is_none(),
+        hats_disabled_key,
+        hats_disabled_values,
+        if has_sponsor && hats_wired {
             sponsor_status.deployed_address.clone()
         } else {
             None
         },
-    });
+    ));
 
     // Wire unwired Ext sponsor
-    let wire_disabled = if !has_pacto_gov {
-        Some("Deploy Pacto Gov before wiring the sponsor.".to_string())
+    let (wire_disabled_key, wire_disabled_values) = if !has_pacto_gov {
+        disabled_reason("governance.launchpad.reason.deployGovBeforeWire")
     } else if !unwired_ext {
-        Some("No unwired Ext sponsor to wire.".to_string())
+        disabled_reason("governance.launchpad.reason.noUnwiredExtSponsor")
     } else if !sponsor_owner_ok {
         let o = ext_owners.sponsor_address_owner.unwrap_or(Address::ZERO);
-        Some(owner_gate_reason(&[o], "sponsor addressOwner"))
+        disabled_reason_with_addresses("governance.launchpad.reason.notSponsorOwner", &[o])
     } else {
-        None
+        (None, None)
     };
-    options.push(LaunchpadDeployOption {
-        id: "sponsor-wire".to_string(),
-        deployed: has_sponsor && hats_wired,
-        enabled: wire_disabled.is_none(),
-        disabled_reason: wire_disabled,
-        deployed_address: sponsor_status.deployed_address.clone(),
-    });
+    options.push(launchpad_option(
+        "sponsor-wire",
+        has_sponsor && hats_wired,
+        wire_disabled_key.is_none(),
+        wire_disabled_key,
+        wire_disabled_values,
+        sponsor_status.deployed_address.clone(),
+    ));
 
     // Squad Admin Ext
-    let admin_disabled = if has_pacto_gov {
-        Some("Squad Admin is included in Pacto Gov.".to_string())
+    let (admin_disabled_key, admin_disabled_values) = if has_pacto_gov {
+        disabled_reason("governance.launchpad.reason.squadAdminIncludedInGov")
     } else if has_admin {
-        Some("Squad Admin is already deployed.".to_string())
+        disabled_reason("governance.launchpad.reason.squadAdminAlreadyDeployed")
     } else {
-        None
+        (None, None)
     };
-    options.push(LaunchpadDeployOption {
-        id: "squad-admin-ext".to_string(),
-        deployed: has_admin,
-        enabled: admin_disabled.is_none(),
-        disabled_reason: admin_disabled,
-        deployed_address: admin_status.deployed_address.clone(),
-    });
+    options.push(launchpad_option(
+        "squad-admin-ext",
+        has_admin,
+        admin_disabled_key.is_none(),
+        admin_disabled_key,
+        admin_disabled_values,
+        admin_status.deployed_address.clone(),
+    ));
 
     Ok(SquadDeployLaunchpadState {
         my_roster_evm: my_roster.map(|a| format!("{:#x}", a)),

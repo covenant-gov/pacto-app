@@ -236,7 +236,8 @@ export interface LaunchpadDeployOptionDto {
   id: LaunchpadDeployOptionId;
   deployed: boolean;
   enabled: boolean;
-  disabledReason?: string | null;
+  disabledReasonKey?: string | null;
+  disabledReasonValues?: Record<string, string> | null;
   deployedAddress?: string | null;
 }
 

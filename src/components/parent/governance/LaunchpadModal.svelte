@@ -11,6 +11,7 @@
   } from '../../../lib/governance/api';
   import {
     launchpadCtaDisabled,
+    launchpadDisabledReasonLabel,
     launchpadOptionI18nKey,
     launchpadOptionRoute,
     launchpadShortAddress,
@@ -256,8 +257,10 @@
           <code>{launchpadShortAddress(option.deployedAddress)}</code>
         </span>
       {/if}
-      {#if !option.enabled && option.disabledReason}
-        <span class="launchpad-option-reason muted">{option.disabledReason}</span>
+      {#if !option.enabled && option.disabledReasonKey}
+        <span class="launchpad-option-reason muted">
+          {launchpadDisabledReasonLabel(option, $t)}
+        </span>
       {/if}
     </span>
   </label>

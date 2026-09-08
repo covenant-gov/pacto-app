@@ -101,84 +101,90 @@ pub async fn send_factory_call<R: Runtime>(
         None => (false, false),
     };
 
-    match select_gov_sponsor_path(eligible_member, false, global_factory_ok, eoa_can_pay) {
-        GovSponsorPath::GlobalTopHat => {
-            let pid = ctx.roster_parent_id.ok_or_else(|| {
-                wallet_err_json(
-                    "MISSING_PARENT",
-                    "parentId is required for global sponsored factory deploy",
-                    None,
-                )
-            })?;
-            match send_sponsored_global_factory_userop(
-                app.clone(),
-                &net.key,
-                pid,
-                factory,
-                calldata,
-                value_wei,
-                rpc_urls,
+    let selected =
+        select_gov_sponsor_path(eligible_member, false, global_factory_ok, eoa_can_pay);
+
+    if selected == GovSponsorPath::GlobalTopHat {
+        let pid = ctx.roster_parent_id.ok_or_else(|| {
+            wallet_err_json(
+                "MISSING_PARENT",
+                "parentId is required for global sponsored factory deploy",
+                None,
             )
-            .await
-            {
-                Ok(send) => finish_sponsored_factory_call(&read_provider, &send, confirm_timeout)
+        })?;
+        match send_sponsored_global_factory_userop(
+            app.clone(),
+            &net.key,
+            pid,
+            factory,
+            calldata.clone(),
+            value_wei,
+            rpc_urls,
+        )
+        .await
+        {
+            Ok(send) => {
+                return finish_sponsored_factory_call(&read_provider, &send, confirm_timeout)
                     .await
                     .map(|receipt| FactoryCallOutcome {
                         receipt,
                         funded_by: "global_sponsored".to_string(),
-                    }),
-                Err(e) if is_soft_sponsor_config_error(&e) => Err(wallet_err_json(
+                    });
+            }
+            Err(e) if is_soft_sponsor_config_error(&e) => {
+                return Err(wallet_err_json(
                     "SPONSOR_PATH_UNAVAILABLE",
                     format!(
                         "Global sponsored factory deploy is not fully configured ({e}). Fund the roster key or save a Pimlico API key on Status."
                     ),
                     None,
-                )),
-                Err(e) => Err(e),
+                ));
             }
-        }
-        GovSponsorPath::Fail => {
-            if eligible_member {
-                if let (Some(catalog), Some(registry)) =
-                    (catalog_policy_version, sponsor_policy_registry)
-                {
-                    if !policy_version_fresh(&read_provider, registry, catalog).await? {
-                        return Err(wallet_err_json(
-                            "USERNAME_POLICY_STALE",
-                            format!(
-                                "local catalog policyVersion {catalog} is behind on-chain registry"
-                            ),
-                            None,
-                        ));
-                    }
-                }
-                Err(wallet_err_json(
-                    "SPONSOR_PATH_UNAVAILABLE",
-                    format!(
-                        "eligible username member has no gas path for this factory call (global factory ok={global_factory_ok}, eoa can pay={eoa_can_pay}, value wei={value_wei})"
-                    ),
-                    None,
-                ))
-            } else {
-                Err(wallet_err_json(
-                    "INSUFFICIENT_FUNDS",
-                    format!(
-                        "signer holds {pay_balance} wei but this factory call needs ~{eoa_total} wei (gas + msg.value), and global sponsorship is unavailable"
-                    ),
-                    None,
-                ))
+            Err(_) => {
+                // Fall through to self-funded EOA when global sponsorship fails at runtime.
             }
-        }
-        GovSponsorPath::Squad | GovSponsorPath::Eoa => {
-            let provider = connect_signing_provider(&urls, ctx.eoa_wallet).await?;
-            let tx = contract_call_request(factory, calldata).with_value(value_wei);
-            let receipt = send_and_confirm(&provider, tx, confirm_timeout).await?;
-            Ok(FactoryCallOutcome {
-                receipt,
-                funded_by: "self_funded".to_string(),
-            })
         }
     }
+
+    if selected == GovSponsorPath::Fail {
+        if eligible_member {
+            if let (Some(catalog), Some(registry)) =
+                (catalog_policy_version, sponsor_policy_registry)
+            {
+                if !policy_version_fresh(&read_provider, registry, catalog).await? {
+                    return Err(wallet_err_json(
+                        "USERNAME_POLICY_STALE",
+                        format!(
+                            "local catalog policyVersion {catalog} is behind on-chain registry"
+                        ),
+                        None,
+                    ));
+                }
+            }
+            return Err(wallet_err_json(
+                "SPONSOR_PATH_UNAVAILABLE",
+                format!(
+                    "eligible username member has no gas path for this factory call (global factory ok={global_factory_ok}, eoa can pay={eoa_can_pay}, value wei={value_wei})"
+                ),
+                None,
+            ));
+        }
+        return Err(wallet_err_json(
+            "INSUFFICIENT_FUNDS",
+            format!(
+                "signer holds {pay_balance} wei but this factory call needs ~{eoa_total} wei (gas + msg.value), and global sponsorship is unavailable"
+            ),
+            None,
+        ));
+    }
+
+    let provider = connect_signing_provider(&urls, ctx.eoa_wallet).await?;
+    let tx = contract_call_request(factory, calldata).with_value(value_wei);
+    let receipt = send_and_confirm(&provider, tx, confirm_timeout).await?;
+    Ok(FactoryCallOutcome {
+        receipt,
+        funded_by: "self_funded".to_string(),
+    })
 }
 
 async fn finish_sponsored_factory_call<P: Provider>(
@@ -242,7 +248,9 @@ fn is_soft_sponsor_config_error(err: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::evm::gov_sponsor_path::{select_gov_sponsor_path, GovSponsorPath};
+    use crate::evm::gov_sponsor_path::{
+        fallback_paths_after, select_gov_sponsor_path, GovSponsorPath,
+    };
     use super::*;
 
     #[test]
@@ -277,6 +285,14 @@ mod tests {
         assert_eq!(
             select_gov_sponsor_path(false, false, true, false),
             GovSponsorPath::Fail
+        );
+    }
+
+    #[test]
+    fn factory_global_failure_falls_through_to_eoa_arm() {
+        assert_eq!(
+            fallback_paths_after(true, GovSponsorPath::GlobalTopHat),
+            vec![GovSponsorPath::Eoa]
         );
     }
 }
