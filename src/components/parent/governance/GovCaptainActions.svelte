@@ -7,7 +7,7 @@
   import GovCaptainRosterModal from './GovCaptainRosterModal.svelte';
   import GovCaptainResignModal from './GovCaptainResignModal.svelte';
   import { mutinyCaptainResign, type MutinyStatusDto, type QuartermasterStatusDto } from '../../../lib/governance/api';
-  import { isHatRequiredReason, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+  import { isHatRequiredReason, MUTINY_ACTIVE_BANNER_KEY, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { pickRandomRosterCaptain, labeledWearerOptions } from '../../../lib/governance/war-game-captain';
@@ -101,6 +101,9 @@
 <div class="captain-actions">
   {#if !captainGate.enabled && isHatRequiredReason(captainGate.reason)}
     <GovHatRequiredBanner reason={captainGate.reason} />
+  {/if}
+  {#if mutinyActive}
+    <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
   {/if}
   <div class="row">
     {#if quartermaster}

@@ -114,13 +114,28 @@ export function isHatRequiredReason(reason: string): boolean {
   return HAT_REQUIRED_REASONS.has(reason);
 }
 
+export const MUTINY_ACTIVE_BANNER_KEY = 'governance.gate.mutinyActiveLimited';
+
+const MUTINY_LOCKED_REASONS = new Set([
+  MUTINY_ACTIVE_BANNER_KEY,
+  'governance.gate.quartermasterLocked',
+  'governance.gate.cannotResignWhileMutiny',
+  'governance.gate.mutinyAlreadyActive',
+  'governance.gate.cannotOffboardWhileMutiny',
+]);
+
+export function isMutinyLockedReason(reason: string): boolean {
+  return MUTINY_LOCKED_REASONS.has(reason);
+}
+
 const SUPPRESSED_INLINE_REASONS = new Set([
   ...HAT_REQUIRED_REASONS,
+  ...MUTINY_LOCKED_REASONS,
   'governance.gate.linkSquadEvmAddressToAct',
   'governance.gate.linkSquadEvmAddressToSign',
 ]);
 
-/** Hat-required and bind-EVM copy live on the pane, not under every CTA. */
+/** Hat-required, mutiny-locked, and bind-EVM copy live on the pane, not under every CTA. */
 export function hideCtaInlineReason(reason: string): boolean {
   return SUPPRESSED_INLINE_REASONS.has(reason);
 }

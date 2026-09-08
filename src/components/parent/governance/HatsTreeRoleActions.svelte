@@ -3,7 +3,9 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import GovCtaButton from './GovCtaButton.svelte';
+  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
+  import { MUTINY_ACTIVE_BANNER_KEY } from '../../../lib/governance/governance-privilege';
   import {
     HATS_TREE_ACTIONS_KEY,
     type HatsTreeActionsApi,
@@ -65,6 +67,9 @@
   </div>
 {:else if resolved && gates && kind === 'mutiny' && resolved.mutinyModule}
   <div class="hats-tree-node-actions">
+    {#if gates.mutinyActive}
+      <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+    {/if}
     <GovCtaButton
       compact
       label={tFn('governance.action.startMutiny')}
@@ -82,6 +87,9 @@
   </div>
 {:else if resolved && gates && kind === 'quartermaster' && resolved.quartermaster}
   <div class="hats-tree-node-actions">
+    {#if gates.mutinyActive}
+      <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+    {/if}
     <GovCtaButton
       compact
       label={tFn('governance.shell.addCrew')}

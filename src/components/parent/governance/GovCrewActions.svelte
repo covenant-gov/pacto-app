@@ -6,7 +6,7 @@
   import GovStartMutinyModal from './GovStartMutinyModal.svelte';
   import GovProposeOffboardModal from './GovProposeOffboardModal.svelte';
   import type { MutinyStatusDto, QuartermasterStatusDto } from '../../../lib/governance/api';
-  import { isHatRequiredReason, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+  import { isHatRequiredReason, MUTINY_ACTIVE_BANNER_KEY, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
 
   interface Props {
@@ -58,6 +58,9 @@
 <div class="crew-actions">
   {#if !crewGate.enabled && isHatRequiredReason(crewGate.reason)}
     <GovHatRequiredBanner reason={crewGate.reason} />
+  {/if}
+  {#if mutinyActive}
+    <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
   {/if}
   <div class="row">
     {#if mutinyModule}

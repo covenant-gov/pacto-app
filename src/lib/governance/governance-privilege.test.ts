@@ -8,6 +8,8 @@ import {
   gateSquadAdminWrite,
   hideCtaInlineReason,
   isHatRequiredReason,
+  isMutinyLockedReason,
+  MUTINY_ACTIVE_BANNER_KEY,
   localizeAclReason,
   resolveGovernancePrivilege,
 } from './governance-privilege';
@@ -153,6 +155,11 @@ describe('governance gates', () => {
     expect(isHatRequiredReason('governance.gate.accessDenied')).toBe(false);
     expect(hideCtaInlineReason('governance.gate.linkSquadEvmAddressToAct')).toBe(true);
     expect(hideCtaInlineReason('governance.gate.bootstrapOnlyEmptyRoster')).toBe(false);
+    expect(isMutinyLockedReason(MUTINY_ACTIVE_BANNER_KEY)).toBe(true);
+    expect(isMutinyLockedReason('governance.gate.quartermasterLocked')).toBe(true);
+    expect(isMutinyLockedReason('governance.gate.cannotResignWhileMutiny')).toBe(true);
+    expect(hideCtaInlineReason(MUTINY_ACTIVE_BANNER_KEY)).toBe(true);
+    expect(hideCtaInlineReason('governance.gate.cannotOffboardWhileMutiny')).toBe(true);
   });
 
   it('falls back to hat checks without capability flags', () => {

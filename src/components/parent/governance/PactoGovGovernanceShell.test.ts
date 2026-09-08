@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/svelte';
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/svelte';
 import PactoGovGovernanceShell from './PactoGovGovernanceShell.svelte';
-import { getSquadCapabilities, getMutinyStatus, mutinyHasVoted } from '../../../lib/governance/api';
+import { getSquadCapabilities, getMutinyStatus, getQuartermasterStatus, mutinyHasVoted } from '../../../lib/governance/api';
 import { listSquadGovReplica } from '../../../lib/governance/gov-replica';
 import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
 import type { SquadCapabilitiesDto } from '../../../lib/governance/api';
@@ -16,6 +16,7 @@ vi.mock('../../../lib/governance/api', async (importOriginal) => {
     ...actual,
     getSquadCapabilities: vi.fn(),
     getMutinyStatus: vi.fn(),
+    getQuartermasterStatus: vi.fn(),
     mutinyHasVoted: vi.fn(),
   };
 });
@@ -36,6 +37,7 @@ vi.mock('../../../lib/wallet/signer-balance', async (importOriginal) => {
 
 const mockedGetSquadCapabilities = vi.mocked(getSquadCapabilities);
 const mockedGetMutinyStatus = vi.mocked(getMutinyStatus);
+const mockedGetQuartermasterStatus = vi.mocked(getQuartermasterStatus);
 const mockedMutinyHasVoted = vi.mocked(mutinyHasVoted);
 const mockedListSquadGovReplica = vi.mocked(listSquadGovReplica);
 const mockedFetchEvmBalance = vi.mocked(fetchEvmBalance);
@@ -71,6 +73,7 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
   beforeEach(() => {
     mockedGetSquadCapabilities.mockReset();
     mockedGetMutinyStatus.mockReset();
+    mockedGetQuartermasterStatus.mockReset();
     mockedMutinyHasVoted.mockReset();
     mockedListSquadGovReplica.mockReset();
     mockedListSquadGovReplica.mockResolvedValue([]);
@@ -85,6 +88,13 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
       captain: '',
     });
     mockedMutinyHasVoted.mockResolvedValue(false);
+    mockedGetQuartermasterStatus.mockResolvedValue({
+      crewChangeDelaySecs: '0',
+      mutinyActive: false,
+      activeCrewOffboardId: '0',
+      crewOffboardExpirySecs: '0',
+      crewOffboardQuorumBps: '0',
+    });
     mockedFetchEvmBalance.mockReset();
     mockedFetchEvmBalance.mockResolvedValue({
       balanceRaw: '0',
@@ -225,6 +235,59 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     );
     expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.queryAllByText('Crew/Captain hat required')).toHaveLength(1);
+  });
+
+  it('shows one mutiny alert on Captain instead of per-button copy', async () => {
+    mockedGetSquadCapabilities.mockResolvedValue(capabilitiesSnapshot());
+    mockedGetMutinyStatus.mockResolvedValue({
+      activeMutinyId: '9',
+      proposedNewCaptain: CREW_ADDRESS,
+      startedAt: 1,
+      deadline: 0,
+      snapshot: 3,
+      yeas: 1,
+      executed: false,
+      captain: CAPTAIN_ADDRESS,
+    });
+    mockedGetQuartermasterStatus.mockResolvedValue({
+      crewChangeDelaySecs: '0',
+      mutinyActive: true,
+      activeCrewOffboardId: '0',
+      crewOffboardExpirySecs: '0',
+      crewOffboardQuorumBps: '0',
+    });
+
+    render(PactoGovGovernanceShell, {
+      props: {
+        payload: {
+          ...basePayload(),
+          quartermaster: '0xqm00000000000000000000000000000000001',
+          mutinyModule: '0xmutiny00000000000000000000000000000001',
+        },
+        network: 'sepolia',
+        parentId: 'parent1',
+        myAddress: CAPTAIN_ADDRESS,
+        captainWearers: [CAPTAIN_ADDRESS],
+        crewWearers: [],
+      },
+    });
+
+    await fireEvent.click(await screen.findByRole('tab', { name: 'Captain' }));
+
+    const mutinyCopy = 'Mutiny is active. Quartermaster actions are limited.';
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toBe(mutinyCopy),
+    );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.queryAllByText(mutinyCopy)).toHaveLength(1);
+    expect(document.querySelectorAll('.gov-cta-reason')).toHaveLength(0);
+
+    const addCrew = screen.getByRole('button', { name: 'Add crew' }) as HTMLButtonElement;
+    const removeCrew = screen.getByRole('button', { name: 'Remove crew' }) as HTMLButtonElement;
+    const resign = screen.getByRole('button', { name: 'Resign captain' }) as HTMLButtonElement;
+    expect(addCrew.disabled).toBe(true);
+    expect(removeCrew.disabled).toBe(true);
+    expect(resign.disabled).toBe(true);
   });
 
   it('keeps Submit proposal disabled when ACL fetch rejects for a captain wearer', async () => {

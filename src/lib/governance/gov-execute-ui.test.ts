@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { govExecuteUiState } from './gov-execute-ui';
+import { MUTINY_ACTIVE_BANNER_KEY } from './governance-privilege';
 import type { GovProcessCard } from './gov-process';
 import type { MutinyStatusDto, TreasuryProposalDto } from './api';
 
@@ -79,13 +80,13 @@ describe('govExecuteUiState', () => {
     expect(
       govExecuteUiState({
         card,
-        privilegeReasonKey: 'governance.gate.quartermasterLocked',
+        privilegeReasonKey: MUTINY_ACTIVE_BANNER_KEY,
         nowSec: 100,
       }),
     ).toMatchObject({
       showExecute: true,
       executeEnabled: false,
-      disabledReasonKey: 'governance.gate.quartermasterLocked',
+      disabledReasonKey: MUTINY_ACTIVE_BANNER_KEY,
       unlockAtSec: 100,
     });
   });

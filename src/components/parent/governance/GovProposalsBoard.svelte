@@ -3,6 +3,7 @@
   import RpcReadErrorCard from '../dashboard/RpcReadErrorCard.svelte';
   import { rpcReadErrorKind, uniqueRpcReadErrorKinds } from '../../../lib/squad/rpc-read-error';
   import GovProcessCardView from './GovProcessCard.svelte';
+  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
   import {
     quartermasterExecuteAddCrew,
     quartermasterExecuteOffboard,
@@ -23,6 +24,7 @@
     gateQuartermasterExecute,
     gateRequiresCaptain,
     gateRequiresCrew,
+    MUTINY_ACTIVE_BANNER_KEY,
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
@@ -33,6 +35,7 @@
     type GovProcessCard,
   } from '../../../lib/governance/gov-process';
   import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
+  import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
   import { parseQuorumBps } from '../../../lib/governance/crew-offboard';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { hasPendingJob, pendingOnChainJobs } from '../../../stores/pending-on-chain';
@@ -88,7 +91,7 @@
     qmPendingLoading = false,
     qmPendingError = '',
     mutinyMode = false,
-    rosterFreezeReason = 'governance.gate.quartermasterLocked',
+    rosterFreezeReason = MUTINY_ACTIVE_BANNER_KEY,
     mutinyHasVoted = false,
     offboardHasVoted = false,
     onRefreshProposals = () => {},
@@ -100,6 +103,7 @@
   const tFn = get(t);
   const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
 
+  let mutinyActive = $derived(isMutinyActive(mutinyStatus));
   let execGate = $derived(capabilitiesPending ? PENDING_GATE : gatePermissionlessSigner(privilege));
   let crewVoteGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCrew(privilege));
   let captainVoteGate = $derived(capabilitiesPending ? PENDING_GATE : gateRequiresCaptain(privilege));
@@ -322,6 +326,10 @@
       onclick={onRefreshProposals}
     />
   </div>
+
+  {#if mutinyActive}
+    <GovHatRequiredBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+  {/if}
 
   {#if boardLoading}
     <p class="muted">{$t('governance.status.loadingProposals')}</p>

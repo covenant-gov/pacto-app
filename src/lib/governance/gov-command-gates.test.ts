@@ -120,10 +120,10 @@ describe('buildGovCommandGates', () => {
       qmStatus: qm({ mutinyActive: true }),
     });
     expect(gates.mutinyActive).toBe(true);
-    expect(gates.startMutiny.reason).toBe('governance.gate.mutinyAlreadyActive');
-    expect(gates.resign.reason).toBe('governance.gate.cannotResignWhileMutiny');
-    expect(gates.proposeOffboard.reason).toBe('governance.gate.cannotOffboardWhileMutiny');
-    expect(gates.qmRoster.reason).toBe('governance.gate.quartermasterLocked');
+    expect(gates.startMutiny.reason).toBe('governance.gate.mutinyActiveLimited');
+    expect(gates.resign.reason).toBe('governance.gate.mutinyActiveLimited');
+    expect(gates.proposeOffboard.reason).toBe('governance.gate.mutinyActiveLimited');
+    expect(gates.qmRoster.reason).toBe('governance.gate.mutinyActiveLimited');
   });
 
   it('exposes bootstrap only when the quartermaster reports it available', () => {
