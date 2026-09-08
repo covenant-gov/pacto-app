@@ -2,6 +2,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import GovCtaButton from './GovCtaButton.svelte';
+  import GovGateBanner from './GovGateBanner.svelte';
   import {
     quartermasterCrewOffboardVote,
     quartermasterExecuteOffboard,
@@ -20,6 +21,7 @@
   import {
     gatePermissionlessSigner,
     gateRequiresCrew,
+    MUTINY_ACTIVE_BANNER_KEY,
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
@@ -97,7 +99,7 @@
 
   const proposeGate: CtaGate = $derived.by(() => {
     if (mutinyActive) {
-      return { enabled: false, reason: 'governance.gate.cannotOffboardWhileMutiny' };
+      return { enabled: false, reason: MUTINY_ACTIVE_BANNER_KEY };
     }
     if (targetOptions.length === 0) {
       return { enabled: false, reason: 'governance.gate.noCrewHatForOffboard' };
@@ -145,6 +147,10 @@
   <p class="muted">
     {$t('governance.offboard.quorum', { values: { percent: quorumBpsToPercent(quorumBps) } })}
   </p>
+
+  {#if mutinyActive}
+    <GovGateBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+  {/if}
 
   {#if offboardActive && offboard}
     <div class="section">

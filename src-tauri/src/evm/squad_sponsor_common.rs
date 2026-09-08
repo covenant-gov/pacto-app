@@ -117,6 +117,14 @@ pub fn parse_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
     }
 }
 
+/// Omitted or blank → zero; invalid strings still error.
+pub fn parse_optional_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
+    match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(U256::ZERO),
+        Some(s) => parse_deposit_wei(Some(s)),
+    }
+}
+
 /// Factory registry row for a parent (live slot or, when allowed, wargame round).
 pub struct ResolvedSponsor {
     pub address: Address,
@@ -357,6 +365,18 @@ mod tests {
     fn parse_deposit_wei_rejects_invalid() {
         assert!(parse_deposit_wei(Some("not-a-number")).is_err());
         assert!(parse_deposit_wei(Some("0xzz")).is_err());
+    }
+
+    #[test]
+    fn parse_optional_deposit_wei_defaults_empty_to_zero() {
+        assert_eq!(parse_optional_deposit_wei(None).unwrap(), U256::ZERO);
+        assert_eq!(parse_optional_deposit_wei(Some("")).unwrap(), U256::ZERO);
+        assert_eq!(parse_optional_deposit_wei(Some("   ")).unwrap(), U256::ZERO);
+        assert_eq!(
+            parse_optional_deposit_wei(Some("1000")).unwrap(),
+            U256::from(1000u64)
+        );
+        assert!(parse_optional_deposit_wei(Some("bad")).is_err());
     }
 
     #[test]

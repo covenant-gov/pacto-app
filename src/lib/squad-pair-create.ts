@@ -23,8 +23,6 @@ import {
   activeHubChannelName,
   activeView,
   activeTopNavTab,
-  lastChannelBySquadId,
-  lastHubChannelNameBySquadId,
   squadNavOrder,
 } from '../stores/navigation';
 import { pendingReadyToast, showToast } from '../stores/toast';
@@ -290,25 +288,6 @@ async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: strin
   void initJoinInbox(gid);
   const myNpub = get(currentUser)?.npub;
   applySquadCreateNetwork(myNpub, gid);
-  if (get(activeSquadId) === parent.id) {
-    activeSquadId.set(gid);
-    activeChannelId.set(gid);
-    const hub =
-      channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? null;
-    activeHubChannelName.set(hub);
-  }
-  lastChannelBySquadId.update((m) => {
-    const next = { ...m };
-    delete next[parent.id];
-    return { ...next, [gid]: gid };
-  });
-  lastHubChannelNameBySquadId.update((m) => {
-    const next = { ...m };
-    delete next[parent.id];
-    const hubName =
-      channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
-    return hubName ? { ...next, [gid]: hubName } : next;
-  });
   pendingReadyToast.set({
     text: get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: parent.name } }),
     goTo: {

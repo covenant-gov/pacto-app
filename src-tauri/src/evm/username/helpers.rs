@@ -11,10 +11,11 @@ use nostr_sdk::prelude::Keys;
 use once_cell::sync::Lazy;
 use tauri::{AppHandle, Runtime};
 
-use super::dto::{UsernameRecordDto, PACTO_ACTIONS_POLICY_VERSION};
+use super::dto::UsernameRecordDto;
 use crate::db::{self, UsernameClaimUpsert};
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{eligibleMemberCall, recordOfCall};
 use crate::evm::contracts::pacto_username::ISponsorPolicyRegistry::policyVersionCall;
+use crate::evm::global_sponsored_fee_ledger::{self, LANE_USERNAME_MEMBER};
 use crate::evm::global_sponsor_userop::{send_sponsored_username_userop, UsernameSponsorLane};
 use crate::evm::gov_read::rpc_urls_or_default;
 use crate::evm::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
@@ -240,10 +241,10 @@ pub async fn send_member_or_eoa_write<R: Runtime>(
         }
         UsernameSponsorPath::GlobalMember => {
             let send = send_sponsored_username_userop(
-                app,
+                app.clone(),
                 &net.key,
                 nft,
-                calldata,
+                calldata.clone(),
                 UsernameSponsorLane::Member,
                 npub_hash,
                 rpc_urls,
@@ -261,6 +262,27 @@ pub async fn send_member_or_eoa_write<R: Runtime>(
                     None,
                     receipt.tx_hash.clone(),
                 ));
+            }
+            if let Some(amount_wei) = receipt.actual_gas_cost_wei.as_ref() {
+                global_sponsored_fee_ledger::persist_global_sponsored_fee_usage(
+                    &app,
+                    LANE_USERNAME_MEMBER,
+                    None,
+                    &net.key,
+                    net.chain_id,
+                    member,
+                    nft,
+                    &calldata,
+                    &send.user_op_hash,
+                    &receipt.tx_hash,
+                    amount_wei,
+                );
+            } else {
+                log::warn!(
+                    target: "pacto_wallet",
+                    "username member UserOp {} succeeded without actualGasCost; skipping global fee ledger row",
+                    send.user_op_hash
+                );
             }
             Ok((path, Some(receipt.tx_hash), Some(send.user_op_hash)))
         }
@@ -294,23 +316,12 @@ pub async fn member_eligibility_ok<P: Provider>(
     ))
 }
 
-pub async fn assert_policy_version_ok<P: Provider>(
-    provider: &P,
-    registry: Address,
-) -> Result<(), String> {
-    let on_chain_policy: U256 = eth_call_decode(provider, registry, &policyVersionCall {})
+/// On-chain registry `policyVersion` for claim-cache metadata (not a client gate).
+pub async fn read_registry_policy_version<P: Provider>(provider: &P, registry: Address) -> u64 {
+    let on_chain: U256 = eth_call_decode(provider, registry, &policyVersionCall {})
         .await
-        .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
-    if on_chain_policy > U256::from(PACTO_ACTIONS_POLICY_VERSION) {
-        return Err(wallet_err_json(
-            "POLICY_VERSION",
-            format!(
-                "local catalog policyVersion {PACTO_ACTIONS_POLICY_VERSION} is behind on-chain {on_chain_policy}"
-            ),
-            None,
-        ));
-    }
-    Ok(())
+        .unwrap_or(U256::ZERO);
+    on_chain.try_into().unwrap_or(0)
 }
 
 /// Balance + EOA cost estimate + member/EOA send for transfer writes.
@@ -351,10 +362,11 @@ pub async fn refresh_claim_cache_after_initiate<R: Runtime, P: Provider>(
     app: &AppHandle<R>,
     provider: &P,
     nft: Address,
+    registry: Address,
     hash: B256,
-    policy_version: u64,
     network: &str,
 ) {
+    let policy_version = read_registry_policy_version(provider, registry).await;
     let record = eth_call_decode(provider, nft, &recordOfCall { npubHash: hash })
         .await
         .ok();

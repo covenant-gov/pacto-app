@@ -960,11 +960,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   squadAdminProxy={squadAdminCtx?.proxy ?? ''}
   {squadAdminNetwork}
   {squadNetwork}
-  sponsorAddress={liveSponsorRow?.canonicalRef ?? ''}
-  pactoGovAddress={pactoPayload?.safe?.trim() ||
-    pactoPayload?.squadAdminProxy?.trim() ||
-    pactoGovRow?.canonicalRef?.trim() ||
-    ''}
+  sponsorUnwiredExt={liveHasSponsor && sponsorVariant === 'ext' && sponsorExtStatus?.hatsWired !== true}
   pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
   quartermaster={pactoPayload?.quartermaster ?? ''}
   {captainMemberOptions}

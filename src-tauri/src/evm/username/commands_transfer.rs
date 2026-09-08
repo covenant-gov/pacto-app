@@ -7,9 +7,9 @@ use tauri::{AppHandle, Runtime};
 
 use super::dto::UsernameTransferResult;
 use super::helpers::{
-    assert_policy_version_ok, finalize_member_write, load_nostr_keys, member_eligibility_ok,
-    parse_b256, path_label, refresh_claim_cache_after_initiate, require_network, require_rpc_urls,
-    username_addrs, InFlightGuard,
+    finalize_member_write, load_nostr_keys, member_eligibility_ok, parse_b256, path_label,
+    read_registry_policy_version, refresh_claim_cache_after_initiate, require_network,
+    require_rpc_urls, username_addrs, InFlightGuard,
 };
 use crate::db::{self, UsernameClaimUpsert};
 use crate::evm::contracts::pacto_username::IGlobalSponsorPool::spendablePoolWeiCall as globalSpendableCall;
@@ -54,7 +54,6 @@ pub async fn username_initiate_address_transfer<R: Runtime>(
     )
     .await
     .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
-    assert_policy_version_ok(&provider, addrs.sponsor_policy_registry).await?;
 
     let calldata = initiateAddressTransferCall {
         npubHash: hash,
@@ -77,8 +76,15 @@ pub async fn username_initiate_address_transfer<R: Runtime>(
     )
     .await?;
 
-    refresh_claim_cache_after_initiate(&app, &provider, nft, hash, addrs.policy_version, &net.key)
-        .await;
+    refresh_claim_cache_after_initiate(
+        &app,
+        &provider,
+        nft,
+        addrs.sponsor_policy_registry,
+        hash,
+        &net.key,
+    )
+    .await;
 
     Ok(UsernameTransferResult {
         network: net.key.clone(),
@@ -128,8 +134,6 @@ pub async fn username_claim_address_transfer<R: Runtime>(
             None,
         ));
     }
-
-    assert_policy_version_ok(&provider, addrs.sponsor_policy_registry).await?;
 
     let calldata = claimAddressTransferCall { npubHash: hash }.abi_encode();
     // Pending address is not yet eligibleMember; member UserOp is unavailable until after claim.
@@ -193,6 +197,9 @@ pub async fn username_claim_address_transfer<R: Runtime>(
         }
     }
 
+    let policy_version =
+        read_registry_policy_version(&provider, addrs.sponsor_policy_registry).await;
+
     if let Err(e) = db::upsert_username_claim(
         &app,
         &UsernameClaimUpsert {
@@ -201,7 +208,7 @@ pub async fn username_claim_address_transfer<R: Runtime>(
             token_id: rec.tokenId.to_string(),
             link_event_id: link_event_id.clone(),
             invalidate_link_event_id: link_event_id.is_none(),
-            policy_version: addrs.policy_version as i64,
+            policy_version: policy_version as i64,
             network: net.key.clone(),
         },
     ) {
@@ -252,7 +259,6 @@ pub async fn username_cancel_address_transfer<R: Runtime>(
     )
     .await
     .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
-    assert_policy_version_ok(&provider, addrs.sponsor_policy_registry).await?;
 
     let calldata = cancelAddressTransferCall { npubHash: hash }.abi_encode();
     let global_member_ok = eligible && !global_pool.is_zero();

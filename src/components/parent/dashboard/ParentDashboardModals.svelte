@@ -19,18 +19,11 @@
     parentId: string;
     announcementsGroupId?: string | null;
     treasurySafeCount?: number;
-    hasSponsor?: boolean;
-    hasPactoGov?: boolean;
-    hasSquadAdmin?: boolean;
     warGameStack?: boolean;
     squadAdminProxy?: string;
     squadAdminNetwork?: SupportedChainId;
     /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
     squadNetwork?: SupportedChainId | null;
-    /** Sponsor clone address when sponsor infra is deployed. */
-    sponsorAddress?: string;
-    /** Pacto Gov reference (Safe / proxy / top hat) when deployed. */
-    pactoGovAddress?: string;
     memberEvmOptions?: { address: string; label: string }[];
     captainMemberOptions?: PactoGovCaptainOption[];
 
@@ -83,25 +76,17 @@
     onCloseExtSponsorDeploy?: () => void;
     onCloseSquadAdminDeploy?: () => void;
     onCloseSquadRolesModal?: () => void;
-    onDeploySquadAdmin?: () => void;
-    onDeployPactoGov?: () => void;
-    onDeployGovAndSponsor?: () => void;
-    onDeployExtSponsor?: () => void;
+    onLaunchpadAction?: (action: import('../../../lib/governance/launchpad-cta').LaunchpadRouteAction) => void;
   }
 
   let {
     parentId,
     announcementsGroupId = null,
     treasurySafeCount = 0,
-    hasSponsor = false,
-    hasPactoGov = false,
-    hasSquadAdmin = false,
     warGameStack = false,
     squadAdminProxy = '',
     squadAdminNetwork = DEFAULT_CHAIN_ID,
     squadNetwork = null,
-    sponsorAddress = '',
-    pactoGovAddress = '',
     memberEvmOptions = [],
     captainMemberOptions = [],
 
@@ -136,10 +121,7 @@
     onCloseExtSponsorDeploy = () => {},
     onCloseSquadAdminDeploy = () => {},
     onCloseSquadRolesModal = () => {},
-    onDeploySquadAdmin = () => {},
-    onDeployPactoGov = () => {},
-    onDeployGovAndSponsor = () => {},
-    onDeployExtSponsor = () => {},
+    onLaunchpadAction = () => {},
   }: Props = $props();
 
   let DeploySafeModalComponent = $state<Awaited<ReturnType<typeof loadDeploySafeModal>> | null>(null);
@@ -210,6 +192,7 @@
   {#if DeployPactoGovModalComponent}
     <DeployPactoGovModalComponent
       parentId={parentId.trim()}
+      announcementsGroupId={announcementsGroupId?.trim() || null}
       {squadNetwork}
       {captainMemberOptions}
       onClose={onClosePactoGovDeploy}
@@ -243,18 +226,11 @@
 
 {#if showLaunchpad && parentId}
   <LaunchpadModal
-    {hasSponsor}
-    {hasPactoGov}
-    {hasSquadAdmin}
-    {sponsorAddress}
-    {pactoGovAddress}
-    squadAdminAddress={squadAdminProxy}
+    parentId={parentId.trim()}
+    {squadNetwork}
     hasAnnouncementsChannel={!!announcementsGroupId}
     onClose={onCloseLaunchpad}
-    onDeployGovAndSponsor={onDeployGovAndSponsor}
-    onDeployPactoGov={onDeployPactoGov}
-    onDeployExtSponsor={onDeployExtSponsor}
-    onDeploySquadAdmin={onDeploySquadAdmin}
+    onSelectAction={onLaunchpadAction}
   />
 {/if}
 
@@ -262,6 +238,7 @@
   {#if DeployExtSponsorComponent}
     <DeployExtSponsorComponent
       parentId={parentId.trim()}
+      announcementsGroupId={announcementsGroupId?.trim() || null}
       {squadNetwork}
       onClose={onCloseExtSponsorDeploy}
       onComplete={onExtSponsorComplete}

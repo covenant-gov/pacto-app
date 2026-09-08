@@ -4,7 +4,6 @@ use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use alloy::sol_types::SolCall;
-use serde_json::Value;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
@@ -28,10 +27,19 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
+use super::global_sponsored_fee_ledger::{self, LANE_GOV_MODULE};
+use super::global_sponsor_userop::send_sponsored_global_gov_userop;
+use super::global_userop_cost::{global_userop_placeholder_max_cost, GlobalUseropPlaceholderLane};
+use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
+use super::pacto_chain_config;
+use super::sponsor_preflight::{
+    global_gov_module_path_ok, read_eligible_member, squad_sponsor_path_ok,
+};
 use super::sponsor_userop::{
     call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
-    roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
-    FALLBACK_MAX_FEE,
+    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
+    resolve_sponsored_squad_id, roster_native_balance_wei, send_sponsored_gov_userop,
+    wait_for_user_operation_receipt, SponsoredUserOpSend, FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -99,39 +107,78 @@ pub async fn send_gov_module_call<R: Runtime>(
         }
     };
     let required = estimate_eoa_cost_wei(&read_provider, signer.address(), to, &calldata).await;
-    match select_write_path(balance, required, has_sponsor_infra) {
-        WritePath::Sponsored => {
-            match send_sponsored_gov_userop(
-                app.clone(),
-                &net.key,
-                pid,
-                to,
-                calldata.clone(),
-                rpc_urls_override.clone(),
+    let eoa_can_pay = balance >= required;
+
+    let global_addrs = pacto_chain_config::global_username_sponsor_addresses(&net.key);
+    let eligible_member = match global_addrs.as_ref() {
+        Ok(addrs) => {
+            read_eligible_member(&read_provider, addrs.pacto_username_nft, signer.address())
+                .await?
+                .is_some()
+        }
+        Err(_) => false,
+    };
+
+    let squad_path_ok = match pacto_chain_config::squad_sponsor_deploy_addresses(&net.key) {
+        Ok(sp) => {
+            let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
+                .map_err(|e| wallet_err_json("WARGAME_READ", e, None))?;
+            let squad_id = resolve_sponsored_squad_id(pid, to, wargame_payload.as_deref());
+            squad_sponsor_path_ok(
+                &read_provider,
+                sp.squad_sponsor_factory,
+                sp.pacto_sponsor_paymaster,
+                squad_id,
+                signer.address(),
+                required,
             )
-            .await
-            {
-                Ok(send) => {
-                    // The write guard must stay held through inclusion: returning now would let
-                    // the next write reuse the same EntryPoint nonce. Callers expect a real L1
-                    // transaction hash, not the bundler userOp hash.
-                    // Receipt poll must hit the bundler that accepted the UserOp.
-                    let receipt =
-                        wait_for_user_operation_receipt(&send.bundler_url, &send.user_op_hash)
-                            .await?;
-                    if !receipt.success {
-                        return Err(wallet_err_json_with_tx_hash(
-                            "USEROP_FAILED",
-                            format!(
-                                "sponsored UserOp {} was included but reverted (tx {})",
-                                send.user_op_hash, receipt.tx_hash
-                            ),
-                            None,
-                            receipt.tx_hash.clone(),
-                        ));
-                    }
-                    if let Some(amount_wei) = receipt.actual_gas_cost_wei.as_ref() {
-                        persist_sponsored_fee_usage(
+            .await?
+        }
+        Err(_) => false,
+    };
+
+    let global_tophat_ok = match global_addrs.as_ref() {
+        Ok(addrs) => {
+            let placeholder_max_cost = global_userop_placeholder_max_cost(
+                &read_provider,
+                &calldata,
+                GlobalUseropPlaceholderLane::GovModule,
+            )
+            .await;
+            global_gov_module_path_ok(
+                &read_provider,
+                addrs,
+                signer.address(),
+                to,
+                placeholder_max_cost,
+            )
+            .await?
+        }
+        Err(_) => false,
+    };
+
+    let path_order = gov_path_attempt_order(
+        eligible_member,
+        squad_path_ok,
+        global_tophat_ok,
+        eoa_can_pay,
+    );
+
+    for path in path_order {
+        match path {
+            GovSponsorPath::Squad => {
+                match send_sponsored_gov_userop(
+                    app.clone(),
+                    &net.key,
+                    pid,
+                    to,
+                    calldata.clone(),
+                    rpc_urls_override.clone(),
+                )
+                .await
+                {
+                    Ok(send) => {
+                        return finish_sponsored_gov_write(
                             &app,
                             pid,
                             &net.key,
@@ -139,49 +186,90 @@ pub async fn send_gov_module_call<R: Runtime>(
                             signer.address(),
                             to,
                             &calldata,
-                            &send.user_op_hash,
-                            &receipt.tx_hash,
-                            amount_wei,
-                        );
-                    } else {
-                        log::warn!(
-                            target: "pacto_wallet",
-                            "sponsored UserOp {} succeeded without actualGasCost; skipping fee ledger row",
-                            send.user_op_hash
-                        );
+                            &send,
+                            SponsoredGovFeeLedger::Squad,
+                        )
+                        .await;
                     }
-                    return Ok((
-                        receipt.tx_hash,
-                        net.key.clone(),
-                        net.chain_id,
-                        "sponsored".to_string(),
-                    ));
-                }
-                Err(e) => {
-                    // Soft config gaps: surface a clear path. Hard sponsor rejects stay hard.
-                    if is_soft_sponsor_config_error(&e) {
-                        return Err(wallet_err_json(
-                            "SPONSOR_PATH_UNAVAILABLE",
-                            format!(
-                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or save a Pimlico API key on Status (optional PIMLICO_API_KEY / BUNDLER_RPC_URL fallback) so the Rust backend can reach an EntryPoint v0.7 bundler."
-                            ),
-                            None,
-                        ));
+                    Err(e) => {
+                        if is_soft_sponsor_config_error(&e) {
+                            return Err(wallet_err_json(
+                                "SPONSOR_PATH_UNAVAILABLE",
+                                format!(
+                                    "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or save a Pimlico API key on Status (optional PIMLICO_API_KEY / BUNDLER_RPC_URL fallback) so the Rust backend can reach an EntryPoint v0.7 bundler."
+                                ),
+                                None,
+                            ));
+                        }
+                        if is_hard_sponsor_preflight_error(&e) {
+                            return Err(e);
+                        }
+                        continue;
                     }
-                    return Err(e);
                 }
             }
+            GovSponsorPath::GlobalTopHat => {
+                match send_sponsored_global_gov_userop(
+                    app.clone(),
+                    &net.key,
+                    pid,
+                    to,
+                    calldata.clone(),
+                    rpc_urls_override.clone(),
+                )
+                .await
+                {
+                    Ok(send) => {
+                        return finish_sponsored_gov_write(
+                            &app,
+                            pid,
+                            &net.key,
+                            net.chain_id,
+                            signer.address(),
+                            to,
+                            &calldata,
+                            &send,
+                            SponsoredGovFeeLedger::Global,
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        if is_soft_sponsor_config_error(&e) {
+                            return Err(wallet_err_json(
+                                "SPONSOR_PATH_UNAVAILABLE",
+                                format!(
+                                    "No squad sponsor pool is available and the global sponsored path is not fully configured ({e}). Fund the roster key, fund the global pool, or save a Pimlico API key on Status."
+                                ),
+                                None,
+                            ));
+                        }
+                        if is_hard_sponsor_preflight_error(&e) {
+                            return Err(e);
+                        }
+                        continue;
+                    }
+                }
+            }
+            GovSponsorPath::Fail => {
+                if eligible_member {
+                    return Err(wallet_err_json(
+                        "SPONSOR_PATH_UNAVAILABLE",
+                        format!(
+                            "eligible username member has no gas path for this write (squad pool ok={squad_path_ok}, global topHat ok={global_tophat_ok}, eoa can pay={eoa_can_pay})"
+                        ),
+                        None,
+                    ));
+                }
+                return Err(wallet_err_json(
+                    "INSUFFICIENT_FUNDS",
+                    format!(
+                        "roster key holds {balance} wei but this write needs ~{required} wei for gas, and no squad sponsor is deployed. Fund the roster key or deploy a squad sponsor first."
+                    ),
+                    None,
+                ));
+            }
+            GovSponsorPath::Eoa => break,
         }
-        WritePath::InsufficientFunds => {
-            return Err(wallet_err_json(
-                "INSUFFICIENT_FUNDS",
-                format!(
-                    "roster key holds {balance} wei but this write needs ~{required} wei for gas, and no squad sponsor is deployed. Fund the roster key or deploy a squad sponsor first."
-                ),
-                None,
-            ));
-        }
-        WritePath::Eoa => {}
     }
 
     let provider = connect_signing_provider(&urls, wallet).await?;
@@ -201,24 +289,84 @@ pub async fn send_gov_module_call<R: Runtime>(
     ))
 }
 
-/// Routing for a squad-key governance write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WritePath {
-    Sponsored,
-    Eoa,
-    InsufficientFunds,
+enum SponsoredGovFeeLedger {
+    Squad,
+    Global,
 }
 
-/// EOA when the roster key can afford the write, sponsored when it can't but sponsor infra
-/// exists, otherwise a pre-send insufficient-funds error.
-fn select_write_path(balance_wei: U256, required_wei: U256, has_sponsor_infra: bool) -> WritePath {
-    if balance_wei >= required_wei {
-        WritePath::Eoa
-    } else if has_sponsor_infra {
-        WritePath::Sponsored
-    } else {
-        WritePath::InsufficientFunds
+async fn finish_sponsored_gov_write<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    chain_id: u64,
+    signer: Address,
+    to: Address,
+    calldata: &[u8],
+    send: &SponsoredUserOpSend,
+    ledger: SponsoredGovFeeLedger,
+) -> Result<(String, String, u64, String), String> {
+    let receipt = wait_for_user_operation_receipt(&send.bundler_url, &send.user_op_hash).await?;
+    if !receipt.success {
+        return Err(wallet_err_json_with_tx_hash(
+            "USEROP_FAILED",
+            format!(
+                "sponsored UserOp {} was included but reverted (tx {})",
+                send.user_op_hash, receipt.tx_hash
+            ),
+            None,
+            receipt.tx_hash.clone(),
+        ));
     }
+    if let Some(amount_wei) = receipt.actual_gas_cost_wei.as_ref() {
+        match ledger {
+            SponsoredGovFeeLedger::Squad => {
+                persist_squad_sponsored_fee_usage(
+                    app,
+                    parent_id,
+                    chain,
+                    chain_id,
+                    signer,
+                    to,
+                    calldata,
+                    &send.user_op_hash,
+                    &receipt.tx_hash,
+                    amount_wei,
+                );
+            }
+            SponsoredGovFeeLedger::Global => {
+                global_sponsored_fee_ledger::persist_global_sponsored_fee_usage(
+                    app,
+                    LANE_GOV_MODULE,
+                    Some(parent_id),
+                    chain,
+                    chain_id,
+                    signer,
+                    to,
+                    calldata,
+                    &send.user_op_hash,
+                    &receipt.tx_hash,
+                    amount_wei,
+                );
+            }
+        }
+    } else {
+        log::warn!(
+            target: "pacto_wallet",
+            "sponsored UserOp {} succeeded without actualGasCost; skipping fee ledger row",
+            send.user_op_hash
+        );
+    }
+    let funded_by = match ledger {
+        SponsoredGovFeeLedger::Squad => "sponsored",
+        SponsoredGovFeeLedger::Global => "global_sponsored",
+    };
+    Ok((
+        receipt.tx_hash,
+        chain.to_string(),
+        chain_id,
+        funded_by.to_string(),
+    ))
 }
 
 /// Conservative EOA cost bound: `eth_estimateGas` with 1.2x headroom times the current
@@ -244,17 +392,7 @@ async fn estimate_eoa_cost_wei<P: Provider>(
 /// Stable `code` of a structured wallet error JSON; unparseable errors have no code and
 /// are treated as hard failures by callers.
 fn wallet_error_code(err: &str) -> Option<String> {
-    let parsed: Value = serde_json::from_str(err).ok()?;
-    parsed.get("code")?.as_str().map(str::to_string)
-}
-
-/// Soft sponsor-path config gaps the user can fix by funding the roster key or completing
-/// bundler/account config.
-fn is_soft_sponsor_config_error(err: &str) -> bool {
-    matches!(
-        wallet_error_code(err).as_deref(),
-        Some("BUNDLER_CONFIG" | "ERC4337_ACCOUNT_CONFIG")
-    )
+    super::sponsor_userop::wallet_error_code(err)
 }
 
 fn calldata_selector_hex(calldata: &[u8]) -> String {
@@ -266,7 +404,7 @@ fn calldata_selector_hex(calldata: &[u8]) -> String {
 }
 
 /// Best-effort human label for known pacto-gov module selectors.
-fn gov_call_action_label(calldata: &[u8]) -> (String, String) {
+pub(crate) fn gov_call_action_label(calldata: &[u8]) -> (String, String) {
     let selector = calldata_selector_hex(calldata);
     if calldata.len() < 4 {
         return (selector.clone(), selector);
@@ -316,7 +454,7 @@ fn gov_call_action_label(calldata: &[u8]) -> (String, String) {
     (selector, name.to_string())
 }
 
-fn persist_sponsored_fee_usage<R: Runtime>(
+fn persist_squad_sponsored_fee_usage<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
     chain: &str,
@@ -404,11 +542,11 @@ pub fn explicit_parent_id(parent_id: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        explicit_parent_id, gov_call_action_label, is_soft_sponsor_config_error, select_write_path,
-        wallet_error_code, WritePath,
+        explicit_parent_id, gov_call_action_label, wallet_error_code,
     };
     use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::castVoteCall;
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::bootstrapCrewCall;
+    use crate::evm::sponsor_userop::{is_hard_sponsor_preflight_error, is_soft_sponsor_config_error};
     use alloy::primitives::U256;
     use alloy::sol_types::SolCall;
 
@@ -420,36 +558,6 @@ mod tests {
     }
 
     #[test]
-    fn select_write_path_covers_balance_and_infra_matrix() {
-        let required = U256::from(1_000_000u64);
-        // Zero balance: sponsored with infra, clear error without.
-        assert_eq!(
-            select_write_path(U256::ZERO, required, true),
-            WritePath::Sponsored
-        );
-        assert_eq!(
-            select_write_path(U256::ZERO, required, false),
-            WritePath::InsufficientFunds
-        );
-        // Dust below required routes the same as zero.
-        let dust = required - U256::from(1u64);
-        assert_eq!(
-            select_write_path(dust, required, true),
-            WritePath::Sponsored
-        );
-        assert_eq!(
-            select_write_path(dust, required, false),
-            WritePath::InsufficientFunds
-        );
-        // Sufficient balance always takes the EOA path.
-        assert_eq!(select_write_path(required, required, true), WritePath::Eoa);
-        assert_eq!(
-            select_write_path(required + U256::from(1u64), required, false),
-            WritePath::Eoa
-        );
-    }
-
-    #[test]
     fn soft_sponsor_config_classification_uses_structured_code() {
         let soft = |code: &str| format!(r#"{{"code":"{code}","message":"configure it"}}"#);
         assert!(is_soft_sponsor_config_error(&soft("BUNDLER_CONFIG")));
@@ -458,6 +566,9 @@ mod tests {
         )));
         assert!(!is_soft_sponsor_config_error(&soft("SPONSOR_POOL_LOW")));
         assert!(!is_soft_sponsor_config_error(&soft("PAYMASTER_REJECTED")));
+        assert!(is_hard_sponsor_preflight_error(&soft("USERNAME_POOL_LOW")));
+        assert!(is_hard_sponsor_preflight_error(&soft("SPONSOR_POOL_LOW")));
+        assert!(!is_hard_sponsor_preflight_error(&soft("BUNDLER_CONFIG")));
         // Unparseable payloads and missing codes are hard errors.
         assert!(!is_soft_sponsor_config_error(
             "BUNDLER_CONFIG as plain text"

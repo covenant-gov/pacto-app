@@ -56,5 +56,22 @@
 	"profile.username.claimSuccess": "Username claimed via {path}.",
 	"profile.username.transferSuccess": "Address transfer updated via {path}.",
 	"profile.username.loadError": "Could not load username status.",
-	"profile.username.invalidAddress": "Enter a valid 0x EVM address."
+	"profile.username.invalidAddress": "Enter a valid 0x EVM address.",
+	"profile.username.errors.claimReverted": "Claim simulation failed. Check the name, try again, or restart the app after a protocol update.",
+	"profile.username.errors.bindingExpired": "Claim link expired. Try again — the app uses chain time for the signature window.",
+	"profile.username.errors.invalidName": "That username is not valid on-chain.",
+	"profile.username.errors.taken": "That username is already taken.",
+	"profile.username.errors.npubClaimed": "Your npub already has a username on-chain.",
+	"profile.username.errors.alreadyClaimed": "This EVM address already claimed a username.",
+	"profile.username.errors.invalidEvmSig": "EVM signature did not verify. Unlock your wallet and try again.",
+	"profile.username.errors.invalidNpubHash": "Account key does not match the claim binding.",
+	"profile.username.errors.invalidNostrSig": "Nostr claim signature did not verify.",
+	"profile.username.errors.nonceUsed": "Claim nonce already used. Refresh and try again.",
+	"profile.username.errors.stale7702": "Updating your on-chain account for sponsored claim. If this persists, restart the app.",
+	"profile.username.errors.paymaster7702Mismatch": "App address book is out of date for sponsored claims. Fully restart the desktop app.",
+	"profile.username.errors.noGasPath": "No gas path available (bootstrap pool, your balance, or global sponsor).",
+	"profile.username.errors.bundlerConfig": "Sponsored gas is not configured. Add a Pimlico key under Status → Sponsored gas.",
+	"profile.username.errors.userOpFailed": "Sponsored claim transaction reverted on-chain.",
+	"profile.username.errors.bootstrapAfterMint": "You already have a username; use address transfer instead of claim.",
+	"profile.username.errors.poolLow": "Bootstrap sponsor pool is low. Try again later or contact the operator."
 }

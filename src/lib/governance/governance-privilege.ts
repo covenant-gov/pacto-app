@@ -114,15 +114,64 @@ export function isHatRequiredReason(reason: string): boolean {
   return HAT_REQUIRED_REASONS.has(reason);
 }
 
-const SUPPRESSED_INLINE_REASONS = new Set([
-  ...HAT_REQUIRED_REASONS,
-  'governance.gate.linkSquadEvmAddressToAct',
+export const MUTINY_ACTIVE_BANNER_KEY = 'governance.gate.mutinyActiveLimited';
+
+export const OFFBOARD_ACTIVE_BANNER_KEY = 'governance.gate.offboardActiveLimited';
+
+export const LINK_EVM_BANNER_KEY = 'governance.gate.linkSquadEvmAddressToAct';
+
+export const CAPTAIN_ON_SAFE_BANNER_KEY = 'governance.gate.captainHatOnSafe';
+
+const MUTINY_LOCKED_REASONS = new Set([
+  MUTINY_ACTIVE_BANNER_KEY,
+  'governance.gate.quartermasterLocked',
+  'governance.gate.cannotResignWhileMutiny',
+  'governance.gate.mutinyAlreadyActive',
+  'governance.gate.cannotOffboardWhileMutiny',
+]);
+
+export function isMutinyLockedReason(reason: string): boolean {
+  return MUTINY_LOCKED_REASONS.has(reason);
+}
+
+const OFFBOARD_LOCKED_REASONS = new Set([
+  OFFBOARD_ACTIVE_BANNER_KEY,
+  'governance.gate.rosterFrozenOffboard',
+  'governance.gate.offboardAlreadyActive',
+  'governance.gate.cannotStartMutinyWhileOffboard',
+]);
+
+export function isOffboardLockedReason(reason: string): boolean {
+  return OFFBOARD_LOCKED_REASONS.has(reason);
+}
+
+const LINK_EVM_REASONS = new Set([
+  LINK_EVM_BANNER_KEY,
   'governance.gate.linkSquadEvmAddressToSign',
 ]);
 
-/** Hat-required and bind-EVM copy live on the pane, not under every CTA. */
+export function isLinkEvmReason(reason: string): boolean {
+  return LINK_EVM_REASONS.has(reason);
+}
+
+export function isCaptainOnSafeReason(reason: string): boolean {
+  return reason === CAPTAIN_ON_SAFE_BANNER_KEY;
+}
+
+export function isPanelBannerReason(reason: string): boolean {
+  return (
+    isHatRequiredReason(reason) ||
+    isMutinyLockedReason(reason) ||
+    isOffboardLockedReason(reason) ||
+    isLinkEvmReason(reason) ||
+    isCaptainOnSafeReason(reason) ||
+    reason === 'governance.status.loading'
+  );
+}
+
+/** Panel-level blockers and loading copy live on the pane, not under every CTA. */
 export function hideCtaInlineReason(reason: string): boolean {
-  return SUPPRESSED_INLINE_REASONS.has(reason);
+  return isPanelBannerReason(reason);
 }
 
 /** Map backend ACL reason strings to i18n keys. Unknown reasons fail closed to accessDenied. */

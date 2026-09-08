@@ -14,14 +14,22 @@
     validateSquadParams,
   } from '../../../lib/governance/squad-params';
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
+  import SquadRosterEvmGatePanel from './SquadRosterEvmGatePanel.svelte';
+  import SponsorInitialDepositField from './SponsorInitialDepositField.svelte';
+  import UsernameNftSponsorNote from './UsernameNftSponsorNote.svelte';
+  import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
   import { WAR_GAME_PUBLIC_RULES_URL } from '../../../lib/governance/war-game-links';
   import { openExternalUrl } from '../../../lib/utils/open-external';
-  import { getAddress, isAddress, parseEther } from 'viem';
-  import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
+  import { getAddress, isAddress } from 'viem';
+  import { parseOptionalDepositWei } from '../../../lib/governance/sponsor-deposit';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { DEFAULT_SQUAD_PRACTICE_NETWORK } from '../../../lib/squad/squad-network';
   import { shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
+  import {
+    fetchUsernameNftDeployEligibility,
+    type UsernameNftEligibility,
+  } from '../../../lib/governance/username-nft-eligibility';
 
   let {
     parentId,
@@ -54,8 +62,13 @@
   let proposalExpirySecs = $state(WAR_GAME_SQUAD_PARAMS.proposalExpirySecs);
   let crewVoteMode = $state(WAR_GAME_SQUAD_PARAMS.crewVoteMode);
   let quorumBps = $state(WAR_GAME_SQUAD_PARAMS.quorumBps);
+  let includeDeposit = $state(false);
   let depositEth = $state('0.01');
   let signerWallet: SquadSponsorDeploySignerWallet = $state('default');
+  let nftEligibility: UsernameNftEligibility = $state({
+    squadSignerEligible: false,
+    captainEligible: false,
+  });
 
   const customizeInvalid = $derived(
     customizeParams &&
@@ -67,36 +80,55 @@
       }),
   );
 
-  const depositWei = $derived.by(() => {
+  const depositWei = $derived(
+    parseOptionalDepositWei(includeDeposit ? depositEth.trim() : '0')?.toString() ?? null,
+  );
+  const depositInvalid = $derived(includeDeposit && depositWei === null);
+
+  const rosterLookupId = $derived(
+    listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId).parentId ||
+      parentId.trim(),
+  );
+  const needsSquadEvmGate = $derived(!resolvingDeployer && !myRosterEvm);
+  const deployNetwork = $derived(practiceNetwork ?? DEFAULT_SQUAD_PRACTICE_NETWORK);
+
+  async function refreshRosterEvm() {
+    resolvingDeployer = true;
+    myRosterEvm = '';
     try {
-      const wei = parseEther(depositEth.trim().replace(/,/g, '') || '0');
-      return wei > 0n ? wei.toString() : null;
+      const raw = await resolveSquadRosterEvmAddress(rosterLookupId);
+      if (raw?.trim() && isAddress(raw.trim() as `0x${string}`)) {
+        myRosterEvm = getAddress(raw.trim() as `0x${string}`);
+      }
     } catch {
-      return null;
+      myRosterEvm = '';
+    } finally {
+      resolvingDeployer = false;
     }
+  }
+
+  async function refreshNftEligibility() {
+    if (!myRosterEvm) {
+      nftEligibility = { squadSignerEligible: false, captainEligible: false };
+      return;
+    }
+    nftEligibility = await fetchUsernameNftDeployEligibility({
+      network: deployNetwork,
+      parentId: parentId.trim(),
+      squadSignerAddress: myRosterEvm,
+      captainAddress: myRosterEvm,
+    });
+  }
+
+  $effect(() => {
+    void rosterLookupId;
+    void refreshRosterEvm();
   });
 
   $effect(() => {
-    const pid = parentId.trim();
-    let cancelled = false;
-    resolvingDeployer = true;
-    myRosterEvm = '';
-    void resolveSquadRosterEvmAddress(pid)
-      .then((raw) => {
-        if (cancelled) return;
-        if (raw?.trim() && isAddress(raw.trim() as `0x${string}`)) {
-          myRosterEvm = getAddress(raw.trim() as `0x${string}`);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) myRosterEvm = '';
-      })
-      .finally(() => {
-        if (!cancelled) resolvingDeployer = false;
-      });
-    return () => {
-      cancelled = true;
-    };
+    void myRosterEvm;
+    void deployNetwork;
+    void refreshNftEligibility();
   });
 
   function executeDeploy() {
@@ -110,7 +142,7 @@
       deployError = tFn('governance.deployWarGame.error.noBoundEvm');
       return;
     }
-    if (!depositWei) {
+    if (depositInvalid) {
       deployError = tFn('governance.deployWarGame.error.invalidDeposit');
       return;
     }
@@ -128,9 +160,9 @@
     const started = startWarGameDeploy({
       parentId: parentId.trim(),
       announcementsGroupId,
-      network: practiceNetwork ?? DEFAULT_SQUAD_PRACTICE_NETWORK,
+      network: deployNetwork,
       captain: myRosterEvm,
-      initialDepositWei: depositWei,
+      initialDepositWei: depositWei ?? '0',
       signerWallet,
       squadParams,
       memberOptions,
@@ -169,21 +201,20 @@
   <div class="war-game-deploy-field">
     <span class="war-game-deploy-label">{$t('governance.deployWarGame.networkLabel')}</span>
     <p class="war-game-deploy-pinned">
-      {getWalletNetworkDisplayName(practiceNetwork ?? DEFAULT_SQUAD_PRACTICE_NETWORK)}
+      {getWalletNetworkDisplayName(deployNetwork)}
       <span class="war-game-deploy-pinned-note">{$t('governance.field.squadNetworkSuffix')}</span>
     </p>
   </div>
 
+  {#if needsSquadEvmGate}
+    <SquadRosterEvmGatePanel rosterLookupId={rosterLookupId} onBound={refreshRosterEvm} />
+  {:else}
   <div class="war-game-deploy-field">
     <span class="war-game-deploy-label">{$t('governance.deployWarGame.captainLabel')}</span>
-    {#if myRosterEvm}
-      <p class="war-game-deploy-pinned">
-        <code>{shortAddress(myRosterEvm)}</code>
-        <span class="war-game-deploy-pinned-note">{$t('governance.deployWarGame.captainYou')}</span>
-      </p>
-    {:else}
-      <p class="war-game-deploy-hint muted">{$t('governance.deployWarGame.captainNoEvmHint')}</p>
-    {/if}
+    <p class="war-game-deploy-pinned">
+      <code>{shortAddress(myRosterEvm)}</code>
+      <span class="war-game-deploy-pinned-note">{$t('governance.deployWarGame.captainYou')}</span>
+    </p>
   </div>
 
   <fieldset class="war-game-deploy-field" disabled={deploying}>
@@ -196,25 +227,19 @@
       <input type="radio" name="war-game-signer" value="squad" bind:group={signerWallet} />
       <span>{$t('governance.deployGovAndSponsor.signer.squad.title')}</span>
     </label>
+    <UsernameNftSponsorNote payFrom={signerWallet} eligibility={nftEligibility} />
   </fieldset>
 
   <div class="war-game-deploy-field">
-    <label class="war-game-deploy-label" for="war-game-deposit">
-      {$t('governance.deployWarGame.depositLabel')}
-    </label>
-    <input
-      id="war-game-deposit"
-      class="input"
-      type="text"
-      inputmode="decimal"
-      placeholder={$t('governance.deployWarGame.depositPlaceholder')}
-      value={depositEth}
+    <SponsorInitialDepositField
+      bind:includeDeposit
+      bind:depositEth
       disabled={deploying}
-      oninput={(e) => {
-        depositEth = normalizeLeadingDotDecimalInput((e.currentTarget as HTMLInputElement).value);
-      }}
+      inputId="war-game-deposit"
+      checkboxKey="governance.deployWarGame.depositOptional"
+      hintKey="governance.deployWarGame.depositHint"
+      hintOptionalKey="governance.deployWarGame.depositHintOptional"
     />
-    <p class="war-game-deploy-hint muted">{$t('governance.deployWarGame.depositHint')}</p>
   </div>
 
   <SquadParamsCustomizeFields
@@ -230,6 +255,7 @@
   {#if redeploy}
     <p class="war-game-deploy-hint muted">{$t('governance.deployWarGame.redeployHint')}</p>
   {/if}
+  {/if}
 
   {#if deployError}
     <p class="input-error" role="alert">{deployError}</p>
@@ -239,17 +265,21 @@
     <button type="button" class="btn-secondary" onclick={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
     <button
       type="button"
-      class="btn-primary"
+      class="btn-primary btn-primary-action"
       disabled={
         deploying ||
         resolvingDeployer ||
         !myRosterEvm ||
-        !depositWei ||
+        depositInvalid ||
         customizeInvalid
       }
       onclick={executeDeploy}
     >
-      {deploying ? $t('governance.common.deploying') : $t('governance.common.execute')}
+      {deploying
+        ? $t('governance.common.deploying')
+        : needsSquadEvmGate
+          ? $t('governance.deployGate.assignButton')
+          : $t('governance.common.execute')}
     </button>
   </div>
 </Modal>
@@ -303,5 +333,9 @@
     gap: 8px;
     margin: 4px 0;
     font-size: 0.875rem;
+  }
+  .btn-primary-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

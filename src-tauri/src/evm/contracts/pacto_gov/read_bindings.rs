@@ -210,4 +210,8 @@ sol! {
 
         function isExecutorPaused(address _executor) external view returns (bool _paused);
     }
+
+    interface ISquadAdminExt {
+        function owner() external view returns (address);
+    }
 }

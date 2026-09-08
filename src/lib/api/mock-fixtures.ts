@@ -251,6 +251,7 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
   }),
   list_squad_tracked_tokens: () => [],
   list_squad_sponsored_fee_usage: () => [],
+  list_global_sponsored_fee_usage: () => [],
   upsert_squad_tracked_token: () => ({
     id: 'mock',
     chain: 'sepolia',

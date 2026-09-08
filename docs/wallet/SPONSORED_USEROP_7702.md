@@ -133,6 +133,8 @@ Requires `ALCHEMY_RPC_KEY` + `PIMLICO_API_KEY` in repo-root `.env`. Stdout stage
 
 Bare `claim` eth_call succeeds (EOA has no code). Under a 7702 stub, NFT `_safeMint` calls `onERC721Received` on the roster EOA; `PactoSimple7702Account`’s empty `fallback` does not return the IERC721Receiver magic → nested empty revert (cast: Transfer then `onERC721Received` → `EvmError: Revert`). That matches Pimlico `reason: 0x` at estimate. **Fix:** implement `onERC721Received` on the account, redeploy **only** the EIP-7702 impl, pin `erc4337.accountImplementation` + paymaster `ALLOWED_7702` (not a third full-system redeploy).
 
+**Production client parity (post harness):** `global_sponsor_userop` bootstrap claims now mirror the harness: authoritative **L1.5** `execute(nft, 0, claim)` preflight (bare L1 only when roster code is empty), and **auto EIP-7702 upgrade** auth when delegation points at a stale impl instead of failing closed. Shared logic lives in `src-tauri/src/evm/username_claim_preflight.rs`.
+
 ### Field-diff notes (squad vs username)
 
 Shared: `user_op_json`, EIP-7702 auth, bare `sign_hash(userOpHash)`, EP v0.7 nonce key 0, two-pass estimate. Diverges only on paymaster contract + `paymasterData` payload and inner `execute(dest, 0, data)`. L1 claim `eth_call` does **not** wrap `execute` — L1 OK does not prove UserOp sim. Squad gov does not `_safeMint` to the roster, so it never hit the missing receiver.

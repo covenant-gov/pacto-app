@@ -7,10 +7,11 @@ use alloy::sol_types::SolCall;
 use rand::RngCore;
 use tauri::{AppHandle, Runtime};
 
-use super::dto::{UsernameClaimResult, PACTO_ACTIONS_POLICY_VERSION};
+use super::dto::UsernameClaimResult;
 use super::helpers::{
-    estimate_eoa_cost_wei, load_nostr_keys, nostr_xonly_pubkey, record_to_dto, require_network,
-    require_rpc_urls, send_eoa_call, username_addrs, validate_username, InFlightGuard,
+    estimate_eoa_cost_wei, load_nostr_keys, nostr_xonly_pubkey, read_registry_policy_version,
+    record_to_dto, require_network, require_rpc_urls, send_eoa_call, username_addrs,
+    validate_username, InFlightGuard,
 };
 use crate::db::{self, UsernameClaimUpsert};
 use crate::evm::claim_binding::{claim_binding_signing_hash, sign_claim_binding};
@@ -19,7 +20,7 @@ use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
     canBootstrapClaimCall, claimCall, hashClaimBindingCall, nameAvailableCall,
     npubOfCall, recordOfCall, usedNonceCall,
 };
-use crate::evm::contracts::pacto_username::ISponsorPolicyRegistry::policyVersionCall;
+use crate::evm::global_sponsored_fee_ledger::{self, LANE_USERNAME_BOOTSTRAP};
 use crate::evm::global_sponsor_userop::{send_sponsored_username_userop, UsernameSponsorLane};
 use crate::evm::nostr_claim_link::{
     hash_nostr_claim, npub_hash_from_pubkey, sign_nostr_claim, verify_nostr_claim,
@@ -230,7 +231,7 @@ pub async fn username_claim<R: Runtime>(
                 app.clone(),
                 &net.key,
                 nft,
-                calldata,
+                calldata.clone(),
                 UsernameSponsorLane::Bootstrap,
                 npub_hash,
                 rpc_urls.clone(),
@@ -248,6 +249,27 @@ pub async fn username_claim<R: Runtime>(
                     None,
                     receipt.tx_hash.clone(),
                 ));
+            }
+            if let Some(amount_wei) = receipt.actual_gas_cost_wei.as_ref() {
+                global_sponsored_fee_ledger::persist_global_sponsored_fee_usage(
+                    &app,
+                    LANE_USERNAME_BOOTSTRAP,
+                    None,
+                    &net.key,
+                    net.chain_id,
+                    member,
+                    nft,
+                    &calldata,
+                    &send.user_op_hash,
+                    &receipt.tx_hash,
+                    amount_wei,
+                );
+            } else {
+                log::warn!(
+                    target: "pacto_wallet",
+                    "bootstrap claim UserOp {} succeeded without actualGasCost; skipping global fee ledger row",
+                    send.user_op_hash
+                );
             }
             (
                 "bootstrap".to_string(),
@@ -279,17 +301,8 @@ pub async fn username_claim<R: Runtime>(
     .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
     let dto = record_to_dto(record);
 
-    let on_chain_policy: U256 = eth_call_decode(
-        &provider,
-        addrs.sponsor_policy_registry,
-        &policyVersionCall {},
-    )
-    .await
-    .unwrap_or(U256::from(addrs.policy_version));
-    let policy_version = on_chain_policy
-        .try_into()
-        .unwrap_or(addrs.policy_version)
-        .max(PACTO_ACTIONS_POLICY_VERSION.min(addrs.policy_version));
+    let policy_version =
+        read_registry_policy_version(&provider, addrs.sponsor_policy_registry).await;
 
     if let Err(e) = db::upsert_username_claim(
         &app,

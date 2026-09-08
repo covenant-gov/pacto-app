@@ -2,11 +2,17 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import GovCtaButton from './GovCtaButton.svelte';
-  import GovHatRequiredBanner from './GovHatRequiredBanner.svelte';
+  import GovGateBanner from './GovGateBanner.svelte';
   import GovStartMutinyModal from './GovStartMutinyModal.svelte';
   import GovProposeOffboardModal from './GovProposeOffboardModal.svelte';
   import type { MutinyStatusDto, QuartermasterStatusDto } from '../../../lib/governance/api';
-  import { isHatRequiredReason, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
+  import {
+    isHatRequiredReason,
+    LINK_EVM_BANNER_KEY,
+    MUTINY_ACTIVE_BANNER_KEY,
+    OFFBOARD_ACTIVE_BANNER_KEY,
+    type GovernancePrivilege,
+  } from '../../../lib/governance/governance-privilege';
   import { buildGovCommandGates } from '../../../lib/governance/gov-command-gates';
 
   interface Props {
@@ -51,13 +57,24 @@
   );
   let crewGate = $derived(gates.crew);
   let mutinyActive = $derived(gates.mutinyActive);
+  let offboardActive = $derived(gates.offboardActive);
   let startMutinyGate = $derived(gates.startMutiny);
   let proposeOffboardGate = $derived(gates.proposeOffboard);
+  let needsLinkEvm = $derived(!privilege.myAddress.trim());
 </script>
 
 <div class="crew-actions">
+  {#if needsLinkEvm}
+    <GovGateBanner reason={LINK_EVM_BANNER_KEY} />
+  {/if}
   {#if !crewGate.enabled && isHatRequiredReason(crewGate.reason)}
-    <GovHatRequiredBanner reason={crewGate.reason} />
+    <GovGateBanner reason={crewGate.reason} />
+  {/if}
+  {#if mutinyActive}
+    <GovGateBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
+  {/if}
+  {#if offboardActive && !mutinyActive}
+    <GovGateBanner reason={OFFBOARD_ACTIVE_BANNER_KEY} />
   {/if}
   <div class="row">
     {#if mutinyModule}

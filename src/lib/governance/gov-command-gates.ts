@@ -6,6 +6,8 @@ import {
   gateRequiresCaptain,
   gateRequiresCaptainOrCrew,
   gateRequiresCrew,
+  MUTINY_ACTIVE_BANNER_KEY,
+  OFFBOARD_ACTIVE_BANNER_KEY,
   type CtaGate,
   type GovernancePrivilege,
 } from './governance-privilege';
@@ -60,8 +62,8 @@ export function buildGovCommandGates(input: {
   const treasury = capabilitiesPending ? PENDING_GATE : gateRequiresCaptainOrCrew(privilege);
   const rosterFrozen = !!qmStatus?.mutinyActive || offboardActive;
   const rosterFreezeReason = qmStatus?.mutinyActive
-    ? 'governance.gate.quartermasterLocked'
-    : 'governance.gate.rosterFrozenOffboard';
+    ? MUTINY_ACTIVE_BANNER_KEY
+    : OFFBOARD_ACTIVE_BANNER_KEY;
   const qmRoster = capabilitiesPending
     ? PENDING_GATE
     : gateBlockedByMutinyMode(privilege, rosterFrozen, rosterFreezeReason);
@@ -73,19 +75,21 @@ export function buildGovCommandGates(input: {
   const randomizeCandidates = randomizeCaptainCandidates(randomizePool, randomizeExclude);
 
   let startMutiny: CtaGate = crew;
-  if (mutinyActive) startMutiny = { enabled: false, reason: 'governance.gate.mutinyAlreadyActive' };
-  else if (offboardActive) startMutiny = { enabled: false, reason: 'governance.gate.cannotStartMutinyWhileOffboard' };
+  if (mutinyActive) startMutiny = { enabled: false, reason: MUTINY_ACTIVE_BANNER_KEY };
+  else if (offboardActive) startMutiny = { enabled: false, reason: OFFBOARD_ACTIVE_BANNER_KEY };
 
   let proposeOffboard: CtaGate = crew;
-  if (offboardActive) proposeOffboard = { enabled: false, reason: 'governance.gate.offboardAlreadyActive' };
-  else if (mutinyActive) proposeOffboard = { enabled: false, reason: 'governance.gate.cannotOffboardWhileMutiny' };
+  if (offboardActive) proposeOffboard = { enabled: false, reason: OFFBOARD_ACTIVE_BANNER_KEY };
+  else if (mutinyActive) proposeOffboard = { enabled: false, reason: MUTINY_ACTIVE_BANNER_KEY };
 
   const resign: CtaGate = mutinyActive
-    ? { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' }
-    : captain;
+    ? { enabled: false, reason: MUTINY_ACTIVE_BANNER_KEY }
+    : offboardActive
+      ? { enabled: false, reason: OFFBOARD_ACTIVE_BANNER_KEY }
+      : captain;
 
   let randomize: CtaGate = captain;
-  if (mutinyActive) randomize = { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' };
+  if (mutinyActive) randomize = { enabled: false, reason: MUTINY_ACTIVE_BANNER_KEY };
   else if (!captain.enabled) randomize = captain;
   else if (randomizeCandidates.length === 0) {
     randomize = { enabled: false, reason: 'governance.gate.noOtherRosterForCaptain' };

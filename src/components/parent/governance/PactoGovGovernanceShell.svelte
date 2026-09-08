@@ -27,6 +27,8 @@
   } from '../../../lib/governance/gov-module-read-cache';
   import {
     resolveGovernancePrivilege,
+    MUTINY_ACTIVE_BANNER_KEY,
+    OFFBOARD_ACTIVE_BANNER_KEY,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
@@ -129,8 +131,8 @@
   let rosterFrozen = $derived(isMutinyActive(mutinyStatus) || isCrewOffboardActive(qmStatus));
   let rosterFreezeReason = $derived(
     isMutinyActive(mutinyStatus)
-      ? 'governance.gate.quartermasterLocked'
-      : 'governance.gate.rosterFrozenOffboard',
+      ? MUTINY_ACTIVE_BANNER_KEY
+      : OFFBOARD_ACTIVE_BANNER_KEY,
   );
   let crewMemberOptions = $derived(
     govMemberOptions({

@@ -4,10 +4,10 @@
   let { reason }: { reason: string } = $props();
 </script>
 
-<p class="hat-required" role="alert">{$t(reason)}</p>
+<p class="gov-gate-banner" role="alert">{$t(reason)}</p>
 
 <style>
-  .hat-required {
+  .gov-gate-banner {
     margin: 0;
     padding: 8px 10px;
     border-radius: 6px;

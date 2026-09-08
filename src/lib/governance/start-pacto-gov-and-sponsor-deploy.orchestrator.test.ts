@@ -73,7 +73,7 @@ describe('startPactoGovAndSponsorDeploy validation', () => {
     expect(onReject.mock.calls[0][0]).toMatch(/squad-assigned/i);
   });
 
-  it('rejects zero deposit', () => {
+  it('accepts zero deposit', () => {
     const onReject = vi.fn();
     const ok = startPactoGovAndSponsorDeploy({
       parentId: 'p1',
@@ -85,8 +85,8 @@ describe('startPactoGovAndSponsorDeploy validation', () => {
       onComplete: vi.fn(),
       onReject,
     });
-    expect(ok).toBe(false);
-    expect(onReject.mock.calls[0][0]).toMatch(/deposit/i);
+    expect(ok).toBe(true);
+    expect(onReject).not.toHaveBeenCalled();
   });
 });
 

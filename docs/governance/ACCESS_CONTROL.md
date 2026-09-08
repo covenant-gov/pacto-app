@@ -89,15 +89,27 @@ Squad Admin executor flags (`FULL`, `PAUSE`, custom tags) appear on the capabili
 
 Do not require deployer EVM == roster owner. Default may fund; hats and Ext ownership stay on the roster address.
 
+### Deploy launchpad scenarios
+
+| Scenario | Sponsor deploy | Pacto Gov deploy | Wire Ext sponsor |
+|----------|----------------|------------------|------------------|
+| **A — Gov first** | Any parent member may deploy hats-linked sponsor | N/A (already deployed) | N/A |
+| **B — Admin Ext first** | Per A/C once gov exists | **`SquadAdminExt.owner` only** | N/A until gov + unwired Ext |
+| **C — Sponsor Ext first** | Ext create: any member before gov | **`SquadSponsorExt.addressOwner` only** | **`addressOwner` only** after gov |
+
+After Pacto Gov is deployed, Ext-first create paths are closed; unwired Ext sponsors wire via `postInitialize` (gas eligibility migrates address → hats on-chain — no app migration step). Admin Ext stays address-gated after post-init into the gov hats tree.
+
+Launchpad enablement reads on-chain `owner()` / `addressOwner()` (fail-closed to payload only when RPC read fails).
+
 ## Sponsored gov writes (ERC-4337)
 
-Plain rule: **roster can pay gas → EOA tx; roster cannot → sponsored UserOp** (if squad sponsor + bundler are configured). Implemented in `send_gov_module_call` / `gov_module_write`.
+**Gov module writes** (`send_gov_module_call` / `gov_module_write`): roster EOA when funded; else parent-scoped squad UserOp; for **eligible username members**, global topHat UserOp when squad path is unavailable for **this parent**; else fail closed.
 
-Signer is always the embedded **roster EOA** — not an external smart-contract wallet. EIP-7702 only applies on the sponsored path when that EOA has empty code (temporary set-code to the shared account impl). Details: [PACTO_SQUAD_SPONSOR.md](../wallet/PACTO_SQUAD_SPONSOR.md).
+**Factory deploys** (`deploy_gas_router`): eligible members may use global topHat sponsorship (roster signer + EIP-7702); non-eligible payers use EOA. Optional sponsor `msg.value` still requires signer ETH. Zero initial sponsor deposit is allowed — fund the pool post-deploy.
+
+Signer is always the embedded **roster EOA** on sponsored paths — not an external smart-contract wallet. EIP-7702 applies when that EOA has empty code. Details: [PACTO_SQUAD_SPONSOR.md](../wallet/PACTO_SQUAD_SPONSOR.md), [USERNAME_NFT.md](../wallet/USERNAME_NFT.md).
 
 Operator env: `ALCHEMY_RPC_KEY` for chain RPC. Sponsored writes use an in-app Pimlico key (Status → Sponsored gas), then **`PIMLICO_API_KEY`**, then optional `BUNDLER_RPC_URL` (EntryPoint v0.7 — Pimlico-first; do not use Alchemy as bundler). Debug builds load repo-root `.env` into Rust at startup. EIP-7702 impl defaults from `networks.sepolia.erc4337.accountImplementation` (`PactoSimple7702Account`); optional `PACTO_ERC4337_ACCOUNT_IMPL` override. Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `SPONSOR_PAYMASTER_MISMATCH`, `PAYMASTER_DEPOSIT_LOW`, `PAYMASTER_STAKE_LOW`, `PAYMASTER_VERIFICATION_GAS`, `PAYMASTER_GAS_EFFICIENCY`, `BUNDLER_ESTIMATE`, `PAYMASTER_VALIDATION`, `BUNDLER_FEE`, `ACCOUNT_SIGNATURE`, `ACCOUNT_VALIDATION`, `USEROP_CALL_GAS`, `USEROP_CALL_REVERTED`, `GOV_CALL_REVERTED`, `MUTINY_NOT_ACTIVE`, `MUTINY_NOT_EXPIRED`, `MUTINY_EXPIRED`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`. EOA `eth_estimateGas` reverts classify to those codes (never raw RPC). Shared paymaster EntryPoint deposit and factory stake (protocol ops) are separate from per-squad sponsor pool deposits.
-
-Deploy/deposit themselves are **not** sponsored in v1 — only post-deploy gov module writes (bootstrap crew, treasury authority, quartermaster, mutiny, etc.).
 
 ## Write reliability (adjacent)
 

@@ -1,9 +1,6 @@
-//! Username NFT command DTOs and local policy floor.
+//! Username NFT command DTOs.
 
 use serde::Serialize;
-
-/// Local catalog floor; must stay ≥ on-chain `SponsorPolicyRegistry.policyVersion()`.
-pub const PACTO_ACTIONS_POLICY_VERSION: u64 = 3;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -3,6 +3,7 @@
   import { get } from 'svelte/store';
   import Modal from '../../ui/Modal.svelte';
   import GovCtaButton from './GovCtaButton.svelte';
+  import GovGateBanner from './GovGateBanner.svelte';
   import {
     getQuartermasterPending,
     quartermasterCancelAddCrew,
@@ -15,7 +16,7 @@
     type QuartermasterStatusDto,
   } from '../../../lib/governance/api';
   import { isCrewOffboardActive } from '../../../lib/governance/crew-offboard';
-  import { type CtaGate } from '../../../lib/governance/governance-privilege';
+  import { type CtaGate, MUTINY_ACTIVE_BANNER_KEY, OFFBOARD_ACTIVE_BANNER_KEY } from '../../../lib/governance/governance-privilege';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import GovMemberPicker from './GovMemberPicker.svelte';
 
@@ -87,9 +88,9 @@
   <Modal {titleId} {onClose} contentClass="gov-action-modal">
     <h2 id={titleId} class="modal-title">{$t(titleKey)}</h2>
     {#if qmStatus?.mutinyActive}
-      <p class="muted"><strong>{$t('governance.info.mutinyModeOn')}</strong> — {$t('governance.info.mutinyModeBlocked')}</p>
+      <GovGateBanner reason={MUTINY_ACTIVE_BANNER_KEY} />
     {:else if offboardActive}
-      <p class="muted">{$t('governance.gate.rosterFrozenOffboard')}</p>
+      <GovGateBanner reason={OFFBOARD_ACTIVE_BANNER_KEY} />
     {:else if qmStatus}
       <p class="muted">{$t('governance.info.crewChangeDelay', { values: { delay: qmStatus.crewChangeDelaySecs } })}</p>
     {/if}

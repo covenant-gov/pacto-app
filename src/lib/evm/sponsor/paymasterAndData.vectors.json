@@ -20,7 +20,7 @@
     "pactoSponsorPaymaster": "0xD84337C18dB089DF78c69Ea0df619bD48EEBBcC3",
     "sponsorImplementation": "0x39502c083E8491d4bfc21BBe999089f9F53f38d6",
     "extImplementation": "0x2EF9B3eAEA2d42173e843c9aC082449049D3C26B",
-    "navePirataRegistry": "0xf6747bE3425139FCe92B67fA482331D7435bd483",
+    "navePirataRegistry": "0xb4e9349540ed00A7a76Da52e1BBe562D9587ba23",
     "hats": "0x3bc1A0Ad72417f2d411118085256fC53CBdDd137"
   },
   "fixtureAddresses": {

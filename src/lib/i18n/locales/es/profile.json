@@ -56,5 +56,22 @@
 	"profile.username.claimSuccess": "Nombre reclamado vía {path}.",
 	"profile.username.transferSuccess": "Transferencia de dirección actualizada vía {path}.",
 	"profile.username.loadError": "No se pudo cargar el estado del nombre de usuario.",
-	"profile.username.invalidAddress": "Introduce una dirección EVM 0x válida."
+	"profile.username.invalidAddress": "Introduce una dirección EVM 0x válida.",
+	"profile.username.errors.claimReverted": "Falló la simulación del reclamo. Comprueba el nombre, inténtalo de nuevo o reinicia la app tras una actualización del protocolo.",
+	"profile.username.errors.bindingExpired": "El enlace de reclamo expiró. Inténtalo de nuevo — la app usa la hora de la cadena.",
+	"profile.username.errors.invalidName": "Ese nombre de usuario no es válido en cadena.",
+	"profile.username.errors.taken": "Ese nombre de usuario ya está ocupado.",
+	"profile.username.errors.npubClaimed": "Tu npub ya tiene un nombre de usuario en cadena.",
+	"profile.username.errors.alreadyClaimed": "Esta dirección EVM ya reclamó un nombre de usuario.",
+	"profile.username.errors.invalidEvmSig": "La firma EVM no se verificó. Desbloquea tu billetera e inténtalo de nuevo.",
+	"profile.username.errors.invalidNpubHash": "La clave de cuenta no coincide con el enlace de reclamo.",
+	"profile.username.errors.invalidNostrSig": "La firma Nostr del reclamo no se verificó.",
+	"profile.username.errors.nonceUsed": "El nonce del reclamo ya se usó. Actualiza e inténtalo de nuevo.",
+	"profile.username.errors.stale7702": "Actualizando tu cuenta en cadena para el reclamo patrocinado. Si persiste, reinicia la app.",
+	"profile.username.errors.paymaster7702Mismatch": "El libro de direcciones está desactualizado. Reinicia por completo la app de escritorio.",
+	"profile.username.errors.noGasPath": "No hay ruta de gas disponible (pool bootstrap, tu saldo o patrocinador global).",
+	"profile.username.errors.bundlerConfig": "El gas patrocinado no está configurado. Añade una clave Pimlico en Estado → Gas patrocinado.",
+	"profile.username.errors.userOpFailed": "La transacción patrocinada del reclamo se revirtió en cadena.",
+	"profile.username.errors.bootstrapAfterMint": "Ya tienes un nombre de usuario; usa transferencia de dirección en lugar de reclamar.",
+	"profile.username.errors.poolLow": "El pool bootstrap está bajo. Inténtalo más tarde o contacta al operador."
 }

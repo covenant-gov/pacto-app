@@ -44,7 +44,6 @@ export type GlobalUsernameSponsorProtocolAddresses = {
   bootstrapClaimPolicy: string;
   pactoGlobalPaymaster: string;
   nostrClaimLink: string;
-  policyVersion: number;
   allowed7702Implementation: string;
   entryPoint: string;
 };
