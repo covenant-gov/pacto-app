@@ -10,7 +10,7 @@
 	import VoteEmbedStrip from '../../../components/channel/VoteEmbedStrip.svelte';
 	import { cn } from '$lib/utils.js';
 	import { design } from '../design-state.svelte.js';
-	import { ditherMaskStyle } from '../dither.js';
+	import { ditherMaskStyle } from '$lib/dither';
 	import type { Message } from '../fixtures.js';
 	import { pollTitle, proposalTitle } from '../fixtures.js';
 

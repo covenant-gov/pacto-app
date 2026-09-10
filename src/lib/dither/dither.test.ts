@@ -12,9 +12,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-describe('design dither wiring', () => {
+describe('dither wiring', () => {
 	const css = readFileSync(join(here, 'dither.css'), 'utf8');
-	const layout = readFileSync(join(here, '+layout.svelte'), 'utf8');
+	const designRoot = join(here, '../../routes/design');
+	const layout = readFileSync(join(designRoot, '+layout.svelte'), 'utf8');
 
 	it('css root fallbacks match dither defaults', () => {
 		expect(css).toContain(`--dither-mix: ${DITHER_DEFAULTS.mix};`);
@@ -50,7 +51,7 @@ describe('design dither wiring', () => {
 	});
 
 	it('lets the gate inherit dither pattern instead of replacing the wash mask', () => {
-		const gate = readFileSync(join(here, 'components/DesignGate.svelte'), 'utf8');
+		const gate = readFileSync(join(designRoot, 'components/DesignGate.svelte'), 'utf8');
 		expect(gate).toContain('ditherMaskStyle(design.ditherPattern)');
 		expect(css).not.toMatch(/\.shell-gate \.shell-dither-wash[\s\S]{0,200}radial-gradient/);
 		expect(css).toContain(`var(--dither-tile, ${DITHER_DEFAULTS.tile}px)`);

@@ -5,4 +5,4 @@ export {
 	ditherPatternMaskImage,
 	ditherPatternUrl,
 	type DitherPattern,
-} from '$lib/dither';
+} from './dither.js';

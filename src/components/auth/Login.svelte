@@ -6,6 +6,7 @@
   import KeyImport from './KeyImport.svelte';
   import PinInput from './PinInput.svelte';
   import BiometricUnlockPrompt from './BiometricUnlockPrompt.svelte';
+  import AuthAtmosphere from './AuthAtmosphere.svelte';
   import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError, checkSession, isAuthenticated, currentUser } from '../../stores/auth';
   import { appConfig } from '../../stores/app-config';
   import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
@@ -160,6 +161,7 @@
 
 </script>
 
+<AuthAtmosphere>
 <div class="login-container">
   {#if currentStep === 'checking'}
     <div class="checking-screen" role="status" aria-live="polite">
@@ -223,12 +225,12 @@
     </div>
   {/if}
 </div>
+</AuthAtmosphere>
 
 <style>
   .login-container {
     width: 100%;
-    height: 100vh;
-    background: var(--bg-page, #1c1c1c);
+    height: 100%;
   }
 
   .checking-screen {
@@ -237,9 +239,8 @@
     align-items: center;
     justify-content: center;
     width: 100%;
-    height: 100vh;
+    height: 100%;
     gap: 16px;
-    background: var(--bg-page, #1c1c1c);
   }
 
   .checking-spinner {
@@ -266,8 +267,7 @@
     align-items: center;
     justify-content: center;
     width: 100%;
-    height: 100vh;
-    background: var(--bg-page);
+    height: 100%;
   }
 </style>
 

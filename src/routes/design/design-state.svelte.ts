@@ -9,7 +9,7 @@ import {
 import type { Channel, Message, PresenceStatus, RailLens, Squad } from './fixtures.js';
 import { currentUser } from './fixtures.js';
 import { consumeChannelInList, withSyncedMentions } from './session.js';
-import { DITHER_DEFAULTS, type DitherPattern } from './dither.js';
+import { DITHER_DEFAULTS, type DitherPattern } from '$lib/dither';
 
 const squadPalette = ['#2a4a3d', '#3d2c6b', '#1e3a4a', '#5a2a2a', '#26324a', '#3a2c4a'];
 

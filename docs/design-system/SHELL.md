@@ -92,7 +92,7 @@ Boundary rules:
 
 Sandbox-only encode (not production chrome):
 
-- Dither CSS and SVG masks live in `src/routes/design/` (`dither.css`, `dither/*.svg`). Do not put mask `url()`s in `src/app.css`.
+- Dither CSS and SVG masks live in `src/lib/dither/` (`dither.css`, `dither/*.svg`). Do not put mask `url()`s in `src/app.css`. Production unauthenticated Login uses `AuthAtmosphere`: content column **2/6** on `--bg-panel`; photo column **4/6** as a gallery wall with the NYPL Digital Collections plate (Wallach Division; Floridian shipwreck, 1837–1842; item `510d47e3-6d81-a3d9-e040-e00a18064a99`) inset like a hung piece. Dither is off on this surface.
 - Inherited custom properties that contain `url(...)` do **not** paint as `mask-image` on `::before` (Chromium/WebKit). Use a `data-dither-pattern` ancestor and literal `url()` in the matching rule.
 - Unread `RailTile` `variant="squad"` stays encoded until hover / focus-visible / `data-active`. The selected tile is decoded.
 - The sealed gate is a full overlay with a radial knockout and a page-color well. Do not wrap lock chrome in a card. PIN wells are floating; copy sits on `--text-primary`.

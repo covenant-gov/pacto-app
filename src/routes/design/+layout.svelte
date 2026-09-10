@@ -22,12 +22,13 @@
 	import type { DashboardMode } from './fixtures';
 	import en from './locales/en.json';
 	import es from './locales/es.json';
-	import './dither.css';
+	import '$lib/dither/dither.css';
 	import './sketches/techno-light-paper.css';
 	import './sketches/techno-light-signal.css';
 	import {
 		applyPlaygroundTheme,
 		isDesignTheme,
+		isShippedTheme,
 		readDesignPreviewTheme,
 		writeDesignPreviewTheme,
 		type DesignTheme,
@@ -41,6 +42,9 @@
 		const preview = readDesignPreviewTheme() ?? DEFAULT_THEME;
 		previewTheme = preview;
 		applyPlaygroundTheme(preview);
+		if (isShippedTheme(preview)) {
+			setTheme(preview);
+		}
 		return () => {
 			setTheme(getStoredTheme() ?? DEFAULT_THEME);
 		};
@@ -50,6 +54,9 @@
 		previewTheme = value;
 		writeDesignPreviewTheme(value);
 		applyPlaygroundTheme(value);
+		if (isShippedTheme(value)) {
+			setTheme(value);
+		}
 	}
 
 	addMessages('en', en);

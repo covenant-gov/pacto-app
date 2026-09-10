@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+  import './auth-step.css';
 
   let {
     title,
@@ -110,7 +111,7 @@
   });
 </script>
 
-<div class="pin-input-container">
+<div class="pin-input-container auth-step-column">
   <h3 class="pin-title">{title}</h3>
 
   {#if error}
@@ -155,21 +156,23 @@
     flex-direction: column;
     align-items: center;
     gap: 24px;
-    padding: 32px;
   }
 
   .pin-title {
-    color: var(--text-primary, #f2f5f9);
-    font-size: 1.25rem;
+    color: var(--text-primary);
+    font-family: var(--font-mono-family, ui-monospace, monospace);
+    font-size: 0.6875rem;
     font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
     margin: 0;
     text-align: center;
   }
 
   .pin-error {
-    color: var(--danger, #f472b6);
+    color: var(--danger);
     font-size: 0.875rem;
-    background: rgba(242, 63, 66, 0.1);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
     padding: 8px 16px;
     border-radius: 8px;
     animation: shake 0.3s;
@@ -190,7 +193,7 @@
 
   .pin-inputs {
     display: flex;
-    gap: 12px;
+    gap: 10px;
   }
 
   .pin-inputs.shake {
@@ -198,24 +201,27 @@
   }
 
   .pin-digit {
-    width: 48px;
-    height: 56px;
-    background: var(--border-subtle, #343c4c);
-    border: 2px solid var(--border, #455061);
-    border-radius: 8px;
-    color: var(--text-primary, #f2f5f9);
-    font-size: 1.5rem;
+    width: 2.25rem;
+    height: 2.5rem;
+    background: color-mix(in srgb, var(--text-primary) 10%, var(--bg-panel));
+    border: none;
+    border-radius: 0.5rem;
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text-primary) 62%, transparent);
+    color: var(--text-primary);
+    font-family: var(--font-mono-family, ui-monospace, monospace);
+    font-size: 1.125rem;
     font-weight: 600;
     text-align: center;
     outline: none;
-    transition: all 0.2s;
+    transition:
+      box-shadow 150ms ease,
+      background-color 150ms ease;
     box-sizing: border-box;
   }
 
   .pin-digit:focus {
-    border-color: var(--brand, #22d3ee);
-    background: var(--bg-hover, #363e4f);
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
+    box-shadow: inset 0 0 0 2px var(--brand);
+    background: color-mix(in srgb, var(--text-primary) 10%, var(--bg-panel));
   }
 
   .pin-digit:disabled {
@@ -228,14 +234,14 @@
     flex-direction: column;
     align-items: center;
     gap: 12px;
-    color: var(--text-muted, #8b96a8);
+    color: var(--text-muted);
   }
 
   .spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid var(--border-subtle, #343c4c);
-    border-top-color: var(--brand, #22d3ee);
+    border: 3px solid var(--border-subtle);
+    border-top-color: var(--brand);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
@@ -253,21 +259,29 @@
 
   .btn-back {
     padding: 12px 24px;
-    background: transparent;
-    color: var(--text-muted, #8b96a8);
-    border: 2px solid var(--border, #455061);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1.5px solid var(--border);
     border-radius: 8px;
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      color 150ms ease;
     outline: none;
   }
 
   .btn-back:hover:not(:disabled) {
-    background: var(--border-subtle, #343c4c);
-    border-color: var(--brand, #22d3ee);
-    color: var(--text-primary, #f2f5f9);
+    background: var(--bg-hover);
+    border-color: var(--brand);
+    color: var(--text-primary);
+  }
+
+  .btn-back:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
   }
 
   .btn-back:disabled {

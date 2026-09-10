@@ -1,6 +1,8 @@
 <script lang="ts">
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
+  import './auth-step.css';
 
   let {
     onImport,
@@ -60,7 +62,7 @@
 </script>
 
 <div class="key-import-container">
-  <div class="key-import-content">
+  <div class="key-import-content auth-step-column">
     <div class="import-header">
       <h2>{$t('auth.importTitle')}</h2>
       <p class="import-subtitle">
@@ -83,8 +85,14 @@
         rows="4"
       ></textarea>
 
+      <div class="import-notice" role="note">
+        <TriangleAlert class="import-notice-icon" aria-hidden="true" />
+        <p>{$t('auth.recoveryPhraseNotice')}</p>
+      </div>
+
       <div class="import-actions">
         <button
+          type="button"
           class="btn-secondary"
           onclick={onBack}
           disabled={isValidating}
@@ -92,6 +100,7 @@
           {$t('auth.back')}
         </button>
         <button
+          type="button"
           class="btn-primary"
           onclick={handleSubmit}
           disabled={isValidating || !privateKey.trim()}
@@ -99,10 +108,6 @@
           {isValidating ? $t('auth.validating') : $t('auth.continue')}
         </button>
       </div>
-    </div>
-
-    <div class="import-notice">
-      <p>{$t('auth.recoveryPhraseNotice')}</p>
     </div>
   </div>
 </div>
@@ -113,23 +118,20 @@
     align-items: center;
     justify-content: center;
     width: 100%;
-    height: 100vh;
-    background: var(--bg-page);
+    height: 100%;
   }
 
   .key-import-content {
     display: flex;
     flex-direction: column;
     gap: 24px;
-    max-width: 480px;
-    width: 100%;
-    padding: 32px;
   }
 
   .import-header {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    text-align: center;
   }
 
   .import-header h2 {
@@ -164,26 +166,34 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    width: 100%;
   }
 
   .key-textarea {
+    display: block;
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 16px;
-    background: var(--border-subtle);
-    border: 2px solid var(--border);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
     border-radius: 8px;
     color: var(--text-primary);
     font-size: 0.9375rem;
-    font-family: 'Courier New', monospace;
+    line-height: 1.55;
     resize: vertical;
     outline: none;
-    transition: all 0.2s;
+    box-sizing: border-box;
+    transition:
+      border-color 150ms ease,
+      background-color 150ms ease,
+      box-shadow 150ms ease;
   }
 
   .key-textarea:focus {
-    border-color: var(--brand);
-    background: var(--bg-hover);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
+    border-color: color-mix(in srgb, var(--brand) 55%, var(--border-subtle));
+    background: var(--bg-elevated);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
   }
 
   .key-textarea:disabled {
@@ -197,22 +207,38 @@
 
   .import-actions {
     display: flex;
+    flex-direction: row;
     gap: 12px;
+    width: 100%;
   }
 
-  .btn-primary, .btn-secondary {
+  .btn-primary,
+  .btn-secondary {
     flex: 1;
+    min-width: 0;
+    width: auto;
     height: 48px;
-    border: none;
+    box-sizing: border-box;
     border-radius: 8px;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      color 150ms ease,
+      box-shadow 150ms ease;
     outline: none;
   }
 
+  .btn-primary:focus-visible,
+  .btn-secondary:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
   .btn-primary {
+    border: none;
     background: var(--brand);
     color: var(--on-brand);
   }
@@ -228,14 +254,14 @@
   }
 
   .btn-secondary {
-    background: transparent;
-    color: var(--text-muted);
-    border: 2px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: var(--border-subtle);
-    border-color: var(--brand);
+    background: var(--bg-hover);
+    border-color: color-mix(in srgb, var(--brand) 45%, var(--border-subtle));
     color: var(--text-primary);
   }
 
@@ -245,17 +271,35 @@
   }
 
   .import-notice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     padding: 12px 16px;
-    background: color-mix(in srgb, var(--brand) 10%, transparent);
+    box-sizing: border-box;
+    width: 100%;
     border-radius: 8px;
-    border-left: 3px solid var(--brand);
+    border: none;
+    background: color-mix(in srgb, var(--warning) 14%, var(--bg-elevated));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 22%, transparent);
+    text-align: start;
+  }
+
+  .import-notice-icon {
+    flex-shrink: 0;
+    width: 1.125rem;
+    height: 1.125rem;
+    color: var(--warning);
   }
 
   .import-notice p {
-    color: var(--text-muted);
-    font-size: 0.75rem;
+    flex: 1;
+    min-width: 0;
     margin: 0;
+    color: var(--text-primary);
+    font-size: 0.8125rem;
     line-height: 1.5;
+    text-align: start;
+    text-wrap: pretty;
   }
 </style>
 

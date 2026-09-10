@@ -3,7 +3,7 @@
 	import { t } from 'svelte-i18n';
 	import type { Snippet } from 'svelte';
 	import { design } from '../design-state.svelte.js';
-	import { ditherMaskStyle } from '../dither.js';
+	import { ditherMaskStyle } from '$lib/dither';
 
 	let {
 		awayFromLatest,
