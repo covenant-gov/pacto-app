@@ -1,0 +1,50 @@
+---
+const features = [
+  {
+    accent: 'blue',
+    title: 'End-to-end encrypted chat',
+    body: 'Direct messages and group channels stay private between participants, with encryption that is the default — not an optional mode.',
+  },
+  {
+    accent: 'pink',
+    title: 'On-chain proposals & voting',
+    body: 'Group decisions are proposed, voted, and recorded on chain so outcomes are durable and hard to rewrite after the fact.',
+  },
+  {
+    accent: 'green',
+    title: 'Transparent treasury management',
+    body: 'Shared funds move with visible rules and on-chain history, so the community can track what was authorized and what was spent.',
+  },
+  {
+    accent: 'yellow',
+    title: 'Censorship resistance, baked in',
+    body: 'Without a single central server holding your group hostage, shutting one operator down does not erase the community.',
+  },
+];
+---
+
+<section class="features" id="features" aria-labelledby="features-title">
+  <div class="section-inner">
+    <p class="eyebrow">The Features</p>
+    <h2 class="section-title" id="features-title">Use Pacto for what really matters to you</h2>
+
+    <div class="video-placeholder" role="img" aria-label="Video placeholder">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.2" />
+        <path d="M10 8.5v7l6-3.5-6-3.5z" />
+      </svg>
+    </div>
+
+    <div class="feature-grid">
+      {
+        features.map((f) => (
+          <article class="feature-card">
+            <span class={`accent-dot ${f.accent}`} aria-hidden="true" />
+            <h3>{f.title}</h3>
+            <p>{f.body}</p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>

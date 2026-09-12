@@ -1,0 +1,59 @@
+---
+interface Props {
+  base: string;
+}
+
+const { base } = Astro.props;
+const docsHref = 'https://github.com/covenant-gov/pacto-app';
+const githubHref = 'https://github.com/covenant-gov/pacto-app';
+---
+
+<footer class="site-footer">
+  <div class="section-inner">
+    <div class="footer-brand">
+      <img
+        class="footer-logo"
+        src={`${base}assets/logo-hands.jpg`}
+        alt=""
+        width="160"
+        height="145"
+      />
+      <div class="footer-wordmark">PACTO</div>
+    </div>
+    <ul class="footer-nav">
+      <li><a class="c-blue" href="#about">About Pacto</a></li>
+      <li><a class="c-pink" href="#values">Our Values</a></li>
+      <li><a class="c-green" href="#features">The Features</a></li>
+      <li><a class="c-yellow" href="#download">Download</a></li>
+      <li>
+        <a class="c-white" href={docsHref} target="_blank" rel="noopener noreferrer">
+          Documentation
+        </a>
+      </li>
+    </ul>
+    <div class="footer-social">
+      <a href={githubHref} target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.39.6.11.82-.26.82-.58v-2.02c-3.34.73-4.04-1.61-4.04-1.61-.55-1.38-1.75-1.33-1.75-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .11-.78.42-1.3.76-1.6-2.66-.3-5.46-1.33-5.46-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.8 5.62-5.47 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.82.58A12 12 0 0 0 24 12c0-6.63-5.37-12-12-12z"
+          ></path>
+        </svg>
+      </a>
+      <a href="https://x.com/pacto_app" target="_blank" rel="noopener noreferrer" aria-label="X">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M18.9 1.5h3.3l-7.2 8.2L24 22.5h-7.4l-5.8-7.6-6.6 7.6H.9l7.7-8.8L0 1.5h7.6l5.2 6.9 6.1-6.9zm-1.2 18.9h1.8L6.4 3.4H4.4l13.3 17z"
+          ></path>
+        </svg>
+      </a>
+    </div>
+    <div class="footer-bottom">
+      <p>2026 Pacto. All rights reserved.</p>
+      <div class="footer-legal">
+        <a href="#">Privacy Policy</a>
+        <a href="#">Terms of Service</a>
+        <a href="#">Cookies Settings</a>
+      </div>
+    </div>
+  </div>
+</footer>

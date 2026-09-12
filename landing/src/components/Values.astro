@@ -1,0 +1,66 @@
+---
+const docsHref = 'https://github.com/covenant-gov/pacto-app';
+
+const values = [
+  {
+    accent: 'blue',
+    title: 'Private by design, not by promise.',
+    body: 'End-to-end encryption and metadata-protected groups mean your conversations stay between members — not on a server that can be mined or subpoenaed.',
+  },
+  {
+    accent: 'pink',
+    title: 'Resistant to shutdown: no one holds the kill switch.',
+    body: 'No central host can freeze your community. Relays and on-chain state keep coordination alive even when a single operator goes dark.',
+  },
+  {
+    accent: 'green',
+    title: 'Governed by you: every big decision, on-chain and visible.',
+    body: 'Proposals and votes settle on chain so authority is explicit, auditable, and owned by the group — not buried in an admin panel.',
+  },
+  {
+    accent: 'yellow',
+    title: 'Made for doing things, not for speculating.',
+    body: 'Pacto is infrastructure for organizing and governing together. It is not a speculative token game or engagement farm.',
+  },
+];
+---
+
+<section class="values" id="values" aria-labelledby="values-title">
+  <div class="section-inner">
+    <div class="values-grid">
+      <div>
+        <p class="eyebrow">Our Values</p>
+        <h2 class="section-title" id="values-title">This is what we stand for</h2>
+        <p class="section-body">
+          We stand by these principles every time we build something new for Pacto.
+        </p>
+        <div class="values-actions">
+          <a class="btn btn-pink js-download-btn" href="#download" data-label-style="get">
+            <span class="js-download-label">Get Pacto</span>
+          </a>
+          <a
+            class="btn btn-ghost-light"
+            href={docsHref}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Read the Docs
+          </a>
+        </div>
+      </div>
+      <div class="value-cards">
+        {
+          values.map((v) => (
+            <article class="value-card">
+              <span class={`accent-dot ${v.accent}`} aria-hidden="true" />
+              <div>
+                <h3>{v.title}</h3>
+                <p>{v.body}</p>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</section>

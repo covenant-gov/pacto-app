@@ -17,17 +17,6 @@ interface ReleaseManifest {
   assets: ReleaseAsset[];
 }
 
-const taglineWords = [
-  'Private.',
-  'Decentralized.',
-  'Open-Source.',
-  'Free.',
-  'No KYC.',
-  'No Metadata.',
-  'No Data Leaks.',
-  'No Ads.',
-];
-
 const osIcons: Record<string, string> = {
   Windows:
     '<svg xmlns="http://www.w3.org/2000/svg" height="88" width="88" viewBox="0 0 88 88"><path d="M0 12.402l35.687-4.86.016 34.423-35.67.203zm35.67 33.529l.028 34.453L.028 75.48.026 45.7zm4.326-39.025L87.314 0v41.527l-47.318.376zm47.329 39.349l-.011 41.34-47.318-6.678-.066-34.739z"/></svg>',
@@ -37,7 +26,12 @@ const osIcons: Record<string, string> = {
     '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 800 800"><path d="M143.3729,749.0272c41.2542,4.9268,87.6064,31.6514,126.3972,36.3696,38.9994,4.9243,51.0679-26.5583,51.0679-26.5583,0,0,43.8864-9.8113,90.025-10.9412,46.1834-1.2938,89.9009,9.6052,89.9009,9.6052,0,0,8.4778,19.4165,24.3035,27.8943,15.8257,8.6417,49.8983,9.8113,71.736-13.1959,21.8799-23.1736,80.256-52.3642,113.0348-70.611,32.9874-18.2891,26.9333-46.1809,6.223-54.6587-20.7102-8.4753-37.6633-21.8377-36.3696-47.4771,1.1274-25.4284-18.2891-42.3815-18.2891-42.3815,0,0,16.9953-55.9525,1.1696-102.3022-15.8257-46.1387-68.021-120.3405-108.1478-176.1266-40.1267-55.9525-6.0566-120.5491-42.5901-203.1021C475.2959-7.1355,380.5527-2.2484,329.4847,32.9913c-51.0679,35.2422-35.411,122.6-49.0632,180.0879-12.6266,52.4874-55.3279,79.1176-86.7133,114.9958-32.0112,36.4946-51.8174,91.6835-42.8425,155.1978,3.3455,23.3186,14.8365,54.4335,35.9775,88.7015C188.3014,590.5306,225.0191,639.0531,252.7438,672.8981,279.3791,705.437,284.2617,719.4266,300.0874,728.5622zM343.2987,247.1836c-7.4491,12.7578-17.5867,24.3035-30.7629,33.1876-10.2484,7.0421-22.0995,12.1627-34.9605,14.649-1.0052,8.2273-1.4208,16.7469-1.4208,25.5552,0,74.0299,42.0112,132.0099,97.6158,132.0099,55.2448,0,97.6158-57.98,97.6158-132.0099,0-8.8083-0.4156-17.3279-1.4208-25.5552-12.861-2.4863-24.7122-7.6069-34.9605-14.649-13.1763-8.8841-23.3138-20.4298-30.7629-33.1876-12.6791,4.8725-26.4748,7.5433-40.9121,7.5433S355.9778,252.0561,343.2987,247.1836z"/></svg>',
 };
 
-function detectPlatform(): { platform: Platform; arch: string | null; buttonText: string; filePattern: RegExp | null } {
+function detectPlatform(): {
+  platform: Platform;
+  arch: string | null;
+  osLabel: string;
+  filePattern: RegExp | null;
+} {
   const ua = (navigator.userAgent || '').toLowerCase();
   const platform = (navigator.platform || '').toLowerCase();
 
@@ -54,11 +48,10 @@ function detectPlatform(): { platform: Platform; arch: string | null; buttonText
   if (platform.includes('mac')) {
     const arch = detectArch();
     const archLabel = arch === 'aarch64' ? ' (Apple Silicon)' : arch === 'x86_64' ? ' (Intel)' : '';
-    return { platform: 'macos', arch, buttonText: `Download for macOS${archLabel}`, filePattern: /\.dmg$/i };
+    return { platform: 'macos', arch, osLabel: `macOS${archLabel}`, filePattern: /\.dmg$/i };
   }
   if (platform.includes('win')) {
-    const arch = detectArch();
-    return { platform: 'windows', arch, buttonText: 'Download for Windows', filePattern: /\.(exe|msi)$/i };
+    return { platform: 'windows', arch: detectArch(), osLabel: 'Windows', filePattern: /\.(exe|msi)$/i };
   }
   if (
     platform.includes('iphone') ||
@@ -66,14 +59,25 @@ function detectPlatform(): { platform: Platform; arch: string | null; buttonText
     platform.includes('ipod') ||
     (ua.includes('mac') && 'ontouchend' in document)
   ) {
-    return { platform: 'ios', arch: null, buttonText: 'Coming Soon', filePattern: null };
+    return { platform: 'ios', arch: null, osLabel: 'iOS', filePattern: null };
   }
   if (platform.includes('linux') || platform.includes('x11')) {
     const arch = detectArch();
     const archLabel = arch === 'aarch64' ? ' (ARM64)' : arch === 'x86_64' ? ' (x64)' : '';
-    return { platform: 'linux', arch, buttonText: `Download for Linux${archLabel}`, filePattern: /\.(AppImage|deb|rpm|tar\.gz|tgz)$/i };
+    return {
+      platform: 'linux',
+      arch,
+      osLabel: `Linux${archLabel}`,
+      filePattern: /\.(AppImage|deb|rpm|tar\.gz|tgz)$/i,
+    };
   }
-  return { platform: 'other', arch: null, buttonText: 'Download Pacto', filePattern: null };
+  return { platform: 'other', arch: null, osLabel: 'your OS', filePattern: null };
+}
+
+function labelFor(style: string | null, osLabel: string, platform: Platform): string {
+  if (platform === 'ios') return 'Coming Soon';
+  if (style === 'download') return `Download for ${osLabel}`;
+  return `Get Pacto for ${osLabel}`;
 }
 
 async function loadManifest(): Promise<ReleaseManifest> {
@@ -98,38 +102,54 @@ function getBestAsset(assets: ReleaseAsset[], filePattern: RegExp | null, arch: 
   return matches[0] || null;
 }
 
-function setDownloadButton(manifest: ReleaseManifest, platform: Platform, arch: string | null, buttonText: string, filePattern: RegExp | null) {
-  const btn = document.getElementById('downloadBtn');
-  const text = document.getElementById('downloadText');
-  if (!btn || !text) return;
+function clearOsIcons(btn: HTMLElement) {
+  btn.querySelectorAll(':scope > .os-icon').forEach((el) => el.remove());
+}
 
-  text.textContent = buttonText;
-
-  if (platform === 'ios') {
-    (btn as HTMLAnchorElement).href = '#';
-    btn.style.cursor = 'default';
-    btn.style.pointerEvents = 'none';
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      return false;
-    });
-    return;
-  }
+function wireDownloadButtons(
+  manifest: ReleaseManifest,
+  platform: Platform,
+  arch: string | null,
+  osLabel: string,
+  filePattern: RegExp | null
+) {
+  const buttons = document.querySelectorAll<HTMLAnchorElement>('.js-download-btn');
+  const href =
+    platform === 'ios'
+      ? '#'
+      : getBestAsset(manifest.assets, filePattern, arch)?.url ||
+        manifest.releaseUrl ||
+        getReleasesPageUrl();
 
   const iconKey = platform === 'macos' ? 'macOS' : platform === 'windows' ? 'Windows' : 'Linux';
   const svgHtml = osIcons[iconKey] || osIcons.Linux;
-  if (platform !== 'other') {
-    const icon = document.createElement('div');
-    icon.className = 'os-icon';
-    icon.innerHTML = svgHtml;
-    btn.insertBefore(icon, text);
-  }
 
-  const best = getBestAsset(manifest.assets, filePattern, arch);
-  if (best) {
-    (btn as HTMLAnchorElement).href = best.url;
-  } else {
-    (btn as HTMLAnchorElement).href = manifest.releaseUrl || getReleasesPageUrl();
+  for (const btn of buttons) {
+    const style = btn.getAttribute('data-label-style');
+    const labelEl = btn.querySelector('.js-download-label') || btn;
+    labelEl.textContent = labelFor(style, osLabel, platform);
+
+    clearOsIcons(btn);
+
+    if (platform === 'ios') {
+      btn.href = '#';
+      btn.style.cursor = 'default';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+      });
+      continue;
+    }
+
+    if (platform !== 'other') {
+      const icon = document.createElement('div');
+      icon.className = 'os-icon';
+      icon.innerHTML = svgHtml;
+      btn.insertBefore(icon, btn.firstChild);
+    }
+
+    btn.href = href;
+    btn.target = '_blank';
+    btn.rel = 'noopener noreferrer';
   }
 }
 
@@ -148,7 +168,9 @@ function simplifyFilename(name: string): { platform: string; variant: string | n
   if (name.includes('.AppImage')) return { platform: 'Linux', variant: arch ? `AppImage ${arch}` : 'AppImage' };
   if (name.includes('.deb')) return { platform: 'Linux', variant: arch ? `Debian ${arch}` : 'Debian' };
   if (name.includes('.rpm')) return { platform: 'Linux', variant: arch ? `RPM ${arch}` : 'RPM' };
-  if (name.includes('.tar.gz') || name.includes('.tgz')) return { platform: 'Linux', variant: arch ? `Archive ${arch}` : 'Archive' };
+  if (name.includes('.tar.gz') || name.includes('.tgz')) {
+    return { platform: 'Linux', variant: arch ? `Archive ${arch}` : 'Archive' };
+  }
   return { platform: name, variant: null };
 }
 
@@ -177,10 +199,7 @@ function sortAssets(assets: ReleaseAsset[], detected: Platform): ReleaseAsset[] 
       if (detected === 'windows' && isWindows) return name.includes('.exe') ? 1 : 2;
       if ((detected === 'macos' && isMac) || (detected === 'linux' && isLinux)) return 1;
 
-      return name.includes('.exe') ? 10
-        : name.includes('.msi') ? 11
-        : name.includes('.dmg') ? 20
-        : 40;
+      return name.includes('.exe') ? 10 : name.includes('.msi') ? 11 : name.includes('.dmg') ? 20 : 40;
     };
     const sa = score(a.name);
     const sb = score(b.name);
@@ -199,7 +218,7 @@ function populateAllDownloads(manifest: ReleaseManifest, detected: Platform) {
 
   if (assets.length === 0) {
     const empty = document.createElement('p');
-    empty.style.color = '#9ea2c1';
+    empty.style.color = '#84888a';
     empty.style.textAlign = 'center';
     empty.textContent = 'No downloads available';
     list.appendChild(empty);
@@ -260,99 +279,44 @@ function populateAllDownloads(manifest: ReleaseManifest, detected: Platform) {
   }
 }
 
-// Tagline animation
-function createCharSpans(word: string): DocumentFragment {
-  const frag = document.createDocumentFragment();
-  for (const char of word.split('')) {
-    const span = document.createElement('span');
-    span.className = 'tagline-char';
-    span.textContent = char;
-    frag.appendChild(span);
-  }
-  return frag;
-}
-
-async function fadeOutChars(): Promise<void> {
-  const dynamicEl = document.getElementById('taglineDynamic');
-  if (!dynamicEl) return;
-  const chars = dynamicEl.querySelectorAll('.tagline-char');
-  for (let i = chars.length - 1; i >= 0; i--) {
-    chars[i].classList.add('fade-out');
-    await new Promise((resolve) => setTimeout(resolve, 80));
-  }
-  await new Promise((resolve) => setTimeout(resolve, 150));
-}
-
-async function fadeInChars(word: string): Promise<void> {
-  const dynamicEl = document.getElementById('taglineDynamic');
-  if (!dynamicEl) return;
-  dynamicEl.innerHTML = '';
-  const spans = createCharSpans(word);
-  dynamicEl.appendChild(spans);
-  const chars = dynamicEl.querySelectorAll('.tagline-char');
-  for (let i = 0; i < chars.length; i++) {
-    chars[i].classList.add('fade-in');
-    (chars[i] as HTMLElement).style.animationDelay = `${0.08 * i}s`;
-    await new Promise((resolve) => setTimeout(resolve, 80));
-  }
-}
-
-async function rotateTagline(): Promise<void> {
-  let currentIndex = 0;
-  const dynamicEl = document.getElementById('taglineDynamic');
-  if (!dynamicEl) return;
-
-  await fadeInChars(taglineWords[0]);
-
-  let isAnimating = false;
-  setInterval(async () => {
-    if (isAnimating) return;
-    isAnimating = true;
-    await fadeOutChars();
-    currentIndex = (currentIndex + 1) % taglineWords.length;
-    await fadeInChars(taglineWords[currentIndex]);
-    isAnimating = false;
-  }, 3000);
-}
-
 async function init(): Promise<void> {
-  const toggleBtn = document.getElementById('toggleDownloads');
+  const toggleBtn = document.getElementById('toggleDownloads') as HTMLButtonElement | null;
   const downloadsList = document.getElementById('downloadsList');
   const platformNote = document.getElementById('platformNote');
-  const downloadBtn = document.getElementById('downloadBtn');
-
-  void rotateTagline();
-
-  if (!toggleBtn || !downloadsList) return;
 
   try {
     const manifest = await loadManifest();
-    const { platform, arch, buttonText, filePattern } = detectPlatform();
+    const { platform, arch, osLabel, filePattern } = detectPlatform();
 
-    setDownloadButton(manifest, platform, arch, buttonText, filePattern);
+    wireDownloadButtons(manifest, platform, arch, osLabel, filePattern);
 
     if (platformNote) {
       platformNote.textContent = 'Available for Windows, macOS & Linux';
     }
 
-    let isOpen = false;
-    toggleBtn.addEventListener('click', () => {
-      isOpen = !isOpen;
-      downloadsList.classList.toggle('open', isOpen);
-      toggleBtn.textContent = isOpen ? 'Hide all downloads' : 'Show All Downloads';
-      if (isOpen && downloadsList.children.length === 0) {
-        populateAllDownloads(manifest, platform);
-      }
-    });
+    if (toggleBtn && downloadsList) {
+      let isOpen = false;
+      toggleBtn.addEventListener('click', () => {
+        isOpen = !isOpen;
+        downloadsList.classList.toggle('open', isOpen);
+        toggleBtn.textContent = isOpen ? 'Hide all downloads' : 'Show all Downloads';
+        if (isOpen && downloadsList.children.length === 0) {
+          populateAllDownloads(manifest, platform);
+        }
+      });
+    }
   } catch (error) {
     console.error('Failed to load release manifest:', error);
-    if (downloadBtn) {
-      (downloadBtn as HTMLAnchorElement).href = getReleasesPageUrl();
-    }
+    const fallback = getReleasesPageUrl();
+    document.querySelectorAll<HTMLAnchorElement>('.js-download-btn').forEach((btn) => {
+      btn.href = fallback;
+      btn.target = '_blank';
+      btn.rel = 'noopener noreferrer';
+    });
     if (platformNote) {
       platformNote.textContent = 'Release data unavailable. View all releases on GitHub.';
     }
-    toggleBtn.disabled = true;
+    if (toggleBtn) toggleBtn.disabled = true;
   }
 }
 

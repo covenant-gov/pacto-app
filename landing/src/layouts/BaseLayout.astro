@@ -4,14 +4,15 @@ interface Props {
   description: string;
   /** Path under the site base, e.g. `` or `wargame/`. */
   path?: string;
-  current: 'download' | 'wargame';
+  /** Homepage uses in-page anchors; wargame is a separate route. */
+  page?: 'home' | 'wargame';
 }
 
 const {
   title,
   description,
   path = '',
-  current,
+  page = 'home',
 } = Astro.props;
 
 const base = import.meta.env.BASE_URL.endsWith('/')
@@ -21,7 +22,12 @@ const origin = 'https://covenant-gov.github.io';
 const canonical = new URL(path, `${origin}${base}`).href;
 const ogImage = new URL('assets/og-image.jpg', `${origin}${base}`).href;
 const homeHref = base;
-const wargameHref = `${base}wargame/`;
+const docsHref = 'https://github.com/covenant-gov/pacto-app';
+
+const aboutHref = page === 'home' ? '#about' : `${homeHref}#about`;
+const valuesHref = page === 'home' ? '#values' : `${homeHref}#values`;
+const featuresHref = page === 'home' ? '#features' : `${homeHref}#features`;
+const downloadHref = page === 'home' ? '#download' : `${homeHref}#download`;
 ---
 
 <html lang="en">
@@ -29,7 +35,10 @@ const wargameHref = `${base}wargame/`;
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
-    <meta name="keywords" content="Pacto, private messenger, encrypted messaging, end-to-end encryption, decentralized, privacy, secure messaging, open source, no metadata, no KYC, no ads, free messaging, wargame, governance" />
+    <meta
+      name="keywords"
+      content="Pacto, private messenger, encrypted messaging, end-to-end encryption, decentralized, privacy, secure messaging, open source, no metadata, no KYC, no ads, free messaging, wargame, governance"
+    />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
@@ -39,16 +48,28 @@ const wargameHref = `${base}wargame/`;
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Pacto logo on a dark purple gradient with the tagline Private. Encrypted. Yours." />
+    <meta
+      property="og:image:alt"
+      content="Pacto — private messaging and community governance. Your community. Your rules. Your data."
+    />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@pacto_app" />
     <meta name="twitter:creator" content="@pacto_app" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
-    <meta name="twitter:image:alt" content="Pacto logo on a dark purple gradient with the tagline Private. Encrypted. Yours." />
-    <meta name="theme-color" content="#7c4cff" />
+    <meta
+      name="twitter:image:alt"
+      content="Pacto — private messaging and community governance. Your community. Your rules. Your data."
+    />
+    <meta name="theme-color" content="#1f1f1f" />
     <title>{title}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Host+Grotesk:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="apple-touch-icon" sizes="180x180" href={`${base}assets/favicon/apple-icon-180x180.png`} />
     <link rel="icon" type="image/png" sizes="32x32" href={`${base}assets/favicon/favicon-32x32.png`} />
     <link rel="icon" type="image/png" sizes="16x16" href={`${base}assets/favicon/favicon-16x16.png`} />
@@ -57,20 +78,64 @@ const wargameHref = `${base}wargame/`;
     <link rel="manifest" href={`${base}assets/favicon/manifest.json`} />
     <link rel="stylesheet" href={`${base}styles.css`} />
   </head>
-  <body>
-    <header class="site-header">
+  <body class={page === 'wargame' ? 'page-wargame' : undefined}>
+    <header class="site-header" id="siteHeader">
       <nav class="site-nav" aria-label="Site">
-        <a class="site-nav-brand" href={homeHref}>pacto</a>
-        <ul class="site-nav-tabs">
+        <a class="site-nav-brand" href={homeHref}>
+          <img
+            class="site-nav-logo"
+            src={`${base}assets/logo-hands.jpg`}
+            alt=""
+            width="36"
+            height="33"
+          />
+          <span class="site-nav-brand-text">Pacto</span>
+        </a>
+        <button
+          type="button"
+          class="nav-toggle"
+          id="navToggle"
+          aria-expanded="false"
+          aria-controls="siteNavTabs"
+        >
+          Menu
+        </button>
+        <ul class="site-nav-tabs" id="siteNavTabs">
+          <li><a href={aboutHref}>About Pacto</a></li>
+          <li><a href={valuesHref}>Our Values</a></li>
+          <li><a href={featuresHref}>The Features</a></li>
+          <li><a href={downloadHref}>Download</a></li>
           <li>
-            <a href={homeHref} aria-current={current === 'download' ? 'page' : undefined}>Download</a>
-          </li>
-          <li>
-            <a href={wargameHref} aria-current={current === 'wargame' ? 'page' : undefined}>Wargame</a>
+            <a href={docsHref} target="_blank" rel="noopener noreferrer">Documentation</a>
           </li>
         </ul>
+        <a
+          class="btn btn-green site-nav-cta js-download-btn"
+          href={downloadHref}
+          data-label-style="get"
+          id="navGetPacto"
+        >
+          <span class="js-download-label">Get Pacto</span>
+        </a>
       </nav>
     </header>
     <slot />
+    <script>
+      const header = document.getElementById('siteHeader');
+      const toggle = document.getElementById('navToggle');
+      const tabs = document.getElementById('siteNavTabs');
+      if (header && toggle && tabs) {
+        toggle.addEventListener('click', () => {
+          const open = header.classList.toggle('is-open');
+          toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        tabs.querySelectorAll('a').forEach((link) => {
+          link.addEventListener('click', () => {
+            header.classList.remove('is-open');
+            toggle.setAttribute('aria-expanded', 'false');
+          });
+        });
+      }
+    </script>
   </body>
 </html>

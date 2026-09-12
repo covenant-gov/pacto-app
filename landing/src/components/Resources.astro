@@ -1,0 +1,33 @@
+---
+interface Props {
+  wargameHref: string;
+}
+
+const { wargameHref } = Astro.props;
+const docsHref = 'https://github.com/covenant-gov/pacto-app';
+---
+
+<section class="resources" id="resources" aria-labelledby="resources-title">
+  <div class="section-inner">
+    <div class="resources-row">
+      <h2 class="section-title" id="resources-title">Everything you need to get started</h2>
+      <div class="resources-copy">
+        <p class="section-body">
+          From setup to governance flows to managing your treasury, our docs walk you through every
+          part of Pacto so you're never guessing.
+        </p>
+        <div class="resources-links">
+          <a
+            class="btn btn-yellow"
+            href={docsHref}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Read the Docs
+          </a>
+          <a class="text-link" href={wargameHref}>Wargame</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
