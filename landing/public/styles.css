@@ -462,25 +462,33 @@ a {
   line-height: 1.5;
 }
 
-.accent-dot {
+.accent-cube {
+  display: inline-flex;
   width: 28px;
   height: 28px;
-  border-radius: 6px;
-  margin-top: 0.15rem;
   flex-shrink: 0;
+  margin-top: 0.15rem;
+  color: var(--blue);
 }
 
-.accent-dot.blue {
-  background: var(--blue);
+.accent-cube svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
-.accent-dot.pink {
-  background: var(--pink);
+
+.accent-cube.blue {
+  color: var(--blue);
 }
-.accent-dot.green {
-  background: var(--green);
+.accent-cube.pink {
+  color: var(--pink);
 }
-.accent-dot.yellow {
-  background: var(--yellow);
+.accent-cube.green {
+  color: var(--green);
+}
+.accent-cube.yellow {
+  color: var(--yellow);
 }
 
 /* —— Features —— */
@@ -518,10 +526,16 @@ a {
   padding: 1.35rem 1.4rem;
 }
 
+.feature-card .accent-cube {
+  display: flex;
+  margin-top: 0;
+  margin-bottom: 0.65rem;
+}
+
 .feature-card h3 {
   font-size: 1.1rem;
   font-weight: 700;
-  margin: 0.75rem 0 0.45rem;
+  margin: 0 0 0.45rem;
 }
 
 .feature-card p {

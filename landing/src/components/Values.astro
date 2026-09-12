@@ -1,24 +1,26 @@
 ---
+import AccentCube from './AccentCube.astro';
+
 const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
 
 const values = [
   {
-    accent: 'blue',
+    accent: 'blue' as const,
     title: 'Private by design, not by promise.',
     body: 'End-to-end encryption and metadata-protected groups mean your conversations stay between members — not on a server that can be mined or subpoenaed.',
   },
   {
-    accent: 'pink',
+    accent: 'pink' as const,
     title: 'Resistant to shutdown: no one holds the kill switch.',
     body: 'No central host can freeze your community. Relays and on-chain state keep coordination alive even when a single operator goes dark.',
   },
   {
-    accent: 'green',
+    accent: 'green' as const,
     title: 'Governed by you: every big decision, on-chain and visible.',
     body: 'Proposals and votes settle on chain so authority is explicit, auditable, and owned by the group — not buried in an admin panel.',
   },
   {
-    accent: 'yellow',
+    accent: 'yellow' as const,
     title: 'Made for doing things, not for speculating.',
     body: 'Pacto is infrastructure for organizing and governing together. It is not a speculative token game or engagement farm.',
   },
@@ -52,7 +54,7 @@ const values = [
         {
           values.map((v) => (
             <article class="value-card">
-              <span class={`accent-dot ${v.accent}`} aria-hidden="true" />
+              <AccentCube accent={v.accent} />
               <div>
                 <h3>{v.title}</h3>
                 <p>{v.body}</p>
