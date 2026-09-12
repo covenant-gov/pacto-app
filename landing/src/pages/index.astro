@@ -12,6 +12,7 @@ const base = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
   : `${import.meta.env.BASE_URL}/`;
 const wargameHref = `${base}wargame/`;
+const howItWorksHref = `${base}how-it-works/`;
 ---
 
 <BaseLayout
@@ -20,13 +21,13 @@ const wargameHref = `${base}wargame/`;
   page="home"
 >
   <main>
-    <Hero />
+    <Hero howItWorksHref={howItWorksHref} />
     <About />
-    <Values />
+    <Values howItWorksHref={howItWorksHref} />
     <Features />
     <DownloadCta />
-    <Resources wargameHref={wargameHref} />
+    <Resources wargameHref={wargameHref} howItWorksHref={howItWorksHref} />
   </main>
-  <SiteFooter base={base} />
+  <SiteFooter base={base} howItWorksHref={howItWorksHref} />
   <script src="../scripts/platform.ts"></script>
 </BaseLayout>

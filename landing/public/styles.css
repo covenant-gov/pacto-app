@@ -365,7 +365,7 @@ a {
   max-width: 420px;
   margin-inline: auto;
   background: var(--bg-placeholder);
-  border-radius: var(--radius);
+  border-radius: 4px;
   display: grid;
   place-items: center;
   color: var(--text-eyebrow);
@@ -382,7 +382,7 @@ a {
   width: 100%;
   max-width: 420px;
   margin-inline: auto;
-  border-radius: var(--radius);
+  border-radius: 4px;
   overflow: hidden;
   background: var(--bg-dark);
 }
@@ -401,7 +401,7 @@ a {
   max-width: 820px;
   margin: 2rem auto 0;
   background: var(--bg-placeholder-dark);
-  border-radius: var(--radius);
+  border-radius: 4px;
   display: grid;
   place-items: center;
   color: var(--text-on-dark-muted);
@@ -446,7 +446,7 @@ a {
   gap: 0.9rem;
   padding: 1.1rem 1.15rem;
   background: var(--bg-light);
-  border-radius: var(--radius);
+  border-radius: 4px;
 }
 
 .value-card h3 {
@@ -522,7 +522,7 @@ a {
 .feature-card {
   background: var(--bg-card-dark);
   border: 1px solid var(--border-dark);
-  border-radius: var(--radius);
+  border-radius: 4px;
   padding: 1.35rem 1.4rem;
 }
 
@@ -895,8 +895,304 @@ a {
 }
 
 .wargame-shell body,
-body.page-wargame {
+body.page-wargame,
+body.page-how-it-works {
   background: var(--bg-white);
+}
+
+.site-nav-tabs a[aria-current='page'] {
+  color: var(--text-on-light);
+  font-weight: 600;
+}
+
+/* —— How it Works —— */
+.how-page {
+  /* Brand --green/--blue are fill accents; ink mixes stay readable on --bg-light. */
+  --diagram-nostr-ink: color-mix(in srgb, var(--blue) 42%, var(--text-on-light));
+  --diagram-eth-ink: color-mix(in srgb, var(--green) 32%, var(--text-on-light));
+
+  width: 100%;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2.5rem var(--pad) 4rem;
+  text-align: left;
+  color: var(--text-on-light);
+  background: var(--bg-white);
+}
+
+.how-page h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+}
+
+.how-page .lede {
+  font-size: 1.125rem;
+  line-height: 1.5;
+  color: var(--blue);
+  margin: 0 0 2rem;
+}
+
+.how-page h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.6rem;
+}
+
+.how-page section {
+  margin-bottom: 2rem;
+}
+
+.how-page p,
+.how-page li {
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.how-page p {
+  margin: 0 0 0.75rem;
+}
+
+.how-page ul.how-govern-list {
+  margin: 0 0 0.9rem;
+  padding-left: 1.2rem;
+}
+
+.how-page ul.how-govern-list li {
+  margin-bottom: 0.55rem;
+}
+
+.how-page .how-closing {
+  margin-top: 0.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.how-page .how-closing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.concept-diagram {
+  margin: 1.25rem 0 0.5rem;
+  padding: 0;
+}
+
+.concept-diagram-caption {
+  margin-top: 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-on-light-muted);
+}
+
+.two-networks {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.network-panel {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 1.1rem 1rem 1.15rem;
+  background: var(--bg-light);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.network-panel-label {
+  font-family: var(--font-label);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.network-panel--nostr .network-panel-label,
+.network-panel--nostr .network-panel-icon {
+  color: var(--diagram-nostr-ink);
+}
+
+.network-panel--eth .network-panel-label,
+.network-panel--eth .network-panel-icon {
+  color: var(--diagram-eth-ink);
+}
+
+.network-panel-role {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-on-light-muted);
+}
+
+.network-panel-icon {
+  margin: 0.35rem 0;
+}
+
+.network-panel-outcome {
+  margin: 0.25rem 0 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.network-panel-stack {
+  margin: 0.25rem 0 0;
+  padding-left: 1.15rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  list-style: disc;
+}
+
+.network-panel-stack li {
+  margin-bottom: 0.2rem;
+  color: var(--text-on-light);
+}
+
+.network-plus {
+  align-self: center;
+  font-family: var(--font-label);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-eyebrow);
+}
+
+.mutual-bind {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas:
+    'nostr arrows eth'
+    'result result result';
+  gap: 0.75rem 0.5rem;
+  align-items: center;
+}
+
+.bind-key {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 1rem;
+  background: var(--bg-light);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: center;
+}
+
+.bind-key--nostr {
+  grid-area: nostr;
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--border-light));
+}
+
+.bind-key--eth {
+  grid-area: eth;
+  border-color: color-mix(in srgb, var(--green) 35%, var(--border-light));
+}
+
+.bind-key-name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.bind-key--nostr .bind-key-name {
+  color: var(--diagram-nostr-ink);
+}
+
+.bind-key--eth .bind-key-name {
+  color: var(--diagram-eth-ink);
+}
+
+.bind-key-hint {
+  font-size: 0.85rem;
+  color: var(--text-on-light-muted);
+}
+
+.bind-arrows {
+  grid-area: arrows;
+  color: var(--text-on-light);
+}
+
+.bind-arrows-svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.bind-arrow-label {
+  font-family: var(--font-label);
+  font-size: 5.5px;
+  fill: var(--text-on-light-muted);
+}
+
+.bind-arrows-stack {
+  display: none;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 0.25rem 0;
+}
+
+.bind-step {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-on-light-muted);
+}
+
+.bind-result {
+  grid-area: result;
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  background: var(--bg-dark);
+  color: var(--text-on-dark);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: center;
+}
+
+.bind-result-label {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--yellow);
+}
+
+.bind-result-body {
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 700px) {
+  .two-networks {
+    grid-template-columns: 1fr;
+  }
+
+  .network-plus {
+    justify-self: center;
+  }
+
+  .mutual-bind {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'nostr'
+      'arrows'
+      'eth'
+      'result';
+  }
+
+  .bind-arrows-svg {
+    display: none;
+  }
+
+  .bind-arrows-stack {
+    display: flex;
+  }
 }
 
 /* —— Reveal —— */

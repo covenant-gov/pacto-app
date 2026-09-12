@@ -1,0 +1,77 @@
+---
+/**
+ * Mutual signatures: each key attests ownership of the other → cross-network identity.
+ */
+---
+
+<figure class="concept-diagram" aria-labelledby="mutual-bind-caption">
+  <div
+    class="mutual-bind"
+    role="img"
+    aria-label="Nostr key and Ethereum key each sign ownership of the other, forming one cross-network identity"
+  >
+    <div class="bind-key bind-key--nostr">
+      <span class="bind-key-name">Nostr key</span>
+      <span class="bind-key-hint">Communication identity</span>
+    </div>
+
+    <div class="bind-arrows" aria-hidden="true">
+      <svg class="bind-arrows-svg" viewBox="0 0 120 80" width="120" height="80">
+        <defs>
+          <marker
+            id="bind-arrowhead"
+            markerWidth="8"
+            markerHeight="8"
+            refX="6"
+            refY="4"
+            orient="auto"
+          >
+            <path d="M0 0 L8 4 L0 8 Z" fill="currentColor" />
+          </marker>
+        </defs>
+        <path
+          class="bind-arrow-top"
+          d="M8 22 H100"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          marker-end="url(#bind-arrowhead)"
+        />
+        <text x="60" y="14" text-anchor="middle" class="bind-arrow-label">
+          signs: I own this Ethereum key
+        </text>
+        <path
+          class="bind-arrow-bottom"
+          d="M112 58 H20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          marker-end="url(#bind-arrowhead)"
+        />
+        <text x="60" y="74" text-anchor="middle" class="bind-arrow-label">
+          signs: I own this Nostr key
+        </text>
+      </svg>
+      <div class="bind-arrows-stack">
+        <p class="bind-step">Nostr key signs: “I own this Ethereum key”</p>
+        <p class="bind-step">Ethereum key signs: “I own this Nostr key”</p>
+      </div>
+    </div>
+
+    <div class="bind-key bind-key--eth">
+      <span class="bind-key-name">Ethereum key</span>
+      <span class="bind-key-hint">Governance identity</span>
+    </div>
+
+    <div class="bind-result">
+      <span class="bind-result-label">Cross-network identity</span>
+      <span class="bind-result-body">
+        Private chat on Nostr · people, app, and assets governable on Ethereum
+      </span>
+    </div>
+  </div>
+  <figcaption id="mutual-bind-caption" class="concept-diagram-caption">
+    Signing means proving control of a key with cryptography — not a password you type into a
+    website. Each key vouching for the other ties the two networks to one person.
+  </figcaption>
+</figure>

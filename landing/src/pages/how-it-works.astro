@@ -1,0 +1,123 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import TwoNetworksDiagram from '../components/how-it-works/TwoNetworksDiagram.astro';
+import MutualBindDiagram from '../components/how-it-works/MutualBindDiagram.astro';
+
+const base = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
+const downloadHref = `${base}#download`;
+---
+
+<BaseLayout
+  title="How it Works · Pacto"
+  description="How Pacto links Nostr private communication with Ethereum governance of people, the app, and assets through a cross-network identity."
+  path="how-it-works/"
+  page="how-it-works"
+>
+  <main class="how-page">
+    <h1>How it Works</h1>
+    <p class="lede">
+      Pacto runs on two decentralized networks at once. Your messages stay private. Your community’s
+      rules settle where they can be enforced. One identity binds both sides.
+    </p>
+
+    <section>
+      <h2>Two networks, two jobs</h2>
+      <p>
+        <strong>Nostr</strong> is a decentralized social network. Relays carry events; no single
+        company owns the pipe. Pacto uses it for private communication — chats and groups that are
+        hard to censor or silently read.
+      </p>
+      <p>
+        <strong>Ethereum</strong> is a public blockchain: an immutable shared ledger that can
+        represent scarce things — votes, permissions, balances. Pacto uses it for{' '}
+        <strong>governance</strong> and <strong>access control</strong> together, with{' '}
+        <strong>finance</strong> as a first-class part of the same stack. Rules, who may act, and
+        shared assets all settle on-chain — not buried in a company admin panel.
+      </p>
+      <TwoNetworksDiagram />
+    </section>
+
+    <section>
+      <h2>What are we governing?</h2>
+      <p>
+        A lot of “DAO” tooling is shareholder logic in a new jacket: token-weighted votes over a
+        treasury, plutocracy with better UX. Finance matters — communities move money — but if that
+        is all you can govern, you have only moved the boardroom onto a chain.
+      </p>
+      <p>So the real question: <strong>what can we govern?</strong></p>
+      <ul class="how-govern-list">
+        <li>
+          <strong>People</strong> — who belongs, who holds which roles, how authority changes.
+        </li>
+        <li>
+          <strong>The app</strong> — permissions in the client come from on-chain access control.
+          Governance does not sit beside the product; it is embedded in it. The software landscape
+          itself is governable.
+        </li>
+        <li>
+          <strong>Assets</strong> — treasuries and scarce resources under the same rules as the
+          people who use them.
+        </li>
+      </ul>
+      <p>
+        In the ordinary digital world, people organize on feudal land: centralized servers owned by
+        corporations. Here the land is not held by a landlord. It is decentralized — and governed by
+        the people who live on it. That is more than governing finance. It is governing the place
+        where the organizing happens.
+      </p>
+    </section>
+
+    <section>
+      <h2>Two keys, one person</h2>
+      <p>
+        On Nostr you act with a <strong>Nostr key</strong>. On Ethereum you act with an{' '}
+        <strong>Ethereum key</strong>. In the Pacto client both come from the same recovery phrase,
+        so you hold one identity root — but each network still speaks its own language.
+      </p>
+      <p>
+        Alone, that is not enough for others to trust that “this chat identity” and “this on-chain
+        actor” are the same person. That is what binding is for.
+      </p>
+    </section>
+
+    <section>
+      <h2>Each key signs the other</h2>
+      <p>
+        <strong>Signing</strong> means using a private key to produce a cryptographic proof —
+        evidence that you control that key — without revealing the key itself.
+      </p>
+      <p>
+        In the client, your Nostr key signs a statement that you own a specific Ethereum key. Your
+        Ethereum key signs a statement that you own that Nostr key. When each side vouches for the
+        other, you get a <strong>cross-network identity</strong>: private communication on Nostr;
+        governable people, app, and assets on Ethereum — one person across both.
+      </p>
+      <MutualBindDiagram />
+    </section>
+
+    <section class="how-closing">
+      <h2>Next steps</h2>
+      <p>
+        This page will grow with more concepts. For setup and developer detail, use the GitHub docs.
+        To try the app, download Pacto.
+      </p>
+      <div class="how-closing-actions">
+        <a class="btn btn-green" href={downloadHref}>Get Pacto</a>
+        <a
+          class="btn btn-ghost-light"
+          href={docsHref}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Read the Docs
+        </a>
+      </div>
+      <p>
+        <a href={base}>← Back to Pacto</a>
+      </p>
+    </section>
+  </main>
+</BaseLayout>

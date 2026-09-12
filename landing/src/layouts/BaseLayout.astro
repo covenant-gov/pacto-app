@@ -4,8 +4,8 @@ interface Props {
   description: string;
   /** Path under the site base, e.g. `` or `wargame/`. */
   path?: string;
-  /** Homepage uses in-page anchors; wargame is a separate route. */
-  page?: 'home' | 'wargame';
+  /** Homepage uses in-page anchors; other values are separate routes. */
+  page?: 'home' | 'wargame' | 'how-it-works';
 }
 
 const {
@@ -22,12 +22,15 @@ const origin = 'https://covenant-gov.github.io';
 const canonical = new URL(path, `${origin}${base}`).href;
 const ogImage = new URL('assets/og-image.jpg', `${origin}${base}`).href;
 const homeHref = base;
-const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
+const howItWorksHref = `${base}how-it-works/`;
 
 const aboutHref = page === 'home' ? '#about' : `${homeHref}#about`;
 const valuesHref = page === 'home' ? '#values' : `${homeHref}#values`;
 const featuresHref = page === 'home' ? '#features' : `${homeHref}#features`;
 const downloadHref = page === 'home' ? '#download' : `${homeHref}#download`;
+
+const bodyClass =
+  page === 'wargame' || page === 'how-it-works' ? `page-${page}` : undefined;
 ---
 
 <html lang="en">
@@ -37,7 +40,7 @@ const downloadHref = page === 'home' ? '#download' : `${homeHref}#download`;
     <meta name="description" content={description} />
     <meta
       name="keywords"
-      content="Pacto, private messenger, encrypted messaging, end-to-end encryption, decentralized, privacy, secure messaging, open source, no metadata, no KYC, no ads, free messaging, wargame, governance"
+      content="Pacto, private messenger, encrypted messaging, end-to-end encryption, decentralized, privacy, secure messaging, open source, no metadata, no KYC, no ads, free messaging, wargame, governance, nostr, ethereum"
     />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
@@ -78,7 +81,7 @@ const downloadHref = page === 'home' ? '#download' : `${homeHref}#download`;
     <link rel="manifest" href={`${base}assets/favicon/manifest.json`} />
     <link rel="stylesheet" href={`${base}styles.css`} />
   </head>
-  <body class={page === 'wargame' ? 'page-wargame' : undefined}>
+  <body class={bodyClass}>
     <header class="site-header" id="siteHeader">
       <nav class="site-nav" aria-label="Site">
         <a class="site-nav-brand" href={homeHref}>
@@ -106,7 +109,12 @@ const downloadHref = page === 'home' ? '#download' : `${homeHref}#download`;
           <li><a href={featuresHref}>The Features</a></li>
           <li><a href={downloadHref}>Download</a></li>
           <li>
-            <a href={docsHref} target="_blank" rel="noopener noreferrer">Documentation</a>
+            <a
+              href={howItWorksHref}
+              aria-current={page === 'how-it-works' ? 'page' : undefined}
+            >
+              How it Works
+            </a>
           </li>
         </ul>
         <a

@@ -1,6 +1,11 @@
 ---
 import AccentCube from './AccentCube.astro';
 
+interface Props {
+  howItWorksHref: string;
+}
+
+const { howItWorksHref } = Astro.props;
 const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
 
 const values = [
@@ -40,6 +45,7 @@ const values = [
           <a class="btn btn-pink js-download-btn" href="#download" data-label-style="get">
             <span class="js-download-label">Get Pacto</span>
           </a>
+          <a class="btn btn-ghost-light" href={howItWorksHref}>How it Works</a>
           <a
             class="btn btn-ghost-light"
             href={docsHref}
