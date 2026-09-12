@@ -6,7 +6,7 @@ import intlifySvelte from '@intlify/eslint-plugin-svelte';
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
-	{ ignores: ['.svelte-kit/', 'build/', 'build-agent/', 'coverage/', 'dist/', 'node_modules/', 'src-tauri/target/', 'static/js/', 'landing/.astro/', 'landing/dist/', 'test-results/', 'test_sandbox/', '.worktrees/'] },
+	{ ignores: ['.svelte-kit/', 'build/', 'build-agent/', 'coverage/', 'dist/', 'node_modules/', 'src-tauri/target/', 'static/js/', '.astro/', 'landing/.astro/', 'landing/dist/', 'test-results/', 'test_sandbox/', '.worktrees/'] },
 	js.configs.recommended,
 	...ts.configs.recommended,
 	...svelte.configs.recommended,

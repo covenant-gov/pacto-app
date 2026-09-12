@@ -1,9 +1,10 @@
 ---
 interface Props {
   wargameHref: string;
+  howItWorksHref: string;
 }
 
-const { wargameHref } = Astro.props;
+const { wargameHref, howItWorksHref } = Astro.props;
 const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
 ---
 
@@ -17,8 +18,9 @@ const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
           part of Pacto so you're never guessing.
         </p>
         <div class="resources-links">
+          <a class="btn btn-yellow" href={howItWorksHref}>How it Works</a>
           <a
-            class="btn btn-yellow"
+            class="btn btn-ghost-light"
             href={docsHref}
             target="_blank"
             rel="noopener noreferrer"

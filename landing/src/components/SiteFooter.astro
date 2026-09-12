@@ -1,10 +1,10 @@
 ---
 interface Props {
   base: string;
+  howItWorksHref: string;
 }
 
-const { base } = Astro.props;
-const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
+const { base, howItWorksHref } = Astro.props;
 const githubHref = 'https://github.com/covenant-gov/pacto-app';
 const youtubeHref = 'https://www.youtube.com/@Pacto0x';
 ---
@@ -27,9 +27,7 @@ const youtubeHref = 'https://www.youtube.com/@Pacto0x';
       <li><a class="c-green" href="#features">The Features</a></li>
       <li><a class="c-yellow" href="#download">Download</a></li>
       <li>
-        <a class="c-white" href={docsHref} target="_blank" rel="noopener noreferrer">
-          Documentation
-        </a>
+        <a class="c-white" href={howItWorksHref}>How it Works</a>
       </li>
     </ul>
     <div class="footer-social">
@@ -53,9 +51,13 @@ const youtubeHref = 'https://www.youtube.com/@Pacto0x';
     <div class="footer-bottom">
       <p>2026 Pacto. All rights reserved.</p>
       <div class="footer-legal">
-        <a href="#">Privacy Policy</a>
-        <a href="#">Terms of Service</a>
-        <a href="#">Cookies Settings</a>
+        <a
+          href={`${githubHref}#readme`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Terms of Service
+        </a>
       </div>
     </div>
   </div>

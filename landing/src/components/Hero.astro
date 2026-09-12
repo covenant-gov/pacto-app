@@ -1,4 +1,9 @@
 ---
+interface Props {
+  howItWorksHref: string;
+}
+
+const { howItWorksHref } = Astro.props;
 const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
 ---
 
@@ -18,6 +23,7 @@ const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
       >
         <span class="js-download-label">Get Pacto</span>
       </a>
+      <a class="btn btn-ghost-light" href={howItWorksHref}>How it Works</a>
       <a
         class="btn btn-ghost-light"
         href={docsHref}

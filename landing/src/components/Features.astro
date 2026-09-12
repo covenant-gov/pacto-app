@@ -1,22 +1,24 @@
 ---
+import AccentCube from './AccentCube.astro';
+
 const features = [
   {
-    accent: 'blue',
+    accent: 'blue' as const,
     title: 'End-to-end encrypted chat',
     body: 'Direct messages and group channels stay private between participants, with encryption that is the default — not an optional mode.',
   },
   {
-    accent: 'pink',
+    accent: 'pink' as const,
     title: 'On-chain proposals & voting',
     body: 'Group decisions are proposed, voted, and recorded on chain so outcomes are durable and hard to rewrite after the fact.',
   },
   {
-    accent: 'green',
+    accent: 'green' as const,
     title: 'Transparent treasury management',
     body: 'Shared funds move with visible rules and on-chain history, so the community can track what was authorized and what was spent.',
   },
   {
-    accent: 'yellow',
+    accent: 'yellow' as const,
     title: 'Censorship resistance, baked in',
     body: 'Without a single central server holding your group hostage, shutting one operator down does not erase the community.',
   },
@@ -39,7 +41,7 @@ const features = [
       {
         features.map((f) => (
           <article class="feature-card">
-            <span class={`accent-dot ${f.accent}`} aria-hidden="true" />
+            <AccentCube accent={f.accent} />
             <h3>{f.title}</h3>
             <p>{f.body}</p>
           </article>
