@@ -755,12 +755,15 @@ a {
 .footer-social {
   display: flex;
   justify-content: center;
-  gap: 1rem;
+  align-items: center;
+  gap: 1.25rem;
   margin-bottom: 2rem;
 }
 
 .footer-social a {
-  opacity: 0.75;
+  display: inline-flex;
+  color: var(--text-on-dark);
+  opacity: 0.85;
   transition: opacity 0.2s ease;
 }
 
@@ -769,9 +772,9 @@ a {
 }
 
 .footer-social svg {
-  width: 22px;
-  height: 22px;
-  fill: var(--text-on-dark);
+  width: 24px;
+  height: 24px;
+  display: block;
 }
 
 .footer-bottom {

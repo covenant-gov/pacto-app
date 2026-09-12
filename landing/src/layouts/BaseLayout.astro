@@ -22,7 +22,7 @@ const origin = 'https://covenant-gov.github.io';
 const canonical = new URL(path, `${origin}${base}`).href;
 const ogImage = new URL('assets/og-image.jpg', `${origin}${base}`).href;
 const homeHref = base;
-const docsHref = 'https://github.com/covenant-gov/pacto-app';
+const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
 
 const aboutHref = page === 'home' ? '#about' : `${homeHref}#about`;
 const valuesHref = page === 'home' ? '#values' : `${homeHref}#values`;
@@ -70,11 +70,11 @@ const downloadHref = page === 'home' ? '#download' : `${homeHref}#download`;
       href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Host+Grotesk:wght@300;400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="apple-touch-icon" sizes="180x180" href={`${base}assets/favicon/apple-icon-180x180.png`} />
-    <link rel="icon" type="image/png" sizes="32x32" href={`${base}assets/favicon/favicon-32x32.png`} />
-    <link rel="icon" type="image/png" sizes="16x16" href={`${base}assets/favicon/favicon-16x16.png`} />
-    <link rel="icon" type="image/png" sizes="96x96" href={`${base}assets/favicon/favicon-96x96.png`} />
-    <link rel="shortcut icon" href={`${base}assets/favicon/favicon.ico`} />
+    <link rel="apple-touch-icon" sizes="180x180" href={`${base}assets/favicon/apple-icon-180x180.png?v=hands`} />
+    <link rel="icon" type="image/png" sizes="32x32" href={`${base}assets/favicon/favicon-32x32.png?v=hands`} />
+    <link rel="icon" type="image/png" sizes="16x16" href={`${base}assets/favicon/favicon-16x16.png?v=hands`} />
+    <link rel="icon" type="image/png" sizes="96x96" href={`${base}assets/favicon/favicon-96x96.png?v=hands`} />
+    <link rel="shortcut icon" href={`${base}assets/favicon/favicon.ico?v=hands`} />
     <link rel="manifest" href={`${base}assets/favicon/manifest.json`} />
     <link rel="stylesheet" href={`${base}styles.css`} />
   </head>
