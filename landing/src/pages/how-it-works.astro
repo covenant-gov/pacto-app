@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import TwoNetworksDiagram from '../components/how-it-works/TwoNetworksDiagram.astro';
 import MutualBindDiagram from '../components/how-it-works/MutualBindDiagram.astro';
+import TwoPartySystemDiagram from '../components/how-it-works/TwoPartySystemDiagram.astro';
 
 const base = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
@@ -12,7 +13,7 @@ const downloadHref = `${base}#download`;
 
 <BaseLayout
   title="How it Works · Pacto"
-  description="How Pacto links Nostr private communication with Ethereum governance of people, the app, and assets through a cross-network identity."
+  description="How Pacto binds Nostr and Ethereum identity, and how Pacto Gov on Hats Protocol keeps community power evolvable through mutiny."
   path="how-it-works/"
   page="how-it-works"
 >
@@ -20,82 +21,149 @@ const downloadHref = `${base}#download`;
     <h1>How it Works</h1>
     <p class="lede">
       Pacto runs on two decentralized networks at once. Your messages stay private. Your community’s
-      rules settle where they can be enforced. One identity binds both sides.
+      rules settle where they can be enforced. One identity binds both sides — and on-chain
+      governance can evolve when the community outgrows its first captain.
     </p>
 
-    <section>
-      <h2>Two networks, two jobs</h2>
-      <p>
-        <strong>Nostr</strong> is a decentralized social network. Relays carry events; no single
-        company owns the pipe. Pacto uses it for private communication — chats and groups that are
-        hard to censor or silently read.
-      </p>
-      <p>
-        <strong>Ethereum</strong> is a public blockchain: an immutable shared ledger that can
-        represent scarce things — votes, permissions, balances. Pacto uses it for{' '}
-        <strong>governance</strong> and <strong>access control</strong> together, with{' '}
-        <strong>finance</strong> as a first-class part of the same stack. Rules, who may act, and
-        shared assets all settle on-chain — not buried in a company admin panel.
-      </p>
-      <TwoNetworksDiagram />
+    <section class="how-concept" aria-labelledby="concept-binding">
+      <h2 id="concept-binding">Binding Nostr and Ethereum</h2>
+
+      <div class="how-subsection">
+        <h3>Two networks, two jobs</h3>
+        <p>
+          <strong>Nostr</strong> is a decentralized social network. Relays carry events; no single
+          company owns the pipe. Pacto uses it for private communication — chats and groups that are
+          hard to censor or silently read.
+        </p>
+        <p>
+          <strong>Ethereum</strong> is a public blockchain: an immutable shared ledger that can
+          represent scarce things — votes, permissions, balances. Pacto uses it for{' '}
+          <strong>governance</strong> and <strong>access control</strong> together, with{' '}
+          <strong>finance</strong> as a first-class part of the same stack. Rules, who may act, and
+          shared assets all settle on-chain — not buried in a company admin panel.
+        </p>
+        <TwoNetworksDiagram />
+      </div>
+
+      <div class="how-subsection">
+        <h3>What are we governing?</h3>
+        <p>
+          A lot of “DAO” tooling is shareholder logic in a new jacket: token-weighted votes over a
+          treasury, plutocracy with better UX. Finance matters — communities move money — but if that
+          is all you can govern, you have only moved the boardroom onto a chain.
+        </p>
+        <p>So the real question: <strong>what can we govern?</strong></p>
+        <ul class="how-govern-list">
+          <li>
+            <strong>People</strong> — who belongs, who holds which roles, how authority changes.
+          </li>
+          <li>
+            <strong>The app</strong> — permissions in the client come from on-chain access control.
+            Governance does not sit beside the product; it is embedded in it. The software landscape
+            itself is governable.
+          </li>
+          <li>
+            <strong>Assets</strong> — treasuries and scarce resources under the same rules as the
+            people who use them.
+          </li>
+        </ul>
+        <p>
+          In the ordinary digital world, people organize on feudal land: centralized servers owned by
+          corporations. Here the land is not held by a landlord. It is decentralized — and governed
+          by the people who live on it. That is more than governing finance. It is governing the
+          place where the organizing happens.
+        </p>
+      </div>
+
+      <div class="how-subsection">
+        <h3>Two keys, one person</h3>
+        <p>
+          On Nostr you act with a <strong>Nostr key</strong>. On Ethereum you act with an{' '}
+          <strong>Ethereum key</strong>. In the Pacto client both come from the same recovery phrase,
+          so you hold one identity root — but each network still speaks its own language.
+        </p>
+        <p>
+          Alone, that is not enough for others to trust that “this chat identity” and “this on-chain
+          actor” are the same person. That is what binding is for.
+        </p>
+      </div>
+
+      <div class="how-subsection">
+        <h3>Each key signs the other</h3>
+        <p>
+          <strong>Signing</strong> means using a private key to produce a cryptographic proof —
+          evidence that you control that key — without revealing the key itself.
+        </p>
+        <p>
+          In the client, your Nostr key signs a statement that you own a specific Ethereum key. Your
+          Ethereum key signs a statement that you own that Nostr key. When each side vouches for the
+          other, you get a <strong>cross-network identity</strong>: private communication on Nostr;
+          governable people, app, and assets on Ethereum — one person across both.
+        </p>
+        <MutualBindDiagram />
+      </div>
     </section>
 
-    <section>
-      <h2>What are we governing?</h2>
+    <section class="how-concept" aria-labelledby="concept-gov-evolve">
+      <p class="how-eyebrow">Leveraging Hats Protocol</p>
+      <h2 id="concept-gov-evolve">Governance that can evolve</h2>
       <p>
-        A lot of “DAO” tooling is shareholder logic in a new jacket: token-weighted votes over a
-        treasury, plutocracy with better UX. Finance matters — communities move money — but if that
-        is all you can govern, you have only moved the boardroom onto a chain.
+        <strong>Pacto Gov</strong> models a community like a pirate ship: a <strong>Captain</strong>{' '}
+        and a <strong>Crew</strong>. Read it as a startup too — founder and contributors. Early on,
+        a clear leader helps the group move. That is intentional.
       </p>
-      <p>So the real question: <strong>what can we govern?</strong></p>
-      <ul class="how-govern-list">
-        <li>
-          <strong>People</strong> — who belongs, who holds which roles, how authority changes.
-        </li>
-        <li>
-          <strong>The app</strong> — permissions in the client come from on-chain access control.
-          Governance does not sit beside the product; it is embedded in it. The software landscape
-          itself is governable.
-        </li>
-        <li>
-          <strong>Assets</strong> — treasuries and scarce resources under the same rules as the
-          people who use them.
-        </li>
-      </ul>
       <p>
-        In the ordinary digital world, people organize on feudal land: centralized servers owned by
-        corporations. Here the land is not held by a landlord. It is decentralized — and governed by
-        the people who live on it. That is more than governing finance. It is governing the place
-        where the organizing happens.
+        The problem with ordinary startups is that power structures harden. What worked at five
+        people calcifies at fifty. As a company or community grows, it needs different structures at
+        different times — but most orgs have no on-chain way to rewrite who is in charge.
       </p>
-    </section>
+      <p>
+        Pacto’s answer is <strong>mutiny</strong>. When the community is ready for a takeover, the
+        crew can mutiny the captain. Leadership is provisional by design. That is what “governance
+        that can evolve” means: not a founder forever, and not a frozen org chart.
+      </p>
 
-    <section>
-      <h2>Two keys, one person</h2>
+      <h3>The two-party system</h3>
       <p>
-        On Nostr you act with a <strong>Nostr key</strong>. On Ethereum you act with an{' '}
-        <strong>Ethereum key</strong>. In the Pacto client both come from the same recovery phrase,
-        so you hold one identity root — but each network still speaks its own language.
+        Captain and crew check each other. The captain picks the crew. Both captain and crew can make
+        proposals; the crew votes by quorum on proposals and treasury. The captain can approve or
+        veto. And the crew can mutiny the captain. All of that lives in one Hats tree.
       </p>
-      <p>
-        Alone, that is not enough for others to trust that “this chat identity” and “this on-chain
-        actor” are the same person. That is what binding is for.
-      </p>
-    </section>
+      <TwoPartySystemDiagram />
 
-    <section>
-      <h2>Each key signs the other</h2>
+      <h3>One tree for people and protocol</h3>
       <p>
-        <strong>Signing</strong> means using a private key to produce a cryptographic proof —
-        evidence that you control that key — without revealing the key itself.
+        Hats Protocol organizes roles as a tree. In Pacto you can see the entire on-chain governance
+        protocol and the people inside the organization in the same place — Top hat, treasury,
+        quartermaster, mutiny, captain, crew.
       </p>
       <p>
-        In the client, your Nostr key signs a statement that you own a specific Ethereum key. Your
-        Ethereum key signs a statement that you own that Nostr key. When each side vouches for the
-        other, you get a <strong>cross-network identity</strong>: private communication on Nostr;
-        governable people, app, and assets on Ethereum — one person across both.
+        Hats Protocol treats both users and smart contracts as{' '}
+        <strong>first-class citizens</strong>. A wearer can be a person (your bound Ethereum identity)
+        or a module (Treasury Safe, Mutiny module, Quartermaster). Same tree. Same rules language.
       </p>
-      <MutualBindDiagram />
+      <figure class="how-shot concept-diagram" aria-labelledby="hats-tree-caption">
+        <div class="how-shot-frame">
+          <img
+            src={`${base}assets/how-it-works-hats-tree.png`}
+            alt="Hats tree explorer showing Top hat with Treasury Safe, Treasury Authority, Quartermaster with Crew wearers, and Mutiny module above Captain and Squad Admin"
+            width="1024"
+            height="957"
+            loading="lazy"
+          />
+        </div>
+        <figcaption id="hats-tree-caption" class="concept-diagram-caption">
+          The Hats tree surfaces roles, wearers, and modules together — people and smart contracts as
+          first-class citizens in one on-chain org chart.
+        </figcaption>
+      </figure>
+      <p class="how-concept-close">
+        Mutiny is not limited to person-to-person handoffs. An{' '}
+        <strong>EOA</strong> (externally owned account — a human-controlled wallet) can be replaced by
+        another person, a <strong>multisig</strong> committee, or any other smart contract. The
+        captain hat does not have to sit on a human. It can sit on whatever on-chain entity the crew
+        chooses next.
+      </p>
     </section>
 
     <section class="how-closing">

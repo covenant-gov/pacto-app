@@ -934,13 +934,39 @@ body.page-how-it-works {
 }
 
 .how-page h2 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0 0 0.6rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
 }
 
-.how-page section {
-  margin-bottom: 2rem;
+.how-page h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.55rem;
+}
+
+.how-page .how-eyebrow {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-eyebrow);
+  margin: 0 0 0.35rem;
+}
+
+.how-page section.how-concept {
+  margin-bottom: 2.75rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.how-page .how-subsection {
+  margin-top: 1.5rem;
+}
+
+.how-page .how-subsection:first-of-type {
+  margin-top: 1rem;
 }
 
 .how-page p,
@@ -964,8 +990,8 @@ body.page-how-it-works {
 
 .how-page .how-closing {
   margin-top: 0.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--border-light);
+  padding-top: 0.25rem;
+  border-top: none;
 }
 
 .how-page .how-closing-actions {
@@ -973,6 +999,30 @@ body.page-how-it-works {
   flex-wrap: wrap;
   gap: 0.75rem;
   margin: 1rem 0 1.5rem;
+}
+
+.how-shot {
+  margin: 1.25rem 0 0.5rem;
+}
+
+.how-page .how-concept-close {
+  margin-top: 1rem;
+  margin-bottom: 0;
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.how-shot-frame {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-dark);
+}
+
+.how-shot-frame img {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 .concept-diagram {
@@ -1168,6 +1218,125 @@ body.page-how-it-works {
   line-height: 1.45;
 }
 
+.two-party {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.two-party-roles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.party-box {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 1rem;
+  background: var(--bg-light);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: center;
+}
+
+.party-box--captain {
+  border-color: color-mix(in srgb, var(--pink) 35%, var(--border-light));
+}
+
+.party-box--crew {
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--border-light));
+}
+
+.party-box-name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.party-box--captain .party-box-name {
+  color: color-mix(in srgb, var(--pink) 45%, var(--text-on-light));
+}
+
+.party-box--crew .party-box-name {
+  color: var(--diagram-nostr-ink);
+}
+
+.party-box-hint {
+  font-size: 0.85rem;
+  color: var(--text-on-light-muted);
+}
+
+.two-party-edges {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  list-style: none;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-white);
+}
+
+.two-party-edges li {
+  margin: 0;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.95rem;
+  color: var(--text-on-light-muted);
+}
+
+.two-party-edges li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.two-party-edges li:first-child {
+  padding-top: 0;
+}
+
+.edge-from,
+.edge-to {
+  font-weight: 600;
+  color: var(--text-on-light);
+}
+
+.edge-mutiny {
+  color: color-mix(in srgb, var(--pink) 45%, var(--text-on-light));
+  font-weight: 700;
+}
+
+.two-party-edges-mutiny {
+  background: color-mix(in srgb, var(--pink) 8%, transparent);
+  margin: 0.35rem -1rem -0.85rem !important;
+  padding: 0.65rem 1rem 0.85rem !important;
+  border-bottom: none !important;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.two-party-result {
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  background: var(--bg-dark);
+  color: var(--text-on-dark);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: center;
+}
+
+.two-party-result-label {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pink);
+}
+
+.two-party-result-body {
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
 @media (max-width: 700px) {
   .two-networks {
     grid-template-columns: 1fr;
@@ -1192,6 +1361,10 @@ body.page-how-it-works {
 
   .bind-arrows-stack {
     display: flex;
+  }
+
+  .two-party-roles {
+    grid-template-columns: 1fr;
   }
 }
 
