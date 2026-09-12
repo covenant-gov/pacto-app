@@ -3,6 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import TwoNetworksDiagram from '../components/how-it-works/TwoNetworksDiagram.astro';
 import MutualBindDiagram from '../components/how-it-works/MutualBindDiagram.astro';
 import TwoPartySystemDiagram from '../components/how-it-works/TwoPartySystemDiagram.astro';
+import GasSponsorshipDiagram from '../components/how-it-works/GasSponsorshipDiagram.astro';
 
 const base = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
@@ -13,7 +14,7 @@ const downloadHref = `${base}#download`;
 
 <BaseLayout
   title="How it Works · Pacto"
-  description="How Pacto binds Nostr and Ethereum identity, and how Pacto Gov on Hats Protocol keeps community power evolvable through mutiny."
+  description="How Pacto binds Nostr and Ethereum, evolves Hats governance through mutiny, and sponsors gas with an EIP-7702 embedded wallet."
   path="how-it-works/"
   page="how-it-works"
 >
@@ -21,11 +22,28 @@ const downloadHref = `${base}#download`;
     <h1>How it Works</h1>
     <p class="lede">
       Pacto runs on two decentralized networks at once. Your messages stay private. Your community’s
-      rules settle where they can be enforced. One identity binds both sides — and on-chain
-      governance can evolve when the community outgrows its first captain.
+      rules settle where they can be enforced. One identity binds both sides — on-chain governance can
+      evolve when the community outgrows its first captain — and gas sponsorship keeps crypto under
+      the hood.
     </p>
 
-    <section class="how-concept" aria-labelledby="concept-binding">
+    <nav class="how-toc" aria-label="On this page">
+      <p class="how-toc-label">On this page</p>
+      <ol class="how-toc-list">
+        <li>
+          <a href="#binding">Nostr + Eth</a>
+        </li>
+        <li>
+          <a href="#governance">Evolve Leadership</a>
+        </li>
+        <li>
+          <a href="#gas">Pool Party</a>
+        </li>
+      </ol>
+    </nav>
+
+    <section id="binding" class="how-concept" aria-labelledby="concept-binding">
+      <p class="how-eyebrow">Cross-network identity</p>
       <h2 id="concept-binding">Binding Nostr and Ethereum</h2>
 
       <div class="how-subsection">
@@ -104,7 +122,7 @@ const downloadHref = `${base}#download`;
       </div>
     </section>
 
-    <section class="how-concept" aria-labelledby="concept-gov-evolve">
+    <section id="governance" class="how-concept" aria-labelledby="concept-gov-evolve">
       <p class="how-eyebrow">Leveraging Hats Protocol</p>
       <h2 id="concept-gov-evolve">Governance that can evolve</h2>
       <p>
@@ -166,11 +184,52 @@ const downloadHref = `${base}#download`;
       </p>
     </section>
 
+    <section id="gas" class="how-concept" aria-labelledby="concept-gas">
+      <p class="how-eyebrow">EIP-7702 · embedded wallet</p>
+      <h2 id="concept-gas">Gas sponsorship under the hood</h2>
+      <p>
+        Open Pacto, set a <strong>PIN</strong>, and you are in. Your <strong>Nostr</strong> key and
+        your <strong>Ethereum</strong> key(s) are created locally and encrypted on your device — a
+        cross-network <strong>embedded wallet</strong>. You do not need to understand seed phrases,
+        gas markets, or browser extensions to start. The crypto is generated for you.
+      </p>
+      <p>
+        Next you claim a unique <strong>username</strong>. Under the hood that mints an NFT. That
+        NFT is your <strong>gas-sponsorship passport</strong>: with it, eligible Pacto actions —
+        including the contracts surfaced through Hats trees — can run without you holding ETH for
+        gas.
+      </p>
+      <p>
+        Sponsorship has two layers. There is an <strong>app-wide</strong> pool for onboarding and
+        protocol actions. And each squad can deploy its own <strong>squad sponsor</strong> so the
+        community pays gas for its members. Both paths use Pacto’s custom{' '}
+        <strong>EIP-7702</strong> account implementation so the same embedded key can send sponsored
+        UserOps.
+      </p>
+      <GasSponsorshipDiagram />
+      <p>
+        Why a gas pool is reasonable here: Pacto’s messaging rides <strong>Nostr</strong> — a
+        decentralized relay network — not a company cloud. There is no Discord- or Slack-scale server
+        bill to keep chats alive. Relays are broadcast infrastructure we do not have to rent like a
+        conventional SaaS. That leaves room to fund on-chain gas so organizers can govern without a
+        crypto shopping list first.
+      </p>
+      <p>
+        If the core team ever stops topping up the global pool, squads can still stand up their own
+        sponsor from the app UI and keep members moving. Sponsorship is part of the product surface,
+        not a hidden ops trick.
+      </p>
+      <p class="how-concept-close">
+        The point is simple: a <strong>governable</strong> app can still feel easy when you are
+        completely crypto-naive — PIN in, keys local, username claimed, gas sponsored under the hood.
+      </p>
+    </section>
+
     <section class="how-closing">
       <h2>Next steps</h2>
       <p>
-        This page will grow with more concepts. For setup and developer detail, use the GitHub docs.
-        To try the app, download Pacto.
+        Those are the core ideas. For setup and developer detail, use the GitHub docs. To try the
+        app, download Pacto.
       </p>
       <div class="how-closing-actions">
         <a class="btn btn-green" href={downloadHref}>Get Pacto</a>
