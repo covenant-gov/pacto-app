@@ -33,3 +33,6 @@ landing/public/pacto-release.json
 # Build artifacts
 *.AppImage
 src-tauri/target/
+
+# Astro generated types (root mis-runs)
+.astro/

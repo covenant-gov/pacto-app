@@ -1,12 +1,33 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import DownloadPage from '../components/DownloadPage.astro';
+import Hero from '../components/Hero.astro';
+import About from '../components/About.astro';
+import Values from '../components/Values.astro';
+import Features from '../components/Features.astro';
+import DownloadCta from '../components/DownloadCta.astro';
+import Resources from '../components/Resources.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+
+const base = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const wargameHref = `${base}wargame/`;
+const howItWorksHref = `${base}how-it-works/`;
 ---
 
 <BaseLayout
   title="Pacto"
-  description="Pacto is a free and open-source private messenger app that allows users full end-to-end encryption and transfers encrypted data via a secure, global, decentralized relay network."
-  current="download"
+  description="Pacto is private messaging plus real governance: encrypted chats, on-chain proposals, and shared treasury — your community, your rules, your data."
+  page="home"
 >
-  <DownloadPage />
+  <main>
+    <Hero howItWorksHref={howItWorksHref} />
+    <About />
+    <Values howItWorksHref={howItWorksHref} />
+    <Features />
+    <DownloadCta />
+    <Resources wargameHref={wargameHref} howItWorksHref={howItWorksHref} />
+  </main>
+  <SiteFooter base={base} howItWorksHref={howItWorksHref} />
+  <script src="../scripts/platform.ts"></script>
 </BaseLayout>

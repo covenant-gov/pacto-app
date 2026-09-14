@@ -1,0 +1,45 @@
+---
+interface Props {
+  accent: 'blue' | 'pink' | 'green' | 'yellow';
+}
+
+const { accent } = Astro.props;
+
+/**
+ * Isometric accent cube (design: solid left face; hollow top + right;
+ * thick rounded stroke). Vertices in a 32×32 pad so round joins don't clip.
+ *
+ *   T(16,5)
+ * LT(4,12)  RT(28,12)
+ *   C(16,19)
+ * LB(4,26)  RB(28,26)
+ *   B(16,33) — clipped to view; use B(16,31)
+ */
+---
+
+<span class={`accent-cube ${accent}`} aria-hidden="true">
+  <svg viewBox="0 0 32 32" width="28" height="28" fill="none">
+    <!-- Solid left face (under stroke) -->
+    <path d="M4 12 L16 19 L16 31 L4 24 Z" fill="currentColor" />
+    <!-- Full cube wire: outer hexagon + internal Y -->
+    <path
+      d="
+        M4 12
+        L16 5
+        L28 12
+        L28 24
+        L16 31
+        L4 24
+        Z
+        M4 12 L16 19
+        M28 12 L16 19
+        M16 31 L16 19
+      "
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.75"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+    />
+  </svg>
+</span>

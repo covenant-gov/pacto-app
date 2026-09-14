@@ -1,0 +1,54 @@
+---
+/**
+ * Side-by-side: Nostr (private communication) vs Ethereum (governance, access control, finance).
+ */
+---
+
+<figure class="concept-diagram" aria-labelledby="two-networks-caption">
+  <div
+    class="two-networks"
+    role="img"
+    aria-label="Nostr for private communication; Ethereum for governance, access control, and finance"
+  >
+    <div class="network-panel network-panel--nostr">
+      <p class="network-panel-label">Nostr</p>
+      <p class="network-panel-role">Decentralized social network</p>
+      <svg class="network-panel-icon" viewBox="0 0 64 64" width="48" height="48" aria-hidden="true">
+        <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" stroke-width="2.5" />
+        <path
+          d="M20 36c4-8 10-12 12-12s8 4 12 12"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+        />
+        <circle cx="32" cy="28" r="4" fill="currentColor" />
+      </svg>
+      <p class="network-panel-outcome">Private communication</p>
+    </div>
+    <div class="network-plus" aria-hidden="true">+</div>
+    <div class="network-panel network-panel--eth">
+      <p class="network-panel-label">Ethereum</p>
+      <p class="network-panel-role">Immutable ledger · scarcity</p>
+      <svg class="network-panel-icon" viewBox="0 0 64 64" width="48" height="48" aria-hidden="true">
+        <path
+          d="M32 8 L48 32 L32 56 L16 32 Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linejoin="round"
+        />
+        <path d="M16 32 H48" stroke="currentColor" stroke-width="2" opacity="0.5" />
+      </svg>
+      <ul class="network-panel-stack">
+        <li>Governance</li>
+        <li>Access control</li>
+        <li>Finance</li>
+      </ul>
+    </div>
+  </div>
+  <figcaption id="two-networks-caption" class="concept-diagram-caption">
+    Two networks, complementary jobs: talk privately on Nostr; settle who may act, how decisions are
+    made, and shared assets on Ethereum.
+  </figcaption>
+</figure>
