@@ -52,12 +52,10 @@
         );
       }
 
-      const list = focusables();
-      if (list.length > 0) {
-        list[0].focus();
-      } else {
-        dialogEl.focus();
-      }
+      // Focus the panel, not the first control — avoids a loud :focus ring on
+      // secondary/dismiss buttons (e.g. backup "Do this later"). Programmatic
+      // focus usually skips :focus-visible; Tab still reaches controls.
+      dialogEl.focus();
 
       function onDocumentKeydown(e: KeyboardEvent) {
         if (e.key !== 'Tab') return;
@@ -134,6 +132,15 @@
     max-height: 85vh;
     overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-content:focus {
+    outline: none;
+  }
+
+  .modal-content:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
   }
 
   .modal-content :global(h2) {
