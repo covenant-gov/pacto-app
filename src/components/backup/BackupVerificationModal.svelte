@@ -449,7 +449,7 @@
   .backup-quiz-input {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: 6px;
     background: var(--bg-panel);
     color: var(--text-primary);
@@ -514,7 +514,7 @@
   .btn-secondary,
   .btn-reveal,
   .btn-copy {
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     background: var(--bg-elevated);
     color: var(--text-primary);
   }

@@ -160,13 +160,13 @@
 
   .pin-title {
     color: var(--text-primary);
-    font-family: var(--font-mono-family, ui-monospace, monospace);
-    font-size: 0.6875rem;
+    font-size: 1.5rem;
     font-weight: 600;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
+    letter-spacing: normal;
+    text-transform: none;
     margin: 0;
     text-align: center;
+    text-wrap: balance;
   }
 
   .pin-error {
@@ -261,7 +261,7 @@
     padding: 12px 24px;
     background: var(--bg-elevated);
     color: var(--text-primary);
-    border: 1.5px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: 8px;
     font-size: 0.875rem;
     font-weight: 600;

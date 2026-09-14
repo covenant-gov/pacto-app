@@ -144,9 +144,9 @@
     gap: 6px;
     padding: 6px 12px;
     border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+    background: transparent;
+    color: var(--text-muted);
     font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.02em;
@@ -158,8 +158,8 @@
   }
 
   .open-source-badge:hover {
-    border-color: var(--brand);
-    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--text-primary) 18%, var(--border-subtle));
+    color: var(--text-secondary);
     background: var(--bg-hover);
   }
 
@@ -212,22 +212,27 @@
     box-shadow: 0 4px 12px color-mix(in srgb, var(--brand) 40%, transparent);
   }
 
-  .btn-primary:active,
-  .btn-secondary:active {
-    transform: translateY(1px);
+  .btn-primary:active {
+    transform: scale(0.96);
   }
 
+  /* Returning user — quieter than Create (Family: Create new vs Add existing) */
   .btn-secondary {
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+    font-weight: 500;
     box-shadow: none;
   }
 
   .btn-secondary:hover {
     background: var(--bg-hover);
-    border-color: var(--brand);
+    border-color: color-mix(in srgb, var(--text-primary) 16%, var(--border-subtle));
     color: var(--text-primary);
+  }
+
+  .btn-secondary:active {
+    transform: scale(0.96);
   }
 
   .welcome-footer {

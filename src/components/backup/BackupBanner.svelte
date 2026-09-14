@@ -63,7 +63,7 @@
 
   .backup-banner-cta {
     padding: 4px 10px;
-    border: 1px solid var(--warning);
+    border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border-subtle));
     border-radius: 6px;
     background: transparent;
     color: var(--warning);

@@ -12,6 +12,7 @@
   import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
   import { getCurrentAccount } from '../../lib/api/auth';
   import { canOfferBiometricUnlock } from '../../stores/biometric-unlock';
+  import { backupVerificationModalOpen } from '../../stores/backup-verification';
 
   type AuthStep = 'checking' | 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
 
@@ -112,8 +113,9 @@
         // Import existing key
         await importAccount(privateKey, pin);
       } else {
-        // Create new account
+        // Create new account — then open backup as an onboarding step (not a later strip).
         await createAccount(pin);
+        backupVerificationModalOpen.set(true);
       }
       // On success, auth store will handle state and user will see app
     } catch (e) {
