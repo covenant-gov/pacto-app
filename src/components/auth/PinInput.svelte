@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import './auth-step.css';
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
+  import { cn } from '$lib/utils.js';
 
   let {
     title,
@@ -21,16 +24,33 @@
     pinDigitCount?: number;
   } = $props();
 
-  let digits: string[] = $state(Array(pinDigitCount).fill(''));
-  let inputs: HTMLInputElement[] = $state([]);
+  let digits: string[] = $state<string[]>([]);
+  let inputs: (HTMLInputElement | null)[] = $state<(HTMLInputElement | null)[]>([]);
   let isShaking = $state(false);
   let lastClearedForError: string | null = $state(null);
 
+  $effect.pre(() => {
+    const n = pinDigitCount;
+    if (digits.length !== n) {
+      digits = Array.from({ length: n }, () => '');
+      inputs = Array.from({ length: n }, () => null);
+    }
+  });
+
+  function maskChar(digit: string): string {
+    return digit ? '*' : '';
+  }
+
+  function syncInputDisplay(): void {
+    for (let i = 0; i < pinDigitCount; i++) {
+      const el = inputs[i];
+      if (el) el.value = maskChar(digits[i]);
+    }
+  }
+
   function clearInputs() {
     digits = Array(pinDigitCount).fill('');
-    inputs.forEach((input) => {
-      if (input) input.value = '';
-    });
+    syncInputDisplay();
     setTimeout(() => inputs[0]?.focus(), 100);
   }
 
@@ -38,62 +58,92 @@
     isShaking = true;
     setTimeout(() => {
       isShaking = false;
-    }, 500);
+    }, 280);
+  }
+
+  function tryComplete(pin = digits.join('')): void {
+    if (isProcessing || pin.length !== pinDigitCount) return;
+    lastClearedForError = null;
+    if (error && onErrorClear) onErrorClear();
+    onComplete(pin);
+  }
+
+  function applyPinDigits(raw: string): void {
+    const cleaned = raw.replace(/[^0-9]/g, '').slice(0, pinDigitCount);
+    if (!cleaned) return;
+
+    const next = Array(pinDigitCount).fill('') as string[];
+    cleaned.split('').forEach((digit, i) => {
+      next[i] = digit;
+    });
+    digits = next;
+    syncInputDisplay();
+
+    if (cleaned.length < pinDigitCount) {
+      inputs[cleaned.length]?.focus();
+      return;
+    }
+
+    inputs[pinDigitCount - 1]?.blur();
+    tryComplete(cleaned);
   }
 
   function handleInput(index: number, event: Event) {
     const target = event.target as HTMLInputElement;
-    let value = target.value.replace(/[^0-9]/g, '');
+    const raw = target.value.replace(/[^0-9*]/g, '');
+    const typedDigits = raw.replace(/\*/g, '');
 
-    if (value.length > 1) {
-      value = value.charAt(0);
+    // Paste/autofill into one box often lands as a multi-digit string.
+    if (typedDigits.length > 1) {
+      applyPinDigits(typedDigits);
+      return;
     }
 
+    // Keep existing digit when the field only shows the mask glyph.
+    const value = typedDigits.slice(0, 1) || (raw.includes('*') ? digits[index] : '');
     digits[index] = value;
-    target.value = value;
+    target.value = maskChar(value);
 
     if (value && index < pinDigitCount - 1) {
       inputs[index + 1]?.focus();
     }
 
-    if (digits.every((d) => d !== '') && !isProcessing) {
-      lastClearedForError = null;
-      if (error && onErrorClear) onErrorClear();
-      onComplete(digits.join(''));
-    }
+    tryComplete();
   }
 
   function handleKeydown(index: number, event: KeyboardEvent) {
     if (event.key === 'Backspace') {
       event.preventDefault();
       digits[index] = '';
-      inputs[index].value = '';
+      const el = inputs[index];
+      if (el) el.value = '';
       if (index > 0) inputs[index - 1]?.focus();
-    } else if (event.key.length === 1 && !event.key.match(/^[0-9]$/)) {
+      return;
+    }
+
+    // Don't block Ctrl/Cmd shortcuts (paste, select-all, copy, …).
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+    if (/^[0-9]$/.test(event.key)) {
+      event.preventDefault();
+      digits[index] = event.key;
+      const el = inputs[index];
+      if (el) el.value = '*';
+      if (index < pinDigitCount - 1) {
+        inputs[index + 1]?.focus();
+      }
+      tryComplete();
+      return;
+    }
+
+    if (event.key.length === 1) {
       event.preventDefault();
     }
   }
 
   function handlePaste(event: ClipboardEvent) {
     event.preventDefault();
-    const pastedData = event.clipboardData?.getData('text') || '';
-    const cleaned = pastedData.replace(/[^0-9]/g, '').slice(0, pinDigitCount);
-
-    cleaned.split('').forEach((digit, i) => {
-      if (i < pinDigitCount) {
-        digits[i] = digit;
-        inputs[i].value = digit;
-      }
-    });
-
-    if (cleaned.length < pinDigitCount) {
-      inputs[cleaned.length]?.focus();
-    } else {
-      inputs[pinDigitCount - 1]?.blur();
-      if (digits.every((d) => d !== '') && !isProcessing) {
-        onComplete(digits.join(''));
-      }
-    }
+    applyPinDigits(event.clipboardData?.getData('text') || '');
   }
 
   onMount(() => {
@@ -111,181 +161,102 @@
   });
 </script>
 
-<div class="pin-input-container auth-step-column">
-  <h3 class="pin-title">{title}</h3>
+<div
+  class="mx-auto flex max-w-full flex-col gap-6 py-8"
+  style="width: calc({pinDigitCount} * 2.5rem + ({pinDigitCount} - 1) * 0.5rem)"
+>
+  <h3 class="m-0 text-center text-2xl font-semibold text-balance text-foreground">
+    {title}
+  </h3>
 
-  {#if error}
-    <div class="pin-error" role="alert">{error}</div>
-  {/if}
-
-  <div class="pin-inputs" class:shake={isShaking}>
+  <div class="pin-inputs flex gap-2" class:pin-inputs-shake={isShaking}>
     {#each digits as digit, i (i)}
-      <input
-        bind:this={inputs[i]}
-        type="password"
+      <Input
+        bind:ref={inputs[i]}
+        type="text"
         inputmode="numeric"
-        maxlength="1"
-        value={digit}
+        autocomplete="one-time-code"
+        maxlength={pinDigitCount}
+        value={maskChar(digit)}
         disabled={isProcessing}
+        aria-describedby={error ? 'pin-error' : undefined}
+        aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
+        class={cn(
+          // !size-10 beats Input's w-full so cells stay square.
+          'size-10! shrink-0 px-0 text-center tabular-nums',
+          // Beat unlayered `input { font: inherit }` in app.css (wins over @layer utilities).
+          '!font-mono text-xl! font-semibold! leading-none',
+          'transition-[box-shadow,border-color] duration-100 ease-[var(--ease-out)]',
+          'motion-reduce:transition-none'
+        )}
         oninput={(e) => handleInput(i, e)}
         onkeydown={(e) => handleKeydown(i, e)}
         onpaste={handlePaste}
-        class="pin-digit"
-        aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
       />
     {/each}
   </div>
 
   {#if isProcessing}
-    <div class="pin-processing" role="status">
-      <div class="spinner"></div>
-      <p>{$t('auth.processing')}</p>
+    <div class="flex flex-col items-center gap-3 text-muted-foreground" role="status">
+      <LoaderCircle class="size-8 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+      <p class="m-0 text-sm">{$t('auth.processing')}</p>
     </div>
   {/if}
 
-  {#if onBack && error}
-    <button type="button" class="btn-back" onclick={onBack} disabled={isProcessing}>
+  {#if error}
+    <div
+      id="pin-error"
+      class="box-border min-w-0 max-w-full w-full rounded-lg bg-destructive/12 px-3 py-2 text-center text-sm text-balance text-destructive animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-[var(--ease-out)] motion-reduce:animate-none"
+      role="alert"
+    >
+      {error}
+    </div>
+  {/if}
+
+  {#if onBack}
+    <Button
+      type="button"
+      variant="outline"
+      class="h-10 w-full min-w-0 max-w-full"
+      disabled={isProcessing}
+      onclick={onBack}
+    >
       {$t('auth.back')}
-    </button>
+    </Button>
   {/if}
 </div>
 
 <style>
-  .pin-input-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 24px;
-  }
-
-  .pin-title {
-    color: var(--text-primary);
-    font-size: 1.5rem;
-    font-weight: 600;
-    letter-spacing: normal;
-    text-transform: none;
-    margin: 0;
-    text-align: center;
-    text-wrap: balance;
-  }
-
-  .pin-error {
-    color: var(--danger);
-    font-size: 0.875rem;
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-    padding: 8px 16px;
-    border-radius: 8px;
-    animation: shake 0.3s;
-  }
-
-  @keyframes shake {
+  /* Scoped keyframes — Tailwind arbitrary animate-* cannot see these names. */
+  @keyframes pin-shake {
     0%,
     100% {
       transform: translateX(0);
     }
-    25% {
-      transform: translateX(-10px);
+    15% {
+      transform: translateX(-5px);
+    }
+    30% {
+      transform: translateX(5px);
+    }
+    45% {
+      transform: translateX(-3px);
+    }
+    60% {
+      transform: translateX(2px);
     }
     75% {
-      transform: translateX(10px);
+      transform: translateX(-1px);
     }
   }
 
-  .pin-inputs {
-    display: flex;
-    gap: 10px;
+  .pin-inputs-shake {
+    animation: pin-shake 280ms ease-in-out;
   }
 
-  .pin-inputs.shake {
-    animation: shake 0.5s;
-  }
-
-  .pin-digit {
-    width: 2.25rem;
-    height: 2.5rem;
-    background: color-mix(in srgb, var(--text-primary) 10%, var(--bg-panel));
-    border: none;
-    border-radius: 0.5rem;
-    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text-primary) 62%, transparent);
-    color: var(--text-primary);
-    font-family: var(--font-mono-family, ui-monospace, monospace);
-    font-size: 1.125rem;
-    font-weight: 600;
-    text-align: center;
-    outline: none;
-    transition:
-      box-shadow 150ms ease,
-      background-color 150ms ease;
-    box-sizing: border-box;
-  }
-
-  .pin-digit:focus {
-    box-shadow: inset 0 0 0 2px var(--brand);
-    background: color-mix(in srgb, var(--text-primary) 10%, var(--bg-panel));
-  }
-
-  .pin-digit:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .pin-processing {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    color: var(--text-muted);
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-subtle);
-    border-top-color: var(--brand);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
+  @media (prefers-reduced-motion: reduce) {
+    .pin-inputs-shake {
+      animation: none;
     }
-  }
-
-  .pin-processing p {
-    margin: 0;
-    font-size: 0.875rem;
-  }
-
-  .btn-back {
-    padding: 12px 24px;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition:
-      background-color 150ms ease,
-      border-color 150ms ease,
-      color 150ms ease;
-    outline: none;
-  }
-
-  .btn-back:hover:not(:disabled) {
-    background: var(--bg-hover);
-    border-color: var(--brand);
-    color: var(--text-primary);
-  }
-
-  .btn-back:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-  }
-
-  .btn-back:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 </style>

@@ -5,16 +5,20 @@
   import WelcomeScreen from './WelcomeScreen.svelte';
   import KeyImport from './KeyImport.svelte';
   import PinInput from './PinInput.svelte';
+  import PinSuccess from './PinSuccess.svelte';
   import BiometricUnlockPrompt from './BiometricUnlockPrompt.svelte';
   import AuthAtmosphere from './AuthAtmosphere.svelte';
-  import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError, checkSession, isAuthenticated, currentUser } from '../../stores/auth';
+  import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError, checkSession, isAuthenticated, currentUser, revealAuthenticatedSession, type CurrentUser } from '../../stores/auth';
   import { appConfig } from '../../stores/app-config';
   import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
   import { getCurrentAccount } from '../../lib/api/auth';
   import { canOfferBiometricUnlock } from '../../stores/biometric-unlock';
   import { backupVerificationModalOpen } from '../../stores/backup-verification';
+  import { prefersReducedMotion } from 'svelte/motion';
 
-  type AuthStep = 'checking' | 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
+  type AuthStep = 'checking' | 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-success' | 'pin-unlock';
+
+  const SUCCESS_BEAT_MS = 1100;
 
   let currentStep: AuthStep = $state('checking');
   let privateKey: string = $state('');
@@ -24,8 +28,30 @@
   let biometricNpub: string | null = $state(null);
   let biometricLabel: 'touchId' | 'windowsHello' | 'generic' = $state('generic');
   let showBiometricPrompt = $state(false);
+  let successKind: 'create' | 'import' = $state('create');
 
   let pinDigitCount = $derived($appConfig.pinDigitCount);
+
+  function holdSuccessBeat(ms = SUCCESS_BEAT_MS): Promise<void> {
+    const wait = prefersReducedMotion.current ? 0 : ms;
+    if (wait <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      setTimeout(resolve, wait);
+    });
+  }
+
+  async function finishWithSuccessBeat(
+    session: CurrentUser,
+    kind: 'create' | 'import'
+  ): Promise<void> {
+    successKind = kind;
+    currentStep = 'pin-success';
+    await holdSuccessBeat();
+    revealAuthenticatedSession(session);
+    if (kind === 'create') {
+      backupVerificationModalOpen.set(true);
+    }
+  }
 
   // Check if user has stored encrypted key on mount, and confirm backend session state.
   onMount(async () => {
@@ -102,22 +128,21 @@
 
   async function handlePinConfirm(pin: string) {
     if (pin !== firstPin) {
+      // Stay on retype — clear only this attempt; first PIN still stands.
       error = get(t)('auth.errorPinsDontMatch');
-      currentStep = 'pin-create';
-      firstPin = '';
       return;
     }
 
     try {
       if (privateKey) {
-        // Import existing key
-        await importAccount(privateKey, pin);
+        const session = await importAccount(privateKey, pin, { deferReveal: true });
+        if (!session) return;
+        await finishWithSuccessBeat(session, 'import');
       } else {
-        // Create new account — then open backup as an onboarding step (not a later strip).
-        await createAccount(pin);
-        backupVerificationModalOpen.set(true);
+        const session = await createAccount(pin, { deferReveal: true });
+        if (!session) return;
+        await finishWithSuccessBeat(session, 'create');
       }
-      // On success, auth store will handle state and user will see app
     } catch (e) {
       error = e instanceof Error ? e.message : get(t)('auth.errorCreateAccountFailed');
       currentStep = 'pin-create';
@@ -204,6 +229,15 @@
         isProcessing={$authLoading}
         {pinDigitCount}
         {error}
+      />
+    </div>
+  {:else if currentStep === 'pin-success'}
+    <div class="pin-screen">
+      <PinSuccess
+        title={$t('auth.pinSuccessTitle')}
+        subtitle={$t(
+          successKind === 'import' ? 'auth.pinSuccessImportSubtitle' : 'auth.pinSuccessSubtitle'
+        )}
       />
     </div>
   {:else if currentStep === 'pin-unlock'}

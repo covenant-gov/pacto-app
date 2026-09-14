@@ -32,7 +32,7 @@
 
     const words = trimmed.split(/\s+/).filter((w) => w.length > 0);
     if (words.length !== 12 && words.length !== 24) {
-      localError = get(t)('auth.errorRecoveryPhraseLength', { values: { count: words.length } });
+      localError = get(t)('auth.errorRecoveryPhraseLength');
       return;
     }
 
@@ -70,10 +70,6 @@
       </p>
     </div>
 
-    {#if displayError}
-      <div class="import-error">{displayError}</div>
-    {/if}
-
     <div class="import-form">
       <textarea
         bind:value={privateKey}
@@ -90,7 +86,11 @@
         <p>{$t('auth.recoveryPhraseNotice')}</p>
       </div>
 
-      <div class="import-actions">
+      {#if displayError}
+        <div class="import-error" role="alert">{displayError}</div>
+      {/if}
+
+      <div class="import-actions w-full">
         <button
           type="button"
           class="btn-secondary"
@@ -217,10 +217,11 @@
     flex: 1;
     min-width: 0;
     width: auto;
-    height: 48px;
+    height: auto;
+    min-height: 2.5rem; /* h-10 */
     box-sizing: border-box;
     border-radius: 8px;
-    font-size: 1rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     cursor: pointer;
     transition:

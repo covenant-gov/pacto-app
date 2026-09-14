@@ -200,18 +200,26 @@ export interface AdoptDevSessionParams {
 /**
  * Post-login tail shared by `importAccount` and the debug-only dev-session
  * adoption path below: activates the default tab, loads npub-scoped
- * persistence, marks the session authenticated, and kicks off local-dev
- * defaults plus the post-login network sync.
+ * persistence, optionally marks the session authenticated, and kicks off
+ * local-dev defaults plus the post-login network sync.
  */
-async function completePostLoginSession(npub: string, pubkey: string): Promise<void> {
+async function completePostLoginSession(
+  npub: string,
+  pubkey: string,
+  options?: { deferReveal?: boolean }
+): Promise<CurrentUser> {
+  const session: CurrentUser = { npub, pubkey };
   activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
   loadAccountState(npub);
   closeWalletSidebar();
-  isAuthenticated.set(true);
-  currentUser.set({ npub, pubkey });
+  if (!options?.deferReveal) {
+    isAuthenticated.set(true);
+    currentUser.set(session);
+  }
   freezeGate();
   await maybeApplyLocalDevDefaults(npub);
   runPostLoginNetworkSync(npub);
+  return session;
 }
 
 /**
@@ -227,8 +235,12 @@ export async function adoptDevSession({ npub, pubkey }: AdoptDevSessionParams): 
 /**
  * Create a new account with generated keys
  * @param pin - 6-digit PIN for encryption
+ * @param options.deferReveal - keep Login mounted so the caller can show a success beat first
  */
-export async function createAccount(pin: string): Promise<void> {
+export async function createAccount(
+  pin: string,
+  options?: { deferReveal?: boolean }
+): Promise<CurrentUser | void> {
   authLoading.set(true);
   authError.set(null);
 
@@ -262,16 +274,22 @@ export async function createAccount(pin: string): Promise<void> {
     closeWalletSidebar();
     runPostLoginNetworkSync(npub);
 
-    isAuthenticated.set(true);
-    currentUser.set({
-      npub: npub,
-      pubkey: keys.pubkey_hex
-    });
+    const session: CurrentUser = {
+      npub,
+      pubkey: keys.pubkey_hex,
+    };
     freezeGate();
     await maybeApplyLocalDevDefaults(npub);
 
     dmLog('createAccount: done');
     authLoading.set(false);
+
+    if (options?.deferReveal) {
+      return session;
+    }
+
+    isAuthenticated.set(true);
+    currentUser.set(session);
   } catch (error: unknown) {
     console.error('Create account failed:', error);
     authError.set(error instanceof Error ? error.message : 'Failed to create account');
@@ -280,12 +298,23 @@ export async function createAccount(pin: string): Promise<void> {
   }
 }
 
+/** Flip auth UI after a deferred createAccount success beat. */
+export function revealAuthenticatedSession(session: CurrentUser): void {
+  currentUser.set(session);
+  isAuthenticated.set(true);
+}
+
 /**
  * Import an existing profile from a BIP-39 recovery phrase only.
  * @param recoveryPhrase - 12- or 24-word phrase
  * @param pin - 6-digit PIN for encryption
+ * @param options.deferReveal - keep Login mounted so the caller can show a success beat first
  */
-export async function importAccount(recoveryPhrase: string, pin: string): Promise<void> {
+export async function importAccount(
+  recoveryPhrase: string,
+  pin: string,
+  options?: { deferReveal?: boolean }
+): Promise<CurrentUser | void> {
   authLoading.set(true);
   authError.set(null);
 
@@ -313,11 +342,12 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
 
     // Get current account npub from backend
     const npub = await getCurrentAccount();
-    await completePostLoginSession(npub, keys.pubkey_hex);
+    const session = await completePostLoginSession(npub, keys.pubkey_hex, options);
     await markBackupVerified(true);
     authLoading.set(false);
 
     dmLog('importAccount: done');
+    if (options?.deferReveal) return session;
   } catch (error: unknown) {
     console.error('Import account failed:', error);
     authError.set(error instanceof Error ? error.message : 'Failed to import account');

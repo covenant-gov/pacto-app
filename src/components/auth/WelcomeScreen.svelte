@@ -26,7 +26,7 @@
     </div>
 
     <div class="welcome-cta">
-      <div class="welcome-actions">
+      <div class="welcome-actions w-full max-w-80">
         <button type="button" class="btn-primary" onclick={onCreateAccount}>
           {$t('auth.createAccount')}
         </button>
@@ -176,15 +176,15 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    width: 100%;
   }
 
   .btn-primary,
   .btn-secondary {
     width: 100%;
-    height: 48px;
+    height: auto;
+    min-height: 2.5rem; /* h-10 — between mobile 48px and shadcn h-9 */
     border-radius: 8px;
-    font-size: 1rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     cursor: pointer;
     transition:
