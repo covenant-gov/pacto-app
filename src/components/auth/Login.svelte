@@ -8,7 +8,10 @@
   import PinSuccess from './PinSuccess.svelte';
   import BiometricUnlockPrompt from './BiometricUnlockPrompt.svelte';
   import AuthAtmosphere from './AuthAtmosphere.svelte';
-  import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError, checkSession, isAuthenticated, currentUser, revealAuthenticatedSession, type CurrentUser } from '../../stores/auth';
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+  import { authLoading, authError, isAuthenticated, currentUser, type CurrentUser } from '../../stores/auth-session';
+  import { checkAuthStatus, createAccount, importAccount, unlockWithPin, clearAuthError, checkSession, revealAuthenticatedSession } from '../../stores/auth';
+  import { prefetchAuthenticatedApp } from '../../lib/app/authenticated-app';
   import { appConfig } from '../../stores/app-config';
   import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
   import { getCurrentAccount } from '../../lib/api/auth';
@@ -46,6 +49,7 @@
   ): Promise<void> {
     successKind = kind;
     currentStep = 'pin-success';
+    prefetchAuthenticatedApp();
     await holdSuccessBeat();
     revealAuthenticatedSession(session);
     if (kind === 'create') {
@@ -154,6 +158,7 @@
     if (unlockInFlight || $authLoading) return;
     unlockInFlight = true;
     try {
+      prefetchAuthenticatedApp();
       await unlockWithPin(pin);
       // On success, auth store will handle state and user will see app
     } catch (e) {
@@ -191,9 +196,9 @@
 <AuthAtmosphere>
 <div class="login-container">
   {#if currentStep === 'checking'}
-    <div class="checking-screen" role="status" aria-live="polite">
-      <div class="checking-spinner"></div>
-      <p class="checking-text">{$t('auth.checkingAccount')}</p>
+    <div class="auth-stage gap-4" role="status" aria-live="polite">
+      <LoaderCircle class="size-12 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
+      <p class="m-0 text-[0.9375rem] text-muted-foreground">{$t('auth.checkingAccount')}</p>
     </div>
   {:else if currentStep === 'welcome'}
     <WelcomeScreen
@@ -208,7 +213,7 @@
       {error}
     />
   {:else if currentStep === 'pin-create'}
-    <div class="pin-screen">
+    <div class="auth-stage">
       <PinInput
         title={$t('auth.pinCreateTitle')}
         onComplete={handlePinCreate}
@@ -220,7 +225,7 @@
       />
     </div>
   {:else if currentStep === 'pin-confirm'}
-    <div class="pin-screen">
+    <div class="auth-stage">
       <PinInput
         title={$t('auth.pinConfirmTitle')}
         onComplete={handlePinConfirm}
@@ -232,7 +237,7 @@
       />
     </div>
   {:else if currentStep === 'pin-success'}
-    <div class="pin-screen">
+    <div class="auth-stage">
       <PinSuccess
         title={$t('auth.pinSuccessTitle')}
         subtitle={$t(
@@ -241,7 +246,7 @@
       />
     </div>
   {:else if currentStep === 'pin-unlock'}
-    <div class="pin-screen">
+    <div class="auth-stage">
       {#if showBiometricPrompt && biometricNpub}
         <BiometricUnlockPrompt
           npub={biometricNpub}
@@ -269,37 +274,9 @@
     height: 100%;
   }
 
-  .checking-screen {
+  .auth-stage {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-    gap: 16px;
-  }
-
-  .checking-spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid var(--border-subtle, #313338);
-    border-top-color: var(--brand, #5865f2);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  .checking-text {
-    color: var(--text-secondary, #dbdee1);
-    font-size: 0.9375rem;
-    margin: 0;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .pin-screen {
-    display: flex;
     align-items: center;
     justify-content: center;
     width: 100%;

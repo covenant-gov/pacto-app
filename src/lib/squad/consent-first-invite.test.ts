@@ -33,7 +33,7 @@ import { getMlsGroupMembers } from '../api/nostr';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { sendSquadInviteDm } from '../pacto-app-inbox';
 import { publishOutboundInviteAnnounce } from './squad-outbound-invite';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import {
   resolveAdmitterNpubs,
   sendConsentFirstSquadInvite,

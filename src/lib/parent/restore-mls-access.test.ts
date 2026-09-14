@@ -42,7 +42,7 @@ import { inviteMemberToGroup } from '../api/nostr';
 import { sendConsentFirstSquadInvite } from '../squad/consent-first-invite';
 import { bumpMembershipVersion } from '../../stores/mls-chat';
 import { squads } from '../../stores/squads';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { restoreMlsMemberAccess } from './restore-mls-access';
 
 function createMockWritable<T>(initial: T) {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { activeView } from '../../stores/app';
   import { t } from 'svelte-i18n';
   import SettingsPage from '../settings/SettingsPage.svelte';

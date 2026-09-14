@@ -1,12 +1,24 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { t } from 'svelte-i18n';
 	import { openExternalUrl } from '../../lib/utils/open-external';
 
 	const NYPL_ITEM_URL =
 		'https://digitalcollections.nypl.org/items/510d47e3-6d81-a3d9-e040-e00a18064a99';
+	const HERO_SRC = '/the-new-york-public-library-qGLE_4n0S4M-unsplash.jpg';
 
 	let { children }: { children: Snippet } = $props();
+
+	onMount(() => {
+		const link = document.createElement('link');
+		link.rel = 'preload';
+		link.as = 'image';
+		link.href = HERO_SRC;
+		document.head.appendChild(link);
+		return () => {
+			link.remove();
+		};
+	});
 
 	function openCredit(event: MouseEvent): void {
 		event.preventDefault();
@@ -24,7 +36,7 @@
 				<div class="auth-atmosphere-frame-lip">
 					<div
 						class="auth-atmosphere-photo"
-						style="background-image: url('/the-new-york-public-library-qGLE_4n0S4M-unsplash.jpg')"
+						style="background-image: url('{HERO_SRC}')"
 						role="img"
 						aria-label={$t('auth.photoCreditTitle')}
 					></div>

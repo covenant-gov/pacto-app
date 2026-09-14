@@ -22,7 +22,7 @@ vi.mock('./wallet-ui-prefs', () => ({
   loadWalletEnabledChains: vi.fn().mockReturnValue(['sepolia']),
 }));
 
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { getWalletSummary } from './backend-wallet';
 import { loadWatchedErc20Rows, watchedRowsToWire } from './watched-tokens';
 import { persistWalletSummaryCache } from './wallet-summary-cache';

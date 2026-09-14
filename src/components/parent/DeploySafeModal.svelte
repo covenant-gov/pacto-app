@@ -15,7 +15,7 @@
     parseWalletOpError,
   } from '../../lib/wallet/backend-wallet';
   import { profiles } from '../../stores/profiles';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
   import { appConfig } from '../../stores/app-config';

@@ -104,7 +104,7 @@ import {
   parentPendingCreateOptions,
   parentRetryingCreateIds,
 } from '../stores/squads';
-import { currentUser } from '../stores/auth';
+import { currentUser } from '../stores/auth-session';
 import { pendingReadyToast, showToast } from '../stores/toast';
 import { applySquadCreateNetwork } from './squad/squad-create-network';
 import { profiles } from '../stores/profiles';

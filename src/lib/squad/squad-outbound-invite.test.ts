@@ -47,7 +47,7 @@ import { getDmMessages, sendDmMessage } from '../api/nostr';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { admitMemberToSquad } from '../parent/admit-member';
 import { enqueuePendingAdmit } from '../parent/pending-admit';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { squads } from '../../stores/squads';
 import {
   formatSquadAdmitNeeded,

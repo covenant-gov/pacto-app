@@ -82,7 +82,7 @@
       ></textarea>
 
       <div class="import-notice" role="note">
-        <TriangleAlert class="import-notice-icon" aria-hidden="true" />
+        <TriangleAlert class="size-4.5 shrink-0 text-warning" aria-hidden="true" />
         <p>{$t('auth.recoveryPhraseNotice')}</p>
       </div>
 
@@ -283,13 +283,6 @@
     background: color-mix(in srgb, var(--warning) 14%, var(--bg-elevated));
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 22%, transparent);
     text-align: start;
-  }
-
-  .import-notice-icon {
-    flex-shrink: 0;
-    width: 1.125rem;
-    height: 1.125rem;
-    color: var(--warning);
   }
 
   .import-notice p {

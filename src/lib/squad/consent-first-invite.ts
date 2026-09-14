@@ -10,7 +10,7 @@ import { getAnnouncementsChannel } from '../parent-navbar';
 import { sendSquadInviteDm } from '../pacto-app-inbox';
 import { publishOutboundInviteAnnounce } from './squad-outbound-invite';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import type { Squad } from '../../stores/squads';
 
 function tt(

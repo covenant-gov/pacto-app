@@ -7,7 +7,7 @@
 import { get } from 'svelte/store';
 import { sendDmMessage } from '../api/nostr';
 import { listSquadInfra } from '../governance/api';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import type { SupportedChainId } from '../wallet/chains';
 import {
   DEFAULT_SQUAD_PRACTICE_NETWORK,

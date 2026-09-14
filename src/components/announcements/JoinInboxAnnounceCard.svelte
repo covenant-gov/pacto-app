@@ -5,7 +5,7 @@
   import { t } from 'svelte-i18n';
   import type { JoinInboxAnnounceMessage } from '../../lib/squad/join-inbox-announce';
   import { shortNpub } from '../../lib/squad/join-inbox-announce';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
   let {

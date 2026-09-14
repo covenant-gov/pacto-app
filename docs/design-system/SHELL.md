@@ -15,7 +15,7 @@ Visual model (Discord-style):
 | **Main** | Primary content (chat, dashboard, settings) |
 | **Aside** | Optional detail (members, wallet, inspectors) |
 
-Production today mounts its legacy chrome through `src/routes/+page.svelte` and layout components (`ParentNavbar`, chat views, wallet sidebar). The reusable shell under `src/components/shell/` is currently mounted only by the development sandbox; production wiring is a later adapter. CSS class `.app-shell` on the legacy `<main>` remains unrelated to the component API.
+Production today mounts its legacy chrome through `src/components/app/AuthenticatedApp.svelte` (lazy-loaded from `src/routes/+page.svelte`) and layout components (`ParentNavbar`, chat views, wallet sidebar). The reusable shell under `src/components/shell/` is currently mounted only by the development sandbox; production wiring is a later adapter. CSS class `.app-shell` on the legacy `<main>` remains unrelated to the component API.
 
 ## Responsive rules
 
@@ -46,13 +46,14 @@ Full height: `html`/`body` are `height: 100%` with `overflow: hidden`. Fill with
 
 | Layer | Owns |
 |-------|------|
-| `src/routes/+page.svelte` | Top layout, tab routing; stays a legacy shell — carve new UI into child components |
+| `src/components/app/AuthenticatedApp.svelte` | Top layout, tab routing; stays a legacy shell — carve new UI into child components |
+| `src/routes/+page.svelte` | Thin lazy loader for AuthenticatedApp (see `docs/auth/FIRST_PAINT.md`) |
 | `src/components/layout/*`, `parent/*`, `dm/*`, … | Feature chrome and product UI |
 | `src/stores/*` | Domain state (`svelte/store`) |
 | `src/lib/*` | Side effects, Tauri wrappers, pure helpers |
 | `src/lib/components/ui` | shadcn primitives |
 
-Invariant from LAYOUT.md: components bind UI and call libs; avoid new cross-cutting logic in `+page.svelte` or monolithic stores.
+Invariant from LAYOUT.md: components bind UI and call libs; avoid new cross-cutting logic in `AuthenticatedApp.svelte` or monolithic stores.
 
 ## Component placement
 

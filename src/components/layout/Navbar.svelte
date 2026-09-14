@@ -40,7 +40,7 @@
     type DmTab,
     type Squad,
   } from '../../stores/app';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { createDefaultParentChannels } from '../../lib/parent-navbar';
   import { activateSquadHub } from '../../lib/squad-hub-nav';
   import { pendingReadyToast } from '../../stores/toast';

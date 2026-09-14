@@ -2,6 +2,7 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import { unlockWithBiometrics } from '../../stores/auth';
+  import { prefetchAuthenticatedApp } from '../../lib/app/authenticated-app';
   import { biometricUnlockEnabled } from '../../stores/biometric-unlock';
   import { mapBiometricErrorToI18nKey } from '../../lib/api/biometry';
 
@@ -39,6 +40,7 @@
     isAuthenticating = true;
     errorKey = null;
     try {
+      prefetchAuthenticatedApp();
       await unlockWithBiometrics(npub);
     } catch (e) {
       errorKey = mapBiometricErrorToI18nKey(e);

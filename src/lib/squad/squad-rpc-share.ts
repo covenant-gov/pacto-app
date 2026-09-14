@@ -5,7 +5,7 @@
 
 import { get } from 'svelte/store';
 import { sendDmMessage } from '../api/nostr';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import type { SupportedChainId } from '../wallet/chains';
 import { dmWarn } from '../utils/dm-debug';
 import {

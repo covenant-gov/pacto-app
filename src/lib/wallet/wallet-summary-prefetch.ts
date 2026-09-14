@@ -4,7 +4,7 @@
  */
 
 import { get } from 'svelte/store';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { getWalletSummary } from './backend-wallet';
 import { loadWatchedErc20Rows, watchedRowsToWire } from './watched-tokens';
 import { loadWalletEnabledChains } from './wallet-ui-prefs';

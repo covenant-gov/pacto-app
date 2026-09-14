@@ -8,7 +8,7 @@ import { getProfileDisplayName } from '../lib/utils/profile';
 import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, lastCatchUpSuccess, type DmChatState } from './dm';
 import { hydrateUnreadCounts } from './unread';
 import { hydrateCatchUpCount } from './catch-up';
-import { currentUser } from './auth';
+import { currentUser } from './auth-session';
 
 type InitFinishedPayload = {
   profiles?: NostrProfile[];

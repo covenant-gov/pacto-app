@@ -8,6 +8,7 @@ import {
   refreshCommonsBroadcasts,
   resetCommonsPrefetchSession,
   scheduleCommonsStartupPrefetch,
+  preloadCommonsTagArt,
 } from './commons-prefetch';
 import type { CommonsBroadcastDto } from './types';
 
@@ -92,6 +93,12 @@ describe('commons-prefetch', () => {
     scheduleCommonsStartupPrefetch();
 
     await vi.waitFor(() => expect(fetchCommonsBroadcastsCached).toHaveBeenCalledTimes(1));
+    expect(ImageMock).not.toHaveBeenCalled();
+  });
+
+  it('preloadCommonsTagArt warms category images once', () => {
+    preloadCommonsTagArt();
+    preloadCommonsTagArt();
     expect(ImageMock).toHaveBeenCalled();
   });
 

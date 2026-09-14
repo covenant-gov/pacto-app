@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { squads, squadMemberEvmByParentId, treasurySafesByParentId, squadInfraByParentId } from '../../stores/squads';
 import { listParentTreasurySafes } from '../api/nostr';
 import { listSquadInfra } from '../governance/api';

@@ -6,7 +6,7 @@
   import WalletPeerExchangeCard from '../wallet/WalletPeerExchangeCard.svelte';
   import type { WalletPeerInfoRequestPayload } from '../../lib/wallet/dm-messages';
   import { profiles } from '../../stores/profiles';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { showToast } from '../../stores/toast';
   import { t } from 'svelte-i18n';
   import {

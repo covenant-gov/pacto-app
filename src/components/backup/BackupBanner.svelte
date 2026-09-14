@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { isAuthenticated } from '../../stores/auth';
+  import { isAuthenticated } from '../../stores/auth-session';
   import {
     backupVerified,
     backupVerificationModalOpen,

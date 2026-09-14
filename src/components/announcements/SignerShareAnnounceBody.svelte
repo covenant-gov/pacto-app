@@ -4,7 +4,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import type { SquadMemberEvmSharePayload } from '../../lib/announcements';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
 

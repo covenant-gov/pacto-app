@@ -3,7 +3,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import type { Address } from 'viem';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import {

@@ -490,8 +490,6 @@
     margin: 0;
   }
 
-  .btn-primary,
-  .btn-secondary,
   .btn-reveal,
   .btn-copy {
     padding: 10px 16px;
@@ -499,22 +497,6 @@
     font-size: 0.9375rem;
     cursor: pointer;
     transition: opacity 0.2s;
-  }
-
-  .btn-primary {
-    border: none;
-    background: var(--brand);
-    color: var(--on-brand);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary,
-  .btn-reveal,
-  .btn-copy {
     border: 1px solid var(--border-subtle);
     background: var(--bg-elevated);
     color: var(--text-primary);

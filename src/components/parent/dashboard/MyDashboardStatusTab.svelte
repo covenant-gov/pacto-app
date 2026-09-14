@@ -5,7 +5,7 @@
   import RotateSquadKeyModal from './RotateSquadKeyModal.svelte';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { showToast } from '../../../stores/toast';
-  import { currentUser } from '../../../stores/auth';
+  import { currentUser } from '../../../stores/auth-session';
   import { needsSquadRosterKeyChoice } from '../../../lib/squad/squad-roster-key-choice';
   import { requestSquadStateSync, isSquadStateSyncInFlight, squadStateSyncRequestInFlightRevision } from '../../../lib/squad/squad-state-sync';
   import { onMount, type Snippet } from 'svelte';

@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
 import SignerShareAnnounceBody from './SignerShareAnnounceBody.svelte';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import type { SquadMemberEvmSharePayload } from '../../lib/announcements';
 
 afterEach(() => {

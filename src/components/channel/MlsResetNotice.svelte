@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { profiles } from '../../stores/profiles';
   import type { MlsStoreResetGroupState } from '../../lib/api/nostr';
   import { getProfileDisplayName } from '../../lib/utils/profile';

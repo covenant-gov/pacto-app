@@ -27,7 +27,7 @@ import {
   resolveAdmitterNpubs,
   sendConsentFirstSquadInvite,
 } from '../squad/consent-first-invite';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import {
   loadInviteCandidateNpubs,
   runInviteMembersToParent,

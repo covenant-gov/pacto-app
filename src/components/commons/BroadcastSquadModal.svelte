@@ -18,7 +18,7 @@
     formatCommonsBroadcastDuration,
     type CommonsBroadcastDurationHours,
   } from '../../lib/commons/broadcast-duration';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import CommonsTagPicker from './CommonsTagPicker.svelte';
 
   interface Props {

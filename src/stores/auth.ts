@@ -1,38 +1,109 @@
-import { writable, derived, get } from 'svelte/store';
-import { t } from 'svelte-i18n';
-import { invoke } from '@tauri-apps/api/core';
-import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount, checkSession as apiCheckSession, sessionHeartbeat as apiSessionHeartbeat, unlockWithBiometricKey } from '../lib/api/auth';
-import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validateRecoveryPhraseForImport } from '../lib/api/encryption';
-import { dmLog } from '../lib/utils/dm-debug';
-import { runPostLoginNetworkSync } from '../lib/app/post-login-sync';
-import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
-import { closeWalletSidebar } from './dm';
-import { loadAccountState } from './persistence';
-import { markBackupVerified, loadBackupVerified } from './backup-verification';
-import { clearAccountState } from '../lib/utils/clear-account-state';
-import { isMigrationGateError, getInvokeErrorMessage } from '../lib/utils/tauri-errors';
-import { awaitGateBeforeAuth, freezeGate } from '../lib/updater/update-gate';
-import { getBiometricUnlockData, removeBiometricUnlockData } from '../lib/api/biometry';
-import { biometricUnlockEnabled } from './biometric-unlock';
+import { writable, get } from "svelte/store";
+import { t } from "svelte-i18n";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  login as apiLogin,
+  loginWithRecoveryPhrase,
+  createAccount as apiCreateAccount,
+  connect as apiConnect,
+  checkAnyAccountExists,
+  getCurrentAccount,
+  checkSession as apiCheckSession,
+  sessionHeartbeat as apiSessionHeartbeat,
+  unlockWithBiometricKey,
+} from "../lib/api/auth";
+import {
+  hasStoredKey,
+  encryptAndSaveKey,
+  encryptAndSaveEvmKey,
+  loadAndDecryptKey,
+  validateRecoveryPhraseForImport,
+} from "../lib/api/encryption";
+import { dmLog } from "../lib/utils/dm-debug";
+import { runPostLoginNetworkSync } from "../lib/app/post-login-sync";
+import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from "./navigation";
+import { closeWalletSidebar } from "./dm";
+import { markBackupVerified, loadBackupVerified } from "./backup-verification";
+import {
+  isMigrationGateError,
+  getInvokeErrorMessage,
+} from "../lib/utils/tauri-errors";
+import { awaitGateBeforeAuth, freezeGate } from "../lib/updater/update-gate";
+import {
+  getBiometricUnlockData,
+  removeBiometricUnlockData,
+} from "../lib/api/biometry";
+import { biometricUnlockEnabled } from "./biometric-unlock";
+import {
+  isAuthenticated,
+  authLoading,
+  authError,
+  currentUser,
+  isLoggedIn,
+  type CurrentUser,
+} from "./auth-session";
+
+export {
+  isAuthenticated,
+  authLoading,
+  authError,
+  currentUser,
+  isLoggedIn,
+  type CurrentUser,
+};
+
+/** Lazy: clear-account-state pulls wallet/invite graphs — keep off cold Login import path. */
+async function clearAccountState(npub?: string): Promise<void> {
+  const { clearAccountState: clear } = await import(
+    "../lib/utils/clear-account-state"
+  );
+  clear(npub);
+}
+
+/** Lazy: avoid static auth → persistence graph on cold Login. */
+async function loadAccountState(npub: string): Promise<void> {
+  const { loadAccountState: load } = await import("./persistence");
+  load(npub);
+}
 
 async function maybeApplyLocalDevDefaults(npub: string): Promise<void> {
   if (!import.meta.env.DEV) return;
-  const { applyLocalDevDefaults } = await import('../lib/dev/local-dev-setup');
+  const { applyLocalDevDefaults } = await import("../lib/dev/local-dev-setup");
   await applyLocalDevDefaults(npub);
 }
 
-// Auth state
-export const isAuthenticated = writable<boolean>(false);
-export const authLoading = writable<boolean>(false);
-export const authError = writable<string | null>(null);
+type KeyMaterial = {
+  private: string;
+  pubkey_hex: string;
+  evm_private_key?: string | null;
+  evm_address?: string | null;
+};
 
-// Current user info
-export interface CurrentUser {
-  npub: string;
-  pubkey: string;
+/** Shared create/import preamble: loading flag, gate, clear prior account state. */
+async function beginAccountSetup(): Promise<boolean> {
+  authLoading.set(true);
+  authError.set(null);
+  if ((await awaitGateBeforeAuth()) === "blocked") {
+    authLoading.set(false);
+    return false;
+  }
+  await clearAccountState();
+  return true;
 }
 
-export const currentUser = writable<CurrentUser | null>(null);
+async function encryptKeysConnectAndPersistEvm(
+  keys: KeyMaterial,
+  pin: string,
+  logLabel: string
+): Promise<void> {
+  await encryptAndSaveKey(keys.private, pin);
+  dmLog(`${logLabel}: connect()`);
+  await apiConnect();
+  dmLog(`${logLabel}: connect() done`);
+  if (keys.evm_private_key && keys.evm_address) {
+    await encryptAndSaveEvmKey(keys.evm_private_key, keys.evm_address, pin);
+  }
+}
 
 /** Toast state shown when the backend finishes a key-derivation migration. */
 export interface MigrationCompleteToast {
@@ -40,7 +111,9 @@ export interface MigrationCompleteToast {
   message: string;
 }
 
-export const migrationCompleteToast = writable<MigrationCompleteToast | null>(null);
+export const migrationCompleteToast = writable<MigrationCompleteToast | null>(
+  null
+);
 
 /** Timer handle returned by setTimeout; alias keeps the variable type local. */
 type TimerHandle = ReturnType<typeof setTimeout>;
@@ -48,7 +121,9 @@ type TimerHandle = ReturnType<typeof setTimeout>;
 let migrationToastTimer: TimerHandle | null = null;
 
 /** Show the migration-complete toast for five seconds, then clear it. */
-export function showMigrationCompleteToast(message = 'Account security updated'): void {
+export function showMigrationCompleteToast(
+  message = "Account security updated"
+): void {
   if (migrationToastTimer !== null) {
     clearTimeout(migrationToastTimer);
     migrationToastTimer = null;
@@ -67,7 +142,10 @@ export function dropSessionState(): void {
 }
 
 /** Query the backend for the current session state. Fail-secure: errors are treated as locked. */
-export async function checkSession(): Promise<{ unlocked: boolean; lockedAt?: number }> {
+export async function checkSession(): Promise<{
+  unlocked: boolean;
+  lockedAt?: number;
+}> {
   try {
     const status = await apiCheckSession();
     if (!status.unlocked) {
@@ -75,7 +153,7 @@ export async function checkSession(): Promise<{ unlocked: boolean; lockedAt?: nu
     }
     return status;
   } catch (error: unknown) {
-    console.error('checkSession failed:', error);
+    console.error("checkSession failed:", error);
     dropSessionState();
     return { unlocked: false };
   }
@@ -86,7 +164,7 @@ export async function sessionHeartbeat(): Promise<void> {
   try {
     await apiSessionHeartbeat();
   } catch (error: unknown) {
-    console.error('sessionHeartbeat failed:', error);
+    console.error("sessionHeartbeat failed:", error);
   }
 }
 
@@ -121,17 +199,17 @@ export function initSessionFocusChecks(): () => void {
 
   const onFocus = () => debouncedCheckSession();
   const onVisibilityChange = () => {
-    if (document.visibilityState === 'visible') {
+    if (document.visibilityState === "visible") {
       debouncedCheckSession();
     }
   };
 
-  window.addEventListener('focus', onFocus);
-  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener("focus", onFocus);
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
   sessionFocusCleanup = () => {
-    window.removeEventListener('focus', onFocus);
-    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener("focus", onFocus);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
     sessionFocusListenersInstalled = false;
     if (focusCheckTimer !== null) {
       clearTimeout(focusCheckTimer);
@@ -155,17 +233,13 @@ export async function maybeRequireSession(): Promise<boolean> {
   return true;
 }
 
-// Derived: Is user logged in with valid data
-export const isLoggedIn = derived(
-  [isAuthenticated, currentUser],
-  ([$isAuthenticated, $currentUser]) => $isAuthenticated && $currentUser !== null
-);
-
 /**
  * Check auth status on app startup
  * Determines if user needs to login or if they have stored keys
  */
-export async function checkAuthStatus(): Promise<'needs-auth' | 'needs-pin' | 'authenticated'> {
+export async function checkAuthStatus(): Promise<
+  "needs-auth" | "needs-pin" | "authenticated"
+> {
   authLoading.set(true);
   authError.set(null);
 
@@ -173,20 +247,22 @@ export async function checkAuthStatus(): Promise<'needs-auth' | 'needs-pin' | 'a
     const accountExists = await checkAnyAccountExists();
 
     if (!accountExists) {
-      return 'needs-auth';
+      return "needs-auth";
     }
 
     const keyStored = await hasStoredKey();
 
     if (!keyStored) {
-      return 'needs-auth';
+      return "needs-auth";
     }
 
-    return 'needs-pin';
+    return "needs-pin";
   } catch (error: unknown) {
-    console.error('Auth check failed:', error);
-    authError.set(error instanceof Error ? error.message : 'Failed to check auth status');
-    return 'needs-auth';
+    console.error("Auth check failed:", error);
+    authError.set(
+      error instanceof Error ? error.message : "Failed to check auth status"
+    );
+    return "needs-auth";
   } finally {
     authLoading.set(false);
   }
@@ -210,7 +286,7 @@ async function completePostLoginSession(
 ): Promise<CurrentUser> {
   const session: CurrentUser = { npub, pubkey };
   activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
-  loadAccountState(npub);
+  await loadAccountState(npub);
   closeWalletSidebar();
   if (!options?.deferReveal) {
     isAuthenticated.set(true);
@@ -228,7 +304,10 @@ async function completePostLoginSession(
  * real PIN-encrypted credentials and an open connection, so this only
  * mirrors the frontend half of a normal login.
  */
-export async function adoptDevSession({ npub, pubkey }: AdoptDevSessionParams): Promise<void> {
+export async function adoptDevSession({
+  npub,
+  pubkey,
+}: AdoptDevSessionParams): Promise<void> {
   await completePostLoginSession(npub, pubkey);
 }
 
@@ -241,58 +320,30 @@ export async function createAccount(
   pin: string,
   options?: { deferReveal?: boolean }
 ): Promise<CurrentUser | void> {
-  authLoading.set(true);
-  authError.set(null);
-
   try {
-    if ((await awaitGateBeforeAuth()) === 'blocked') {
-      authLoading.set(false);
-      return;
-    }
+    if (!(await beginAccountSetup())) return;
 
-    clearAccountState();
-    // Generate keys with mnemonic (initializes Nostr client)
     const keys = await apiCreateAccount();
-    
-    // Encrypt and save private key + mnemonic
-    await encryptAndSaveKey(keys.private, pin);
-    // Connect first so optional Kind 0 profile refresh can reach relays after PIN setup.
-    dmLog('createAccount: connect()');
-    await apiConnect();
-    dmLog('createAccount: connect() done');
-    if (keys.evm_private_key && keys.evm_address) {
-      await encryptAndSaveEvmKey(keys.evm_private_key, keys.evm_address, pin);
-    }
+    await encryptKeysConnectAndPersistEvm(keys, pin, "createAccount");
 
-    // Set frontend state and load npub-scoped persistence (squads, last open, etc.)
     const npub = await getCurrentAccount();
-    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
-    loadAccountState(npub);
     // PIN save may have marked backup_verified under PACTO_ALLOW_TEST_AUTH;
     // wait for the store so invite Accept is not a silent no-op.
     await loadBackupVerified();
-    closeWalletSidebar();
-    runPostLoginNetworkSync(npub);
-
-    const session: CurrentUser = {
+    const session = await completePostLoginSession(
       npub,
-      pubkey: keys.pubkey_hex,
-    };
-    freezeGate();
-    await maybeApplyLocalDevDefaults(npub);
+      keys.pubkey_hex,
+      options
+    );
 
-    dmLog('createAccount: done');
+    dmLog("createAccount: done");
     authLoading.set(false);
-
-    if (options?.deferReveal) {
-      return session;
-    }
-
-    isAuthenticated.set(true);
-    currentUser.set(session);
+    if (options?.deferReveal) return session;
   } catch (error: unknown) {
-    console.error('Create account failed:', error);
-    authError.set(error instanceof Error ? error.message : 'Failed to create account');
+    console.error("Create account failed:", error);
+    authError.set(
+      error instanceof Error ? error.message : "Failed to create account"
+    );
     authLoading.set(false);
     throw error;
   }
@@ -315,42 +366,32 @@ export async function importAccount(
   pin: string,
   options?: { deferReveal?: boolean }
 ): Promise<CurrentUser | void> {
-  authLoading.set(true);
-  authError.set(null);
-
   try {
-    if ((await awaitGateBeforeAuth()) === 'blocked') {
-      authLoading.set(false);
-      return;
-    }
+    if (!(await beginAccountSetup())) return;
 
-    clearAccountState();
     if (!validateRecoveryPhraseForImport(recoveryPhrase)) {
-      throw new Error('Enter a valid 12- or 24-word recovery phrase');
+      throw new Error("Enter a valid 12- or 24-word recovery phrase");
     }
 
     const keys = await loginWithRecoveryPhrase(recoveryPhrase);
-    
-    // Encrypt and save the private key
-    await encryptAndSaveKey(keys.private, pin);
-    dmLog('importAccount: connect()');
-    await apiConnect();
-    dmLog('importAccount: connect() done');
-    if (keys.evm_private_key && keys.evm_address) {
-      await encryptAndSaveEvmKey(keys.evm_private_key, keys.evm_address, pin);
-    }
+    await encryptKeysConnectAndPersistEvm(keys, pin, "importAccount");
 
-    // Get current account npub from backend
     const npub = await getCurrentAccount();
-    const session = await completePostLoginSession(npub, keys.pubkey_hex, options);
+    const session = await completePostLoginSession(
+      npub,
+      keys.pubkey_hex,
+      options
+    );
     await markBackupVerified(true);
     authLoading.set(false);
 
-    dmLog('importAccount: done');
+    dmLog("importAccount: done");
     if (options?.deferReveal) return session;
   } catch (error: unknown) {
-    console.error('Import account failed:', error);
-    authError.set(error instanceof Error ? error.message : 'Failed to import account');
+    console.error("Import account failed:", error);
+    authError.set(
+      error instanceof Error ? error.message : "Failed to import account"
+    );
     authLoading.set(false);
     throw error;
   }
@@ -365,29 +406,33 @@ export async function unlockWithPin(pin: string): Promise<void> {
   authError.set(null);
 
   try {
-    if ((await awaitGateBeforeAuth()) === 'blocked') return;
+    if ((await awaitGateBeforeAuth()) === "blocked") return;
 
     const privateKey = await loadAndDecryptKey(pin);
     const keys = await apiLogin(privateKey);
     const npub = await getCurrentAccount();
 
     activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
-    loadAccountState(npub);
+    await loadAccountState(npub);
     closeWalletSidebar();
     runPostLoginNetworkSync(npub);
 
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
-      pubkey: keys.pubkey_hex
+      pubkey: keys.pubkey_hex,
     });
     freezeGate();
     await maybeApplyLocalDevDefaults(npub);
 
-    dmLog('unlockWithPin: done');
+    dmLog("unlockWithPin: done");
   } catch (error: unknown) {
-    console.error('Unlock failed:', error);
-    authError.set(error instanceof Error ? error.message : 'Incorrect PIN or failed to decrypt');
+    console.error("Unlock failed:", error);
+    authError.set(
+      error instanceof Error
+        ? error.message
+        : "Incorrect PIN or failed to decrypt"
+    );
     throw error;
   } finally {
     authLoading.set(false);
@@ -404,27 +449,29 @@ export async function unlockWithBiometrics(npub: string): Promise<void> {
   authError.set(null);
 
   try {
-    if ((await awaitGateBeforeAuth()) === 'blocked') return;
+    if ((await awaitGateBeforeAuth()) === "blocked") return;
 
-    const reason = get(t)('auth.biometricUnlockPromptReason');
+    const reason = get(t)("auth.biometricUnlockPromptReason");
     const keyHex = await getBiometricUnlockData(npub, reason);
-    const keys = await unlockWithBiometricKey(keyHex).catch((error: unknown) => {
-      // Only a rejection here proves the backend-validated key no longer decrypts
-      // (stale/corrupted stored blob): revoke so the user re-enrolls after a PIN
-      // unlock. A cancelled or unavailable OS prompt above leaves a valid
-      // enrollment untouched so the user can simply retry.
-      void removeBiometricUnlockData(npub).catch(() => {});
-      biometricUnlockEnabled.set(false);
-      throw error;
-    });
+    const keys = await unlockWithBiometricKey(keyHex).catch(
+      (error: unknown) => {
+        // Only a rejection here proves the backend-validated key no longer decrypts
+        // (stale/corrupted stored blob): revoke so the user re-enrolls after a PIN
+        // unlock. A cancelled or unavailable OS prompt above leaves a valid
+        // enrollment untouched so the user can simply retry.
+        void removeBiometricUnlockData(npub).catch(() => {});
+        biometricUnlockEnabled.set(false);
+        throw error;
+      }
+    );
     const unlockedNpub = await getCurrentAccount();
 
     await completePostLoginSession(unlockedNpub, keys.pubkey_hex);
 
-    dmLog('unlockWithBiometrics: done');
+    dmLog("unlockWithBiometrics: done");
   } catch (error: unknown) {
-    console.error('Biometric unlock failed:', error);
-    authError.set(getInvokeErrorMessage(error, 'Biometric unlock failed'));
+    console.error("Biometric unlock failed:", error);
+    authError.set(getInvokeErrorMessage(error, "Biometric unlock failed"));
     throw error;
   } finally {
     authLoading.set(false);
@@ -444,11 +491,11 @@ export async function logout(): Promise<void> {
   try {
     isAuthenticated.set(false);
     currentUser.set(null);
-    clearAccountState(npub);
-    await invoke('logout');
+    await clearAccountState(npub);
+    await invoke("logout");
   } catch (error: unknown) {
-    console.error('Logout failed:', error);
-    authError.set(error instanceof Error ? error.message : 'Failed to logout');
+    console.error("Logout failed:", error);
+    authError.set(error instanceof Error ? error.message : "Failed to logout");
     isAuthenticated.set(false);
     currentUser.set(null);
     throw error;
@@ -472,9 +519,8 @@ export function clearAuthError(): void {
 export function handleMigrationGateError(error: unknown): boolean {
   if (isMigrationGateError(error)) {
     dropSessionState();
-    authError.set('Please unlock to update account security.');
+    authError.set("Please unlock to update account security.");
     return true;
   }
   return false;
 }
-
