@@ -18,18 +18,25 @@
 	<section class="auth-atmosphere-panel">
 		{@render children()}
 	</section>
-	<aside class="auth-atmosphere-wall" aria-label={$t('auth.photoCreditCollections')}>
+	<aside class="auth-atmosphere-wall" aria-label={$t('auth.photoCreditTitle')}>
 		<figure class="auth-atmosphere-piece">
-			<div
-				class="auth-atmosphere-photo"
-				style="background-image: url('/the-new-york-public-library-qGLE_4n0S4M-unsplash.jpg')"
-				role="img"
-				aria-label={$t('auth.photoCreditTitle')}
-			></div>
+			<div class="auth-atmosphere-frame">
+				<div class="auth-atmosphere-frame-lip">
+					<div
+						class="auth-atmosphere-photo"
+						style="background-image: url('/the-new-york-public-library-qGLE_4n0S4M-unsplash.jpg')"
+						role="img"
+						aria-label={$t('auth.photoCreditTitle')}
+					></div>
+				</div>
+			</div>
 			<figcaption class="auth-atmosphere-credit">
-				<span class="auth-atmosphere-credit-collection">{$t('auth.photoCreditCollection')}</span>
 				<span class="auth-atmosphere-credit-title">“{$t('auth.photoCreditTitle')}”</span>
-				<span class="auth-atmosphere-credit-collections">{$t('auth.photoCreditCollections')}</span>
+				<span class="auth-atmosphere-credit-meta">
+					{$t('auth.photoCreditCollection')}
+					·
+					{$t('auth.photoCreditCollections')}
+				</span>
 				<a href={NYPL_ITEM_URL} onclick={openCredit}>
 					{$t('auth.photoCreditLink')}
 				</a>
@@ -65,6 +72,8 @@
 	}
 
 	.auth-atmosphere-wall {
+		position: relative;
+		isolation: isolate;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -74,13 +83,61 @@
 		background: var(--bg-panel);
 	}
 
+	/* Soft ceiling wash — no extra libs */
+	.auth-atmosphere-wall::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		pointer-events: none;
+		background:
+			radial-gradient(
+				ellipse 85% 50% at 50% -8%,
+				color-mix(in srgb, var(--text-primary) 16%, transparent) 0%,
+				transparent 70%
+			),
+			linear-gradient(
+				180deg,
+				color-mix(in srgb, var(--text-primary) 7%, transparent) 0%,
+				transparent 38%
+			);
+	}
+
 	.auth-atmosphere-piece {
+		position: relative;
+		z-index: 1;
 		display: flex;
 		flex-direction: column;
 		align-items: stretch;
 		gap: 0.85rem;
 		width: min(100%, 52rem);
 		margin: 0;
+	}
+
+	/* Concentric moulding: outer 10 + lip 3 ≈ theme-aware frame (SVG 9-slice lives at /painting-frame.svg) */
+	.auth-atmosphere-frame {
+		padding: 10px;
+		border-radius: 2px;
+		background: linear-gradient(
+			165deg,
+			color-mix(in srgb, var(--text-primary) 28%, var(--bg-elevated)) 0%,
+			color-mix(in srgb, var(--text-primary) 10%, var(--bg-panel)) 48%,
+			color-mix(in srgb, #000 42%, var(--bg-elevated)) 100%
+		);
+		box-shadow:
+			inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent),
+			inset 0 -1px 0 color-mix(in srgb, #000 35%, transparent),
+			0 1px 0 color-mix(in srgb, var(--text-primary) 10%, transparent),
+			0 22px 52px color-mix(in srgb, #000 34%, transparent),
+			0 6px 14px color-mix(in srgb, #000 18%, transparent);
+	}
+
+	.auth-atmosphere-frame-lip {
+		padding: 3px;
+		background: color-mix(in srgb, var(--text-primary) 28%, #8a7355);
+		box-shadow:
+			inset 0 0 0 1px color-mix(in srgb, #000 45%, transparent),
+			inset 0 1px 0 color-mix(in srgb, #fff 22%, transparent);
 	}
 
 	.auth-atmosphere-photo {
@@ -90,30 +147,34 @@
 		background-size: cover;
 		background-position: center;
 		background-repeat: no-repeat;
-		border: 1px solid color-mix(in srgb, var(--text-primary) 14%, transparent);
-		box-shadow:
-			0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent),
-			0 18px 48px color-mix(in srgb, #000 28%, transparent),
-			0 4px 12px color-mix(in srgb, #000 16%, transparent);
+		box-shadow: inset 0 12px 28px color-mix(in srgb, #000 18%, transparent);
 	}
 
 	.auth-atmosphere-credit {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.35rem;
 		margin: 0;
 		padding: 0 0.15rem;
-		color: var(--text-muted);
-		font-size: 0.625rem;
-		line-height: 1.45;
-		letter-spacing: 0.01em;
-		text-align: left;
 		max-width: 42rem;
+		text-align: left;
 	}
 
 	.auth-atmosphere-credit-title {
-		color: var(--text-secondary);
+		color: var(--text-primary);
+		font-size: 0.875rem;
+		font-weight: 500;
 		font-style: italic;
+		line-height: 1.35;
+		text-wrap: pretty;
+	}
+
+	.auth-atmosphere-credit-meta,
+	.auth-atmosphere-credit a {
+		color: var(--text-muted);
+		font-size: 0.75rem;
+		line-height: 1.45;
+		text-wrap: pretty;
 	}
 
 	.auth-atmosphere-credit a {
