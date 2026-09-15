@@ -218,8 +218,7 @@ function populateAllDownloads(manifest: ReleaseManifest, detected: Platform) {
 
   if (assets.length === 0) {
     const empty = document.createElement('p');
-    empty.style.color = '#84888a';
-    empty.style.textAlign = 'center';
+    empty.className = 'downloads-empty';
     empty.textContent = 'No downloads available';
     list.appendChild(empty);
     return;

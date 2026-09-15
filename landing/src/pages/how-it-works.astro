@@ -9,6 +9,7 @@ const base = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
   : `${import.meta.env.BASE_URL}/`;
 const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
+const blogHref = 'https://dpunk1.substack.com/p/building-the-network-state-substrate';
 const downloadHref = `${base}#download`;
 ---
 
@@ -233,6 +234,14 @@ const downloadHref = `${base}#download`;
       </p>
       <div class="how-closing-actions">
         <a class="btn btn-green" href={downloadHref}>Get Pacto</a>
+        <a
+          class="btn btn-blue"
+          href={blogHref}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Read Blog
+        </a>
         <a
           class="btn btn-ghost-light"
           href={docsHref}

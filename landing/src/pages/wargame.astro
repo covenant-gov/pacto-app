@@ -1,5 +1,12 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
+
+const base = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const docsHref = 'https://github.com/covenant-gov/pacto-app#readme';
+const blogHref = 'https://dpunk1.substack.com/p/building-the-network-state-substrate';
+const downloadHref = `${base}#download`;
 ---
 
 <BaseLayout
@@ -108,16 +115,34 @@ import BaseLayout from '../layouts/BaseLayout.astro';
       </ul>
     </section>
 
-    <p>
-      <a href="../">← Back to Pacto</a>
-      {' · '}
-      <a
-        href="https://github.com/covenant-gov/pacto-app#readme"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Documentation on GitHub
-      </a>
-    </p>
+    <section class="how-closing">
+      <h2>Next steps</h2>
+      <p>
+        Those are the core ideas. For setup and developer detail, use the GitHub docs. To try the
+        app, download Pacto.
+      </p>
+      <div class="how-closing-actions">
+        <a class="btn btn-green" href={downloadHref}>Get Pacto</a>
+        <a
+          class="btn btn-blue"
+          href={blogHref}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Read Blog
+        </a>
+        <a
+          class="btn btn-ghost-light"
+          href={docsHref}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Read the Docs
+        </a>
+      </div>
+      <p>
+        <a href={base}>← Back to Pacto</a>
+      </p>
+    </section>
   </main>
 </BaseLayout>
