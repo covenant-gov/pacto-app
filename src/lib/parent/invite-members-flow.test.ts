@@ -14,7 +14,7 @@ vi.mock('../squad/consent-first-invite', () => ({
   sendConsentFirstSquadInvite: vi.fn(),
 }));
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser: { subscribe: vi.fn() },
 }));
 

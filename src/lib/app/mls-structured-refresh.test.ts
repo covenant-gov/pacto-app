@@ -51,7 +51,7 @@ const currentUser = vi.hoisted(() => {
   return makeStore<{ npub: string } | null>({ npub: 'npub1alice' });
 });
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser,
 }));
 

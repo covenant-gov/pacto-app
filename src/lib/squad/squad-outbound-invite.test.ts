@@ -22,7 +22,7 @@ vi.mock('../parent/pending-admit', () => ({
   clearPendingAdmitForMember: vi.fn(),
 }));
 
-vi.mock('../../stores/auth', async () => {
+vi.mock('../../stores/auth-session', async () => {
   const { writable } = await import('svelte/store');
   return { currentUser: writable({ npub: 'npub-me' }) };
 });

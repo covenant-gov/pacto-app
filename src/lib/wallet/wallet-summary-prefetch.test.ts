@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { writable } from 'svelte/store';
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser: writable(null),
 }));
 

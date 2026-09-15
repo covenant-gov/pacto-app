@@ -25,7 +25,7 @@ vi.mock('./squad-outbound-invite', () => ({
   publishOutboundInviteAnnounce: vi.fn(),
 }));
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser: { subscribe: vi.fn() },
 }));
 

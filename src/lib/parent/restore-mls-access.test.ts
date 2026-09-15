@@ -28,7 +28,7 @@ vi.mock('../../stores/squads', () => ({
   }[]),
 }));
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser: createMockWritable<{ npub: string; pubkey: string } | null>(null),
 }));
 
