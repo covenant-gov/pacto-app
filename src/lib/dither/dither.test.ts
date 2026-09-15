@@ -71,6 +71,7 @@ describe('dither wiring', () => {
 		expect(layout).toContain('previewTheme = $state<DesignTheme>(DEFAULT_THEME)');
 		expect(layout).toContain('readDesignPreviewTheme() ?? DEFAULT_THEME');
 		expect(layout).toContain('applyPlaygroundTheme(preview)');
-		expect(layout).not.toMatch(/function selectTheme[\s\S]*setTheme\(/);
+		// Shipped themes also call setTheme so / keeps the preview after leaving /design.
+		expect(layout).toMatch(/function selectTheme[\s\S]*if \(isShippedTheme\(value\)\) \{[\s\S]*setTheme\(value\)/);
 	});
 });

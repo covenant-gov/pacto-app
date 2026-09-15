@@ -96,7 +96,9 @@ describe('formatMessageTimestamp', () => {
   });
 
   it('formats a valid ISO string', () => {
-    const result = formatMessageTimestamp('2024-05-26T23:09:00.000Z');
+    // Local constructor — avoids UTC→local day rollover flaking CI TZ.
+    const local = new Date(2024, 4, 26, 15, 9, 0);
+    const result = formatMessageTimestamp(local.toISOString());
     expect(result).toMatch(/May 26/);
     expect(result).toMatch(/:\d{2}\s/);
   });
