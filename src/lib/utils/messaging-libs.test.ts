@@ -50,4 +50,41 @@ describe('ensureMessagingLibs', () => {
       '/js/dompurify.min.js',
     ]);
   });
+
+  it('retries with a fresh script element after a load failure', async () => {
+    const { ensureMessagingLibs } = await import('./messaging-libs');
+
+    let attempt = 0;
+    const appendSpy = vi.spyOn(document.head, 'appendChild');
+    appendSpy.mockImplementation((node) => {
+      const script = node as HTMLScriptElement;
+      attempt += 1;
+      queueMicrotask(() => {
+        if (attempt === 1) {
+          script.dispatchEvent(new Event('error'));
+          return;
+        }
+        script.dataset.loaded = '1';
+        (window as { marked?: object }).marked = { use() {}, parse: () => '' };
+        (window as { hljs?: object }).hljs = { highlight: () => ({ value: '' }) };
+        (window as { twemoji?: object }).twemoji = {
+          replace: (t: string) => t,
+          convert: { toCodePoint: () => '' },
+        };
+        (window as { DOMPurify?: object }).DOMPurify = {
+          sanitize: (s: string) => s,
+          addHook() {},
+          removeHook() {},
+        };
+        script.dispatchEvent(new Event('load'));
+      });
+      return HTMLElement.prototype.appendChild.call(document.head, node);
+    });
+
+    await expect(ensureMessagingLibs()).rejects.toThrow('Failed to load /js/marked.min.js');
+    expect(document.head.querySelector('script[src="/js/marked.min.js"]')).toBeNull();
+
+    await ensureMessagingLibs();
+    expect(document.head.querySelectorAll('script[src="/js/marked.min.js"]')).toHaveLength(1);
+  });
 });

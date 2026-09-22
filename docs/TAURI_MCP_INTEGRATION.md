@@ -202,8 +202,8 @@ Only reach for this when the fresh-account UI flow itself is what you're testing
 
 1. Snapshot the DOM (`webview_dom_snapshot`), then click the button matching text `Create Account`.
 2. Snapshot again to get the six PIN-digit input refs under the "Create your PIN" heading. **Type one digit per input, in six separate `webview_keyboard` `type` calls** — each digit box has `maxlength="1"`, so a single call with `"text": "123456"` only fills the first box and silently drops the rest. Use PIN `123456` (the project's throwaway dev PIN, also used by `e2e/login.spec.ts`).
-3. Snapshot again — a fresh "Confirm your PIN" screen renders with new input refs. Repeat step 2's six single-digit calls against the new refs.
-4. Account creation runs for real: Argon2id key derivation plus a live MLS keypackage publish to a Nostr relay. Expect a "Processing…" status for **20–30 seconds** before the main navbar appears — poll with `webview_dom_snapshot` rather than assuming failure early.
+3. Snapshot again — a fresh "Retype your PIN" screen renders with new input refs. Repeat step 2's six single-digit calls against the new refs.
+4. Account creation runs for real: Argon2id key derivation plus a live MLS keypackage publish to a Nostr relay. Expect a "Processing…" status for **20–30 seconds**, then a ~1.1s success beat, before the main navbar appears — poll with `webview_dom_snapshot` rather than assuming failure early. A `BackupVerificationModal` auto-opens over the main shell right after creation; dismiss it before interacting with other shell controls.
 
 ### Backend-only assertions: `dev_login` at backend depth
 

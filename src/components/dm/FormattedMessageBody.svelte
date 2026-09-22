@@ -20,13 +20,18 @@
   let messagingLibsEpoch = $state(0);
 
   onMount(() => {
+    let destroyed = false;
     void ensureMessagingLibs()
       .then(() => {
+        if (destroyed) return;
         messagingLibsEpoch += 1;
       })
       .catch(() => {
         // Fallbacks in message-formatting cover missing globals.
       });
+    return () => {
+      destroyed = true;
+    };
   });
 
   let formatted = $derived.by(() => {

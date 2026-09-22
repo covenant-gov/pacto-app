@@ -117,7 +117,7 @@
     box-sizing: border-box;
     padding: 0 24px;
     background: var(--brand, #22d3ee);
-    color: var(--on-brand, var(--bg-page, #1c1c1c));
+    color: var(--on-brand);
     border: none;
     border-radius: 8px;
     font-size: 0.9375rem;

@@ -16,9 +16,14 @@ function injectScript(src: string): Promise<void> {
         return;
       }
       existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), {
-        once: true,
-      });
+      existing.addEventListener(
+        'error',
+        () => {
+          existing.remove();
+          reject(new Error(`Failed to load ${src}`));
+        },
+        { once: true },
+      );
       return;
     }
     const script = document.createElement('script');
@@ -32,9 +37,14 @@ function injectScript(src: string): Promise<void> {
       },
       { once: true },
     );
-    script.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), {
-      once: true,
-    });
+    script.addEventListener(
+      'error',
+      () => {
+        script.remove();
+        reject(new Error(`Failed to load ${src}`));
+      },
+      { once: true },
+    );
     document.head.appendChild(script);
   });
 }
