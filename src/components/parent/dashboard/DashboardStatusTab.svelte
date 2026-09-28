@@ -5,7 +5,7 @@
   import { resolveGovernanceProvider } from '../../../lib/governance/governance-provider';
   import type { SquadInfraDto, TreasuryProposalDto } from '../../../lib/governance/api';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
-  import { currentUser } from '../../../stores/auth';
+  import { currentUser } from '../../../stores/auth-session';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import {

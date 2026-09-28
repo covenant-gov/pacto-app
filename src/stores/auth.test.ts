@@ -326,6 +326,18 @@ describe('auth', () => {
       expect(get(backupVerified)).toBe(false);
     });
 
+    it('defers auth reveal when requested', async () => {
+      vi.mocked(apiCreateAccount).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      const session = await createAccount('123456', { deferReveal: true });
+
+      expect(session).toEqual({ npub, pubkey: keys.pubkey_hex });
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+      expect(encryptAndSaveKey).toHaveBeenCalledWith(keys.private, '123456');
+    });
+
     it('sets auth error on failure', async () => {
       vi.mocked(apiCreateAccount).mockRejectedValue(new Error('key gen failed'));
       await expect(createAccount('123456')).rejects.toThrow('key gen failed');
@@ -368,6 +380,24 @@ describe('auth', () => {
       expect(get(isAuthenticated)).toBe(true);
       expect(get(currentUser)).toEqual({ npub, pubkey: keys.pubkey_hex });
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
+      expect(get(backupVerified)).toBe(true);
+      expect(get(backupVerificationModalOpen)).toBe(false);
+    });
+
+    it('defers auth reveal when requested', async () => {
+      vi.mocked(validateRecoveryPhraseForImport).mockReturnValue(true);
+      vi.mocked(loginWithRecoveryPhrase).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      const session = await importAccount(
+        'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12',
+        '123456',
+        { deferReveal: true }
+      );
+
+      expect(session).toEqual({ npub, pubkey: keys.pubkey_hex });
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
       expect(get(backupVerified)).toBe(true);
       expect(get(backupVerificationModalOpen)).toBe(false);
     });

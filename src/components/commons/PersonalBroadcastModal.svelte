@@ -2,7 +2,7 @@
   import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
   import UserCommonsBroadcastPanel from './UserCommonsBroadcastPanel.svelte';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
 
   import { closeCommonsBroadcastModal } from '../../stores/commons-ui';
 

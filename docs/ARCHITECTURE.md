@@ -36,7 +36,7 @@ flowchart TB
 
 | Layer | Role | Key files |
 |-------|------|-----------|
-| **Frontend** | UI, state, user flows | `src/routes/+page.svelte`, `src/stores/`, `src/components/`, `src/lib/` |
+| **Frontend** | UI, state, user flows | `src/routes/+page.svelte` (lazy shell), `src/components/app/AuthenticatedApp.svelte`, `src/stores/`, `src/components/`, `src/lib/` |
 | **Tauri bridge** | Typed frontend ⇄ backend RPC and events | `src-tauri/src/lib.rs` (`invoke_handler` + `AppHandle::emit`) |
 | **Rust backend** | Crypto, Nostr/MLS relay logic, EVM signing, SQLite, media | `src-tauri/src/lib.rs`, `src-tauri/src/{nostr,mls,chat,message,rumor,db,account_manager,evm}/` |
 | **Network** | Nostr relays for messaging; RPCs for chain reads and sends | `trusted_relays::trusted_relays()`, `ALCHEMY_RPC_KEY`, user RPC prefs |
@@ -145,7 +145,7 @@ flowchart TB
 
 ## Frontend architecture
 
-- `src/routes/+page.svelte` is the single root container.
+- `src/routes/+page.svelte` lazy-loads `src/components/app/AuthenticatedApp.svelte` (logged-in shell). See [`auth/FIRST_PAINT.md`](./auth/FIRST_PAINT.md).
 - `src/lib/app/tauri-subscriptions.ts` is the central bridge for backend → UI events (`message_new`, `mls_message_new`, `profile_update`, etc.).
 - `src/stores/app.ts` is a thin re-export barrel; new code should import directly from domain slices (`auth.ts`, `dm.ts`, `squads.ts`, `mls-chat.ts`, etc.).
 - State persistence is npub-scoped. Use `persistenceKey(prefix)` from `src/stores/persistence-context.ts` for any new `localStorage` key.

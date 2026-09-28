@@ -14,7 +14,7 @@ vi.mock('../squad/consent-first-invite', () => ({
   sendConsentFirstSquadInvite: vi.fn(),
 }));
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser: { subscribe: vi.fn() },
 }));
 
@@ -27,7 +27,7 @@ import {
   resolveAdmitterNpubs,
   sendConsentFirstSquadInvite,
 } from '../squad/consent-first-invite';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import {
   loadInviteCandidateNpubs,
   runInviteMembersToParent,

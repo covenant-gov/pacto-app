@@ -3,6 +3,7 @@
   import { get } from 'svelte/store';
   import { onMount } from 'svelte';
   import Modal from '../ui/Modal.svelte';
+  import { Button } from '$lib/components/ui/button/index.js';
   import { exportRecoveryPhrase } from '../../lib/api/auth';
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -250,15 +251,16 @@
       {/if}
 
       <div class="backup-actions">
-        <button type="button" class="btn-secondary" onclick={handleClose}>{$t('backup.modal.later')}</button>
-        <button
+        <Button type="button" variant="outline" onclick={handleClose}>
+          {$t('backup.modal.later')}
+        </Button>
+        <Button
           type="button"
-          class="btn-primary"
           onclick={goToConfirm}
           disabled={!revealed || seedWords.length === 0}
         >
           {$t('backup.modal.wroteItDown')}
-        </button>
+        </Button>
       </div>
     {:else if phase === 'confirm'}
       <div class="backup-confirm">
@@ -271,15 +273,12 @@
       </div>
 
       <div class="backup-actions">
-        <button type="button" class="btn-secondary" onclick={() => (phase = 'show')}>{$t('auth.back')}</button>
-        <button
-          type="button"
-          class="btn-primary"
-          onclick={goToQuiz}
-          disabled={!writtenDown}
-        >
+        <Button type="button" variant="outline" onclick={() => (phase = 'show')}>
+          {$t('auth.back')}
+        </Button>
+        <Button type="button" onclick={goToQuiz} disabled={!writtenDown}>
           {$t('auth.continue')}
-        </button>
+        </Button>
       </div>
     {:else if phase === 'quiz'}
       <div class="backup-quiz">
@@ -306,10 +305,12 @@
       {/if}
 
       <div class="backup-actions">
-        <button type="button" class="btn-secondary" onclick={goToShow}>{$t('backup.modal.showSeedAgain')}</button>
-        <button type="button" class="btn-primary" onclick={() => void submitQuiz()}>
+        <Button type="button" variant="outline" onclick={goToShow}>
+          {$t('backup.modal.showSeedAgain')}
+        </Button>
+        <Button type="button" onclick={() => void submitQuiz()}>
           {$t('commons.verify')}
-        </button>
+        </Button>
       </div>
     {:else}
       <div class="backup-success" role="status">
@@ -449,7 +450,7 @@
   .backup-quiz-input {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: 6px;
     background: var(--bg-panel);
     color: var(--text-primary);
@@ -489,8 +490,6 @@
     margin: 0;
   }
 
-  .btn-primary,
-  .btn-secondary,
   .btn-reveal,
   .btn-copy {
     padding: 10px 16px;
@@ -498,23 +497,7 @@
     font-size: 0.9375rem;
     cursor: pointer;
     transition: opacity 0.2s;
-  }
-
-  .btn-primary {
-    border: none;
-    background: var(--brand);
-    color: var(--on-brand);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary,
-  .btn-reveal,
-  .btn-copy {
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     background: var(--bg-elevated);
     color: var(--text-primary);
   }

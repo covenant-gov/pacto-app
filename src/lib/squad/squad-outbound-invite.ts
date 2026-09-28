@@ -4,7 +4,7 @@
 
 import { get } from 'svelte/store';
 import { getDmMessages, sendDmMessage } from '../api/nostr';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { admitMemberToSquad } from '../parent/admit-member';
 import { clearPendingAdmitForMember, enqueuePendingAdmit } from '../parent/pending-admit';
 import type { Squad } from '../../stores/squads';

@@ -8,6 +8,7 @@ import {
   refreshCommonsBroadcasts,
   resetCommonsPrefetchSession,
   scheduleCommonsStartupPrefetch,
+  preloadCommonsTagArt,
 } from './commons-prefetch';
 import type { CommonsBroadcastDto } from './types';
 
@@ -92,7 +93,16 @@ describe('commons-prefetch', () => {
     scheduleCommonsStartupPrefetch();
 
     await vi.waitFor(() => expect(fetchCommonsBroadcastsCached).toHaveBeenCalledTimes(1));
-    expect(ImageMock).toHaveBeenCalled();
+    expect(ImageMock).not.toHaveBeenCalled();
+  });
+
+  it('preloadCommonsTagArt warms category images once', () => {
+    preloadCommonsTagArt();
+    const firstCallCount = ImageMock.mock.calls.length;
+    expect(firstCallCount).toBeGreaterThan(0);
+
+    preloadCommonsTagArt();
+    expect(ImageMock.mock.calls.length).toBe(firstCallCount);
   });
 
   it('refreshCommonsBroadcasts loads rows into the store', async () => {

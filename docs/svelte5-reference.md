@@ -676,7 +676,8 @@ Notes:
 
 ```svelte
 <script>
-	import { MediaQuery, prefersReducedMotion } from 'svelte/reactivity';
+	import { MediaQuery } from 'svelte/reactivity';
+	import { prefersReducedMotion } from 'svelte/motion';
 
 	const mq = new MediaQuery('(min-width: 768px)');
 </script>

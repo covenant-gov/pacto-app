@@ -3,7 +3,7 @@
  */
 
 import { get } from 'svelte/store';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { squads } from '../../stores/squads';
 import { getJoinInboxState, reclaimJoinInboxIfSplit } from './join-inbox';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';

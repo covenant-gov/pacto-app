@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { parseSupportedChainId } from '../wallet/chains';
 import { buildSquadInvokeRpcUrls } from './squad-rpc';
 

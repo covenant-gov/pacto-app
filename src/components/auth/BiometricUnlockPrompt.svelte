@@ -2,6 +2,7 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import { unlockWithBiometrics } from '../../stores/auth';
+  import { prefetchAuthenticatedApp } from '../../lib/app/authenticated-app';
   import { biometricUnlockEnabled } from '../../stores/biometric-unlock';
   import { mapBiometricErrorToI18nKey } from '../../lib/api/biometry';
 
@@ -39,6 +40,7 @@
     isAuthenticating = true;
     errorKey = null;
     try {
+      prefetchAuthenticatedApp();
       await unlockWithBiometrics(npub);
     } catch (e) {
       errorKey = mapBiometricErrorToI18nKey(e);
@@ -59,7 +61,13 @@
   {/if}
 
   {#if !revoked}
-    <button type="button" class="btn-biometric" onclick={handleUnlock} disabled={isAuthenticating} bind:this={buttonEl}>
+    <button
+      type="button"
+      class="btn-biometric w-full max-w-80"
+      onclick={handleUnlock}
+      disabled={isAuthenticating}
+      bind:this={buttonEl}
+    >
       {$t(buttonLabelKey)}
     </button>
   {/if}
@@ -71,7 +79,7 @@
     </div>
   {/if}
 
-  <button type="button" class="btn-back" onclick={onUsePinInstead}>
+  <button type="button" class="btn-back w-full max-w-80" onclick={onUsePinInstead}>
     {$t('auth.usePinInstead')}
   </button>
 </div>
@@ -83,6 +91,8 @@
     align-items: center;
     gap: 24px;
     padding: 32px;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .pin-title {
@@ -102,15 +112,20 @@
   }
 
   .btn-biometric {
-    padding: 12px 24px;
+    height: auto;
+    min-height: 2.5rem; /* h-10 */
+    box-sizing: border-box;
+    padding: 0 24px;
     background: var(--brand, #22d3ee);
-    color: var(--bg-page, #1c1c1c);
+    color: var(--on-brand);
     border: none;
     border-radius: 8px;
-    font-size: 1rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition:
+      opacity 0.2s,
+      transform 150ms ease;
     outline: none;
   }
 
@@ -148,21 +163,27 @@
   }
 
   .btn-back {
-    padding: 12px 24px;
+    height: auto;
+    min-height: 2.5rem; /* h-10 */
+    box-sizing: border-box;
+    padding: 0 24px;
     background: transparent;
-    color: var(--text-muted, #8b96a8);
-    border: 2px solid var(--border, #455061);
+    color: var(--text-secondary, var(--text-muted, #8b96a8));
+    border: 1px solid var(--border-subtle, #343c4c);
     border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: 0.9375rem;
+    font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      color 150ms ease;
     outline: none;
   }
 
   .btn-back:hover {
-    background: var(--border-subtle, #343c4c);
-    border-color: var(--brand, #22d3ee);
+    background: var(--bg-hover, var(--border-subtle, #343c4c));
+    border-color: color-mix(in srgb, var(--text-primary, #f2f5f9) 16%, var(--border-subtle, #343c4c));
     color: var(--text-primary, #f2f5f9);
   }
 </style>

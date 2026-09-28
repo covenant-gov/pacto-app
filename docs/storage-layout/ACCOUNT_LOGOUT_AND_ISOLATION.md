@@ -82,7 +82,7 @@ When adding persistence:
 | Paths, schema init | `src-tauri/src/account_manager.rs` |
 | Logout | `src-tauri/src/lib.rs` — `logout` |
 | Clear storage | `src-tauri/src/lib.rs` — `clear_storage` |
-| Frontend clear | `src/lib/utils/clear-account-state.ts` (resets domain stores + invite accept state), `src/stores/auth.ts` |
+| Frontend clear | `src/lib/utils/clear-account-state.ts` (resets domain stores + invite accept state). **`auth.ts` must `await import()` this module** — never a static import — so cold Login does not pull wallet/`viem` (see [`docs/auth/FIRST_PAINT.md`](../auth/FIRST_PAINT.md)) |
 | Account load | `src/stores/persistence.ts` — `loadAccountState` |
 
 ---

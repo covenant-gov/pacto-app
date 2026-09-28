@@ -6,7 +6,7 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { cn } from '$lib/utils.js';
 	import { design } from '../design-state.svelte.js';
-	import { DITHER_PATTERNS, ditherPatternMaskImage, type DitherPattern } from '../dither.js';
+	import { DITHER_PATTERNS, ditherPatternMaskImage, type DitherPattern } from '$lib/dither';
 
 	function setNumber(field: 'ditherMix' | 'ditherTile' | 'ditherEdge', event: Event): void {
 		const value = Number((event.currentTarget as HTMLInputElement).value);

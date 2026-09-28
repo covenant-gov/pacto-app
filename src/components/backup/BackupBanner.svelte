@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { isAuthenticated } from '../../stores/auth';
+  import { isAuthenticated } from '../../stores/auth-session';
   import {
     backupVerified,
     backupVerificationModalOpen,
@@ -63,7 +63,7 @@
 
   .backup-banner-cta {
     padding: 4px 10px;
-    border: 1px solid var(--warning);
+    border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border-subtle));
     border-radius: 6px;
     background: transparent;
     color: var(--warning);

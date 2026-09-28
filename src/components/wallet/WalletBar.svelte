@@ -11,7 +11,7 @@
     walletPeerInfoRequestInFlightRevision,
   } from '../../lib/wallet/wallet-peer-exchange';
   import { profiles } from '../../stores/profiles';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import {
     getWalletSummary,

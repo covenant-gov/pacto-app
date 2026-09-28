@@ -3,7 +3,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { getEvmAddress } from '../../lib/api/auth';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import {
     loadWalletEnabledChains,
     saveWalletEnabledChains,

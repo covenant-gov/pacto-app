@@ -29,7 +29,7 @@ import {
   buildWarGameUpdatedPayload,
   warGameActionFromProviderPayload,
 } from '../governance/war-game-announce';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { publishSquadEvmRosterSnapshot } from './squad-evm-roster-snapshot';
 import { publishSquadNetworkUpdated } from './squad-network-share';
 import { publishSquadRpcUpdated } from './squad-rpc-share';

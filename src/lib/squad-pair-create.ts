@@ -5,7 +5,7 @@ import { t } from 'svelte-i18n';
 import { createDefaultParentChannels, getAnnouncementsChannel } from './parent-navbar';
 import { getInvokeErrorMessage, friendlyMessage } from './utils/tauri-errors';
 import { activateSquadHub } from './squad-hub-nav';
-import { currentUser } from '../stores/auth';
+import { currentUser } from '../stores/auth-session';
 import {
   squads,
   addParentCreatingAnnouncements,

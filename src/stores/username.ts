@@ -17,7 +17,7 @@ import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
 import { ZERO_ADDRESS } from '../lib/wallet/assets';
 import { getInvokeErrorMessage } from '../lib/utils/tauri-errors';
 import { usernameClaimErrorMessage } from '../lib/username/username-claim-errors';
-import { currentUser } from './auth';
+import { currentUser } from './auth-session';
 import type { Hex } from 'viem';
 
 /** Only Sepolia has pinned `globalUsernameSponsor` addresses. */

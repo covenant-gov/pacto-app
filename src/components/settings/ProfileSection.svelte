@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { loadProfile, profiles, profileLoadingStates } from '../../stores/profiles';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { updateProfile } from '../../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../../lib/utils/profile';
   import { openExternalUrl } from '../../lib/utils/open-external';

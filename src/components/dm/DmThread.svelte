@@ -41,7 +41,7 @@
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import Modal from '../ui/Modal.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { showToast } from '../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
