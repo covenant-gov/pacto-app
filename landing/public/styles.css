@@ -1036,6 +1036,144 @@ body.page-how-it-works {
   font-weight: 600;
 }
 
+/* —— Blog —— */
+.blog-page a:not(.btn) {
+  color: inherit;
+  text-underline-offset: 0.2em;
+}
+
+.blog-page h1,
+.blog-page h2 {
+  text-wrap: balance;
+}
+
+.blog-page .blog-meta {
+  font-family: var(--font-label);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.blog-entry {
+  padding: 1.5rem 0 2rem;
+  margin-bottom: 2rem;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.blog-page .blog-entry h2 {
+  font-size: 1.5rem;
+}
+
+.blog-page h3 {
+  font-size: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.blog-notice {
+  padding: 1rem;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+}
+
+.blog-notice p:last-child {
+  margin-bottom: 0;
+  color: var(--ink-muted);
+}
+
+.blog-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 2rem;
+  border-radius: var(--radius);
+}
+
+.blog-page :focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+
+/* —— Logo contest announcement —— */
+.logo-contest-page section[id] {
+  scroll-margin-top: 7.5rem;
+}
+
+.logo-contest-page h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1rem 0 0.4rem;
+}
+
+.logo-contest-page .contest-notice {
+  background: var(--surface-muted);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  color: var(--ink);
+}
+
+.logo-contest-page .contest-notice p:last-child {
+  margin-bottom: 0;
+  color: var(--ink-muted);
+}
+
+.logo-contest-page .contest-steps {
+  list-style: decimal;
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+}
+
+.logo-contest-page .contest-steps li {
+  padding-left: 0.3rem;
+  margin-bottom: 1.25rem;
+}
+
+.logo-contest-page .contest-steps h3 {
+  margin-top: 0;
+}
+
+.logo-contest-page .contest-template {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-family: var(--font-label);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.logo-contest-page :focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+
+.contest-banner .btn {
+  flex-shrink: 0;
+}
+
+.contest-download-callout {
+  margin-top: 1.25rem;
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+}
+
+.contest-download-callout a {
+  color: inherit;
+  text-underline-offset: 0.2em;
+}
+
+@media (max-width: 900px) {
+  .logo-contest-page section[id] {
+    scroll-margin-top: 8.5rem;
+  }
+}
+
 /* —— How it Works —— */
 .how-page {
   /* Brand --green/--blue are fill accents; ink mixes stay readable on muted panels. */
@@ -1737,6 +1875,10 @@ body.page-how-it-works {
 
   .btn {
     width: 100%;
+  }
+
+  .site-nav-cta {
+    width: auto;
   }
 
   .hero-actions,
