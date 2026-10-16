@@ -15,6 +15,7 @@ vi.mock('../utils/dm-debug', () => ({
 
 import { requestLinkPreview, clearLinkPreviewRequests } from './link-preview';
 import { webPreviewsEnabled } from '../../stores/web-previews';
+import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 
 function msg(overrides: Partial<DmMessage> = {}): DmMessage {
   return {
@@ -32,11 +33,12 @@ describe('requestLinkPreview', () => {
     mockFetchMsgMetadata.mockResolvedValue(true);
     clearLinkPreviewRequests();
     webPreviewsEnabled.set(true);
+    stripTrackingMarkersEnabled.set(true);
   });
 
   it('fetches metadata for a message with a URL and no existing preview', () => {
     requestLinkPreview('chat1', msg());
-    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1');
+    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1', ['https://example.com']);
   });
 
   it('does not fetch when the Web Previews setting is disabled, and reports retry-eligible (false)', () => {
@@ -52,7 +54,7 @@ describe('requestLinkPreview', () => {
 
     webPreviewsEnabled.set(true);
     requestLinkPreview('chat1', msg());
-    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1');
+    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1', ['https://example.com']);
   });
 
   it('reports a permanent (true) outcome for messages that will never get a preview, even while disabled', () => {
@@ -102,7 +104,7 @@ describe('requestLinkPreview', () => {
     ];
     historicalBatch.forEach((m) => requestLinkPreview('chat1', m));
     expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(1);
-    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'h1');
+    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'h1', ['https://a.example.com']);
   });
 
   it('clearLinkPreviewRequests resets the dedupe set so a message can be re-requested', () => {
@@ -149,5 +151,16 @@ describe('requestLinkPreview', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(5);
+  });
+
+  it('passes stripped preview URLs when the setting is on, and the original URLs when it is off', () => {
+    const content = "https://example.com/a?id=1'&utm_source=n";
+    requestLinkPreview('chat1', msg({ content }));
+    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1', ["https://example.com/a?id=1'"]);
+
+    clearLinkPreviewRequests();
+    stripTrackingMarkersEnabled.set(false);
+    requestLinkPreview('chat1', msg({ id: 'm2', content }));
+    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm2', [content]);
   });
 });

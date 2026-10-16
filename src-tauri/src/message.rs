@@ -3574,8 +3574,168 @@ pub async fn react_to_message(
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct PreviewFetchCandidate {
+    pub fetch_url: String,
+    pub stored_url: String,
+}
+
+struct HttpUrlParts<'a> {
+    scheme: String,
+    host: String,
+    port: u16,
+    path: String,
+    query: Option<&'a str>,
+    fragment: Option<&'a str>,
+}
+
+fn raw_query_fragment(raw: &str) -> (Option<&str>, Option<&str>) {
+    let hash = raw.find('#');
+    let before = match hash {
+        Some(i) => &raw[..i],
+        None => raw,
+    };
+    let fragment = hash.map(|i| &raw[i + 1..]);
+    let query = before.find('?').map(|i| &before[i + 1..]);
+    (query, fragment)
+}
+
+fn form_pairs(section: &str) -> Vec<(&str, &str)> {
+    if section.is_empty() {
+        return Vec::new();
+    }
+    section
+        .split('&')
+        .filter(|part| !part.is_empty())
+        .map(|part| match part.split_once('=') {
+            Some((name, value)) => (name, value),
+            None => (part, ""),
+        })
+        .collect()
+}
+
+fn pairs_are_subset(candidate: &[(&str, &str)], stored: &[(&str, &str)]) -> bool {
+    candidate.iter().all(|pair| stored.contains(pair))
+}
+
+fn parse_http_url(raw: &str) -> Option<HttpUrlParts<'_>> {
+    let parsed = url::Url::parse(raw).ok()?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return None;
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return None;
+    }
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    let port = parsed.port_or_known_default()?;
+    let path = parsed.path().to_string();
+    let (query, fragment) = raw_query_fragment(raw);
+    Some(HttpUrlParts {
+        scheme: parsed.scheme().to_string(),
+        host,
+        port,
+        path,
+        query,
+        fragment,
+    })
+}
+
+fn fragments_compatible(stored: Option<&str>, candidate: Option<&str>) -> bool {
+    let stored = stored.unwrap_or("");
+    let candidate = candidate.unwrap_or("");
+    let stored_form = stored.contains('=');
+    let candidate_form = candidate.contains('=');
+    if !stored_form && !candidate_form {
+        return stored == candidate;
+    }
+    if !stored_form {
+        return false;
+    }
+    if !candidate_form {
+        return candidate.is_empty();
+    }
+    pairs_are_subset(&form_pairs(candidate), &form_pairs(stored))
+}
+
+/// Keep a caller URL only when it is a stored https URL with query or fragment pairs removed.
+pub(crate) fn select_preview_fetch_candidates(
+    stored_text: &str,
+    requested: Option<&[String]>,
+) -> Vec<PreviewFetchCandidate> {
+    let Some(requested) = requested else {
+        return Vec::new();
+    };
+    if requested.is_empty() {
+        return Vec::new();
+    }
+    let stored_urls = util::extract_https_urls(stored_text);
+    let stored_parts: Vec<Option<HttpUrlParts<'_>>> =
+        stored_urls.iter().map(|url| parse_http_url(url)).collect();
+
+    let mut out = Vec::new();
+    for candidate_url in requested {
+        let Some(candidate) = parse_http_url(candidate_url) else {
+            continue;
+        };
+        let mut best: Option<(usize, &str)> = None;
+        for (stored_url, parts) in stored_urls.iter().zip(stored_parts.iter()) {
+            let Some(stored) = parts else {
+                continue;
+            };
+            if candidate.scheme != stored.scheme
+                || candidate.host != stored.host
+                || candidate.port != stored.port
+                || candidate.path != stored.path
+            {
+                continue;
+            }
+            if !pairs_are_subset(
+                &form_pairs(candidate.query.unwrap_or("")),
+                &form_pairs(stored.query.unwrap_or("")),
+            ) {
+                continue;
+            }
+            if !fragments_compatible(stored.fragment, candidate.fragment) {
+                continue;
+            }
+            let extra = form_pairs(stored.query.unwrap_or("")).len()
+                + form_pairs(stored.fragment.unwrap_or("")).len();
+            let kept = form_pairs(candidate.query.unwrap_or("")).len()
+                + form_pairs(candidate.fragment.unwrap_or("")).len();
+            let extra = extra.saturating_sub(kept);
+            match best {
+                Some((best_extra, _)) if best_extra <= extra => {}
+                _ => best = Some((extra, stored_url.as_str())),
+            }
+        }
+        if let Some((_, stored_url)) = best {
+            out.push(PreviewFetchCandidate {
+                fetch_url: candidate_url.clone(),
+                stored_url: stored_url.to_string(),
+            });
+        }
+    }
+    out
+}
+
+/// When the page has no og:url of its own, remember the pre-strip stored URL.
+pub(crate) fn preview_og_url_fallback(
+    fetched_og_url: Option<String>,
+    fetch_url: &str,
+    stored_url: &str,
+) -> Option<String> {
+    match fetched_og_url {
+        Some(og) if og == fetch_url && fetch_url != stored_url => Some(stored_url.to_string()),
+        other => other,
+    }
+}
+
 #[tauri::command]
-pub async fn fetch_msg_metadata(chat_id: String, msg_id: String) -> bool {
+pub async fn fetch_msg_metadata(
+    chat_id: String,
+    msg_id: String,
+    urls: Option<Vec<String>>,
+) -> bool {
     // Find the message we're extracting metadata from
     let text = {
         let mut state = STATE.lock().await;
@@ -3592,18 +3752,21 @@ pub async fn fetch_msg_metadata(chat_id: String, msg_id: String) -> bool {
         }
     };
 
-    // Extract URLs from the message
     const MAX_URLS_TO_TRY: usize = 3;
-    let urls = util::extract_https_urls(text.as_str());
-    if urls.is_empty() {
+    let candidates = select_preview_fetch_candidates(text.as_str(), urls.as_deref());
+    if candidates.is_empty() {
         return false;
     }
 
-    // Only try the first few URLs
-    for url in urls.into_iter().take(MAX_URLS_TO_TRY) {
-        match net::fetch_site_metadata(&url).await {
+    for candidate in candidates.into_iter().take(MAX_URLS_TO_TRY) {
+        match net::fetch_site_metadata(&candidate.fetch_url).await {
             Ok(metadata) => {
                 let mut metadata = metadata;
+                metadata.og_url = preview_og_url_fallback(
+                    metadata.og_url,
+                    &candidate.fetch_url,
+                    &candidate.stored_url,
+                );
                 let has_content = metadata.og_title.is_some()
                     || metadata.og_description.is_some()
                     || metadata.og_image.is_some()
@@ -4056,6 +4219,65 @@ mod get_image_preview_base64_exif_tests {
             decoded_img.height(),
             raw_width,
             "preview height should equal the source width once the 90° EXIF rotation is applied"
+        );
+    }
+}
+
+#[cfg(test)]
+mod preview_fetch_candidate_tests {
+    use super::{preview_og_url_fallback, select_preview_fetch_candidates};
+
+    const STORED: &str = "https://example.com/a?id=1&utm_source=n";
+
+    fn only(requested: &str) -> Vec<super::PreviewFetchCandidate> {
+        select_preview_fetch_candidates(STORED, Some(&[requested.to_string()]))
+    }
+
+    #[test]
+    fn drops_foreign_host() {
+        assert!(only("https://evil.example/a").is_empty());
+    }
+
+    #[test]
+    fn drops_changed_port_and_userinfo() {
+        assert!(only("https://example.com:444/a?id=1").is_empty());
+        assert!(only("https://user@example.com/a?id=1").is_empty());
+    }
+
+    #[test]
+    fn keeps_stripped_subset_and_equal_unstripped_url() {
+        let stripped = only("https://example.com/a?id=1");
+        assert_eq!(stripped.len(), 1);
+        assert_eq!(stripped[0].fetch_url, "https://example.com/a?id=1");
+        assert_eq!(stripped[0].stored_url, STORED);
+
+        let same = only(STORED);
+        assert_eq!(same.len(), 1);
+        assert_eq!(same[0].fetch_url, STORED);
+        assert_eq!(same[0].stored_url, STORED);
+    }
+
+    #[test]
+    fn drops_added_query_parameters() {
+        assert!(only("https://example.com/a?id=1&stolen=1").is_empty());
+    }
+
+    #[test]
+    fn empty_and_null_lists_yield_no_urls() {
+        assert!(select_preview_fetch_candidates(STORED, None).is_empty());
+        assert!(select_preview_fetch_candidates(STORED, Some(&[])).is_empty());
+    }
+
+    #[test]
+    fn og_url_fallback_is_the_stored_url_when_fetch_differs() {
+        let fetch_url = "https://example.com/a?id=1";
+        assert_eq!(
+            preview_og_url_fallback(Some(fetch_url.to_string()), fetch_url, STORED),
+            Some(STORED.to_string())
+        );
+        assert_eq!(
+            preview_og_url_fallback(Some(STORED.to_string()), STORED, STORED),
+            Some(STORED.to_string())
         );
     }
 }

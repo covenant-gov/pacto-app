@@ -6,6 +6,7 @@
   import WalletPeerExchangeCard from '../wallet/WalletPeerExchangeCard.svelte';
   import type { WalletPeerInfoRequestPayload } from '../../lib/wallet/dm-messages';
   import { profiles } from '../../stores/profiles';
+  import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { currentUser } from '../../stores/auth-session';
   import { showToast } from '../../stores/toast';
   import { t } from 'svelte-i18n';
@@ -227,7 +228,7 @@
   </div>
 {:else if presentation.kind === 'plain'}
   <Message
-    {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub)}
+    {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub, $stripTrackingMarkersEnabled)}
     reactions={msg.reactions}
     attachments={msg.attachments}
     previewMetadata={msg.preview_metadata}

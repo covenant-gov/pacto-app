@@ -1,5 +1,7 @@
 <script lang="ts">
   import { openExternalUrl } from '../../lib/utils/open-external';
+  import { stripTrackingParamsFromUrl } from '../../lib/utils/url-tracking';
+  import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { t } from 'svelte-i18n';
   import type { PreviewMetadata } from '../../stores/dm';
   import { cachedOrRemoteImageSrc } from '../../lib/utils/profile';
@@ -15,7 +17,11 @@
 
   let displayImage = $derived(cachedOrRemoteImageSrc(metadata?.og_image, metadata?.og_image_cached) ?? '');
   let displayFavicon = $derived(cachedOrRemoteImageSrc(metadata?.favicon, metadata?.favicon_cached) ?? '');
-  let linkUrl = $derived(metadata?.og_url || metadata?.domain || '');
+  let linkUrl = $derived.by(() => {
+    const raw = metadata?.og_url || metadata?.domain || '';
+    if (!raw || !$stripTrackingMarkersEnabled) return raw;
+    return stripTrackingParamsFromUrl(raw);
+  });
   let displayDomain = $derived((metadata?.domain ?? '').replace(/^https?:\/\//, '').replace(/\/$/, ''));
   let hasContent = $derived(Boolean(displayTitle || displayDescription || displayImage));
 

@@ -5,6 +5,7 @@
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { torRoutingEnabled, torAvailable, torStartupError, toggleTorRouting } from '../../stores/tor';
   import { sendTypingIndicatorsEnabled } from '../../stores/typing-indicators';
+  import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { webPreviewsEnabled } from '../../stores/web-previews';
   import torIcon from '../../icons/tor.svg';
 
@@ -49,6 +50,11 @@
     sendTypingIndicatorsEnabled.set(target.checked);
   }
 
+  function handleToggleStripTrackingMarkers(e: Event): void {
+    const target = e.currentTarget as HTMLInputElement;
+    stripTrackingMarkersEnabled.set(target.checked);
+  }
+
   function handleToggleWebPreviews(e: Event): void {
     const target = e.currentTarget as HTMLInputElement;
     webPreviewsEnabled.set(target.checked);
@@ -67,6 +73,16 @@
     <span>{$t('settings.sendTypingIndicatorsLabel')}</span>
   </label>
   <p class="privacy-toggle-description">{$t('settings.sendTypingIndicatorsDescription')}</p>
+
+  <label class="privacy-toggle">
+    <input
+      type="checkbox"
+      checked={$stripTrackingMarkersEnabled}
+      onchange={handleToggleStripTrackingMarkers}
+    />
+    <span>{$t('settings.stripTrackingMarkersLabel')}</span>
+  </label>
+  <p class="privacy-toggle-description">{$t('settings.stripTrackingMarkersDescription')}</p>
 
   <label class="privacy-toggle">
     <input

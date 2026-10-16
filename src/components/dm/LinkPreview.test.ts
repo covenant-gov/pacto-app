@@ -4,6 +4,7 @@ import { fireEvent, render } from '@testing-library/svelte';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import LinkPreview from './LinkPreview.svelte';
 import { torRoutingEnabled } from '../../stores/tor';
+import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import type { PreviewMetadata } from '../../stores/dm';
 
 vi.mock('@tauri-apps/api/core');
@@ -18,6 +19,7 @@ const baseMetadata: PreviewMetadata = {
 
 afterEach(() => {
   torRoutingEnabled.set(false);
+  stripTrackingMarkersEnabled.set(true);
   vi.unstubAllGlobals();
   mockedConvertFileSrc.mockReset();
 });
@@ -110,5 +112,23 @@ describe('LinkPreview', () => {
     expect(container.querySelector('img.link-preview-favicon')?.getAttribute('src')).toBe(
       'asset:///cache/link_preview_images/def.ico'
     );
+  });
+
+  it('strips tracking parameters from the open address when the setting is on', () => {
+    stripTrackingMarkersEnabled.set(true);
+    const { container } = render(LinkPreview, {
+      props: { metadata: { ...baseMetadata, og_url: 'https://example.com/a?fbclid=abc' } },
+    });
+    const href = container.querySelector('a')?.getAttribute('href') ?? '';
+    expect(href).not.toContain('fbclid');
+    expect(href).toBe('https://example.com/a');
+  });
+
+  it('keeps tracking parameters in the open address when the setting is off', () => {
+    stripTrackingMarkersEnabled.set(false);
+    const { container } = render(LinkPreview, {
+      props: { metadata: { ...baseMetadata, og_url: 'https://example.com/a?fbclid=abc' } },
+    });
+    expect(container.querySelector('a')?.getAttribute('href')).toContain('fbclid');
   });
 });

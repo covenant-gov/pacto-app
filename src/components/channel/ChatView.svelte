@@ -65,6 +65,8 @@
   import { persistSquadPatch } from '../../lib/squad/squad-catalog';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { buildMentionEnvelope, parseMessageContent, filterMentionsByRoster } from '../../lib/messaging/mentions';
+  import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
+  import { replyQuoteExcerpt } from '../../lib/utils/url-tracking';
   import { clearPendingReactions } from '../../lib/messaging/reactions';
   import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
@@ -224,11 +226,10 @@
         msg.replied_to_has_attachment === true
           ? tFn('messaging.message.attachment')
           : msg.replied_to_content != null && msg.replied_to_content.length > 0
-            ? (() => {
-                const parsedReply = parseMessageContent(msg.replied_to_content as string);
-                const body = parsedReply.body;
-                return body.slice(0, 80).trim() + (body.length > 80 ? '…' : '');
-              })()
+            ? replyQuoteExcerpt(
+                parseMessageContent(msg.replied_to_content as string).body,
+                $stripTrackingMarkersEnabled,
+              )
             : tFn('messaging.message.messageFallback');
     }
     return base;
@@ -608,7 +609,11 @@
   }
 
   let replyToMessageId: string | null = null;
-  let replyPreview: string | undefined = undefined;
+  $: replyPreview = channelComposerReplyPreview(
+    replyToMessageId,
+    virtualTimelineMessages,
+    $stripTrackingMarkersEnabled,
+  );
 
   let prevChannelIdForReply: string | null = null;
   $: if ($activeChannelId !== prevChannelIdForReply) {
@@ -633,21 +638,27 @@
     navigator.clipboard.writeText(text).catch(() => showToast(tFn('messaging.channel.copyFailed')));
   }
 
+  function channelComposerReplyPreview(
+    messageId: string | null,
+    messages: DmMessage[],
+    stripTracking: boolean,
+  ): string | undefined {
+    if (!messageId) return undefined;
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return undefined;
+    if (msg.attachments && msg.attachments.length > 0) return tFn('messaging.message.attachment');
+    if (msg.content && msg.content.length > 0) return replyQuoteExcerpt(msg.content, stripTracking);
+    return tFn('messaging.message.messageFallback');
+  }
+
   function onReply(messageId: string) {
     const msg = virtualTimelineMessages.find((m) => m.id === messageId);
     if (!msg) return;
     replyToMessageId = messageId;
-    replyPreview =
-      msg.attachments && msg.attachments.length > 0
-        ? tFn('messaging.message.attachment')
-        : msg.content && msg.content.length > 0
-          ? msg.content.slice(0, 80).trim() + (msg.content.length > 80 ? '…' : '')
-          : tFn('messaging.message.messageFallback');
   }
 
   function cancelReply() {
     replyToMessageId = null;
-    replyPreview = undefined;
   }
 
   async function handleSendText(body: string, repliedTo?: string) {

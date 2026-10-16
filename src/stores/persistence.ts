@@ -61,6 +61,7 @@ import { normalizeHubChannelName } from './squads';
 import { hydrateLocale } from './locale';
 import { loadStartupCheckPreference } from './startup-check';
 import { loadSendTypingIndicatorsPreference } from './typing-indicators';
+import { loadStripTrackingMarkersPreference } from './strip-tracking-markers';
 import { loadWebPreviewsPreference } from './web-previews';
 import { loadBiometricUnlockPreference } from './biometric-unlock';
 import { loadMlsHistoryWelcome } from './mls-history-welcome';
@@ -172,6 +173,7 @@ export function loadAccountState(npub: string): void {
   // unrelated parse failure earlier in that try doesn't silently skip loading them.
   loadStartupCheckPreference(npub);
   loadSendTypingIndicatorsPreference(npub);
+  loadStripTrackingMarkersPreference(npub);
   loadWebPreviewsPreference(npub);
   loadBiometricUnlockPreference(npub);
   loadDeferredSquadRosterKeyParentIds();

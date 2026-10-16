@@ -312,9 +312,9 @@ export async function reactToMessage(
 }
 
 /** Fetch OpenGraph/link-preview metadata for a message containing a URL. Backend: fetch_msg_metadata. */
-export async function fetchMsgMetadata(chatId: string, msgId: string): Promise<boolean> {
+export async function fetchMsgMetadata(chatId: string, msgId: string, urls: string[]): Promise<boolean> {
   dmLog('fetch_msg_metadata', { chatId: chatId.slice(0, 20) + '…', msgId: msgId.slice(0, 12) });
-  const ok = (await invoke('fetch_msg_metadata', { chatId, msgId })) as boolean;
+  const ok = (await invoke('fetch_msg_metadata', { chatId, msgId, urls })) as boolean;
   dmLog('fetch_msg_metadata result', { ok });
   return ok;
 }

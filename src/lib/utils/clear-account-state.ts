@@ -131,6 +131,7 @@ import { resetMlsStoreResetState } from '../../stores/mls-reset';
 import { resetStickerPacksStore } from '../../stores/stickers';
 import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
 import { TYPING_INDICATORS_PREFIX } from '../../stores/typing-indicators';
+import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import { WEB_PREVIEWS_PREFIX } from '../../stores/web-previews';
 import { BIOMETRIC_UNLOCK_PREFIX } from '../../stores/biometric-unlock';
 import { backupVerified } from '../../stores/backup-verification';
@@ -201,6 +202,7 @@ function clearAccountLocalStorage(npub?: string): void {
  */
 export function clearAccountState(npub?: string): void {
   setCurrentNpubForPersistence(null);
+  stripTrackingMarkersEnabled.set(true);
   resetInviteAcceptState();
   stopJoinInboxHolderSync();
   stopPendingAdmitDrain();

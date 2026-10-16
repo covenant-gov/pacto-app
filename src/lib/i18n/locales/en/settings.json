@@ -98,6 +98,8 @@
 	"settings.privacyTitle": "Privacy",
 	"settings.sendTypingIndicatorsLabel": "Send Typing Indicators",
 	"settings.sendTypingIndicatorsDescription": "When enabled, Pacto will notify your contacts when you are typing a message to them. Disable this if you prefer to type without others knowing you are composing a message.",
+	"settings.stripTrackingMarkersLabel": "Strip Tracking Markers",
+	"settings.stripTrackingMarkersDescription": "When enabled, Pacto will automatically remove tracking markers from URLs before displaying or sending them. This helps reduce your footprint and enhances your privacy with no loss in functionality — only disable if you know what you're doing.",
 	"settings.webPreviewsLabel": "Web Previews",
 	"settings.webPreviewsDescription": "When enabled, Pacto will automatically fetch and display previews for links shared in messages. This may expose your IP address to the linked sites. Use Tor or a VPN if that's a concern.",
 	"settings.biometricUnlockTouchId": "Unlock with Touch ID",
