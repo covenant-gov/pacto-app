@@ -1,0 +1,15 @@
+---
+import { logoContestContent } from '../content/logo-contest';
+
+interface Props {
+  contestHref: string;
+}
+const { contestHref } = Astro.props;
+---
+
+<section class="blog-banner contest-banner" aria-label={logoContestContent.banner.label}>
+  <div class="blog-banner-inner">
+    <p class="blog-banner-copy">{logoContestContent.banner.text}</p>
+    <a class="btn btn-green" href={contestHref}>{logoContestContent.banner.action}</a>
+  </div>
+</section>

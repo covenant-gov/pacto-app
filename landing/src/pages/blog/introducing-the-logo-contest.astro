@@ -1,0 +1,60 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import { blogContent, logoContestPost as post } from '../../content/blog';
+import { logoContestContent } from '../../content/logo-contest';
+
+const base = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const contestHref = `${base}logo-contest/`;
+---
+
+<BaseLayout
+  title={`${post.title} · Pacto`}
+  description={post.description}
+  path={post.path}
+  page="blog"
+  ogImagePath="assets/logo-contest-og.png"
+  ogImageAlt={logoContestContent.social.imageAlt}
+>
+  <main class="rules-page blog-page">
+    <article aria-labelledby="post-heading">
+      <header>
+        <p><a href={`${base}blog/`}>{blogContent.backToBlog}</a></p>
+        <p class="blog-meta">{post.category}</p>
+        <h1 id="post-heading">{post.title}</h1>
+        <p class="lede">{post.introduction}</p>
+      </header>
+      <aside class="blog-notice" aria-labelledby="post-status">
+        <p id="post-status"><strong>{logoContestContent.status}</strong></p>
+        <p>{logoContestContent.notice}</p>
+      </aside>
+      <div class="how-closing-actions">
+        <a class="btn btn-green" href={contestHref}>{post.contestAction}</a>
+      </div>
+      <img
+        class="blog-image"
+        src={`${base}assets/logo-contest-og.png`}
+        alt={logoContestContent.social.imageAlt}
+        width="1200"
+        height="630"
+      />
+      {post.sections.map((section) => (
+        <section>
+          <h2>{section.heading}</h2>
+          {section.paragraphs.map((paragraph) => <p>{paragraph}</p>)}
+        </section>
+      ))}
+      <section class="how-closing" aria-labelledby="post-next-heading">
+        <h2 id="post-next-heading">{post.closingHeading}</h2>
+        <p>{post.closing}</p>
+        <div class="how-closing-actions">
+          <a class="btn btn-green" href={contestHref}>{post.contestAction}</a>
+          <a class="btn btn-ghost-light" href={`${contestHref}#rules`}>{post.rulesAction}</a>
+        </div>
+      </section>
+    </article>
+  </main>
+  <SiteFooter base={base} howItWorksHref={`${base}how-it-works/`} />
+</BaseLayout>

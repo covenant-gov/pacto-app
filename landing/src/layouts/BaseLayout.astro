@@ -1,11 +1,16 @@
 ---
+import { logoContestContent } from '../content/logo-contest';
+import { blogContent } from '../content/blog';
+
 interface Props {
   title: string;
   description: string;
   /** Path under the site base, e.g. `` or `wargame/`. */
   path?: string;
   /** Homepage uses in-page anchors; other values are separate routes. */
-  page?: 'home' | 'wargame' | 'how-it-works';
+  page?: 'home' | 'wargame' | 'how-it-works' | 'logo-contest' | 'blog';
+  ogImagePath?: string;
+  ogImageAlt?: string;
 }
 
 const {
@@ -13,6 +18,8 @@ const {
   description,
   path = '',
   page = 'home',
+  ogImagePath = 'assets/og-image.jpg',
+  ogImageAlt = 'Pacto — private messaging and community governance. Your community. Your rules. Your data.',
 } = Astro.props;
 
 const base = import.meta.env.BASE_URL.endsWith('/')
@@ -20,9 +27,10 @@ const base = import.meta.env.BASE_URL.endsWith('/')
   : `${import.meta.env.BASE_URL}/`;
 const origin = 'https://covenant-gov.github.io';
 const canonical = new URL(path, `${origin}${base}`).href;
-const ogImage = new URL('assets/og-image.jpg', `${origin}${base}`).href;
+const ogImage = new URL(ogImagePath, `${origin}${base}`).href;
 const homeHref = base;
 const howItWorksHref = `${base}how-it-works/`;
+const contestHref = `${base}logo-contest/`;
 
 const aboutHref = page === 'home' ? '#about' : `${homeHref}#about`;
 const valuesHref = page === 'home' ? '#values' : `${homeHref}#values`;
@@ -30,7 +38,7 @@ const featuresHref = page === 'home' ? '#features' : `${homeHref}#features`;
 const downloadHref = page === 'home' ? '#download' : `${homeHref}#download`;
 
 const bodyClass =
-  page === 'wargame' || page === 'how-it-works' ? `page-${page}` : undefined;
+  page === 'home' ? undefined : `page-${page}`;
 ---
 
 <html lang="en">
@@ -53,7 +61,7 @@ const bodyClass =
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Pacto — private messaging and community governance. Your community. Your rules. Your data."
+      content={ogImageAlt}
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@pacto_app" />
@@ -63,7 +71,7 @@ const bodyClass =
     <meta name="twitter:image" content={ogImage} />
     <meta
       name="twitter:image:alt"
-      content="Pacto — private messaging and community governance. Your community. Your rules. Your data."
+      content={ogImageAlt}
     />
     <meta name="theme-color" content="#ffffff" />
     <script is:inline>
@@ -128,6 +136,19 @@ const bodyClass =
               aria-current={page === 'how-it-works' ? 'page' : undefined}
             >
               How it Works
+            </a>
+          </li>
+          <li>
+            <a
+              href={contestHref}
+              aria-current={page === 'logo-contest' ? 'page' : undefined}
+            >
+              {logoContestContent.navLabel}
+            </a>
+          </li>
+          <li>
+            <a href={`${base}blog/`} aria-current={page === 'blog' ? 'page' : undefined}>
+              {blogContent.navLabel}
             </a>
           </li>
         </ul>

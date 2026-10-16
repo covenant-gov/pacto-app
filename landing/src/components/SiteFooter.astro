@@ -1,4 +1,7 @@
 ---
+import { logoContestContent } from '../content/logo-contest';
+import { blogContent } from '../content/blog';
+
 interface Props {
   base: string;
   howItWorksHref: string;
@@ -22,13 +25,15 @@ const youtubeHref = 'https://www.youtube.com/@Pacto0x';
       <div class="footer-wordmark">PACTO</div>
     </div>
     <ul class="footer-nav">
-      <li><a class="c-blue" href="#about">About Pacto</a></li>
-      <li><a class="c-pink" href="#values">Our Values</a></li>
-      <li><a class="c-green" href="#features">The Features</a></li>
-      <li><a class="c-yellow" href="#download">Download</a></li>
+      <li><a class="c-blue" href={`${base}#about`}>About Pacto</a></li>
+      <li><a class="c-pink" href={`${base}#values`}>Our Values</a></li>
+      <li><a class="c-green" href={`${base}#features`}>The Features</a></li>
+      <li><a class="c-yellow" href={`${base}#download`}>Download</a></li>
       <li>
         <a class="c-white" href={howItWorksHref}>How it Works</a>
       </li>
+      <li><a class="c-white" href={`${base}logo-contest/`}>{logoContestContent.navLabel}</a></li>
+      <li><a class="c-white" href={`${base}blog/`}>{blogContent.navLabel}</a></li>
     </ul>
     <div class="footer-social">
       <a href={githubHref} target="_blank" rel="noopener noreferrer" aria-label="GitHub">
