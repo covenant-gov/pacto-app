@@ -153,14 +153,16 @@ describe('requestLinkPreview', () => {
     expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(5);
   });
 
-  it('passes stripped preview URLs when the setting is on, and the original URLs when it is off', () => {
+  it('passes stripped preview URLs when the setting is on', () => {
     const content = "https://example.com/a?id=1'&utm_source=n";
     requestLinkPreview('chat1', msg({ content }));
     expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1', ["https://example.com/a?id=1'"]);
+  });
 
-    clearLinkPreviewRequests();
+  it('passes the original preview URLs when the setting is off', () => {
     stripTrackingMarkersEnabled.set(false);
-    requestLinkPreview('chat1', msg({ id: 'm2', content }));
-    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm2', [content]);
+    const content = "https://example.com/a?id=1'&utm_source=n";
+    requestLinkPreview('chat1', msg({ content }));
+    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1', [content]);
   });
 });

@@ -4245,6 +4245,16 @@ mod preview_fetch_candidate_tests {
     }
 
     #[test]
+    fn keeps_a_stripped_url_that_still_contains_a_quote() {
+        let stored = "https://example.com/a?id=1'&utm_source=n";
+        let fetch = "https://example.com/a?id=1'";
+        let got = select_preview_fetch_candidates(stored, Some(&[fetch.to_string()]));
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].fetch_url, fetch);
+        assert_eq!(got[0].stored_url, stored);
+    }
+
+    #[test]
     fn keeps_stripped_subset_and_equal_unstripped_url() {
         let stripped = only("https://example.com/a?id=1");
         assert_eq!(stripped.len(), 1);

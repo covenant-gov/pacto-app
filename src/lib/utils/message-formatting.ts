@@ -559,7 +559,7 @@ function rewriteTrackingAnchors(html: string): string {
       else if (!isClosing && !tag.endsWith('/>')) stack.push(tagName);
     }
     if (!isClosing && tagName === 'a' && !inProtected && !tag.endsWith('/>')) {
-      const rewritten = rewriteOneAnchor(html, i, close, tag);
+      const rewritten = rewriteOneAnchor(html, close, tag);
       if (rewritten) {
         out += rewritten.html;
         i = rewritten.next;
@@ -574,7 +574,6 @@ function rewriteTrackingAnchors(html: string): string {
 
 function rewriteOneAnchor(
   html: string,
-  tagStart: number,
   tagEnd: number,
   tag: string,
 ): { html: string; next: number } | null {

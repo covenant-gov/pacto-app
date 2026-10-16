@@ -340,7 +340,7 @@ U1 has no dependencies. U2 depends on nothing in U1 but ships the store the late
 - Outbound DM and channel text is stripped only in the composer. Programmatic `sendDmMessage` callers (join inbox, admissions, and similar) do not pass through that composer and stay unstripped. Those bodies are app-generated, not pasted links.
 - Inbound rows and relay payloads are unchanged. Other clients and a later toggle-off on this client still see the original received text.
 - Preview HTTP, including the Tor-aware client, requests the stripped URL when the setting is on. The preview image and favicon URLs are whatever the fetched page declared; this plan does not strip those asset URLs.
-- A new localStorage prefix joins the account-scoped clear list. No SQLite migration.
+- The preference key is npub-scoped and is not on the logout delete list, so it survives sign-out. Logout only resets the in-memory store. No SQLite migration.
 - `fetch_msg_metadata` requires the URL list from `fetchMsgMetadata`, its only frontend caller. A candidate that is not a stored `https` URL with only query or fragment parameters removed is not fetched. A missing list does not mean "use the raw body."
 
 ## Risks & Dependencies
