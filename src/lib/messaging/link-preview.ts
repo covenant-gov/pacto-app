@@ -1,8 +1,10 @@
 import { get } from 'svelte/store';
 import { fetchMsgMetadata } from '../api/nostr';
 import { containsHttpsUrl } from '../utils/message-formatting';
+import { extractPreviewHttpsUrls, stripTrackingParamsFromUrl } from '../utils/url-tracking';
 import { dmError } from '../utils/dm-debug';
 import { webPreviewsEnabled } from '../../stores/web-previews';
+import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import type { DmMessage } from '../../stores/dm';
 
 /** Message ids for which an OpenGraph preview fetch has already been requested this session. */
@@ -46,7 +48,11 @@ export function requestLinkPreview(chatId: string, message: DmMessage): boolean 
   if (!containsHttpsUrl(message.content ?? '')) return true;
   if (!get(webPreviewsEnabled)) return false;
   requested.add(message.id);
-  runQueued(() => fetchMsgMetadata(chatId, message.id).catch((e) => dmError('fetchMsgMetadata', e)));
+  const strip = get(stripTrackingMarkersEnabled);
+  const urls = extractPreviewHttpsUrls(message.content ?? '').map((url) =>
+    strip ? stripTrackingParamsFromUrl(url) : url,
+  );
+  runQueued(() => fetchMsgMetadata(chatId, message.id, urls).catch((e) => dmError('fetchMsgMetadata', e)));
   return true;
 }
 

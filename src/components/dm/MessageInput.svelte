@@ -33,6 +33,8 @@
   import type { Mention } from '../../lib/messaging/mentions';
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
+  import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
+  import { stripTrackingParamsFromText } from '../../lib/utils/url-tracking';
   import { convertFileSrc, invoke } from '@tauri-apps/api/core';
   import { stickerPacks } from '../../stores/stickers';
   import { fetchStickerImage, type StickerPack, type StickerEntry } from '../../lib/api/stickers';
@@ -266,8 +268,9 @@
       await sendPendingAttachment(pending);
       return;
     }
-    const body = messageText.trim();
-    if (!body) return;
+    const trimmed = messageText.trim();
+    if (!trimmed) return;
+    const body = get(stripTrackingMarkersEnabled) ? stripTrackingParamsFromText(trimmed) : trimmed;
     const pruned = removeStaleMentions(body);
     if (onSendMentions && squadMlsGroupId) {
       onSendMentions(body, pruned, repliedTo);

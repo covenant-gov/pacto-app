@@ -24,6 +24,8 @@ import { summarizeStructuredMessageContent, type MessageFormatter } from '../mes
 import { getProfileAvatarSrc, getProfileDisplayName } from '../utils/profile';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
+import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
+import { replyQuoteExcerpt } from '../utils/url-tracking';
 import { resolveInviteInviterNpub } from '../pacto-app-inbox';
 import type { DmMessage } from '../../stores/dm';
 
@@ -112,6 +114,7 @@ export function buildPlainMessageProps(
   threadNpub: string,
   profilesMap: Record<string, NostrProfile | undefined>,
   currentUserNpub: string | undefined,
+  stripTracking: boolean = get(stripTrackingMarkersEnabled),
   tFn: MessageFormatter = get(t)
 ) {
   const currentUserProfile = currentUserNpub ? profilesMap[currentUserNpub] : null;
@@ -151,7 +154,7 @@ export function buildPlainMessageProps(
       msg.replied_to_has_attachment === true
         ? tFn('messaging.message.attachment')
         : msg.replied_to_content != null && msg.replied_to_content.length > 0
-          ? msg.replied_to_content.slice(0, 80).trim() + (msg.replied_to_content.length > 80 ? '…' : '')
+          ? replyQuoteExcerpt(msg.replied_to_content, stripTracking)
           : tFn('messaging.message.messageFallback');
   }
   return base;

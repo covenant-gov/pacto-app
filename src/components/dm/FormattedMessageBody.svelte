@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { formatMessageContent, formatMessageContentWithMentions } from '../../lib/utils/message-formatting';
+  import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { ensureMessagingLibs } from '../../lib/utils/messaging-libs';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { get } from 'svelte/store';
@@ -36,9 +37,10 @@
 
   let formatted = $derived.by(() => {
     void messagingLibsEpoch;
+    const stripTracking = $stripTrackingMarkersEnabled;
     return mentions && profiles && rosterNpubs
-      ? formatMessageContentWithMentions(content, mentions, profiles, rosterNpubs)
-      : formatMessageContent(content);
+      ? formatMessageContentWithMentions(content, mentions, profiles, rosterNpubs, stripTracking)
+      : formatMessageContent(content, stripTracking);
   });
 
   let bodyEl: HTMLDivElement | undefined = $state();

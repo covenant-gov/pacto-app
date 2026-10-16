@@ -16,6 +16,9 @@
   import type { Attachment, Reaction, PreviewMetadata, DmMessage } from '../../stores/dm';
   import { observeLinkPreview } from '../../lib/messaging/link-preview-observer';
   import { webPreviewsEnabled } from '../../stores/web-previews';
+  import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
+  import { stripTrackingParamsFromText } from '../../lib/utils/url-tracking';
+  import { get } from 'svelte/store';
   import { outboundDeliveryLabel } from '../../lib/dm/resolve-dm-message-presentation';
 
   interface Props {
@@ -270,7 +273,8 @@
 
   function handleMenuCopy(messageId: string, text: string) {
     closeMenu();
-    onCopy(messageId, text);
+    const copied = get(stripTrackingMarkersEnabled) ? stripTrackingParamsFromText(text) : text;
+    onCopy(messageId, copied);
   }
 
   function handleMenuReply(messageId: string) {

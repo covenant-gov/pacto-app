@@ -22,6 +22,7 @@ import type { NostrProfile } from '../api/nostr';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import { locale } from '$lib/i18n';
+import { stripTrackingParamsFromUrl, URL_REGEX_SOURCE } from './url-tracking';
 
 function getDOMPurify(): Window['DOMPurify'] {
   return typeof window !== 'undefined' ? window.DOMPurify : undefined;
@@ -73,6 +74,16 @@ function escapeAttr(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/"/g, '&quot;')
     .replace(/\r?\n/g, '&#10;');
+}
+
+function unescapeHtml(text: string): string {
+  return text
+    .replace(/&#10;/g, '\n')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&');
 }
 
 function highlightCode(text: string, lang: string | undefined): string {
@@ -298,12 +309,14 @@ export function formatMessageContentWithMentions(
   content: string,
   mentions: Mention[],
   profiles: Record<string, NostrProfile | undefined>,
-  rosterNpubs: string[] | Set<string>
+  rosterNpubs: string[] | Set<string>,
+  stripTracking = false
 ): string {
   const html = parseMarkdown(content);
   const mentionified = mentionify(html, mentions, profiles, rosterNpubs);
   const linked = linkify(mentionified);
-  const cleaned = sanitize(linked);
+  const rewritten = stripTracking ? rewriteTrackingAnchors(linked) : linked;
+  const cleaned = sanitize(rewritten);
   const withEmoji = replaceEmojiWithTwemoji(cleaned);
   return sanitizeWithEmoji(withEmoji);
 }
@@ -365,7 +378,9 @@ function sanitizeWithEmoji(html: string): string {
   }
 }
 
-const URL_REGEX = /(https?:\/\/[^\s<>"']+?)([.,;:!?)\]'"]*)(?=\s|$|<|>)/g;
+function messageUrlRegex(): RegExp {
+  return new RegExp(URL_REGEX_SOURCE, 'g');
+}
 
 /** True when content has an https:// URL — mirrors the backend's link-preview candidate check. */
 export function containsHttpsUrl(content: string): boolean {
@@ -458,7 +473,7 @@ function linkify(html: string): string {
     const segmentEnd = nextTag === -1 ? len : nextTag;
     let segment = html.slice(i, segmentEnd);
     if (stack.length === 0) {
-      segment = segment.replace(URL_REGEX, (_: string, url: string, trail: string) => {
+      segment = segment.replace(messageUrlRegex(), (_: string, url: string, trail: string) => {
         if (!isSafeUrl(url)) return url + trail;
         const href = escapeAttr(url);
         return `<a href="${href}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>${trail}`;
@@ -494,13 +509,103 @@ export function formatMessageTimestamp(isoString: string): string {
   return `${datePart}, ${timePart}`;
 }
 
+const HREF_ATTR = /\bhref\s*=\s*(["'])([\s\S]*?)\1/i;
+
+function findAnchorEnd(html: string, innerStart: number): number | null {
+  let depth = 1;
+  let i = innerStart;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    if (lt === -1) return null;
+    const gt = html.indexOf('>', lt);
+    if (gt === -1) return null;
+    const tag = html.slice(lt, gt + 1);
+    const name = tag.match(/^<\/?\s*([a-zA-Z0-9]+)/);
+    if (name?.[1]?.toLowerCase() === 'a') {
+      if (tag.startsWith('</')) depth -= 1;
+      else if (!tag.endsWith('/>')) depth += 1;
+      if (depth === 0) return lt;
+    }
+    i = gt + 1;
+  }
+  return null;
+}
+
+/** Rewrite http(s) hrefs outside code and pre. Link text changes only when it is the URL. */
+function rewriteTrackingAnchors(html: string): string {
+  let out = '';
+  let i = 0;
+  const stack: string[] = [];
+  while (i < html.length) {
+    if (html[i] !== '<') {
+      const next = html.indexOf('<', i);
+      const end = next === -1 ? html.length : next;
+      out += html.slice(i, end);
+      i = end;
+      continue;
+    }
+    const close = html.indexOf('>', i);
+    if (close === -1) {
+      out += html.slice(i);
+      break;
+    }
+    const tag = html.slice(i, close + 1);
+    const isClosing = tag.startsWith('</');
+    const nameMatch = tag.match(isClosing ? /^<\/([a-zA-Z0-9]+)/ : /^<([a-zA-Z0-9]+)/);
+    const tagName = nameMatch?.[1]?.toLowerCase();
+    const inProtected = stack.length > 0;
+    if (tagName === 'code' || tagName === 'pre') {
+      if (isClosing && stack[stack.length - 1] === tagName) stack.pop();
+      else if (!isClosing && !tag.endsWith('/>')) stack.push(tagName);
+    }
+    if (!isClosing && tagName === 'a' && !inProtected && !tag.endsWith('/>')) {
+      const rewritten = rewriteOneAnchor(html, close, tag);
+      if (rewritten) {
+        out += rewritten.html;
+        i = rewritten.next;
+        continue;
+      }
+    }
+    out += tag;
+    i = close + 1;
+  }
+  return out;
+}
+
+function rewriteOneAnchor(
+  html: string,
+  tagEnd: number,
+  tag: string,
+): { html: string; next: number } | null {
+  const hrefMatch = HREF_ATTR.exec(tag);
+  if (!hrefMatch) return null;
+  const rawHref = unescapeHtml(hrefMatch[2] ?? '');
+  if (!isSafeUrl(rawHref)) return null;
+  const stripped = stripTrackingParamsFromUrl(rawHref);
+  if (stripped === rawHref) return null;
+  const innerStart = tagEnd + 1;
+  const innerEnd = findAnchorEnd(html, innerStart);
+  if (innerEnd == null) return null;
+  const closeEnd = html.indexOf('>', innerEnd);
+  if (closeEnd === -1) return null;
+  const escapedHref = escapeAttr(stripped);
+  const newTag =
+    tag.slice(0, hrefMatch.index) +
+    `href="${escapedHref}"` +
+    tag.slice(hrefMatch.index + hrefMatch[0].length);
+  const inner = html.slice(innerStart, innerEnd);
+  const nextInner = !inner.includes('<') && unescapeHtml(inner) === rawHref ? escapeHtml(stripped) : inner;
+  return { html: newTag + nextInner + html.slice(innerEnd, closeEnd + 1), next: closeEnd + 1 };
+}
+
 /**
  * Parse, linkify bare URLs, sanitize, replace emoji with Twemoji img, then re-sanitize.
  */
-export function formatMessageContent(content: string): string {
+export function formatMessageContent(content: string, stripTracking = false): string {
   const html = parseMarkdown(content);
   const linked = linkify(html);
-  const cleaned = sanitize(linked);
+  const rewritten = stripTracking ? rewriteTrackingAnchors(linked) : linked;
+  const cleaned = sanitize(rewritten);
   const withEmoji = replaceEmojiWithTwemoji(cleaned);
   return sanitizeWithEmoji(withEmoji);
 }

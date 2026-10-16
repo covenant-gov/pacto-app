@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import {
   resolveDmMessagePresentation,
   isInvitePresentation,
@@ -395,6 +396,23 @@ describe('buildPlainMessageProps', () => {
     const message = msg({ mine: false, replied_to: 'r1', replied_to_npub: NPUB_B });
     const props = buildPlainMessageProps(message, NPUB_B, {}, NPUB_A);
     expect(props.replyAuthorName).toBe('Unknown');
+  });
+
+  it('strips tracking parameters from the reply preview when the setting is on', () => {
+    const message = msg({
+      mine: false,
+      replied_to: 'r1',
+      replied_to_content: 'https://example.com/a?fbclid=abc&id=1',
+    });
+    stripTrackingMarkersEnabled.set(true);
+    const on = buildPlainMessageProps(message, NPUB_B, {}, NPUB_A);
+    expect(on.replyPreview).toContain('id=1');
+    expect(on.replyPreview).not.toContain('fbclid');
+
+    stripTrackingMarkersEnabled.set(false);
+    const off = buildPlainMessageProps(message, NPUB_B, {}, NPUB_A);
+    expect(off.replyPreview).toContain('fbclid');
+    stripTrackingMarkersEnabled.set(true);
   });
 
   it('forwards pending and failed delivery flags', () => {

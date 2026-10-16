@@ -285,6 +285,94 @@ describe('formatMessageContentWithMentions', () => {
     expect(trusted).toMatch(/npub1ali/i);
   });
 
+  function markedStub(parse: (src: string) => string) {
+    return {
+      use: vi.fn(),
+      parse: vi.fn((src: string) => parse(src)),
+    };
+  }
+
+  it('rewrites tracked hrefs and their visible URL text when stripping is on', () => {
+    const purify = createIdentityPurify();
+    vi.stubGlobal('window', {
+      DOMPurify: purify,
+      marked: markedStub((src) => `<p>${src}</p>`),
+      twemoji: undefined,
+    });
+    const result = formatMessageContent('https://example.com/a?utm_campaign=x&id=1', true);
+    expect(result).toContain('href="https://example.com/a?id=1"');
+    expect(result).toContain('https://example.com/a?id=1');
+    expect(result).not.toContain('utm_campaign');
+  });
+
+  it('keeps non-tracking parameters and escapes ampersands in the href', () => {
+    const purify = createIdentityPurify();
+    vi.stubGlobal('window', {
+      DOMPurify: purify,
+      marked: markedStub((src) => `<p>${src}</p>`),
+      twemoji: undefined,
+    });
+    const result = formatMessageContent('https://example.com/a?id=1&ok=2', true);
+    expect(result).toContain('href="https://example.com/a?id=1&amp;ok=2"');
+  });
+
+  it('leaves tracking parameters in the href when stripping is off', () => {
+    const purify = createIdentityPurify();
+    vi.stubGlobal('window', {
+      DOMPurify: purify,
+      marked: markedStub((src) => `<p>${src}</p>`),
+      twemoji: undefined,
+    });
+    const result = formatMessageContent('https://example.com/a?utm_campaign=x&id=1', false);
+    expect(result).toContain('utm_campaign');
+  });
+
+  it('rewrites hrefs from the mentions formatter when stripping is on', () => {
+    const purify = createIdentityPurify();
+    vi.stubGlobal('window', {
+      DOMPurify: purify,
+      marked: markedStub((src) => `<p>${src}</p>`),
+      twemoji: undefined,
+    });
+    const result = formatMessageContentWithMentions(
+      'https://example.com/a?utm_campaign=x&id=1',
+      [],
+      {},
+      [],
+      true,
+    );
+    expect(result).toContain('href="https://example.com/a?id=1"');
+    expect(result).not.toContain('utm_campaign');
+  });
+
+  it('keeps markdown link labels and drops tracking from the href', () => {
+    const purify = createIdentityPurify();
+    vi.stubGlobal('window', {
+      DOMPurify: purify,
+      marked: markedStub(
+        () => '<p><a href="https://example.com/a?gclid=1">docs</a></p>',
+      ),
+      twemoji: undefined,
+    });
+    const result = formatMessageContent('[docs](https://example.com/a?gclid=1)', true);
+    expect(result).toContain('>docs<');
+    expect(result).toContain('href="https://example.com/a"');
+    expect(result).not.toContain('gclid');
+  });
+
+  it('does not strip URLs inside fenced code', () => {
+    const purify = createIdentityPurify();
+    vi.stubGlobal('window', {
+      DOMPurify: purify,
+      marked: markedStub(
+        () => '<pre><code>https://example.com?utm_source=n</code></pre>',
+      ),
+      twemoji: undefined,
+    });
+    const result = formatMessageContent('```\nhttps://example.com?utm_source=n\n```', true);
+    expect(result).toContain('utm_source');
+  });
+
   it('skips mid-token @mentions', () => {
     const purify = createIdentityPurify();
     vi.stubGlobal('window', { DOMPurify: purify, marked: undefined, twemoji: undefined });
