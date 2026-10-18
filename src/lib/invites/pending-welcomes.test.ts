@@ -29,7 +29,7 @@ vi.mock('../squad/squad-outbound-invite', () => ({
   publishInviteAcceptedClaims: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser: writable({ npub: 'npub1invitee' }),
 }));
 

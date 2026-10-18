@@ -2,7 +2,7 @@
 	import { t } from 'svelte-i18n';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { design } from '../design-state.svelte.js';
-	import { ditherMaskStyle } from '../dither.js';
+	import { ditherMaskStyle } from '$lib/dither';
 
 	let { onClose }: { onClose: () => void } = $props();
 

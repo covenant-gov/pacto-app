@@ -61,11 +61,11 @@ Works in Tauri. Use when the **value** is the animation:
 
 Do **not** use Spring to drive `grid-template-columns` or element `width`. That is still layout animation; keep CSS on the track and, if you want a sprung feel, Spring only the inner `x` / `opacity`.
 
-Always gate with `prefersReducedMotion` from `svelte/reactivity`: `.set(target, { duration: 0 })` or assign `.current` immediately.
+Always gate with `prefersReducedMotion` from `svelte/motion`: `.set(target, { duration: 0 })` or assign `.current` immediately.
 
 ```ts
 import { Spring } from 'svelte/motion';
-import { prefersReducedMotion } from 'svelte/reactivity';
+import { prefersReducedMotion } from 'svelte/motion';
 
 const x = new Spring(0, { stiffness: 0.18, damping: 0.7 });
 
@@ -89,7 +89,7 @@ Keep drawer **children rendered** while the dialog is closing so the CSS outro i
 Every path honors `prefers-reduced-motion`:
 
 - CSS: `motion-reduce:transition-none` / `motion-reduce:animate-none`
-- JS: `prefersReducedMotion.current` from `svelte/reactivity`
+- JS: `prefersReducedMotion.current` from `svelte/motion`
 
 No exceptions for “subtle” opacity-only chrome.
 

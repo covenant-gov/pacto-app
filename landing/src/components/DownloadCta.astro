@@ -1,4 +1,9 @@
 ---
+import { logoContestContent } from '../content/logo-contest';
+
+const base = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
 ---
 
 <section class="download" id="download" aria-labelledby="download-title">
@@ -27,5 +32,8 @@
         <div class="downloads-list" id="downloadsList"></div>
       </div>
     </div>
+    <p class="contest-download-callout">
+      <a href={`${base}logo-contest/#how-to-enter`}>{logoContestContent.downloadCallout}</a>
+    </p>
   </div>
 </section>

@@ -12,9 +12,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-describe('design dither wiring', () => {
+describe('dither wiring', () => {
 	const css = readFileSync(join(here, 'dither.css'), 'utf8');
-	const layout = readFileSync(join(here, '+layout.svelte'), 'utf8');
+	const designRoot = join(here, '../../routes/design');
+	const layout = readFileSync(join(designRoot, '+layout.svelte'), 'utf8');
 
 	it('css root fallbacks match dither defaults', () => {
 		expect(css).toContain(`--dither-mix: ${DITHER_DEFAULTS.mix};`);
@@ -50,7 +51,7 @@ describe('design dither wiring', () => {
 	});
 
 	it('lets the gate inherit dither pattern instead of replacing the wash mask', () => {
-		const gate = readFileSync(join(here, 'components/DesignGate.svelte'), 'utf8');
+		const gate = readFileSync(join(designRoot, 'components/DesignGate.svelte'), 'utf8');
 		expect(gate).toContain('ditherMaskStyle(design.ditherPattern)');
 		expect(css).not.toMatch(/\.shell-gate \.shell-dither-wash[\s\S]{0,200}radial-gradient/);
 		expect(css).toContain(`var(--dither-tile, ${DITHER_DEFAULTS.tile}px)`);
@@ -70,6 +71,7 @@ describe('design dither wiring', () => {
 		expect(layout).toContain('previewTheme = $state<DesignTheme>(DEFAULT_THEME)');
 		expect(layout).toContain('readDesignPreviewTheme() ?? DEFAULT_THEME');
 		expect(layout).toContain('applyPlaygroundTheme(preview)');
-		expect(layout).not.toMatch(/function selectTheme[\s\S]*setTheme\(/);
+		// Shipped themes also call setTheme so / keeps the preview after leaving /design.
+		expect(layout).toMatch(/function selectTheme[\s\S]*if \(isShippedTheme\(value\)\) \{[\s\S]*setTheme\(value\)/);
 	});
 });

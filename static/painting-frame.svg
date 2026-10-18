@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" fill="none">
+	<!--
+		Minimal museum frame as a 9-slice source.
+		Slice inset = 28 (use with: border-image: url(...) 28 / 14px / 0 stretch;)
+		Center 64�64 is discarded unless you add the `fill` keyword.
+	-->
+	<rect width="120" height="120" fill="#2c2926"/>
+	<rect x="3" y="3" width="114" height="114" fill="#4a4540"/>
+	<rect x="5" y="5" width="110" height="110" fill="#1e1c1a"/>
+	<!-- outer highlight (top / left catch) -->
+	<path d="M3 117V3h114" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1"/>
+	<!-- outer shade (bottom / right) -->
+	<path d="M117 3v114H3" stroke="#000000" stroke-opacity="0.35" stroke-width="1"/>
+	<!-- gilt lip -->
+	<rect x="10" y="10" width="100" height="100" fill="none" stroke="#b59a6a" stroke-opacity="0.85" stroke-width="2"/>
+	<!-- mat -->
+	<rect x="14" y="14" width="92" height="92" fill="#0f0e0d"/>
+	<!-- transparent center for 9-slice hole -->
+	<rect x="28" y="28" width="64" height="64" fill="black" fill-opacity="0"/>
+</svg>

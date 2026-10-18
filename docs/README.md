@@ -10,6 +10,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[security/CRYPTOGRAPHY.md](./security/CRYPTOGRAPHY.md)** | **PIN-derived encryption, per-device salt, migration, and MLS encryption** (contributor/technical) |
 | **[user/UNDERSTANDING_ENCRYPTION.md](./user/UNDERSTANDING_ENCRYPTION.md)** | **User-facing explanation of PIN, salt, and group encryption** (non-technical) |
 | **[ARCHITECTURE.md](./ARCHITECTURE.md)** | High-level system architecture, data flows, and layer responsibilities |
+| **[auth/FIRST_PAINT.md](./auth/FIRST_PAINT.md)** | Unauth cold-start: thin `/` page, deferred messaging scripts, Commons prefetch after unlock |
 | **[messaging/OVERVIEW.md](./messaging/OVERVIEW.md)** | DM vs MLS: kinds, events, Tauri commands, frontend hooks |
 | **[messaging/ATTACHMENTS.md](./messaging/ATTACHMENTS.md)** | Encrypted attachment uploads: Blossom blob vs media servers, host-visible metadata, caveats |
 | **[messaging/STICKER_PACKS.md](./messaging/STICKER_PACKS.md)** | Squad sticker packs: MLS announce wire format, membership-based authorization, last-write-wins, encrypted Blossom storage |
@@ -34,6 +35,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[RUNTIME_CONFIG.md](./RUNTIME_CONFIG.md)** | Backend-owned `AppConfig` limits/flags over Tauri IPC: source of truth, Zod validation, fallback behavior, how to add a new limit |
 | **[audits/](./audits/)** | **Alpha / no external audit:** wallet and key-handling assurance posture ([README](./audits/README.md)) |
 | **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu); [OPERATOR_UPDATES.md](./build/OPERATOR_UPDATES.md) covers signed in-app updates and the [mandatory update gate](./build/OPERATOR_UPDATES.md#marking-a-release-as-breaking); [DEV_SANDBOX.md](./build/DEV_SANDBOX.md) covers the debug-only dev-world data-directory refusal |
+| **[landing/LOGO_CONTEST.md](./landing/LOGO_CONTEST.md)** | Logo contest page and blog introduction, manual promotion and organizer opening prerequisites |
 | **[testing/](./testing/)** | Test coverage status and backend phased testing plan ([README](./testing/README.md)) |
 
 **Cross-cutting:**

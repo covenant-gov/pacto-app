@@ -36,7 +36,7 @@ vi.mock('../governance/api', () => ({
   listSquadInfra: (...args: unknown[]) => listSquadInfra(...args),
 }));
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser,
 }));
 

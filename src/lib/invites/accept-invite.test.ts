@@ -35,7 +35,7 @@ vi.mock('../squad/squad-outbound-invite', () => ({
   publishInviteAcceptedClaims: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../stores/auth', async () => {
+vi.mock('../../stores/auth-session', async () => {
   const { writable } = await import('svelte/store');
   return { currentUser: writable({ npub: 'npub1invitee' }) };
 });

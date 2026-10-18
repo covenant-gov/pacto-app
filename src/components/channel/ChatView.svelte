@@ -68,7 +68,7 @@
   import { clearPendingReactions } from '../../lib/messaging/reactions';
   import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { mlsResetByGroupId } from '../../stores/mls-reset';
   import {
     incrementMentionAlert,

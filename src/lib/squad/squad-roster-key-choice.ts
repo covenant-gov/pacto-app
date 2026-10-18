@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { listEvmAccountSquadBindings } from './evm-account-squad-bindings';
 import { listSquadMemberEvmInvokeArgs } from './squad-member-evm-share';
 

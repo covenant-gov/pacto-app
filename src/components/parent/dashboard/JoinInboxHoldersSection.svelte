@@ -4,7 +4,7 @@
   import { get } from 'svelte/store';
   const tFn = get(t);
   import { onMount } from 'svelte';
-  import { currentUser } from '../../../stores/auth';
+  import { currentUser } from '../../../stores/auth-session';
   import { profiles } from '../../../stores/profiles';
   import { showToast } from '../../../stores/toast';
   import { getProfileDisplayName } from '../../../lib/utils/profile';

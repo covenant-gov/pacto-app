@@ -25,7 +25,7 @@ vi.mock('./squad-outbound-invite', () => ({
   publishOutboundInviteAnnounce: vi.fn(),
 }));
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser: { subscribe: vi.fn() },
 }));
 
@@ -33,7 +33,7 @@ import { getMlsGroupMembers } from '../api/nostr';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { sendSquadInviteDm } from '../pacto-app-inbox';
 import { publishOutboundInviteAnnounce } from './squad-outbound-invite';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import {
   resolveAdmitterNpubs,
   sendConsentFirstSquadInvite,

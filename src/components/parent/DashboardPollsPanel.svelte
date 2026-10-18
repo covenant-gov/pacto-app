@@ -14,7 +14,7 @@
     type DashboardPollDto,
   } from '../../lib/api/nostr';
   import { showToast } from '../../stores/toast';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import type { ParentPoll } from '../../lib/parent/parent-polls';
   import { getPollBallotMap, pollReferenceToken, setPollBallot } from '../../lib/parent/parent-polls';

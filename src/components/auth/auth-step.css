@@ -1,0 +1,7 @@
+/* Shared auth step column (welcome / import / PIN). */
+.auth-step-column {
+	width: 100%;
+	max-width: min(26rem, 100%);
+	padding: 32px clamp(1.25rem, 3vw, 1.75rem);
+	box-sizing: border-box;
+}

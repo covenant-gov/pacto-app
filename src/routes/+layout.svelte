@@ -6,10 +6,10 @@
   import Login from '../components/auth/Login.svelte';
   import UpdateGate from '../components/updater/UpdateGate.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip/index.js';
-  import { isAuthenticated, currentUser, checkSession } from '../stores/auth';
+  import { isAuthenticated, currentUser } from '../stores/auth-session';
+  import { checkSession } from '../stores/auth';
   import { resolveGateAtLaunch } from '../lib/updater/update-gate';
   import { DEFAULT_THEME, getStoredTheme, setTheme } from '../stores/theme';
-  import { scheduleCommonsStartupPrefetch } from '../lib/commons/commons-prefetch';
   import { locale } from '../stores/locale';
   import { loadAppConfig } from '../stores/app-config';
   import { runDevAutologin } from '../lib/dev/autologin';
@@ -52,7 +52,6 @@
     // gate still settles first.
     void runDevAutologin();
     void loadAppConfig();
-    scheduleCommonsStartupPrefetch();
   });
 
   onMount(() => {

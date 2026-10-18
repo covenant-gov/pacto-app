@@ -25,7 +25,7 @@ import {
   type JoinInboxState,
 } from '../../../lib/squad/join-inbox';
 import { profiles } from '../../../stores/profiles';
-import { currentUser } from '../../../stores/auth';
+import { currentUser } from '../../../stores/auth-session';
 
 function inboxState(overrides: Partial<JoinInboxState> = {}): JoinInboxState {
   return {

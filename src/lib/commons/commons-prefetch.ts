@@ -1,6 +1,6 @@
 /**
- * Warm Commons browse UI before PIN unlock: tag art + cached broadcasts (DB-only).
- * Full relay sync still runs after unlock when Commons is opened.
+ * Warm Commons after unlock: cached broadcasts (DB-only).
+ * Tag art preloads on first Commons browse open — not on cold login.
  */
 
 import { get, writable } from 'svelte/store';
@@ -14,15 +14,20 @@ export const commonsFeedSyncing = writable(false);
 export const commonsFeedError = writable<string | null>(null);
 
 let prefetchStarted = false;
+let tagArtPreloadStarted = false;
 
 export function resetCommonsPrefetchSession(): void {
   prefetchStarted = false;
+  tagArtPreloadStarted = false;
   commonsBroadcasts.set([]);
   commonsFeedError.set(null);
   commonsFeedSyncing.set(false);
 }
 
-function preloadCommonsTagArt(): void {
+/** Warm category tile images on first Commons open. */
+export function preloadCommonsTagArt(): void {
+  if (tagArtPreloadStarted) return;
+  tagArtPreloadStarted = true;
   for (const category of COMMONS_TAG_TREE) {
     const src = commonsTagArtSrc(category);
     if (!src) continue;
@@ -42,11 +47,10 @@ async function prefetchCachedBroadcasts(): Promise<void> {
   }
 }
 
-/** Idempotent: tag tiles + last-session broadcast cache, safe before PIN unlock. */
+/** Idempotent: last-session broadcast cache after unlock. */
 export function scheduleCommonsStartupPrefetch(): void {
   if (prefetchStarted) return;
   prefetchStarted = true;
-  preloadCommonsTagArt();
   void prefetchCachedBroadcasts();
 }
 

@@ -47,7 +47,7 @@ describe('PinInput', () => {
     }
     expect(onComplete).toHaveBeenCalledTimes(1);
     for (let i = 1; i <= 4; i++) {
-      expect(digitInput(i).value).toBe(String(i));
+      expect(digitInput(i).value).toBe('*');
     }
 
     // Parent surfaces an incorrect-PIN error after the failed unlock attempt.
@@ -61,14 +61,51 @@ describe('PinInput', () => {
     expect(screen.getByRole('alert').textContent).toBe('Incorrect PIN');
 
     // Re-rendering with the *same* error must not re-clear or re-shake (sentinel guard).
-    const container = screen.getByRole('alert').closest('.pin-input-container') as HTMLElement;
-    const pinInputsEl = container.querySelector('.pin-inputs') as HTMLElement;
-    await waitFor(() => expect(pinInputsEl.classList.contains('shake')).toBe(false));
+    const pinInputsEl = digitInput(1).closest('.pin-inputs') as HTMLElement;
+    await waitFor(() => expect(pinInputsEl.classList.contains('pin-inputs-shake')).toBe(false));
 
     await rerender({ title: 'Enter your PIN', onComplete, pinDigitCount: 4, error: 'Incorrect PIN' });
-    expect(pinInputsEl.classList.contains('shake')).toBe(false);
+    expect(pinInputsEl.classList.contains('pin-inputs-shake')).toBe(false);
     for (let i = 1; i <= 4; i++) {
       expect(digitInput(i).value).toBe('');
     }
+  });
+
+  it('enters digits from keydown, ignores letters, and completes once', async () => {
+    const onComplete = vi.fn();
+    render(PinInput, { title: 'Enter your PIN', onComplete, pinDigitCount: 4 });
+
+    const first = digitInput(1);
+    first.focus();
+    await fireEvent.keyDown(first, { key: 'a' });
+    expect(first.value).toBe('');
+    expect(onComplete).not.toHaveBeenCalled();
+
+    await fireEvent.keyDown(first, { key: '1' });
+    expect(digitInput(1).value).toBe('*');
+    expect(document.activeElement).toBe(digitInput(2));
+
+    await fireEvent.keyDown(digitInput(2), { key: '2' });
+    await fireEvent.keyDown(digitInput(3), { key: '3' });
+    expect(onComplete).not.toHaveBeenCalled();
+
+    await fireEvent.keyDown(digitInput(4), { key: '4' });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledWith('1234');
+  });
+
+  it('clears the current digit on Backspace and focuses the previous box', async () => {
+    const onComplete = vi.fn();
+    render(PinInput, { title: 'Enter your PIN', onComplete, pinDigitCount: 4 });
+
+    await fireEvent.keyDown(digitInput(1), { key: '1' });
+    await fireEvent.keyDown(digitInput(2), { key: '2' });
+    expect(document.activeElement).toBe(digitInput(3));
+
+    await fireEvent.keyDown(digitInput(2), { key: 'Backspace' });
+    expect(digitInput(2).value).toBe('');
+    expect(digitInput(1).value).toBe('*');
+    expect(document.activeElement).toBe(digitInput(1));
+    expect(onComplete).not.toHaveBeenCalled();
   });
 });

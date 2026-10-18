@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { runDevAutologin } from './autologin';
-import { isAuthenticated, currentUser } from '../../stores/auth';
+import { isAuthenticated, currentUser } from '../../stores/auth-session';
 import { loadAccountState } from '../../stores/persistence';
 import { runPostLoginNetworkSync } from '../app/post-login-sync';
 import { freezeGate } from '../updater/update-gate';

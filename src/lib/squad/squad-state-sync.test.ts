@@ -129,7 +129,7 @@ vi.mock('./join-inbox', () => ({
   ),
 }));
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser,
 }));
 

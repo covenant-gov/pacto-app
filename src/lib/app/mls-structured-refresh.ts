@@ -32,7 +32,7 @@ import {
   parseSquadIdentityUpdated,
 } from '../squad/squad-identity-announce';
 import { parseSquadEvmRosterSnapshot } from '../squad/squad-evm-roster-snapshot';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { squadInfraByParentId } from '../../stores/squads';
 import {
   bumpGovernanceProcessNonce,

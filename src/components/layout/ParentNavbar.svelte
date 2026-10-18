@@ -31,7 +31,7 @@
   import { showToast } from '../../stores/toast';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { partnerSquadsForHubParent } from '../../lib/squad-pair';

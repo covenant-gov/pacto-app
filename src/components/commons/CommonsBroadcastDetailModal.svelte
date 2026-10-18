@@ -5,7 +5,7 @@
   import type { CommonsBroadcastDto } from '../../lib/commons/types';
   import { profiles } from '../../stores/profiles';
   import { squads } from '../../stores/squads';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { showToast } from '../../stores/toast';
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
   import { computeBroadcastPresentation } from '../../lib/commons/broadcast-presentation';

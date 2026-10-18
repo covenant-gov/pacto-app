@@ -22,7 +22,7 @@
   import { persistSquadPatch } from '../../../lib/squad/squad-catalog';
   import SquadAvatar from '../../squad/SquadAvatar.svelte';
   import { showToast } from '../../../stores/toast';
-  import { currentUser } from '../../../stores/auth';
+  import { currentUser } from '../../../stores/auth-session';
   import type { CommonsBroadcastLocalState } from '../../../lib/commons/types';
   import type { Squad } from '../../../stores/squads';
 

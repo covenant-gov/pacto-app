@@ -5,7 +5,7 @@ import { __unstable__loadDesignSystem } from '@tailwindcss/node';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const appCssPath = path.join(repoRoot, 'src/app.css');
-const pagePath = path.join(repoRoot, 'src/routes/+page.svelte');
+const pagePath = path.join(repoRoot, 'src/components/app/AuthenticatedApp.svelte');
 
 describe('tailwind foundation', () => {
 	let appCss: string;

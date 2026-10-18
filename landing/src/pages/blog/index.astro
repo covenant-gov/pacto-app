@@ -1,0 +1,37 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import { blogContent as content, logoContestPost } from '../../content/blog';
+import { logoContestContent } from '../../content/logo-contest';
+
+const base = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+---
+
+<BaseLayout title={content.title} description={content.description} path="blog/" page="blog">
+  <main class="rules-page blog-page">
+    <h1>{content.heading}</h1>
+    <p class="lede">{content.introduction}</p>
+
+    <article class="blog-entry" aria-labelledby="contest-post-heading">
+      <p class="blog-meta">{logoContestPost.category}</p>
+      <h2 id="contest-post-heading">
+        <a href={`${base}${logoContestPost.path}`}>{logoContestPost.title}</a>
+      </h2>
+      <p>{logoContestPost.introduction}</p>
+      <p><strong>{logoContestContent.status}</strong></p>
+      <a class="btn btn-green" href={`${base}${logoContestPost.path}`}>{content.readArticle}</a>
+    </article>
+
+    <section aria-labelledby="elsewhere-heading">
+      <h2 id="elsewhere-heading">{content.elsewhereHeading}</h2>
+      <h3>{content.externalArticle.title}</h3>
+      <p>{content.externalArticle.description}</p>
+      <a href={content.externalArticle.href} target="_blank" rel="noopener noreferrer">
+        {content.externalArticle.action}
+      </a>
+    </section>
+  </main>
+  <SiteFooter base={base} howItWorksHref={`${base}how-it-works/`} />
+</BaseLayout>

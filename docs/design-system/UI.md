@@ -162,7 +162,7 @@ Which tool (CSS vs `svelte/motion` vs `svelte/transition`): [MOTION.md](./MOTION
 - MUST: Loading, empty, and error states on new interactive surfaces.
 - SHOULD: Light press feedback on primary controls (`translate` / `scale` on transform only).
 
-God shells (`+page.svelte`, `ChatView.svelte`, `ParentDashboard.svelte`) stay legacy. Carve new work into runes child components.
+God shells (`AuthenticatedApp.svelte`, `ChatView.svelte`, `ParentDashboard.svelte`) stay legacy. Carve new work into runes child components.
 
 `/design` and `src/components/shell` compose owned shadcn primitives (`Button`, `Badge`, `Input`, `Avatar`, `Card`, `ContextMenu`) plus Tailwind utilities. Do not add scoped `<style>` blocks there.
 

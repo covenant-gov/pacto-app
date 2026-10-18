@@ -11,7 +11,7 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import type { SquadRpcConfig } from '../../../lib/squad/squad-rpc';
   import type { Squad } from '../../../stores/squads';
-  import { currentUser } from '../../../stores/auth';
+  import { currentUser } from '../../../stores/auth-session';
   import {
     needsSquadRosterKeyChoice,
     squadMemberEvmForDisplay,

@@ -7,7 +7,8 @@ How the logged-in app shell is split after the SM refactor: **Svelte orchestrate
 ## Top-level map
 
 ```
-src/routes/+page.svelte           layout, tab routing, DM send/typing; mounts app event bridge
+src/routes/+page.svelte                    thin lazy loader → AuthenticatedApp
+src/components/app/AuthenticatedApp.svelte layout, tab routing, DM send/typing; mounts app event bridge
 src/components/layout/ParentNavbar.svelte   sidebar + modals → lib/parent/* flows
 src/components/parent/ParentDashboard.svelte   #squad-dashboard tab shell (Status→Governance→Treasury→Crew)
 src/components/parent/SquadSettingsView.svelte #settings virtual channel (username | Squad modes)
@@ -15,7 +16,7 @@ src/components/dm/DmThread.svelte             header/input/options + DmMessageRo
 src/stores/app.ts                 thin re-export barrel (navigation, dm, squads, mls-chat, persistence)
 ```
 
-**Invariant:** Components bind UI and call libs; avoid new cross-cutting logic in `+page.svelte` or monolithic stores.
+**Invariant:** Components bind UI and call libs; avoid new cross-cutting logic in `AuthenticatedApp.svelte` or monolithic stores. Unauth cold-start rules: [`docs/auth/FIRST_PAINT.md`](../auth/FIRST_PAINT.md).
 
 ---
 

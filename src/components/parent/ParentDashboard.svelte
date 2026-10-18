@@ -54,7 +54,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     resolvePrimarySquadNetwork,
     squadNetworkTick,
   } from '../../lib/squad/squad-network';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import friendsIcon from '../../icons/friends.svg';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
   import WarGameHubBanner from './dashboard/WarGameHubBanner.svelte';

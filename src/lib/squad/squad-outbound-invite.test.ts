@@ -22,7 +22,7 @@ vi.mock('../parent/pending-admit', () => ({
   clearPendingAdmitForMember: vi.fn(),
 }));
 
-vi.mock('../../stores/auth', async () => {
+vi.mock('../../stores/auth-session', async () => {
   const { writable } = await import('svelte/store');
   return { currentUser: writable({ npub: 'npub-me' }) };
 });
@@ -47,7 +47,7 @@ import { getDmMessages, sendDmMessage } from '../api/nostr';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { admitMemberToSquad } from '../parent/admit-member';
 import { enqueuePendingAdmit } from '../parent/pending-admit';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { squads } from '../../stores/squads';
 import {
   formatSquadAdmitNeeded,

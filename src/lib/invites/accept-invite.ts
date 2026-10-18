@@ -32,7 +32,7 @@ import { pendingReadyToast, showToast } from '../../stores/toast';
 import { maybeAutoRequestSquadStateSyncAfterJoin } from '../squad/squad-state-sync';
 import { publishInviteAcceptedClaims } from '../squad/squad-outbound-invite';
 import { requireBackupVerified } from '../../stores/backup-verification';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { markMlsHistoryWelcome } from '../../stores/mls-history-welcome';
 import { resolveOneCatchUpEntry } from '../../stores/catch-up';
 import {

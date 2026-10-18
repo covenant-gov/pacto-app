@@ -33,7 +33,7 @@
   import { showToast } from '../../stores/toast';
   import { requireBackupVerified } from '../../stores/backup-verification';
   import type { WalletSendPrefillPayload } from '../../stores/app';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { formatWalletTxRequest } from '../../lib/wallet/dm-messages';
   import {
     finalizeWalletDmTransferAfterBroadcast,
@@ -75,8 +75,8 @@
     return n.slice(0, 10) + '…' + n.slice(-6);
   }
 
-  const titleId = `wallet-${mode}-title`;
-  const descId = `wallet-${mode}-desc`;
+  const titleId = $derived(`wallet-${mode}-title`);
+  const descId = $derived(`wallet-${mode}-desc`);
 
   let chainId: SupportedChainId = $state(DEFAULT_CHAIN_ID);
   let assetCode = $state('ETH');

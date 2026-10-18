@@ -7,7 +7,7 @@ import {
   resolveAdmitterNpubs,
   sendConsentFirstSquadInvite,
 } from '../squad/consent-first-invite';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import type { Squad } from '../../stores/squads';
 
 export async function loadInviteCandidateNpubs(

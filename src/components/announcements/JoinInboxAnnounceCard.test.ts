@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
 import JoinInboxAnnounceCard from './JoinInboxAnnounceCard.svelte';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import type { JoinInboxAnnounceMessage } from '../../lib/squad/join-inbox-announce';
 
 describe('JoinInboxAnnounceCard', () => {

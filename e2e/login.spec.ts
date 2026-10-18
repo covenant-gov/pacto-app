@@ -9,7 +9,7 @@ test.describe('login screen', () => {
     await page.goto('/');
 
     await page.waitForSelector('.welcome-container');
-    await expect(page.locator('h1.app-title')).toHaveText('Pacto');
+    await expect(page.getByRole('heading', { level: 1, name: 'Pacto' })).toBeVisible();
 
     const outDir = 'test-results';
     fs.mkdirSync(outDir, { recursive: true });
@@ -24,16 +24,19 @@ test.describe('login screen', () => {
     await page.click('button:has-text("Create Account")');
 
     // Create PIN
-    await page.waitForSelector('.pin-title:has-text("Create your PIN")');
+    await page.getByRole('heading', { name: 'Create your PIN' }).waitFor();
     for (const digit of TEST_PIN) {
       await page.keyboard.press(digit);
     }
 
     // Confirm PIN
-    await page.waitForSelector('.pin-title:has-text("Confirm your PIN")');
+    await page.getByRole('heading', { name: 'Retype your PIN' }).waitFor();
     for (const digit of TEST_PIN) {
       await page.keyboard.press(digit);
     }
+
+    // Backup modal auto-opens over the shell after create.
+    await page.getByRole('button', { name: 'Do this later' }).click({ timeout: 15000 });
 
     // Authenticated layout should render
     await page.waitForSelector('.navbar', { timeout: 10000 });

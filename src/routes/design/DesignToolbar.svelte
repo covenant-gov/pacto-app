@@ -33,13 +33,18 @@
 			theme,
 	);
 
+	const themeGroups = $derived([
+		{ headingKey: 'design.toolbar.themeShipped' as const, options: THEME_OPTIONS },
+		{ headingKey: 'design.toolbar.themeSketches' as const, options: SKETCH_THEME_OPTIONS },
+	]);
+
 	function selectTheme(value: string): void {
 		if (value) onThemeChange(value as DesignTheme);
 	}
 </script>
 
 <header
-	class="flex h-9 shrink-0 items-center justify-between gap-4 overflow-x-auto border-b border-border bg-background/88 px-3 text-secondary-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+	class="flex h-9 shrink-0 items-center justify-between gap-4 overflow-x-auto border-b border-border bg-background/88 px-3 text-secondary-foreground scrollbar-none [&::-webkit-scrollbar]:hidden"
 >
 	<div class="flex shrink-0 items-center gap-2">
 		<PanelsTopLeft class="size-4" aria-hidden="true" />
@@ -63,7 +68,7 @@
 							{...props}
 							variant="secondary"
 							size="xs"
-							class="h-[26px] min-w-[148px] justify-between px-2 text-xs font-medium normal-case tracking-normal"
+							class="h-6.5 min-w-37 justify-between px-2 text-xs font-medium normal-case tracking-normal"
 							aria-label={$t('design.toolbar.theme')}
 						>
 							<span class="truncate">{themeLabel}</span>
@@ -73,22 +78,18 @@
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" class="min-w-48">
 					<DropdownMenu.RadioGroup value={theme} onValueChange={selectTheme}>
-						<DropdownMenu.GroupHeading class="text-[0.625rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-							{$t('design.toolbar.themeShipped')}
-						</DropdownMenu.GroupHeading>
-						{#each THEME_OPTIONS as option (option.value)}
-							<DropdownMenu.RadioItem value={option.value} onSelect={() => selectTheme(option.value)}>
-								{option.label}
-							</DropdownMenu.RadioItem>
-						{/each}
-						<DropdownMenu.Separator />
-						<DropdownMenu.GroupHeading class="text-[0.625rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-							{$t('design.toolbar.themeSketches')}
-						</DropdownMenu.GroupHeading>
-						{#each SKETCH_THEME_OPTIONS as option (option.value)}
-							<DropdownMenu.RadioItem value={option.value} onSelect={() => selectTheme(option.value)}>
-								{option.label}
-							</DropdownMenu.RadioItem>
+						{#each themeGroups as group, i (group.headingKey)}
+							{#if i > 0}
+								<DropdownMenu.Separator />
+							{/if}
+							<DropdownMenu.GroupHeading class="text-[0.625rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+								{$t(group.headingKey)}
+							</DropdownMenu.GroupHeading>
+							{#each group.options as option (option.value)}
+								<DropdownMenu.RadioItem value={option.value}>
+									{option.label}
+								</DropdownMenu.RadioItem>
+							{/each}
 						{/each}
 					</DropdownMenu.RadioGroup>
 				</DropdownMenu.Content>
@@ -103,7 +104,7 @@
 							{...props}
 							variant="secondary"
 							size="xs"
-							class="h-[26px] min-w-[104px] justify-between px-2 text-xs font-medium normal-case tracking-normal"
+							class="h-6.5 min-w-26 justify-between px-2 text-xs font-medium normal-case tracking-normal"
 							aria-label={$t('design.toolbar.state')}
 						>
 							<span class="truncate">{$t(`design.state.${previewState}`)}</span>

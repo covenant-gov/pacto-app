@@ -15,7 +15,7 @@ import {
   claimUsername,
   type UsernameState,
 } from './username';
-import { currentUser } from './auth';
+import { currentUser } from './auth-session';
 import {
   usernameGetCachedClaim,
   usernameRecordOf,

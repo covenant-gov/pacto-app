@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { get, writable } from 'svelte/store';
 import { sendDmMessage, getDmMessages } from '../api/nostr';
-import { currentUser } from '../../stores/auth';
+import { currentUser } from '../../stores/auth-session';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsJoinRequestDto, CommonsJoinRequestStatus } from '../commons/types';
 import { isJoinRequesterMuted } from './squad-join-spam';

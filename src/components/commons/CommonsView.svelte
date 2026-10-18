@@ -24,6 +24,7 @@
     commonsBroadcasts,
     commonsFeedError,
     commonsFeedSyncing,
+    preloadCommonsTagArt,
     refreshCommonsBroadcasts,
   } from '../../lib/commons/commons-prefetch';
   import {
@@ -219,6 +220,7 @@
   $effect(() => {
     const commonsActive = $activeTopNavTab === 'commons';
     if (commonsActive && !wasCommonsActive) {
+      preloadCommonsTagArt();
       void loadFeed({ silent: get(commonsBroadcasts).length > 0 });
       startPolling();
     } else if (!commonsActive && wasCommonsActive) {

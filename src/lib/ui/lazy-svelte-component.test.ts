@@ -9,4 +9,16 @@ describe('lazy-svelte-component', () => {
     await load();
     expect(loader).toHaveBeenCalledTimes(1);
   });
+
+  it('drops a rejected import so the next call loads again', async () => {
+    const loader = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('chunk'))
+      .mockResolvedValueOnce({ default: class {} });
+    const load = createLazyComponent(loader);
+
+    await expect(load()).rejects.toThrow('chunk');
+    await expect(load()).resolves.toBeDefined();
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
 });

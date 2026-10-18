@@ -11,15 +11,16 @@ async function createAccountAndOpenProfileSettings(page: Page) {
   await page.waitForSelector('.welcome-container');
   await page.click('button:has-text("Create Account")');
 
-  await page.waitForSelector('.pin-title:has-text("Create your PIN")');
+  await page.getByRole('heading', { name: 'Create your PIN' }).waitFor();
   for (const digit of TEST_PIN) {
     await page.keyboard.press(digit);
   }
-  await page.waitForSelector('.pin-title:has-text("Confirm your PIN")');
+  await page.getByRole('heading', { name: 'Retype your PIN' }).waitFor();
   for (const digit of TEST_PIN) {
     await page.keyboard.press(digit);
   }
 
+  await page.getByRole('button', { name: 'Do this later' }).click({ timeout: 15000 });
   await page.waitForSelector('.navbar', { timeout: 10000 });
   await page.click('button[aria-label="Settings"]');
   await page.getByRole('button', { name: 'Profile', exact: true }).click();

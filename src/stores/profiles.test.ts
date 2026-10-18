@@ -8,7 +8,7 @@ import {
   isProfileLoading,
 } from './profiles';
 import { dmChatsByNpub, blockedDmNpubs, activeDmId, lastCatchUpSuccess } from './dm';
-import { currentUser } from './auth';
+import { currentUser } from './auth-session';
 import { fetchNostrProfile, loadNostrProfile, type NostrProfile } from '../lib/api/nostr';
 import { setCurrentNpubForPersistence } from './persistence-context';
 

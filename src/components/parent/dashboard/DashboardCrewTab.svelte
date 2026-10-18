@@ -4,7 +4,7 @@
   const tFn = get(t);
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { profiles } from '../../../stores/profiles';
-  import { currentUser } from '../../../stores/auth';
+  import { currentUser } from '../../../stores/auth-session';
   import {
     crewHatLookupAddress,
     needsSquadRosterKeyChoice,

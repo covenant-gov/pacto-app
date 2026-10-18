@@ -2,6 +2,9 @@
  * Clear all account-specific frontend state (localStorage + in-memory stores).
  * Used on logout and when switching to a new account so the UI never shows
  * the previous account's squads, DMs, or related state.
+ *
+ * Do not statically import this module from `stores/auth.ts` or Login — it pulls
+ * wallet / invite / emoji graphs. Auth loads it via dynamic import only.
  */
 
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';

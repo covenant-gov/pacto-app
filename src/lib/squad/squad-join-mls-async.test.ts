@@ -18,7 +18,7 @@ vi.mock('../api/nostr', () => ({
 
 const currentUserStore = writable<{ npub: string } | null>({ npub: 'npub1holder' });
 
-vi.mock('../../stores/auth', () => ({
+vi.mock('../../stores/auth-session', () => ({
   currentUser: {
     subscribe: (fn: (v: { npub: string } | null) => void) => currentUserStore.subscribe(fn),
   },

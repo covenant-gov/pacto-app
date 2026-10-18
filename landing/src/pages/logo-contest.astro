@@ -1,0 +1,108 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { logoContestContent as content } from '../content/logo-contest';
+
+const base = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const downloadHref = `${base}#download`;
+const canonical = new URL('logo-contest/', `https://covenant-gov.github.io${base}`).href;
+const shareHref = `https://twitter.com/intent/tweet?${new URLSearchParams({
+  url: canonical,
+  text: content.social.copy,
+})}`;
+---
+
+<BaseLayout
+  title={content.title}
+  description={content.description}
+  path="logo-contest/"
+  page="logo-contest"
+  ogImagePath="assets/logo-contest-og.png"
+  ogImageAlt={content.social.imageAlt}
+>
+  <main class="rules-page logo-contest-page">
+    <h1>{content.heading}</h1>
+    <aside class="contest-notice" aria-labelledby="contest-status">
+      <p id="contest-status"><strong>{content.status}</strong></p>
+      <p>{content.notice}</p>
+    </aside>
+    <div class="how-closing-actions">
+      <a class="btn btn-green" href={downloadHref}>{content.getPacto}</a>
+      <a class="btn btn-ghost-light" href="#rules">{content.readRules}</a>
+    </div>
+
+    <section aria-labelledby="brief-heading">
+      <h2 id="brief-heading">{content.brief.heading}</h2>
+      {content.brief.paragraphs.map((paragraph) => <p>{paragraph}</p>)}
+      <h3>{content.brief.usesHeading}</h3>
+      <ul>{content.brief.uses.map((use) => <li>{use}</li>)}</ul>
+      <h3>{content.brief.rewardHeading}</h3>
+      <p><strong>{content.brief.reward}</strong></p>
+      <p>{content.brief.adoption}</p>
+    </section>
+
+    <section id="rules" aria-labelledby="rules-heading">
+      <h2 id="rules-heading">{content.rules.heading}</h2>
+      <p>{content.rules.notice}</p>
+      <ol class="contest-steps">
+        {content.rules.items.map((rule) => (
+          <li><h3>{rule.title}</h3><p>{rule.text}</p></li>
+        ))}
+      </ol>
+    </section>
+
+    <section id="how-to-enter" aria-labelledby="entry-heading">
+      <h2 id="entry-heading">{content.entry.heading}</h2>
+      <p>{content.entry.introduction}</p>
+      <ol class="contest-steps">
+        {content.entry.steps.map((step) => (
+          <li><h3>{step.title}</h3><p>{step.text}</p></li>
+        ))}
+      </ol>
+      <h3 id="template-heading">{content.entry.templateHeading}</h3>
+      <pre class="contest-template" tabindex="0" aria-labelledby="template-heading">{content.entry.template}</pre>
+      <p><strong>{content.entry.privacy}</strong></p>
+      <p>{content.entry.contact}</p>
+      <p>{content.entry.destination}</p>
+    </section>
+
+    <section id="selection" aria-labelledby="selection-heading">
+      <h2 id="selection-heading">{content.selection.heading}</h2>
+      <ol class="contest-steps">
+        {content.selection.steps.map((step) => (
+          <li><h3>{step.title}</h3><p>{step.text}</p></li>
+        ))}
+      </ol>
+    </section>
+
+    <section id="timeline" aria-labelledby="timeline-heading">
+      <h2 id="timeline-heading">{content.timeline.heading}</h2>
+      <p>{content.timeline.notice}</p>
+      <ol class="contest-steps">
+        {content.timeline.steps.map((step) => (
+          <li><h3>{step.title}</h3><p>{step.text}</p></li>
+        ))}
+      </ol>
+    </section>
+
+    <section aria-labelledby="faq-heading">
+      <h2 id="faq-heading">{content.faq.heading}</h2>
+      {content.faq.items.map((item) => (
+        <div><h3>{item.question}</h3><p>{item.answer}</p></div>
+      ))}
+    </section>
+
+    <section aria-labelledby="share-heading">
+      <h2 id="share-heading">{content.social.heading}</h2>
+      <p id="share-url-label">{content.social.urlLabel}</p>
+      <pre class="contest-template" tabindex="0" aria-labelledby="share-url-label">{canonical}</pre>
+      <p>{content.social.note}</p>
+      <div class="how-closing-actions">
+        <a class="btn btn-green" href={shareHref} target="_blank" rel="noopener noreferrer">{content.social.action}</a>
+      </div>
+    </section>
+  </main>
+  <SiteFooter base={base} howItWorksHref={`${base}how-it-works/`} />
+</BaseLayout>

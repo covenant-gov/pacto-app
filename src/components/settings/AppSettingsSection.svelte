@@ -15,7 +15,7 @@
   import PrivacySettingsSection from './PrivacySettingsSection.svelte';
   import { getSessionTimeout, setSessionTimeout } from '../../lib/api/auth';
   import { locale, setLocale, LOCALE_OPTIONS } from '../../stores/locale';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { biometricUnlockEnabled, enrollBiometricUnlock, disableBiometricUnlock } from '../../stores/biometric-unlock';
   import { getBiometricStatus, hasBiometricUnlockData, biometryLabel, isKeychainUnavailableError, canPersistBiometricUnlockData, type BiometryLabel } from '../../lib/api/biometry';
 

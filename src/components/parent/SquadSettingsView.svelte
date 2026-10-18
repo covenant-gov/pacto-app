@@ -8,7 +8,7 @@
     squadInfraByParentId,
     squadMemberEvmByParentId,
   } from '../../stores/app';
-  import { currentUser } from '../../stores/auth';
+  import { currentUser } from '../../stores/auth-session';
   import { profiles } from '../../stores/profiles';
   import {
     settingsChannelMode,

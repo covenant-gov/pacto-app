@@ -1,22 +1,23 @@
 ---
-const articleTitle = 'Building the Network-State Substrate';
-const articleHref = 'https://dpunk1.substack.com/p/building-the-network-state-substrate';
+import { blogContent, logoContestPost } from '../content/blog';
+
+const base = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
 ---
 
-<section class="blog-banner" aria-label="Featured article">
+<section class="blog-banner" aria-label={blogContent.featuredLabel}>
   <div class="blog-banner-inner">
     <p class="blog-banner-copy">
-      <span class="blog-banner-lead">Read on blog:</span>
+      <span class="blog-banner-lead">{blogContent.bannerLead}</span>
       {' '}
-      <span class="blog-banner-title">{articleTitle}</span>
+      <span class="blog-banner-title">{logoContestPost.title}</span>
     </p>
     <a
       class="btn btn-blue"
-      href={articleHref}
-      target="_blank"
-      rel="noopener noreferrer"
+      href={`${base}${logoContestPost.path}`}
     >
-      Read Blog
+      {blogContent.bannerAction}
     </a>
   </div>
 </section>
