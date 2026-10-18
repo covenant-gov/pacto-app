@@ -1,4 +1,4 @@
-.PHONY: help install relay-free-harness-seed dev dev-sandbox dev-sandbox-fresh dev-sandbox-pair dev-sandbox-seeded dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
+.PHONY: help install relay-free-harness-seed dev dev-isolated dev-sandbox dev-sandbox-fresh dev-sandbox-pair dev-sandbox-seeded dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
@@ -6,6 +6,7 @@ help:
 	@echo ""
 	@echo "  install      install Node/Rust dependencies"
 	@echo "  dev          run the desktop app in development mode (auto-isolated per branch, except main)"
+	@echo "  dev-isolated  run desktop app with isolated storage (always; used by pnpm tauri:dev:iso)"
 	@echo "  dev-sandbox  run the desktop app against a throwaway account for MCP-driven UI verification"
 	@echo "  dev-sandbox-pair    launch Host (solo) + Guest (alice) sandboxes with distinct autologin mnemonics"
 	@echo "  dev-sandbox-seeded  dev-sandbox, pre-seeded and already logged in -- no env vars to remember"
@@ -62,14 +63,20 @@ dev:
 	if [ "$$branch" = "main" ]; then \
 		pnpm tauri dev -f local-relay-tls; \
 	else \
-		slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
-		eval "$$(node scripts/dev-ports.mjs --export --branch "$$branch")"; \
-		mkdir -p test_fixtures; \
-		echo "make dev: branch '$$branch' -> port index $$PACTO_DEV_PORT_INDEX, isolated data dir test_fixtures/dev-branch-$$slug"; \
-		echo "  devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
-		PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-branch-$$slug" \
-		pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'; \
+		$(MAKE) dev-isolated; \
 	fi
+
+# Always-isolated desktop dev (every branch including main). Used by pnpm tauri:dev:iso.
+# Same per-branch test_fixtures root and port hashing as non-main make dev.
+dev-isolated:
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
+	slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
+	eval "$$(node scripts/dev-ports.mjs --export --branch "$$branch")"; \
+	mkdir -p test_fixtures; \
+	echo "make dev-isolated: branch '$$branch' -> port index $$PACTO_DEV_PORT_INDEX, isolated data dir test_fixtures/dev-branch-$$slug"; \
+	echo "  devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
+	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-branch-$$slug" \
+	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
 
 # Isolated sandbox account for agent-driven MCP verification (docs/TAURI_MCP_INTEGRATION.md).
 # Avoids colliding with a real dev account whose PIN nobody remembers.
