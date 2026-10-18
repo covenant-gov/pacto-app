@@ -20,7 +20,7 @@
   import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
   import TorStatusIndicator from './TorStatusIndicator.svelte';
 
-  const tabs: TopNavTab[] = ['commons', 'dms', 'squads', 'catchup'];
+  const tabs: TopNavTab[] = ['commons', 'dms', 'squads'];
 
   const DEBUG = false;
   function selectTab(id: TopNavTab) {
@@ -53,28 +53,47 @@
     $activeTopNavTab = id;
     $activeView = 'hub';
   }
+
+  const catchUpLabel = $derived(
+    $catchUpCount > 0
+      ? `${$t('nav.topNavbar.tabs.catchup')} (${$catchUpCount})`
+      : $t('nav.topNavbar.tabs.catchup'),
+  );
 </script>
 
-<div class="top-navbar" role="tablist" aria-label={$t('nav.topNavbar.mainViewAria')}>
-  <div class="mode-switcher" role="group" aria-label={$t('nav.topNavbar.mainViewsAria')}>
-    {#each tabs as tab (tab)}
+<div class="top-navbar">
+  <div class="top-navbar-tabs" role="tablist" aria-label={$t('nav.topNavbar.mainViewAria')}>
+    <div class="mode-switcher">
+      {#each tabs as tab (tab)}
+        <button
+          type="button"
+          role="tab"
+          class="mode-segment"
+          class:active={$activeTopNavTab === tab}
+          onclick={() => selectTab(tab)}
+          aria-selected={$activeTopNavTab === tab}
+          aria-label={$t(`nav.topNavbar.tabs.${tab}`)}
+        >
+          {$t(`nav.topNavbar.tabs.${tab}`)}
+        </button>
+      {/each}
+    </div>
+    <div class="catch-up-control">
       <button
         type="button"
         role="tab"
         class="mode-segment"
-        class:active={$activeTopNavTab === tab}
-        onclick={() => selectTab(tab)}
-        aria-selected={$activeTopNavTab === tab}
-        aria-label={tab === 'catchup' && $catchUpCount > 0
-          ? `${$t(`nav.topNavbar.tabs.${tab}`)} (${$catchUpCount})`
-          : $t(`nav.topNavbar.tabs.${tab}`)}
+        class:active={$activeTopNavTab === 'catchup'}
+        onclick={() => selectTab('catchup')}
+        aria-selected={$activeTopNavTab === 'catchup'}
+        aria-label={catchUpLabel}
       >
-        {$t(`nav.topNavbar.tabs.${tab}`)}
-        {#if tab === 'catchup' && $catchUpCount > 0}
+        {$t('nav.topNavbar.tabs.catchup')}
+        {#if $catchUpCount > 0}
           <span class="mode-segment-badge">{formatUnreadBadgeCount($catchUpCount)}</span>
         {/if}
       </button>
-    {/each}
+    </div>
   </div>
   <TorStatusIndicator />
 </div>
@@ -94,7 +113,16 @@
     flex-shrink: 0;
   }
 
-  .mode-switcher {
+  .top-navbar-tabs {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    gap: 12px;
+  }
+
+  .mode-switcher,
+  .catch-up-control {
     display: inline-flex;
     align-items: stretch;
     background: var(--bg-panel);
@@ -102,6 +130,10 @@
     border-radius: 10px;
     padding: 3px;
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  .catch-up-control {
+    margin-left: auto;
   }
 
   .mode-segment {
