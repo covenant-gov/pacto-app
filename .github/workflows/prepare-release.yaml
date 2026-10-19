@@ -3,8 +3,8 @@ name: Prepare Release
 # Manual trigger only (Actions tab -> Prepare Release -> Run workflow). Bumps
 # package.json / src-tauri/tauri.conf.json / src-tauri/Cargo.toml, regenerates
 # CHANGELOG.md, runs the same checks scripts/bump-version.sh runs locally, and
-# opens a PR with the result. Merging that PR to main pushes v<version>
-# automatically (see tag-release.yaml), which triggers release.yaml.
+# opens a PR with the result. Merging that PR to main runs tag-release.yaml,
+# which pushes v<version> and dispatches release.yaml on that tag.
 
 on:
   workflow_dispatch:
@@ -71,7 +71,7 @@ jobs:
             - `CHANGELOG.md`: regenerated via `git-cliff`.
             - `pnpm check`, `pnpm test`, `cargo check`, `cargo test` all passed in this run.
 
-            No tag is created by this PR. Merging to `main` triggers `tag-release.yaml`, which pushes tag `v${{ steps.bumped.outputs.version }}` and kicks off `release.yaml`.
+            No tag is created by this PR. Merging to `main` triggers `tag-release.yaml`, which pushes tag `v${{ steps.bumped.outputs.version }}` and dispatches `release.yaml` on that tag.
           branch: "chore/release-${{ steps.bumped.outputs.version }}"
           base: main
           delete-branch: true
