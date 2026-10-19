@@ -180,7 +180,6 @@
   .tor-indicator-root {
     position: relative;
     display: inline-flex;
-    margin-left: auto;
   }
 
   .tor-indicator-trigger {
