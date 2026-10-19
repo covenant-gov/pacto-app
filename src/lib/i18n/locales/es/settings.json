@@ -96,6 +96,8 @@
 	"settings.privacyTitle": "Privacidad",
 	"settings.sendTypingIndicatorsLabel": "Enviar indicadores de escritura",
 	"settings.sendTypingIndicatorsDescription": "Cuando está activado, Pacto notificará a tus contactos cuando estés escribiendo un mensaje para ellos. Desactívalo si prefieres escribir sin que otros sepan que estás componiendo un mensaje.",
+	"settings.stripTrackingMarkersLabel": "Quitar marcadores de seguimiento",
+	"settings.stripTrackingMarkersDescription": "Si está activado, Pacto quita automáticamente los marcadores de seguimiento de las URLs antes de mostrarlas o enviarlas. Así reduces tu huella y mejoras tu privacidad sin perder funcionalidad. Desactívalo solo si sabes lo que haces.",
 	"settings.webPreviewsLabel": "Vistas previas de enlaces",
 	"settings.webPreviewsDescription": "Cuando está activo, Pacto obtendrá y mostrará automáticamente vistas previas de los enlaces compartidos en los mensajes. Esto puede exponer tu dirección IP a los sitios enlazados. Usa Tor o una VPN si eso te preocupa.",
 	"settings.biometricUnlockTouchId": "Desbloquear con Touch ID",

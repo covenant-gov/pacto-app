@@ -19,6 +19,8 @@
   import { isScrollAtBottom } from '../../lib/dm/dm-unread';
   import { shouldStackWithPrevious } from '../../lib/dm/message-stack';
   import { dmThreadScrolledToBottom } from '../../stores/app';
+  import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
+  import { replyQuoteExcerpt } from '../../lib/utils/url-tracking';
   import { toggleDmBlock } from '../../lib/api/nostr';
   import { profiles } from '../../stores/profiles';
   import {
@@ -120,24 +122,24 @@
   }: Props = $props();
 
   let replyToMessageId: string | null = $state(null);
-  let replyPreview: string | undefined = $state(undefined);
+  let replyPreview = $derived.by(() => {
+    if (!replyToMessageId) return undefined;
+    const msg = messages.find((m) => m.id === replyToMessageId);
+    if (!msg) return undefined;
+    if (msg.attachments && msg.attachments.length > 0) return 'Attachment';
+    if (msg.content && msg.content.length > 0) return replyQuoteExcerpt(msg.content, $stripTrackingMarkersEnabled);
+    return 'Message';
+  });
   let chatDeleting = $derived($deletingDmNpubs.has(npub));
 
   function onReply(messageId: string) {
     const msg = messages.find((m) => m.id === messageId);
     if (!msg) return;
     replyToMessageId = messageId;
-    replyPreview =
-      msg.attachments && msg.attachments.length > 0
-        ? 'Attachment'
-        : msg.content && msg.content.length > 0
-          ? msg.content.slice(0, 80).trim() + (msg.content.length > 80 ? '…' : '')
-          : 'Message';
   }
 
   function cancelReply() {
     replyToMessageId = null;
-    replyPreview = undefined;
   }
 
   async function handleSend(content: string, repliedTo?: string) {

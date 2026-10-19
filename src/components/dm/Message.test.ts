@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/svelte';
 import Message from './Message.svelte';
+import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import { pendingReactionSent, clearPendingReactions } from '../../lib/messaging/reactions';
 import type { Reaction } from '../../stores/dm';
 import type { NostrProfile } from '../../lib/api/nostr';
@@ -297,5 +298,38 @@ describe('Message reactor tooltip', () => {
     const tooltip = screen.getByRole('tooltip');
     expect(tooltip.querySelectorAll('.reactor-tooltip-entry')).toHaveLength(8);
     expect(tooltip.querySelector('.reactor-tooltip-more')?.textContent?.trim()).toBe('and 4 more');
+  });
+});
+
+describe('Message copy', () => {
+  afterEach(() => {
+    stripTrackingMarkersEnabled.set(true);
+  });
+
+  async function copyBody(content: string, onCopy: (messageId: string, text: string) => void) {
+    render(Message, {
+      props: {
+        id: 'msg-copy',
+        authorName: 'Alice',
+        content,
+        onCopy,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Message options' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy' }));
+  }
+
+  it('hands the parent a body with tracking parameters removed when the setting is on', async () => {
+    stripTrackingMarkersEnabled.set(true);
+    const onCopy = vi.fn();
+    await copyBody('https://example.com/a?utm_source=nl&id=1', onCopy);
+    expect(onCopy).toHaveBeenCalledWith('msg-copy', 'https://example.com/a?id=1');
+  });
+
+  it('hands the parent the original body when the setting is off', async () => {
+    stripTrackingMarkersEnabled.set(false);
+    const onCopy = vi.fn();
+    await copyBody('https://example.com/a?utm_source=nl&id=1', onCopy);
+    expect(onCopy).toHaveBeenCalledWith('msg-copy', 'https://example.com/a?utm_source=nl&id=1');
   });
 });

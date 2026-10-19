@@ -6,6 +6,7 @@ import MessageInput from './MessageInput.svelte';
 import { pendingFilePreview, clearPendingAttachment, type PendingFileAttachment } from '../../lib/messaging/attachment-composer';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import { stickerPacks } from '../../stores/stickers';
+import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import type { StickerPack } from '../../lib/api/stickers';
 import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 
@@ -56,11 +57,16 @@ beforeEach(() => {
   mockedOpen.mockReset();
   (window as Window & { __TAURI__?: unknown }).__TAURI__ = {};
   setCurrentNpubForPersistence('npub1test');
-  vi.stubGlobal('URL', {
-    ...URL,
-    createObjectURL: vi.fn(() => 'blob://mock-preview'),
-    revokeObjectURL: vi.fn(),
-  });
+  stripTrackingMarkersEnabled.set(true);
+  const RealURL = URL;
+  function URLConstructor(url: string | URL, base?: string | URL): URL {
+    return base === undefined ? new RealURL(url) : new RealURL(url, base);
+  }
+  Object.setPrototypeOf(URLConstructor, RealURL);
+  URLConstructor.prototype = RealURL.prototype;
+  (URLConstructor as unknown as typeof URL).createObjectURL = vi.fn(() => 'blob://mock-preview');
+  (URLConstructor as unknown as typeof URL).revokeObjectURL = vi.fn();
+  vi.stubGlobal('URL', URLConstructor);
   ioInstances = [];
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
 });
@@ -94,6 +100,64 @@ describe('MessageInput', () => {
       expect(onSend).toHaveBeenCalledWith('hello world', undefined);
     });
     expect(input.value).toBe('');
+  });
+
+  it('strips tracking parameters before onSend when the setting is on', async () => {
+    stripTrackingMarkersEnabled.set(true);
+    const onSend = vi.fn();
+    render(MessageInput, { props: { channelName: 'general', onSend } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'https://example.com/a?utm_source=nl&id=1' } });
+    await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('https://example.com/a?id=1', undefined);
+    });
+  });
+
+  it('strips tracking parameters before onSendMentions for a squad channel', async () => {
+    stripTrackingMarkersEnabled.set(true);
+    const onSend = vi.fn();
+    const onSendMentions = vi.fn();
+    render(MessageInput, {
+      props: { channelName: 'general', onSend, onSendMentions, squadMlsGroupId: 'group-1' },
+    });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'https://example.com/a?utm_source=nl&id=1' } });
+    await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => {
+      expect(onSendMentions).toHaveBeenCalledWith('https://example.com/a?id=1', [], undefined);
+    });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('sends the original URL when stripping is off, and sends a URL-less or malformed body unchanged', async () => {
+    const onSend = vi.fn();
+    stripTrackingMarkersEnabled.set(false);
+    const { unmount } = render(MessageInput, { props: { channelName: 'general', onSend } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'https://example.com/a?utm_source=nl&id=1' } });
+    await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('https://example.com/a?utm_source=nl&id=1', undefined);
+    });
+    unmount();
+
+    stripTrackingMarkersEnabled.set(true);
+    onSend.mockClear();
+    render(MessageInput, { props: { channelName: 'general', onSend } });
+    const next = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    await fireEvent.input(next, { target: { value: 'hello there' } });
+    await fireEvent.keyDown(next, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('hello there', undefined);
+    });
+
+    onSend.mockClear();
+    await fireEvent.input(next, { target: { value: 'https://[bad' } });
+    await fireEvent.keyDown(next, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('https://[bad', undefined);
+    });
   });
 
   it('does not call onSend when Shift+Enter is pressed, so the default newline insertion proceeds', async () => {
