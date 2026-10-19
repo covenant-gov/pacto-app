@@ -7,10 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Harden username-nft claim path from pr review
+- Harden username claim layer-1 and document sponsored-userop 7702 method
+- Heal squad-hub navigation after create to stop infinite loading
+- Add gas-router fall through to pay with eoa
+- Surface global pool-low errors instead of generic gov write failure
+- Focus modal panel instead of dismiss control (ui)
+- Keep transfer modal ids reactive to mode (wallet)
+- Close code-review findings on auth gallery redesign (review)
+- Align e2e and shell load with the gallery login (auth)
+
+
+### Chores
+- Pin sepolia address book for app-1 username/squad cutover
+- Pin sepolia sponsor-policy registry and nave-pirata factory for tophat cutover
+- Update contract deployment addresses
+- Isolate feature-branch app data and move Catch up off the mode switch (#389)
+
+
+### Documentation
+- Username nft and gas-sponsor router
+- Document global-tophat router and add cross-squad path regression tests
+- Correct prefersreducedmotion to svelte/motion
+- Add gallery welcome screenshots across themes (auth)
+
+
+### Features
+- Alloy bindings and global sponsor path
+- Backend validation
+- Ui components to mint nft
+- Debug bin env
+- Username claim client parity
+- Add tophat policy registry bindings and factory sponsor action catalog
+- Add shared sponsor preflight helpers for global and squad paths
+- Route gov writes through squad, global-tophat, or eoa by eligibility
+- Route factory deploys through global tophat pool for eligible members
+- Allow zero-deposit squad sponsor deploy in backend and deploy wizards
+- Scenario-driven deploy governance launchpad with on-chain owner gates and optional sponsor deposit
+- Consolidate mutiny lock copy into a single warning banner
+- Consolidate governance gate blockers into panel banners
+- Add global sponsored fee ledger and wire all global userop paths
+- Rebuild landing as branded long-scroll marketing page
+- Add landing theme toggle, blog banner, and edge-matched overscroll (website)
+- Gallery login shell with shared dither module (auth)
+- Hang gallery piece with ambient light and quieter credits (auth)
+- Demote import cta and open backup after create (auth)
+- Polish pin otp and add post-pin success beat (auth)
+- Invite designers to shape pacto's next identity (website)
+
+
+### Performance
+- Defer shell and messaging work until after unlock (auth)
+
+
+### Refactor
+- Remove policy checks on gas-sponsorship registrar
+
+
+### Styling
+- Update logo and website links
+- App images
+
+
+### Testing
+- Retarget currentUser mocks to auth-session
+- Align dither and timestamp coverage assertions
+
+## v0.7.2
+
+### Bug Fixes
 - Use an eye-off icon for the commons hide action instead of an x
 - Statically link liblzma to stop macos startup crash
 - Report tor traffic live instead of only at connection close (privacy)
 - Gate whisper import behind feature flag in cmds/storage and cmds/voice
+
+
+### Chores
+- Bump version to 0.7.2 (release)
 
 
 ### Documentation
