@@ -3,7 +3,8 @@ name: Tag Release
 # Auto-tags after a "Prepare Release" PR merges to main. Reads the bumped
 # version out of package.json, cross-checks it against Cargo.toml /
 # tauri.conf.json, and pushes v<version> if that tag doesn't exist yet.
-# Pushing the tag is what triggers release.yaml.
+# Then dispatches release.yaml on that tag. The tag push uses
+# GITHUB_TOKEN, which does not start publish's push trigger.
 #
 # The bump PR may land via squash, merge-commit, or rebase merge; only squash
 # folds the bump commit message into github.event.head_commit. Match against
@@ -18,6 +19,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   tag:
@@ -41,14 +43,24 @@ jobs:
           fi
 
       - name: create and push tag
+        id: push
         env:
           TAG: v${{ steps.version.outputs.version }}
         run: |
           if git ls-remote --tags origin "$TAG" | grep -q "refs/tags/$TAG\$"; then
             echo "Tag $TAG already exists, skipping."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: start publish for the new tag
+        if: steps.push.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.version }}
+        run: gh workflow run release.yaml --repo "$GITHUB_REPOSITORY" --ref "$TAG"

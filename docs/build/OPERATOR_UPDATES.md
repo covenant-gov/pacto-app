@@ -14,19 +14,32 @@ That URL is configured in `src-tauri/tauri.conf.json` under `plugins.updater.end
 
 ## Release workflow
 
-1. Tag a release in the form `vX.Y.Z`, e.g. `v0.2.1`.
-2. Push the tag: `git push origin v0.2.1`.
-3. `.github/workflows/release.yaml` runs the `publish-tauri` job for:
+The usual path needs no manual tag:
+
+1. Run **Prepare Release** (Actions → Prepare Release) and choose `patch`, `minor`, or `major`.
+2. Merge the pull request it opens.
+3. **Tag Release** reads the bumped version, pushes `vX.Y.Z` when that tag is new, and dispatches **publish** (`.github/workflows/release.yaml`) on that tag.
+4. `release.yaml` runs the `publish-tauri` job for:
    - macOS (`aarch64-apple-darwin`, `x86_64-apple-darwin`)
    - Linux (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`)
    - Windows (`x86_64-pc-windows-msvc`)
-4. The workflow uploads installers and `latest.json` to the GitHub release.
+5. The workflow uploads installers and `latest.json` to the GitHub release.
    - `uploadUpdaterJson: true` tells the Tauri action to generate and attach `latest.json`.
-5. Once the **entire** platform matrix finishes, `release.yaml` fans out three
+6. Once the **entire** platform matrix finishes, `release.yaml` fans out three
    follow-up jobs, all gated on `needs: publish-tauri`:
    - `update-homebrew-tap` — opens a Cask bump PR against `covenant-gov/homebrew-pacto`.
    - `stamp-updater-compatibility` — stamps `minimum_compatible_version` onto `latest.json`.
    - `deploy-landing` — refreshes the public download page (see below).
+
+Pushing a `v*` tag yourself still starts publish through the `push` trigger. The automatic push cannot: Tag Release authenticates with `GITHUB_TOKEN`, and GitHub does not start `push` workflows from that token. Re-running Tag Release after the tag exists does not dispatch a second publish.
+
+If publish did not start, dispatch it against the tag that is already on the repo:
+
+```bash
+gh workflow run release.yaml --ref vX.Y.Z
+```
+
+Do not delete the tag and push it again. A dispatch from a branch (for example `--ref main`) fails the first step, before any build or upload.
 
 ## Download page (release → landing deploy)
 
