@@ -400,6 +400,14 @@ fn pending_export_flag_path<R: Runtime>(handle: &AppHandle<R>) -> Result<PathBuf
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    // Parallel test processes share one app data directory. A per-process flag
+    // file keeps one test's startup cleanup from clearing another's export.
+    #[cfg(test)]
+    {
+        let name = format!("pending_clipboard_export-{}", std::process::id());
+        return Ok(app_data.join(name));
+    }
+    #[cfg(not(test))]
     Ok(app_data.join("pending_clipboard_export"))
 }
 
