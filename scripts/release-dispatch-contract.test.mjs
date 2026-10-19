@@ -44,19 +44,29 @@ describe('tag-release dispatches publish', () => {
     assert.match(notes, /if: \$\{\{ !startsWith\(github\.ref, 'refs\/tags\/v'\) \}\}/);
     assert.match(notes, /echo "publish must run on a v\* tag ref, got \$GITHUB_REF"\n {10}exit 1/);
     assert.ok(notes.indexOf('- name: Require a v* tag ref') < notes.indexOf('actions/checkout'));
+    const publish = jobBlock(release, 'publish-tauri', 'update-homebrew-tap');
+    assert.match(publish, /\n {4}needs: release-notes\n/);
   });
 
   it('dispatches publish only when this run created the tag', () => {
     assert.match(tagRelease, /permissions:\n {2}contents: write\n {2}actions: write\n/);
-    const pushStep = tagRelease.slice(tagRelease.indexOf('- name: create and push tag'));
+    const pushStart = tagRelease.indexOf('- name: create and push tag');
+    const dispatchStart = tagRelease.indexOf('- name: start publish for the new tag');
+    assert.ok(pushStart !== -1 && dispatchStart > pushStart);
+    const pushStep = tagRelease.slice(pushStart, dispatchStart);
     assert.match(pushStep, /id: push\n/);
-    assert.match(pushStep, /echo "pushed=false" >> "\$GITHUB_OUTPUT"/);
+    const skipped = pushStep.indexOf('echo "pushed=false" >> "$GITHUB_OUTPUT"');
+    const skipExit = pushStep.indexOf('exit 0', skipped === -1 ? 0 : skipped);
+    const tagCmd = pushStep.indexOf('git tag -a');
+    const pushCmd = pushStep.indexOf('git push origin "$TAG"');
+    assert.ok(skipped !== -1 && skipExit > skipped && tagCmd > skipExit && pushCmd > tagCmd);
     assert.match(pushStep, /git push origin "\$TAG"\n {10}echo "pushed=true" >> "\$GITHUB_OUTPUT"/);
-    assert.match(tagRelease, /if: steps\.push\.outputs\.pushed == 'true'\n/);
-    assert.match(
-      tagRelease,
-      /gh workflow run release\.yaml --repo "\$GITHUB_REPOSITORY" --ref "\$TAG"/,
+    const dispatchStep = tagRelease.slice(dispatchStart);
+    const gate = dispatchStep.indexOf("if: steps.push.outputs.pushed == 'true'");
+    const run = dispatchStep.indexOf(
+      'gh workflow run release.yaml --repo "$GITHUB_REPOSITORY" --ref "$TAG"',
     );
+    assert.ok(gate !== -1 && run > gate);
     assert.doesNotMatch(tagRelease, /Pushing the tag is what triggers release\.yaml/);
   });
 
