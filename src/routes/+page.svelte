@@ -3,7 +3,7 @@
   import { t } from 'svelte-i18n';
   import { loadAuthenticatedApp } from '../lib/app/authenticated-app';
 
-  let shellLoadAttempt = 0;
+  let shellLoadAttempt = $state(0);
 
   function retryShellLoad(): void {
     shellLoadAttempt += 1;
@@ -24,7 +24,7 @@
   {:catch}
     <div class="auth-shell-loading" role="alert">
       <p class="m-0 text-[0.9375rem] text-foreground">{$t('auth.shellLoadError')}</p>
-      <button type="button" class="shell-load-retry" on:click={retryShellLoad}>
+      <button type="button" class="shell-load-retry" onclick={retryShellLoad}>
         {$t('auth.shellLoadRetry')}
       </button>
     </div>
