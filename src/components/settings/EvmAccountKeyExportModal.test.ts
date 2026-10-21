@@ -2,16 +2,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
-import { exportSensitiveToClipboard } from '../../lib/api/auth';
+import { clearClipboard, exportSensitiveToClipboard } from '../../lib/api/auth';
 
 vi.mock('../../lib/api/auth', () => ({
   exportSensitiveToClipboard: vi.fn(),
+  clearClipboard: vi.fn(),
 }));
 
 const mockedExport = vi.mocked(exportSensitiveToClipboard);
+const mockedClear = vi.mocked(clearClipboard);
 
 beforeEach(() => {
   mockedExport.mockReset();
+  mockedClear.mockReset();
+  mockedClear.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -76,6 +80,24 @@ describe('EvmAccountKeyExportModal', () => {
     expect(screen.getByText('Copied to clipboard')).toBeTruthy();
     expect(screen.getByText(/It will be cleared in 90 seconds/)).toBeTruthy();
     expect(screen.queryByText('0xsecretprivatekey')).toBeNull();
+  });
+
+  it('clears the clipboard on demand once a secret has been copied', async () => {
+    mockedExport.mockResolvedValueOnce({ exportType: 'evm', accountId: 'acc-1', clearedAt: 1 });
+
+    render(EvmAccountKeyExportModal, {
+      props: { open: true, variant: 'evm', account: evmAccount },
+    });
+    expect(screen.queryByRole('button', { name: 'Clear clipboard now' })).toBeNull();
+
+    await enterPin('123456');
+    await fireEvent.click(copyButton());
+    const clearButton = await screen.findByRole('button', { name: 'Clear clipboard now' });
+
+    await fireEvent.click(clearButton);
+    await waitFor(() => expect(mockedClear).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Clipboard cleared')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear clipboard now' })).toBeNull();
   });
 
   it('exports nsec and the seed phrase without an account id', async () => {

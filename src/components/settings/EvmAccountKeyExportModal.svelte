@@ -5,7 +5,7 @@
   import Check from '@lucide/svelte/icons/check';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import { Button } from '$lib/components/ui/button/index.js';
-  import { exportSensitiveToClipboard } from '../../lib/api/auth';
+  import { clearClipboard, exportSensitiveToClipboard } from '../../lib/api/auth';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { evmAccountSchemeLabel, type EvmAccountRow } from '../../lib/wallet/evm-accounts';
   import { showToast } from '../../stores/toast';
@@ -34,7 +34,7 @@
   const titleId = 'sensitive-export-title';
   const descId = 'sensitive-export-desc';
 
-  type Phase = 'form' | 'copied';
+  type Phase = 'form' | 'copied' | 'cleared';
 
   let phase = $state<Phase>('form');
   let pin = $state('');
@@ -101,6 +101,20 @@
 
   function copyAgain(): void {
     resetState();
+  }
+
+  async function clearNow(): Promise<void> {
+    if (busy) return;
+    busy = true;
+    try {
+      await clearClipboard();
+      phase = 'cleared';
+    } catch (e) {
+      const message = getInvokeErrorMessage(e, get(t)('export.error.couldNotClearClipboard'));
+      showToast(message, undefined, undefined, { error: true });
+    } finally {
+      busy = false;
+    }
   }
 
   $effect(() => {
@@ -179,6 +193,30 @@
           <div>
             <p class="export-success-title">{$t('export.modal.success.title')}</p>
             <p id={descId}>{$t('export.modal.success.clearedIn90')}</p>
+          </div>
+        </div>
+        <div class="export-actions">
+          <Button type="button" variant="outline" onclick={copyAgain} disabled={busy}>
+            {$t('export.modal.action.copyAgain')}
+          </Button>
+          <Button type="button" variant="outline" onclick={() => void clearNow()} disabled={busy}>
+            {#if busy}
+              <LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            {/if}
+            {$t('export.modal.action.clearNow')}
+          </Button>
+          <Button type="button" onclick={handleClose} disabled={busy}>
+            {$t('export.modal.action.done')}
+          </Button>
+        </div>
+      {:else if phase === 'cleared'}
+        <div class="export-success" role="status">
+          <span class="export-success-icon" aria-hidden="true">
+            <Check class="size-5" />
+          </span>
+          <div>
+            <p class="export-success-title">{$t('export.modal.cleared.title')}</p>
+            <p id={descId}>{$t('export.modal.cleared.body')}</p>
           </div>
         </div>
         <div class="export-actions">

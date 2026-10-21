@@ -4,7 +4,7 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import { Button } from '$lib/components/ui/button/index.js';
-  import { exportSensitiveToClipboard } from '../../lib/api/auth';
+  import { clearClipboard, exportSensitiveToClipboard } from '../../lib/api/auth';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import {
     evmAccountSchemeLabel,
@@ -32,6 +32,8 @@
 
   const titleId = 'export-all-title';
   const descId = 'export-all-desc';
+  /** `busyId` sentinel: the clear-clipboard call, which belongs to no row. */
+  const CLEAR_BUSY_ID = '__clear__';
 
   interface ExportTarget {
     id: string;
@@ -53,6 +55,8 @@
   let loadState = $state<'loading' | 'ready' | 'error'>('loading');
   let loadError = $state('');
   let rootEl: HTMLDivElement | undefined = $state();
+  let clipboardCleared = $state(false);
+  let anyCopied = $derived(Object.values(copiedIds).some(Boolean));
 
   let wasOpen = false;
   let loadGen = 0;
@@ -90,6 +94,7 @@
     busyId = null;
     backoffUntil = {};
     copiedIds = {};
+    clipboardCleared = false;
     rowErrors = {};
     evmRows = [];
     loadState = 'loading';
@@ -155,6 +160,7 @@
     try {
       await exportSensitiveToClipboard(target.kind, target.accountId, pin);
       copiedIds = { ...copiedIds, [target.id]: true };
+      clipboardCleared = false;
     } catch (e) {
       const message = getInvokeErrorMessage(e, tFn('export.error.couldNotExportSecrets'));
       const wait = parseExportBackoffSeconds(message);
@@ -168,6 +174,21 @@
       } else {
         rowErrors = { ...rowErrors, [target.id]: message };
       }
+      showToast(message, undefined, undefined, { error: true });
+    } finally {
+      busyId = null;
+    }
+  }
+
+  async function clearNow(): Promise<void> {
+    if (busyId) return;
+    busyId = CLEAR_BUSY_ID;
+    try {
+      await clearClipboard();
+      copiedIds = {};
+      clipboardCleared = true;
+    } catch (e) {
+      const message = getInvokeErrorMessage(e, get(t)('export.error.couldNotClearClipboard'));
       showToast(message, undefined, undefined, { error: true });
     } finally {
       busyId = null;
@@ -263,10 +284,28 @@
         <p class="export-status">{$t('export.modal.empty.noEvm')}</p>
       {/if}
 
+      {#if clipboardCleared}
+        <p class="export-status export-status-ok" role="status">
+          {$t('export.modal.cleared.body')}
+        </p>
+      {/if}
+
       <div class="export-actions">
         <Button type="button" variant="outline" onclick={handleClose} disabled={busyId !== null}>
           {$t('settings.cancel')}
         </Button>
+        {#if anyCopied}
+          <Button
+            type="button"
+            onclick={() => void clearNow()}
+            disabled={busyId !== null}
+          >
+            {#if busyId === CLEAR_BUSY_ID}
+              <LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            {/if}
+            {$t('export.modal.action.clearNow')}
+          </Button>
+        {/if}
       </div>
     </div>
   </Modal>
