@@ -1416,12 +1416,13 @@
     background: var(--bg-hover);
     border-radius: 8px;
     padding: 0 16px;
-    transition: background 0.15s;
+    transition: background 0.15s, box-shadow 0.15s;
     position: relative;
   }
 
   .input-wrapper:focus-within {
-    background: var(--border);
+    background: color-mix(in oklch, var(--brand) 8%, var(--bg-elevated));
+    box-shadow: 0 0 0 1px var(--brand);
   }
 
   .emoji-trigger-btn,
