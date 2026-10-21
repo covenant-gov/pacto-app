@@ -458,7 +458,7 @@ describe('subscribeAppEvents', () => {
         old_id: 'old1',
         message: dmMessage({ id: 'peer1', at: 2000, mine: false }),
       });
-      const chat = mocks.mockStores.dmChatsByNpub.get()['npub1chat']!;
+      const chat = mocks.mockStores.dmChatsByNpub.get()['npub1chat'] as Record<string, unknown>;
       expect(chat.hasFromMe).toBe(true);
       expect(chat.hasFromThem).toBe(true);
       expect(chat.lastAt).toBe(2000);
