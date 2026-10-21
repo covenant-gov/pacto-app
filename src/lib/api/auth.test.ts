@@ -13,6 +13,7 @@ import {
   listAllAccounts,
   exportRecoveryPhrase,
   exportEvmAccountKeyPlaintext,
+  exportSensitiveToClipboard,
 } from './auth';
 
 vi.mock('@tauri-apps/api/core');
@@ -153,5 +154,21 @@ describe('auth command wrappers', () => {
       accountId: 'acc-1',
     });
     expect(result).toBe('0xkey');
+  });
+
+  it('exportSensitiveToClipboard maps kinds and returns metadata only', async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      exportType: 'evm_account',
+      accountId: 'acc-1',
+      clearedAt: 90,
+    });
+    const result = await exportSensitiveToClipboard('evm', 'acc-1', '123456');
+    expect(mockedInvoke).toHaveBeenCalledWith('export_sensitive_to_clipboard', {
+      exportType: 'evm_account',
+      accountId: 'acc-1',
+      pin: '123456',
+    });
+    expect(result).toEqual({ exportType: 'evm', accountId: 'acc-1', clearedAt: 90 });
+    expect(JSON.stringify(result)).not.toContain('nsec');
   });
 });

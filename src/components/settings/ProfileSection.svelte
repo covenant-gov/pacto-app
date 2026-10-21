@@ -312,7 +312,6 @@
 
 <ExportAllSecretsModal
   open={exportAllModalOpen}
-  npub={userNpub}
   onClose={() => (exportAllModalOpen = false)}
 />
 

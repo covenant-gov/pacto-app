@@ -13,7 +13,9 @@
     error = null,
     onErrorClear = undefined,
     onBack = undefined,
+    onChange = undefined,
     pinDigitCount = 6,
+    compact = false,
   }: {
     title: string;
     onComplete: (pin: string) => void;
@@ -21,7 +23,11 @@
     error?: string | null;
     onErrorClear?: (() => void) | undefined;
     onBack?: (() => void) | undefined;
+    /** Current digits, including partial entry and clears. */
+    onChange?: ((pin: string) => void) | undefined;
     pinDigitCount?: number;
+    /** Tighter padding when the control sits inside a modal. */
+    compact?: boolean;
   } = $props();
 
   let digits: string[] = $state<string[]>([]);
@@ -48,9 +54,14 @@
     }
   }
 
+  function publishPin(): void {
+    onChange?.(digits.join(''));
+  }
+
   function clearInputs() {
     digits = Array(pinDigitCount).fill('');
     syncInputDisplay();
+    publishPin();
     setTimeout(() => inputs[0]?.focus(), 100);
   }
 
@@ -78,6 +89,7 @@
     });
     digits = next;
     syncInputDisplay();
+    publishPin();
 
     if (cleaned.length < pinDigitCount) {
       inputs[cleaned.length]?.focus();
@@ -103,6 +115,7 @@
     const value = typedDigits.slice(0, 1) || (raw.includes('*') ? digits[index] : '');
     digits[index] = value;
     target.value = maskChar(value);
+    publishPin();
 
     if (value && index < pinDigitCount - 1) {
       inputs[index + 1]?.focus();
@@ -117,6 +130,7 @@
       digits[index] = '';
       const el = inputs[index];
       if (el) el.value = '';
+      publishPin();
       if (index > 0) inputs[index - 1]?.focus();
       return;
     }
@@ -129,6 +143,7 @@
       digits[index] = event.key;
       const el = inputs[index];
       if (el) el.value = '*';
+      publishPin();
       if (index < pinDigitCount - 1) {
         inputs[index + 1]?.focus();
       }
@@ -162,7 +177,7 @@
 </script>
 
 <div
-  class="mx-auto flex max-w-full flex-col gap-6 py-8"
+  class={cn('mx-auto flex max-w-full flex-col', compact ? 'gap-4 py-2' : 'gap-6 py-8')}
   style="width: calc({pinDigitCount} * 2.5rem + ({pinDigitCount} - 1) * 0.5rem)"
 >
   <h3 class="m-0 text-center text-2xl font-semibold text-balance text-foreground">

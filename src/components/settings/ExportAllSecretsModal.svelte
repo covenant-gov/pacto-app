@@ -1,652 +1,274 @@
 <script lang="ts">
-  import { loadAndDecryptKey } from '../../lib/api/encryption';
-  import { exportEvmAccountKeyPlaintext, exportRecoveryPhrase } from '../../lib/api/auth';
-  import { listEvmAccounts } from '../../lib/wallet/evm-accounts';
-  import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import { exportSensitiveToClipboard } from '../../lib/api/auth';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
-  import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
-  import { portal } from '../../lib/utils/portal';
+  import {
+    evmAccountSchemeLabel,
+    listEvmAccounts,
+    type EvmAccountRow,
+  } from '../../lib/wallet/evm-accounts';
   import { showToast } from '../../stores/toast';
   import { appConfig } from '../../stores/app-config';
+  import Modal from '../ui/Modal.svelte';
+  import PinInput from '../auth/PinInput.svelte';
+  import {
+    formatExportAddress,
+    parseExportBackoffSeconds,
+    type SensitiveExportKind,
+  } from './sensitive-export';
+  import ExportModalStyles from './ExportModalStyles.svelte';
 
-  interface Props {
+  let {
+    open = false,
+    onClose = () => {},
+  }: {
     open?: boolean;
-    npub?: string;
     onClose?: () => void;
-  }
+  } = $props();
 
-  let { open = false, npub = '', onClose = () => {} }: Props = $props();
+  const titleId = 'export-all-title';
+  const descId = 'export-all-desc';
 
-  const tFn = get(t);
-
-  type Phase = 'pin' | 'export';
-
-  interface EvmSecretRow {
+  interface ExportTarget {
     id: string;
-    address: string;
-    label: string;
-    privateKey: string;
+    kind: SensitiveExportKind;
+    accountId?: string;
+    title: string;
+    detail?: string;
   }
 
-  interface ExportBundle {
-    seed: string | null;
-    nsec: string;
-    evmKeys: EvmSecretRow[];
-  }
-
-  let phase: Phase = $state('pin');
-  let pinDigits: string[] = $state(Array(6).fill(''));
+  let pin = $state('');
   let pinError = $state('');
-  let busy = $state(false);
-  let bundle: ExportBundle | null = $state(null);
-  let revealed = $state(new Set<string>());
-  let pinInputs: HTMLInputElement[] = $state([]);
+  let busyId = $state<string | null>(null);
+  let formEpoch = $state(0);
+  let now = $state(Date.now());
+  let backoffUntil = $state<Record<string, number>>({});
+  let copiedIds = $state<Record<string, boolean>>({});
+  let rowErrors = $state<Record<string, string>>({});
+  let evmRows = $state<EvmAccountRow[]>([]);
+  let loadState = $state<'loading' | 'ready' | 'error'>('loading');
+  let loadError = $state('');
+  let rootEl: HTMLDivElement | undefined = $state();
 
   let wasOpen = false;
-
+  let loadGen = 0;
   let pinDigitCount = $derived($appConfig.pinDigitCount);
-  $effect(() => {
-    if (pinDigits.length !== pinDigitCount) pinDigits = Array(pinDigitCount).fill('');
+  let pinReady = $derived(pin.length === pinDigitCount);
+
+  let targets = $derived.by(() => {
+    const rows: ExportTarget[] = [
+      { id: 'nostr', kind: 'nostr', title: $t('export.modal.section.nostrPrivateKey') },
+      { id: 'seed', kind: 'seed', title: $t('export.modal.label.seedPhrase') },
+    ];
+    for (const account of evmRows) {
+      const name = account.label?.trim();
+      const address = formatExportAddress(account.address);
+      rows.push({
+        id: `evm:${account.id}`,
+        kind: 'evm',
+        accountId: account.id,
+        title: name || address,
+        detail: name ? address : $t(evmAccountSchemeLabel(account.scheme)),
+      });
+    }
+    return rows;
   });
 
-  $effect(() => {
-    if (open && !wasOpen && phase === 'pin') {
-      setTimeout(() => pinInputs[0]?.focus(), 100);
-    }
-    if (!open && wasOpen) {
-      resetState();
-    }
-    wasOpen = open;
-  });
-
-  function resetState() {
-    phase = 'pin';
-    pinDigits = Array(pinDigitCount).fill('');
-    pinError = '';
-    busy = false;
-    bundle = null;
-    revealed = new Set();
+  function remainingSeconds(id: string): number {
+    const until = backoffUntil[id] ?? 0;
+    if (until <= now) return 0;
+    return Math.max(1, Math.ceil((until - now) / 1000));
   }
 
-  function handleClose() {
+  function resetState(): void {
+    pin = '';
+    pinError = '';
+    busyId = null;
+    backoffUntil = {};
+    copiedIds = {};
+    rowErrors = {};
+    evmRows = [];
+    loadState = 'loading';
+    loadError = '';
+    formEpoch += 1;
+    loadGen += 1;
+  }
+
+  function handleClose(): void {
+    if (busyId) return;
     resetState();
     onClose();
   }
 
-  function toggleReveal(id: string) {
-    const next = new Set(revealed);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    revealed = next;
-  }
-
-  async function copyValue(id: string, value: string, _label: string) {
-    if (!value) return;
-    const labelKey =
-      id === 'seed'
-        ? 'export.modal.label.seedPhrase'
-        : id === 'nsec'
-          ? 'export.modal.label.nsec'
-          : 'export.modal.label.privateKey';
-    const ok = await copyTextToClipboard(value);
-    if (ok) {
-      showToast(tFn('export.toast.copied', { values: { label: tFn(labelKey) } }));
-    } else {
-      showToast(tFn('export.toast.couldNotCopy', { values: { label: tFn(labelKey) } }));
-    }
-  }
-
-  async function loadExportBundle(pinValue: string): Promise<ExportBundle> {
-    const nsec = await loadAndDecryptKey(pinValue);
-
-    let seed: string | null = null;
+  async function loadAccounts(): Promise<void> {
+    const gen = ++loadGen;
+    loadState = 'loading';
+    loadError = '';
     try {
-      seed = await exportRecoveryPhrase();
-    } catch {
-      seed = null;
-    }
-
-    const accounts = (await listEvmAccounts()) ?? [];
-    const evmKeys: EvmSecretRow[] = [];
-    for (const acc of accounts) {
-      const privateKey = await exportEvmAccountKeyPlaintext(acc.id);
-      evmKeys.push({
-        id: acc.id,
-        address: acc.address,
-        label: acc.label?.trim() ?? '',
-        privateKey,
-      });
-    }
-
-    return { seed, nsec, evmKeys };
-  }
-
-  async function handlePinSubmit() {
-    if (busy) return;
-    const pinValue = pinDigits.join('');
-    if (pinValue.length !== pinDigitCount) {
-      pinError = tFn('auth.pinMustBeSixDigits', { values: { count: pinDigitCount } });
-      return;
-    }
-
-    busy = true;
-    pinError = '';
-    try {
-      bundle = await loadExportBundle(pinValue);
-      revealed = new Set();
-      phase = 'export';
+      const rows = (await listEvmAccounts()) ?? [];
+      if (gen !== loadGen) return;
+      evmRows = rows;
+      loadState = 'ready';
     } catch (e) {
-      pinError = tFn('auth.incorrectPinOrExportFailed');
-      console.error('Export all failed:', e);
-      showToast(getInvokeErrorMessage(e, tFn('export.error.couldNotExportSecrets')));
-      pinDigits = Array(pinDigitCount).fill('');
-      setTimeout(() => pinInputs[0]?.focus(), 100);
-    } finally {
-      busy = false;
+      if (gen !== loadGen) return;
+      evmRows = [];
+      loadState = 'error';
+      loadError = getInvokeErrorMessage(e, get(t)('export.modal.error.loadAccounts'));
     }
   }
 
-  function handlePinInput(index: number, event: Event) {
-    const input = event.target as HTMLInputElement;
-    const value = input.value;
-    if (value && !/^\d$/.test(value)) {
-      input.value = pinDigits[index];
-      return;
+  $effect(() => {
+    const isOpen = open;
+    if (isOpen && !wasOpen) {
+      resetState();
+      void loadAccounts();
     }
-    pinDigits[index] = value;
-    pinError = '';
-    if (value && index < pinDigitCount - 1) pinInputs[index + 1]?.focus();
-    if (pinDigits.every((d) => d !== '')) void handlePinSubmit();
-  }
+    wasOpen = isOpen;
+  });
 
-  function handlePinKeydown(index: number, event: KeyboardEvent) {
-    if (event.key === 'Backspace') {
-      if (!pinDigits[index] && index > 0) {
-        pinDigits[index - 1] = '';
-        pinInputs[index - 1]?.focus();
+  $effect(() => {
+    if (!open) return;
+    const pending = Object.values(backoffUntil).some((until) => until > Date.now());
+    if (!pending) return;
+    const timer = setInterval(() => {
+      now = Date.now();
+    }, 250);
+    return () => clearInterval(timer);
+  });
+
+  $effect(() => {
+    if (!open) return;
+    const el = rootEl;
+    const timer = setTimeout(() => el?.querySelector('input')?.focus(), 50);
+    return () => clearTimeout(timer);
+  });
+
+  async function copyTarget(target: ExportTarget): Promise<void> {
+    if (busyId || !pinReady || remainingSeconds(target.id) > 0) return;
+    busyId = target.id;
+    rowErrors = { ...rowErrors, [target.id]: '' };
+    const tFn = get(t);
+    try {
+      await exportSensitiveToClipboard(target.kind, target.accountId, pin);
+      copiedIds = { ...copiedIds, [target.id]: true };
+    } catch (e) {
+      const message = getInvokeErrorMessage(e, tFn('export.error.couldNotExportSecrets'));
+      const wait = parseExportBackoffSeconds(message);
+      if (wait != null) {
+        backoffUntil = { ...backoffUntil, [target.id]: Date.now() + wait * 1000 };
+        now = Date.now();
+      } else if (/incorrect pin/i.test(message)) {
+        pin = '';
+        pinError = message;
+        formEpoch += 1;
       } else {
-        pinDigits[index] = '';
+        rowErrors = { ...rowErrors, [target.id]: message };
       }
-      event.preventDefault();
-    } else if (event.key === 'ArrowLeft' && index > 0) {
-      pinInputs[index - 1]?.focus();
-    } else if (event.key === 'ArrowRight' && index < pinDigitCount - 1) {
-      pinInputs[index + 1]?.focus();
-    } else if (event.key === 'Enter') {
-      void handlePinSubmit();
+      showToast(message, undefined, undefined, { error: true });
+    } finally {
+      busyId = null;
     }
-  }
-
-  function handlePinPaste(event: ClipboardEvent) {
-    event.preventDefault();
-    const digits = (event.clipboardData?.getData('text') || '').replace(/\D/g, '').split('').slice(0, pinDigitCount);
-    digits.forEach((digit, i) => {
-      if (i < pinDigitCount) pinDigits[i] = digit;
-    });
-    const lastIndex = Math.min(digits.length - 1, pinDigitCount - 1);
-    pinInputs[lastIndex]?.focus();
-    if (digits.length === pinDigitCount) void handlePinSubmit();
-  }
-
-  function evmRowLabel(row: EvmSecretRow): string {
-    return row.label ? `${row.address} · ${row.label}` : row.address;
   }
 </script>
 
 {#if open}
-  <div use:portal>
-  <div
-    class="modal-overlay"
-    onclick={handleClose}
-    onkeydown={(e) => e.key === 'Escape' && handleClose()}
-    role="presentation"
-  >
-    <div
-      class="modal-content"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.key === 'Escape' && handleClose()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="export-all-title"
-      tabindex="0"
-    >
-      {#if phase === 'pin'}
-        <h2 id="export-all-title">{$t('auth.pinEnterTitle')}</h2>
-        <p class="modal-subtitle">{$t('export.modal.pinSubtitle.all')}</p>
+  <Modal {titleId} descriptionId={descId} onClose={handleClose} dismissible={!busyId}>
+    <div class="sensitive-export" bind:this={rootEl}>
+      <ExportModalStyles />
+      <h2 id={titleId}>{$t('export.modal.title.all')}</h2>
+      <p id={descId} class="export-desc">{$t('export.modal.subtitle.all')}</p>
+      <p class="export-warning" role="note">
+        <span class="export-warning-icon" aria-hidden="true">
+          <TriangleAlert class="size-4" />
+        </span>
+        <span>{$t('export.modal.warning.all')}</span>
+      </p>
+      <p class="export-note">{$t('export.modal.warning.clipboardAll')}</p>
 
-        {#if pinError}
-          <div class="modal-error" role="alert">{pinError}</div>
-        {/if}
+      {#key formEpoch}
+        <PinInput
+          title={$t('auth.pinEnterTitle')}
+          {pinDigitCount}
+          compact
+          isProcessing={busyId !== null}
+          error={pinError || null}
+          onErrorClear={() => (pinError = '')}
+          onChange={(next) => (pin = next)}
+          onComplete={() => {}}
+        />
+      {/key}
 
-        <div class="pin-boxes">
-          {#each pinDigits as digit, i (i)}
-            <input
-              bind:this={pinInputs[i]}
-              type="password"
-              inputmode="numeric"
-              maxlength="1"
-              class="pin-box"
-              value={digit}
-              disabled={busy}
-              aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
-              oninput={(e) => handlePinInput(i, e)}
-              onkeydown={(e) => handlePinKeydown(i, e)}
-              onpaste={handlePinPaste}
-            />
-          {/each}
-        </div>
+      <h3 class="export-list-heading">{$t('export.modal.list.heading')}</h3>
 
-        <div class="modal-actions">
-          <button type="button" class="btn-cancel" onclick={handleClose} disabled={busy}>{$t('settings.cancel')}</button>
-          <button
-            type="button"
-            class="btn-confirm"
-            onclick={handlePinSubmit}
-            disabled={busy || pinDigits.some((d) => d === '')}
-          >
-            {busy ? $t('commons.verifying') : $t('auth.continue')}
-          </button>
-        </div>
-      {:else if bundle}
-        <h2 id="export-all-title">{$t('export.modal.title.all')}</h2>
-        <p class="modal-warning">
-          {$t('export.modal.warning.all')}
+      {#if loadState === 'loading'}
+        <p class="export-status" role="status">
+          <LoaderCircle class="inline size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          {$t('export.modal.loading.accounts')}
         </p>
-
-        <div class="export-sections">
-          <section class="export-section">
-            <h3 class="export-section-title">{$t('export.modal.section.seedPhrase')}</h3>
-            {#if bundle.seed}
-              <div class="secret-value-shell">
-                <div class="secret-value-main">
-                  {#if revealed.has('seed')}
-                    <span class="secret-plain secret-plain-seed">{bundle.seed}</span>
-                  {:else}
-                    <span class="secret-mask" aria-hidden="true">•••••••••••••••••••••••••••••••••</span>
-                  {/if}
-                </div>
-                <div class="secret-toolbar">
-                  <button
-                    type="button"
-                    class="btn-reveal-secret"
-                    aria-pressed={revealed.has('seed')}
-                    aria-label={revealed.has('seed')
-                      ? $t('export.modal.hide.seedPhrase')
-                      : $t('export.modal.reveal.seedPhrase')}
-                    title={revealed.has('seed') ? $t('commons.hide') : $t('commons.reveal')}
-                    onclick={() => toggleReveal('seed')}
-                  >
-                    {#if revealed.has('seed')}
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-                      </svg>
-                    {:else}
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    {/if}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn-copy"
-                    aria-label={$t('export.modal.aria.copySeedPhrase')}
-                    title={$t('settings.copy')}
-                    onclick={() => copyValue('seed', bundle!.seed ?? '', 'Seed phrase')}
-                  >
-                    <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            {:else}
-              <p class="export-unavailable">{$t('export.modal.unavailable.seed')}</p>
-            {/if}
-          </section>
-
-          <section class="export-section">
-            <h3 class="export-section-title">{$t('export.modal.section.nostrPrivateKey')}</h3>
-            <code class="export-label">{npub || 'nPub'}</code>
-            <div class="secret-value-shell">
-              <div class="secret-value-main">
-                {#if revealed.has('nsec')}
-                  <span class="secret-plain">{bundle.nsec}</span>
-                {:else}
-                  <span class="secret-mask" aria-hidden="true">•••••••••••••••••••••••••••••••••</span>
-                {/if}
-              </div>
-              <div class="secret-toolbar">
-                <button
-                  type="button"
-                  class="btn-reveal-secret"
-                  aria-pressed={revealed.has('nsec')}
-                  aria-label={revealed.has('nsec')
-                    ? $t('export.modal.hide.nsec')
-                    : $t('export.modal.reveal.nsec')}
-                  title={revealed.has('nsec') ? $t('commons.hide') : $t('commons.reveal')}
-                  onclick={() => toggleReveal('nsec')}
-                >
-                  {#if revealed.has('nsec')}
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-                    </svg>
-                  {:else}
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  {/if}
-                </button>
-                <button
-                  type="button"
-                  class="btn-copy"
-                  aria-label={$t('export.modal.aria.copyNsec')}
-                  title={$t('settings.copy')}
-                  onclick={() => copyValue('nsec', bundle!.nsec, 'nsec')}
-                >
-                  <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section class="export-section">
-            <h3 class="export-section-title">{$t('export.modal.section.evmPrivateKeys')}</h3>
-            {#if bundle.evmKeys.length === 0}
-              <p class="export-unavailable">{$t('export.modal.unavailable.evm')}</p>
-            {:else}
-              <ul class="evm-export-list">
-                {#each bundle.evmKeys as row (row.id)}
-                  {@const rowKey = `evm-${row.id}`}
-                  <li class="evm-export-item">
-                    <code class="export-label">{evmRowLabel(row)}</code>
-                    <div class="secret-value-shell">
-                      <div class="secret-value-main">
-                        {#if revealed.has(rowKey)}
-                          <span class="secret-plain">{row.privateKey}</span>
-                        {:else}
-                          <span class="secret-mask" aria-hidden="true">•••••••••••••••••••••••••••••••••</span>
-                        {/if}
-                      </div>
-                      <div class="secret-toolbar">
-                        <button
-                          type="button"
-                          class="btn-reveal-secret"
-                          aria-pressed={revealed.has(rowKey)}
-                          aria-label={revealed.has(rowKey)
-                            ? $t('export.modal.hide.privateKey')
-                            : $t('export.modal.reveal.privateKey')}
-                          title={revealed.has(rowKey) ? $t('commons.hide') : $t('commons.reveal')}
-                          onclick={() => toggleReveal(rowKey)}
-                        >
-                          {#if revealed.has(rowKey)}
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-                            </svg>
-                          {:else}
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                          {/if}
-                        </button>
-                        <button
-                          type="button"
-                          class="btn-copy"
-                          aria-label={$t('export.modal.aria.copyPrivateKeyForAddress', { values: { address: row.address } })}
-                          title={$t('settings.copy')}
-                          onclick={() => copyValue(rowKey, row.privateKey, 'Private key')}
-                        >
-                          <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </section>
-        </div>
-
-        <div class="modal-actions">
-          <button type="button" class="btn-close" onclick={handleClose}>{$t('commons.close')}</button>
-        </div>
+      {:else if loadState === 'error'}
+        <div class="export-error" role="alert">{loadError}</div>
+        <Button type="button" variant="outline" onclick={() => void loadAccounts()}>
+          {$t('export.modal.action.retry')}
+        </Button>
       {/if}
+
+      <ul class="export-list">
+        {#each targets as target (target.id)}
+          {@const wait = remainingSeconds(target.id)}
+          <li class="export-row">
+            <div class="export-row-text">
+              <div class="export-row-title">{target.title}</div>
+              {#if target.detail}
+                <div class="export-row-detail">{target.detail}</div>
+              {/if}
+              {#if busyId === target.id}
+                <p class="export-status" role="status">{$t('export.modal.row.copying')}</p>
+              {:else if copiedIds[target.id] && !rowErrors[target.id] && wait === 0}
+                <p class="export-status export-status-ok" role="status">{$t('export.modal.row.copied')}</p>
+              {:else if wait > 0}
+                <p class="export-status" role="status">
+                  {$t('export.modal.backoff.body', { values: { seconds: wait } })}
+                </p>
+              {:else if rowErrors[target.id]}
+                <p class="export-error" role="alert">{rowErrors[target.id]}</p>
+              {/if}
+            </div>
+            <Button
+              type="button"
+              class="h-10 shrink-0"
+              disabled={!pinReady || busyId !== null || wait > 0}
+              aria-label={wait > 0
+                ? $t('export.modal.action.wait', { values: { seconds: wait } })
+                : $t('export.modal.action.copyNamed', { values: { name: target.title } })}
+              onclick={() => void copyTarget(target)}
+            >
+              {#if busyId === target.id}
+                <LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              {/if}
+              {#if wait > 0}
+                {$t('export.modal.action.wait', { values: { seconds: wait } })}
+              {:else}
+                {$t('export.modal.action.copy')}
+              {/if}
+            </Button>
+          </li>
+        {/each}
+      </ul>
+
+      {#if loadState === 'ready' && evmRows.length === 0}
+        <p class="export-status">{$t('export.modal.empty.noEvm')}</p>
+      {/if}
+
+      <div class="export-actions">
+        <Button type="button" variant="outline" onclick={handleClose} disabled={busyId !== null}>
+          {$t('settings.cancel')}
+        </Button>
+      </div>
     </div>
-  </div>
-  </div>
+  </Modal>
 {/if}
 
-<style>
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-    backdrop-filter: blur(4px);
-  }
-
-  .modal-content {
-    background: var(--bg-elevated);
-    border-radius: 12px;
-    padding: 28px;
-    max-width: 640px;
-    width: 90%;
-    max-height: 85vh;
-    overflow-y: auto;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  }
-
-  .modal-content h2 {
-    margin: 0 0 8px;
-    font-size: 1.375rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .modal-subtitle {
-    margin: 0 0 20px;
-    color: var(--text-muted);
-    font-size: 0.9375rem;
-    line-height: 1.5;
-  }
-
-  .modal-warning {
-    margin: 0 0 16px;
-    padding: 12px 14px;
-    border-radius: 8px;
-    border-left: 3px solid var(--warning);
-    background: rgba(250, 166, 26, 0.1);
-    color: var(--warning);
-    font-size: 0.875rem;
-    line-height: 1.45;
-  }
-
-  .modal-error {
-    margin: 0 0 16px;
-    padding: 12px 14px;
-    border-radius: 8px;
-    background: rgba(242, 63, 66, 0.1);
-    color: var(--danger);
-    font-size: 0.875rem;
-  }
-
-  .pin-boxes {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    margin-bottom: 20px;
-  }
-
-  .pin-box {
-    width: 52px;
-    height: 60px;
-    padding: 0;
-    border: 2px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 1.5rem;
-    text-align: center;
-    outline: none;
-  }
-
-  .pin-box:focus {
-    border-color: var(--brand);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
-  }
-
-  .export-sections {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
-
-  .export-section-title {
-    margin: 0 0 8px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-  }
-
-  .export-label {
-    display: block;
-    margin: 0 0 8px;
-    font-size: 0.8125rem;
-    color: var(--text-primary);
-    word-break: break-all;
-  }
-
-  .export-unavailable {
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  .evm-export-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-
-  .evm-export-item {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .secret-value-shell {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 12px;
-    justify-content: space-between;
-    padding: 12px 14px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-  }
-
-  .secret-value-main {
-    flex: 1;
-    min-width: 140px;
-  }
-
-  .secret-plain {
-    color: var(--text-secondary);
-    font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
-    word-break: break-all;
-  }
-
-  .secret-plain-seed {
-    font-family: inherit;
-    font-size: 0.9375rem;
-    line-height: 1.55;
-    word-break: normal;
-  }
-
-  .secret-mask {
-    color: var(--text-muted);
-    letter-spacing: 0.04em;
-    user-select: none;
-  }
-
-  .secret-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .btn-reveal-secret {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    cursor: pointer;
-  }
-
-  .btn-reveal-secret[aria-pressed='true'] {
-    border-color: var(--brand);
-    color: var(--brand);
-  }
-
-  .reveal-icon {
-    width: 1.15rem;
-    height: 1.15rem;
-  }
-
-  .btn-copy {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: border-color 0.2s;
-  }
-
-  .btn-copy:hover {
-    border-color: var(--brand);
-  }
-
-  .copy-icon {
-    display: block;
-  }
-
-  .modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 24px;
-  }
-</style>
