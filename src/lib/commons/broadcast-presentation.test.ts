@@ -114,6 +114,27 @@ describe('computeBroadcastPresentation', () => {
     const result = computeBroadcastPresentation(dto, {}, [], npub, tFn);
 
     expect(result.canMessage).toBe(false);
+    expect(result.hasExistingDm).toBe(false);
+  });
+
+  it('marks hasExistingDm when a DM thread already exists with the author', () => {
+    const npub = 'npub1author0000000000000000000000000000000000000';
+    const me = 'npub1me000000000000000000000000000000000000000000';
+    const dto = makeDto({ subject: 'user', authorNpub: npub, subjectId: npub });
+    const result = computeBroadcastPresentation(dto, {}, [], me, tFn, true);
+
+    expect(result.canMessage).toBe(true);
+    expect(result.hasExistingDm).toBe(true);
+  });
+
+  it('does not mark hasExistingDm when no DM thread exists', () => {
+    const npub = 'npub1author0000000000000000000000000000000000000';
+    const me = 'npub1me000000000000000000000000000000000000000000';
+    const dto = makeDto({ subject: 'user', authorNpub: npub, subjectId: npub });
+    const result = computeBroadcastPresentation(dto, {}, [], me, tFn, false);
+
+    expect(result.canMessage).toBe(true);
+    expect(result.hasExistingDm).toBe(false);
   });
 
   it('does not allow joining your own squad broadcast', () => {

@@ -40,6 +40,28 @@ static ANDROID_FILE_CACHE: Lazy<std::sync::Mutex<HashMap<String, (Vec<u8>, Strin
 #[cfg(target_os = "android")]
 use crate::android::{clipboard, filesystem};
 
+/// True when at least one relay in the send `Output` acknowledged the event.
+/// Used with `gift_wrap_to(trusted_relays(), …)` so a non-empty set means a trusted ACK.
+pub(crate) fn dm_gift_wrap_output_ok(output: &Output<EventId>) -> bool {
+    !output.success.is_empty()
+}
+
+/// Publish a NIP-17 gift wrap to the trusted relay set only (same chokepoint as typing/MLS).
+async fn gift_wrap_dm_to_trusted(
+    client: &Client,
+    receiver: &PublicKey,
+    rumor: UnsignedEvent,
+) -> Result<Output<EventId>, nostr_sdk::client::Error> {
+    client
+        .gift_wrap_to(
+            crate::trusted_relays::trusted_relays().iter().cloned(),
+            receiver,
+            rumor,
+            [],
+        )
+        .await
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub struct Message {
     pub id: String,
@@ -1143,14 +1165,10 @@ pub async fn message(
         while send_attempts < MAX_ATTEMPTS {
             send_attempts += 1;
 
-            match client
-                .gift_wrap(&receiver_pubkey, built_rumor.clone(), [])
-                .await
-            {
+            match gift_wrap_dm_to_trusted(&client, &receiver_pubkey, built_rumor.clone()).await {
                 Ok(output) => {
-                    // Check if at least one relay acknowledged the message
-                    if !output.success.is_empty() {
-                        // Success! Message was acknowledged by at least one relay
+                    // Trusted-relay publish: non-empty success means at least one trusted ACK.
+                    if dm_gift_wrap_output_ok(&output) {
                         // Extract wrapper_event_id BEFORE moving output
                         let wrapper_id = output.id().to_hex();
                         final_output = Some(output);
@@ -1265,8 +1283,8 @@ pub async fn message(
             return Ok(false);
         }
 
-        // Send message to our own public key, to allow for message recovering
-        let _ = client.gift_wrap(&my_public_key, built_rumor, []).await;
+        // Self-wrap for multi-device recovery (best-effort; peer send already succeeded).
+        let _ = gift_wrap_dm_to_trusted(&client, &my_public_key, built_rumor).await;
 
         Ok(true)
     }
@@ -1419,12 +1437,9 @@ pub async fn klipy_gif_message(
 
     while send_attempts < MAX_ATTEMPTS {
         send_attempts += 1;
-        match client
-            .gift_wrap(&receiver_pubkey, built_rumor.clone(), [])
-            .await
-        {
+        match gift_wrap_dm_to_trusted(&client, &receiver_pubkey, built_rumor.clone()).await {
             Ok(output) => {
-                if !output.success.is_empty() {
+                if dm_gift_wrap_output_ok(&output) {
                     wrapper_id_hex = output.id().to_hex();
                     succeeded = true;
                     break;
@@ -1489,8 +1504,8 @@ pub async fn klipy_gif_message(
         }
     }
 
-    // Send to our own public key too, for message recovery across devices.
-    let _ = client.gift_wrap(&my_public_key, built_rumor, []).await;
+    // Self-wrap for multi-device recovery (best-effort; peer send already succeeded).
+    let _ = gift_wrap_dm_to_trusted(&client, &my_public_key, built_rumor).await;
 
     Ok(true)
 }
@@ -3479,17 +3494,16 @@ pub async fn react_to_message(
             .build(my_public_key);
             let rumor_id = rumor.id.ok_or("Failed to get rumor ID")?.to_hex();
 
-            // Send reaction to the receiver
-            client
-                .gift_wrap(&receiver_pubkey, rumor.clone(), [])
-                .await
-                .map_err(|e| e.to_string())?;
+            // Send reaction to the receiver (trusted relays)
+            let reaction_out =
+                gift_wrap_dm_to_trusted(&client, &receiver_pubkey, rumor.clone()).await
+                    .map_err(|e| e.to_string())?;
+            if !dm_gift_wrap_output_ok(&reaction_out) {
+                return Err("no trusted relay acknowledged the reaction".to_string());
+            }
 
-            // Send reaction to ourselves for recovery
-            client
-                .gift_wrap(&my_public_key, rumor, [])
-                .await
-                .map_err(|e| e.to_string())?;
+            // Self-wrap for recovery (best-effort)
+            let _ = gift_wrap_dm_to_trusted(&client, &my_public_key, rumor).await;
 
             // Add reaction to local state
             let reaction = Reaction {
@@ -3941,17 +3955,16 @@ pub async fn edit_message(
             // For DMs, send gift-wrapped edit
             let receiver_pubkey = PublicKey::from_bech32(&chat_id).map_err(|e| e.to_string())?;
 
-            // Send edit to the receiver
-            client
-                .gift_wrap(&receiver_pubkey, rumor.clone(), [])
+            // Send edit to the receiver (trusted relays)
+            let edit_out = gift_wrap_dm_to_trusted(&client, &receiver_pubkey, rumor.clone())
                 .await
                 .map_err(|e| e.to_string())?;
+            if !dm_gift_wrap_output_ok(&edit_out) {
+                return Err("no trusted relay acknowledged the edit".to_string());
+            }
 
-            // Send edit to ourselves for recovery
-            client
-                .gift_wrap(&my_public_key, rumor, [])
-                .await
-                .map_err(|e| e.to_string())?;
+            // Self-wrap for recovery (best-effort)
+            let _ = gift_wrap_dm_to_trusted(&client, &my_public_key, rumor).await;
         }
         ChatType::MlsGroup => {
             // For group chats, send edit through MLS
@@ -4066,6 +4079,38 @@ pub fn envelope_names_npub(content: &str, member_npub: &str) -> bool {
             envelope.mentions.iter().any(|m| m.npub == member_npub)
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod dm_gift_wrap_output_ok_tests {
+    use super::dm_gift_wrap_output_ok;
+    use nostr_sdk::prelude::*;
+    use std::collections::{HashMap, HashSet};
+
+    fn output_with(success: HashSet<RelayUrl>, failed: HashMap<RelayUrl, String>) -> Output<EventId> {
+        Output {
+            val: EventId::all_zeros(),
+            success,
+            failed,
+        }
+    }
+
+    #[test]
+    fn ok_when_at_least_one_relay_acked() {
+        let mut success = HashSet::new();
+        success.insert(RelayUrl::parse("wss://jskitty.cat/nostr").unwrap());
+        assert!(dm_gift_wrap_output_ok(&output_with(success, HashMap::new())));
+    }
+
+    #[test]
+    fn not_ok_when_no_relay_acked() {
+        let mut failed = HashMap::new();
+        failed.insert(
+            RelayUrl::parse("wss://relay.damus.io").unwrap(),
+            "timeout".to_string(),
+        );
+        assert!(!dm_gift_wrap_output_ok(&output_with(HashSet::new(), failed)));
     }
 }
 

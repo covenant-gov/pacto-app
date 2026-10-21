@@ -3,6 +3,7 @@
   import { get } from 'svelte/store';
   import { activeDmId, activeDmTab, composingNewChat, addPendingDm, backendDmMessages, dmSendError, newChatDraftNpub, newChatDraftMessage } from '../../stores/app';
   import { sendDmMessage } from '../../lib/api/nostr';
+  import { requestCatchUp } from '../../lib/app/wake-sync';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../../lib/utils/dm-debug';
   import { isValidNpub } from '../../lib/utils/npub';
@@ -69,6 +70,8 @@
     try {
       const ok = await sendDmMessage(trimmedNpub, contentToSend);
       dmLog('MessengerChatView sendDmMessage result', { ok });
+      // Pull gift wraps that may have landed while we were only publishing outbound.
+      if (ok) requestCatchUp();
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, tFn('errors.dm.sendFailed'));
       $dmSendError = friendlyMessage(raw, 'dm_send');

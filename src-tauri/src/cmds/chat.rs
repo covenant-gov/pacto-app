@@ -2300,6 +2300,44 @@ pub(crate) fn try_wallet_tx_announcement_notify_body(
     })
 }
 
+/// When a rumor is already in SQLite but missing from in-memory STATE (e.g. prior intake
+/// persisted without the webview applying `message_new`), put it in STATE and re-emit.
+/// Returns true when a reconcile emit happened.
+async fn reconcile_existing_dm_from_db(
+    msg: &Message,
+    contact: &str,
+    wrapper_event_id: &str,
+) -> bool {
+    if let Some(handle) = TAURI_APP.get() {
+        if let Ok(updated) = db::update_wrapper_event_id(&handle, &msg.id, wrapper_event_id).await {
+            if !updated {
+                let mut cache = WRAPPER_ID_CACHE.lock().await;
+                cache.insert(wrapper_event_id.to_string());
+            }
+        }
+    }
+    if !contact.starts_with("npub1") {
+        return false;
+    }
+    let added = {
+        let mut state = STATE.lock().await;
+        state.add_message_to_participant(contact, msg.clone())
+    };
+    if !added {
+        return false;
+    }
+    if let Some(handle) = TAURI_APP.get() {
+        let _ = handle.emit(
+            "message_new",
+            serde_json::json!({
+                "message": msg,
+                "chat_id": contact
+            }),
+        );
+    }
+    true
+}
+
 /// Handle a processed text message
 pub(crate) async fn handle_text_message(
     mut msg: Message,
@@ -2312,20 +2350,7 @@ pub(crate) async fn handle_text_message(
     if let Some(handle) = TAURI_APP.get() {
         if let Ok(exists) = db::message_exists_in_db(&handle, &msg.id).await {
             if exists {
-                // Message already in DB but we got here (wrapper check passed)
-                // Try to backfill the wrapper_event_id for future fast lookups
-                // If backfill fails (message already has a different wrapper), add this wrapper to cache
-                // to prevent repeated processing of duplicate giftwraps
-                if let Ok(updated) =
-                    db::update_wrapper_event_id(&handle, &msg.id, wrapper_event_id).await
-                {
-                    if !updated {
-                        // Message has a different wrapper_id - add this duplicate wrapper to cache
-                        let mut cache = WRAPPER_ID_CACHE.lock().await;
-                        cache.insert(wrapper_event_id.to_string());
-                    }
-                }
-                return false;
+                return reconcile_existing_dm_from_db(&msg, contact, wrapper_event_id).await;
             }
         }
     }
@@ -2569,20 +2594,7 @@ pub(crate) async fn handle_file_attachment(
     if let Some(handle) = TAURI_APP.get() {
         if let Ok(exists) = db::message_exists_in_db(&handle, &msg.id).await {
             if exists {
-                // Message already in DB but we got here (wrapper check passed)
-                // Try to backfill the wrapper_event_id for future fast lookups
-                // If backfill fails (message already has a different wrapper), add this wrapper to cache
-                // to prevent repeated processing of duplicate giftwraps
-                if let Ok(updated) =
-                    db::update_wrapper_event_id(&handle, &msg.id, wrapper_event_id).await
-                {
-                    if !updated {
-                        // Message has a different wrapper_id - add this duplicate wrapper to cache
-                        let mut cache = WRAPPER_ID_CACHE.lock().await;
-                        cache.insert(wrapper_event_id.to_string());
-                    }
-                }
-                return false;
+                return reconcile_existing_dm_from_db(&msg, contact, wrapper_event_id).await;
             }
         }
     }

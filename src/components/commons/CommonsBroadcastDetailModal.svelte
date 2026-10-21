@@ -5,6 +5,7 @@
   import type { CommonsBroadcastDto } from '../../lib/commons/types';
   import { profiles } from '../../stores/profiles';
   import { squads } from '../../stores/squads';
+  import { dmChatsByNpub } from '../../stores/dm';
   import { currentUser } from '../../stores/auth-session';
   import { showToast } from '../../stores/toast';
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
@@ -40,7 +41,15 @@
 
   const presentation = $derived.by(() => {
     $commonsJoinRequestRevision;
-    return computeBroadcastPresentation(broadcast, $profiles, $squads, $currentUser?.npub, tFn);
+    const hasExistingDm = broadcast.authorNpub in $dmChatsByNpub;
+    return computeBroadcastPresentation(
+      broadcast,
+      $profiles,
+      $squads,
+      $currentUser?.npub,
+      tFn,
+      hasExistingDm
+    );
   });
   const isSquad = $derived(presentation.isSquad);
   const title = $derived(presentation.title);
@@ -132,7 +141,11 @@
     <div class="commons-detail-actions">
       {#if canMessage}
         <button type="button" class="commons-detail-btn" disabled={messageBusy} onclick={handleRequestDm}>
-          {messageBusy ? $t('commons.detail.opening') : $t('commons.detail.requestDm')}
+          {messageBusy
+            ? $t('commons.detail.opening')
+            : presentation.hasExistingDm
+              ? $t('commons.detail.message')
+              : $t('commons.detail.requestDm')}
         </button>
       {/if}
       {#if canJoin}

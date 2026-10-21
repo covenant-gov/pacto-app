@@ -43,7 +43,7 @@ Entry points include **`message`** (text), **`file_message`**, **`voice_message`
 1. If a chat already exists for `receiver`, use **`chat.is_mls_group()`**.
 2. Else **`receiver.starts_with("npub1")` → DM**, otherwise treat as MLS group.
 
-- **DM:** `state.add_message_to_participant(&receiver, msg)` → rumor → **Gift Wrap** → publish.
+- **DM:** `state.add_message_to_participant(&receiver, msg)` → rumor → **Gift Wrap** published via `gift_wrap_to(trusted_relays::trusted_relays(), …)` (same curated set as typing indicators / MLS welcomes / Join inbox). Success requires at least one trusted-relay ACK; Settings “default relays” still participate in gift-wrap **subscribe/fetch** for broader read coverage.
 - **MLS:** `state.create_or_get_mls_group_chat` + `add_message_to_chat` → **`crate::mls::send_mls_message`** → Kind **444**.
 
 ### Receiving (`src-tauri/src/lib.rs`)

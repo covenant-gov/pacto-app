@@ -15,6 +15,8 @@ export interface BroadcastPresentation {
   joinBlockReason: string | null;
   joinInFlight: boolean;
   canMessage: boolean;
+  /** True when a DM thread with the author already exists (Pending/Friends/Requests). */
+  hasExistingDm: boolean;
   canJoin: boolean;
   greetingName: string;
 }
@@ -28,7 +30,8 @@ export function computeBroadcastPresentation(
   profileRecord: Record<string, NostrProfile>,
   squadList: Squad[],
   currentNpub: string | undefined,
-  tFn: (key: string, opts?: Record<string, unknown>) => string
+  tFn: (key: string, opts?: Record<string, unknown>) => string,
+  hasExistingDm = false
 ): BroadcastPresentation {
   const isSquad = broadcast.subject === 'squad';
   const isUser = broadcast.subject === 'user';
@@ -72,6 +75,7 @@ export function computeBroadcastPresentation(
     joinBlockReason,
     joinInFlight,
     canMessage,
+    hasExistingDm: canMessage && hasExistingDm,
     canJoin,
     greetingName,
   };
