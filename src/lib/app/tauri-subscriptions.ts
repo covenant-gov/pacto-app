@@ -101,6 +101,24 @@ async function refreshPendingWelcomes(): Promise<void> {
   );
 }
 
+/** Merge Pending/Friends flags from an inbound or outbound DM message. */
+function mergeDmChatFlagsFromMessage(chatId: string, m: DmMessage): void {
+  dmChatsByNpub.update((map: Record<string, DmChatState>) => {
+    const cur = map[chatId];
+    return {
+      ...map,
+      [chatId]: {
+        npub: chatId,
+        name: cur?.name,
+        avatar: cur?.avatar,
+        hasFromMe: (cur?.hasFromMe ?? false) || m.mine,
+        hasFromThem: (cur?.hasFromThem ?? false) || !m.mine,
+        lastAt: Math.max(cur?.lastAt ?? 0, m.at),
+      },
+    };
+  });
+}
+
 function register(
   unsubs: Promise<UnlistenFn>[],
   event: string,
@@ -161,18 +179,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       });
       return { ...byNpub, [chat_id]: [...withoutDupes, m] };
     });
-    dmChatsByNpub.update((map: Record<string, DmChatState>) => {
-      const cur = map[chat_id];
-      const next = {
-        npub: chat_id,
-        name: cur?.name,
-        avatar: cur?.avatar,
-        hasFromMe: (cur?.hasFromMe ?? false) || m.mine,
-        hasFromThem: (cur?.hasFromThem ?? false) || !m.mine,
-        lastAt: Math.max(cur?.lastAt ?? 0, m.at),
-      };
-      return { ...map, [chat_id]: next };
-    });
+    mergeDmChatFlagsFromMessage(chat_id, m);
     const invite = parseSquadInviteMessage(content);
     if (invite?.groupId) {
       if (!m.mine) {
@@ -215,6 +222,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
           [chat_id]: [...out, m].sort((a: DmMessage, b: DmMessage) => a.at - b.at),
         };
       });
+      mergeDmChatFlagsFromMessage(chat_id, m);
       if (!m.mine) {
         const invite = parseSquadInviteMessage(m.content ?? '');
         if (invite?.groupId) {

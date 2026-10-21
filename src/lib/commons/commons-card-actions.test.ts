@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { sendCommonsJoinRequest } from './commons-card-actions';
+import { get } from 'svelte/store';
+import { openCommonsUserDmRequest, sendCommonsJoinRequest } from './commons-card-actions';
 import type { CommonsBroadcastDto } from './types';
 import {
   getJoinRequestRecord,
@@ -7,6 +8,16 @@ import {
   resetCommonsJoinRequestRevision,
 } from './commons-join-request';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
+import {
+  activeDmId,
+  activeDmTab,
+  blockedDmNpubs,
+  composingNewChat,
+  dmChatsByNpub,
+  newChatDraftMessage,
+  newChatDraftNpub,
+} from '../../stores/dm';
+import { activeTopNavTab, activeView } from '../../stores/navigation';
 
 vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn().mockResolvedValue(undefined),
@@ -116,5 +127,70 @@ describe('sendCommonsJoinRequest', () => {
     expect(result.ok).toBe(false);
     expect(isJoinRequestInFlight('squad-mls-id')).toBe(false);
     expect(getJoinRequestRecord('squad-mls-id')).toBeNull();
+  });
+});
+
+const AUTHOR = 'npub1author0000000000000000000000000000000000000';
+
+describe('openCommonsUserDmRequest', () => {
+  beforeEach(() => {
+    dmChatsByNpub.set({});
+    blockedDmNpubs.set(new Set());
+    activeDmId.set(null);
+    composingNewChat.set(false);
+    newChatDraftNpub.set('');
+    newChatDraftMessage.set('');
+    activeDmTab.set('friends');
+    activeTopNavTab.set('commons');
+    activeView.set('hub');
+  });
+
+  it('opens compose with a greeting when no DM thread exists', () => {
+    openCommonsUserDmRequest(AUTHOR, 'Alice');
+
+    expect(get(composingNewChat)).toBe(true);
+    expect(get(activeDmId)).toBeNull();
+    expect(get(newChatDraftNpub)).toBe(AUTHOR);
+    expect(get(newChatDraftMessage)).toBe('Hi Alice, ');
+    expect(get(activeTopNavTab)).toBe('dms');
+  });
+
+  it('opens the existing thread instead of compose when a DM already exists', () => {
+    dmChatsByNpub.set({
+      [AUTHOR]: {
+        npub: AUTHOR,
+        hasFromMe: true,
+        hasFromThem: false,
+        lastAt: 1,
+      },
+    });
+
+    openCommonsUserDmRequest(AUTHOR, 'Alice');
+
+    expect(get(composingNewChat)).toBe(false);
+    expect(get(activeDmId)).toBe(AUTHOR);
+    expect(get(activeDmTab)).toBe('pending');
+    expect(get(newChatDraftNpub)).toBe('');
+    expect(get(newChatDraftMessage)).toBe('');
+    expect(get(activeTopNavTab)).toBe('dms');
+  });
+
+  it('does nothing when the author is blocked, even if a DM thread exists', () => {
+    blockedDmNpubs.set(new Set([AUTHOR]));
+    dmChatsByNpub.set({
+      [AUTHOR]: {
+        npub: AUTHOR,
+        hasFromMe: true,
+        hasFromThem: true,
+        lastAt: 1,
+      },
+    });
+
+    openCommonsUserDmRequest(AUTHOR, 'Alice');
+
+    expect(get(activeDmId)).toBeNull();
+    expect(get(composingNewChat)).toBe(false);
+    expect(get(newChatDraftNpub)).toBe('');
+    expect(get(activeTopNavTab)).toBe('commons');
   });
 });

@@ -1,3 +1,4 @@
+import { get } from 'svelte/store';
 import { sendDmMessage } from '../api/nostr';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsBroadcastDto } from './types';
@@ -14,18 +15,42 @@ import { formatJoinInboxDm } from '../squad/squad-join-mls';
 import { activeTopNavTab, activeView } from '../../stores/navigation';
 import {
   activeDmId,
+  activeDmTab,
+  blockedDmNpubs,
   composingNewChat,
+  dmChatsByNpub,
+  dmSidebarCategoryForNpub,
   newChatDraftNpub,
   newChatDraftMessage,
+  pinnedDmNpubs,
+  type DmTab,
 } from '../../stores/dm';
 import { loadProfile } from '../../stores/profiles';
 
 /**
- * Open the DMs "New Chat" compose view with the recipient and a partial
- * greeting pre-filled so the sender can finish the message before sending.
+ * Open an existing DM thread with the author, or the New Chat compose view with a
+ * partial greeting when no thread exists yet.
  */
 export function openCommonsUserDmRequest(authorNpub: string, displayName?: string): void {
   if (!authorNpub.startsWith('npub1')) return;
+  // Blocked peers stay out of the DM sidebar; do not navigate into a stranded thread.
+  if (get(blockedDmNpubs).has(authorNpub)) return;
+
+  const chats = get(dmChatsByNpub);
+  if (authorNpub in chats) {
+    newChatDraftNpub.set('');
+    newChatDraftMessage.set('');
+    composingNewChat.set(false);
+    activeDmId.set(authorNpub);
+    activeDmTab.set(
+      dmSidebarCategoryForNpub(authorNpub, chats, get(pinnedDmNpubs)) as DmTab
+    );
+    activeTopNavTab.set('dms');
+    activeView.set('hub');
+    void loadProfile(authorNpub);
+    return;
+  }
+
   const name = displayName?.trim();
   newChatDraftNpub.set(authorNpub);
   newChatDraftMessage.set(name ? `Hi ${name}, ` : 'Hi, ');
