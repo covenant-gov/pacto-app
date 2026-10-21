@@ -2304,7 +2304,7 @@ pub(crate) fn try_wallet_tx_announcement_notify_body(
 /// persisted without the webview applying `message_new`), put it in STATE and re-emit.
 /// Returns true when a reconcile emit happened.
 async fn reconcile_existing_dm_from_db(
-    msg: &Message,
+    mut msg: Message,
     contact: &str,
     wrapper_event_id: &str,
 ) -> bool {
@@ -2318,6 +2318,11 @@ async fn reconcile_existing_dm_from_db(
     }
     if !contact.starts_with("npub1") {
         return false;
+    }
+    if !msg.replied_to.is_empty() {
+        if let Some(handle) = TAURI_APP.get() {
+            let _ = db::populate_reply_context(&handle, &mut msg).await;
+        }
     }
     let added = {
         let mut state = STATE.lock().await;
@@ -2334,8 +2339,75 @@ async fn reconcile_existing_dm_from_db(
                 "chat_id": contact
             }),
         );
+        let _ = update_unread_counter(handle.clone()).await;
     }
     true
+}
+
+#[cfg(test)]
+mod reconcile_existing_dm_from_db_tests {
+    use super::*;
+
+    fn test_msg(id: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            content: "hello".to_string(),
+            at: 42,
+            mine: false,
+            ..Default::default()
+        }
+    }
+
+    async fn remove_dm_chat(contact: &str) {
+        let mut state = STATE.lock().await;
+        state.chats.retain(|c| !c.has_participant(contact));
+        state.profiles.retain(|p| p.id != contact);
+    }
+
+    #[tokio::test]
+    async fn non_npub_contact_returns_false() {
+        let msg = test_msg("reconcile-non-npub");
+        assert!(
+            !reconcile_existing_dm_from_db(msg, "mls-group-not-dm", "wrap-non-npub").await
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_from_state_returns_true_and_adds_message() {
+        let contact = "npub1reconcilemissingmsg000000000000000000000000000000";
+        remove_dm_chat(contact).await;
+        let msg = test_msg("reconcile-add-1");
+        assert!(
+            reconcile_existing_dm_from_db(msg, contact, "wrap-add-1").await,
+            "expected reconcile emit when STATE lacked the message"
+        );
+        {
+            let state = STATE.lock().await;
+            let chat = state
+                .chats
+                .iter()
+                .find(|c| c.has_participant(contact))
+                .expect("DM chat after reconcile");
+            assert!(chat.messages.iter().any(|m| m.id == "reconcile-add-1"));
+        }
+        remove_dm_chat(contact).await;
+    }
+
+    #[tokio::test]
+    async fn already_in_state_returns_false() {
+        let contact = "npub1reconcilealreadypresent000000000000000000000000";
+        remove_dm_chat(contact).await;
+        let msg = test_msg("reconcile-dup-1");
+        assert!(
+            reconcile_existing_dm_from_db(msg.clone(), contact, "wrap-dup-1").await,
+            "first reconcile should add"
+        );
+        assert!(
+            !reconcile_existing_dm_from_db(msg, contact, "wrap-dup-2").await,
+            "second reconcile should be a no-op"
+        );
+        remove_dm_chat(contact).await;
+    }
 }
 
 /// Handle a processed text message
@@ -2350,7 +2422,9 @@ pub(crate) async fn handle_text_message(
     if let Some(handle) = TAURI_APP.get() {
         if let Ok(exists) = db::message_exists_in_db(&handle, &msg.id).await {
             if exists {
-                return reconcile_existing_dm_from_db(&msg, contact, wrapper_event_id).await;
+                // Heal STATE as a side effect; do not count as a network-new message for sync.
+                let _ = reconcile_existing_dm_from_db(msg, contact, wrapper_event_id).await;
+                return false;
             }
         }
     }
@@ -2594,7 +2668,9 @@ pub(crate) async fn handle_file_attachment(
     if let Some(handle) = TAURI_APP.get() {
         if let Ok(exists) = db::message_exists_in_db(&handle, &msg.id).await {
             if exists {
-                return reconcile_existing_dm_from_db(&msg, contact, wrapper_event_id).await;
+                // Heal STATE as a side effect; do not count as a network-new message for sync.
+                let _ = reconcile_existing_dm_from_db(msg, contact, wrapper_event_id).await;
+                return false;
             }
         }
     }

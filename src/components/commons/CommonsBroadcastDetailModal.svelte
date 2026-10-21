@@ -5,7 +5,7 @@
   import type { CommonsBroadcastDto } from '../../lib/commons/types';
   import { profiles } from '../../stores/profiles';
   import { squads } from '../../stores/squads';
-  import { dmChatsByNpub } from '../../stores/dm';
+  import { blockedDmNpubs, dmChatsByNpub } from '../../stores/dm';
   import { currentUser } from '../../stores/auth-session';
   import { showToast } from '../../stores/toast';
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
@@ -42,13 +42,15 @@
   const presentation = $derived.by(() => {
     $commonsJoinRequestRevision;
     const hasExistingDm = broadcast.authorNpub in $dmChatsByNpub;
+    const authorBlocked = $blockedDmNpubs.has(broadcast.authorNpub);
     return computeBroadcastPresentation(
       broadcast,
       $profiles,
       $squads,
       $currentUser?.npub,
       tFn,
-      hasExistingDm
+      hasExistingDm,
+      authorBlocked
     );
   });
   const isSquad = $derived(presentation.isSquad);

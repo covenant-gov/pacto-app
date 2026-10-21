@@ -16,6 +16,7 @@ import { activeTopNavTab, activeView } from '../../stores/navigation';
 import {
   activeDmId,
   activeDmTab,
+  blockedDmNpubs,
   composingNewChat,
   dmChatsByNpub,
   dmSidebarCategoryForNpub,
@@ -32,6 +33,8 @@ import { loadProfile } from '../../stores/profiles';
  */
 export function openCommonsUserDmRequest(authorNpub: string, displayName?: string): void {
   if (!authorNpub.startsWith('npub1')) return;
+  // Blocked peers stay out of the DM sidebar; do not navigate into a stranded thread.
+  if (get(blockedDmNpubs).has(authorNpub)) return;
 
   const chats = get(dmChatsByNpub);
   if (authorNpub in chats) {

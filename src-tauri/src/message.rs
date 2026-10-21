@@ -41,25 +41,70 @@ static ANDROID_FILE_CACHE: Lazy<std::sync::Mutex<HashMap<String, (Vec<u8>, Strin
 use crate::android::{clipboard, filesystem};
 
 /// True when at least one relay in the send `Output` acknowledged the event.
-/// Used with `gift_wrap_to(trusted_relays(), …)` so a non-empty set means a trusted ACK.
+/// Used with `gift_wrap_to` on the trusted∩pool set so a non-empty set means a trusted ACK.
 pub(crate) fn dm_gift_wrap_output_ok(output: &Output<EventId>) -> bool {
     !output.success.is_empty()
 }
 
-/// Publish a NIP-17 gift wrap to the trusted relay set only (same chokepoint as typing/MLS).
+/// Trusted URLs that are currently registered in the live relay pool.
+pub(crate) fn filter_trusted_relays_in_pool(
+    trusted: &[RelayUrl],
+    pool: &HashMap<RelayUrl, impl Sized>,
+) -> Vec<RelayUrl> {
+    trusted
+        .iter()
+        .filter(|url| pool.contains_key(url))
+        .cloned()
+        .collect()
+}
+
+async fn trusted_relays_in_pool(client: &Client) -> Vec<RelayUrl> {
+    let pool = client.relays().await;
+    filter_trusted_relays_in_pool(crate::trusted_relays::trusted_relays(), &pool)
+}
+
+/// Publish a NIP-17 gift wrap to trusted relays still in the pool (same chokepoint as typing/MLS).
 async fn gift_wrap_dm_to_trusted(
     client: &Client,
     receiver: &PublicKey,
     rumor: UnsignedEvent,
-) -> Result<Output<EventId>, nostr_sdk::client::Error> {
+) -> Result<Output<EventId>, String> {
+    let targets = trusted_relays_in_pool(client).await;
+    if targets.is_empty() {
+        return Err("no trusted relays available in the relay pool".to_string());
+    }
     client
-        .gift_wrap_to(
-            crate::trusted_relays::trusted_relays().iter().cloned(),
-            receiver,
-            rumor,
-            [],
-        )
+        .gift_wrap_to(targets, receiver, rumor, [])
         .await
+        .map_err(|e| e.to_string())
+}
+
+/// Same publish path as [`gift_wrap_dm_to_trusted`], with the bounded retry used by text DMs.
+async fn gift_wrap_dm_to_trusted_with_retry(
+    client: &Client,
+    receiver: &PublicKey,
+    rumor: UnsignedEvent,
+) -> Result<Output<EventId>, String> {
+    const MAX_ATTEMPTS: u32 = 12;
+    const RETRY_DELAY_SECS: u64 = 5;
+    let mut attempts = 0u32;
+    loop {
+        attempts += 1;
+        match gift_wrap_dm_to_trusted(client, receiver, rumor.clone()).await {
+            Ok(output) if dm_gift_wrap_output_ok(&output) => return Ok(output),
+            Ok(_) => {
+                if attempts >= MAX_ATTEMPTS {
+                    return Err("no trusted relay acknowledged the gift wrap".to_string());
+                }
+            }
+            Err(e) => {
+                if attempts >= MAX_ATTEMPTS {
+                    return Err(e);
+                }
+            }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY_SECS)).await;
+    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
@@ -3494,13 +3539,16 @@ pub async fn react_to_message(
             .build(my_public_key);
             let rumor_id = rumor.id.ok_or("Failed to get rumor ID")?.to_hex();
 
-            // Send reaction to the receiver (trusted relays)
-            let reaction_out =
-                gift_wrap_dm_to_trusted(&client, &receiver_pubkey, rumor.clone()).await
-                    .map_err(|e| e.to_string())?;
-            if !dm_gift_wrap_output_ok(&reaction_out) {
-                return Err("no trusted relay acknowledged the reaction".to_string());
-            }
+            // Send reaction to the receiver (trusted relays, same retry as text DMs)
+            gift_wrap_dm_to_trusted_with_retry(&client, &receiver_pubkey, rumor.clone())
+                .await
+                .map_err(|e| {
+                    if e == "no trusted relay acknowledged the gift wrap" {
+                        "no trusted relay acknowledged the reaction".to_string()
+                    } else {
+                        e
+                    }
+                })?;
 
             // Self-wrap for recovery (best-effort)
             let _ = gift_wrap_dm_to_trusted(&client, &my_public_key, rumor).await;
@@ -3955,13 +4003,16 @@ pub async fn edit_message(
             // For DMs, send gift-wrapped edit
             let receiver_pubkey = PublicKey::from_bech32(&chat_id).map_err(|e| e.to_string())?;
 
-            // Send edit to the receiver (trusted relays)
-            let edit_out = gift_wrap_dm_to_trusted(&client, &receiver_pubkey, rumor.clone())
+            // Send edit to the receiver (trusted relays, same retry as text DMs)
+            gift_wrap_dm_to_trusted_with_retry(&client, &receiver_pubkey, rumor.clone())
                 .await
-                .map_err(|e| e.to_string())?;
-            if !dm_gift_wrap_output_ok(&edit_out) {
-                return Err("no trusted relay acknowledged the edit".to_string());
-            }
+                .map_err(|e| {
+                    if e == "no trusted relay acknowledged the gift wrap" {
+                        "no trusted relay acknowledged the edit".to_string()
+                    } else {
+                        e
+                    }
+                })?;
 
             // Self-wrap for recovery (best-effort)
             let _ = gift_wrap_dm_to_trusted(&client, &my_public_key, rumor).await;
@@ -4083,10 +4134,14 @@ pub fn envelope_names_npub(content: &str, member_npub: &str) -> bool {
 }
 
 #[cfg(test)]
-mod dm_gift_wrap_output_ok_tests {
-    use super::dm_gift_wrap_output_ok;
+mod dm_gift_wrap_target_tests {
+    use super::{dm_gift_wrap_output_ok, filter_trusted_relays_in_pool};
     use nostr_sdk::prelude::*;
     use std::collections::{HashMap, HashSet};
+
+    fn url(s: &str) -> RelayUrl {
+        RelayUrl::parse(s).unwrap()
+    }
 
     fn output_with(success: HashSet<RelayUrl>, failed: HashMap<RelayUrl, String>) -> Output<EventId> {
         Output {
@@ -4099,18 +4154,37 @@ mod dm_gift_wrap_output_ok_tests {
     #[test]
     fn ok_when_at_least_one_relay_acked() {
         let mut success = HashSet::new();
-        success.insert(RelayUrl::parse("wss://jskitty.cat/nostr").unwrap());
+        success.insert(url("wss://jskitty.cat/nostr"));
         assert!(dm_gift_wrap_output_ok(&output_with(success, HashMap::new())));
     }
 
     #[test]
     fn not_ok_when_no_relay_acked() {
         let mut failed = HashMap::new();
-        failed.insert(
-            RelayUrl::parse("wss://relay.damus.io").unwrap(),
-            "timeout".to_string(),
-        );
+        failed.insert(url("wss://relay.damus.io"), "timeout".to_string());
         assert!(!dm_gift_wrap_output_ok(&output_with(HashSet::new(), failed)));
+    }
+
+    #[test]
+    fn intersection_keeps_only_pool_members() {
+        let trusted = vec![
+            url("wss://jskitty.cat/nostr"),
+            url("wss://asia.vectorapp.io/nostr"),
+            url("wss://nostr.computingcache.com"),
+        ];
+        let mut pool: HashMap<RelayUrl, ()> = HashMap::new();
+        pool.insert(url("wss://asia.vectorapp.io/nostr"), ());
+        pool.insert(url("wss://relay.damus.io"), ());
+        let targets = filter_trusted_relays_in_pool(&trusted, &pool);
+        assert_eq!(targets, vec![url("wss://asia.vectorapp.io/nostr")]);
+    }
+
+    #[test]
+    fn intersection_empty_when_no_trusted_in_pool() {
+        let trusted = vec![url("wss://jskitty.cat/nostr")];
+        let mut pool: HashMap<RelayUrl, ()> = HashMap::new();
+        pool.insert(url("wss://relay.damus.io"), ());
+        assert!(filter_trusted_relays_in_pool(&trusted, &pool).is_empty());
     }
 }
 

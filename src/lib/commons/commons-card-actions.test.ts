@@ -11,6 +11,7 @@ import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
   activeDmId,
   activeDmTab,
+  blockedDmNpubs,
   composingNewChat,
   dmChatsByNpub,
   newChatDraftMessage,
@@ -134,6 +135,7 @@ const AUTHOR = 'npub1author0000000000000000000000000000000000000';
 describe('openCommonsUserDmRequest', () => {
   beforeEach(() => {
     dmChatsByNpub.set({});
+    blockedDmNpubs.set(new Set());
     activeDmId.set(null);
     composingNewChat.set(false);
     newChatDraftNpub.set('');
@@ -171,5 +173,24 @@ describe('openCommonsUserDmRequest', () => {
     expect(get(newChatDraftNpub)).toBe('');
     expect(get(newChatDraftMessage)).toBe('');
     expect(get(activeTopNavTab)).toBe('dms');
+  });
+
+  it('does nothing when the author is blocked, even if a DM thread exists', () => {
+    blockedDmNpubs.set(new Set([AUTHOR]));
+    dmChatsByNpub.set({
+      [AUTHOR]: {
+        npub: AUTHOR,
+        hasFromMe: true,
+        hasFromThem: true,
+        lastAt: 1,
+      },
+    });
+
+    openCommonsUserDmRequest(AUTHOR, 'Alice');
+
+    expect(get(activeDmId)).toBeNull();
+    expect(get(composingNewChat)).toBe(false);
+    expect(get(newChatDraftNpub)).toBe('');
+    expect(get(activeTopNavTab)).toBe('commons');
   });
 });

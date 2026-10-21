@@ -31,7 +31,8 @@ export function computeBroadcastPresentation(
   squadList: Squad[],
   currentNpub: string | undefined,
   tFn: (key: string, opts?: Record<string, unknown>) => string,
-  hasExistingDm = false
+  hasExistingDm = false,
+  authorBlocked = false
 ): BroadcastPresentation {
   const isSquad = broadcast.subject === 'squad';
   const isUser = broadcast.subject === 'user';
@@ -59,7 +60,8 @@ export function computeBroadcastPresentation(
   const myNpub = currentNpub;
   const joinBlockReason = isSquad ? commonsJoinRequestBlockReason(broadcast, myNpub, localSquadIds) : null;
   const joinInFlight = isSquad && isJoinRequestInFlight(squadIdFromBroadcast(broadcast));
-  const canMessage = isUser && !!myNpub && broadcast.authorNpub !== myNpub;
+  const canMessage =
+    isUser && !!myNpub && broadcast.authorNpub !== myNpub && !authorBlocked;
   const canJoin = isSquad && !joinBlockReason && !!myNpub;
   const profileName = userProfile ? getProfileDisplayName(userProfile) : '';
   const greetingName = profileName && !profileName.startsWith('npub1') ? profileName : '';

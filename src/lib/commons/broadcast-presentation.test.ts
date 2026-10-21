@@ -137,6 +137,16 @@ describe('computeBroadcastPresentation', () => {
     expect(result.hasExistingDm).toBe(false);
   });
 
+  it('does not allow messaging a blocked author', () => {
+    const npub = 'npub1author0000000000000000000000000000000000000';
+    const me = 'npub1me000000000000000000000000000000000000000000';
+    const dto = makeDto({ subject: 'user', authorNpub: npub, subjectId: npub });
+    const result = computeBroadcastPresentation(dto, {}, [], me, tFn, true, true);
+
+    expect(result.canMessage).toBe(false);
+    expect(result.hasExistingDm).toBe(false);
+  });
+
   it('does not allow joining your own squad broadcast', () => {
     const npub = 'npub1self0000000000000000000000000000000000000000';
     const dto = makeDto({

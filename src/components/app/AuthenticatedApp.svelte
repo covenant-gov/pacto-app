@@ -52,7 +52,7 @@
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { parseWalletTxRequest } from '../../lib/wallet/dm-messages';
   import { dmLog, dmError } from '../../lib/utils/dm-debug';
-  import { requestCatchUp } from '../../lib/app/wake-sync';
+  import { requestCatchUpIfPendingDm } from '../../lib/app/wake-sync';
   import { hasRunPostLoginNetworkSyncThisSession } from '../../lib/app/post-login-sync';
   import { isAuthenticated, currentUser } from '../../stores/auth-session';
   import { checkSession, sessionHeartbeat, maybeRequireSession } from '../../stores/auth';
@@ -721,10 +721,7 @@
       const ok = await sendDmMessage(id, content, repliedTo ?? '');
       dmLog('handleDmSend result', { ok });
       // Pending threads especially need a catch-up nudge so peer replies ingest promptly.
-      if (ok && id.startsWith('npub1')) {
-        const chat = get(dmChatsByNpub)[id];
-        if (chat && chat.hasFromMe && !chat.hasFromThem) requestCatchUp();
-      }
+      if (ok) requestCatchUpIfPendingDm(id);
       return ok;
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, get(t)('errors.dm.sendFailed'));

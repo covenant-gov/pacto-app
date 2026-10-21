@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { installWakeSyncHandlers, requestCatchUp } from './wake-sync';
+import { installWakeSyncHandlers, requestCatchUp, requestCatchUpIfPendingDm } from './wake-sync';
 import { fetchMessages, syncMlsGroupsNow } from '../api/nostr';
-import { dmSyncStatus } from '../../stores/dm';
+import { dmChatsByNpub, dmSyncStatus } from '../../stores/dm';
 
 vi.mock('../api/nostr', () => ({
   fetchMessages: vi.fn(),
@@ -69,6 +69,35 @@ describe('wake-sync', () => {
       vi.mocked(fetchMessages).mockRejectedValue(new Error('ipc failed'));
       expect(() => requestCatchUp()).not.toThrow();
       await vi.waitFor(() => expect(fetchMessages).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  describe('requestCatchUpIfPendingDm', () => {
+    const peer = 'npub1pendingpeer00000000000000000000000000000000';
+
+    beforeEach(() => {
+      dmChatsByNpub.set({});
+    });
+
+    it('requests catch-up for one-sided Pending threads', () => {
+      dmChatsByNpub.set({
+        [peer]: { npub: peer, hasFromMe: true, hasFromThem: false, lastAt: 1 },
+      });
+      requestCatchUpIfPendingDm(peer);
+      expect(fetchMessages).toHaveBeenCalledWith(false);
+    });
+
+    it('skips when the peer has already replied', () => {
+      dmChatsByNpub.set({
+        [peer]: { npub: peer, hasFromMe: true, hasFromThem: true, lastAt: 1 },
+      });
+      requestCatchUpIfPendingDm(peer);
+      expect(fetchMessages).not.toHaveBeenCalled();
+    });
+
+    it('skips non-npub ids', () => {
+      requestCatchUpIfPendingDm('mls-group-id');
+      expect(fetchMessages).not.toHaveBeenCalled();
     });
   });
 

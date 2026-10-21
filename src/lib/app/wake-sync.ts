@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { fetchMessages, syncMlsGroupsNow } from '../api/nostr';
 import { dmError, dmLog } from '../utils/dm-debug';
-import { dmSyncStatus } from '../../stores/dm';
+import { dmChatsByNpub, dmSyncStatus } from '../../stores/dm';
 
 /** Timer handle returned by setTimeout; alias keeps the variable type local. */
 type TimerHandle = ReturnType<typeof setTimeout>;
@@ -23,6 +23,15 @@ export function requestCatchUp(): void {
   fetchMessages(false).catch((e) => {
     dmError('wake-sync: fetchMessages(false) failed', e);
   });
+}
+
+/** Catch-up after send when the thread is still one-sided Pending. */
+export function requestCatchUpIfPendingDm(npub: string): void {
+  if (!npub.startsWith('npub1')) return;
+  const chat = get(dmChatsByNpub)[npub];
+  if (chat && chat.hasFromMe && !chat.hasFromThem) {
+    requestCatchUp();
+  }
 }
 
 /** MLS wake catch-up; coalesces overlapping invokes while one is in flight. */
