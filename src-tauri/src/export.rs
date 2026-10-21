@@ -396,9 +396,11 @@ fn epoch_seconds() -> u64 {
 
 /// Path to the persisted uncleared-export flag file.
 fn pending_export_flag_path<R: Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
-    let app_data = handle
-        .path()
-        .app_data_dir()
+    // Same resolver every other module uses: a configured sandbox root, the
+    // per-process disposable root in test builds, the real app data dir
+    // otherwise. Going straight to `handle.path().app_data_dir()` instead put
+    // test writes in the developer's (or CI runner's) home directory.
+    let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
     // Parallel test processes share one app data directory. A per-process flag
     // file keeps one test's startup cleanup from clearing another's export.
@@ -420,6 +422,17 @@ fn has_pending_export_flag<R: Runtime>(handle: &AppHandle<R>) -> bool {
 fn set_pending_export_flag<R: Runtime>(handle: &AppHandle<R>, pending: bool) -> Result<(), String> {
     let path = pending_export_flag_path(handle)?;
     if pending {
+        // The data directory does not exist yet on a first run (or a fresh
+        // sandbox), and the flag is written before anything else creates it.
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "Failed to create app data dir at {}: {}",
+                    parent.display(),
+                    e
+                )
+            })?;
+        }
         std::fs::write(&path, "").map_err(|e| {
             format!(
                 "Failed to write pending export flag at {}: {}",

@@ -201,6 +201,14 @@ export async function exportSensitiveToClipboard(
   return { ...result, exportType: backendToFrontendExportType(result.exportType) };
 }
 
+/**
+ * Clear a secret off the system clipboard immediately, ahead of the backend's
+ * 90-second timer, and drop the uncleared-export flag.
+ */
+export async function clearClipboard(): Promise<void> {
+  await invoke<void>('clear_clipboard');
+}
+
 function frontendToBackendExportType(exportType: 'evm' | 'nostr' | 'seed'): string {
   switch (exportType) {
     case 'evm':

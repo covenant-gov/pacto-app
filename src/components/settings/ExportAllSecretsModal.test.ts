@@ -2,11 +2,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
-import { exportSensitiveToClipboard } from '../../lib/api/auth';
+import { clearClipboard, exportSensitiveToClipboard } from '../../lib/api/auth';
 import { listEvmAccounts } from '../../lib/wallet/evm-accounts';
 
 vi.mock('../../lib/api/auth', () => ({
   exportSensitiveToClipboard: vi.fn(),
+  clearClipboard: vi.fn(),
 }));
 
 vi.mock('../../lib/wallet/evm-accounts', async (importOriginal) => {
@@ -18,6 +19,7 @@ vi.mock('../../lib/wallet/evm-accounts', async (importOriginal) => {
 });
 
 const mockedExport = vi.mocked(exportSensitiveToClipboard);
+const mockedClear = vi.mocked(clearClipboard);
 const mockedList = vi.mocked(listEvmAccounts);
 
 const evmAccounts = [
@@ -47,6 +49,8 @@ const evmAccounts = [
 
 beforeEach(() => {
   mockedExport.mockReset();
+  mockedClear.mockReset();
+  mockedClear.mockResolvedValue(undefined);
   mockedList.mockReset();
   mockedList.mockResolvedValue([]);
 });
@@ -115,6 +119,22 @@ describe('ExportAllSecretsModal', () => {
     await waitFor(() => expect(mockedExport).toHaveBeenCalledTimes(4));
     expect(mockedExport).toHaveBeenNthCalledWith(4, 'evm', 'acc-2', '123456');
     expect(screen.queryByText('supersecret')).toBeNull();
+  });
+
+  it('offers a clipboard clear only after something was copied', async () => {
+    mockedExport.mockResolvedValueOnce({ exportType: 'nostr', accountId: '', clearedAt: 1 });
+
+    render(ExportAllSecretsModal, { props: { open: true } });
+    await enterPin();
+    expect(screen.queryByRole('button', { name: 'Clear clipboard now' })).toBeNull();
+
+    await fireEvent.click(copyNamed('Nostr private key'));
+    const clearButton = await screen.findByRole('button', { name: 'Clear clipboard now' });
+
+    await fireEvent.click(clearButton);
+    await waitFor(() => expect(mockedClear).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('The secret is no longer on your clipboard.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear clipboard now' })).toBeNull();
   });
 
   it('stops on a failed secret and leaves the others uncopied', async () => {
