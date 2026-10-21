@@ -16,7 +16,7 @@
   import { getEvmAddress } from '../../lib/api/auth';
   import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { notifyUserAction } from '../../lib/utils/desktop-notify';
-  import { isScrollAtBottom } from '../../lib/dm/dm-unread';
+  import { countMessagesAfter, isScrollAtBottom } from '../../lib/dm/dm-unread';
   import { shouldStackWithPrevious } from '../../lib/dm/message-stack';
   import { dmThreadScrolledToBottom } from '../../stores/app';
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
@@ -186,15 +186,50 @@
   }
 
   let dmMessagesContainer: HTMLDivElement | null = $state(null);
-  let scrollPrevNpub: string | null = null;
-  let lastScrolledToBottomNpub: string | null = null;
   let lastReportedReadId = '';
+  /** Reader intent: true while the scroller sits at the newest message. */
+  let pinnedToBottom = $state(true);
+  /** Messages that arrived below the viewport while the reader was scrolled up. */
+  let unseenBelow = $state(0);
+  /** Newest message the reader has actually been shown. */
+  let seenTailMessageId: string | null = null;
+  let lastTailMessageId: string | null = null;
+  let threadAnchored = false;
+  let scrollPrevNpub: string | null = null;
 
   $effect(() => {
-    if (npub !== scrollPrevNpub) {
-      lastReportedReadId = '';
-    }
+    if (npub === scrollPrevNpub) return;
+    scrollPrevNpub = npub;
+    lastReportedReadId = '';
+    pinnedToBottom = true;
+    unseenBelow = 0;
+    seenTailMessageId = null;
+    lastTailMessageId = null;
+    threadAnchored = false;
+    dmThreadScrolledToBottom.set(false);
   });
+
+  function tailMessageId(): string | null {
+    return messages.length ? messages[messages.length - 1]!.id : null;
+  }
+
+  function scrollToLatest() {
+    const container = dmMessagesContainer;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+    pinnedToBottom = true;
+    unseenBelow = 0;
+    seenTailMessageId = tailMessageId();
+    notifyIfAtBottom();
+    // Message bodies that finish laying out after this flush (wrapped text,
+    // cards, embeds) would otherwise leave the newest one just below the fold.
+    requestAnimationFrame(() => {
+      const el = dmMessagesContainer;
+      if (!el || !pinnedToBottom) return;
+      el.scrollTop = el.scrollHeight;
+      notifyIfAtBottom();
+    });
+  }
 
   function notifyIfAtBottom() {
     if (!dmMessagesContainer) {
@@ -211,7 +246,19 @@
     }
   }
   function handleMessagesScroll() {
+    const container = dmMessagesContainer;
+    if (container) {
+      pinnedToBottom = isScrollAtBottom(container);
+      if (pinnedToBottom) {
+        unseenBelow = 0;
+        seenTailMessageId = tailMessageId();
+      }
+    }
     notifyIfAtBottom();
+  }
+  /** Media that finishes layout after a pinned scroll would push the tail off-screen. */
+  function handleMessagesLoad() {
+    if (pinnedToBottom) scrollToLatest();
   }
 
   let appliedWalletGrantIds = new Set<string>();
@@ -327,32 +374,32 @@
     return n.slice(0, 8) + '…' + n.slice(-4);
   }
 
-  // $effect runs after the DOM has already been updated with the new message list, so
-  // (unlike its Svelte 4 `setTimeout(0)` predecessor, which deferred until after a `$:`
-  // block that ran before the DOM update) the scroll measurement below sees the real
-  // scrollHeight synchronously and does not need to wait a tick.
+  // $effect runs after the DOM already holds the new message list, so scroll
+  // writes here land on final geometry. Pinning comes from the reader's last
+  // scroll position, never from the post-append gap: a tall incoming message
+  // grows that gap and would otherwise read as "the reader scrolled away".
   $effect(() => {
     const container = dmMessagesContainer;
-    if (!container || !messages.length) return;
-    const conversationJustChanged = npub !== scrollPrevNpub;
-    const firstTimeWithMessages = npub !== lastScrolledToBottomNpub;
-    if (conversationJustChanged) {
-      scrollPrevNpub = npub;
+    const tail = messages.length ? messages[messages.length - 1]! : null;
+    if (!container) return;
+    if (!tail) {
+      unseenBelow = 0;
+      seenTailMessageId = null;
+      lastTailMessageId = null;
       dmThreadScrolledToBottom.set(false);
+      return;
     }
-    const isNearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    if (conversationJustChanged || firstTimeWithMessages || isNearBottom) {
-      container.scrollTop = container.scrollHeight;
-      lastScrolledToBottomNpub = npub;
-      notifyIfAtBottom();
+    const tailChanged = tail.id !== lastTailMessageId;
+    lastTailMessageId = tail.id;
+    const firstPaint = !threadAnchored;
+    threadAnchored = true;
+    // Own sends always win: the reader asked for that message to be on screen.
+    if (firstPaint || pinnedToBottom || (tailChanged && tail.mine === true)) {
+      scrollToLatest();
+      return;
     }
-  });
-  $effect(() => {
-    if (npub !== scrollPrevNpub && messages.length === 0) {
-      scrollPrevNpub = npub;
-      dmThreadScrolledToBottom.set(false);
-    }
+    if (tailChanged) unseenBelow = countMessagesAfter(messages, seenTailMessageId);
+    notifyIfAtBottom();
   });
 
   let contactProfile = $derived(npub ? $profiles[npub] : null);
@@ -592,44 +639,68 @@
       {/if}
     </div>
   </div>
-  <div class="dm-thread-messages" bind:this={dmMessagesContainer} onscroll={handleMessagesScroll}>
-    {#if chatDeleting}
-      <div class="dm-thread-deleting" role="status" aria-live="polite" aria-busy="true">
-        <span class="dm-thread-deleting-spinner" aria-hidden="true"></span>
-        <span>{$t('messaging.dm.thread.deleting')}</span>
-      </div>
-    {/if}
-    {#if canLoadOlder}
-      <div class="dm-thread-load-older">
-        <button type="button" class="load-older-btn" onclick={onLoadOlder} disabled={loadingOlder}>
-          {loadingOlder ? $t('messaging.dm.thread.loading') : $t('messaging.dm.thread.loadOlder')}
-        </button>
-      </div>
-    {/if}
-    {#if messages.length > 0}
-      {#each messages as msg, i (msg.id)}
-        <DmMessageRouter
-          {msg}
-          {npub}
-          {contactDisplayName}
-          threadMessages={messages}
-          {fulfilledWalletRequestIds}
-          {acceptingSquadInviteId}
-          {acceptingChannelInSquadId}
-          {acceptingWalletPeerInfoRequestId}
-          {onAcceptSquadInvite}
-          {onAcceptChannelInSquad}
-          {onDeclineSquad}
-          {onDeclineChannelInSquad}
-          {onAcceptWalletPeerInfoRequest}
-          {onDeclineWalletPeerInfoRequest}
-          {onOpenInviterChat}
-          compact={shouldStackWithPrevious(messages[i - 1], msg)}
-          {onReply}
-        />
-      {/each}
-    {:else}
-      <p class="dm-thread-placeholder">{$t('messaging.dm.thread.noMessages')}</p>
+  <div class="dm-thread-messages-wrap">
+    <div
+      class="dm-thread-messages"
+      bind:this={dmMessagesContainer}
+      onscroll={handleMessagesScroll}
+      onloadcapture={handleMessagesLoad}
+    >
+      {#if chatDeleting}
+        <div class="dm-thread-deleting" role="status" aria-live="polite" aria-busy="true">
+          <span class="dm-thread-deleting-spinner" aria-hidden="true"></span>
+          <span>{$t('messaging.dm.thread.deleting')}</span>
+        </div>
+      {/if}
+      {#if canLoadOlder}
+        <div class="dm-thread-load-older">
+          <button type="button" class="load-older-btn" onclick={onLoadOlder} disabled={loadingOlder}>
+            {loadingOlder ? $t('messaging.dm.thread.loading') : $t('messaging.dm.thread.loadOlder')}
+          </button>
+        </div>
+      {/if}
+      {#if messages.length > 0}
+        {#each messages as msg, i (msg.id)}
+          <DmMessageRouter
+            {msg}
+            {npub}
+            {contactDisplayName}
+            threadMessages={messages}
+            {fulfilledWalletRequestIds}
+            {acceptingSquadInviteId}
+            {acceptingChannelInSquadId}
+            {acceptingWalletPeerInfoRequestId}
+            {onAcceptSquadInvite}
+            {onAcceptChannelInSquad}
+            {onDeclineSquad}
+            {onDeclineChannelInSquad}
+            {onAcceptWalletPeerInfoRequest}
+            {onDeclineWalletPeerInfoRequest}
+            {onOpenInviterChat}
+            compact={shouldStackWithPrevious(messages[i - 1], msg)}
+            {onReply}
+          />
+        {/each}
+      {:else}
+        <p class="dm-thread-placeholder">{$t('messaging.dm.thread.noMessages')}</p>
+      {/if}
+    </div>
+    {#if !pinnedToBottom && messages.length > 0}
+      <button
+        type="button"
+        class="dm-thread-jump"
+        class:dm-thread-jump--unseen={unseenBelow > 0}
+        onclick={scrollToLatest}
+      >
+        {unseenBelow > 0
+          ? $t('messaging.dm.thread.newMessages', { values: { count: unseenBelow } })
+          : $t('messaging.dm.thread.jumpToLatest')}
+        <span class="dm-thread-jump-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" focusable="false">
+            <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </button>
     {/if}
   </div>
   {#if ($typingByChat[npub]?.length ?? 0) > 0}
@@ -957,11 +1028,57 @@
     color: var(--danger);
   }
 
+  .dm-thread-messages-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
   .dm-thread-messages {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     padding: 24px;
+  }
+
+  .dm-thread-jump {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    outline: none;
+  }
+
+  .dm-thread-jump:hover {
+    background: var(--bg-hover);
+  }
+
+  .dm-thread-jump--unseen {
+    color: var(--on-brand);
+    background: var(--brand);
+    border-color: var(--brand);
+  }
+
+  .dm-thread-jump--unseen:hover {
+    background: var(--brand-hover);
+  }
+
+  .dm-thread-jump-icon {
+    display: flex;
+    align-items: center;
   }
 
   .dm-thread-load-older {

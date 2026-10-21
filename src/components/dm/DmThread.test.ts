@@ -56,6 +56,22 @@ describe('DmThread read receipts', () => {
   });
 });
 
+type Scroller = { scrollHeight: number; clientHeight: number; scrollTop: number };
+
+/** jsdom has no layout; drive the scroller geometry explicitly. */
+function stubScroller(el: HTMLElement, metrics: Scroller): Scroller {
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => metrics.scrollHeight });
+  Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => metrics.clientHeight });
+  Object.defineProperty(el, 'scrollTop', {
+    configurable: true,
+    get: () => metrics.scrollTop,
+    set: (value: number) => {
+      metrics.scrollTop = Math.max(0, Math.min(value, metrics.scrollHeight - metrics.clientHeight));
+    },
+  });
+  return metrics;
+}
+
 describe('DmThread scroll-to-bottom effect', () => {
   it('does not touch scrollTop on an unrelated re-render, only when the message list actually changes', async () => {
     const onMarkReadUpTo = vi.fn();
@@ -94,6 +110,71 @@ describe('DmThread scroll-to-bottom effect', () => {
     });
     await waitFor(() => {
       expect(scrollTopSetter).toHaveBeenCalled();
+    });
+  });
+
+  it('follows an incoming message taller than the near-bottom threshold', async () => {
+    const { rerender } = render(DmThread, {
+      props: { npub: 'npub1peer', messages: [makeMessage({ id: 'm1' })] },
+    });
+    const container = document.querySelector('.dm-thread-messages') as HTMLDivElement;
+    // Reader is parked at the bottom of a full viewport.
+    const metrics = stubScroller(container, { scrollHeight: 1000, clientHeight: 400, scrollTop: 600 });
+
+    // A 400px-tall message lands: the post-append gap is far past the 100px
+    // near-bottom threshold, so gap-based pinning would wrongly stay put.
+    metrics.scrollHeight = 1400;
+    await rerender({
+      npub: 'npub1peer',
+      messages: [makeMessage({ id: 'm1' }), makeMessage({ id: 'm2', content: 'tall' })],
+    });
+
+    await waitFor(() => {
+      expect(metrics.scrollTop).toBe(1000);
+    });
+    expect(document.querySelector('.dm-thread-jump')).toBeNull();
+  });
+
+  it('leaves a reader who scrolled up alone and offers a jump-to-latest pill', async () => {
+    const { rerender } = render(DmThread, {
+      props: { npub: 'npub1peer', messages: [makeMessage({ id: 'm1' })] },
+    });
+    const container = document.querySelector('.dm-thread-messages') as HTMLDivElement;
+    const metrics = stubScroller(container, { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 });
+    await fireEvent.scroll(container);
+
+    metrics.scrollHeight = 1200;
+    await rerender({
+      npub: 'npub1peer',
+      messages: [makeMessage({ id: 'm1' }), makeMessage({ id: 'm2', content: 'incoming' })],
+    });
+
+    const jump = await screen.findByRole('button', { name: /1 new message/ });
+    expect(metrics.scrollTop).toBe(0);
+
+    await fireEvent.click(jump);
+    expect(metrics.scrollTop).toBe(800);
+    await waitFor(() => {
+      expect(document.querySelector('.dm-thread-jump')).toBeNull();
+    });
+  });
+
+  it('scrolls to the message the reader just sent even when scrolled up', async () => {
+    const { rerender } = render(DmThread, {
+      props: { npub: 'npub1peer', messages: [makeMessage({ id: 'm1' })] },
+    });
+    const container = document.querySelector('.dm-thread-messages') as HTMLDivElement;
+    const metrics = stubScroller(container, { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 });
+    await fireEvent.scroll(container);
+
+    metrics.scrollHeight = 1200;
+    await rerender({
+      npub: 'npub1peer',
+      messages: [makeMessage({ id: 'm1' }), makeMessage({ id: 'm2', content: 'mine', mine: true })],
+    });
+
+    await waitFor(() => {
+      expect(metrics.scrollTop).toBe(800);
     });
   });
 });
