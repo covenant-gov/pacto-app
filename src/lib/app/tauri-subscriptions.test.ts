@@ -68,6 +68,7 @@ const mocks = vi.hoisted(() => {
     applyMlsStoreResetState: vi.fn(),
     refreshMlsStoreResetState: vi.fn(),
     handleJoinInboxResponseDm: vi.fn(),
+    applyLiveCommonsChange: vi.fn(),
   };
 
   const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
@@ -204,6 +205,11 @@ vi.mock('../../stores/mls-reset', () => ({
     mocks.mockFunctions.refreshMlsStoreResetState(...args),
 }));
 
+vi.mock('../commons/commons-prefetch', () => ({
+  applyLiveCommonsChange: (...args: unknown[]) =>
+    mocks.mockFunctions.applyLiveCommonsChange(...args),
+}));
+
 function emit(event: string, payload: unknown): void {
   const handlers = mocks.registered[event] ?? [];
   for (const h of handlers) {
@@ -299,6 +305,7 @@ describe('subscribeAppEvents', () => {
       'mls_group_initial_sync',
       'mls_group_left',
       'dashboard_poll_replica_updated',
+      'commons_broadcasts_changed',
       'migration_complete',
       'session_locked',
     ];
@@ -354,6 +361,17 @@ describe('subscribeAppEvents', () => {
       shown: true,
       message: 'Account security updated',
     });
+  });
+
+  it('calls applyLiveCommonsChange on commons_broadcasts_changed event', () => {
+    unsubscribe = subscribeAppEvents(handlers);
+    emit('commons_broadcasts_changed', {
+      event_id: 'evt1',
+      subject: 'user',
+      subject_id: 'npub1author',
+      cancelled: false,
+    });
+    expect(mocks.mockFunctions.applyLiveCommonsChange).toHaveBeenCalledTimes(1);
   });
 
   describe('message_new', () => {

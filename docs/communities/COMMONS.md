@@ -18,7 +18,7 @@ Wire/storage may still use `visibility: 'public' | 'private'` for Commons eligib
 | **New vs active (implicit)** | A user's audience is derived, never chosen. The **first user broadcast ever** is shown as **new user** and carries the reserved **`#new`** tag; every later broadcast is **active user** with no `#new`. Tracked coarsely per npub (cancelling the first broadcast does not reset it). Newly created squads with Commons on always broadcast `#new` at create. The reserved `#new` tag cannot be self-selected. |
 | **Cooldown** | One active broadcast per **(author npub, subject)** — user npub or squad id. Squad broadcasts are **signed by the Join inbox identity**; author npub is that shared npub. UI blocks re-publish until `expiresAt`. |
 | **Cancel** | A **Join inbox holder** can retract an active squad broadcast (signed by the inbox identity). Publishes a replacement (NIP-33, same `d`) with `cancelled: true`; clients drop it from the feed even before `expiresAt`, and the cooldown lifts so they can rebroadcast immediately. Newest-event-wins keeps the tombstone hidden and prevents feed spam. |
-| **Feed** | Active broadcasts only; relay lookback **≤ 72 h** (max TTL). Refreshes every **60 s** while Commons is open. |
+| **Feed** | Active broadcasts only; relay lookback **≤ 72 h** (max TTL). Arrives **live** over a relay subscription (`commons_broadcasts_changed`); a **60 s** poll is the fallback while Commons is open. |
 | **Squad broadcast roles** | Only **Join inbox holders** with a local secret may publish/cancel. Holder list is Settings + MLS meta; SquadAdmin will gate who may be holders later ([`JOIN_INBOX.md`](./JOIN_INBOX.md)). |
 
 ---
