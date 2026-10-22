@@ -3,7 +3,9 @@
   import Modal from '../ui/Modal.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { restoreMlsMemberAccess } from '../../lib/parent/restore-mls-access';
+  import { restoreMemberToSquad, squadOwningGroupId } from '../../lib/parent/restore-squad-access';
   import { showToast } from '../../stores/toast';
+  import { squads } from '../../stores/squads';
   import type { NostrProfile } from '../../stores/profiles';
 
   let {
@@ -27,6 +29,8 @@
   const canRestore = $derived(
     !!currentUserNpub && admins.some((a) => a === currentUserNpub),
   );
+
+  const owningSquad = $derived(squadOwningGroupId($squads, groupId));
 
   // Union of engine members and pending-only npubs: a resend can remove the engine leaf before
   // the re-add fails, dropping the npub from `members` while it's still in `pendingWelcomes`.
@@ -53,11 +57,17 @@
     const npub = confirmNpub;
     if (!npub || !groupId) return;
     restoringNpub = npub;
-    const result = await restoreMlsMemberAccess(groupId, npub);
+    const squad = owningSquad;
+    const result = squad
+      ? await restoreMemberToSquad({ parent: squad, memberNpub: npub })
+      : await restoreMlsMemberAccess(groupId, npub);
     restoringNpub = null;
     confirmNpub = null;
     if (result.ok) {
-      showToast($t('messaging.channel.mlsRestoreSuccess', { values: { name: displayName(npub) } }));
+      const toastKey = squad
+        ? 'messaging.channel.mlsRestoreSquadSuccess'
+        : 'messaging.channel.mlsRestoreSuccess';
+      showToast($t(toastKey, { values: { name: displayName(npub) } }));
     } else {
       showToast(
         $t('messaging.channel.mlsRestoreError', {
@@ -142,7 +152,9 @@
   <Modal titleId="mls-restore-confirm-title" onClose={closeConfirm}>
     <h2 id="mls-restore-confirm-title">{$t('messaging.channel.mlsRestoreConfirmTitle')}</h2>
     <p class="restore-explainer">
-      {$t('messaging.channel.mlsRestoreConfirmBody', { values: { name: displayName(confirmNpub) } })}
+      {owningSquad
+        ? $t('messaging.channel.mlsRestoreSquadConfirmBody', { values: { name: displayName(confirmNpub) } })
+        : $t('messaging.channel.mlsRestoreConfirmBody', { values: { name: displayName(confirmNpub) } })}
     </p>
     <div class="restore-actions">
       <button type="button" class="restore-cancel" disabled={!!restoringNpub} onclick={closeConfirm}>

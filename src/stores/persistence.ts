@@ -65,6 +65,7 @@ import { loadStripTrackingMarkersPreference } from './strip-tracking-markers';
 import { loadWebPreviewsPreference } from './web-previews';
 import { loadBiometricUnlockPreference } from './biometric-unlock';
 import { loadMlsHistoryWelcome } from './mls-history-welcome';
+import { loadLastSeenPollCreatedAt } from './polls-hub-alerts';
 
 export {
   currentNpubForPersistence,
@@ -176,6 +177,7 @@ export function loadAccountState(npub: string): void {
   loadStripTrackingMarkersPreference(npub);
   loadWebPreviewsPreference(npub);
   loadBiometricUnlockPreference(npub);
+  loadLastSeenPollCreatedAt(npub);
   loadDeferredSquadRosterKeyParentIds();
   hydrateWalletSummaryCacheFromDisk(npub);
   hydrateTreasurySafesCacheFromDisk(npub);

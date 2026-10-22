@@ -145,6 +145,16 @@ vi.mock('../squad/squad-outbound-invite', async (importOriginal) => {
   };
 });
 
+vi.mock('../squad/squad-rejoin', () => ({
+  parseSquadRejoinRequest: () => null,
+  parseSquadRejoinNeeded: () => null,
+  handleSquadRejoinRequest: vi.fn(),
+  noteRejoinChannelDm: vi.fn(),
+  onMlsSquadRejoinNeeded: vi.fn(),
+  scanSquadRejoinAfterBackfill: vi.fn(),
+  tryAcceptRememberedRejoinWelcomes: vi.fn(),
+}));
+
 vi.mock('../squad/squad-catalog', () => ({
   updateChannelNameIfPlaceholder: (...args: unknown[]) =>
     mocks.mockFunctions.updateChannelNameIfPlaceholder(...args),

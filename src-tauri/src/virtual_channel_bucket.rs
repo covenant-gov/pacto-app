@@ -103,6 +103,7 @@ pub fn normalize_virtual_bucket_for_message(
                 Some(
                     "squad_outbound_invite"
                         | "squad_admit_needed"
+                        | "squad_rejoin_needed"
                         | "squad_channels_catalog"
                         | "squad_identity_updated"
                 )

@@ -4,6 +4,8 @@ Polls for a squad/network parent are **replicated across members** via the paren
 
 `#polls` shows **Create Poll** and vote cards only — no chat timeline or composer.
 
+**Sidebar badge:** `#polls` alerts on **unseen poll creates** (not MLS group unread shared with `#announcements`). Opening `#polls` clears that badge without marking the announcements MLS chat read.
+
 ## Wire
 
 - **Kind 30078** rumor with **`d` tag** `pacto_dashboard_poll` and JSON schema **`pacto.dashboard_poll.v1`**.

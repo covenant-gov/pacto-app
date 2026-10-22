@@ -16,6 +16,13 @@ import {
   parseSquadInviteAccepted,
 } from '../squad/squad-outbound-invite';
 import {
+  handleSquadRejoinRequest,
+  noteRejoinChannelDm,
+  parseSquadRejoinRequest,
+  scanSquadRejoinAfterBackfill,
+  tryAcceptRememberedRejoinWelcomes,
+} from '../squad/squad-rejoin';
+import {
   handleJoinInboxResponseDm,
   tryCompletePendingApprovedJoins,
 } from '../squad/join-request-finalize';
@@ -163,6 +170,14 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       return;
     }
     if (!message.mine) {
+      const rejoin = parseSquadRejoinRequest(content);
+      if (rejoin) {
+        void handleSquadRejoinRequest(rejoin, { fanOut: true });
+        return;
+      }
+      noteRejoinChannelDm(content);
+    }
+    if (!message.mine) {
       void handleJoinInboxResponseDm(content, chat_id);
     }
     const m = normalizeDmPayload(message);
@@ -262,6 +277,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     dmSyncStatus.set('finished');
     lastCatchUpSuccess.set(Date.now());
     setTimeout(() => dmSyncStatus.set('idle'), 2500);
+    void scanSquadRejoinAfterBackfill();
   });
 
   register(unsubs, 'relay_status_change', (event) => {
@@ -334,6 +350,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
         : '';
     notifyPendingInviteWelcome(groupId || null);
     void tryCompletePendingApprovedJoins(groupId || null);
+    void tryAcceptRememberedRejoinWelcomes(groupId || null);
   });
 
   register(unsubs, 'mls_store_reset', (event) => {

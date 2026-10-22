@@ -76,6 +76,7 @@
     incrementMentionAlert,
     clearMentionAlert,
   } from '../../stores/squad-hub-alerts';
+  import { markPollsChannelSeen } from '../../stores/polls-hub-alerts';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import friendsIcon from '../../icons/friends.svg';
   import { get } from 'svelte/store';
@@ -589,13 +590,18 @@
   }
 
   // Clear the mention badge when the user opens or scrolls-to-bottom of a squad channel.
+  // `#polls` shares the announcements MLS id — mark poll creates seen only; do not clear group unread.
   let lastClearedMentionKey: string | null = null;
   $: if (activeSquad && activeChannel) {
     const key = `${activeSquad.id}:${activeChannel.name}`;
     if (lastClearedMentionKey !== key) {
       lastClearedMentionKey = key;
       clearMentionAlert(activeSquad.id, activeChannel.name);
-      if ($activeChannelId) markAsRead($activeChannelId, null).catch(() => {});
+      if (isPollsChannel && activeParent?.id) {
+        void markPollsChannelSeen(activeParent.id);
+      } else if ($activeChannelId) {
+        markAsRead($activeChannelId, null).catch(() => {});
+      }
     }
   }
 
@@ -604,7 +610,9 @@
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     if (isNearBottom && activeSquad && activeChannel) {
       clearMentionAlert(activeSquad.id, activeChannel.name);
-      if ($activeChannelId) markAsRead($activeChannelId, null).catch(() => {});
+      if (!isPollsChannel && $activeChannelId) {
+        markAsRead($activeChannelId, null).catch(() => {});
+      }
     }
   }
 

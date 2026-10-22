@@ -92,6 +92,11 @@ import { resetRelayedWalletTxKeys } from '../wallet/wallet-dm-transfer';
 import { resetInviteAcceptState } from '../invites/accept-invite';
 import { resetPendingAdmitState, PENDING_ADMIT_PREFIX, stopPendingAdmitDrain } from '../parent/pending-admit';
 import {
+  resetSquadRejoinState,
+  SQUAD_REJOIN_FANOUT_PREFIX,
+  SQUAD_REJOIN_PENDING_PREFIX,
+} from '../squad/squad-rejoin';
+import {
   resetPendingSquadAdmissions,
   PENDING_SQUAD_ADMISSION_PREFIX,
 } from '../../stores/pending-squad-admission';
@@ -125,6 +130,10 @@ import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { SQUAD_RPC_PREFIX } from '../squad/squad-rpc';
 import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
+import {
+  LAST_SEEN_POLL_CREATED_AT_PREFIX,
+  resetPollsHubAlertStores,
+} from '../../stores/polls-hub-alerts';
 import { resetGovActionPromptStores } from '../../stores/gov-action-prompts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { resetMlsStoreResetState } from '../../stores/mls-reset';
@@ -175,6 +184,8 @@ const SCOPED_KEY_PREFIXES = [
   PENDING_SQUAD_ADMISSION_PREFIX,
   PENDING_WELCOME_FINALIZATION_PREFIX,
   PENDING_ADMIT_PREFIX,
+  SQUAD_REJOIN_PENDING_PREFIX,
+  SQUAD_REJOIN_FANOUT_PREFIX,
   PENDING_APPROVED_JOINS_PREFIX,
   STARTUP_CHECK_PREFIX,
   TYPING_INDICATORS_PREFIX,
@@ -183,6 +194,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
   MUTINY_PROCESS_TX_PREFIX,
+  LAST_SEEN_POLL_CREATED_AT_PREFIX,
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {
@@ -208,6 +220,7 @@ export function clearAccountState(npub?: string): void {
   stopJoinInboxHolderSync();
   stopPendingAdmitDrain();
   resetPendingAdmitState();
+  resetSquadRejoinState();
   resetPendingSquadAdmissions();
   resetPendingWelcomeFinalizations();
   joiningWelcomeGroupIds.set([]);
@@ -224,6 +237,7 @@ export function clearAccountState(npub?: string): void {
   resetMutinyProcessTxStore();
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
+  resetPollsHubAlertStores();
   resetGovActionPromptStores();
   resetMlsGroupMembersStores();
   resetMlsStoreResetState();
