@@ -184,6 +184,17 @@ describe('MessageInput', () => {
     });
   });
 
+  it('focuses the composer when repliedTo becomes set', async () => {
+    const { rerender } = render(MessageInput, { props: { channelName: 'general' } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    expect(document.activeElement).not.toBe(input);
+
+    await rerender({ channelName: 'general', repliedTo: 'msg-123' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(input);
+    });
+  });
+
   it('opens the attachment menu when paperclip is clicked', async () => {
     render(MessageInput, { props: { channelName: 'general' } });
     const attachBtn = screen.getByLabelText(/Attach file/i);

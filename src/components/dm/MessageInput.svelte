@@ -133,6 +133,16 @@
   let dropUnregister: (() => void) | undefined;
   let composerDestroyed = false;
   const desktopPickerAvailable = isDesktopFilePickerAvailable();
+  let prevRepliedTo: string | undefined;
+
+  // Focus composer when Reply sets a new target so the user can type immediately.
+  $effect(() => {
+    const id = repliedTo;
+    const becameReply = Boolean(id) && id !== prevRepliedTo;
+    prevRepliedTo = id;
+    if (!becameReply || disabled || isSendingAttachment) return;
+    void tick().then(() => textareaEl?.focus());
+  });
 
   const COMPOSER_MAX_HEIGHT_PX = 240;
 
