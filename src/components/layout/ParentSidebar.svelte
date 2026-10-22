@@ -4,9 +4,15 @@
   import ParentSettingUp from '../parent/ParentSettingUp.svelte';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
   import { partitionHubSidebarChannels } from '../../lib/parent-navbar';
+  import { POLLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import { t } from 'svelte-i18n';
   import { unreadCountsByChat } from '../../stores/unread';
+  import { dashboardPollReplicaNonceByParentId } from '../../stores/navigation';
+  import {
+    refreshUnseenPollCreatesForParent,
+    unseenPollCreateCountByParentId,
+  } from '../../stores/polls-hub-alerts';
 
   /** Channel shape for list items (name, groupId, order). Re-exported via type. */
   interface ParentChannel {
@@ -104,11 +110,25 @@
 
   let showPartnerSquads = $derived(partnerSquads.length > 0 || showPairWithSquadAction);
   let { defaultHubChannels, customChannels } = $derived(partitionHubSidebarChannels(channels));
+
+  $effect(() => {
+    const pid = parentId.trim();
+    if (!pid) return;
+    void $dashboardPollReplicaNonceByParentId[pid];
+    void refreshUnseenPollCreatesForParent(pid);
+  });
+
   let hubAlertByChannelName = $derived.by(() => {
     const counts = $unreadCountsByChat;
+    const pollAlerts = $unseenPollCreateCountByParentId;
+    const pid = parentId.trim();
     const out: Record<string, number> = {};
     for (const channel of [...defaultHubChannels, ...customChannels]) {
-      out[channel.name] = counts[channel.groupId] ?? 0;
+      if (channel.name === POLLS_CHANNEL_NAME) {
+        out[channel.name] = pid ? (pollAlerts[pid] ?? 0) : 0;
+      } else {
+        out[channel.name] = counts[channel.groupId] ?? 0;
+      }
     }
     return out;
   });

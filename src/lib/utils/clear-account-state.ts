@@ -125,6 +125,10 @@ import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { SQUAD_RPC_PREFIX } from '../squad/squad-rpc';
 import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
+import {
+  LAST_SEEN_POLL_CREATED_AT_PREFIX,
+  resetPollsHubAlertStores,
+} from '../../stores/polls-hub-alerts';
 import { resetGovActionPromptStores } from '../../stores/gov-action-prompts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { resetMlsStoreResetState } from '../../stores/mls-reset';
@@ -183,6 +187,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
   MUTINY_PROCESS_TX_PREFIX,
+  LAST_SEEN_POLL_CREATED_AT_PREFIX,
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {
@@ -224,6 +229,7 @@ export function clearAccountState(npub?: string): void {
   resetMutinyProcessTxStore();
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
+  resetPollsHubAlertStores();
   resetGovActionPromptStores();
   resetMlsGroupMembersStores();
   resetMlsStoreResetState();
