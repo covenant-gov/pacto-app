@@ -4,7 +4,7 @@ Polls for a squad/network parent are **replicated across members** via the paren
 
 `#polls` shows **Create Poll** and vote cards only — no chat timeline or composer.
 
-**Sidebar badge:** `#polls` alerts on **unseen poll creates** (not MLS group unread shared with `#announcements`). Opening `#polls` clears that badge without marking the announcements MLS chat read.
+**Sidebar badge:** `#polls` alerts on **unseen poll creates** (not MLS group unread shared with `#announcements`). Opening `#polls` clears that badge without marking the announcements MLS chat read. Each parent gets a persisted baseline at first sight (polls created before it never badge); creates that arrive while `#polls` is open are marked seen immediately. Marking seen never lowers a watermark, and overlapping replica updates (for example vote bursts) coalesce into one trailing refetch.
 
 ## Wire
 

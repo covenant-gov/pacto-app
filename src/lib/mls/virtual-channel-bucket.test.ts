@@ -389,14 +389,6 @@ describe('announceCardAllowedForTimelineBucket', () => {
     expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
   });
 
-  it('routes squad_rejoin_needed to announcements', () => {
-    const raw = JSON.stringify({
-      type: 'squad_rejoin_needed',
-      payload: { parent_id: 'p', requester_npub: 'npub1bob', request_id: 'r1' },
-    });
-    expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
-  });
-
   it('routes squad_member_left to announcements', () => {
     const raw = JSON.stringify({
       type: 'squad_member_left',

@@ -1,6 +1,6 @@
 /**
- * After a storage wipe, ask an online member to restore squads still visible in
- * recovered invite DMs, then auto-accept only those welcomes.
+ * After a storage wipe, ask an admitter to restore squads the user had joined, then
+ * auto-accept only the welcomes that admitter sends. See docs/mls/INVITES_AND_MEMBERSHIP.md.
  */
 
 import { get } from 'svelte/store';
@@ -13,6 +13,7 @@ import {
   parseChannelInSquadMessage,
   parseSquadInviteMessage,
   sendDmMessage,
+  type PendingMlsWelcome,
 } from '../api/nostr';
 import { finalizeSquadAfterAnnouncementsWelcome, acceptStagedChannelWelcome } from '../invites/accept-invite';
 import { sameMlsGroupId } from '../invites/declined-welcomes';
@@ -22,17 +23,29 @@ import { getAnnouncementsChannel } from '../parent-navbar';
 import { persistenceKey } from '../../stores/persistence-context';
 import { backendDmMessages } from '../../stores/dm';
 import { currentUser } from '../../stores/auth-session';
+import {
+  acceptedSquadInviteIds,
+  declinedSquadInviteIds,
+  declinedWelcomeGroupIds,
+} from '../../stores/invite-decisions';
 import { squads, type Squad } from '../../stores/squads';
 import { showToast } from '../../stores/toast';
 import { dmError } from '../utils/dm-debug';
 
 export const SQUAD_REJOIN_REQUEST_TYPE = 'squad_rejoin_request';
-export const SQUAD_REJOIN_NEEDED_TYPE = 'squad_rejoin_needed';
 export const SQUAD_REJOIN_PENDING_PREFIX = 'pacto_squad_rejoin_pending';
-export const SQUAD_REJOIN_FANOUT_PREFIX = 'pacto_squad_rejoin_fanout';
+export const SQUAD_REJOIN_HANDLED_PREFIX = 'pacto_squad_rejoin_handled';
 
-const REQUEST_COOLDOWN_MS = 15_000;
 const RETRY_INTERVAL_MS = 45_000;
+const RETRY_BASE_MS = 45_000;
+const RETRY_MAX_MS = 6 * 60 * 60 * 1000;
+const MAX_ATTEMPTS = 64;
+const REQUEST_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const CHANNEL_WINDOW_MS = 24 * 60 * 60 * 1000;
+const HANDLED_WINDOW_MS = 10 * 60 * 1000;
+const MAX_ADMITTER_TARGETS = 3;
+const MAX_PENDING_ROWS = 50;
+const MAX_HANDLED_ROWS = 100;
 
 export interface SquadRejoinPayload {
   parent_id: string;
@@ -45,11 +58,27 @@ export interface PlannedRejoin {
   squadName: string;
   targets: string[];
   channelGroupIds: string[];
+  /** Channel display names from `channel_in_squad` hints, keyed by channel group id. */
+  channelNames: Record<string, string>;
 }
+
+/** `requesting`: asking admitters; `channels`: announcements joined, accepting restored channels; `abandoned`: tombstone. */
+export type RejoinPhase = 'requesting' | 'channels' | 'abandoned';
 
 interface PendingRejoin extends PlannedRejoin {
   requestId: string;
+  phase: RejoinPhase;
+  attempts: number;
   lastAttemptAt: number;
+  createdAt: number;
+  joinedAt: number;
+  /** Welcomers who restored announcements; trusted for the squad's channel welcomes. */
+  trustedWelcomers: string[];
+}
+
+interface RejoinThread {
+  peerNpub: string;
+  messages: Array<{ id?: string; mine?: boolean; content?: string }>;
 }
 
 const toastedParents = new Set<string>();
@@ -60,11 +89,15 @@ function npubOk(value: string): boolean {
   return value.startsWith('npub1');
 }
 
-function parseRejoin(content: string | null | undefined, type: string): SquadRejoinPayload | null {
+function listed(npubs: string[], npub: string): boolean {
+  return npubs.some((n) => sameMlsGroupId(n, npub));
+}
+
+function parseRejoin(content: string | null | undefined): SquadRejoinPayload | null {
   if (!content?.trim().startsWith('{')) return null;
   try {
     const root = JSON.parse(content) as Record<string, unknown>;
-    if (root.type !== type) return null;
+    if (root.type !== SQUAD_REJOIN_REQUEST_TYPE) return null;
     const p = root.payload as Record<string, unknown> | undefined;
     if (!p || typeof p !== 'object') return null;
     const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
@@ -78,141 +111,219 @@ function parseRejoin(content: string | null | undefined, type: string): SquadRej
 }
 
 export function parseSquadRejoinRequest(content: string | null | undefined): SquadRejoinPayload | null {
-  return parseRejoin(content, SQUAD_REJOIN_REQUEST_TYPE);
-}
-
-export function parseSquadRejoinNeeded(content: string | null | undefined): SquadRejoinPayload | null {
-  return parseRejoin(content, SQUAD_REJOIN_NEEDED_TYPE);
+  return parseRejoin(content);
 }
 
 export function formatSquadRejoinRequest(payload: SquadRejoinPayload): string {
   return JSON.stringify({ type: SQUAD_REJOIN_REQUEST_TYPE, payload });
 }
 
-export function formatSquadRejoinNeeded(payload: SquadRejoinPayload): string {
-  return JSON.stringify({
-    type: SQUAD_REJOIN_NEEDED_TYPE,
-    payload,
-    pacto_virtual_bucket: 'announcements',
-  });
-}
-
 function addTarget(targets: Set<string>, npub: string, selfNpub: string): void {
   const n = npub.trim();
   if (!npubOk(n) || sameMlsGroupId(n, selfNpub)) return;
+  if ([...targets].some((t) => sameMlsGroupId(t, n))) return;
   targets.add(n);
 }
 
-/** Squads named by recovered invite DMs that this install has not joined. */
+/**
+ * Squads named by recovered invite DMs that this install has not joined.
+ * Only received, undeclined invites qualify; `requireAccepted` also demands a recorded accept.
+ */
 export function planSquadRejoinRequests(opts: {
-  threads: Array<{ peerNpub: string; messages: Array<{ content?: string }> }>;
+  threads: RejoinThread[];
   localGroupIds: Iterable<string>;
   selfNpub: string;
+  requireAccepted: boolean;
+  acceptedInviteMessageIds?: ReadonlySet<string>;
+  declinedInviteMessageIds?: ReadonlySet<string>;
+  declinedGroupIds?: Iterable<string>;
+  onlyParentId?: string;
 }): PlannedRejoin[] {
   const local = new Set(
     [...opts.localGroupIds].map((id) => id.trim().toLowerCase()).filter((id) => id.length > 0),
   );
+  const declinedGroups = new Set(
+    [...(opts.declinedGroupIds ?? [])].map((id) => id.trim().toLowerCase()),
+  );
+  const only = opts.onlyParentId?.trim().toLowerCase();
   const byParent = new Map<
     string,
-    { parentId: string; squadName: string; targets: Set<string>; channels: Set<string> }
+    {
+      parentId: string;
+      squadName: string;
+      admitters: Set<string>;
+      peers: Set<string>;
+      channels: Map<string, string>;
+    }
   >();
 
-  function slot(parentId: string, squadName: string) {
-    const id = parentId.trim();
-    const key = id.toLowerCase();
-    let row = byParent.get(key);
-    if (!row) {
-      row = { parentId: id, squadName: squadName.trim(), targets: new Set(), channels: new Set() };
-      byParent.set(key, row);
-    } else if (!row.squadName && squadName.trim()) {
-      row.squadName = squadName.trim();
+  for (const thread of opts.threads) {
+    for (const msg of thread.messages) {
+      if (msg.mine) continue;
+      const invite = parseSquadInviteMessage(msg.content ?? '');
+      if (!invite?.groupId) continue;
+      const parentId = invite.groupId.trim();
+      const key = parentId.toLowerCase();
+      if (only && key !== only) continue;
+      if (declinedGroups.has(key)) continue;
+      if (msg.id && opts.declinedInviteMessageIds?.has(msg.id)) continue;
+      if (opts.requireAccepted && !(msg.id && opts.acceptedInviteMessageIds?.has(msg.id))) continue;
+      let row = byParent.get(key);
+      if (!row) {
+        row = {
+          parentId,
+          squadName: invite.squadName?.trim() ?? '',
+          admitters: new Set(),
+          peers: new Set(),
+          channels: new Map(),
+        };
+        byParent.set(key, row);
+      } else if (!row.squadName && invite.squadName?.trim()) {
+        row.squadName = invite.squadName.trim();
+      }
+      for (const npub of (invite.admitterNpubs ?? []).slice(0, MAX_ADMITTER_TARGETS * 2)) {
+        addTarget(row.admitters, npub, opts.selfNpub);
+      }
+      addTarget(row.peers, thread.peerNpub, opts.selfNpub);
     }
-    return row;
   }
 
   for (const thread of opts.threads) {
     for (const msg of thread.messages) {
-      const invite = parseSquadInviteMessage(msg.content ?? '');
-      if (invite?.groupId) {
-        const row = slot(invite.groupId, invite.squadName);
-        const admitters = invite.admitterNpubs ?? [];
-        if (admitters.length > 0) {
-          for (const npub of admitters) addTarget(row.targets, npub, opts.selfNpub);
-        } else {
-          addTarget(row.targets, thread.peerNpub, opts.selfNpub);
-        }
-      }
+      if (msg.mine) continue;
       const channel = parseChannelInSquadMessage(msg.content ?? '');
-      if (channel?.announcementsGroupId) {
-        const row = slot(channel.announcementsGroupId, channel.squadName);
-        addTarget(row.targets, thread.peerNpub, opts.selfNpub);
-        const channelId = channel.channelGroupId.trim();
-        if (channelId) row.channels.add(channelId);
-      }
+      if (!channel?.announcementsGroupId) continue;
+      const row = byParent.get(channel.announcementsGroupId.trim().toLowerCase());
+      const channelId = channel.channelGroupId.trim();
+      if (row && channelId) row.channels.set(channelId, channel.channelName);
     }
   }
 
   const planned: PlannedRejoin[] = [];
   for (const row of byParent.values()) {
     if (local.has(row.parentId.toLowerCase())) continue;
-    if (row.targets.size === 0) continue;
+    const targets = new Set<string>();
+    for (const npub of [...row.admitters].slice(0, MAX_ADMITTER_TARGETS)) targets.add(npub);
+    for (const npub of row.peers) addTarget(targets, npub, opts.selfNpub);
+    if (targets.size === 0) continue;
     planned.push({
       parentId: row.parentId,
       squadName: row.squadName || row.parentId,
-      targets: [...row.targets],
-      channelGroupIds: [...row.channels],
+      targets: [...targets],
+      channelGroupIds: [...row.channels.keys()],
+      channelNames: Object.fromEntries(row.channels),
     });
   }
   return planned;
 }
 
+function storageKey(prefix: string): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  return persistenceKey(prefix) ?? null;
+}
+
+function finiteNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((x): x is string => typeof x === 'string') : [];
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === 'string') out[k] = v;
+  }
+  return out;
+}
+
+function parsePendingRow(raw: unknown): PendingRejoin | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.parentId !== 'string' || !r.parentId.trim()) return null;
+  if (typeof r.requestId !== 'string' || !r.requestId.trim()) return null;
+  const phase: RejoinPhase =
+    r.phase === 'channels' || r.phase === 'abandoned' ? r.phase : 'requesting';
+  const targets = stringList(r.targets).filter(npubOk);
+  if (targets.length === 0) return null;
+  return {
+    parentId: r.parentId.trim(),
+    squadName: typeof r.squadName === 'string' ? r.squadName : r.parentId.trim(),
+    targets,
+    channelGroupIds: stringList(r.channelGroupIds),
+    channelNames: stringRecord(r.channelNames),
+    requestId: r.requestId.trim(),
+    phase,
+    attempts: finiteNumber(r.attempts),
+    lastAttemptAt: finiteNumber(r.lastAttemptAt),
+    createdAt: finiteNumber(r.createdAt) || Date.now(),
+    joinedAt: finiteNumber(r.joinedAt),
+    trustedWelcomers: stringList(r.trustedWelcomers).filter(npubOk),
+  };
+}
+
 function readPending(): PendingRejoin[] {
-  if (typeof localStorage === 'undefined') return [];
-  const key = persistenceKey(SQUAD_REJOIN_PENDING_PREFIX);
+  const key = storageKey(SQUAD_REJOIN_PENDING_PREFIX);
   if (!key) return [];
   try {
     const parsed = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((row): row is PendingRejoin => {
-      if (!row || typeof row !== 'object') return false;
-      const r = row as PendingRejoin;
-      return typeof r.parentId === 'string' && typeof r.requestId === 'string' && Array.isArray(r.targets);
-    });
+    return parsed.map(parsePendingRow).filter((row): row is PendingRejoin => row !== null);
   } catch {
     return [];
   }
 }
 
 function writePending(rows: PendingRejoin[]): void {
-  if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(SQUAD_REJOIN_PENDING_PREFIX);
+  const key = storageKey(SQUAD_REJOIN_PENDING_PREFIX);
   if (!key) return;
   try {
-    localStorage.setItem(key, JSON.stringify(rows.slice(0, 50)));
+    localStorage.setItem(key, JSON.stringify(rows.slice(-MAX_PENDING_ROWS)));
   } catch {
     /* quota */
   }
 }
 
-function readFanout(): Set<string> {
-  if (typeof localStorage === 'undefined') return new Set();
-  const key = persistenceKey(SQUAD_REJOIN_FANOUT_PREFIX);
-  if (!key) return new Set();
+function updateRow(parentId: string, fn: (row: PendingRejoin) => PendingRejoin | null): void {
+  const rows = readPending();
+  const i = rows.findIndex((r) => sameMlsGroupId(r.parentId, parentId));
+  if (i < 0) return;
+  const next = fn({ ...rows[i] });
+  if (next) rows[i] = next;
+  else rows.splice(i, 1);
+  writePending(rows);
+}
+
+function handledKey(parentId: string, requesterNpub: string): string {
+  return `${parentId.trim().toLowerCase()}:${requesterNpub.trim().toLowerCase()}`;
+}
+
+function readHandled(now: number): Record<string, number> {
+  const key = storageKey(SQUAD_REJOIN_HANDLED_PREFIX);
+  if (!key) return {};
   try {
-    const parsed = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown;
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((x): x is string => typeof x === 'string'));
+    const parsed = JSON.parse(localStorage.getItem(key) ?? '{}') as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'number' && now - v < HANDLED_WINDOW_MS) out[k] = v;
+    }
+    return out;
   } catch {
-    return new Set();
+    return {};
   }
 }
 
-function writeFanout(keys: Set<string>): void {
-  if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(SQUAD_REJOIN_FANOUT_PREFIX);
+function markHandled(parentId: string, requesterNpub: string, now: number): void {
+  const key = storageKey(SQUAD_REJOIN_HANDLED_PREFIX);
   if (!key) return;
+  const next = readHandled(now);
+  next[handledKey(parentId, requesterNpub)] = now;
+  const kept = Object.entries(next).sort((a, b) => b[1] - a[1]).slice(0, MAX_HANDLED_ROWS);
   try {
-    localStorage.setItem(key, JSON.stringify([...keys].slice(0, 100)));
+    localStorage.setItem(key, JSON.stringify(Object.fromEntries(kept)));
   } catch {
     /* quota */
   }
@@ -224,17 +335,20 @@ function newRequestId(): string {
     : `rejoin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function ensureRetryTimer(): void {
-  if (retryTimer || readPending().length === 0) return;
-  retryTimer = setInterval(() => {
-    void scanSquadRejoinAfterBackfill();
-  }, RETRY_INTERVAL_MS);
+function isActive(row: PendingRejoin): boolean {
+  return row.phase !== 'abandoned';
 }
 
-function stopRetryTimerIfIdle(): void {
-  if (readPending().length > 0 || !retryTimer) return;
-  clearInterval(retryTimer);
-  retryTimer = null;
+function syncRetryTimer(rows: PendingRejoin[]): void {
+  const active = rows.some(isActive);
+  if (active && !retryTimer) {
+    retryTimer = setInterval(() => {
+      void scanSquadRejoinAfterBackfill();
+    }, RETRY_INTERVAL_MS);
+  } else if (!active && retryTimer) {
+    clearInterval(retryTimer);
+    retryTimer = null;
+  }
 }
 
 function toastRestoring(parentId: string): void {
@@ -248,52 +362,119 @@ function toastRestoring(parentId: string): void {
   }
 }
 
-function mergePending(planned: PlannedRejoin[], existing: PendingRejoin[]): PendingRejoin[] {
-  return planned.map((row) => {
-    const prev = existing.find((p) => sameMlsGroupId(p.parentId, row.parentId));
-    const channels = new Set([...(prev?.channelGroupIds ?? []), ...row.channelGroupIds]);
-    return {
-      ...row,
-      channelGroupIds: [...channels],
-      requestId: prev?.requestId || newRequestId(),
-      lastAttemptAt: prev?.lastAttemptAt ?? 0,
-    };
-  });
+function newRow(planned: PlannedRejoin, now: number): PendingRejoin {
+  return {
+    ...planned,
+    requestId: newRequestId(),
+    phase: 'requesting',
+    attempts: 0,
+    lastAttemptAt: 0,
+    createdAt: now,
+    joinedAt: 0,
+    trustedWelcomers: [],
+  };
 }
 
-async function sendDueRequests(rows: PendingRejoin[]): Promise<PendingRejoin[]> {
-  const now = Date.now();
+/** Keep existing rows (including tombstones); add new squads; widen hints on live requests. */
+function mergePending(planned: PlannedRejoin[], existing: PendingRejoin[], now: number): PendingRejoin[] {
+  const out = [...existing];
+  for (const row of planned) {
+    const i = out.findIndex((p) => sameMlsGroupId(p.parentId, row.parentId));
+    if (i < 0) {
+      out.push(newRow(row, now));
+      continue;
+    }
+    const prev = out[i];
+    if (prev.phase !== 'requesting') continue;
+    out[i] = {
+      ...prev,
+      channelGroupIds: [...new Set([...prev.channelGroupIds, ...row.channelGroupIds])],
+      channelNames: { ...row.channelNames, ...prev.channelNames },
+    };
+  }
+  return out;
+}
+
+/** Move joined rows to the channel window, abandon stale requests, drop expired channel windows. */
+function advanceRows(rows: PendingRejoin[], localGroupIds: string[], now: number): PendingRejoin[] {
+  const out: PendingRejoin[] = [];
+  for (const row of rows) {
+    let next = row;
+    if (
+      next.phase === 'requesting' &&
+      localGroupIds.some((id) => sameMlsGroupId(id, next.parentId))
+    ) {
+      next = { ...next, phase: 'channels', joinedAt: now };
+    }
+    if (
+      next.phase === 'requesting' &&
+      (next.attempts >= MAX_ATTEMPTS || now - next.createdAt > REQUEST_TTL_MS)
+    ) {
+      next = { ...next, phase: 'abandoned' };
+    }
+    if (next.phase === 'channels' && now - next.joinedAt > CHANNEL_WINDOW_MS) continue;
+    out.push(next);
+  }
+  return out;
+}
+
+function retryWaitMs(attempts: number): number {
+  return Math.min(RETRY_BASE_MS * 2 ** Math.max(attempts - 1, 0), RETRY_MAX_MS);
+}
+
+/** One target per attempt, rotating, so several admins do not restore the same member at once. */
+async function sendDueRequests(rows: PendingRejoin[], now: number): Promise<PendingRejoin[]> {
   const me = get(currentUser)?.npub?.trim() ?? '';
   const next: PendingRejoin[] = [];
   for (const row of rows) {
-    if (now - row.lastAttemptAt < REQUEST_COOLDOWN_MS) {
+    const due = row.attempts === 0 || now - row.lastAttemptAt >= retryWaitMs(row.attempts);
+    if (row.phase !== 'requesting' || !due || row.attempts >= MAX_ATTEMPTS) {
       next.push(row);
       continue;
     }
-    const body = formatSquadRejoinRequest({
-      parent_id: row.parentId,
-      requester_npub: me,
-      request_id: row.requestId,
-    });
+    const target = row.targets[row.attempts % row.targets.length];
     let sent = false;
-    for (const target of row.targets) {
-      try {
-        await sendDmMessage(target, body);
-        sent = true;
-      } catch (e) {
-        console.warn('[squad-rejoin] request DM failed', target.slice(0, 16), e);
-      }
+    try {
+      await sendDmMessage(
+        target,
+        formatSquadRejoinRequest({
+          parent_id: row.parentId,
+          requester_npub: me,
+          request_id: row.requestId,
+        }),
+      );
+      sent = true;
+    } catch (e) {
+      console.warn('[squad-rejoin] request DM failed', target.slice(0, 16), e);
     }
     if (sent) toastRestoring(row.parentId);
-    next.push({ ...row, lastAttemptAt: sent ? now : row.lastAttemptAt });
+    next.push({ ...row, attempts: row.attempts + 1, lastAttemptAt: now });
   }
   return next;
 }
 
-/** Accept welcomes for squads this install asked to rejoin. */
+function trustedWelcome(row: PendingRejoin, welcome: PendingMlsWelcome): boolean {
+  const welcomer = welcome.welcomer?.trim() ?? '';
+  if (!welcomer || !welcome.id) return false;
+  return listed([...row.targets, ...row.trustedWelcomers], welcomer);
+}
+
+function trustedSender(row: PendingRejoin, senderNpub: string): boolean {
+  return listed([...row.targets, ...row.trustedWelcomers], senderNpub);
+}
+
+function welcomesFor(
+  welcomes: PendingMlsWelcome[],
+  row: PendingRejoin,
+  groupId: string,
+): PendingMlsWelcome[] {
+  return welcomes.filter((w) => sameMlsGroupId(w.nostr_group_id, groupId) && trustedWelcome(row, w));
+}
+
+/** Accept restored welcomes (announcements, then channels) from welcomers this install asked. */
 export async function tryAcceptRememberedRejoinWelcomes(groupId?: string | null): Promise<void> {
   const focus = groupId?.trim() ?? '';
-  let rows = readPending();
+  let rows = readPending().filter(isActive);
   if (focus) {
     rows = rows.filter(
       (row) =>
@@ -303,7 +484,7 @@ export async function tryAcceptRememberedRejoinWelcomes(groupId?: string | null)
   }
   if (rows.length === 0) return;
 
-  let welcomes;
+  let welcomes: PendingMlsWelcome[];
   try {
     welcomes = await listPendingMlsWelcomes();
   } catch (e) {
@@ -311,37 +492,12 @@ export async function tryAcceptRememberedRejoinWelcomes(groupId?: string | null)
     return;
   }
 
-  for (const row of rows) {
-    const lock = row.parentId.toLowerCase();
+  for (const original of rows) {
+    const lock = original.parentId.toLowerCase();
     if (acceptingParents.has(lock)) continue;
     acceptingParents.add(lock);
     try {
-      const ann = welcomes.find((w) => sameMlsGroupId(w.nostr_group_id, row.parentId));
-      let joinedAnnouncements = false;
-      if (ann?.id) {
-        await acceptMlsWelcome(ann.id);
-        await finalizeSquadAfterAnnouncementsWelcome(
-          { groupId: row.parentId, name: row.squadName || row.parentId },
-          null,
-        );
-        await recoverMissingSquadCatalog();
-        joinedAnnouncements = true;
-      }
-      const parentReady =
-        joinedAnnouncements ||
-        get(squads).some((s) => sameMlsGroupId(s.id, row.parentId));
-      if (!parentReady) continue;
-      for (const channelId of row.channelGroupIds) {
-        const welcome = welcomes.find((w) => sameMlsGroupId(w.nostr_group_id, channelId));
-        if (!welcome?.id) continue;
-        const hinted = parseChannelName(row, channelId);
-        await acceptStagedChannelWelcome({
-          welcomeId: welcome.id,
-          channelGroupId: welcome.nostr_group_id,
-          parentId: row.parentId,
-          channelName: hinted,
-        });
-      }
+      await acceptForRow(original, welcomes);
     } catch (e) {
       dmError('accept squad rejoin welcome', e);
     } finally {
@@ -350,69 +506,148 @@ export async function tryAcceptRememberedRejoinWelcomes(groupId?: string | null)
   }
 }
 
-function parseChannelName(row: PendingRejoin, channelId: string): string {
-  for (const thread of Object.values(get(backendDmMessages))) {
-    for (const msg of thread) {
-      const channel = parseChannelInSquadMessage(msg.content ?? '');
-      if (
-        channel &&
-        sameMlsGroupId(channel.announcementsGroupId, row.parentId) &&
-        sameMlsGroupId(channel.channelGroupId, channelId)
-      ) {
-        return channel.channelName;
+async function acceptForRow(original: PendingRejoin, welcomes: PendingMlsWelcome[]): Promise<void> {
+  let row = original;
+  if (row.phase === 'requesting') {
+    for (const ann of welcomesFor(welcomes, row, row.parentId)) {
+      try {
+        await acceptMlsWelcome(ann.id);
+      } catch (e) {
+        dmError('accept squad rejoin announcements welcome', e);
+        continue;
       }
+      const trusted = [...new Set([...row.trustedWelcomers, ann.welcomer])];
+      updateRow(row.parentId, (r) => ({
+        ...r,
+        phase: 'channels',
+        joinedAt: Date.now(),
+        trustedWelcomers: trusted,
+      }));
+      row = { ...row, phase: 'channels', trustedWelcomers: trusted };
+      try {
+        await finalizeSquadAfterAnnouncementsWelcome(
+          { groupId: row.parentId, name: row.squadName || row.parentId },
+          null,
+        );
+        await recoverMissingSquadCatalog();
+      } catch (e) {
+        dmError('finalize squad after rejoin welcome', e);
+      }
+      break;
+    }
+    if (row.phase === 'requesting') return;
+  }
+
+  for (const channelId of row.channelGroupIds) {
+    for (const welcome of welcomesFor(welcomes, row, channelId)) {
+      try {
+        await acceptStagedChannelWelcome({
+          welcomeId: welcome.id,
+          channelGroupId: welcome.nostr_group_id,
+          parentId: row.parentId,
+          channelName: parseChannelName(row, channelId),
+        });
+      } catch (e) {
+        dmError('accept squad rejoin channel welcome', e);
+        continue;
+      }
+      updateRow(row.parentId, (r) => ({
+        ...r,
+        channelGroupIds: r.channelGroupIds.filter((id) => !sameMlsGroupId(id, channelId)),
+      }));
+      break;
     }
   }
-  return channelId;
 }
 
-function dropJoined(rows: PendingRejoin[], localGroupIds: string[]): PendingRejoin[] {
-  return rows.filter((row) => !localGroupIds.some((id) => sameMlsGroupId(id, row.parentId)));
+function parseChannelName(row: PendingRejoin, channelId: string): string {
+  const hit = Object.entries(row.channelNames).find(([id]) => sameMlsGroupId(id, channelId));
+  return hit?.[1] || channelId;
 }
 
-/** Scan recovered DMs and ask admitters to restore squads missing locally. */
-export async function scanSquadRejoinAfterBackfill(): Promise<void> {
-  const me = get(currentUser)?.npub?.trim();
-  if (!me) return;
-  let localIds: string[];
+async function localGroupIds(): Promise<string[] | null> {
   try {
-    const meta = await getMlsGroupMetadata();
-    localIds = meta.map((g) => g.group_id);
+    return (await getMlsGroupMetadata()).map((g) => g.group_id);
   } catch (e) {
     dmError('mls metadata for squad rejoin', e);
-    return;
+    return null;
   }
-  const threads = Object.entries(get(backendDmMessages)).map(([peerNpub, messages]) => ({
+}
+
+function dmThreads(): RejoinThread[] {
+  return Object.entries(get(backendDmMessages)).map(([peerNpub, messages]) => ({
     peerNpub,
     messages,
   }));
-  const planned = planSquadRejoinRequests({ threads, localGroupIds: localIds, selfNpub: me });
-  const pending = dropJoined(mergePending(planned, readPending()), localIds);
-  const sent = await sendDueRequests(pending);
-  writePending(sent);
-  if (sent.length > 0) ensureRetryTimer();
-  else stopRetryTimerIfIdle();
-  await tryAcceptRememberedRejoinWelcomes();
-  try {
-    const meta = await getMlsGroupMetadata();
-    const still = dropJoined(readPending(), meta.map((g) => g.group_id));
-    writePending(still);
-    if (still.length === 0) stopRetryTimerIfIdle();
-  } catch {
-    /* keep the queue */
-  }
 }
 
-/** Record a live channel-in-squad DM for a rejoin already in progress. */
-export function noteRejoinChannelDm(content: string): void {
+/** Ask admitters to restore squads the user had accepted but that are missing locally. */
+export async function scanSquadRejoinAfterBackfill(): Promise<void> {
+  const me = get(currentUser)?.npub?.trim();
+  if (!me) return;
+  const localIds = await localGroupIds();
+  if (!localIds) return;
+  const now = Date.now();
+  const planned = planSquadRejoinRequests({
+    threads: dmThreads(),
+    localGroupIds: localIds,
+    selfNpub: me,
+    requireAccepted: true,
+    acceptedInviteMessageIds: new Set(get(acceptedSquadInviteIds)),
+    declinedInviteMessageIds: new Set(get(declinedSquadInviteIds)),
+    declinedGroupIds: get(declinedWelcomeGroupIds),
+  });
+  let rows = advanceRows(mergePending(planned, readPending(), now), localIds, now);
+  rows = await sendDueRequests(rows, now);
+  writePending(rows);
+  await tryAcceptRememberedRejoinWelcomes();
+
+  const after = await localGroupIds();
+  const settled = advanceRows(readPending(), after ?? localIds, Date.now());
+  writePending(settled);
+  syncRetryTimer(settled);
+}
+
+/** User-initiated restore for an invite card that has no recorded accept (full local wipe). */
+export async function requestSquadRejoinForInvite(parentId: string): Promise<boolean> {
+  const me = get(currentUser)?.npub?.trim();
+  if (!me) return false;
+  const localIds = await localGroupIds();
+  if (!localIds) return false;
+  const planned = planSquadRejoinRequests({
+    threads: dmThreads(),
+    localGroupIds: localIds,
+    selfNpub: me,
+    requireAccepted: false,
+    declinedInviteMessageIds: new Set(get(declinedSquadInviteIds)),
+    declinedGroupIds: get(declinedWelcomeGroupIds),
+    onlyParentId: parentId,
+  })[0];
+  if (!planned) return false;
+  const now = Date.now();
+  const rows = readPending().filter((r) => !sameMlsGroupId(r.parentId, planned.parentId));
+  rows.push(newRow(planned, now));
+  toastedParents.delete(planned.parentId.toLowerCase());
+  const sent = await sendDueRequests(rows, now);
+  writePending(sent);
+  syncRetryTimer(sent);
+  return true;
+}
+
+/** Record a live channel-in-squad DM from a trusted welcomer for a rejoin in progress. */
+export function noteRejoinChannelDm(content: string, senderNpub: string): void {
   const channel = parseChannelInSquadMessage(content);
   if (!channel?.announcementsGroupId || !channel.channelGroupId) return;
-  const rows = readPending();
-  const row = rows.find((r) => sameMlsGroupId(r.parentId, channel.announcementsGroupId));
-  if (!row) return;
+  const row = readPending().find(
+    (r) => isActive(r) && sameMlsGroupId(r.parentId, channel.announcementsGroupId),
+  );
+  if (!row || !trustedSender(row, senderNpub)) return;
   if (!row.channelGroupIds.some((id) => sameMlsGroupId(id, channel.channelGroupId))) {
-    row.channelGroupIds.push(channel.channelGroupId);
-    writePending(rows);
+    updateRow(row.parentId, (r) => ({
+      ...r,
+      channelGroupIds: [...r.channelGroupIds, channel.channelGroupId],
+      channelNames: { ...r.channelNames, [channel.channelGroupId]: channel.channelName },
+    }));
   }
   void tryAcceptRememberedRejoinWelcomes(channel.channelGroupId);
 }
@@ -426,20 +661,21 @@ function findSquad(parentId: string): Squad | undefined {
 }
 
 /**
- * An online member received a rejoin ask.
- * Admins restore the squad. Other members fan the ask out once on announcements.
- * A requester with no leaf is ignored.
+ * A rejoin ask arrived by DM. Only an MLS admin acts, and only when the DM sender is the
+ * requester; a requester with no leaf is ignored, so a kick is not undone.
  */
 export async function handleSquadRejoinRequest(
   payload: SquadRejoinPayload,
-  opts: { fanOut: boolean },
+  senderNpub: string,
 ): Promise<void> {
   const me = get(currentUser)?.npub?.trim();
   if (!me || sameMlsGroupId(payload.requester_npub, me)) return;
+  if (!sameMlsGroupId(payload.requester_npub, senderNpub)) return;
   const parent = findSquad(payload.parent_id);
   if (!parent) return;
   const announcementsGid = getAnnouncementsChannel(parent).groupId?.trim();
   if (!announcementsGid) return;
+  if (handledKey(announcementsGid, payload.requester_npub) in readHandled(Date.now())) return;
 
   let members: string[];
   let admins: string[];
@@ -451,36 +687,11 @@ export async function handleSquadRejoinRequest(
     dmError('members for squad rejoin', e);
     return;
   }
-  if (!members.some((n) => sameMlsGroupId(n, payload.requester_npub))) return;
-  const iAmAdmin = admins.some((n) => sameMlsGroupId(n, me));
-  const iAmMember = members.some((n) => sameMlsGroupId(n, me));
-  if (!iAmAdmin && !iAmMember) return;
+  if (!listed(members, payload.requester_npub) || !listed(admins, me)) return;
 
-  if (iAmAdmin) {
-    await restoreMemberToSquad({ parent, memberNpub: payload.requester_npub });
-  }
-  if (!opts.fanOut) return;
-  const fanKey = `${announcementsGid.toLowerCase()}:${payload.requester_npub.toLowerCase()}`;
-  const fanned = readFanout();
-  if (fanned.has(fanKey)) return;
-  try {
-    await sendDmMessage(announcementsGid, formatSquadRejoinNeeded(payload), '', {
-      virtualBucket: 'announcements',
-    });
-    fanned.add(fanKey);
-    writeFanout(fanned);
-  } catch (e) {
-    console.warn('[squad-rejoin] fan-out failed', e);
-  }
-}
-
-export function onMlsSquadRejoinNeeded(content: string, groupId: string): void {
-  const parsed = parseSquadRejoinNeeded(content);
-  if (!parsed) return;
-  if (!sameMlsGroupId(parsed.parent_id, groupId)) return;
-  void handleSquadRejoinRequest(parsed, { fanOut: false }).catch((e) =>
-    console.warn('[squad-rejoin] needed failed', e),
-  );
+  const result = await restoreMemberToSquad({ parent, memberNpub: payload.requester_npub });
+  if (result.ok) markHandled(announcementsGid, payload.requester_npub, Date.now());
+  else console.warn('[squad-rejoin] restore failed', result.error);
 }
 
 export function resetSquadRejoinState(): void {

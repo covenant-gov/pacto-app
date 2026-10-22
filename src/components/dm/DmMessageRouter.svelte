@@ -33,6 +33,7 @@
   import { shouldShowWalletPeerGrantCard } from '../../lib/wallet/wallet-peer-exchange';
   import { isWalletTxAnnouncementOnChainPending } from '../../lib/wallet/dm-messages';
   import { reactToMessage } from '../../lib/api/nostr';
+  import { requestSquadRejoinForInvite } from '../../lib/squad/squad-rejoin';
   import { clearPendingReactions } from '../../lib/messaging/reactions';
 
   interface Props {
@@ -105,6 +106,15 @@
     }
   }
 
+  async function requestRestore(groupId: string) {
+    try {
+      if (await requestSquadRejoinForInvite(groupId)) return;
+    } catch {
+      /* fall through to the failure toast */
+    }
+    showToast($t('messaging.inviteCard.requestRestoreFailed'));
+  }
+
   function onCopy(_messageId: string, text: string) {
     if (!navigator.clipboard) {
       showToast($t('errors.dm.copyUnavailable'));
@@ -145,6 +155,9 @@
     accepting={acceptingSquadInviteId === msg.id}
     onAccept={() => onAcceptSquadInvite(msg, presentation.payload.groupId)}
     onDecline={() => onDeclineSquad(msg)}
+    onRequestRestore={presentation.kind === 'squad-invite' && !msg.mine
+      ? () => void requestRestore(presentation.payload.groupId)
+      : undefined}
     onMessageInviter={openInviter}
   />
 {:else if presentation.kind === 'wallet-peer-info-request'}

@@ -29,6 +29,7 @@ landing/public/pacto-release.json
 *.db
 .beads-credential-key
 .beads/proxieddb/
+.beads.gate.lock
 
 # Build artifacts
 *.AppImage

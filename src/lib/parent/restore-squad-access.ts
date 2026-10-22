@@ -26,7 +26,9 @@ export interface RestoreChannelPlan {
   admitOpen: Array<{ groupId: string; name: string }>;
 }
 
-export type RestoreSquadResult = { ok: true } | { ok: false; error: string };
+export type RestoreSquadResult =
+  | { ok: true; skipped?: 'cooldown' | 'in_flight' }
+  | { ok: false; error: string };
 
 function restoreKey(parentId: string, memberNpub: string): string {
   return `${parentId.trim().toLowerCase()}:${memberNpub.trim().toLowerCase()}`;
@@ -36,13 +38,11 @@ function listed(npubs: string[], npub: string): boolean {
   return npubs.some((n) => sameMlsGroupId(n, npub));
 }
 
-/** Squad whose id or any channel group id matches. */
-export function squadOwningGroupId(list: Squad[], groupId: string): Squad | undefined {
+/** Squad whose announcements group id matches; channel groups never match. */
+export function squadForAnnouncementsGroup(list: Squad[], groupId: string): Squad | undefined {
   const gid = groupId.trim();
   if (!gid) return undefined;
-  return list.find(
-    (s) => sameMlsGroupId(s.id, gid) || s.channels.some((c) => sameMlsGroupId(c.groupId, gid)),
-  );
+  return list.find((s) => sameMlsGroupId(getAnnouncementsChannel(s).groupId ?? '', gid));
 }
 
 function membershipFor(
@@ -156,6 +156,13 @@ async function restoreChannelsInBackground(
         await inviteMemberToGroup(gid, npub);
       } catch (e) {
         console.warn('[mls] channel restore failed', gid.slice(0, 12), e);
+        continue;
+      }
+      const name = parent.channels.find((ch) => sameMlsGroupId(ch.groupId, gid))?.name ?? gid;
+      try {
+        await notifyChannelWelcome(parent, gid, name, npub);
+      } catch (e) {
+        console.warn('[mls] channel notify failed', gid.slice(0, 12), e);
       }
     }
     for (const ch of plan.admitOpen) {
@@ -186,9 +193,9 @@ export async function restoreMemberToSquad(opts: {
     return { ok: false, error: 'Squad not ready.' };
   }
   const key = restoreKey(opts.parent.id, npub);
-  if (restoreInFlight.has(key)) return { ok: true };
+  if (restoreInFlight.has(key)) return { ok: true, skipped: 'in_flight' };
   const last = lastRestoreAt.get(key) ?? 0;
-  if (Date.now() - last < RESTORE_COOLDOWN_MS) return { ok: true };
+  if (Date.now() - last < RESTORE_COOLDOWN_MS) return { ok: true, skipped: 'cooldown' };
 
   restoreInFlight.add(key);
   try {

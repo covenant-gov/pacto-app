@@ -5,22 +5,22 @@ import { persistenceKey, setCurrentNpubForPersistence } from './persistence-cont
 
 export const LAST_SEEN_POLL_CREATED_AT_PREFIX = 'pacto_last_seen_poll_created_at_v1';
 
-/** Per-parent last time the user opened `#polls` (max create timestamp seen). */
+/** Per-parent `#polls` watermark: the first-seen baseline, then the newest create the user has seen. */
 export const lastSeenPollCreatedAtMsByParentId = writable<Record<string, number>>({});
 
 /** Sidebar badge counts for `#polls` (unseen creates by others). */
 export const unseenPollCreateCountByParentId = writable<Record<string, number>>({});
 
-/** Session fallback when a parent has no persisted watermark yet. */
-let sessionDefaultWatermarkMs = 0;
-
 const refreshGenByParentId = new Map<string, number>();
+const refreshInFlight = new Set<string>();
+const refreshRerun = new Set<string>();
 
 export function resetPollsHubAlertStores(): void {
   lastSeenPollCreatedAtMsByParentId.set({});
   unseenPollCreateCountByParentId.set({});
-  sessionDefaultWatermarkMs = 0;
   refreshGenByParentId.clear();
+  refreshInFlight.clear();
+  refreshRerun.clear();
 }
 
 function persistWatermarks(map: Record<string, number>): void {
@@ -36,7 +36,6 @@ function persistWatermarks(map: Record<string, number>): void {
 
 export function loadLastSeenPollCreatedAt(npub: string): void {
   setCurrentNpubForPersistence(npub);
-  sessionDefaultWatermarkMs = Date.now();
   if (typeof localStorage === 'undefined') {
     lastSeenPollCreatedAtMsByParentId.set({});
     return;
@@ -67,12 +66,15 @@ export function loadLastSeenPollCreatedAt(npub: string): void {
   }
 }
 
-export function effectivePollsWatermarkMs(parentId: string): number {
-  const pid = parentId.trim();
-  if (!pid) return sessionDefaultWatermarkMs;
+/** First sight of a parent fixes its baseline so polls created later badge, across restarts. */
+function ensureBaseline(pid: string): number {
   const map = get(lastSeenPollCreatedAtMsByParentId);
   if (Object.prototype.hasOwnProperty.call(map, pid)) return map[pid] ?? 0;
-  return sessionDefaultWatermarkMs;
+  const baseline = Date.now();
+  const next = { ...map, [pid]: baseline };
+  lastSeenPollCreatedAtMsByParentId.set(next);
+  persistWatermarks(next);
+  return baseline;
 }
 
 /** Pure count helper for tests. */
@@ -91,9 +93,27 @@ export function countUnseenPollCreates(
   return n;
 }
 
+/** Recount unseen creates; overlapping calls for a parent coalesce into one trailing refetch. */
 export async function refreshUnseenPollCreatesForParent(parentId: string): Promise<void> {
   const pid = parentId.trim();
   if (!pid) return;
+  if (refreshInFlight.has(pid)) {
+    refreshRerun.add(pid);
+    return;
+  }
+  refreshInFlight.add(pid);
+  try {
+    do {
+      refreshRerun.delete(pid);
+      await refreshOnce(pid);
+    } while (refreshRerun.has(pid));
+  } finally {
+    refreshInFlight.delete(pid);
+  }
+}
+
+async function refreshOnce(pid: string): Promise<void> {
+  const watermark = ensureBaseline(pid);
   const gen = (refreshGenByParentId.get(pid) ?? 0) + 1;
   refreshGenByParentId.set(pid, gen);
   let polls: DashboardPollDto[];
@@ -103,9 +123,8 @@ export async function refreshUnseenPollCreatesForParent(parentId: string): Promi
     return;
   }
   if (refreshGenByParentId.get(pid) !== gen) return;
-  const watermark = effectivePollsWatermarkMs(pid);
-  const npub = get(currentUser)?.npub;
-  const count = countUnseenPollCreates(polls, watermark, npub);
+  const current = get(lastSeenPollCreatedAtMsByParentId)[pid] ?? watermark;
+  const count = countUnseenPollCreates(polls, current, get(currentUser)?.npub);
   unseenPollCreateCountByParentId.update((m) => ({ ...m, [pid]: count }));
 }
 
@@ -122,9 +141,9 @@ export async function markPollsChannelSeen(parentId: string): Promise<void> {
   }
   if (refreshGenByParentId.get(pid) !== gen) return;
   const maxCreated = polls.reduce((max, p) => Math.max(max, p.created_at_ms), 0);
-  const watermark = maxCreated > 0 ? maxCreated : Date.now();
+  const seen = maxCreated > 0 ? maxCreated : Date.now();
   lastSeenPollCreatedAtMsByParentId.update((m) => {
-    const next = { ...m, [pid]: watermark };
+    const next = { ...m, [pid]: Math.max(m[pid] ?? 0, seen) };
     persistWatermarks(next);
     return next;
   });
