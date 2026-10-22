@@ -91,6 +91,7 @@ import { SAFE_STATE_DISK_CACHE_PREFIX } from '../dashboard/safe-state-disk-cache
 import { resetRelayedWalletTxKeys } from '../wallet/wallet-dm-transfer';
 import { resetInviteAcceptState } from '../invites/accept-invite';
 import { resetPendingAdmitState, PENDING_ADMIT_PREFIX, stopPendingAdmitDrain } from '../parent/pending-admit';
+import { resetRestoreSquadAccessState } from '../parent/restore-squad-access';
 import {
   resetSquadRejoinState,
   SQUAD_REJOIN_HANDLED_PREFIX,
@@ -221,6 +222,7 @@ export function clearAccountState(npub?: string): void {
   stopPendingAdmitDrain();
   resetPendingAdmitState();
   resetSquadRejoinState();
+  resetRestoreSquadAccessState();
   resetPendingSquadAdmissions();
   resetPendingWelcomeFinalizations();
   joiningWelcomeGroupIds.set([]);

@@ -10,11 +10,19 @@ import { isOpenCustomChannel } from './channel-access';
 import { sameMlsGroupId } from '../invites/declined-welcomes';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
 import { currentUser } from '../../stores/auth-session';
+import { bumpMembershipVersion } from '../../stores/mls-chat';
+import { refreshMlsGroupMembers } from '../../stores/mls-group-members';
 import { squads, type Channel, type Squad } from '../../stores/squads';
 
 const restoreInFlight = new Set<string>();
 const lastRestoreAt = new Map<string, number>();
 const RESTORE_COOLDOWN_MS = 60_000;
+
+/** Re-add changed the group's leaves: let any open members panel repaint. */
+function noteMembershipChanged(groupId: string): void {
+  bumpMembershipVersion(groupId);
+  void refreshMlsGroupMembers(groupId).catch(() => {});
+}
 
 export interface GroupMembershipSnapshot {
   members: string[];
@@ -158,6 +166,7 @@ async function restoreChannelsInBackground(
         console.warn('[mls] channel restore failed', gid.slice(0, 12), e);
         continue;
       }
+      noteMembershipChanged(gid);
       const name = parent.channels.find((ch) => sameMlsGroupId(ch.groupId, gid))?.name ?? gid;
       try {
         await notifyChannelWelcome(parent, gid, name, npub);
@@ -168,6 +177,7 @@ async function restoreChannelsInBackground(
     for (const ch of plan.admitOpen) {
       try {
         await inviteMemberToGroup(ch.groupId, npub);
+        noteMembershipChanged(ch.groupId);
         try {
           await notifyChannelWelcome(parent, ch.groupId, ch.name, npub);
         } catch (e) {
@@ -208,12 +218,13 @@ export async function restoreMemberToSquad(opts: {
     };
   }
   lastRestoreAt.set(key, Date.now());
+  noteMembershipChanged(announcementsGid);
   const liveParent = get(squads).find((s) => s.id === opts.parent.id) ?? opts.parent;
   void restoreChannelsInBackground(liveParent, npub, announcementsGid, key);
   return { ok: true };
 }
 
-export function resetRestoreSquadAccessForTests(): void {
+export function resetRestoreSquadAccessState(): void {
   restoreInFlight.clear();
   lastRestoreAt.clear();
 }
