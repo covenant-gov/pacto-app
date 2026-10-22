@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { getProfileDisplayName, getProfileAvatarSrc, getProfileBannerSrc, cachedOrRemoteImageSrc } from './profile';
+import {
+  getProfileDisplayName,
+  getProfileAvatarSrc,
+  getProfileBannerSrc,
+  cachedOrRemoteImageSrc,
+  profileNeedsRelayHydration,
+} from './profile';
 import { torRoutingEnabled } from '../../stores/tor';
 import type { NostrProfile } from '../api/nostr';
 
@@ -41,6 +47,35 @@ function makeProfile(overrides?: Partial<NostrProfile>): NostrProfile {
     ...overrides,
   };
 }
+
+describe('profileNeedsRelayHydration', () => {
+  it('is true for null/undefined and empty shells', () => {
+    expect(profileNeedsRelayHydration(null)).toBe(true);
+    expect(profileNeedsRelayHydration(undefined)).toBe(true);
+    expect(
+      profileNeedsRelayHydration(
+        makeProfile({ name: '', display_name: '', avatar: '' })
+      )
+    ).toBe(true);
+    expect(
+      profileNeedsRelayHydration(
+        makeProfile({ name: '  ', display_name: '', avatar: '' })
+      )
+    ).toBe(true);
+  });
+
+  it('is false when any of name, display_name, or avatar is set', () => {
+    expect(profileNeedsRelayHydration(makeProfile({ name: 'Iso' }))).toBe(false);
+    expect(
+      profileNeedsRelayHydration(makeProfile({ name: '', display_name: 'Iso' }))
+    ).toBe(false);
+    expect(
+      profileNeedsRelayHydration(
+        makeProfile({ name: '', display_name: '', avatar: 'https://x/a.png' })
+      )
+    ).toBe(false);
+  });
+});
 
 describe('getProfileDisplayName', () => {
   it('returns Unknown for null/undefined', () => {

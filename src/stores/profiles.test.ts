@@ -6,6 +6,7 @@ import {
   loadProfile,
   getProfile,
   isProfileLoading,
+  mergeInitProfiles,
 } from './profiles';
 import { dmChatsByNpub, blockedDmNpubs, activeDmId, lastCatchUpSuccess } from './dm';
 import { currentUser } from './auth-session';
@@ -102,11 +103,59 @@ describe('profiles', () => {
     expect(get(isProfileLoading(npub))).toBe(true);
   });
 
-  it('returns cached profile without fetching', async () => {
+  it('returns cached profile without fetching when metadata is present', async () => {
     profiles.set({ [npub]: baseProfile });
     const result = await loadProfile(npub);
     expect(result).toEqual(baseProfile);
     expect(fetchNostrProfile).not.toHaveBeenCalled();
+    expect(loadNostrProfile).not.toHaveBeenCalled();
+  });
+
+  it('hydrates from relays when cached profile is an empty shell', async () => {
+    const emptyShell: NostrProfile = {
+      ...baseProfile,
+      name: '',
+      display_name: '',
+      avatar: '',
+      mine: true,
+    };
+    profiles.set({ [npub]: emptyShell });
+    vi.mocked(fetchNostrProfile)
+      .mockResolvedValueOnce(emptyShell)
+      .mockResolvedValueOnce(baseProfile);
+    vi.mocked(loadNostrProfile).mockResolvedValue(true);
+
+    const result = await loadProfile(npub);
+
+    expect(loadNostrProfile).toHaveBeenCalledTimes(1);
+    expect(loadNostrProfile).toHaveBeenCalledWith(npub);
+    expect(result).toEqual(baseProfile);
+    expect(get(profiles)[npub]).toEqual(baseProfile);
+  });
+
+  it('retries Kind 0 fetch when the first re-read is still empty', async () => {
+    vi.useFakeTimers();
+    const emptyShell: NostrProfile = {
+      ...baseProfile,
+      name: '',
+      display_name: '',
+      avatar: '',
+      mine: true,
+    };
+    profiles.set({ [npub]: emptyShell });
+    vi.mocked(fetchNostrProfile)
+      .mockResolvedValueOnce(emptyShell)
+      .mockResolvedValueOnce(emptyShell)
+      .mockResolvedValueOnce(baseProfile);
+    vi.mocked(loadNostrProfile).mockResolvedValue(true);
+
+    const pending = loadProfile(npub);
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await pending;
+
+    expect(loadNostrProfile).toHaveBeenCalledTimes(2);
+    expect(result).toEqual(baseProfile);
+    vi.useRealTimers();
   });
 
   it('fetches and caches a profile when not in cache', async () => {
@@ -125,6 +174,7 @@ describe('profiles', () => {
 
   it('throws when fetch ultimately fails', async () => {
     vi.mocked(fetchNostrProfile).mockRejectedValue(new Error('not found'));
+    vi.mocked(loadNostrProfile).mockResolvedValue(false);
     await expect(loadProfile(npub)).rejects.toThrow('not found');
   });
 
@@ -144,6 +194,32 @@ describe('profiles', () => {
       // for an init-only run); it must carry the same watermark update as the real handler
       // so behind/stalled doesn't drift stale off a completion it never observed.
       expect(get(lastCatchUpSuccess)).not.toBeNull();
+    });
+
+    it('init_finished keeps a hydrated profile when the payload shell is empty', () => {
+      const hydrated = { ...baseProfile, name: 'Iso', display_name: 'Iso', avatar: 'https://example.com/iso.png' };
+      profiles.set({ [npub]: hydrated });
+      const initHandler = handlers.get('init_finished');
+      initHandler?.({
+        payload: {
+          profiles: [{ ...hydrated, name: '', display_name: '', avatar: '' }],
+        },
+      });
+      expect(get(profiles)[npub]?.name).toBe('Iso');
+      expect(get(profiles)[npub]?.avatar).toBe('https://example.com/iso.png');
+    });
+
+    it('mergeInitProfiles prefers incoming metadata and keeps extra local rows', () => {
+      const other = 'npub1bob';
+      const merged = mergeInitProfiles(
+        {
+          [npub]: { ...baseProfile, name: 'Iso', avatar: 'https://example.com/iso.png' },
+          [other]: { ...baseProfile, id: other, name: 'Bob' },
+        },
+        [{ ...baseProfile, name: '', display_name: '', avatar: '' }]
+      );
+      expect(merged[npub]?.name).toBe('Iso');
+      expect(merged[other]?.name).toBe('Bob');
     });
 
     it('profile_update updates the profile and blocked list', () => {

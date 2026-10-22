@@ -62,6 +62,18 @@ export function cachedOrRemoteImageSrc(
   return null;
 }
 
+/** True when Kind 0 name/display_name/avatar are all empty (needs relay hydrate). */
+export function profileNeedsRelayHydration(
+  profile: NostrProfile | null | undefined
+): boolean {
+  if (!profile) return true;
+  const hasData =
+    !!profile.name?.trim() ||
+    !!profile.display_name?.trim() ||
+    !!profile.avatar?.trim();
+  return !hasData;
+}
+
 /**
  * Get the display name for a profile.
  * Prefer Vector nickname, then Nostr name/display_name, then short npub.

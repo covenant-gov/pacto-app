@@ -25,7 +25,7 @@
 	"profile.noUserLoggedIn": "No user logged in",
 	"profile.failedToLoadProfile": "Failed to load profile",
 	"profile.chooseAvatarImage": "Choose avatar image",
-	"profile.profilePublished": "Profile published to the network.",
+	"profile.profilePublished": "Profile published to {count} relays.",
 	"profile.couldNotPublishProfile": "Could not publish profile.",
 	"profile.crop.title": "Crop Avatar",
 	"profile.crop.guidance": "For best results, use a square image at least 512x512 pixels.",

@@ -6,7 +6,7 @@
 import { get } from 'svelte/store';
 import { connect as apiConnect } from '../api/auth';
 import { monitorRelayConnections } from '../api/relays';
-import { fetchMessages, refreshProfileNow, syncMlsGroupsNow } from '../api/nostr';
+import { fetchMessages, loadNostrProfile, refreshProfileNow, syncMlsGroupsNow } from '../api/nostr';
 import { dmLog } from '../utils/dm-debug';
 import { dmSyncStatus } from '../../stores/dm';
 import { scheduleCommonsStartupPrefetch } from '../commons/commons-prefetch';
@@ -50,6 +50,12 @@ export function runPostLoginNetworkSync(npub: string): void {
 
     dmLog('post-login: fetchMessages(true)');
     fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
+
+    try {
+      await loadNostrProfile(npub);
+    } catch (e) {
+      console.error('Own profile hydrate failed:', e);
+    }
 
     try {
       await refreshProfileNow(npub);

@@ -64,6 +64,11 @@ impl Profile {
         }
     }
 
+    /// True when Kind 0 name, display_name, or avatar is present.
+    pub fn has_public_metadata(&self) -> bool {
+        !self.name.is_empty() || !self.display_name.is_empty() || !self.avatar.is_empty()
+    }
+
     /// Merge Nostr Metadata with this Vector Profile
     ///
     /// Returns `true` if any fields were updated, `false`` otherwise
@@ -329,6 +334,128 @@ pub async fn cache_all_profile_images() {
     }
 }
 
+/// One acknowledgement when fewer than two write relays are connected, otherwise two.
+pub(crate) fn required_kind0_acks(connected_write_count: usize) -> usize {
+    if connected_write_count < 2 {
+        1
+    } else {
+        2
+    }
+}
+
+fn metadata_has_public(meta: &Metadata) -> bool {
+    meta.name.as_ref().is_some_and(|s| !s.is_empty())
+        || meta.display_name.as_ref().is_some_and(|s| !s.is_empty())
+        || meta.picture.is_some()
+}
+
+fn kind0_echoes_local(meta: &Metadata, name: &str, avatar: &str) -> bool {
+    let name_ok = name.is_empty() || meta.name.as_deref() == Some(name);
+    let avatar_ok = avatar.is_empty()
+        || meta
+            .picture
+            .as_ref()
+            .is_some_and(|url| url.as_str() == avatar);
+    name_ok && avatar_ok && (!name.is_empty() || !avatar.is_empty())
+}
+
+pub(crate) struct Kind0ScanHit {
+    pub created_at: u64,
+    pub metadata: Metadata,
+}
+
+pub(crate) fn newest_public_kind0(hits: &[Kind0ScanHit]) -> Option<&Kind0ScanHit> {
+    hits.iter()
+        .filter(|hit| metadata_has_public(&hit.metadata))
+        .max_by_key(|hit| hit.created_at)
+}
+
+async fn connected_relay_urls(client: &Client, write: bool) -> Vec<RelayUrl> {
+    let relays = client.relays().await;
+    relays
+        .into_iter()
+        .filter(|(_, relay)| {
+            relay.status() == RelayStatus::Connected
+                && if write {
+                    relay.flags().has_write()
+                } else {
+                    relay.flags().has_read()
+                }
+        })
+        .map(|(url, _)| url)
+        .collect()
+}
+
+/// One Kind 0 REQ per connected read relay. Newest event with a name or picture wins.
+pub(crate) async fn fetch_kind0_per_relay(client: &Client, pubkey: PublicKey) -> Vec<Kind0ScanHit> {
+    let urls = connected_relay_urls(client, false).await;
+    let mut tasks = Vec::with_capacity(urls.len());
+    for url in urls {
+        let client = client.clone();
+        tasks.push(tokio::spawn(async move {
+            let url_str = url.to_string();
+            let filter = Filter::new()
+                .author(pubkey)
+                .kind(Kind::Metadata)
+                .limit(1);
+            match client
+                .fetch_events_from([url], filter, std::time::Duration::from_secs(8))
+                .await
+            {
+                Ok(events) => match events.first() {
+                    Some(event) => {
+                        println!("[kind0] {url_str}: event {}", event.id);
+                        match Metadata::from_json(&event.content) {
+                            Ok(metadata) => Some(Kind0ScanHit {
+                                created_at: event.created_at.as_secs(),
+                                metadata,
+                            }),
+                            Err(e) => {
+                                println!("[kind0] {url_str}: error {e}");
+                                None
+                            }
+                        }
+                    }
+                    None => {
+                        println!("[kind0] {url_str}: empty");
+                        None
+                    }
+                },
+                Err(e) => {
+                    println!("[kind0] {url_str}: error {e}");
+                    None
+                }
+            }
+        }));
+    }
+
+    let mut hits = Vec::new();
+    for task in tasks {
+        if let Ok(Some(hit)) = task.await {
+            hits.push(hit);
+        }
+    }
+    hits
+}
+
+/// `connect()` only starts handshakes. Kind 0 REQ against an empty pool returns none.
+async fn wait_for_connected_relay(client: &Client) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let relays = client.relays().await;
+        if relays
+            .values()
+            .any(|relay| relay.status() == RelayStatus::Connected)
+        {
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+}
+
 #[tauri::command]
 pub async fn load_profile(npub: String) -> bool {
     let client = match get_nostr_client() {
@@ -354,20 +481,25 @@ pub async fn load_profile(npub: String) -> bool {
 
     // Fetch immutable copies of our updateable profile parts (or, quickly generate a new one to pass to the fetching logic)
     let old_status: Status;
+    let lacks_metadata: bool;
     {
         let mut state = STATE.lock().await;
-        old_status = match state.get_profile(&npub) {
-            Some(p) => p.status.clone(),
+        match state.get_profile(&npub) {
+            Some(p) => {
+                lacks_metadata = !p.has_public_metadata();
+                old_status = p.status.clone();
+            }
             None => {
-                // Create a new profile
                 let mut new_profile = Profile::new();
                 new_profile.id = npub.clone();
                 state.profiles.push(new_profile);
-                Status::new()
+                lacks_metadata = true;
+                old_status = Status::new();
             }
         }
-        .clone();
     }
+
+    wait_for_connected_relay(&client).await;
 
     // Attempt to fetch their status, if one exists
     let status_filter = Filter::new()
@@ -404,65 +536,73 @@ pub async fn load_profile(npub: String) -> bool {
         Err(_) => old_status,
     };
 
-    // Attempt to fetch their Metadata profile
-    let fetch_result = client
-        .fetch_metadata(profile_pubkey, std::time::Duration::from_secs(15))
-        .await;
+    // Empty profiles get a per-relay Kind 0 scan. Profiles that already have
+    // a name or avatar keep the single pooled refresh.
+    let fetch_result = if lacks_metadata {
+        let hits = fetch_kind0_per_relay(&client, profile_pubkey).await;
+        Ok(newest_public_kind0(&hits).map(|hit| hit.metadata.clone()))
+    } else {
+        client
+            .fetch_metadata(profile_pubkey, std::time::Duration::from_secs(15))
+            .await
+            .map_err(|e| e.to_string())
+    };
 
     match fetch_result {
         Ok(meta) => {
             if meta.is_some() {
-                // If it's ours, mark it as such
-                let mut state = STATE.lock().await;
-                let profile_mutable = state.get_profile_mut(&npub).unwrap();
-                profile_mutable.mine = my_public_key == profile_pubkey;
+                let (status_changed, metadata_changed, profile_clone, avatar_url, banner_url) = {
+                    let mut state = STATE.lock().await;
+                    let profile_mutable = state.get_profile_mut(&npub).unwrap();
+                    profile_mutable.mine = my_public_key == profile_pubkey;
 
-                // Update the Status, and track changes
-                let status_changed = profile_mutable.status != status;
-                profile_mutable.status = status;
+                    let status_changed = profile_mutable.status != status;
+                    profile_mutable.status = status;
 
-                // Update the Metadata, and track changes
-                let metadata_changed = profile_mutable.from_metadata(meta.unwrap());
+                    let metadata_changed = profile_mutable.from_metadata(meta.unwrap());
 
-                // Apply the current update time
-                profile_mutable.last_updated = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
+                    profile_mutable.last_updated = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
 
-                // If there's any change between our Old and New profile, emit an update
+                    (
+                        status_changed,
+                        metadata_changed,
+                        profile_mutable.clone(),
+                        profile_mutable.avatar.clone(),
+                        profile_mutable.banner.clone(),
+                    )
+                };
+
                 if status_changed || metadata_changed {
                     let handle = TAURI_APP.get().unwrap();
-                    handle.emit("profile_update", &profile_mutable).unwrap();
+                    handle.emit("profile_update", &profile_clone).unwrap();
 
-                    // Cache this profile in our DB, too
-                    db::set_profile(handle.clone(), profile_mutable.clone())
+                    db::set_profile(handle.clone(), profile_clone)
                         .await
                         .unwrap();
 
-                    // Cache avatar/banner images in the background for offline access
                     let npub_clone = npub.clone();
-                    let avatar_url = profile_mutable.avatar.clone();
-                    let banner_url = profile_mutable.banner.clone();
                     tokio::spawn(async move {
                         cache_profile_images(&npub_clone, &avatar_url, &banner_url).await;
                     });
                 }
                 return true;
             } else {
-                // Profile doesn't exist on relays - check if we have it in STATE already
+                // No Kind 0 on relays this attempt. Do not stamp last_updated while
+                // the profile is still empty — that would demote Critical retries
+                // (e.g. own profile after reinstall before metadata is visible).
                 let mut state = STATE.lock().await;
                 if let Some(profile) = state.get_profile_mut(&npub) {
-                    // We have the profile in STATE, just update the timestamp so we don't keep retrying
-                    profile.last_updated = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs();
-                    return true;
-                } else {
-                    // Profile truly doesn't exist anywhere
-                    return true;
+                    if profile.has_public_metadata() {
+                        profile.last_updated = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
+                    }
                 }
+                return true;
             }
         }
         Err(_) => {
@@ -547,12 +687,36 @@ fn build_metadata_from_vector_profile(
     meta
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Kind0PublishReceipt {
+    pub event_id: String,
+    pub success_count: usize,
+    pub connected_write_count: usize,
+}
+
+#[derive(serde::Serialize)]
+struct Kind0RelayFailure {
+    url: String,
+    error: String,
+}
+
+#[derive(serde::Serialize)]
+struct Kind0PublishReceiptStored {
+    event_id: String,
+    success: Vec<String>,
+    failed: Vec<Kind0RelayFailure>,
+    at: u64,
+}
+
+const KIND0_PUBLISH_RECEIPT_KEY: &str = "kind0_publish_receipt";
+
 async fn publish_vector_profile_kind0(
     name: String,
     avatar: String,
     banner: String,
     about: String,
-) -> Result<(), String> {
+) -> Result<Kind0PublishReceipt, String> {
     let handle = TAURI_APP
         .get()
         .cloned()
@@ -576,12 +740,65 @@ async fn publish_vector_profile_kind0(
     let metadata_event = EventBuilder::new(Kind::Metadata, metadata_json.clone())
         .tag(nostr_tags::custom_tag("client", vec!["vector"]));
 
-    client
-        .send_event_builder(metadata_event)
+    let event = client
+        .sign_event_builder(metadata_event)
         .await
         .map_err(|e| e.to_string())?;
+    let connected_write_count = connected_relay_urls(&client, true).await.len();
+    let required = required_kind0_acks(connected_write_count);
+    let output = client.send_event(&event).await.map_err(|e| e.to_string())?;
+    let success_count = output.success.len();
+    let first_failure = output.failed.values().next().cloned().unwrap_or_default();
+    if success_count < required {
+        return Err(format!(
+            "Kind 0 stored on {success_count} of {connected_write_count} relays: {first_failure}"
+        ));
+    }
+
+    let readback = client
+        .fetch_events_from(
+            output.success.iter().cloned(),
+            Filter::new()
+                .author(my_public_key)
+                .kind(Kind::Metadata)
+                .id(event.id)
+                .limit(1),
+            std::time::Duration::from_secs(8),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    if readback.is_empty() {
+        return Err(format!(
+            "Kind 0 acknowledged by {success_count} of {connected_write_count} relays but not readable back"
+        ));
+    }
+
+    let stored = Kind0PublishReceiptStored {
+        event_id: event.id.to_string(),
+        success: output.success.iter().map(|url| url.to_string()).collect(),
+        failed: output
+            .failed
+            .iter()
+            .map(|(url, error)| Kind0RelayFailure {
+                url: url.to_string(),
+                error: error.clone(),
+            })
+            .collect(),
+        at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+    };
+    if let Ok(json) = serde_json::to_string(&stored) {
+        let _ = db::set_sql_setting(handle.clone(), KIND0_PUBLISH_RECEIPT_KEY.to_string(), json);
+    }
 
     let meta_published = serde_json::from_str::<Metadata>(&metadata_json).unwrap_or(meta);
+    let receipt = Kind0PublishReceipt {
+        event_id: event.id.to_string(),
+        success_count,
+        connected_write_count,
+    };
 
     let (profile_clone, avatar_url, banner_url) = {
         let mut state = STATE.lock().await;
@@ -614,7 +831,52 @@ async fn publish_vector_profile_kind0(
         cache_profile_images(&npub_clone, &avatar_url, &banner_url).await;
     });
 
-    Ok(())
+    Ok(receipt)
+}
+
+static LAST_KIND0_REPAIR: std::sync::Mutex<Option<std::time::Instant>> =
+    std::sync::Mutex::new(None);
+
+/// Republish own Kind 0 when relays no longer echo the local name and avatar.
+pub(crate) async fn maybe_republish_own_kind0(
+    name: String,
+    avatar: String,
+    banner: String,
+    about: String,
+) {
+    {
+        let last = LAST_KIND0_REPAIR.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(at) = *last {
+            if at.elapsed() < std::time::Duration::from_secs(30 * 60) {
+                return;
+            }
+        }
+    }
+
+    let Ok(client) = get_nostr_client() else {
+        return;
+    };
+    let Ok(signer) = client.signer().await else {
+        return;
+    };
+    let Ok(pubkey) = signer.get_public_key().await else {
+        return;
+    };
+    let hits = fetch_kind0_per_relay(&client, pubkey).await;
+    if hits
+        .iter()
+        .any(|hit| kind0_echoes_local(&hit.metadata, &name, &avatar))
+    {
+        return;
+    }
+
+    {
+        let mut last = LAST_KIND0_REPAIR.lock().unwrap_or_else(|e| e.into_inner());
+        *last = Some(std::time::Instant::now());
+    }
+    if let Err(e) = publish_vector_profile_kind0(name, avatar, banner, about).await {
+        eprintln!("[kind0] repair publish failed: {e}");
+    }
 }
 
 #[tauri::command]
@@ -623,7 +885,7 @@ pub async fn update_profile(
     avatar: String,
     banner: String,
     about: String,
-) -> Result<(), String> {
+) -> Result<Kind0PublishReceipt, String> {
     publish_vector_profile_kind0(name, avatar, banner, about).await
 }
 
@@ -839,6 +1101,75 @@ pub async fn get_profile(npub: String) -> Result<Profile, String> {
     match state.get_profile(&npub) {
         Some(profile) => Ok(profile.clone()),
         None => Err(format!("Profile not found: {}", npub)),
+    }
+}
+
+#[cfg(test)]
+mod kind0_relay_proof_tests {
+    use super::{kind0_echoes_local, newest_public_kind0, required_kind0_acks, Kind0ScanHit};
+    use nostr_sdk::prelude::*;
+
+    #[test]
+    fn required_acks_is_one_below_two_relays_and_two_after() {
+        assert_eq!(required_kind0_acks(0), 1);
+        assert_eq!(required_kind0_acks(1), 1);
+        assert_eq!(required_kind0_acks(7), 2);
+    }
+
+    #[test]
+    fn newest_public_hit_skips_empty_metadata() {
+        let older = Kind0ScanHit {
+            created_at: 10,
+            metadata: Metadata::new().name("Iso"),
+        };
+        let newer_empty = Kind0ScanHit {
+            created_at: 20,
+            metadata: Metadata::new(),
+        };
+        let hits = [newer_empty, older];
+        let picked = newest_public_kind0(&hits).unwrap();
+        assert_eq!(picked.metadata.name.as_deref(), Some("Iso"));
+        assert_eq!(picked.created_at, 10);
+    }
+
+    #[test]
+    fn echo_requires_local_name_and_avatar() {
+        let meta = Metadata::new()
+            .name("Iso")
+            .picture(Url::parse("https://example.com/a.png").unwrap());
+        assert!(kind0_echoes_local(
+            &meta,
+            "Iso",
+            "https://example.com/a.png"
+        ));
+        assert!(!kind0_echoes_local(&meta, "Iso", "https://example.com/other.png"));
+        assert!(!kind0_echoes_local(&Metadata::new(), "", ""));
+    }
+}
+
+#[cfg(test)]
+mod public_metadata_tests {
+    use super::Profile;
+
+    #[test]
+    fn empty_shell_has_no_public_metadata() {
+        let p = Profile::new();
+        assert!(!p.has_public_metadata());
+    }
+
+    #[test]
+    fn any_of_name_display_or_avatar_counts() {
+        let mut p = Profile::new();
+        p.name = "Iso".into();
+        assert!(p.has_public_metadata());
+
+        let mut p = Profile::new();
+        p.display_name = "Iso".into();
+        assert!(p.has_public_metadata());
+
+        let mut p = Profile::new();
+        p.avatar = "https://example.com/a.png".into();
+        assert!(p.has_public_metadata());
     }
 }
 

@@ -165,6 +165,12 @@ export async function syncAllProfiles(): Promise<void> {
   dmLog('sync_all_profiles done');
 }
 
+export interface Kind0PublishReceipt {
+  eventId: string;
+  successCount: number;
+  connectedWriteCount: number;
+}
+
 /**
  * Update own profile and publish to Nostr.
  * Backend: update_profile. Pass current avatar/banner to preserve when only changing name/about.
@@ -174,15 +180,16 @@ export async function updateProfile(params: {
   avatar: string;
   banner: string;
   about: string;
-}): Promise<void> {
+}): Promise<Kind0PublishReceipt> {
   dmLog('update_profile', { nameLen: params.name?.length ?? 0 });
-  await invoke('update_profile', {
+  const receipt = await invoke<Kind0PublishReceipt>('update_profile', {
     name: params.name ?? '',
     avatar: params.avatar ?? '',
     banner: params.banner ?? '',
     about: params.about ?? '',
   });
-  dmLog('update_profile result', { ok: true });
+  dmLog('update_profile result', { ok: true, successCount: receipt?.successCount });
+  return receipt;
 }
 
 /**

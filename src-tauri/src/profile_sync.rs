@@ -195,10 +195,26 @@ pub async fn start_profile_sync_processor() {
             let state = STATE.lock().await;
             if let Some(own_profile) = state.profiles.iter().find(|p| p.mine) {
                 let npub = own_profile.id.clone();
+                let empty = !own_profile.has_public_metadata();
+                let name = own_profile.name.clone();
+                let avatar = own_profile.avatar.clone();
+                let banner = own_profile.banner.clone();
+                let about = own_profile.about.clone();
                 drop(state);
 
+                if !empty {
+                    tokio::spawn(async move {
+                        profile::maybe_republish_own_kind0(name, avatar, banner, about).await;
+                    });
+                }
+
+                let priority = if empty {
+                    SyncPriority::Critical
+                } else {
+                    SyncPriority::Low
+                };
                 let mut queue = PROFILE_SYNC_QUEUE.lock().await;
-                queue.add(npub.clone(), SyncPriority::Low, false);
+                queue.add(npub.clone(), priority, false);
                 drop(queue);
             }
             last_own_profile_sync = std::time::Instant::now();
@@ -290,16 +306,10 @@ pub async fn queue_chat_profiles(chat_id: String, is_opening: bool) {
     // Queue profiles for all participants
     // Note: chat.participants should be kept up-to-date by the MLS event handlers
     for member_npub in &chat.participants {
-        // Check if profile exists and has ANY metadata (name, display_name, or avatar)
-        // Also check last_updated to see if it was ever fetched from relays
+        // Empty metadata stays Critical regardless of last_updated (relay miss must retry).
         let has_metadata = state
             .get_profile(member_npub)
-            .map(|p| {
-                let has_data =
-                    !p.name.is_empty() || !p.display_name.is_empty() || !p.avatar.is_empty();
-                let was_fetched = p.last_updated > 0;
-                has_data || was_fetched
-            })
+            .map(|p| p.has_public_metadata())
             .unwrap_or(false);
 
         let priority = if !has_metadata {
@@ -335,16 +345,10 @@ pub async fn sync_all_profiles() {
 
     // Queue all profiles with appropriate priority
     for profile in &state.profiles {
-        // Check if profile has ANY metadata or was ever fetched
-        let has_metadata = !profile.name.is_empty()
-            || !profile.display_name.is_empty()
-            || !profile.avatar.is_empty();
-        let was_fetched = profile.last_updated > 0;
-
-        let priority = if !has_metadata && !was_fetched {
+        let priority = if !profile.has_public_metadata() {
             SyncPriority::Critical
         } else {
-            SyncPriority::Low // Passive refresh for existing profiles
+            SyncPriority::Low // Passive refresh for profiles that already have data
         };
 
         profiles_to_queue.push((profile.id.clone(), priority));
