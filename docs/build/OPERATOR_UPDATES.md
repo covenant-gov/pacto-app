@@ -27,7 +27,7 @@ The usual path needs no manual tag:
    - `uploadUpdaterJson: true` tells the Tauri action to generate and attach `latest.json`.
 6. Once the **entire** platform matrix finishes, `release.yaml` fans out three
    follow-up jobs, all gated on `needs: publish-tauri`:
-   - `update-homebrew-tap` — opens a Cask bump PR against `covenant-gov/homebrew-pacto`.
+   - `update-homebrew-tap` — bumps the Cask in `covenant-gov/homebrew-pacto` and waits for the tap to merge it (see below).
    - `stamp-updater-compatibility` — stamps `minimum_compatible_version` onto `latest.json`.
    - `deploy-landing` — refreshes the public download page (see below).
 
@@ -78,6 +78,36 @@ gh workflow run deploy-landing.yaml -f release_tag=v0.5.4
 Leaving `release_tag` blank resolves to `releases/latest`. Deploys are
 serialized by the `deploy-landing` concurrency group, so a dispatch issued
 during a release deploy queues behind it rather than cancelling it.
+
+## Homebrew tap (release → cask merge)
+
+`update-homebrew-tap` finishes the brew side without a human merging anything:
+
+1. It closes any open `chore/bump-v*` PR in the tap for an older version, so a
+   superseded PR can never land over a newer cask
+   (`scripts/close-stale-tap-bump-prs.sh`).
+2. It rewrites `Casks/pacto.rb` with the new version and the sha256 of the two
+   DMGs just published, and opens a `chore/bump-<tag>` PR with
+   `HOMEBREW_TAP_TOKEN`.
+3. The tap's own `release-bump.yaml` runs on that PR, on a macOS runner: only
+   the cask may change; the cask version must equal the branch's tag and that
+   tag must be a published, non-draft, non-prerelease release here; both DMGs
+   are re-downloaded from the cask's own URLs and their sha256 compared; `brew
+   style` and `brew audit --cask --strict --online` must pass; the cask must
+   install and expose its app bundle. It then squash-merges pinned to the
+   verified head commit and deletes the branch.
+4. `scripts/wait-for-tap-pr-merge.sh` polls that PR for up to 30 minutes. The
+   release job is green only once the PR is merged.
+
+If a gate fails, the tap PR stays open with a comment naming the gate, the
+release job goes red, and it opens a `ci/cd` issue here linking the PR, the tap
+run, and the release run. Fix the cask (or the gate), then re-run the
+`update-homebrew-tap` job; re-running pushes the corrected cask onto the same
+branch and the tap re-verifies it.
+
+The tap token (`HOMEBREW_TAP_TOKEN`) needs `contents:write` and
+`pull-requests:write` on `covenant-gov/homebrew-pacto`. The merge itself uses
+the tap's own `GITHUB_TOKEN`, so no tap setting or ruleset has to change.
 
 ## Signing key
 

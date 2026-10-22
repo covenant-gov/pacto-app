@@ -218,18 +218,35 @@ jobs:
         run: gh release upload "${{ github.ref_name }}" CHANGELOG.md --clobber
 
   update-homebrew-tap:
-    # Points covenant-gov/homebrew-pacto's Cask at the DMGs just published above.
-    # Requires HOMEBREW_TAP_TOKEN: a PAT (or fine-grained token) with contents:write
-    # on homebrew-pacto, since GITHUB_TOKEN here only covers this repo.
+    # Points covenant-gov/homebrew-pacto's Cask at the DMGs just published above,
+    # then waits for the tap's own release-bump workflow to verify and merge that
+    # PR. The job is green only once brew users can actually get this version.
+    # Requires HOMEBREW_TAP_TOKEN: a PAT (or fine-grained token) with
+    # contents:write and pull-requests:write on homebrew-pacto, since
+    # GITHUB_TOKEN here only covers this repo.
     needs: publish-tauri
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
     steps:
+      - name: Checkout pacto-app
+        uses: actions/checkout@v6
+        with:
+          path: pacto-app
+
       - name: Checkout homebrew-pacto
         uses: actions/checkout@v6
         with:
           repository: covenant-gov/homebrew-pacto
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-pacto
+
+      - name: Close superseded cask bump PRs
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: pacto-app/scripts/close-stale-tap-bump-prs.sh "$TAG"
 
       - name: Download macOS release assets
         env:
@@ -256,6 +273,7 @@ jobs:
           cat "$CASK"
 
       - name: Open PR against homebrew-pacto
+        id: tap_pr
         uses: peter-evans/create-pull-request@v8
         with:
           sign-commits: true
@@ -265,9 +283,56 @@ jobs:
           title: "chore: bump cask to ${{ github.ref_name }}"
           body: |
             Automated from covenant-gov/pacto-app's `${{ github.ref_name }}` release publish.
+
+            `release-bump.yaml` verifies the cask and merges this PR; no human step.
           branch: "chore/bump-${{ github.ref_name }}"
           base: main
           delete-branch: true
+
+      - name: Confirm the tap already carries this version
+        if: steps.tap_pr.outputs.pull-request-number == ''
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          if ! grep -q "^  version \"${VERSION}\"$" homebrew-pacto/Casks/pacto.rb; then
+            echo "No bump PR was opened and the tap's cask is not at ${VERSION}."
+            exit 1
+          fi
+          echo "Cask already at ${VERSION}; nothing to merge."
+
+      - name: Wait for the tap to verify and merge the bump
+        id: tap_merge
+        if: steps.tap_pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: pacto-app/scripts/wait-for-tap-pr-merge.sh "${{ steps.tap_pr.outputs.pull-request-number }}"
+
+      - name: Open an issue when the tap was not updated
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          PR_URL: ${{ steps.tap_merge.outputs.pr_url }}
+          TAP_RUN_URL: ${{ steps.tap_merge.outputs.run_url }}
+          REASON: ${{ steps.tap_merge.outputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "\`update-homebrew-tap\` finished red for \`$TAG\`, so \`brew install --cask covenant-gov/pacto/pacto\` still serves the previous version."
+            echo
+            echo "- Reason: ${REASON:-the job failed before the merge wait; see the run log}"
+            echo "- Tap PR: ${PR_URL:-none opened}"
+            echo "- Tap check: ${TAP_RUN_URL:-none}"
+            echo "- Release run: $RUN_URL"
+            echo
+            echo "Fix the cask or the failing gate, then re-run this job."
+          } > issue-body.md
+          gh issue create --repo covenant-gov/pacto-app \
+            --title "Homebrew tap not updated for $TAG" \
+            --label ci/cd \
+            --body-file issue-body.md
 
   stamp-updater-compatibility:
     # Stamps the tracked minimum_compatible_version onto the release's
