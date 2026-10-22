@@ -37,12 +37,25 @@ pub(crate) async fn notifs() -> Result<bool, String> {
     // Live MLS group wrappers (Kind::MlsGroupMessage). Broad subscribe; we'll filter by membership in handler.
     let mls_msg_filter = Filter::new().kind(Kind::MlsGroupMessage).limit(0);
 
-    // Subscribe to both filters
+    // Live Commons discovery broadcasts (public, no membership filtering needed).
+    let commons_broadcast_filter = Filter::new()
+        .kind(Kind::ApplicationSpecificData)
+        .custom_tag(
+            SingleLetterTag::lowercase(Alphabet::D),
+            crate::commons::COMMONS_BROADCAST_D_TAG,
+        )
+        .limit(0);
+
+    // Subscribe to all three filters
     let gift_sub_id = match client.subscribe(giftwrap_filter, None).await {
         Ok(id) => id.val,
         Err(e) => return Err(e.to_string()),
     };
     let mls_sub_id = match client.subscribe(mls_msg_filter, None).await {
+        Ok(id) => id.val,
+        Err(e) => return Err(e.to_string()),
+    };
+    let commons_sub_id = match client.subscribe(commons_broadcast_filter, None).await {
         Ok(id) => id.val,
         Err(e) => return Err(e.to_string()),
     };
@@ -752,6 +765,8 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                             crate::cmds::chat::schedule_debounced_unread_recompute(handle.clone());
                         }
                     }
+                } else if subscription_id == commons_sub_id {
+                    crate::commons::ingest_live_broadcast_event(&event).await;
                 }
             }
             Ok(false)

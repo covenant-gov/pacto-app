@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
   import CommonsTopFilters from './CommonsTopFilters.svelte';
   import CommonsCategoryFocus from './CommonsCategoryFocus.svelte';
@@ -24,6 +24,7 @@
     commonsBroadcasts,
     commonsFeedError,
     commonsFeedSyncing,
+    getLastCommonsLiveChangeAt,
     preloadCommonsTagArt,
     refreshCommonsBroadcasts,
   } from '../../lib/commons/commons-prefetch';
@@ -62,6 +63,9 @@
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let wasCommonsActive = false;
+
+  let scrollEl: HTMLDivElement | undefined;
+  let showNewBroadcastsPill = $state(false);
 
   const feedFilters = $derived({ tags: filterTags, categoryId: filterCategoryId, subjectFilter, audienceFilter });
   const hiddenBroadcastIds = $derived.by(() => {
@@ -121,8 +125,7 @@
   }
 
   async function loadFeed(options: { silent?: boolean } = {}) {
-    const rows = await refreshCommonsBroadcasts(options);
-    prefetchAuthorProfiles(rows);
+    await refreshCommonsBroadcasts(options);
   }
 
   /** Resolve PFPs for user broadcast authors missing or still empty shells. */
@@ -142,6 +145,11 @@
       void loadProfile(npub).catch(() => {});
     }
   }
+
+  // Hydrate author avatars for broadcasts arriving via poll or live subscription.
+  $effect(() => {
+    prefetchAuthorProfiles($commonsBroadcasts);
+  });
 
   /** Category tile: ANY of all tags in the category; opens focused drill-down. */
   function selectCategory(categoryId: string) {
@@ -210,8 +218,42 @@
   function startPolling() {
     stopPolling();
     pollTimer = setInterval(() => {
+      // A live subscription event already refreshed the feed this interval; skip the redundant poll.
+      if (Date.now() - getLastCommonsLiveChangeAt() < COMMONS_FEED_REFRESH_MS) return;
       void loadFeed({ silent: true });
     }, COMMONS_FEED_REFRESH_MS);
+  }
+
+  /** Keep the visible cards pinned when new broadcasts prepend while the user has scrolled down. */
+  async function adjustScrollAfterUpdate(prevScrollTop: number, prevScrollHeight: number) {
+    await tick();
+    if (!scrollEl || prevScrollTop <= 80) return;
+    const grew = scrollEl.scrollHeight - prevScrollHeight;
+    if (grew > 0) {
+      scrollEl.scrollTop = prevScrollTop + grew;
+      showNewBroadcastsPill = true;
+    }
+  }
+
+  $effect.pre(() => {
+    $commonsBroadcasts;
+    if (!scrollEl) return;
+    void adjustScrollAfterUpdate(scrollEl.scrollTop, scrollEl.scrollHeight);
+  });
+
+  function handleScroll() {
+    if (scrollEl && scrollEl.scrollTop <= 80) {
+      showNewBroadcastsPill = false;
+    }
+  }
+
+  $effect(() => {
+    scrollEl?.addEventListener('scroll', handleScroll);
+  });
+
+  function dismissNewBroadcastsPill() {
+    showNewBroadcastsPill = false;
+    scrollEl?.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   $effect(() => {
@@ -236,11 +278,22 @@
 
   onDestroy(() => {
     stopPolling();
+    scrollEl?.removeEventListener('scroll', handleScroll);
   });
 </script>
 
 <section class="commons-area" aria-labelledby="commons-feed-heading">
-  <div class="commons-scroll">
+  {#if showNewBroadcastsPill}
+    <button
+      type="button"
+      class="commons-new-pill"
+      aria-label={$t('commons.view.newBroadcastsAria')}
+      onclick={dismissNewBroadcastsPill}
+    >
+      {$t('commons.view.newBroadcasts')}
+    </button>
+  {/if}
+  <div class="commons-scroll" bind:this={scrollEl}>
     <header class="commons-header">
       <div class="commons-header-row">
         <h1 id="commons-feed-heading" class="commons-title">{$t('commons.view.title')}</h1>
@@ -357,12 +410,35 @@
 
 <style>
   .commons-area {
+    position: relative;
     flex: 1;
     min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
     background: var(--bg-base, var(--bg-primary));
+  }
+
+  .commons-new-pill {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    padding: 6px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .commons-new-pill:hover,
+  .commons-new-pill:focus-visible {
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .commons-scroll {

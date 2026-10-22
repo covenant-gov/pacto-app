@@ -4,7 +4,7 @@ use nostr_sdk::prelude::*;
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::get_nostr_client;
 use crate::nostr_tags;
@@ -341,6 +341,57 @@ fn upsert_broadcast_row(
     )
     .map_err(|e| format!("Failed to upsert commons broadcast: {e}"))?;
     Ok(())
+}
+
+/// DB-only ingest for a single broadcast event, used by the live subscription
+/// handler. Returns `None` when the event does not parse as a valid broadcast
+/// (wrong schema, tags, expired, etc.).
+pub(crate) fn ingest_broadcast_event_into(
+    conn: &rusqlite::Connection,
+    event: &Event,
+) -> Result<Option<(CommonsBroadcastWire, String)>, String> {
+    let Some((wire, author_npub)) = try_parse_broadcast_event(event) else {
+        return Ok(None);
+    };
+    ensure_commons_broadcasts_table(conn)?;
+    upsert_broadcast_row(conn, event, &wire, &author_npub)?;
+    prune_expired_broadcasts(conn)?;
+    Ok(Some((wire, author_npub)))
+}
+
+/// Ingests one event delivered over the live Commons broadcast subscription
+/// (see `notifs` in `cmds/relays.rs`) and, on a successful write, emits
+/// `commons_broadcasts_changed` so the frontend can refresh without polling.
+/// Silently drops events that fail to parse or arrive after an account switch.
+pub(crate) async fn ingest_live_broadcast_event(event: &Event) {
+    let captured_generation = crate::current_login_generation();
+    let Some(handle) = crate::TAURI_APP.get() else {
+        return;
+    };
+    let conn = match crate::account_manager::get_db_connection(handle) {
+        Ok(conn) => conn,
+        Err(_) => return,
+    };
+    if captured_generation != crate::current_login_generation() {
+        crate::account_manager::return_db_connection(conn);
+        return;
+    }
+    let result = ingest_broadcast_event_into(&conn, event);
+    crate::account_manager::return_db_connection(conn);
+    if captured_generation != crate::current_login_generation() {
+        return;
+    }
+    let Ok(Some((wire, author_npub))) = result else {
+        return;
+    };
+    let subject_id = subject_id_for(&wire, &author_npub);
+    let payload = serde_json::json!({
+        "event_id": event.id.to_hex(),
+        "subject": wire.subject,
+        "subject_id": subject_id,
+        "cancelled": wire.cancelled.unwrap_or(false),
+    });
+    let _ = handle.emit("commons_broadcasts_changed", payload);
 }
 
 /// Maps a row whose final selected column (index 15) is the `cancelled` flag.
@@ -873,5 +924,90 @@ mod tests {
         .unwrap();
         let (wire, _) = try_parse_broadcast_event(&event).expect("parse");
         assert_eq!(wire.cancelled, Some(true));
+    }
+
+    fn user_broadcast_event(keys: &Keys, created: i64, expires: i64, cancelled: bool) -> Event {
+        let content = format!(
+            r#"{{"schema":"{COMMONS_BROADCAST_SCHEMA}","subject":"user","message":"hello","durationHours":24,"expiresAt":{expires},"tags":["neo"],"cancelled":{cancelled}}}"#
+        );
+        EventBuilder::new(Kind::ApplicationSpecificData, &content)
+            .tag(nostr_tags::d_tag([COMMONS_BROADCAST_D_TAG]))
+            .tag(nostr_tags::custom_tag("client", [COMMONS_CLIENT_TAG]))
+            .tag(nostr_tags::custom_tag("subject", ["user"]))
+            .tag(nostr_tags::custom_tag("exp", [expires.to_string()]))
+            .tag(nostr_tags::letter_tag(Alphabet::T, ["neo"]))
+            .custom_created_at(Timestamp::from_secs(created as u64))
+            .sign_with_keys(keys)
+            .unwrap()
+    }
+
+    #[test]
+    fn ingest_upserts_valid_broadcast_into_active_list() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let keys = Keys::generate();
+        let created = unix_now_secs();
+        let event = user_broadcast_event(&keys, created, created + 86400, false);
+
+        let outcome = ingest_broadcast_event_into(&conn, &event).unwrap();
+        assert!(outcome.is_some());
+
+        let active = list_active_broadcasts(&conn, 100).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].message, "hello");
+    }
+
+    #[test]
+    fn ingest_cancellation_hides_subject_from_active_list() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let keys = Keys::generate();
+        let created = unix_now_secs();
+        let original = user_broadcast_event(&keys, created, created + 86400, false);
+        ingest_broadcast_event_into(&conn, &original)
+            .unwrap()
+            .expect("original ingests");
+
+        let cancel_created = created + 10;
+        let cancellation =
+            user_broadcast_event(&keys, cancel_created, cancel_created + 86400, true);
+        ingest_broadcast_event_into(&conn, &cancellation)
+            .unwrap()
+            .expect("cancellation ingests");
+
+        let active = list_active_broadcasts(&conn, 100).unwrap();
+        assert!(active.is_empty());
+    }
+
+    #[test]
+    fn ingest_ignores_invalid_schema_and_writes_no_row() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_commons_broadcasts_table(&conn).unwrap();
+        let keys = Keys::generate();
+        let content = r#"{"schema":"other","subject":"user","message":"hi","durationHours":24,"expiresAt":9999999999,"tags":["neo"]}"#;
+        let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
+            .tag(nostr_tags::d_tag([COMMONS_BROADCAST_D_TAG]))
+            .tag(nostr_tags::custom_tag("client", [COMMONS_CLIENT_TAG]))
+            .tag(nostr_tags::custom_tag("subject", ["user"]))
+            .tag(nostr_tags::custom_tag("exp", ["9999999999"]))
+            .tag(nostr_tags::letter_tag(Alphabet::T, ["neo"]))
+            .sign_with_keys(&keys)
+            .unwrap();
+
+        let outcome = ingest_broadcast_event_into(&conn, &event).unwrap();
+        assert!(outcome.is_none());
+        assert!(list_active_broadcasts(&conn, 100).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ingest_ignores_expired_event_and_writes_no_row() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_commons_broadcasts_table(&conn).unwrap();
+        let keys = Keys::generate();
+        let created = unix_now_secs() - 100_000;
+        let expired_at = created - 100;
+        let event = user_broadcast_event(&keys, created, expired_at, false);
+
+        let outcome = ingest_broadcast_event_into(&conn, &event).unwrap();
+        assert!(outcome.is_none());
+        assert!(list_active_broadcasts(&conn, 100).unwrap().is_empty());
     }
 }

@@ -2,9 +2,11 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { fetchCommonsBroadcasts, fetchCommonsBroadcastsCached } from '../api/commons';
 import {
+  applyLiveCommonsChange,
   commonsBroadcasts,
   commonsFeedError,
   commonsFeedSyncing,
+  getLastCommonsLiveChangeAt,
   refreshCommonsBroadcasts,
   resetCommonsPrefetchSession,
   scheduleCommonsStartupPrefetch,
@@ -137,5 +139,52 @@ describe('commons-prefetch', () => {
 
     expect(get(commonsBroadcasts)).toEqual(rows);
     expect(get(commonsFeedSyncing)).toBe(false);
+  });
+
+  describe('applyLiveCommonsChange', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('coalesces rapid calls into one cache read', async () => {
+      const rows = [makeDto()];
+      vi.mocked(fetchCommonsBroadcastsCached).mockResolvedValue(rows);
+
+      applyLiveCommonsChange();
+      applyLiveCommonsChange();
+      applyLiveCommonsChange();
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(fetchCommonsBroadcastsCached).toHaveBeenCalledTimes(1);
+      expect(get(commonsBroadcasts)).toEqual(rows);
+      expect(getLastCommonsLiveChangeAt()).toBeGreaterThan(0);
+    });
+
+    it('resetCommonsPrefetchSession cancels a pending debounce and resets the timestamp', async () => {
+      vi.mocked(fetchCommonsBroadcastsCached).mockResolvedValue([makeDto()]);
+
+      applyLiveCommonsChange();
+      resetCommonsPrefetchSession();
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(fetchCommonsBroadcastsCached).not.toHaveBeenCalled();
+      expect(getLastCommonsLiveChangeAt()).toBe(0);
+    });
+
+    it('leaves the store untouched when the fetch rejects', async () => {
+      const existing = [makeDto()];
+      commonsBroadcasts.set(existing);
+      vi.mocked(fetchCommonsBroadcastsCached).mockRejectedValue(new Error('db locked'));
+
+      applyLiveCommonsChange();
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(get(commonsBroadcasts)).toEqual(existing);
+      expect(getLastCommonsLiveChangeAt()).toBe(0);
+    });
   });
 });

@@ -9,6 +9,7 @@ import {
 } from '../api/nostr';
 import { listRelays, type RelayStatus } from '../api/relays';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
+import { applyLiveCommonsChange } from '../commons/commons-prefetch';
 import { onMlsStructuredMessage } from './mls-structured-refresh';
 import { handleChannelAddedToSquad, handleMlsWelcomeAccepted, notifyPendingInviteWelcome } from '../invites/accept-invite';
 import {
@@ -384,6 +385,8 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     if (!pid) return;
     dashboardPollReplicaNonceByParentId.update((m) => ({ ...m, [pid]: (m[pid] ?? 0) + 1 }));
   });
+
+  register(unsubs, 'commons_broadcasts_changed', () => applyLiveCommonsChange());
 
   register(unsubs, 'migration_complete', () => {
     dmLog('migration_complete: showing migration toast');
