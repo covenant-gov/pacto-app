@@ -36,15 +36,22 @@ export const SQUAD_REJOIN_REQUEST_TYPE = 'squad_rejoin_request';
 export const SQUAD_REJOIN_PENDING_PREFIX = 'pacto_squad_rejoin_pending';
 export const SQUAD_REJOIN_HANDLED_PREFIX = 'pacto_squad_rejoin_handled';
 
-const RETRY_INTERVAL_MS = 45_000;
 const RETRY_BASE_MS = 45_000;
 const RETRY_MAX_MS = 6 * 60 * 60 * 1000;
+/** Floor on timer waits so a burst of due rows cannot busy-loop the scan. */
+const RETRY_MIN_WAKE_MS = 5_000;
 const MAX_ATTEMPTS = 64;
 const REQUEST_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const CHANNEL_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Grace for the admin's per-channel `channel_in_squad` DMs before an empty channel row is dropped. */
+const CHANNEL_IDLE_MS = 10 * 60 * 1000;
 const HANDLED_WINDOW_MS = 10 * 60 * 1000;
+/** Per-sender floor between inbound asks, so a stranger cannot drive repeated MLS member reads. */
+const SENDER_THROTTLE_MS = 30_000;
+const MAX_THROTTLE_ENTRIES = 200;
 const MAX_ADMITTER_TARGETS = 3;
 const MAX_PENDING_ROWS = 50;
+const MAX_TOMBSTONE_ROWS = 50;
 const MAX_HANDLED_ROWS = 100;
 
 export interface SquadRejoinPayload {
@@ -83,7 +90,8 @@ interface RejoinThread {
 
 const toastedParents = new Set<string>();
 const acceptingParents = new Set<string>();
-let retryTimer: ReturnType<typeof setInterval> | null = null;
+const lastRequestBySender = new Map<string, number>();
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 function npubOk(value: string): boolean {
   return value.startsWith('npub1');
@@ -276,11 +284,18 @@ function readPending(): PendingRejoin[] {
   }
 }
 
+/** Trim live rows and tombstones against separate caps: evicting a tombstone resurrects its request. */
+function trimPending(rows: PendingRejoin[]): PendingRejoin[] {
+  const live = rows.filter(isActive).slice(-MAX_PENDING_ROWS);
+  const tombstones = rows.filter((row) => !isActive(row)).slice(-MAX_TOMBSTONE_ROWS);
+  return rows.filter((row) => live.includes(row) || tombstones.includes(row));
+}
+
 function writePending(rows: PendingRejoin[]): void {
   const key = storageKey(SQUAD_REJOIN_PENDING_PREFIX);
   if (!key) return;
   try {
-    localStorage.setItem(key, JSON.stringify(rows.slice(-MAX_PENDING_ROWS)));
+    localStorage.setItem(key, JSON.stringify(trimPending(rows)));
   } catch {
     /* quota */
   }
@@ -339,16 +354,32 @@ function isActive(row: PendingRejoin): boolean {
   return row.phase !== 'abandoned';
 }
 
+/** Earliest wall-clock time a row needs work: its next send, or the deadline that tombstones it. */
+function nextWakeAt(rows: PendingRejoin[]): number | null {
+  let soonest: number | null = null;
+  for (const row of rows) {
+    if (row.phase !== 'requesting' || row.attempts >= MAX_ATTEMPTS) continue;
+    const at = Math.min(row.lastAttemptAt + retryWaitMs(row.attempts), row.createdAt + REQUEST_TTL_MS);
+    if (soonest === null || at < soonest) soonest = at;
+  }
+  return soonest;
+}
+
+/** Wake only when a request is actually due; channel-phase rows wait on `mls_invite_received`. */
 function syncRetryTimer(rows: PendingRejoin[]): void {
-  const active = rows.some(isActive);
-  if (active && !retryTimer) {
-    retryTimer = setInterval(() => {
-      void scanSquadRejoinAfterBackfill();
-    }, RETRY_INTERVAL_MS);
-  } else if (!active && retryTimer) {
-    clearInterval(retryTimer);
+  if (retryTimer) {
+    clearTimeout(retryTimer);
     retryTimer = null;
   }
+  const at = nextWakeAt(rows);
+  if (at === null) return;
+  retryTimer = setTimeout(
+    () => {
+      retryTimer = null;
+      void scanSquadRejoinAfterBackfill();
+    },
+    Math.max(at - Date.now(), RETRY_MIN_WAKE_MS),
+  );
 }
 
 function toastRestoring(parentId: string): void {
@@ -395,7 +426,10 @@ function mergePending(planned: PlannedRejoin[], existing: PendingRejoin[], now: 
   return out;
 }
 
-/** Move joined rows to the channel window, abandon stale requests, drop expired channel windows. */
+/**
+ * Move joined rows into the channel window, abandon stale requests, and drop channel rows
+ * once their restored channels are in or the window closes.
+ */
 function advanceRows(rows: PendingRejoin[], localGroupIds: string[], now: number): PendingRejoin[] {
   const out: PendingRejoin[] = [];
   for (const row of rows) {
@@ -412,7 +446,10 @@ function advanceRows(rows: PendingRejoin[], localGroupIds: string[], now: number
     ) {
       next = { ...next, phase: 'abandoned' };
     }
-    if (next.phase === 'channels' && now - next.joinedAt > CHANNEL_WINDOW_MS) continue;
+    if (next.phase === 'channels') {
+      const idle = next.channelGroupIds.length === 0 && now - next.joinedAt > CHANNEL_IDLE_MS;
+      if (idle || now - next.joinedAt > CHANNEL_WINDOW_MS) continue;
+    }
     out.push(next);
   }
   return out;
@@ -422,12 +459,23 @@ function retryWaitMs(attempts: number): number {
   return Math.min(RETRY_BASE_MS * 2 ** Math.max(attempts - 1, 0), RETRY_MAX_MS);
 }
 
-/** One target per attempt, rotating, so several admins do not restore the same member at once. */
-async function sendDueRequests(rows: PendingRejoin[], now: number): Promise<PendingRejoin[]> {
+interface RejoinSendOutcome {
+  rows: PendingRejoin[];
+  /** Parent ids whose request DM left this device on this pass. */
+  sentParentIds: string[];
+}
+
+/**
+ * One target per attempt, rotating, so several admins do not restore the same member at once.
+ * A send that throws re-arms the backoff but does not spend an attempt: an offline client
+ * must not exhaust its budget against requests nobody received.
+ */
+async function sendDueRequests(rows: PendingRejoin[], now: number): Promise<RejoinSendOutcome> {
   const me = get(currentUser)?.npub?.trim() ?? '';
   const next: PendingRejoin[] = [];
+  const sentParentIds: string[] = [];
   for (const row of rows) {
-    const due = row.attempts === 0 || now - row.lastAttemptAt >= retryWaitMs(row.attempts);
+    const due = now - row.lastAttemptAt >= retryWaitMs(row.attempts);
     if (row.phase !== 'requesting' || !due || row.attempts >= MAX_ATTEMPTS) {
       next.push(row);
       continue;
@@ -447,10 +495,13 @@ async function sendDueRequests(rows: PendingRejoin[], now: number): Promise<Pend
     } catch (e) {
       console.warn('[squad-rejoin] request DM failed', target.slice(0, 16), e);
     }
-    if (sent) toastRestoring(row.parentId);
-    next.push({ ...row, attempts: row.attempts + 1, lastAttemptAt: now });
+    if (sent) {
+      toastRestoring(row.parentId);
+      sentParentIds.push(row.parentId);
+    }
+    next.push({ ...row, attempts: sent ? row.attempts + 1 : row.attempts, lastAttemptAt: now });
   }
-  return next;
+  return { rows: next, sentParentIds };
 }
 
 function trustedWelcome(row: PendingRejoin, welcome: PendingMlsWelcome): boolean {
@@ -597,8 +648,8 @@ export async function scanSquadRejoinAfterBackfill(): Promise<void> {
     declinedInviteMessageIds: new Set(get(declinedSquadInviteIds)),
     declinedGroupIds: get(declinedWelcomeGroupIds),
   });
-  let rows = advanceRows(mergePending(planned, readPending(), now), localIds, now);
-  rows = await sendDueRequests(rows, now);
+  const planRows = advanceRows(mergePending(planned, readPending(), now), localIds, now);
+  const { rows } = await sendDueRequests(planRows, now);
   writePending(rows);
   await tryAcceptRememberedRejoinWelcomes();
 
@@ -628,10 +679,10 @@ export async function requestSquadRejoinForInvite(parentId: string): Promise<boo
   const rows = readPending().filter((r) => !sameMlsGroupId(r.parentId, planned.parentId));
   rows.push(newRow(planned, now));
   toastedParents.delete(planned.parentId.toLowerCase());
-  const sent = await sendDueRequests(rows, now);
-  writePending(sent);
-  syncRetryTimer(sent);
-  return true;
+  const outcome = await sendDueRequests(rows, now);
+  writePending(outcome.rows);
+  syncRetryTimer(outcome.rows);
+  return outcome.sentParentIds.some((id) => sameMlsGroupId(id, planned.parentId));
 }
 
 /** Record a live channel-in-squad DM from a trusted welcomer for a rejoin in progress. */
@@ -650,6 +701,18 @@ export function noteRejoinChannelDm(content: string, senderNpub: string): void {
     }));
   }
   void tryAcceptRememberedRejoinWelcomes(channel.channelGroupId);
+}
+
+/**
+ * A sender whose last ask was rejected waits before we spend another MLS member read on them.
+ * Accepted asks never throttle: the handled window governs those.
+ */
+function throttleSender(senderNpub: string, now: number): void {
+  lastRequestBySender.set(senderNpub.trim().toLowerCase(), now);
+  if (lastRequestBySender.size <= MAX_THROTTLE_ENTRIES) return;
+  for (const [sender, at] of lastRequestBySender) {
+    if (now - at >= SENDER_THROTTLE_MS) lastRequestBySender.delete(sender);
+  }
 }
 
 function findSquad(parentId: string): Squad | undefined {
@@ -676,6 +739,9 @@ export async function handleSquadRejoinRequest(
   const announcementsGid = getAnnouncementsChannel(parent).groupId?.trim();
   if (!announcementsGid) return;
   if (handledKey(announcementsGid, payload.requester_npub) in readHandled(Date.now())) return;
+  const askedAt = lastRequestBySender.get(senderNpub.trim().toLowerCase());
+  const sinceAsk = askedAt === undefined ? Number.POSITIVE_INFINITY : Date.now() - askedAt;
+  if (sinceAsk >= 0 && sinceAsk < SENDER_THROTTLE_MS) return;
 
   let members: string[];
   let admins: string[];
@@ -687,7 +753,10 @@ export async function handleSquadRejoinRequest(
     dmError('members for squad rejoin', e);
     return;
   }
-  if (!listed(members, payload.requester_npub) || !listed(admins, me)) return;
+  if (!listed(members, payload.requester_npub) || !listed(admins, me)) {
+    throttleSender(senderNpub, Date.now());
+    return;
+  }
 
   const result = await restoreMemberToSquad({ parent, memberNpub: payload.requester_npub });
   if (result.ok) markHandled(announcementsGid, payload.requester_npub, Date.now());
@@ -697,8 +766,9 @@ export async function handleSquadRejoinRequest(
 export function resetSquadRejoinState(): void {
   toastedParents.clear();
   acceptingParents.clear();
+  lastRequestBySender.clear();
   if (retryTimer) {
-    clearInterval(retryTimer);
+    clearTimeout(retryTimer);
     retryTimer = null;
   }
 }

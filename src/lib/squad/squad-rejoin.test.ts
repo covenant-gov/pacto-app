@@ -344,6 +344,14 @@ describe('handleSquadRejoinRequest', () => {
     await handleSquadRejoinRequest(payload, 'npub1bob');
     expect(restoreMemberToSquad).toHaveBeenCalledTimes(2);
   });
+
+  it('throttles a sender whose ask was rejected before reading members again', async () => {
+    mockMembership(['npub1me'], ['npub1me']);
+    await handleSquadRejoinRequest(payload, 'npub1bob');
+    await handleSquadRejoinRequest({ ...payload, request_id: 'r2' }, 'npub1bob');
+    expect(getMlsGroupMembers).toHaveBeenCalledTimes(1);
+    expect(restoreMemberToSquad).not.toHaveBeenCalled();
+  });
 });
 
 describe('requester lifecycle', () => {
@@ -542,5 +550,83 @@ describe('requester lifecycle', () => {
     declinedSquadInviteIds.set(['m-invite']);
     expect(await requestSquadRejoinForInvite('g-ann')).toBe(false);
     expect(sendDmMessage).not.toHaveBeenCalled();
+  });
+
+  it('re-arms the backoff without spending an attempt when the request DM fails', async () => {
+    vi.mocked(sendDmMessage).mockRejectedValue(new Error('no relay'));
+    await scanSquadRejoinAfterBackfill();
+    expect(sendDmMessage).toHaveBeenCalledTimes(1);
+    expect(rows()[0]).toMatchObject({ attempts: 0, lastAttemptAt: 1_000_000 });
+
+    await scanSquadRejoinAfterBackfill();
+    expect(sendDmMessage).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(1_000_000 + 60_000);
+    vi.mocked(sendDmMessage).mockResolvedValue(true);
+    await scanSquadRejoinAfterBackfill();
+    expect(sendDmMessage).toHaveBeenCalledTimes(2);
+    expect(rows()[0]).toMatchObject({ attempts: 1 });
+  });
+
+  it('reports a failed user-initiated restore while keeping the retry queued', async () => {
+    acceptedSquadInviteIds.set([]);
+    vi.mocked(sendDmMessage).mockRejectedValue(new Error('no relay'));
+    expect(await requestSquadRejoinForInvite('g-ann')).toBe(false);
+    expect(rows()[0]).toMatchObject({ phase: 'requesting', attempts: 0 });
+  });
+
+  it('drops a channel row once the restored channels are in', async () => {
+    await scanSquadRejoinAfterBackfill();
+    vi.mocked(listPendingMlsWelcomes).mockResolvedValue([welcome('g-ann', 'npub1admin')]);
+    vi.mocked(getMlsGroupMetadata)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ group_id: 'g-ann' }] as never);
+    await scanSquadRejoinAfterBackfill();
+    expect(rows()[0]).toMatchObject({ phase: 'channels', channelGroupIds: [] });
+
+    vi.setSystemTime(1_000_000 + 11 * 60 * 1000);
+    await scanSquadRejoinAfterBackfill();
+    expect(rows()).toEqual([]);
+  });
+
+  it('keeps tombstones when the pending queue overflows', async () => {
+    const filler = Array.from({ length: 50 }, (_, i) => ({
+      parentId: `g-filler-${i}`,
+      squadName: 'Filler',
+      targets: ['npub1admin'],
+      channelGroupIds: [],
+      channelNames: {},
+      requestId: `f${i}`,
+      phase: 'requesting',
+      attempts: 1,
+      lastAttemptAt: 1_000_000,
+      createdAt: 1_000_000,
+      joinedAt: 0,
+      trustedWelcomers: [],
+    }));
+    storage.set(
+      PENDING_KEY,
+      JSON.stringify([
+        {
+          parentId: 'g-dead',
+          squadName: 'Dead',
+          targets: ['npub1admin'],
+          channelGroupIds: [],
+          channelNames: {},
+          requestId: 'dead',
+          phase: 'abandoned',
+          attempts: 64,
+          lastAttemptAt: 1,
+          createdAt: 1,
+          joinedAt: 0,
+          trustedWelcomers: [],
+        },
+        ...filler,
+      ]),
+    );
+    await scanSquadRejoinAfterBackfill();
+    const saved = rows();
+    expect(saved.filter((r) => r.phase === 'requesting')).toHaveLength(50);
+    expect(saved.some((r) => r.parentId === 'g-dead')).toBe(true);
   });
 });

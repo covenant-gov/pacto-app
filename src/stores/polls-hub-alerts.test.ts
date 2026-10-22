@@ -174,4 +174,23 @@ describe('polls hub alerts', () => {
     expect(get(unseenPollCreateCountByParentId)[PARENT]).toBe(0);
     expect(get(lastSeenPollCreatedAtMsByParentId)[PARENT]).toBe(50);
   });
+
+  it('a refresh starting mid-markPollsChannelSeen cannot drop the watermark', async () => {
+    lastSeenPollCreatedAtMsByParentId.set({ [PARENT]: 0 });
+    let resolveSeen: (rows: DashboardPollDto[]) => void = () => {};
+    mockListDashboardPolls.mockImplementationOnce(
+      () =>
+        new Promise<DashboardPollDto[]>((resolve) => {
+          resolveSeen = resolve;
+        })
+    );
+    const seen = markPollsChannelSeen(PARENT);
+    mockListDashboardPolls.mockResolvedValue([poll({ id: 'a', created_at_ms: 70 })]);
+    const refresh = refreshUnseenPollCreatesForParent(PARENT);
+    resolveSeen([poll({ id: 'a', created_at_ms: 70 })]);
+    await seen;
+    await refresh;
+    expect(get(lastSeenPollCreatedAtMsByParentId)[PARENT]).toBe(70);
+    expect(get(unseenPollCreateCountByParentId)[PARENT]).toBe(0);
+  });
 });
