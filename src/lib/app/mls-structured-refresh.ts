@@ -23,7 +23,6 @@ import {
   parseSquadAdmitNeeded,
   parseSquadOutboundInvite,
 } from '../squad/squad-outbound-invite';
-import { onMlsSquadRejoinNeeded, parseSquadRejoinNeeded } from '../squad/squad-rejoin';
 import {
   applySquadChannelsCatalog,
   parseSquadChannelsCatalog,
@@ -115,9 +114,6 @@ export function onMlsStructuredMessage(
   if (parseSquadAdmitNeeded(raw)) {
     onMlsAdmitNeeded(raw, gid);
     void drainPendingAdmitQueue();
-  }
-  if (parseSquadRejoinNeeded(raw)) {
-    onMlsSquadRejoinNeeded(raw, gid);
   }
   if (parseSquadChannelsCatalog(raw)) {
     applySquadChannelsCatalog(raw, gid);

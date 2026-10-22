@@ -10,11 +10,19 @@ import { isOpenCustomChannel } from './channel-access';
 import { sameMlsGroupId } from '../invites/declined-welcomes';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
 import { currentUser } from '../../stores/auth-session';
+import { bumpMembershipVersion } from '../../stores/mls-chat';
+import { refreshMlsGroupMembers } from '../../stores/mls-group-members';
 import { squads, type Channel, type Squad } from '../../stores/squads';
 
 const restoreInFlight = new Set<string>();
 const lastRestoreAt = new Map<string, number>();
 const RESTORE_COOLDOWN_MS = 60_000;
+
+/** Re-add changed the group's leaves: let any open members panel repaint. */
+function noteMembershipChanged(groupId: string): void {
+  bumpMembershipVersion(groupId);
+  void refreshMlsGroupMembers(groupId).catch(() => {});
+}
 
 export interface GroupMembershipSnapshot {
   members: string[];
@@ -26,7 +34,9 @@ export interface RestoreChannelPlan {
   admitOpen: Array<{ groupId: string; name: string }>;
 }
 
-export type RestoreSquadResult = { ok: true } | { ok: false; error: string };
+export type RestoreSquadResult =
+  | { ok: true; skipped?: 'cooldown' | 'in_flight' }
+  | { ok: false; error: string };
 
 function restoreKey(parentId: string, memberNpub: string): string {
   return `${parentId.trim().toLowerCase()}:${memberNpub.trim().toLowerCase()}`;
@@ -36,13 +46,11 @@ function listed(npubs: string[], npub: string): boolean {
   return npubs.some((n) => sameMlsGroupId(n, npub));
 }
 
-/** Squad whose id or any channel group id matches. */
-export function squadOwningGroupId(list: Squad[], groupId: string): Squad | undefined {
+/** Squad whose announcements group id matches; channel groups never match. */
+export function squadForAnnouncementsGroup(list: Squad[], groupId: string): Squad | undefined {
   const gid = groupId.trim();
   if (!gid) return undefined;
-  return list.find(
-    (s) => sameMlsGroupId(s.id, gid) || s.channels.some((c) => sameMlsGroupId(c.groupId, gid)),
-  );
+  return list.find((s) => sameMlsGroupId(getAnnouncementsChannel(s).groupId ?? '', gid));
 }
 
 function membershipFor(
@@ -156,11 +164,20 @@ async function restoreChannelsInBackground(
         await inviteMemberToGroup(gid, npub);
       } catch (e) {
         console.warn('[mls] channel restore failed', gid.slice(0, 12), e);
+        continue;
+      }
+      noteMembershipChanged(gid);
+      const name = parent.channels.find((ch) => sameMlsGroupId(ch.groupId, gid))?.name ?? gid;
+      try {
+        await notifyChannelWelcome(parent, gid, name, npub);
+      } catch (e) {
+        console.warn('[mls] channel notify failed', gid.slice(0, 12), e);
       }
     }
     for (const ch of plan.admitOpen) {
       try {
         await inviteMemberToGroup(ch.groupId, npub);
+        noteMembershipChanged(ch.groupId);
         try {
           await notifyChannelWelcome(parent, ch.groupId, ch.name, npub);
         } catch (e) {
@@ -186,9 +203,9 @@ export async function restoreMemberToSquad(opts: {
     return { ok: false, error: 'Squad not ready.' };
   }
   const key = restoreKey(opts.parent.id, npub);
-  if (restoreInFlight.has(key)) return { ok: true };
+  if (restoreInFlight.has(key)) return { ok: true, skipped: 'in_flight' };
   const last = lastRestoreAt.get(key) ?? 0;
-  if (Date.now() - last < RESTORE_COOLDOWN_MS) return { ok: true };
+  if (Date.now() - last < RESTORE_COOLDOWN_MS) return { ok: true, skipped: 'cooldown' };
 
   restoreInFlight.add(key);
   try {
@@ -201,12 +218,13 @@ export async function restoreMemberToSquad(opts: {
     };
   }
   lastRestoreAt.set(key, Date.now());
+  noteMembershipChanged(announcementsGid);
   const liveParent = get(squads).find((s) => s.id === opts.parent.id) ?? opts.parent;
   void restoreChannelsInBackground(liveParent, npub, announcementsGid, key);
   return { ok: true };
 }
 
-export function resetRestoreSquadAccessForTests(): void {
+export function resetRestoreSquadAccessState(): void {
   restoreInFlight.clear();
   lastRestoreAt.clear();
 }

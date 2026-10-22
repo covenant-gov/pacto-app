@@ -10,6 +10,7 @@
   import { unreadCountsByChat } from '../../stores/unread';
   import { dashboardPollReplicaNonceByParentId } from '../../stores/navigation';
   import {
+    markPollsChannelSeen,
     refreshUnseenPollCreatesForParent,
     unseenPollCreateCountByParentId,
   } from '../../stores/polls-hub-alerts';
@@ -115,7 +116,11 @@
     const pid = parentId.trim();
     if (!pid) return;
     void $dashboardPollReplicaNonceByParentId[pid];
-    void refreshUnseenPollCreatesForParent(pid);
+    if (activeView === 'hub' && activeHubChannelName === POLLS_CHANNEL_NAME) {
+      void markPollsChannelSeen(pid);
+    } else {
+      void refreshUnseenPollCreatesForParent(pid);
+    }
   });
 
   let hubAlertByChannelName = $derived.by(() => {

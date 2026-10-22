@@ -3,7 +3,7 @@
   import Modal from '../ui/Modal.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { restoreMlsMemberAccess } from '../../lib/parent/restore-mls-access';
-  import { restoreMemberToSquad, squadOwningGroupId } from '../../lib/parent/restore-squad-access';
+  import { restoreMemberToSquad, squadForAnnouncementsGroup } from '../../lib/parent/restore-squad-access';
   import { showToast } from '../../stores/toast';
   import { squads } from '../../stores/squads';
   import type { NostrProfile } from '../../stores/profiles';
@@ -30,7 +30,8 @@
     !!currentUserNpub && admins.some((a) => a === currentUserNpub),
   );
 
-  const owningSquad = $derived(squadOwningGroupId($squads, groupId));
+  /** Squad-wide restore applies only on the announcements panel; channel panels restore that channel. */
+  const owningSquad = $derived(squadForAnnouncementsGroup($squads, groupId));
 
   // Union of engine members and pending-only npubs: a resend can remove the engine leaf before
   // the re-add fails, dropping the npub from `members` while it's still in `pendingWelcomes`.
@@ -64,9 +65,12 @@
     restoringNpub = null;
     confirmNpub = null;
     if (result.ok) {
-      const toastKey = squad
-        ? 'messaging.channel.mlsRestoreSquadSuccess'
-        : 'messaging.channel.mlsRestoreSuccess';
+      const toastKey =
+        'skipped' in result && result.skipped
+          ? 'messaging.channel.mlsRestoreInProgress'
+          : squad
+            ? 'messaging.channel.mlsRestoreSquadSuccess'
+            : 'messaging.channel.mlsRestoreSuccess';
       showToast($t(toastKey, { values: { name: displayName(npub) } }));
     } else {
       showToast(
