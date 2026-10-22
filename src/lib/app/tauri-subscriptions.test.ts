@@ -68,6 +68,9 @@ const mocks = vi.hoisted(() => {
     applyMlsStoreResetState: vi.fn(),
     refreshMlsStoreResetState: vi.fn(),
     handleJoinInboxResponseDm: vi.fn(),
+    parseSquadRejoinRequest: vi.fn(),
+    handleSquadRejoinRequest: vi.fn(),
+    noteRejoinChannelDm: vi.fn(),
   };
 
   const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
@@ -146,11 +149,11 @@ vi.mock('../squad/squad-outbound-invite', async (importOriginal) => {
 });
 
 vi.mock('../squad/squad-rejoin', () => ({
-  parseSquadRejoinRequest: () => null,
-  parseSquadRejoinNeeded: () => null,
-  handleSquadRejoinRequest: vi.fn(),
-  noteRejoinChannelDm: vi.fn(),
-  onMlsSquadRejoinNeeded: vi.fn(),
+  parseSquadRejoinRequest: (...args: unknown[]) =>
+    mocks.mockFunctions.parseSquadRejoinRequest(...args),
+  handleSquadRejoinRequest: (...args: unknown[]) =>
+    mocks.mockFunctions.handleSquadRejoinRequest(...args),
+  noteRejoinChannelDm: (...args: unknown[]) => mocks.mockFunctions.noteRejoinChannelDm(...args),
   scanSquadRejoinAfterBackfill: vi.fn(),
   tryAcceptRememberedRejoinWelcomes: vi.fn(),
 }));
@@ -263,6 +266,7 @@ describe('subscribeAppEvents', () => {
     mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue(null);
     mocks.mockFunctions.parseWalletTxAnnouncement.mockReturnValue(null);
     mocks.mockFunctions.parseAnnouncement.mockReturnValue(null);
+    mocks.mockFunctions.parseSquadRejoinRequest.mockReturnValue(null);
     mocks.mockFunctions.listPendingMlsWelcomes.mockResolvedValue([]);
     mocks.mockFunctions.fetchMessages.mockResolvedValue(undefined);
     mocks.mockFunctions.syncMlsGroupsNow.mockResolvedValue(undefined);
@@ -376,6 +380,33 @@ describe('subscribeAppEvents', () => {
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: true }) });
       expect(mocks.mockFunctions.syncMlsGroupsNow).not.toHaveBeenCalled();
+    });
+
+    it('binds a rejoin request to the DM sender and does not store it', () => {
+      const payload = { parent_id: 'g1', requester_npub: 'npub1chat', request_id: 'r1' };
+      mocks.mockFunctions.parseSquadRejoinRequest.mockReturnValue(payload);
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: false }) });
+      expect(mocks.mockFunctions.handleSquadRejoinRequest).toHaveBeenCalledWith(payload, 'npub1chat');
+      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
+    });
+
+    it('ignores rejoin requests from our own account and passes the sender to channel hints', () => {
+      mocks.mockFunctions.parseSquadRejoinRequest.mockReturnValue({
+        parent_id: 'g1',
+        requester_npub: 'npub1chat',
+        request_id: 'r1',
+      });
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: true }) });
+      expect(mocks.mockFunctions.handleSquadRejoinRequest).not.toHaveBeenCalled();
+
+      mocks.mockFunctions.parseSquadRejoinRequest.mockReturnValue(null);
+      emit('message_new', {
+        chat_id: 'npub1admin',
+        message: dmMessage({ id: 'm9', content: 'channel-hint', mine: false }),
+      });
+      expect(mocks.mockFunctions.noteRejoinChannelDm).toHaveBeenCalledWith('channel-hint', 'npub1admin');
     });
 
     it('adds message to backendDmMessages for normal DM content', () => {

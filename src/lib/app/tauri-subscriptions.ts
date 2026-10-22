@@ -172,10 +172,10 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     if (!message.mine) {
       const rejoin = parseSquadRejoinRequest(content);
       if (rejoin) {
-        void handleSquadRejoinRequest(rejoin, { fanOut: true });
+        void handleSquadRejoinRequest(rejoin, chat_id);
         return;
       }
-      noteRejoinChannelDm(content);
+      noteRejoinChannelDm(content, chat_id);
     }
     if (!message.mine) {
       void handleJoinInboxResponseDm(content, chat_id);

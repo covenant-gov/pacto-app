@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   planSquadMemberRestore,
-  squadOwningGroupId,
+  squadForAnnouncementsGroup,
   type GroupMembershipSnapshot,
 } from './restore-squad-access';
 import type { Channel, Squad } from '../../stores/squads';
@@ -22,7 +22,7 @@ function membership(members: string[], admins: string[]): GroupMembershipSnapsho
   return { members, admins };
 }
 
-describe('squadOwningGroupId', () => {
+describe('squadForAnnouncementsGroup', () => {
   const squad: Squad = {
     id: 'g-ann',
     name: 'Alpha',
@@ -32,14 +32,15 @@ describe('squadOwningGroupId', () => {
     updatedAt: 1,
   };
 
-  it('matches the squad id and a channel group id', () => {
-    expect(squadOwningGroupId([squad], 'g-ann')?.id).toBe('g-ann');
-    expect(squadOwningGroupId([squad], 'g-sec')?.name).toBe('Alpha');
+  it('matches the announcements group id only', () => {
+    expect(squadForAnnouncementsGroup([squad], 'g-ann')?.id).toBe('g-ann');
+    expect(squadForAnnouncementsGroup([squad], ' G-ANN ')?.id).toBe('g-ann');
   });
 
-  it('returns undefined for a bare MLS group', () => {
-    expect(squadOwningGroupId([squad], 'g-other')).toBeUndefined();
-    expect(squadOwningGroupId([squad], '  ')).toBeUndefined();
+  it('does not match a channel group, a bare MLS group, or an empty id', () => {
+    expect(squadForAnnouncementsGroup([squad], 'g-sec')).toBeUndefined();
+    expect(squadForAnnouncementsGroup([squad], 'g-other')).toBeUndefined();
+    expect(squadForAnnouncementsGroup([squad], '  ')).toBeUndefined();
   });
 });
 

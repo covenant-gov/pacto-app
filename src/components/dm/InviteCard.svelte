@@ -17,6 +17,8 @@
     accepting: boolean;
     onAccept: () => void;
     onDecline: () => void;
+    /** Squad invites only: ask admitters to restore a member whose local MLS state was wiped. */
+    onRequestRestore?: () => void;
     /** Opens a DM with the actual inviter, when they differ from the thread's peer. */
     onMessageInviter?: () => void;
   }
@@ -35,6 +37,7 @@
     accepting,
     onAccept,
     onDecline,
+    onRequestRestore,
     onMessageInviter,
   }: Props = $props();
 
@@ -148,6 +151,16 @@
           {$t('messaging.inviteCard.decline')}
         </button>
       </div>
+      {#if onRequestRestore}
+        <button
+          type="button"
+          class="invite-card-restore-link"
+          disabled={accepting}
+          onclick={onRequestRestore}
+        >
+          {$t('messaging.inviteCard.requestRestore')}
+        </button>
+      {/if}
     {/if}
   </div>
 </div>
@@ -281,6 +294,22 @@
     font-weight: 500;
     cursor: pointer;
     border: 1px solid transparent;
+  }
+
+  .invite-card-restore-link {
+    margin-top: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.75rem;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .invite-card-restore-link:hover:not(:disabled) {
+    color: var(--text-secondary);
   }
 
   .invite-card-btn-accept {
