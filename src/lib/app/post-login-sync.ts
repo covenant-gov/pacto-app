@@ -99,8 +99,8 @@ async function startNotifsWithRetry(): Promise<void> {
 
   let settled = false;
   let retrying = false;
-  let unlisten: UnlistenFn | undefined;
-  unlisten = await listen<{ url: string; status: RelayStatus }>(
+  // The callback runs only on later events, by which point `unlisten` is assigned.
+  const unlisten: UnlistenFn = await listen<{ url: string; status: RelayStatus }>(
     'relay_status_change',
     async (event) => {
       // Only a relay reaching `connected` means there is now something to subscribe on.
@@ -110,7 +110,7 @@ async function startNotifsWithRetry(): Promise<void> {
       try {
         await startNotifs();
         settled = true;
-        unlisten?.();
+        unlisten();
       } catch (e) {
         console.error('notifs retry failed:', e);
       } finally {
