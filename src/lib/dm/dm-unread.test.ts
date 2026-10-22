@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatUnreadBadgeCount, isScrollAtBottom } from './dm-unread';
+import { countMessagesAfter, formatUnreadBadgeCount, isScrollAtBottom } from './dm-unread';
 
 describe('formatUnreadBadgeCount', () => {
   it('formats counts for badges', () => {
@@ -35,5 +35,23 @@ describe('isScrollAtBottom', () => {
   it('treats an exact-gap value as not at bottom', () => {
     const el = { scrollHeight: 500, scrollTop: 300, clientHeight: 100 } as HTMLElement;
     expect(isScrollAtBottom(el, 100)).toBe(false);
+  });
+});
+
+describe('countMessagesAfter', () => {
+  const messages = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('counts the tail appended after the last seen message', () => {
+    expect(countMessagesAfter(messages, 'a')).toBe(2);
+    expect(countMessagesAfter(messages, 'c')).toBe(0);
+  });
+
+  it('counts everything when the seen message is unknown or missing', () => {
+    expect(countMessagesAfter(messages, null)).toBe(3);
+    expect(countMessagesAfter(messages, 'gone')).toBe(3);
+  });
+
+  it('returns zero for an empty list', () => {
+    expect(countMessagesAfter([], 'a')).toBe(0);
   });
 });
