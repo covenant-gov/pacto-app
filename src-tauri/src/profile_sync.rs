@@ -1,4 +1,4 @@
-use crate::{profile, STATE};
+use crate::{current_login_generation, get_nostr_client, profile, STATE};
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -196,16 +196,18 @@ pub async fn start_profile_sync_processor() {
             if let Some(own_profile) = state.profiles.iter().find(|p| p.mine) {
                 let npub = own_profile.id.clone();
                 let empty = !own_profile.has_public_metadata();
-                let name = own_profile.name.clone();
-                let avatar = own_profile.avatar.clone();
-                let banner = own_profile.banner.clone();
-                let about = own_profile.about.clone();
                 drop(state);
 
                 if !empty {
-                    tokio::spawn(async move {
-                        profile::maybe_republish_own_kind0(name, avatar, banner, about).await;
-                    });
+                    if let Ok(client) = get_nostr_client() {
+                        let generation = current_login_generation();
+                        let expected_npub = npub.clone();
+                        let client = (*client).clone();
+                        tokio::spawn(async move {
+                            profile::maybe_republish_own_kind0(client, expected_npub, generation)
+                                .await;
+                        });
+                    }
                 }
 
                 let priority = if empty {

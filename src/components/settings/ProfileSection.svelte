@@ -94,7 +94,7 @@
         about: editAbout.trim(),
       });
       isEditing = false;
-      showToast($t('profile.profilePublished', { values: { count: receipt.successCount } }));
+      showToast($t('profile.profilePublished', { values: { count: receipt.verifiedCount } }));
     } catch (e: unknown) {
       console.error('Save profile failed:', e);
       const msg = getInvokeErrorMessage(e, $t('profile.couldNotPublishProfile'));

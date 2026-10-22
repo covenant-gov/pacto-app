@@ -168,6 +168,7 @@ export async function syncAllProfiles(): Promise<void> {
 export interface Kind0PublishReceipt {
   eventId: string;
   successCount: number;
+  verifiedCount: number;
   connectedWriteCount: number;
 }
 
@@ -188,7 +189,7 @@ export async function updateProfile(params: {
     banner: params.banner ?? '',
     about: params.about ?? '',
   });
-  dmLog('update_profile result', { ok: true, successCount: receipt?.successCount });
+  dmLog('update_profile result', { ok: true, verifiedCount: receipt?.verifiedCount });
   return receipt;
 }
 

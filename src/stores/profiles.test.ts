@@ -209,17 +209,48 @@ describe('profiles', () => {
       expect(get(profiles)[npub]?.avatar).toBe('https://example.com/iso.png');
     });
 
-    it('mergeInitProfiles prefers incoming metadata and keeps extra local rows', () => {
-      const other = 'npub1bob';
+    it('mergeInitProfiles prefers incoming metadata for the same id', () => {
       const merged = mergeInitProfiles(
         {
           [npub]: { ...baseProfile, name: 'Iso', avatar: 'https://example.com/iso.png' },
-          [other]: { ...baseProfile, id: other, name: 'Bob' },
         },
         [{ ...baseProfile, name: '', display_name: '', avatar: '' }]
       );
       expect(merged[npub]?.name).toBe('Iso');
-      expect(merged[other]?.name).toBe('Bob');
+    });
+
+    it('mergeInitProfiles drops other-account rows on init', () => {
+      const other = 'npub1bob';
+      const incomingId = 'npub1iso';
+      const merged = mergeInitProfiles(
+        {
+          [npub]: { ...baseProfile, name: 'Alice', blocked: true },
+          [other]: { ...baseProfile, id: other, name: 'Bob', blocked: true },
+        },
+        [{ ...baseProfile, id: incomingId, name: '', display_name: '', avatar: '', blocked: false }]
+      );
+      expect(Object.keys(merged)).toEqual([incomingId]);
+      expect(merged[incomingId]?.name).toBe('');
+      expect(merged[npub]).toBeUndefined();
+      expect(merged[other]).toBeUndefined();
+    });
+
+    it('init_finished rebuilds blocked from incoming ids only', () => {
+      const previous = 'npub1alice';
+      const incoming = 'npub1iso';
+      profiles.set({
+        [previous]: { ...baseProfile, id: previous, name: 'Alice', blocked: true },
+      });
+      const initHandler = handlers.get('init_finished');
+      initHandler?.({
+        payload: {
+          profiles: [{ ...baseProfile, id: incoming, name: '', display_name: '', avatar: '', blocked: false }],
+        },
+      });
+      expect(get(profiles)[previous]).toBeUndefined();
+      expect(get(profiles)[incoming]?.id).toBe(incoming);
+      expect(get(blockedDmNpubs).has(previous)).toBe(false);
+      expect(get(blockedDmNpubs).size).toBe(0);
     });
 
     it('profile_update updates the profile and blocked list', () => {

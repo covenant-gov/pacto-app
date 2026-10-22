@@ -190,17 +190,19 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
   }
 })();
 
-/** Incoming Kind 0 wins; an empty init row must not replace a hydrated profile. */
+/** Incoming IDs only; keep a hydrated current row for the same id when incoming is empty. */
 export function mergeInitProfiles(
   current: Record<string, NostrProfile>,
   incoming: NostrProfile[]
 ): Record<string, NostrProfile> {
-  const next = { ...current };
+  const next: Record<string, NostrProfile> = {};
   for (const profile of incoming) {
-    const existing = next[profile.id];
+    const existing = current[profile.id];
     if (!profileNeedsRelayHydration(profile)) {
       next[profile.id] = profile;
-    } else if (!existing || profileNeedsRelayHydration(existing)) {
+    } else if (existing && !profileNeedsRelayHydration(existing)) {
+      next[profile.id] = existing;
+    } else {
       next[profile.id] = profile;
     }
   }

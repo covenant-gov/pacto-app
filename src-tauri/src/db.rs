@@ -230,6 +230,73 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
     Ok(())
 }
 
+/// Persist Kind 0 receipt and profile row in one transaction before UI observe.
+pub fn persist_kind0_publish<R: Runtime>(
+    handle: AppHandle<R>,
+    profile: &Profile,
+    receipt_json: String,
+) -> Result<(), String> {
+    crate::account_manager::get_current_account()
+        .map_err(|_| "No current account".to_string())?;
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let write_result = (|| -> Result<(), String> {
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Failed to begin kind0 persist transaction: {e}"))?;
+        tx.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["kind0_publish_receipt", &receipt_json],
+        )
+        .map_err(|e| format!("Failed to persist kind0 receipt: {e}"))?;
+        tx.execute(
+            "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, blocked, bot, avatar_cached, banner_cached)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+             ON CONFLICT(npub) DO UPDATE SET
+                name = excluded.name,
+                display_name = excluded.display_name,
+                nickname = excluded.nickname,
+                lud06 = excluded.lud06,
+                lud16 = excluded.lud16,
+                banner = excluded.banner,
+                avatar = excluded.avatar,
+                about = excluded.about,
+                website = excluded.website,
+                nip05 = excluded.nip05,
+                status_content = excluded.status_content,
+                status_url = excluded.status_url,
+                blocked = excluded.blocked,
+                bot = excluded.bot,
+                avatar_cached = excluded.avatar_cached,
+                banner_cached = excluded.banner_cached",
+            rusqlite::params![
+                profile.id,
+                profile.name,
+                profile.display_name,
+                profile.nickname,
+                profile.lud06,
+                profile.lud16,
+                profile.banner,
+                profile.avatar,
+                profile.about,
+                profile.website,
+                profile.nip05,
+                profile.status.title,
+                profile.status.url,
+                profile.blocked as i32,
+                profile.bot as i32,
+                profile.avatar_cached,
+                profile.banner_cached,
+            ],
+        )
+        .map_err(|e| format!("Failed to persist kind0 profile: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("Failed to commit kind0 persist: {e}"))?;
+        Ok(())
+    })();
+    crate::account_manager::return_db_connection(conn);
+    write_result
+}
+
 #[command]
 pub fn get_theme<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
     // Try SQL if account is selected
