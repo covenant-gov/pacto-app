@@ -507,13 +507,12 @@ export async function acceptChannelInSquadInvite(
       dmError('Accept channel in squad: no pending welcome for channel', payload.channelGroupId);
       return;
     }
-    channelInvitePendingAccept.set(payload.channelGroupId, {
+    await acceptStagedChannelWelcome({
+      welcomeId: welcome.id,
+      channelGroupId: payload.channelGroupId,
       parentId: payload.announcementsGroupId,
       channelName: payload.channelName,
     });
-    acceptedSquadInviteGroupIds.add(payload.channelGroupId);
-    await acceptMlsWelcome(welcome.id);
-    markMlsHistoryWelcome(payload.channelGroupId);
     acceptedChannelInviteMessageIds.update((ids: string[]) =>
       ids.includes(msg.id) ? ids : [...ids, msg.id]
     );
@@ -524,6 +523,28 @@ export async function acceptChannelInSquadInvite(
     acceptedSquadInviteGroupIds.delete(payload.channelGroupId);
   } finally {
     acceptingChannelInSquadId.set(null);
+  }
+}
+
+/** Accept a channel welcome and attach it to the parent when `mls_welcome_accepted` fires. */
+export async function acceptStagedChannelWelcome(opts: {
+  welcomeId: string;
+  channelGroupId: string;
+  parentId: string;
+  channelName: string;
+}): Promise<void> {
+  channelInvitePendingAccept.set(opts.channelGroupId, {
+    parentId: opts.parentId,
+    channelName: opts.channelName,
+  });
+  acceptedSquadInviteGroupIds.add(opts.channelGroupId);
+  try {
+    await acceptMlsWelcome(opts.welcomeId);
+    markMlsHistoryWelcome(opts.channelGroupId);
+  } catch (e) {
+    channelInvitePendingAccept.delete(opts.channelGroupId);
+    acceptedSquadInviteGroupIds.delete(opts.channelGroupId);
+    throw e;
   }
 }
 

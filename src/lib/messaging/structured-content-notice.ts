@@ -46,6 +46,8 @@ const TYPE_KEYS: Record<string, string> = {
   dashboard_poll_created: 'messaging.structuredNotice.dashboardPollCreated',
   squad_outbound_invite: 'messaging.structuredNotice.squadInvitePending',
   squad_admit_needed: 'messaging.structuredNotice.squadMemberAdmit',
+  squad_rejoin_request: 'messaging.structuredNotice.squadRejoinRequest',
+  squad_rejoin_needed: 'messaging.structuredNotice.squadRejoinNeeded',
   squad_channels_catalog: 'messaging.structuredNotice.squadChannelsUpdated',
   squad_identity_updated: 'messaging.structuredNotice.squadIdentityUpdated',
   squad_invite_accepted: 'messaging.structuredNotice.squadInviteAccepted',
