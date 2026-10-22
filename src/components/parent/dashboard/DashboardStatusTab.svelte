@@ -21,11 +21,15 @@
   } from '../../../lib/governance/squad-sponsor-crew';
   import { squadInfraByParentId } from '../../../stores/squads';
   import { pactoGovInfraRow, pactoGovWargameInfraRow } from '../../../lib/governance/api';
-  import { hasSquadAdminInfra } from '../../../lib/governance/squad-admin-payload';
+  import {
+    hasSquadAdminInfra,
+    resolveStandaloneSquadAdminState,
+  } from '../../../lib/governance/squad-admin-payload';
   import { syncSquadInfraForParent } from '../../../lib/dashboard/dashboard-data-sync';
   import { openSquadWargame } from '../../../lib/navigation/open-squad-dashboard';
   import { isActiveWarGameStack, warGameStatusAction } from '../../../lib/governance/war-game-payload';
   import DeployWarGameModal from '../governance/DeployWarGameModal.svelte';
+  import SquadAdminStatusCard from './SquadAdminStatusCard.svelte';
   import { showToast } from '../../../stores/toast';
   import type { WarGameDeployComplete } from '../../../lib/governance/start-war-game-deploy';
 
@@ -118,6 +122,9 @@
     Boolean(pactoPayload?.treasuryAuthority?.trim()) && (warGameStack || liveProvider === 'pacto_gov'),
   );
   const govNetwork = $derived(pactoGovChain ?? 'sepolia');
+  const standaloneAdmin = $derived(
+    warGameStack || showPactoGovShell ? null : resolveStandaloneSquadAdminState(infraRows),
+  );
 
   $effect(() => {
     const pid = parentId;
@@ -215,6 +222,10 @@
     </li>
   </ul>
 </section>
+
+{#if standaloneAdmin}
+  <SquadAdminStatusCard {parentId} admin={standaloneAdmin} />
+{/if}
 
 {#if showPactoGovShell && pactoPayload}
   <PactoGovGovernanceShell
