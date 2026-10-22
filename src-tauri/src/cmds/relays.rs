@@ -19,11 +19,33 @@ use tokio::sync::Mutex;
 static NOTIFS_LOOP_GENERATION: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(u64::MAX);
 
-/// Claim the live-subscription loop for `generation`. `false` means a loop for the
-/// same login already owns it, so a second `notifs()` call must not open a duplicate
-/// subscription set and a second notification loop over the same relays.
+/// Claim the live-subscription loop for `generation`. `false` means the loop is already
+/// owned -- by this same login (a duplicate `notifs()` call) or by a newer login whose
+/// claim must not be clobbered -- so the caller must not open a duplicate subscription set
+/// and a second notification loop over the same relays.
+///
+/// This is a CAS loop rather than an unconditional `swap`: a stale `notifs()` that resumes
+/// out of order, after a newer login has already claimed the loop, must not swap its own
+/// older generation back in. If it did, a later call for the newer login would read the
+/// stale generation, believe it was free, and open a duplicate subscription set.
 pub(crate) fn claim_notifs_loop(generation: u64) -> bool {
-    NOTIFS_LOOP_GENERATION.swap(generation, std::sync::atomic::Ordering::SeqCst) != generation
+    use std::sync::atomic::Ordering::SeqCst;
+    loop {
+        let current = NOTIFS_LOOP_GENERATION.load(SeqCst);
+        // `u64::MAX` is the "no owner" sentinel and stays claimable despite being the
+        // largest value. Any real generation `>=` ours means an equal-or-newer login
+        // already owns the loop, so refuse rather than overwrite it.
+        if current != u64::MAX && current >= generation {
+            return false;
+        }
+        if NOTIFS_LOOP_GENERATION
+            .compare_exchange(current, generation, SeqCst, SeqCst)
+            .is_ok()
+        {
+            return true;
+        }
+        // Lost the race with a concurrent claim/release; re-read and re-evaluate.
+    }
 }
 
 /// Release the claim when the loop ends, so a later call can restart it. A no-op
@@ -67,6 +89,15 @@ pub(crate) async fn notifs() -> Result<bool, String> {
     // outright on "no relays specified" and never start listening.
     if client.relays().await.is_empty() {
         wait_for_populated_relay_pool(&client).await;
+    }
+
+    // A newer login can claim the loop while the signer calls and the relay-pool wait above
+    // are in flight. Subscribing now would start a second live loop for a stale generation,
+    // so bail once we are no longer current. `release_notifs_loop` frees the claim only if we
+    // still hold it (compare_exchange), so a newer owner's claim is left intact.
+    if current_login_generation() != generation {
+        release_notifs_loop(generation);
+        return Ok(true);
     }
 
     // Live GiftWraps to us (DMs, files, MLS welcomes)
@@ -1191,6 +1222,27 @@ mod notifs_loop_claim_tests {
         assert!(
             !claim_notifs_loop(GEN + 1),
             "the current login's claim must survive a stale loop's release"
+        );
+        release_notifs_loop(GEN + 1);
+    }
+
+    #[test]
+    fn a_stale_claim_cannot_reclaim_after_a_newer_login_owns_the_loop() {
+        let _guard = CLAIM_TEST_LOCK.lock();
+        // A newer login owns the loop.
+        assert!(claim_notifs_loop(GEN + 1));
+        // An older generation's `notifs()` resumes out of order and tries to claim. It must
+        // be refused, so it neither opens a duplicate subscription set nor swaps its stale
+        // generation back in for a later call to mistake as free.
+        assert!(
+            !claim_notifs_loop(GEN),
+            "a stale login must not reclaim the loop a newer login owns"
+        );
+        // The newer login still owns it: its own repeat call is still a no-op, proving the
+        // stale claim did not overwrite the stored generation.
+        assert!(
+            !claim_notifs_loop(GEN + 1),
+            "the newer login's claim must be intact after a stale claim attempt"
         );
         release_notifs_loop(GEN + 1);
     }

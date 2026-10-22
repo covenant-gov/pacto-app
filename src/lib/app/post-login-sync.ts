@@ -4,8 +4,9 @@
  */
 
 import { get } from 'svelte/store';
+import { listen, type UnlistenFn } from '../api';
 import { connect as apiConnect } from '../api/auth';
-import { monitorRelayConnections } from '../api/relays';
+import { monitorRelayConnections, type RelayStatus } from '../api/relays';
 import { fetchMessages, loadNostrProfile, refreshProfileNow, startNotifs, syncMlsGroupsNow } from '../api/nostr';
 import { dmLog } from '../utils/dm-debug';
 import { dmSyncStatus } from '../../stores/dm';
@@ -53,7 +54,7 @@ export function runPostLoginNetworkSync(npub: string): void {
     // warm start, which left the session with no live DM/MLS/Commons delivery at all.
     // `notifs` is idempotent per login, so a repeat call is a no-op.
     dmLog('post-login: startNotifs()');
-    startNotifs().catch((e) => console.error('notifs failed:', e));
+    void startNotifsWithRetry();
 
     dmLog('post-login: fetchMessages(true)');
     fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
@@ -75,6 +76,48 @@ export function runPostLoginNetworkSync(npub: string): void {
 
     runStartupUpdateCheckIfEnabled();
   })();
+}
+
+/**
+ * Start live subscriptions, retrying on relay connect if the first attempt fails.
+ *
+ * `startNotifs` can fail transiently during startup: the backend's bounded wait for a
+ * populated relay pool can expire, or a `subscribe` call can fail while relays are still
+ * coming up. The backend releases its per-login claim on that failure, and the old
+ * `init_finished` path that used to start subscriptions later has been removed — so without
+ * a retry the logged-in session is left with no live DM/MLS/Commons delivery. Retry whenever
+ * a relay reaches `connected` (the signal the pool has gained a relay to subscribe on). The
+ * backend's `notifs` is idempotent per login, so re-calling after a success is a no-op.
+ */
+async function startNotifsWithRetry(): Promise<void> {
+  try {
+    await startNotifs();
+    return;
+  } catch (e) {
+    console.error('notifs failed:', e);
+  }
+
+  let settled = false;
+  let retrying = false;
+  let unlisten: UnlistenFn | undefined;
+  unlisten = await listen<{ url: string; status: RelayStatus }>(
+    'relay_status_change',
+    async (event) => {
+      // Only a relay reaching `connected` means there is now something to subscribe on.
+      // Guard against overlapping retries and against retrying once one has succeeded.
+      if (settled || retrying || event.payload.status !== 'connected') return;
+      retrying = true;
+      try {
+        await startNotifs();
+        settled = true;
+        unlisten?.();
+      } catch (e) {
+        console.error('notifs retry failed:', e);
+      } finally {
+        retrying = false;
+      }
+    }
+  );
 }
 
 function runStartupUpdateCheckIfEnabled(): void {
