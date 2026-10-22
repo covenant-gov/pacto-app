@@ -135,6 +135,7 @@ import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers
 import { WEB_PREVIEWS_PREFIX } from '../../stores/web-previews';
 import { BIOMETRIC_UNLOCK_PREFIX } from '../../stores/biometric-unlock';
 import { backupVerified } from '../../stores/backup-verification';
+import { profiles } from '../../stores/profiles';
 import {
   MLS_HISTORY_WELCOME_PREFIX,
   mlsHistoryWelcomeGroupIds,
@@ -242,6 +243,7 @@ export function clearAccountState(npub?: string): void {
   dashboardPollReplicaNonceByParentId.set({});
   safeStateByTreasuryId.set({});
   squads.set([]);
+  profiles.set({});
   pinnedDmNpubs.set(new Set());
   blockedDmNpubs.set(new Set());
   dmChatsByNpub.set({});

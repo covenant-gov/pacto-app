@@ -87,14 +87,14 @@
     saveError = null;
     savingProfile = true;
     try {
-      await updateProfile({
+      const receipt = await updateProfile({
         name: editName.trim(),
         avatar: editAvatarUrl,
         banner: profile.banner ?? '',
         about: editAbout.trim(),
       });
       isEditing = false;
-      showToast($t('profile.profilePublished'));
+      showToast($t('profile.profilePublished', { values: { count: receipt.verifiedCount } }));
     } catch (e: unknown) {
       console.error('Save profile failed:', e);
       const msg = getInvokeErrorMessage(e, $t('profile.couldNotPublishProfile'));

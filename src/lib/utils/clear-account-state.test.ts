@@ -53,6 +53,7 @@ import { joiningWelcomeGroupIds } from '../invites/pending-welcomes-store';
 import { squads, ungroupedChannels, channelMessages, type Channel, type Squad } from '../../stores/squads';
 import { recentEmojisStore, type EmojiEntry } from '../../stores/emojis';
 import { unreadCountsByChat } from '../../stores/unread';
+import { profiles } from '../../stores/profiles';
 import { requestLinkPreview } from '../messaging/link-preview';
 
 describe('clearAccountState', () => {
@@ -163,6 +164,7 @@ describe('clearAccountState', () => {
       hasFromThem: false,
       lastAt: 1,
     };
+    profiles.set({ npub1: { id: 'npub1', name: 'Alice' } as never });
     pinnedDmNpubs.set(new Set(['npub1']));
     blockedDmNpubs.set(new Set(['npub2']));
     dmChatsByNpub.set({ npub1: chatState });
@@ -176,6 +178,7 @@ describe('clearAccountState', () => {
 
     clearAccountState('npub1abcdef');
 
+    expect(get(profiles)).toEqual({});
     expect(get(pinnedDmNpubs).size).toBe(0);
     expect(get(blockedDmNpubs).size).toBe(0);
     expect(get(dmChatsByNpub)).toEqual({});

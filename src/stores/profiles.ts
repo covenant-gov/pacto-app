@@ -4,7 +4,7 @@ import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles } fro
 import type { NostrProfile } from '../lib/api/nostr';
 export type { NostrProfile };
 import { dmLog } from '../lib/utils/dm-debug';
-import { getProfileDisplayName } from '../lib/utils/profile';
+import { getProfileDisplayName, profileNeedsRelayHydration } from '../lib/utils/profile';
 import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, lastCatchUpSuccess, type DmChatState } from './dm';
 import { hydrateUnreadCounts } from './unread';
 import { hydrateCatchUpCount } from './catch-up';
@@ -60,10 +60,7 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
       hydrateCatchUpCount().catch((e) => console.error('hydrateCatchUpCount failed:', e));
 
       if (payload.profiles) {
-        const profilesMap: Record<string, NostrProfile> = {};
-        for (const profile of payload.profiles) {
-          profilesMap[profile.id] = profile;
-        }
+        const profilesMap = mergeInitProfiles(get(profiles), payload.profiles);
         profiles.set(profilesMap);
         blockedDmNpubs.set(
           new Set(
@@ -77,9 +74,7 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
 
       // Build DM map: Friends (2-way), Requests (they only), Pending (we only). Derived lists in app.ts.
       if (payload.chats && Array.isArray(payload.chats)) {
-        const profilesMap = payload.profiles
-          ? Object.fromEntries(payload.profiles.map((p: NostrProfile) => [p.id, p]))
-          : {};
+        const profilesMap = get(profiles);
       const dmChats = payload.chats.filter(
           (c) =>
             typeof c.id === 'string' &&
@@ -195,46 +190,73 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
   }
 })();
 
+/** Incoming IDs only; keep a hydrated current row for the same id when incoming is empty. */
+export function mergeInitProfiles(
+  current: Record<string, NostrProfile>,
+  incoming: NostrProfile[]
+): Record<string, NostrProfile> {
+  const next: Record<string, NostrProfile> = {};
+  for (const profile of incoming) {
+    const existing = current[profile.id];
+    if (!profileNeedsRelayHydration(profile)) {
+      next[profile.id] = profile;
+    } else if (existing && !profileNeedsRelayHydration(existing)) {
+      next[profile.id] = existing;
+    } else {
+      next[profile.id] = profile;
+    }
+  }
+  return next;
+}
+
+const HYDRATE_RETRY_MS = [0, 1000, 2000];
+
 /**
- * Load a Nostr profile from the backend cache (or trigger fetch if not cached)
- * @param npub - The npub (bech32 format) of the user
- * @returns Promise with the profile data
+ * Load a Nostr profile from the backend cache (or trigger fetch if not cached).
+ * Empty shells (e.g. own profile after reinstall) still trigger Kind 0 hydrate.
  */
 export async function loadProfile(npub: string): Promise<NostrProfile> {
-  // Check if already in our frontend cache
   let existing: NostrProfile | undefined;
   profiles.subscribe(p => { existing = p[npub]; })();
-  
-  if (existing) {
+
+  if (existing && !profileNeedsRelayHydration(existing)) {
     return existing;
   }
 
-  // Set loading state
   profileLoadingStates.update(states => ({ ...states, [npub]: true }));
 
   try {
-    // Try to get from Rust cache first
     try {
       const profile = await fetchNostrProfile(npub);
-      profiles.update(p => ({ ...p, [npub]: profile }));
-      return profile;
+      if (!profileNeedsRelayHydration(profile)) {
+        profiles.update(p => ({ ...p, [npub]: profile }));
+        return profile;
+      }
     } catch {
-      // Not in cache, trigger background fetch
-      await loadNostrProfile(npub);
-      
-      // Wait a moment for the fetch to complete
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Try again
-      const profile = await fetchNostrProfile(npub);
-      profiles.update(p => ({ ...p, [npub]: profile }));
-      return profile;
+      // Not in Rust cache yet
     }
+
+    let profile: NostrProfile | undefined;
+    for (let attempt = 0; attempt < HYDRATE_RETRY_MS.length; attempt++) {
+      const delay = HYDRATE_RETRY_MS[attempt];
+      if (delay > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+      await loadNostrProfile(npub);
+      profile = await fetchNostrProfile(npub);
+      profiles.update(p => ({ ...p, [npub]: profile! }));
+      if (!profileNeedsRelayHydration(profile)) {
+        return profile;
+      }
+    }
+    if (!profile) {
+      throw new Error('profile missing');
+    }
+    return profile;
   } catch (error) {
     console.error('Failed to load profile for', npub, ':', error);
     throw error;
   } finally {
-    // Clear loading state
     profileLoadingStates.update(states => ({ ...states, [npub]: false }));
   }
 }

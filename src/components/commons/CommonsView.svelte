@@ -46,6 +46,7 @@
     openCommonsBroadcastModal,
   } from '../../stores/commons-ui';
   import { profiles, loadProfile } from '../../stores/profiles';
+  import { profileNeedsRelayHydration } from '../../lib/utils/profile';
   import { get } from 'svelte/store';
 
   let filterTags: string[] = $state([...DEFAULT_COMMONS_FEED_FILTERS.tags]);
@@ -124,12 +125,16 @@
     prefetchAuthorProfiles(rows);
   }
 
-  /** Resolve PFPs for user broadcast authors that aren't cached yet. */
+  /** Resolve PFPs for user broadcast authors missing or still empty shells. */
   function prefetchAuthorProfiles(list: CommonsBroadcastDto[]) {
     const cached = get(profiles);
     const pending = new Set<string>();
     for (const b of list) {
-      if (b.subject === 'user' && b.authorNpub && !cached[b.authorNpub]) {
+      if (
+        b.subject === 'user' &&
+        b.authorNpub &&
+        profileNeedsRelayHydration(cached[b.authorNpub])
+      ) {
         pending.add(b.authorNpub);
       }
     }

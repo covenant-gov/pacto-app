@@ -25,7 +25,7 @@
 	"profile.noUserLoggedIn": "No hay usuario conectado",
 	"profile.failedToLoadProfile": "No se pudo cargar el perfil",
 	"profile.chooseAvatarImage": "Elige una imagen de avatar",
-	"profile.profilePublished": "Perfil publicado en la red.",
+	"profile.profilePublished": "Perfil publicado en {count} relays.",
 	"profile.couldNotPublishProfile": "No se pudo publicar el perfil.",
 	"profile.crop.title": "Recortar avatar",
 	"profile.crop.guidance": "Para mejores resultados, usa una imagen cuadrada de al menos 512x512 píxeles.",

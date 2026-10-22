@@ -15,6 +15,7 @@ const apiConnect = vi.fn();
 const monitorRelayConnections = vi.fn().mockResolvedValue(undefined);
 const fetchMessages = vi.fn();
 const refreshProfileNow = vi.fn();
+const loadNostrProfile = vi.fn().mockResolvedValue(true);
 const syncMlsGroupsNow = vi.fn();
 // Backed by a real writable store (not just a spy) so wake-sync's own `get(dmSyncStatus)`
 // guard observes the same state this module writes — needed to test the two modules'
@@ -35,6 +36,7 @@ vi.mock('../api/relays', () => ({
 
 vi.mock('../api/nostr', () => ({
   fetchMessages: (...args: unknown[]) => fetchMessages(...args),
+  loadNostrProfile: (...args: unknown[]) => loadNostrProfile(...args),
   refreshProfileNow: (...args: unknown[]) => refreshProfileNow(...args),
   syncMlsGroupsNow: (...args: unknown[]) => syncMlsGroupsNow(...args),
 }));
@@ -69,6 +71,7 @@ describe('runPostLoginNetworkSync', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.clearAllMocks();
+    loadNostrProfile.mockResolvedValue(true);
     dmSyncStatusStore.set('idle');
     resetStartupCheckSession();
     startupCheckEnabled.set(false);
@@ -109,7 +112,11 @@ describe('runPostLoginNetworkSync', () => {
     expect(dmLog).toHaveBeenCalledWith('post-login: fetchMessages(true)');
     expect(dmSyncStatusSet).toHaveBeenCalledWith('syncing');
     expect(fetchMessages).toHaveBeenCalledWith(true);
+    expect(loadNostrProfile).toHaveBeenCalledWith('npub1test');
     expect(refreshProfileNow).toHaveBeenCalledWith('npub1test');
+    expect(loadNostrProfile.mock.invocationCallOrder[0]).toBeLessThan(
+      refreshProfileNow.mock.invocationCallOrder[0]
+    );
     expect(syncMlsGroupsNow).toHaveBeenCalledWith(null);
     expect(dmLog).toHaveBeenCalledWith('post-login: network sync done');
     expect(monitorRelayConnections).toHaveBeenCalled();
