@@ -3,6 +3,7 @@ import type { SquadInfraDto } from './api';
 import {
   resolveSettingsPrivilegesAdmin,
   resolveSquadAdminContext,
+  resolveStandaloneSquadAdminState,
   resolveWarGameSquadAdminContext,
   settingsPrivilegesRevision,
 } from './squad-admin-payload';
@@ -133,5 +134,65 @@ describe('settingsPrivilegesRevision', () => {
     ];
     const ctx = resolveSettingsPrivilegesAdmin(rows);
     expect(settingsPrivilegesRevision(rows, ctx)).toBe('live-rev');
+  });
+});
+
+
+describe('resolveStandaloneSquadAdminState', () => {
+  const adminProxy = '0x2222222222222222222222222222222222222222';
+
+  function adminRow(payload: Record<string, unknown>) {
+    return row({
+      id: 'admin-1',
+      infraType: 'squad_admin',
+      canonicalRef: adminProxy,
+      providerPayload: JSON.stringify(payload),
+    });
+  }
+
+  it('reports the dedicated row with its variant and chain', () => {
+    expect(
+      resolveStandaloneSquadAdminState([
+        adminRow({ v: 1, variant: 'ext_standalone', squadAdminProxy: adminProxy }),
+      ]),
+    ).toEqual({ proxy: adminProxy, chain: 'sepolia', variant: 'ext_standalone' });
+  });
+
+  it('keeps the captain-hat variant', () => {
+    expect(resolveStandaloneSquadAdminState([adminRow({ variant: 'captain_hat' })])?.variant).toBe(
+      'captain_hat',
+    );
+  });
+
+  it('defaults an unknown variant to ext standalone', () => {
+    expect(resolveStandaloneSquadAdminState([adminRow({})])?.variant).toBe('ext_standalone');
+  });
+
+  it('returns null once a pacto_gov row exists', () => {
+    expect(
+      resolveStandaloneSquadAdminState([
+        adminRow({ variant: 'ext_standalone' }),
+        row({
+          infraType: 'pacto_gov',
+          providerPayload: JSON.stringify({ squadAdminProxy: liveProxy }),
+        }),
+      ]),
+    ).toBeNull();
+  });
+
+  it('ignores a war-game-only stack', () => {
+    expect(
+      resolveStandaloneSquadAdminState([
+        row({
+          id: 'wg-1',
+          infraType: 'pacto_gov_wargame',
+          providerPayload: JSON.stringify({ squadAdminProxy: wargameProxy }),
+        }),
+      ]),
+    ).toBeNull();
+  });
+
+  it('returns null without infra rows', () => {
+    expect(resolveStandaloneSquadAdminState(undefined)).toBeNull();
   });
 });

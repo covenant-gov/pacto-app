@@ -65,6 +65,9 @@ See [PACTO_GOV.md](./PACTO_GOV.md) and [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SP
 - [ ] On explorer: `addressOwner()` on the new clone equals the roster EVM; when Default paid, deployer ≠ owner.
 - [ ] Devtools: `deploy_squad_sponsor_for_parent` (Ext) now defaults `signerWallet` to `'default'` (Default pays gas + deposit; roster EVM stays allowlist owner) — pass `signerWallet: 'squad'` to fund from the squad roster key instead.
 - [ ] **Deploy** → Advanced → **Deploy Squad Admin** standalone for executor AC without Nave Pirata.
+- [ ] After that tx confirms, **Status** shows a **Squad Admin** card: Deployed badge, variant copy, truncated proxy with copy, network, and **Manage privileges in Settings**.
+- [ ] That CTA lands on `#settings`; **Privileges → Manage** opens the roles modal on the same proxy.
+- [ ] Re-open the Launchpad: **Deploy Squad Admin (Ext)** shows the deployed address and the *already deployed* reason, and cannot be selected.
 - [ ] **Treasury** → **Deploy Sponsor** opens **Deploy Governance** launchpad (pick Ext or combined hats path from there).
 - [ ] When gov exists and sponsor missing: primary card **Deploy squad sponsor** (hats path via the same wizard).
 - [ ] When sponsor exists but Pacto Gov is missing: Launchpad offers **Deploy Pacto Gov** recovery.

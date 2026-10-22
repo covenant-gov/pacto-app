@@ -82,6 +82,27 @@ export function hasSquadAdminInfra(rows: SquadInfraDto[] | undefined): boolean {
   return resolveSquadAdminContext(rows) != null;
 }
 
+/** Dashboard state for a squad whose only governance infra is a standalone Squad Admin. */
+export interface StandaloneSquadAdminState {
+  proxy: string;
+  chain: string;
+  variant: 'ext_standalone' | 'captain_hat';
+}
+
+/** Non-null only for a dedicated `squad_admin` row with no `pacto_gov` row alongside it. */
+export function resolveStandaloneSquadAdminState(
+  rows: SquadInfraDto[] | undefined,
+): StandaloneSquadAdminState | null {
+  if (pactoGovInfraRow(rows) != null) return null;
+  const ctx = resolveSquadAdminContext(rows);
+  if (ctx?.source !== 'squad_admin') return null;
+  return {
+    proxy: ctx.proxy,
+    chain: ctx.chain,
+    variant: ctx.variant === 'captain_hat' ? 'captain_hat' : 'ext_standalone',
+  };
+}
+
 /** Settings is stack-agnostic: live Squad Admin first, then war-game fallback. */
 export function resolveSettingsPrivilegesAdmin(
   rows: SquadInfraDto[] | undefined,

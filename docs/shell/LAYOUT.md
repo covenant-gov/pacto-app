@@ -66,7 +66,8 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | Path | Role |
 |------|------|
 | `components/dm/DmMessageRouter.svelte` | Invite cards, wallet cards, plain `Message` |
-| `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + live Proposals board |
+| `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + live Proposals board; Squad Admin card when the squad has a standalone `squad_admin` row and no Pacto Gov |
+| `components/parent/dashboard/SquadAdminStatusCard.svelte` | Admin-only deployed state: variant copy, proxy (copy), network, CTA to Settings → Privileges |
 | `components/parent/dashboard/DashboardSettingsTab.svelte` | Squad photo, Join requests, Broadcast, Privileges (ACL / Squad Admin), Stickers, Primary/Practice networks, Chain RPC / Pimlico, Join-inbox holders — mounted from `#settings` |
 | `components/parent/dashboard/DashboardGovernanceTab.svelte` | All / Crew / Captain commands + Hats tree |
 | `components/parent/dashboard/DashboardRolesTreeTab.svelte` | Hats tree (mounted at the bottom of Governance) |
