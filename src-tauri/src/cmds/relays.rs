@@ -15,13 +15,51 @@ use lazy_static::lazy_static;
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::Mutex;
 
+/// Login generation whose live-subscription loop is running; `u64::MAX` means none.
+static NOTIFS_LOOP_GENERATION: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(u64::MAX);
+
+/// Claim the live-subscription loop for `generation`. `false` means a loop for the
+/// same login already owns it, so a second `notifs()` call must not open a duplicate
+/// subscription set and a second notification loop over the same relays.
+pub(crate) fn claim_notifs_loop(generation: u64) -> bool {
+    NOTIFS_LOOP_GENERATION.swap(generation, std::sync::atomic::Ordering::SeqCst) != generation
+}
+
+/// Release the claim when the loop ends, so a later call can restart it. A no-op
+/// once a newer login has taken the claim.
+pub(crate) fn release_notifs_loop(generation: u64) {
+    let _ = NOTIFS_LOOP_GENERATION.compare_exchange(
+        generation,
+        u64::MAX,
+        std::sync::atomic::Ordering::SeqCst,
+        std::sync::atomic::Ordering::SeqCst,
+    );
+}
+
 #[tauri::command]
 pub(crate) async fn notifs() -> Result<bool, String> {
+    let generation = current_login_generation();
+    if !claim_notifs_loop(generation) {
+        return Ok(true);
+    }
     let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Grab our pubkey
-    let signer = client.signer().await.map_err(|e| e.to_string())?;
-    let pubkey = signer.get_public_key().await.map_err(|e| e.to_string())?;
+    let signer = match client.signer().await {
+        Ok(signer) => signer,
+        Err(e) => {
+            release_notifs_loop(generation);
+            return Err(e.to_string());
+        }
+    };
+    let pubkey = match signer.get_public_key().await {
+        Ok(pubkey) => pubkey,
+        Err(e) => {
+            release_notifs_loop(generation);
+            return Err(e.to_string());
+        }
+    };
 
     // A login/startup race can call this before relay setup completes (the same class of bug
     // as the account-wide sync in `fetch_messages`). Give the pool a
@@ -49,15 +87,24 @@ pub(crate) async fn notifs() -> Result<bool, String> {
     // Subscribe to all three filters
     let gift_sub_id = match client.subscribe(giftwrap_filter, None).await {
         Ok(id) => id.val,
-        Err(e) => return Err(e.to_string()),
+        Err(e) => {
+            release_notifs_loop(generation);
+            return Err(e.to_string());
+        }
     };
     let mls_sub_id = match client.subscribe(mls_msg_filter, None).await {
         Ok(id) => id.val,
-        Err(e) => return Err(e.to_string()),
+        Err(e) => {
+            release_notifs_loop(generation);
+            return Err(e.to_string());
+        }
     };
     let commons_sub_id = match client.subscribe(commons_broadcast_filter, None).await {
         Ok(id) => id.val,
-        Err(e) => return Err(e.to_string()),
+        Err(e) => {
+            release_notifs_loop(generation);
+            return Err(e.to_string());
+        }
     };
 
     // Begin watching for notifications from our subscriptions
@@ -773,8 +820,14 @@ pub(crate) async fn notifs() -> Result<bool, String> {
         })
         .await
     {
-        Ok(_) => Ok(true),
-        Err(e) => Err(e.to_string()),
+        Ok(_) => {
+            release_notifs_loop(generation);
+            Ok(true)
+        }
+        Err(e) => {
+            release_notifs_loop(generation);
+            Err(e.to_string())
+        }
     }
 }
 
@@ -1103,6 +1156,56 @@ pub(crate) fn classify_relay_error(err: &nostr_sdk::pool::relay::Error) -> Relay
         RELAY_FAILURE_DETAIL_CAP,
     ));
     RelayFailure { code, detail }
+}
+
+#[cfg(test)]
+mod notifs_loop_claim_tests {
+    use super::{claim_notifs_loop, release_notifs_loop};
+
+    /// The claim is one process-wide static, so these cases must not interleave.
+    static CLAIM_TEST_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+    const GEN: u64 = 900_001;
+
+    #[test]
+    fn second_call_for_the_same_login_does_not_reclaim() {
+        let _guard = CLAIM_TEST_LOCK.lock();
+        assert!(claim_notifs_loop(GEN));
+        assert!(
+            !claim_notifs_loop(GEN),
+            "a repeat notifs() for the same login must not open a duplicate subscription set"
+        );
+        release_notifs_loop(GEN);
+    }
+
+    #[test]
+    fn a_new_login_reclaims_and_a_stale_release_cannot_free_it() {
+        let _guard = CLAIM_TEST_LOCK.lock();
+        assert!(claim_notifs_loop(GEN));
+        assert!(
+            claim_notifs_loop(GEN + 1),
+            "a new login must start its own loop"
+        );
+        // The previous loop unwinding must not free the current login's claim.
+        release_notifs_loop(GEN);
+        assert!(
+            !claim_notifs_loop(GEN + 1),
+            "the current login's claim must survive a stale loop's release"
+        );
+        release_notifs_loop(GEN + 1);
+    }
+
+    #[test]
+    fn release_allows_a_restart_after_the_loop_ends() {
+        let _guard = CLAIM_TEST_LOCK.lock();
+        assert!(claim_notifs_loop(GEN));
+        release_notifs_loop(GEN);
+        assert!(
+            claim_notifs_loop(GEN),
+            "a loop that ended must be restartable for the same login"
+        );
+        release_notifs_loop(GEN);
+    }
 }
 
 #[cfg(test)]

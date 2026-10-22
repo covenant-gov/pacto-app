@@ -6,7 +6,7 @@
 import { get } from 'svelte/store';
 import { connect as apiConnect } from '../api/auth';
 import { monitorRelayConnections } from '../api/relays';
-import { fetchMessages, loadNostrProfile, refreshProfileNow, syncMlsGroupsNow } from '../api/nostr';
+import { fetchMessages, loadNostrProfile, refreshProfileNow, startNotifs, syncMlsGroupsNow } from '../api/nostr';
 import { dmLog } from '../utils/dm-debug';
 import { dmSyncStatus } from '../../stores/dm';
 import { scheduleCommonsStartupPrefetch } from '../commons/commons-prefetch';
@@ -47,6 +47,13 @@ export function runPostLoginNetworkSync(npub: string): void {
     }
 
     monitorRelayConnections().catch((e) => console.error('monitor_relay_connections failed:', e));
+
+    // Live relay subscriptions are started here, not from the backend's `init_finished`
+    // event: that event can be emitted before the frontend listener is registered on a
+    // warm start, which left the session with no live DM/MLS/Commons delivery at all.
+    // `notifs` is idempotent per login, so a repeat call is a no-op.
+    dmLog('post-login: startNotifs()');
+    startNotifs().catch((e) => console.error('notifs failed:', e));
 
     dmLog('post-login: fetchMessages(true)');
     fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));

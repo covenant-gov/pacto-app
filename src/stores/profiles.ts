@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { listen } from '../lib/api';
-import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles } from '../lib/api/nostr';
+import { fetchNostrProfile, loadNostrProfile, syncAllProfiles } from '../lib/api/nostr';
 import type { NostrProfile } from '../lib/api/nostr';
 export type { NostrProfile };
 import { dmLog } from '../lib/utils/dm-debug';
@@ -120,10 +120,6 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
 
       // Queue all contacts for profile sync so names/PFPs fill in over time
       syncAllProfiles().catch((e) => console.error('sync_all_profiles failed:', e));
-
-      // Start live subscriptions so relays push new DMs/group messages
-      dmLog('init_finished: calling startNotifs()');
-      startNotifs().catch((e) => console.error('notifs failed:', e));
 
       // Clear initial sync banner (login or page load had set syncing; backend may not emit sync_finished for init-only).
       // Set lastCatchUpSuccess here too so the behind/stalled predicate doesn't drift stale

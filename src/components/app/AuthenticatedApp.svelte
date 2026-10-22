@@ -25,6 +25,7 @@
     sendFileBytes,
     queueProfileSync,
     fetchMessages,
+    startNotifs,
     markAsRead,
     setNickname,
     syncMlsGroupsNow,
@@ -893,6 +894,7 @@
     if ($isAuthenticated && !hasRunPostLoginNetworkSyncThisSession) {
       dmLog('onMount: authenticated without a prior post-login sync, calling fetchMessages(true)');
       dmSyncStatus.set('syncing');
+      startNotifs().catch((e) => dmError('onMount: startNotifs() failed', e));
       fetchMessages(true).catch((e) => dmError('onMount: fetchMessages(true) failed', e));
       clearUngroupedChannels();
     }
