@@ -76,7 +76,7 @@ After this change, `make` lists the available targets, `cargo check` is clean fo
 
 ## Evidence
 
-UI changes always need screenshots in a `## Demo` section above the badge. For other observable behavior (CLI output, workflow output, generated artifacts), ask whether to capture evidence. For internal plumbing, type-only changes, refactors, docs, or tests, skip the prompt and proceed without a Demo section.
+UI changes always need visual evidence in a `## Demo` section above the badge. Use screenshots, or `ce-demo-reel` when the change is a flow that reads better as a GIF. For other observable behavior (CLI output, workflow output, generated artifacts), ask whether to capture evidence. For internal plumbing, type-only changes, refactors, docs, or tests, skip the prompt and proceed without a Demo section.
 
 Host images in [`covenant-gov/pacto-pr-assets`](https://github.com/covenant-gov/pacto-pr-assets), never in this repo:
 
