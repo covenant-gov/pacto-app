@@ -4,6 +4,8 @@
   import MessageAttachment from './MessageAttachment.svelte';
   import LinkPreview from './LinkPreview.svelte';
   import MessageActionsMenu from './MessageActionsMenu.svelte';
+  import MessageEditForm from './MessageEditForm.svelte';
+  import MessageEditedLabel from './MessageEditedLabel.svelte';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { summarizeStructuredMessageContent } from '../../lib/messaging/structured-content-notice';
   import { aggregateReactions, isPendingReaction, pendingReactionSent } from '../../lib/messaging/reactions';
@@ -13,7 +15,7 @@
   import type { Mention } from '../../lib/messaging/mentions';
   import type { NostrProfile } from '../../lib/api/nostr';
   import { t } from 'svelte-i18n';
-  import type { Attachment, Reaction, PreviewMetadata, DmMessage } from '../../stores/dm';
+  import type { Attachment, Reaction, PreviewMetadata, DmMessage, EditEntry } from '../../stores/dm';
   import { observeLinkPreview } from '../../lib/messaging/link-preview-observer';
   import { webPreviewsEnabled } from '../../stores/web-previews';
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
@@ -48,6 +50,13 @@
     onReact?: (messageId: string, emoji: string) => void;
     onCopy?: (messageId: string, text: string) => void;
     onReply?: (messageId: string) => void;
+    /** Author replaced the original text. */
+    edited?: boolean;
+    editHistory?: EditEntry[] | null;
+    /** Unix ms until which the author may still edit; `null` when never editable. */
+    editableUntil?: number | null;
+    /** Send an edit of the displayed body; resolve `true` to close the editor. */
+    onEdit?: (messageId: string, newBody: string) => Promise<boolean>;
   }
 
   let {
@@ -75,6 +84,10 @@
     onReact = () => {},
     onCopy = () => {},
     onReply = () => {},
+    edited = false,
+    editHistory = null,
+    editableUntil = null,
+    onEdit = undefined,
   }: Props = $props();
 
   let displayContent = $derived(body || content);
@@ -86,6 +99,28 @@
       : undefined,
   );
   let structuredNotice = $derived(summarizeStructuredMessageContent(displayContent, $t));
+
+  let editing = $state(false);
+  /** Re-checked on each menu open so the action disappears once the window closes. */
+  let canEditNow = $state(false);
+
+  function editWindowOpen(): boolean {
+    return !!onEdit && !structuredNotice && editableUntil != null && Date.now() <= editableUntil;
+  }
+
+  function startEdit() {
+    closeMenu();
+    if (!editWindowOpen()) return;
+    editing = true;
+  }
+
+  async function saveEdit(newBody: string): Promise<boolean> {
+    if (!onEdit) return false;
+    const done = await onEdit(id, newBody);
+    if (done) editing = false;
+    return done;
+  }
+
   let aggregated = $derived(aggregateReactions(reactions ?? [], currentUserNpub ?? ''));
   /** Telegram-style reactions overlay onto the last attachment when it's an image/video tile; otherwise they sit in normal flow below the content. */
   let lastAttachmentIsTile = $derived.by(() => {
@@ -171,6 +206,7 @@
     menuY = y;
     pickerExpanded = false;
     emojiSearchQuery = '';
+    canEditNow = editWindowOpen();
     menuOpen = true;
     await clampPopover();
   }
@@ -417,10 +453,19 @@
     {/if}
     <div class="message-body">
       <div class="message-text">
-        {#if structuredNotice}
+        {#if editing}
+          <MessageEditForm
+            initialBody={displayContent}
+            onSave={saveEdit}
+            onCancel={() => (editing = false)}
+          />
+        {:else if structuredNotice}
           <span class="structured-notice">{structuredNotice}</span>
         {:else}
           <FormattedMessageBody content={displayContent} {mentions} {profiles} {rosterNpubs} />
+        {/if}
+        {#if edited && !editing}
+          <MessageEditedLabel messageId={id} {editHistory} />
         {/if}
       </div>
       {#if previewMetadata && $webPreviewsEnabled}
@@ -557,8 +602,10 @@
         <MessageActionsMenu
           messageId={id}
           text={displayContent}
+          canEdit={canEditNow}
           onCopy={handleMenuCopy}
           onReply={handleMenuReply}
+          onEdit={startEdit}
         />
       {:else}
         <div class="reaction-picker-expanded" role="dialog" aria-label={$t('messaging.message.chooseReactionAria')}>

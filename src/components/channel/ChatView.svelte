@@ -68,6 +68,8 @@
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { replyQuoteExcerpt } from '../../lib/utils/url-tracking';
   import { clearPendingReactions } from '../../lib/messaging/reactions';
+  import { editableUntil } from '../../lib/messaging/message-edit';
+  import { submitMessageEdit } from '../../lib/messaging/submit-message-edit';
   import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
@@ -206,6 +208,9 @@
       previewMetadata: msg.preview_metadata,
       pending: msg.pending,
       failed: msg.failed,
+      edited: msg.edited,
+      editHistory: msg.edit_history,
+      editableUntil: editableUntil(msg),
     };
     if (msg.mine) {
       base.authorName = tFn('messaging.message.authorYou');
@@ -850,6 +855,7 @@
                 {onReact}
                 {onCopy}
                 {onReply}
+                onEdit={(_id, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
                 compact={shouldStackChannelWithPrevious(
                   virtualTimelineMessages[i - 1],
                   message,

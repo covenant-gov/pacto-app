@@ -112,6 +112,7 @@ export const chatFixtures: Record<string, MockCommandHandler> = {
   get_message_views: () => [],
   replay_mls_automation_side_effects: () => undefined,
   message: () => true,
+  edit_message: () => 'edit-mock-id',
   create_group_chat: () => ({ groupId: 'group-mock-id', skippedMembers: [], pendingInvites: [] }),
   list_mls_groups: () => [],
   get_safe: () => null,

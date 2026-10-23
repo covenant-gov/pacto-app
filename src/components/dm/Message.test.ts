@@ -333,3 +333,104 @@ describe('Message copy', () => {
     expect(onCopy).toHaveBeenCalledWith('msg-copy', 'https://example.com/a?utm_source=nl&id=1');
   });
 });
+
+describe('Message editing', () => {
+  async function openMenu() {
+    await fireEvent.click(screen.getByRole('button', { name: 'Message options' }));
+  }
+
+  it('offers Edit inside the window and sends the new body on Enter', async () => {
+    const onEdit = vi.fn().mockResolvedValue(true);
+    render(Message, {
+      props: {
+        id: 'msg-edit',
+        authorName: 'You',
+        content: 'helo',
+        editableUntil: Date.now() + 30_000,
+        onEdit,
+      },
+    });
+
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    const input = screen.getByRole('textbox', { name: 'Edit message' }) as HTMLTextAreaElement;
+    expect(input.value).toBe('helo');
+
+    await fireEvent.input(input, { target: { value: 'hello' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onEdit).toHaveBeenCalledWith('msg-edit', 'hello');
+    await act(() => Promise.resolve());
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull();
+  });
+
+  it('cancels editing on Escape without sending', async () => {
+    const onEdit = vi.fn();
+    render(Message, {
+      props: { id: 'msg-esc', content: 'helo', editableUntil: Date.now() + 30_000, onEdit },
+    });
+
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    await fireEvent.keyDown(screen.getByRole('textbox', { name: 'Edit message' }), { key: 'Escape' });
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull();
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it('keeps the editor open when the edit fails', async () => {
+    const onEdit = vi.fn().mockResolvedValue(false);
+    render(Message, {
+      props: { id: 'msg-fail', content: 'helo', editableUntil: Date.now() + 30_000, onEdit },
+    });
+
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    const input = screen.getByRole('textbox', { name: 'Edit message' });
+    await fireEvent.input(input, { target: { value: 'hello' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await act(() => Promise.resolve());
+    expect(screen.getByRole('textbox', { name: 'Edit message' })).toBeTruthy();
+  });
+
+  it('hides Edit once the window has closed or for non-editable messages', async () => {
+    render(Message, {
+      props: { id: 'msg-old', content: 'old', editableUntil: Date.now() - 1, onEdit: vi.fn() },
+    });
+    await openMenu();
+    expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+    cleanup();
+
+    render(Message, { props: { id: 'msg-theirs', content: 'hi', editableUntil: null, onEdit: vi.fn() } });
+    await openMenu();
+    expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+  });
+
+  it('labels edited messages with the edit time and reveals history on demand', async () => {
+    const sentAt = new Date(2026, 9, 22, 15, 41, 10).getTime();
+    const editedAt = new Date(2026, 9, 22, 15, 41, 40).getTime();
+    render(Message, {
+      props: {
+        id: 'msg-edited',
+        content: 'hello',
+        edited: true,
+        editHistory: [
+          { content: 'helo', edited_at: sentAt },
+          { content: 'hello', edited_at: editedAt },
+        ],
+      },
+    });
+
+    const label = screen.getByRole('button', { name: '(edited 3:41 PM)' });
+    expect(label.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('helo')).toBeNull();
+
+    await fireEvent.click(label);
+    expect(label.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('helo')).toBeTruthy();
+    expect(screen.getByText('Original · 3:41 PM')).toBeTruthy();
+  });
+
+  it('shows no edited label on unedited messages', () => {
+    render(Message, { props: { id: 'msg-plain', content: 'hello' } });
+    expect(screen.queryByText(/\(edited/)).toBeNull();
+  });
+});
