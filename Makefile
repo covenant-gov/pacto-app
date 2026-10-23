@@ -1,4 +1,4 @@
-.PHONY: help install relay-free-harness-seed dev dev-isolated dev-sandbox dev-sandbox-fresh dev-sandbox-pair dev-sandbox-seeded dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
+.PHONY: help install relay-free-harness-seed dev dev-isolated dev-sandbox dev-sandbox-fresh dev-sandbox-pair dev-sandbox-seeded dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean clean-cargo sweep-cargo distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
@@ -37,6 +37,8 @@ help:
 	@echo "  release-symbol-check  verify release binary has no debug-only symbols"
 	@echo ""
 	@echo "  clean        remove build artifacts and caches"
+	@echo "  clean-cargo  remove only the Rust target dir (keeps sandboxes and node_modules)"
+	@echo "  sweep-cargo  drop Rust artifacts unused for CARGO_SWEEP_DAYS days (default 7; needs cargo-sweep)"
 	@echo "  distclean    deep clean, including node_modules and Cargo targets"
 	@echo "  tauri-info   print Tauri environment diagnostics"
 	@echo "  signer-key   generate a new Tauri updater signing key"
@@ -278,6 +280,15 @@ release-symbol-check:
 clean:
 	rm -rf build build-agent test-results test_sandbox
 	cd src-tauri && cargo clean
+
+# Debug builds leave every superseded fingerprint behind, so the target dir
+# grows without bound. See docs/build/CARGO_TARGETS.md.
+clean-cargo:
+	./scripts/cargo-target-clean.sh clean
+
+CARGO_SWEEP_DAYS ?= 7
+sweep-cargo:
+	./scripts/cargo-target-clean.sh sweep $(CARGO_SWEEP_DAYS)
 
 distclean: clean
 	rm -rf node_modules
