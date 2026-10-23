@@ -186,17 +186,12 @@ impl Message {
     }
 
     /// Whether an inbound edit came from this message's author inside the edit window.
-    pub fn accepts_edit(&self, edit_mine: bool, edit_npub: Option<&str>, edited_at: u64) -> bool {
+    /// `dm_peer` is the other party when the message lives in a DM, `None` in a group.
+    pub fn accepts_edit(&self, dm_peer: Option<&str>, edit: EditAuthor, edited_at: u64) -> bool {
+        let original = EditAuthor::of_original(self.mine, self.npub.as_deref(), dm_peer);
         self.attachments.is_empty()
             && self.rumor_kind.is_none()
-            && edit_is_authorized(
-                self.mine,
-                self.npub.as_deref(),
-                self.at,
-                edit_mine,
-                edit_npub,
-                edited_at,
-            )
+            && edit_is_authorized(original, self.at, edit, edited_at)
     }
 
     /// Apply an edit to this message, updating content and tracking history
@@ -498,29 +493,49 @@ pub const EDIT_WINDOW_SECS: u64 = 60;
 /// Error returned when an edit arrives after the edit window closed.
 pub const EDIT_WINDOW_CLOSED_ERROR: &str = "edit window closed";
 
-/// Whether an edit may replace a message's content: same author, and stamped
-/// no later than `EDIT_WINDOW_SECS` after the message (second granularity, so
-/// the in-memory and SQLite paths agree). DM rows carry no sender npub; the
-/// caller scopes those to the conversation.
-pub fn edit_is_authorized(
-    msg_mine: bool,
-    msg_npub: Option<&str>,
-    msg_at_ms: u64,
-    edit_mine: bool,
-    edit_npub: Option<&str>,
-    edited_at_ms: u64,
-) -> bool {
-    if msg_mine != edit_mine {
-        return false;
-    }
-    if !msg_mine {
-        if let Some(author) = msg_npub {
-            if edit_npub != Some(author) {
-                return false;
-            }
+/// Who wrote a message or an edit, as far as this device can verify.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EditAuthor<'a> {
+    Me,
+    Peer(&'a str),
+    Unknown,
+}
+
+impl<'a> EditAuthor<'a> {
+    /// Author of a stored or in-memory message. A row with no sender npub falls
+    /// back to `dm_peer` (set only for DMs); in a group it stays `Unknown`.
+    pub fn of_original(mine: bool, npub: Option<&'a str>, dm_peer: Option<&'a str>) -> Self {
+        match (mine, npub.or(dm_peer)) {
+            (true, _) => Self::Me,
+            (false, Some(npub)) => Self::Peer(npub),
+            (false, None) => Self::Unknown,
         }
     }
-    edited_at_ms / 1000 <= msg_at_ms / 1000 + EDIT_WINDOW_SECS
+
+    /// Author of an inbound edit rumor.
+    pub fn of_edit(mine: bool, npub: Option<&'a str>) -> Self {
+        Self::of_original(mine, npub, None)
+    }
+}
+
+/// Whether an edit may replace a message's content: same verified author, and
+/// stamped between the message's own second and `EDIT_WINDOW_SECS` after it
+/// (second granularity, so the in-memory and SQLite paths agree). Both stamps
+/// come from the author's clock.
+pub fn edit_is_authorized(
+    original: EditAuthor,
+    original_at_ms: u64,
+    edit: EditAuthor,
+    edited_at_ms: u64,
+) -> bool {
+    use EditAuthor::*;
+    let same_author = match (original, edit) {
+        (Me, Me) => true,
+        (Peer(a), Peer(b)) => a == b,
+        _ => false,
+    };
+    let (msg_secs, edit_secs) = (original_at_ms / 1000, edited_at_ms / 1000);
+    same_author && (msg_secs..=msg_secs + EDIT_WINDOW_SECS).contains(&edit_secs)
 }
 
 /// Checks the local user may edit `msg` to `new_content` at `now_ms`.
@@ -534,7 +549,8 @@ fn validate_own_edit(msg: &Message, new_content: &str, now_ms: u64) -> Result<()
     if new_content.trim().is_empty() {
         return Err("Edited message cannot be empty".to_string());
     }
-    if !edit_is_authorized(true, None, msg.at, true, None, now_ms) {
+    let original = EditAuthor::of_original(msg.mine, msg.npub.as_deref(), None);
+    if !edit_is_authorized(original, msg.at, EditAuthor::Me, now_ms) {
         return Err(EDIT_WINDOW_CLOSED_ERROR.to_string());
     }
     Ok(())
@@ -543,6 +559,7 @@ fn validate_own_edit(msg: &Message, new_content: &str, now_ms: u64) -> Result<()
 #[cfg(test)]
 mod edit_authorization_tests {
     use super::*;
+    use EditAuthor::{Me, Peer, Unknown};
 
     const AT: u64 = 1_700_000_000_250;
     const ALICE: &str = "npub1alice";
@@ -558,79 +575,95 @@ mod edit_authorization_tests {
         }
     }
 
-    #[test]
-    fn author_inside_window_is_accepted() {
-        assert!(edit_is_authorized(true, None, AT, true, None, AT + 59_000));
-        assert!(edit_is_authorized(
-            false,
-            Some(ALICE),
-            AT,
-            false,
-            Some(ALICE),
-            AT + 60_000
-        ));
+    fn their_text(npub: Option<&str>) -> Message {
+        Message {
+            mine: false,
+            npub: npub.map(str::to_string),
+            ..own_text(AT)
+        }
     }
 
     #[test]
-    fn edit_after_window_is_rejected() {
-        assert!(!edit_is_authorized(true, None, AT, true, None, AT + 61_000));
+    fn same_author_rule_over_all_pairs() {
+        let cases = [
+            (Me, Me, true),
+            (Me, Peer(MALLORY), false),
+            (Me, Unknown, false),
+            (Peer(ALICE), Peer(ALICE), true),
+            (Peer(ALICE), Peer(MALLORY), false),
+            (Peer(ALICE), Me, false),
+            (Peer(ALICE), Unknown, false),
+            (Unknown, Peer(ALICE), false),
+            (Unknown, Me, false),
+            (Unknown, Unknown, false),
+        ];
+        for (original, edit, expected) in cases {
+            assert_eq!(
+                edit_is_authorized(original, AT, edit, AT + 1_000),
+                expected,
+                "{original:?} edited by {edit:?}"
+            );
+        }
     }
 
     #[test]
-    fn non_author_is_rejected() {
-        // Someone else editing my message.
-        assert!(!edit_is_authorized(
-            true,
-            None,
-            AT,
-            false,
-            Some(MALLORY),
-            AT + 1_000
-        ));
-        // Me editing someone else's message.
-        assert!(!edit_is_authorized(
-            false,
-            Some(ALICE),
-            AT,
-            true,
-            None,
-            AT + 1_000
-        ));
-        // A third group member editing Alice's message.
-        assert!(!edit_is_authorized(
-            false,
-            Some(ALICE),
-            AT,
-            false,
-            Some(MALLORY),
-            AT + 1_000
-        ));
-        assert!(!edit_is_authorized(
-            false,
-            Some(ALICE),
-            AT,
-            false,
-            None,
-            AT + 1_000
-        ));
+    fn original_author_resolution() {
+        let cases = [
+            ((true, None, None), Me),
+            ((true, Some(ALICE), Some(ALICE)), Me),
+            ((false, Some(ALICE), None), Peer(ALICE)),
+            ((false, Some(ALICE), Some(MALLORY)), Peer(ALICE)),
+            // DM row with no stored sender: the peer.
+            ((false, None, Some(ALICE)), Peer(ALICE)),
+            // Group row with no stored sender: unverifiable.
+            ((false, None, None), Unknown),
+        ];
+        for ((mine, npub, dm_peer), expected) in cases {
+            assert_eq!(EditAuthor::of_original(mine, npub, dm_peer), expected);
+        }
+        assert_eq!(EditAuthor::of_edit(true, None), Me);
+        assert_eq!(EditAuthor::of_edit(false, Some(ALICE)), Peer(ALICE));
+        assert_eq!(EditAuthor::of_edit(false, None), Unknown);
     }
 
     #[test]
-    fn dm_peer_without_stored_npub_is_accepted() {
-        assert!(edit_is_authorized(
-            false,
-            None,
-            AT,
-            false,
-            Some(ALICE),
-            AT + 1_000
-        ));
+    fn window_bounds() {
+        let cases = [
+            // Same second as the original, even if earlier in it.
+            (AT - 250, true),
+            (AT + 59_000, true),
+            (AT + 60_000, true),
+            (AT + 61_000, false),
+            // Dated before the original.
+            (AT - 1_000, false),
+            (AT - 30_000, false),
+            (0, false),
+        ];
+        for (edited_at, expected) in cases {
+            assert_eq!(edit_is_authorized(Me, AT, Me, edited_at), expected);
+            assert_eq!(
+                edit_is_authorized(Peer(ALICE), AT, Peer(ALICE), edited_at),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_edit_scopes_null_author_to_dm_peer() {
+        let at = AT + 1_000;
+        let legacy = their_text(None);
+        assert!(legacy.accepts_edit(Some(ALICE), Peer(ALICE), at));
+        assert!(!legacy.accepts_edit(Some(ALICE), Peer(MALLORY), at));
+        assert!(!legacy.accepts_edit(None, Peer(MALLORY), at));
+        assert!(!legacy.accepts_edit(None, Peer(ALICE), at));
+        assert!(!their_text(Some(ALICE)).accepts_edit(None, Peer(MALLORY), at));
     }
 
     #[test]
     fn accepts_edit_then_apply_tracks_history() {
         let mut msg = own_text(AT);
-        assert!(msg.accepts_edit(true, None, AT + 5_000));
+        assert!(msg.accepts_edit(None, Me, AT + 5_000));
+        assert!(!msg.accepts_edit(None, Me, AT - 5_000));
         msg.apply_edit("hello".to_string(), AT + 5_000);
         assert!(msg.edited);
         assert_eq!(msg.content, "hello");

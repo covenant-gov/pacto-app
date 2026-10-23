@@ -60,7 +60,7 @@ Entry points include **`message`** (text), **`file_message`**, **`voice_message`
 
 ### Edits
 
-Kind **16** rumors reference the original with an `e` tag and ride the same transport as text (gift wrap or MLS). Only the author may edit, and only within **`EDIT_WINDOW_SECS`** (60 s) of the original's timestamp; `edit_message` rejects later edits, and every receive path (live DM, live MLS, sync, and SQLite materialization in `get_message_views` / reply previews) drops edits from anyone else, from another chat, or stamped after the window. History stays on the message (`edit_history`) and is shown only on request.
+Kind **16** rumors reference the original with an `e` tag and ride the same transport as text (gift wrap or MLS). Only the author may edit, and only with an edit stamped no earlier than the original and within **`EDIT_WINDOW_SECS`** (60 s) of it; `edit_message` rejects later edits, and every receive path (live DM, live MLS, sync, and SQLite materialization in `get_message_views` / reply previews) drops edits from anyone else, from another chat, or stamped outside the window. A row with no stored sender npub (older group rows can lack one) is editable only by the peer of a DM; in a group it accepts no edits from others. Both stamps are the author's own `created_at`, so the window is not enforced against receive time. History stays on the message (`edit_history`) and is shown only on request.
 
 ### In-memory state
 

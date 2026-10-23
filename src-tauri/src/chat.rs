@@ -1,3 +1,4 @@
+use crate::message::EditAuthor;
 use crate::Message;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -59,6 +60,19 @@ impl Chat {
     /// Get a mutable message by ID
     pub fn get_message_mut(&mut self, id: &str) -> Option<&mut Message> {
         self.messages.iter_mut().find(|msg| msg.id == id)
+    }
+
+    /// The message an inbound edit targets, if that edit is authorized to change it.
+    pub fn edit_target_mut(
+        &mut self,
+        message_id: &str,
+        edit: EditAuthor,
+        edited_at: u64,
+    ) -> Option<&mut Message> {
+        // DM chats are keyed by the peer's npub.
+        let dm_peer = matches!(self.chat_type, ChatType::DirectMessage).then(|| self.id.clone());
+        self.get_message_mut(message_id)
+            .filter(|m| m.accepts_edit(dm_peer.as_deref(), edit, edited_at))
     }
 
     /// Set the Last Received message as the "Last Read" message
@@ -682,5 +696,62 @@ mod tests {
         assert_eq!(reloaded_again.notification_level, NotificationLevel::All);
 
         crate::account_manager::close_db_connection();
+    }
+
+    /// Someone else's text message with no stored author, as V7-migrated rows can be.
+    fn null_author_text(at: u64) -> Message {
+        Message {
+            id: "m".to_string(),
+            content: "original".to_string(),
+            at,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn edit_target_in_dm_accepts_only_the_peer() {
+        let peer = "npub1peer";
+        let mut chat = Chat::new_dm(peer.to_string());
+        chat.messages.push(null_author_text(10_000));
+
+        assert!(chat
+            .edit_target_mut("m", EditAuthor::Peer("npub1mallory"), 11_000)
+            .is_none());
+        assert!(chat
+            .edit_target_mut("m", EditAuthor::Peer(peer), 11_000)
+            .is_some());
+    }
+
+    #[test]
+    fn edit_target_in_group_rejects_null_author_rows() {
+        let mut chat = Chat::new_mls_group("group".to_string(), vec![]);
+        chat.messages.push(null_author_text(10_000));
+
+        assert!(chat
+            .edit_target_mut("m", EditAuthor::Peer("npub1mallory"), 11_000)
+            .is_none());
+        assert!(chat
+            .edit_target_mut("m", EditAuthor::Peer("npub1alice"), 11_000)
+            .is_none());
+    }
+
+    #[test]
+    fn edit_target_rejects_edits_dated_before_the_message() {
+        let author = "npub1alice";
+        let mut chat = Chat::new_mls_group("group".to_string(), vec![]);
+        chat.messages.push(Message {
+            npub: Some(author.to_string()),
+            ..null_author_text(10_000)
+        });
+
+        assert!(chat
+            .edit_target_mut("m", EditAuthor::Peer(author), 9_000)
+            .is_none());
+        assert!(chat
+            .edit_target_mut("m", EditAuthor::Peer(author), 71_000)
+            .is_none());
+        assert!(chat
+            .edit_target_mut("m", EditAuthor::Peer(author), 70_000)
+            .is_some());
     }
 }

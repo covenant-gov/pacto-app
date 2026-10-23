@@ -8456,25 +8456,43 @@ struct ReplyContext {
 }
 
 /// Edits newest-first for the given message ids, keeping only those that pass
-/// the same author/chat/window checks as `stored_edit_is_authorized`.
+/// the same author/chat/window checks as `stored_edit_is_authorized`. The author
+/// CASE mirrors `EditAuthor::of_original` and the match in `edit_is_authorized`.
 fn latest_authorized_edits_sql(placeholders: &str) -> String {
     format!(
         r#"
         SELECT e.reference_id, e.content
         FROM events e
         JOIN events m ON m.id = e.reference_id
+        JOIN chats c ON c.id = m.chat_id
         WHERE e.kind = {edit_kind} AND e.reference_id IN ({placeholders})
           AND m.kind = {text_kind}
           AND e.chat_id = m.chat_id
-          AND e.mine = m.mine
-          AND (m.mine = 1 OR m.npub IS NULL OR m.npub = e.npub)
-          AND e.created_at <= m.created_at + {window}
+          AND CASE
+                WHEN m.mine = 1 THEN e.mine = 1
+                ELSE e.mine = 0 AND e.npub = COALESCE(
+                  m.npub,
+                  CASE WHEN c.chat_type = {dm_type} THEN c.chat_identifier END
+                )
+              END
+          AND e.created_at BETWEEN m.created_at AND m.created_at + {window}
         ORDER BY e.created_at DESC
         "#,
         edit_kind = event_kind::MESSAGE_EDIT,
         text_kind = event_kind::PRIVATE_DIRECT_MESSAGE,
+        dm_type = crate::chat::ChatType::DirectMessage.to_i32(),
         window = crate::message::EDIT_WINDOW_SECS,
     )
+}
+
+/// The peer npub when `chat_id` is a DM (DM chats are keyed by it), `None` otherwise.
+fn dm_peer_for_chat(conn: &rusqlite::Connection, chat_id: i64) -> Option<String> {
+    conn.query_row(
+        "SELECT chat_identifier FROM chats WHERE id = ?1 AND chat_type = ?2",
+        rusqlite::params![chat_id, crate::chat::ChatType::DirectMessage.to_i32()],
+        |row| row.get(0),
+    )
+    .ok()
 }
 
 #[cfg(test)]
@@ -8599,6 +8617,17 @@ mod edit_authorization_sql_tests {
             false,
             Some("npub1alice"),
         );
+        insert(
+            &conn,
+            "e-early",
+            edit,
+            1,
+            Some("alice-msg"),
+            "predated",
+            T - 1,
+            false,
+            Some("npub1alice"),
+        );
 
         insert(&conn, "my-msg", text, 1, None, "draft", T, true, None);
         insert(
@@ -8625,14 +8654,81 @@ mod edit_authorization_sql_tests {
     }
 
     #[test]
+    fn null_author_fallback_applies_only_to_the_dm_peer() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES ('npub1peer', 0, '[\"npub1peer\"]', 0)",
+            [],
+        )
+        .expect("dm");
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES ('abcdef01', 1, '[]', 0)",
+            [],
+        )
+        .expect("group");
+        let text = event_kind::PRIVATE_DIRECT_MESSAGE;
+        let edit = event_kind::MESSAGE_EDIT;
+
+        // DM row with no stored sender: only the peer may edit it.
+        insert(&conn, "dm-msg", text, 1, None, "hi", T, false, None);
+        insert(
+            &conn,
+            "dm-peer",
+            edit,
+            1,
+            Some("dm-msg"),
+            "hello",
+            T + 5,
+            false,
+            Some("npub1peer"),
+        );
+        insert(
+            &conn,
+            "dm-other",
+            edit,
+            1,
+            Some("dm-msg"),
+            "pwned",
+            T + 10,
+            false,
+            Some("npub1mallory"),
+        );
+
+        // Group row with no stored sender: no member can prove authorship.
+        insert(&conn, "grp-msg", text, 2, None, "hi", T, false, None);
+        insert(
+            &conn,
+            "grp-other",
+            edit,
+            2,
+            Some("grp-msg"),
+            "pwned",
+            T + 5,
+            false,
+            Some("npub1mallory"),
+        );
+
+        assert_eq!(dm_peer_for_chat(&conn, 1).as_deref(), Some("npub1peer"));
+        assert_eq!(dm_peer_for_chat(&conn, 2), None);
+
+        let mut rows = latest_edits(&conn, &["dm-msg", "grp-msg"]);
+        rows.sort();
+        assert_eq!(rows, vec![("dm-msg".to_string(), "hello".to_string())]);
+    }
+
+    #[test]
     fn stored_edit_check_matches_sql_rules() {
-        let original = StoredEventBuilder::new()
-            .id("m".to_string())
-            .kind(event_kind::PRIVATE_DIRECT_MESSAGE)
-            .created_at(T as u64)
-            .mine(false)
-            .npub(Some("npub1alice".to_string()))
-            .build();
+        let stored = |npub: Option<&str>| {
+            StoredEventBuilder::new()
+                .id("m".to_string())
+                .kind(event_kind::PRIVATE_DIRECT_MESSAGE)
+                .created_at(T as u64)
+                .mine(false)
+                .npub(npub.map(str::to_string))
+                .build()
+        };
+        let original = stored(Some("npub1alice"));
         let edit = |npub: &str, chat_id: i64| {
             let mut e = StoredEventBuilder::new()
                 .id("e".to_string())
@@ -8644,26 +8740,57 @@ mod edit_authorization_sql_tests {
             e.chat_id = chat_id;
             e
         };
+        let chat = original.chat_id;
         let at = (T as u64 + 5) * 1000;
         assert!(stored_edit_is_authorized(
             &original,
-            &edit("npub1alice", original.chat_id),
+            &edit("npub1alice", chat),
+            None,
             at
         ));
         assert!(!stored_edit_is_authorized(
             &original,
-            &edit("npub1mallory", original.chat_id),
+            &edit("npub1mallory", chat),
+            None,
             at
         ));
         assert!(!stored_edit_is_authorized(
             &original,
-            &edit("npub1alice", original.chat_id + 1),
+            &edit("npub1alice", chat + 1),
+            None,
             at
         ));
         assert!(!stored_edit_is_authorized(
             &original,
-            &edit("npub1alice", original.chat_id),
+            &edit("npub1alice", chat),
+            None,
             (T as u64 + 61) * 1000
+        ));
+        assert!(!stored_edit_is_authorized(
+            &original,
+            &edit("npub1alice", chat),
+            None,
+            (T as u64 - 1) * 1000
+        ));
+
+        let legacy = stored(None);
+        assert!(stored_edit_is_authorized(
+            &legacy,
+            &edit("npub1alice", chat),
+            Some("npub1alice"),
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &legacy,
+            &edit("npub1mallory", chat),
+            Some("npub1alice"),
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &legacy,
+            &edit("npub1mallory", chat),
+            None,
+            at
         ));
     }
 }
@@ -9196,22 +9323,146 @@ mod reply_context_fallback_tests {
 }
 
 /// Whether a stored edit may replace `original`: a text message in the same chat,
-/// edited by its author inside the edit window.
+/// edited by its author inside the edit window. `dm_peer` is set when the chat is a DM.
 fn stored_edit_is_authorized(
     original: &StoredEvent,
     edit: &StoredEvent,
+    dm_peer: Option<&str>,
     edited_at_ms: u64,
 ) -> bool {
+    use crate::message::{edit_is_authorized, EditAuthor};
     original.kind == event_kind::PRIVATE_DIRECT_MESSAGE
         && original.chat_id == edit.chat_id
-        && crate::message::edit_is_authorized(
-            original.mine,
-            original.npub.as_deref(),
+        && edit_is_authorized(
+            EditAuthor::of_original(original.mine, original.npub.as_deref(), dm_peer),
             original.timestamp_ms(),
-            edit.mine,
-            edit.npub.as_deref(),
+            EditAuthor::of_edit(edit.mine, edit.npub.as_deref()),
             edited_at_ms,
         )
+}
+
+#[cfg(test)]
+mod edit_reconstruction_tests {
+    use super::*;
+    use crate::stored_event::StoredEventBuilder;
+
+    const T: u64 = 1_700_000_000;
+
+    async fn save_edit<R: Runtime>(
+        handle: &AppHandle<R>,
+        chat_id: i64,
+        id: &str,
+        target: &str,
+        npub: &str,
+        content: &str,
+        created_at: u64,
+    ) {
+        let mut edit = StoredEventBuilder::new()
+            .id(id.to_string())
+            .kind(event_kind::MESSAGE_EDIT)
+            .content(content.to_string())
+            .reference_id(Some(target.to_string()))
+            .created_at(created_at)
+            .mine(false)
+            .npub(Some(npub.to_string()))
+            .build();
+        edit.chat_id = chat_id;
+        save_event(handle, &edit).await.unwrap();
+    }
+
+    /// Rebuilds history from SQLite: a null-author group row ignores every member's
+    /// edit, a null-author DM row takes only the peer's, and predated or late edits
+    /// are dropped, in both the timeline and reply previews.
+    #[tokio::test]
+    async fn stored_edits_obey_author_and_window_rules() {
+        let test_npub = "npub1editreconstructionaccount";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let profile_dir = crate::account_manager::get_profile_directory(handle, test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+        let db_path = crate::account_manager::get_database_path(handle, test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+        crate::set_encryption_key([7u8; 32]);
+
+        let original = |id: &str| Message {
+            id: id.to_string(),
+            content: "original".to_string(),
+            at: T * 1000,
+            ..Default::default()
+        };
+
+        let group = "0e4d7c1f00ed17ec0457";
+        save_message(handle.clone(), group, &original("grp-msg"))
+            .await
+            .unwrap();
+        let group_id = get_chat_id_by_identifier(handle, group).unwrap();
+        save_edit(
+            handle,
+            group_id,
+            "grp-e1",
+            "grp-msg",
+            "npub1mallory",
+            "pwned",
+            T + 5,
+        )
+        .await;
+
+        let peer = "npub1editreconstructionpeer";
+        save_message(handle.clone(), peer, &original("dm-msg"))
+            .await
+            .unwrap();
+        let dm_id = get_chat_id_by_identifier(handle, peer).unwrap();
+        save_edit(handle, dm_id, "dm-e1", "dm-msg", peer, "fixed", T + 5).await;
+        save_edit(
+            handle,
+            dm_id,
+            "dm-e2",
+            "dm-msg",
+            "npub1mallory",
+            "pwned",
+            T + 6,
+        )
+        .await;
+        save_edit(handle, dm_id, "dm-e3", "dm-msg", peer, "predated", T - 5).await;
+        save_edit(handle, dm_id, "dm-e4", "dm-msg", peer, "late", T + 61).await;
+
+        let group_view = get_message_views(handle, group_id, 50, 0, None)
+            .await
+            .unwrap();
+        assert_eq!(group_view.len(), 1);
+        assert_eq!(group_view[0].content, "original");
+        assert!(!group_view[0].edited);
+
+        let dm_view = get_message_views(handle, dm_id, 50, 0, None).await.unwrap();
+        assert_eq!(dm_view.len(), 1);
+        assert_eq!(dm_view[0].content, "fixed");
+        let history: Vec<&str> = dm_view[0]
+            .edit_history
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|e| e.content.as_str())
+            .collect();
+        assert_eq!(history, vec!["original", "fixed"]);
+
+        for (target, expected) in [("grp-msg", "original"), ("dm-msg", "fixed")] {
+            let mut reply = Message {
+                id: format!("reply-{target}"),
+                replied_to: target.to_string(),
+                mine: true,
+                ..Default::default()
+            };
+            populate_reply_context(handle, &mut reply).await.unwrap();
+            assert_eq!(reply.replied_to_content.as_deref(), Some(expected));
+        }
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
 }
 
 /// Get message events with their reactions composed (materialized view)
@@ -9258,6 +9509,12 @@ pub async fn get_message_views<R: Runtime>(
     // Step 2: Get related events (reactions, edits) for these messages
     let message_ids: Vec<String> = message_events.iter().map(|e| e.id.clone()).collect();
     let related_events = get_related_events(handle, &message_ids).await?;
+    let dm_peer = {
+        let conn = crate::account_manager::get_db_connection(handle)?;
+        let peer = dm_peer_for_chat(&conn, chat_id);
+        crate::account_manager::return_db_connection(conn);
+        peer
+    };
 
     // Group reactions and edits by message ID
     let mut reactions_by_msg: HashMap<String, Vec<Reaction>> = HashMap::new();
@@ -9283,7 +9540,12 @@ pub async fn get_message_views<R: Runtime>(
                     let Some(original) = message_events.iter().find(|m| &m.id == ref_id) else {
                         continue;
                     };
-                    if !stored_edit_is_authorized(original, &event, timestamp_ms) {
+                    if !stored_edit_is_authorized(
+                        original,
+                        &event,
+                        dm_peer.as_deref(),
+                        timestamp_ms,
+                    ) {
                         continue;
                     }
                     // Edit content is encrypted, decrypt it here

@@ -652,9 +652,7 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                                                                 // Update message in state and emit to frontend
                                                                 let mut state = crate::STATE.lock().await;
                                                                 if let Some(chat) = state.get_chat_mut(&group_id_for_persist) {
-                                                                    if let Some(msg) = chat.get_message_mut(&message_id).filter(|m| {
-                                                                        m.accepts_edit(edit_mine, edit_npub.as_deref(), edited_at)
-                                                                    }) {
+                                                                    if let Some(msg) = chat.edit_target_mut(&message_id, crate::message::EditAuthor::of_edit(edit_mine, edit_npub.as_deref()), edited_at) {
                                                                         msg.apply_edit(new_content, edited_at);
 
                                                                         // Emit update to frontend
