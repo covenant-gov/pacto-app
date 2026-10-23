@@ -9,7 +9,8 @@ risk:ci:
           - '.github/**'
           - 'Dockerfile.ci'
 
-# .npmrc is not tracked today; adding one can redirect the package registry.
+# Some of these files are not tracked today. Adding one can redirect a package
+# registry or run code during install, so creation is flagged too.
 risk:dependencies:
   - changed-files:
       - any-glob-to-any-file:
@@ -19,8 +20,10 @@ risk:dependencies:
           - 'landing/package.json'
           - 'src-tauri/Cargo.toml'
           - 'src-tauri/Cargo.lock'
-          - '.cargo/**'
-          - '.npmrc'
+          - '**/.cargo/**'
+          - '**/.npmrc'
+          - '.pnpmfile.cjs'
+          - '**/rust-toolchain*'
 
 risk:build-scripts:
   - changed-files:
@@ -31,12 +34,17 @@ risk:build-scripts:
           - 'cliff.toml'
           - 'vite.config*.ts'
           - 'svelte.config.js'
+          - 'eslint.config.js'
+          - 'playwright.config.ts'
+          - 'landing/astro.config.mjs'
+          - 'src-tauri/.config/**'
+          - '.beads/hooks/**'
 
 risk:agent-instructions:
   - changed-files:
       - any-glob-to-any-file:
-          - 'AGENTS.md'
-          - 'CLAUDE.md'
+          - '**/AGENTS.md'
+          - '**/CLAUDE.md'
           - '.agents/**'
           - '.claude/**'
           - '.codex/**'
