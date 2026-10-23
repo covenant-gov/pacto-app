@@ -4,6 +4,7 @@ import {
   profiles,
   profileLoadingStates,
   loadProfile,
+  startProfileLoad,
   getProfile,
   isProfileLoading,
   mergeInitProfiles,
@@ -156,6 +157,33 @@ describe('profiles', () => {
     expect(loadNostrProfile).toHaveBeenCalledTimes(2);
     expect(result).toEqual(baseProfile);
     vi.useRealTimers();
+  });
+
+  it('signals requested once the relay Kind 0 request is sent, before it answers', async () => {
+    const emptyShell: NostrProfile = { ...baseProfile, name: '', display_name: '', avatar: '' };
+    const relayLoad = Promise.withResolvers<boolean>();
+    vi.mocked(fetchNostrProfile)
+      .mockResolvedValueOnce(emptyShell)
+      .mockResolvedValueOnce(baseProfile);
+    vi.mocked(loadNostrProfile).mockReturnValue(relayLoad.promise);
+
+    const load = startProfileLoad(npub);
+    expect(loadNostrProfile).not.toHaveBeenCalled();
+    await load.requested;
+    expect(loadNostrProfile).toHaveBeenCalledWith(npub);
+
+    relayLoad.resolve(true);
+    await expect(load.profile).resolves.toEqual(baseProfile);
+  });
+
+  it('signals requested without a relay request when the cache already has the profile', async () => {
+    vi.mocked(fetchNostrProfile).mockResolvedValue(baseProfile);
+
+    const load = startProfileLoad(npub);
+    await load.requested;
+
+    await expect(load.profile).resolves.toEqual(baseProfile);
+    expect(loadNostrProfile).not.toHaveBeenCalled();
   });
 
   it('shares one in-flight restore across concurrent callers and tracks loading', async () => {

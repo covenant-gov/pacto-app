@@ -567,162 +567,195 @@ async fn wait_for_connected_relay(client: &Client) {
     }
 }
 
+/// Kind 0 is applied and emitted as soon as it arrives; the status update finishes in
+/// the background so a slow status REQ never holds the caller.
 #[tauri::command]
 pub async fn load_profile(npub: String) -> bool {
+    let (loaded, status) = load_profile_metadata(&npub).await;
+    if let Some(status) = status {
+        tokio::spawn(apply_fetched_status(npub, status));
+    }
+    loaded
+}
+
+/// Like `load_profile`, but also waits for the status update. The profile sync queue
+/// uses this so its per-profile pacing still covers both REQs.
+pub async fn load_profile_and_status(npub: String) -> bool {
+    let (loaded, status) = load_profile_metadata(&npub).await;
+    if let Some(status) = status {
+        apply_fetched_status(npub, status).await;
+    }
+    loaded
+}
+
+/// Fetches and applies Kind 0. Returns the still-running status fetch alongside the result.
+async fn load_profile_metadata(
+    npub: &str,
+) -> (bool, Option<tokio::task::JoinHandle<Option<Status>>>) {
     let client = match get_nostr_client() {
         Ok(c) => c,
-        Err(_) => return false,
+        Err(_) => return (false, None),
     };
 
     // Convert the Bech32 String in to a PublicKey
-    let profile_pubkey = match PublicKey::from_bech32(npub.as_str()) {
+    let profile_pubkey = match PublicKey::from_bech32(npub) {
         Ok(pk) => pk,
-        Err(_) => return false,
+        Err(_) => return (false, None),
     };
 
     // Grab our pubkey to check for profiles belonging to us
     let signer = match client.signer().await {
         Ok(s) => s,
-        Err(_) => return false,
+        Err(_) => return (false, None),
     };
     let my_public_key = match signer.get_public_key().await {
         Ok(pk) => pk,
-        Err(_) => return false,
+        Err(_) => return (false, None),
     };
 
-    // Fetch immutable copies of our updateable profile parts (or, quickly generate a new one to pass to the fetching logic)
-    let old_status: Status;
+    // Check whether we already hold metadata (or, quickly generate a new profile to pass to the fetching logic)
     let lacks_metadata: bool;
     {
         let mut state = STATE.lock().await;
-        match state.get_profile(&npub) {
+        match state.get_profile(npub) {
             Some(p) => {
                 lacks_metadata = !p.has_public_metadata();
-                old_status = p.status.clone();
             }
             None => {
                 let mut new_profile = Profile::new();
-                new_profile.id = npub.clone();
+                new_profile.id = npub.to_string();
                 state.profiles.push(new_profile);
                 lacks_metadata = true;
-                old_status = Status::new();
             }
         }
     }
 
     wait_for_connected_relay(&client).await;
 
-    // Status and Kind 0 run concurrently so a slow status REQ never delays name/avatar.
-    let status_filter = Filter::new()
-        .author(profile_pubkey)
-        .kind(Kind::from_u16(30315))
-        .limit(1);
-    let status_fetch = client.fetch_events(status_filter, std::time::Duration::from_secs(15));
+    // Status runs alongside Kind 0 but is applied only after it, so it never delays name/avatar.
+    let status_client = client.clone();
+    let status_fetch = tokio::spawn(async move {
+        let status_filter = Filter::new()
+            .author(profile_pubkey)
+            .kind(Kind::from_u16(30315))
+            .limit(1);
+        status_client
+            .fetch_events(status_filter, std::time::Duration::from_secs(15))
+            .await
+            .ok()
+            .and_then(|events| events.first().map(status_from_event))
+    });
 
     // Empty profiles get a per-relay Kind 0 scan. Profiles that already have
     // a name or avatar keep the single pooled refresh.
-    let metadata_fetch = async {
-        if lacks_metadata {
-            let hits = fetch_kind0_per_relay(&client, profile_pubkey).await;
-            Ok(nip01_kind0_winner(&hits).map(|hit| hit.metadata.clone()))
-        } else {
-            client
-                .fetch_metadata(profile_pubkey, std::time::Duration::from_secs(15))
-                .await
-                .map_err(|e| e.to_string())
-        }
+    let fetch_result = if lacks_metadata {
+        let hits = fetch_kind0_per_relay(&client, profile_pubkey).await;
+        Ok(nip01_kind0_winner(&hits).map(|hit| hit.metadata.clone()))
+    } else {
+        client
+            .fetch_metadata(profile_pubkey, std::time::Duration::from_secs(15))
+            .await
+            .map_err(|e| e.to_string())
     };
 
-    let (status_result, fetch_result) = tokio::join!(status_fetch, metadata_fetch);
+    let loaded = match fetch_result {
+        Ok(Some(meta)) => {
+            let (metadata_changed, profile_clone, avatar_url, banner_url) = {
+                let mut state = STATE.lock().await;
+                let profile_mutable = state.get_profile_mut(npub).unwrap();
+                profile_mutable.mine = my_public_key == profile_pubkey;
 
-    let status = match status_result {
-        Ok(res) => {
-            // Make sure they have a status available
-            if !res.is_empty() {
-                let status_event = res.first().unwrap();
-                // Simple status recognition: last, general-only, no URLs, Metadata or Expiry considered
-                // TODO: comply with expiries, accept more "d" types, allow URLs
-                Status {
-                    title: status_event.content.clone(),
-                    purpose: status_event
-                        .tags
-                        .first()
-                        .unwrap()
-                        .content()
-                        .unwrap()
-                        .to_string(),
-                    url: String::from(""),
-                }
-            } else {
-                // Relays didn't find anything? We'll ignore this and use our previous status
-                old_status
+                let metadata_changed = profile_mutable.apply_kind0_replacement(&meta);
+
+                profile_mutable.last_updated = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                (
+                    metadata_changed,
+                    profile_mutable.clone(),
+                    profile_mutable.avatar.clone(),
+                    profile_mutable.banner.clone(),
+                )
+            };
+
+            if metadata_changed {
+                let handle = TAURI_APP.get().unwrap();
+                handle.emit("profile_update", &profile_clone).unwrap();
+
+                db::set_profile(handle.clone(), profile_clone)
+                    .await
+                    .unwrap();
+
+                let npub_clone = npub.to_string();
+                tokio::spawn(async move {
+                    cache_profile_images(&npub_clone, &avatar_url, &banner_url).await;
+                });
             }
+            true
         }
-        Err(_) => old_status,
-    };
-
-    match fetch_result {
-        Ok(meta) => {
-            if meta.is_some() {
-                let (status_changed, metadata_changed, profile_clone, avatar_url, banner_url) = {
-                    let mut state = STATE.lock().await;
-                    let profile_mutable = state.get_profile_mut(&npub).unwrap();
-                    profile_mutable.mine = my_public_key == profile_pubkey;
-
-                    let status_changed = profile_mutable.status != status;
-                    profile_mutable.status = status;
-
-                    let metadata_changed = profile_mutable.apply_kind0_replacement(&meta.unwrap());
-
-                    profile_mutable.last_updated = std::time::SystemTime::now()
+        Ok(None) => {
+            // No Kind 0 on relays this attempt. Do not stamp last_updated while
+            // the profile is still empty — that would demote Critical retries
+            // (e.g. own profile after reinstall before metadata is visible).
+            let mut state = STATE.lock().await;
+            if let Some(profile) = state.get_profile_mut(npub) {
+                if profile.has_public_metadata() {
+                    profile.last_updated = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-
-                    (
-                        status_changed,
-                        metadata_changed,
-                        profile_mutable.clone(),
-                        profile_mutable.avatar.clone(),
-                        profile_mutable.banner.clone(),
-                    )
-                };
-
-                if status_changed || metadata_changed {
-                    let handle = TAURI_APP.get().unwrap();
-                    handle.emit("profile_update", &profile_clone).unwrap();
-
-                    db::set_profile(handle.clone(), profile_clone)
-                        .await
-                        .unwrap();
-
-                    let npub_clone = npub.clone();
-                    tokio::spawn(async move {
-                        cache_profile_images(&npub_clone, &avatar_url, &banner_url).await;
-                    });
                 }
-                return true;
-            } else {
-                // No Kind 0 on relays this attempt. Do not stamp last_updated while
-                // the profile is still empty — that would demote Critical retries
-                // (e.g. own profile after reinstall before metadata is visible).
-                let mut state = STATE.lock().await;
-                if let Some(profile) = state.get_profile_mut(&npub) {
-                    if profile.has_public_metadata() {
-                        profile.last_updated = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs();
-                    }
-                }
-                return true;
             }
+            true
         }
-        Err(_) => {
-            // Network/relay error - this is a genuine failure
-            return false;
-        }
+        // Network/relay error - this is a genuine failure
+        Err(_) => false,
+    };
+
+    (loaded, Some(status_fetch))
+}
+
+/// Simple status recognition: last, general-only, no URLs, Metadata or Expiry considered
+// TODO: comply with expiries, accept more "d" types, allow URLs
+fn status_from_event(event: &Event) -> Status {
+    Status {
+        title: event.content.clone(),
+        purpose: event
+            .tags
+            .first()
+            .and_then(|tag| tag.content())
+            .unwrap_or_default()
+            .to_string(),
+        url: String::new(),
     }
+}
+
+/// Applies a fetched status to a profile that has Kind 0 metadata. A missing status
+/// keeps the previous one.
+async fn apply_fetched_status(npub: String, status_fetch: tokio::task::JoinHandle<Option<Status>>) {
+    let Ok(Some(status)) = status_fetch.await else {
+        return;
+    };
+
+    let profile_clone = {
+        let mut state = STATE.lock().await;
+        let Some(profile) = state.get_profile_mut(&npub) else {
+            return;
+        };
+        if !profile.has_public_metadata() || profile.status == status {
+            return;
+        }
+        profile.status = status;
+        profile.clone()
+    };
+
+    let handle = TAURI_APP.get().unwrap();
+    handle.emit("profile_update", &profile_clone).unwrap();
+    db::set_profile(handle.clone(), profile_clone)
+        .await
+        .unwrap();
 }
 
 /// Serialize Kind 0 metadata and strip any `evm_address` (not published on relays).
@@ -1567,6 +1600,35 @@ mod kind0_evm_tests {
         let json = kind0_metadata_json_without_evm(&contaminated).unwrap();
         assert!(!json.contains("evm_address"));
         assert!(json.contains("alice"));
+    }
+}
+
+#[cfg(test)]
+mod status_event_tests {
+    use super::status_from_event;
+    use crate::nostr_tags;
+    use nostr_sdk::prelude::*;
+
+    #[test]
+    fn reads_title_and_purpose_from_status_event() {
+        let keys = Keys::generate();
+        let event = EventBuilder::new(Kind::from_u16(30315), "in a meeting")
+            .tag(nostr_tags::d_tag(vec!["general"]))
+            .sign_with_keys(&keys)
+            .unwrap();
+        let status = status_from_event(&event);
+        assert_eq!(status.title, "in a meeting");
+        assert_eq!(status.purpose, "general");
+        assert_eq!(status.url, "");
+    }
+
+    #[test]
+    fn untagged_status_event_does_not_panic() {
+        let keys = Keys::generate();
+        let event = EventBuilder::new(Kind::from_u16(30315), "hi")
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(status_from_event(&event).purpose, "");
     }
 }
 
