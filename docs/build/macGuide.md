@@ -125,6 +125,7 @@ pnpm dev
 ```
 
 - The first `pnpm run tauri:dev` can take several minutes because Cargo downloads and compiles Rust dependencies.
+- Debug builds never delete superseded artifacts, so `src-tauri/target` grows by tens of GB over weeks. Reclaim it with `make sweep-cargo` or `make clean-cargo`; see [CARGO_TARGETS.md](./CARGO_TARGETS.md).
 
 ## Troubleshooting
 

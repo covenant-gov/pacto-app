@@ -121,6 +121,10 @@ pnpm test:coverage:serve
 
 # Rust backend tests
 cd src-tauri && cargo test
+
+# Reclaim disk from src-tauri/target (docs/build/CARGO_TARGETS.md)
+make sweep-cargo   # drop artifacts unused for 7 days; needs cargo-sweep
+make clean-cargo   # wipe the target dir; keeps sandboxes
 ```
 
 ## Code Conventions & Common Patterns
