@@ -23,6 +23,7 @@
   import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
   import EditIconButton from '../ui/EditIconButton.svelte';
   import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
+  import { featureEnabled } from '../../stores/feature-flags';
 
   interface Props {
     accountNpub?: string | null;
@@ -51,6 +52,9 @@
     onAddAdvanced = () => {},
     onImportKey = () => {},
   }: Props = $props();
+
+  // Creating advanced keys is opt-in; accounts that already exist are always listed.
+  const advancedAccountsEnabled = featureEnabled('advanced_evm_accounts');
 
   let bindings: EvmAccountSquadBinding[] = $state([]);
   let bindingsLoading = $state(false);
@@ -153,7 +157,7 @@
       >
         {embeddedInSettings ? $t('wallet.addSquadAccount') : $t('wallet.addNewAccount')}
       </button>
-      {#if !embeddedInSettings}
+      {#if !embeddedInSettings && $advancedAccountsEnabled}
         <button
           type="button"
           class="wallet-view-btn wallet-view-btn-secondary"
@@ -348,30 +352,32 @@
     </ul>
   {/if}
 
-  {#if embeddedInSettings}
+  {#if embeddedInSettings && ($advancedAccountsEnabled || advancedList.length > 0)}
     <div class="evm-advanced-actions">
       <h3 class="evm-advanced-actions-title">{$t('wallet.advancedEvmAccountsTitle')}</h3>
       <p class="wallet-view-hint evm-advanced-actions-hint">
         {$t('wallet.advancedEvmAccountsHint')}
       </p>
-      <div class="wallet-view-account-actions">
-        <button
-          type="button"
-          class="wallet-view-btn wallet-view-btn-secondary"
-          disabled={!evmAddress}
-          onclick={onAddAdvanced}
-        >
-          {$t('wallet.addAdvancedAccount')}
-        </button>
-        <button
-          type="button"
-          class="wallet-view-btn wallet-view-btn-secondary"
-          disabled={!evmAddress}
-          onclick={onImportKey}
-        >
-          {$t('wallet.importPrivateKey')}
-        </button>
-      </div>
+      {#if $advancedAccountsEnabled}
+        <div class="wallet-view-account-actions">
+          <button
+            type="button"
+            class="wallet-view-btn wallet-view-btn-secondary"
+            disabled={!evmAddress}
+            onclick={onAddAdvanced}
+          >
+            {$t('wallet.addAdvancedAccount')}
+          </button>
+          <button
+            type="button"
+            class="wallet-view-btn wallet-view-btn-secondary"
+            disabled={!evmAddress}
+            onclick={onImportKey}
+          >
+            {$t('wallet.importPrivateKey')}
+          </button>
+        </div>
+      {/if}
       {#if advancedList.length > 0}
         <ul class="wallet-view-account-list evm-advanced-list">
           {#each advancedList as acc (acc.id)}
