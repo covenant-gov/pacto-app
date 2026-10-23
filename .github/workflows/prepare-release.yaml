@@ -18,6 +18,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: read
 
 jobs:
   prepare-release:
@@ -45,7 +46,7 @@ jobs:
       - name: install git-cliff
         uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff
+          tool: git-cliff@2.14.2
 
       - name: install Tauri system dependencies (ubuntu)
         run: |
@@ -53,6 +54,8 @@ jobs:
           sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libvulkan-dev libxdo-dev libssl-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libasound2-dev xdg-utils glslc
 
       - name: bump version, changelog, checks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/bump-version.sh "${{ inputs.bump }}" --no-commit
 
       - name: read bumped version

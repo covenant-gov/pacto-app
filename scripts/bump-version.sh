@@ -91,8 +91,9 @@ if [[ "$NEW_PKG" != "$VERSION" || "$NEW_CARGO" != "$VERSION" || "$NEW_TAURI" != 
   exit 1
 fi
 
-# Regenerate changelog
-pnpm changelog
+# Regenerate changelog; --tag titles the new section before the tag exists.
+node scripts/changelog.mjs --tag "$TAG" --output CHANGELOG.md
+./scripts/post-process-changelog.sh
 
 # Install dependencies with the new version
 pnpm install

@@ -17,16 +17,33 @@ body = """{% if version %}\
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group | upper_first }}
 {% for commit in commits -%}
-- {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | upper_first }}{% if commit.scope %} ({{ commit.scope }}){% endif %}
+- {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | split(pat="\n") | first | trim | upper_first }}\
+{% if commit.scope %} ({{ commit.scope }}){% endif %}\
+{% if commit.remote and commit.remote.pr_number %} (#{{ commit.remote.pr_number }}){% endif %}\
+{% if commit.remote and commit.remote.pr_author %} by @{{ commit.remote.pr_author }}\
+{% elif commit.remote and commit.remote.username %} by @{{ commit.remote.username }}{% endif %}\
+{% if commit.extra and commit.extra.closes %}, closes {% for issue in commit.extra.closes %}{{ issue }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
 {% endfor %}
 {% endfor %}"""
+
+[remote.github]
+owner = "covenant-gov"
+repo = "pacto-app"
 
 [git]
 conventional_commits = true
 filter_unconventional = false
 split_commits = false
 
+commit_preprocessors = [
+    # A PR merge commit carries the PR title on its third line; use it as the subject.
+    { pattern = '(?s)^Merge pull request #\d+ from \S+\n\n([^\n]*).*', replace = "${1}" },
+    # The PR number is rendered from remote data, so drop the squash-merge suffix.
+    { pattern = '^([^\n]*?)\s*\(#\d+\)(\n|$)', replace = "${1}${2}" },
+]
+
 commit_parsers = [
+    { message = "^chore\\(release\\)", skip = true },
     { message = "^Merge", skip = true },
     { message = "^merge", skip = true },
     { message = "^feat", group = "Features" },
