@@ -56,6 +56,8 @@
     /** When set, replaces the default `Message #{channelName}` placeholder (e.g. blocked peer). */
     placeholderOverride?: string;
     onSend?: (content: string, repliedTo?: string) => void;
+    /** Open the last editable message; true means the shortcut was handled. */
+    onEditLast?: () => boolean;
     /** Optional: called for squad channels with a body + mention list so the caller can build the envelope. */
     onSendMentions?: (body: string, mentions: Mention[], repliedTo?: string) => void;
     /** Optional: called with the bytes of a pending file attachment when the user sends it. */
@@ -85,6 +87,7 @@
     channelName = "",
     placeholderOverride,
     onSend = () => {},
+    onEditLast,
     onSendMentions,
     onSendFile,
     onSendGif,
@@ -478,8 +481,23 @@
     }
   }
 
+  export function focus() {
+    textareaEl?.focus();
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (disabled) return;
+    if (
+      event.key === 'ArrowUp' && !event.isComposing &&
+      !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey &&
+      messageText.length === 0 && !mentionPickerOpen &&
+      !repliedTo && !$pendingFilePreview && !isSendingAttachment &&
+      onEditLast?.()
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();

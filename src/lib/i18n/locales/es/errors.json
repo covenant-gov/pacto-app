@@ -4,6 +4,8 @@
 	"errors.migrationGate": "Desbloquea para actualizar la seguridad de la cuenta.",
 	"errors.dm.attachmentFailed": "No se pudo enviar el adjunto",
 	"errors.dm.copyFailed": "No se pudo copiar el mensaje",
+	"errors.dm.editFailed": "No se pudo editar el mensaje",
+	"errors.dm.editWindowClosed": "Los mensajes solo se pueden editar durante 1 minuto después de enviarlos",
 	"errors.dm.copyUnavailable": "Copiar no está disponible en este dispositivo",
 	"errors.dm.gifFailed": "No se pudo enviar el GIF",
 	"errors.dm.invalidNpub": "Ingresa un npub válido (comienza con npub1).",

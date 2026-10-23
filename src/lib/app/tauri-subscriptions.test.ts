@@ -502,6 +502,30 @@ describe('subscribeAppEvents', () => {
       expect(list[0].id).toBe('new1');
     });
 
+    it('keeps edited flag and history on DM and group edits', () => {
+      const history = [
+        { content: 'helo', edited_at: 2000 },
+        { content: 'hello', edited_at: 9000 },
+      ];
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_update', {
+        chat_id: 'npub1chat',
+        old_id: 'm1',
+        message: { ...dmMessage({ id: 'm1', at: 2000, content: 'hello' }), edited: true, edit_history: history },
+      });
+      emit('message_update', {
+        chat_id: 'group1',
+        old_id: 'g1',
+        message: { ...dmMessage({ id: 'g1', at: 2000, content: 'hello' }), edited: true, edit_history: history },
+      });
+      const dm = mocks.mockStores.backendDmMessages.get()['npub1chat']![0];
+      expect(dm.edited).toBe(true);
+      expect(dm.edit_history).toEqual(history);
+      const group = mocks.mockStores.backendGroupMessages.get()['group1']![0];
+      expect(group.edited).toBe(true);
+      expect(group.edit_history).toEqual(history);
+    });
+
     it('updates hasFromThem on peer message_update so Pending can become Friends', () => {
       mocks.mockStores.dmChatsByNpub.set({
         npub1chat: {

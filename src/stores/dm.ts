@@ -233,6 +233,12 @@ export interface PreviewMetadata {
   favicon_cached?: string | null;
 }
 
+export interface EditEntry {
+  content: string;
+  /** Unix ms when this version was written; the first entry is the original send. */
+  edited_at: number;
+}
+
 export interface DmMessage {
   id: string;
   content: string;
@@ -250,6 +256,10 @@ export interface DmMessage {
   attachments?: Attachment[];
   reactions?: Reaction[];
   preview_metadata?: PreviewMetadata | null;
+  /** True once the author replaced the original text. */
+  edited?: boolean;
+  /** Original + every edit, oldest first; present only when edited. */
+  edit_history?: EditEntry[] | null;
 }
 
 export interface DmChatSnapshot {

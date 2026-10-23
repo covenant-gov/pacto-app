@@ -319,6 +319,23 @@ export async function reactToMessage(
   return ok;
 }
 
+/**
+ * Replace the text of one of your own messages (DM npub or MLS group id as `chatId`).
+ * The update arrives through `message_update`. Backend: edit_message.
+ */
+export async function editMessage(
+  messageId: string,
+  chatId: string,
+  newContent: string
+): Promise<string> {
+  dmLog('edit_message', {
+    messageId: messageId.slice(0, 12),
+    chatId: chatId.slice(0, 20) + '…',
+    contentLen: newContent.length,
+  });
+  return (await invoke('edit_message', { messageId, chatId, newContent })) as string;
+}
+
 /** Fetch OpenGraph/link-preview metadata for a message containing a URL. Backend: fetch_msg_metadata. */
 export async function fetchMsgMetadata(chatId: string, msgId: string, urls: string[]): Promise<boolean> {
   dmLog('fetch_msg_metadata', { chatId: chatId.slice(0, 20) + '…', msgId: msgId.slice(0, 12) });

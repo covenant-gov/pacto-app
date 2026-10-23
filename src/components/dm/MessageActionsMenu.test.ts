@@ -31,4 +31,19 @@ describe('MessageActionsMenu', () => {
     expect(onReply).toHaveBeenCalledTimes(1);
     expect(onReply).toHaveBeenCalledWith('msg-3');
   });
+
+  it('hides Edit unless the message is editable', () => {
+    render(MessageActionsMenu, { props: { messageId: 'msg-4', text: 'hi' } });
+    expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+  });
+
+  it('calls onEdit with message id when Edit is shown', async () => {
+    const onEdit = vi.fn();
+    render(MessageActionsMenu, {
+      props: { messageId: 'msg-5', text: 'hi', canEdit: true, onEdit },
+    });
+
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    expect(onEdit).toHaveBeenCalledWith('msg-5');
+  });
 });

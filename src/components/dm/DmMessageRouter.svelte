@@ -35,6 +35,8 @@
   import { reactToMessage } from '../../lib/api/nostr';
   import { requestSquadRejoinForInvite } from '../../lib/squad/squad-rejoin';
   import { clearPendingReactions } from '../../lib/messaging/reactions';
+  import { editableUntil, type MessageEditRequest } from '../../lib/messaging/message-edit';
+  import { submitMessageEdit } from '../../lib/messaging/submit-message-edit';
 
   interface Props {
     msg: DmMessage;
@@ -65,6 +67,7 @@
     onReply?: (messageId: string) => void;
     /** Nest under previous same-author plain message (hide avatar/header). */
     compact?: boolean;
+    editRequest?: MessageEditRequest | null;
   }
 
   let {
@@ -82,6 +85,7 @@
     onOpenInviterChat,
     onReply = () => {},
     compact = false,
+    editRequest = null,
   }: Props = $props();
 
   let presentation = $derived(resolveDmMessagePresentation(msg));
@@ -248,6 +252,11 @@
     profiles={$profiles}
     currentUserNpub={$currentUser?.npub}
     chatId={npub}
+    edited={msg.edited}
+    editHistory={msg.edit_history}
+    editableUntil={editableUntil(msg)}
+    {editRequest}
+    onEdit={(_id, body) => submitMessageEdit(npub, msg, body)}
     {onReact}
     {onCopy}
     {onReply}

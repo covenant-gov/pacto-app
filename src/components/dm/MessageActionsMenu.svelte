@@ -1,14 +1,25 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import Pencil from '@lucide/svelte/icons/pencil';
 
   interface Props {
     messageId: string;
     text?: string;
+    /** Show the Edit action (own text message still inside the edit window). */
+    canEdit?: boolean;
     onCopy?: (messageId: string, text: string) => void;
     onReply?: (messageId: string) => void;
+    onEdit?: (messageId: string) => void;
   }
 
-  let { messageId, text = '', onCopy = () => {}, onReply = () => {} }: Props = $props();
+  let {
+    messageId,
+    text = '',
+    canEdit = false,
+    onCopy = () => {},
+    onReply = () => {},
+    onEdit = () => {},
+  }: Props = $props();
 </script>
 
 <div class="message-actions-menu" role="group" aria-label={$t('messaging.message.actionsAria')}>
@@ -43,6 +54,21 @@
     </span>
     <span class="menu-label">{$t('messaging.message.reply')}</span>
   </button>
+  {#if canEdit}
+    <button
+      type="button"
+      class="menu-item"
+      role="menuitem"
+      aria-label={$t('messaging.message.edit')}
+      title={$t('messaging.message.edit')}
+      onclick={() => onEdit(messageId)}
+    >
+      <span class="menu-icon" aria-hidden="true">
+        <Pencil size={18} />
+      </span>
+      <span class="menu-label">{$t('messaging.message.edit')}</span>
+    </button>
+  {/if}
 </div>
 
 <style>

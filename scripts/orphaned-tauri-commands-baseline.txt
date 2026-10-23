@@ -28,7 +28,6 @@ clear_storage
 debug_hot_reload_sync
 delete_whisper_model
 download_whisper_model
-edit_message
 evict_chat_messages
 file_message
 file_message_compressed

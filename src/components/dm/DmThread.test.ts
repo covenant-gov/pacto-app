@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import DmThread from './DmThread.svelte';
 import type { DmMessage } from '../../stores/dm';
+import { invoke } from '@tauri-apps/api/core';
 
 vi.mock('../../icons/smile-face.svg', () => ({ default: '/smile-face.svg' }));
 vi.mock('../../icons/attachment.svg', () => ({ default: '/attachment.svg' }));
@@ -176,5 +177,58 @@ describe('DmThread scroll-to-bottom effect', () => {
     await waitFor(() => {
       expect(metrics.scrollTop).toBe(800);
     });
+  });
+});
+
+
+describe('DmThread Up Arrow editing', () => {
+  it('opens the latest eligible own text, focuses it and returns focus on cancel', async () => {
+    render(DmThread, { props: { npub: 'npub1peer', messages: [
+      makeMessage({ id: 'own', content: 'last eligible', mine: true, at: Date.now() - 2000 }),
+      makeMessage({ id: 'older', content: 'older own', mine: true, at: Date.now() - 10000 }),
+      makeMessage({ id: 'pending', content: 'pending own', mine: true, pending: true }),
+      makeMessage({ id: 'theirs', content: 'incoming' }),
+    ] } });
+    const composer = screen.getByPlaceholderText(/Message #/);
+    composer.focus();
+    await fireEvent.keyDown(composer, { key: 'ArrowUp' });
+    const editor = await screen.findByRole('textbox', { name: 'Edit message' });
+    expect((editor as HTMLTextAreaElement).value).toBe('last eligible');
+    await waitFor(() => expect(document.activeElement).toBe(editor));
+    await fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(composer));
+    await fireEvent.keyDown(composer, { key: 'ArrowUp' });
+    expect(await screen.findByRole('textbox', { name: 'Edit message' })).toBeTruthy();
+  });
+
+  it('saves a shortcut edit through the existing edit command and restores composer focus', async () => {
+    vi.mocked(invoke).mockResolvedValue('edit-id');
+    const onSend = vi.fn();
+    render(DmThread, { props: { npub: 'npub1peer', messages: [makeMessage({ id: 'own', content: 'typo', mine: true })], onSend } });
+    const composer = screen.getByPlaceholderText(/Message #/);
+    await fireEvent.keyDown(composer, { key: 'ArrowUp' });
+    const editor = await screen.findByRole('textbox', { name: 'Edit message' });
+    await fireEvent.input(editor, { target: { value: 'fixed' } });
+    await fireEvent.keyDown(editor, { key: 'Enter' });
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('edit_message', { messageId: 'own', chatId: 'npub1peer', newContent: 'fixed' }));
+    await waitFor(() => expect(document.activeElement).toBe(composer));
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('does not edit expired messages or keep a shortcut editor across a conversation switch', async () => {
+    const { rerender } = render(DmThread, { props: { npub: 'npub1peer', messages: [
+      makeMessage({ id: 'own', content: 'old text', mine: true, at: Date.now() - 120000 }),
+    ] } });
+    await fireEvent.keyDown(screen.getByPlaceholderText(/Message #/), { key: 'ArrowUp' });
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull();
+    await rerender({ npub: 'npub1peer', messages: [makeMessage({ id: 'own', content: 'recent', mine: true })] });
+    await fireEvent.keyDown(screen.getByPlaceholderText(/Message #/), { key: 'ArrowUp' });
+    expect(await screen.findByRole('textbox', { name: 'Edit message' })).toBeTruthy();
+    await rerender({ npub: 'npub1other', messages: [makeMessage({ id: 'other-own', content: 'other chat', mine: true })] });
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull();
+    await fireEvent.keyDown(screen.getByPlaceholderText(/Message #/), { key: 'ArrowUp' });
+    expect((await screen.findByRole('textbox', { name: 'Edit message' }) as HTMLTextAreaElement).value).toBe('other chat');
   });
 });

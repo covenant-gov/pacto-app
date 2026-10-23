@@ -1,5 +1,7 @@
 <script lang="ts">
-  import MessageInput from './MessageInput.svelte';
+  import MessageShortcutComposer from './MessageShortcutComposer.svelte';
+  import type { MessageEditRequest } from '../../lib/messaging/message-edit';
+  import { resolveDmMessagePresentation } from '../../lib/dm/resolve-dm-message-presentation';
   import DmMessageRouter from './DmMessageRouter.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import {
@@ -121,6 +123,7 @@
     onMarkReadUpTo = () => {},
   }: Props = $props();
 
+  let editRequest: MessageEditRequest | null = $state(null);
   let replyToMessageId: string | null = $state(null);
   let replyPreview = $derived.by(() => {
     if (!replyToMessageId) return undefined;
@@ -660,9 +663,10 @@
         </div>
       {/if}
       {#if messages.length > 0}
-        {#each messages as msg, i (msg.id)}
+        {#each messages as msg, i (`${npub}:${msg.id}`)}
           <DmMessageRouter
             {msg}
+            editRequest={editRequest?.scope === npub && editRequest.messageId === msg.id ? editRequest : null}
             {npub}
             {contactDisplayName}
             threadMessages={messages}
@@ -709,7 +713,10 @@
   {#if $dmSendError}
     <p class="dm-thread-error" role="alert">{$dmSendError}</p>
   {/if}
-  <MessageInput
+  <MessageShortcutComposer
+    messages={messages.filter((msg) => resolveDmMessagePresentation(msg).kind === 'plain')}
+    scope={npub}
+    bind:editRequest
     channelName={truncateNpub(npub)}
     placeholderOverride={peerBlockedByMe ? $t('messaging.dm.thread.blockedPlaceholder', { values: { npub: truncateNpub(npub) } }) : undefined}
     disabled={peerBlockedByMe || chatDeleting}

@@ -203,15 +203,20 @@ impl StoredEvent {
     /// Get millisecond-precision timestamp
     /// Combines created_at (seconds) with "ms" tag if present
     pub fn timestamp_ms(&self) -> u64 {
-        if let Some(ms_str) = self.get_tag("ms") {
-            if let Ok(ms) = ms_str.parse::<u64>() {
-                if ms <= 999 {
-                    return self.created_at * 1000 + ms;
-                }
-            }
-        }
-        self.created_at * 1000
+        timestamp_ms_from_tags(self.created_at, &self.tags)
     }
+}
+
+/// Decode the existing optional millisecond tag consistently for stored views.
+pub fn timestamp_ms_from_tags(created_at: u64, tags: &[Vec<String>]) -> u64 {
+    let ms = tags
+        .iter()
+        .find(|tag| tag.first().is_some_and(|key| key == "ms"))
+        .and_then(|tag| tag.get(1))
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|ms| *ms <= 999)
+        .unwrap_or(0);
+    created_at * 1000 + ms
 }
 
 /// Get current timestamp in milliseconds
