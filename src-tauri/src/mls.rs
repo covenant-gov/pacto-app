@@ -2775,6 +2775,11 @@ impl MlsService {
                                 }
 
                                 if already_in_db || !was_added {
+                                    if let Some(handle) = TAURI_APP.get() {
+                                        let _ = crate::message::reconcile_message_edits(
+                                            handle, &chat_id, &msg.id,
+                                        ).await;
+                                    }
                                     continue;
                                 }
 
@@ -2806,8 +2811,10 @@ impl MlsService {
                                                 e
                                             );
                                         });
-                                    let _ = crate::db::save_message(handle.clone(), &chat_id, &msg)
-                                        .await;
+                                    let _ = crate::message::persist_message_and_reconcile_edits(
+                                        handle, &chat_id, &msg,
+                                    )
+                                    .await;
                                 }
                             }
                             RumorProcessingResult::Reaction(reaction) => {
@@ -2925,56 +2932,12 @@ impl MlsService {
                             RumorProcessingResult::Ignored => {
                                 // Rumor was ignored (e.g., expired typing indicator)
                             }
-                            RumorProcessingResult::Edit {
-                                message_id,
-                                new_content,
-                                edited_at,
-                                event,
-                            } => {
-                                let edit_mine = event.mine;
-                                let edit_npub = event.npub.clone();
-                                // Skip if this edit event was already processed (deduplication)
+                            RumorProcessingResult::Edit { event, .. } => {
                                 if let Some(handle) = TAURI_APP.get() {
-                                    if crate::db::event_exists(handle, &event.id).unwrap_or(false) {
-                                        continue; // Already processed, skip
-                                    }
-
-                                    // Save edit event to database
-                                    if let Ok(chat_int_id) =
-                                        crate::db::get_chat_id_by_identifier(handle, &chat_id)
-                                    {
-                                        let mut event_with_chat = event;
-                                        event_with_chat.chat_id = chat_int_id;
-                                        let _ =
-                                            crate::db::save_event(handle, &event_with_chat).await;
-                                    }
-                                }
-
-                                // Update message in state and emit to frontend
-                                let mut state = STATE.lock().await;
-                                if let Some(chat) = state.get_chat_mut(&chat_id) {
-                                    if let Some(msg) = chat.edit_target_mut(
-                                        &message_id,
-                                        crate::message::EditAuthor::of_edit(
-                                            edit_mine,
-                                            edit_npub.as_deref(),
-                                        ),
-                                        edited_at,
-                                    ) {
-                                        msg.apply_edit(new_content, edited_at);
-
-                                        // Emit update to frontend
-                                        if let Some(handle) = TAURI_APP.get() {
-                                            let _ = handle.emit(
-                                                "message_update",
-                                                serde_json::json!({
-                                                    "old_id": &message_id,
-                                                    "message": &msg,
-                                                    "chat_id": &chat_id
-                                                }),
-                                            );
-                                        }
-                                    }
+                                    let _ = crate::message::receive_message_edit(
+                                        handle, &chat_id, event,
+                                    )
+                                    .await;
                                 }
                             }
                         }
@@ -3573,10 +3536,8 @@ pub async fn send_mls_message(
                                 let msg_clone = msg.clone();
                                 drop(state);
                                 if let Some(handle) = TAURI_APP.get() {
-                                    let _ = crate::db::save_message(
-                                        handle.clone(),
-                                        &group_id,
-                                        &msg_clone,
+                                    let _ = crate::message::persist_message_and_reconcile_edits(
+                                        handle, &group_id, &msg_clone,
                                     )
                                     .await;
                                 }
