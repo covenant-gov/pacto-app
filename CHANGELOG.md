@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Accept quote-bearing preview urls and clear the typecheck
+- Dispatch publish after the release tag is created (ci)
+- Isolate the pending clipboard flag across parallel tests (export)
+- Unbreak ci by fixing the flag path and wiring clipboard clear (export)
+- Harden trusted-relay dm delivery and heal stuck pending threads (#402)
+- Autofocus composer when starting a reply
+- Require kind-0 relay acknowledgement and read-back before saving profile
+- Harden kind-0 relay proof against stale repair and cross-account merge
+- Keep dm threads pinned to the newest message
+- Stop polls hub badge from mirroring announcements unread
+- Restore squads after a local storage wipe
+- Harden squad-rejoin after storage wipe and isolate polls-hub badge from announcements unread
+- Stop rejoin retries from burning their budget and repaint restored members
+- Start live subscriptions from login, not a racy startup event (relays)
+
+
+### Chores
+- Bump astro from 7.1.6 to 7.2.8 (deps)
+- Bump proxy-addr from 2.0.7 to 2.0.8 (deps)
+- Bump devalue from 5.9.0 to 5.9.4 (deps)
+
+
+### Features
+- Strip tracking markers from message urls
+- Backend-mediated clipboard export and frontend export modals (export)
+- Show new broadcasts live instead of on a 60s poll (commons)
+- Surface standalone Squad Admin deploys on Status (dashboard)
+
+
+### Other
+- Verify and merge the homebrew cask bump automatically (release)
+- Address PR review feedback (#417)
+
+- relays.rs: make claim_notifs_loop a CAS loop that never replaces an
+  equal-or-newer owner (u64::MAX stays the free sentinel), so a stale
+  out-of-order notifs() cannot swap its generation back in; re-check the
+  captured login generation after the relay-pool wait before subscribing;
+  add an out-of-order stale-claim test.
+- post-login-sync.ts: retry startNotifs on relay_status_change=connected
+  when the first attempt fails, so a transient startup failure no longer
+  leaves the session with no live delivery; add a failure-then-recovery test.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+- Fix lint: use const for unlisten in startNotifsWithRetry (#417)
+
+The relay_status_change unlisten handle is assigned once, so eslint's
+prefer-const rejected the `let`. The callback only runs on later events,
+after assignment, so a const closes over it fine.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+
+### Refactor
+- Keep the shell retry reactive in runes mode (svelte5)
+
+
+### Testing
+- Lock the tag-release skip so a rerun cannot start a second publish
+
+## v0.7.3
+
+### Bug Fixes
 - Harden username-nft claim path from pr review
 - Harden username claim layer-1 and document sponsored-userop 7702 method
 - Heal squad-hub navigation after create to stop infinite loading
@@ -23,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin sepolia sponsor-policy registry and nave-pirata factory for tophat cutover
 - Update contract deployment addresses
 - Isolate feature-branch app data and move Catch up off the mode switch (#389)
+- Bump version to 0.7.3 (#390) (release)
 
 
 ### Documentation
