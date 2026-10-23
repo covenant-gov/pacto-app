@@ -60,13 +60,18 @@ pub async fn transcribe<R: Runtime>(
     handle: &AppHandle<R>,
     model_name: &str,
     translate: bool,
+    use_gpu: bool,
     audio: Vec<f32>,
 ) -> Result<TranscriptionResult, Box<dyn std::error::Error + Send + Sync>> {
     // Download or get cached whisper model
     println!("Initializing Whisper...");
     let model_path = download_whisper_model(handle, model_name).await?;
 
-    let ctx_params = WhisperContextParameters::default();
+    let mut ctx_params = WhisperContextParameters::default();
+    // Only ever narrows the default: builds without a GPU backend stay on CPU.
+    if !use_gpu {
+        ctx_params.use_gpu(false);
+    }
     let ctx = WhisperContext::new_with_params(&model_path, ctx_params)?;
 
     // Configure the parameters
@@ -430,7 +435,10 @@ pub async fn download_whisper_model<R: Runtime>(
     // Get content length
     let total_size = response.content_length().unwrap_or(0);
 
-    let mut file = std::fs::File::create(&model_path)?;
+    // Stream into a sibling file and rename on completion, so an interrupted
+    // download never leaves a truncated model that reads as "downloaded".
+    let partial_path = models_dir.join(format!("{}.part", model_filename));
+    let mut file = std::fs::File::create(&partial_path)?;
     let mut downloaded: u64 = 0;
 
     // Stream chunks and write to file
@@ -463,15 +471,14 @@ pub async fn download_whisper_model<R: Runtime>(
                 }
 
                 // Print a progress message every 5MB
-                if chunk_count % 50 == 0 {
-                    handle
-                        .emit(
-                            "whisper_download_progress",
-                            serde_json::json!({
-                                "progress": (downloaded * 100) / total_size
-                            }),
-                        )
-                        .unwrap();
+                if chunk_count % 50 == 0 && total_size > 0 {
+                    let _ = handle.emit(
+                        "whisper_download_progress",
+                        serde_json::json!({
+                            "model": model_name,
+                            "progress": (downloaded * 100) / total_size
+                        }),
+                    );
                     println!(
                         "\nProgress update: Downloaded {} MB so far...",
                         downloaded / (1024 * 1024)
@@ -480,6 +487,8 @@ pub async fn download_whisper_model<R: Runtime>(
             }
             Err(e) => {
                 println!("\nError downloading chunk {}: {}", chunk_count, e);
+                drop(file);
+                let _ = std::fs::remove_file(&partial_path);
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("Failed to download chunk: {}", e),
@@ -487,6 +496,10 @@ pub async fn download_whisper_model<R: Runtime>(
             }
         }
     }
+
+    file.flush()?;
+    drop(file);
+    std::fs::rename(&partial_path, &model_path)?;
 
     println!("\nModel downloaded to: {}", model_path.display());
 

@@ -53,35 +53,66 @@ impl AudioRecorder {
         let samples = Arc::clone(&self.samples);
         let recording = Arc::clone(&self.recording);
 
+        // Drop leftovers from a recording that never reached `stop`.
+        self.samples.lock().map_err(|_| "Failed to get samples")?.clear();
         self.recording.store(true, Ordering::SeqCst);
 
-        std::thread::spawn(move || {
-            let stream = device
-                .build_input_stream(
-                    &config,
-                    move |data: &[f32], _: &_| {
-                        if recording.load(Ordering::SeqCst) {
-                            if let Ok(mut guard) = samples.lock() {
-                                guard.extend(data.chunks(channels).map(|chunk| {
-                                    let sum: f32 = chunk.iter().sum();
-                                    let avg = sum / channels as f32;
-                                    (avg.clamp(-1.0, 1.0) * 32767.0) as i16
-                                }));
-                            }
-                        }
-                    },
-                    |err| eprintln!("Error: {}", err),
-                    None,
-                )
-                .unwrap();
+        // The stream lives on its own thread; report whether it opened so a
+        // denied microphone permission fails here instead of on `stop`.
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
 
-            stream.play().unwrap();
+        std::thread::spawn(move || {
+            let stream = match device.build_input_stream(
+                &config,
+                move |data: &[f32], _: &_| {
+                    if recording.load(Ordering::SeqCst) {
+                        if let Ok(mut guard) = samples.lock() {
+                            guard.extend(data.chunks(channels).map(|chunk| {
+                                let sum: f32 = chunk.iter().sum();
+                                let avg = sum / channels as f32;
+                                (avg.clamp(-1.0, 1.0) * 32767.0) as i16
+                            }));
+                        }
+                    }
+                },
+                |err| eprintln!("Error: {}", err),
+                None,
+            ) {
+                Ok(stream) => stream,
+                Err(e) => {
+                    let _ = ready_tx.send(Err(e.to_string()));
+                    return;
+                }
+            };
+
+            if let Err(e) = stream.play() {
+                let _ = ready_tx.send(Err(e.to_string()));
+                return;
+            }
+            let _ = ready_tx.send(Ok(()));
 
             // Wait for stop signal
             rx.recv().unwrap_or(());
         });
 
-        Ok(())
+        match ready_rx.recv() {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => {
+                self.abort();
+                Err(e)
+            }
+            Err(_) => {
+                self.abort();
+                Err("Audio input stream failed to start".to_string())
+            }
+        }
+    }
+
+    fn abort(&self) {
+        self.recording.store(false, Ordering::SeqCst);
+        if let Ok(mut tx) = self.stop_tx.lock() {
+            tx.take();
+        }
     }
 
     pub fn stop(&self) -> Result<Vec<u8>, String> {
