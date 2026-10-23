@@ -8401,7 +8401,7 @@ pub async fn get_related_events<R: Runtime>(
                created_at, received_at, mine, pending, failed, wrapper_event_id, npub, virtual_bucket
         FROM events
         WHERE reference_id IN ({})
-        ORDER BY created_at ASC
+        ORDER BY created_at ASC, rowid ASC
         "#,
         placeholders
     );
@@ -9429,6 +9429,8 @@ mod edit_reconstruction_tests {
         .await;
         save_edit(handle, dm_id, "dm-e3", "dm-msg", peer, "predated", T - 5).await;
         save_edit(handle, dm_id, "dm-e4", "dm-msg", peer, "late", T + 61).await;
+        save_edit(handle, dm_id, "dm-e5", "dm-msg", peer, "fixed again", T + 5).await;
+        save_edit(handle, dm_id, "dm-e6", "dm-msg", peer, "fixed", T + 5).await;
 
         let group_view = get_message_views(handle, group_id, 50, 0, None)
             .await
@@ -9447,7 +9449,7 @@ mod edit_reconstruction_tests {
             .iter()
             .map(|e| e.content.as_str())
             .collect();
-        assert_eq!(history, vec!["original", "fixed"]);
+        assert_eq!(history, vec!["original", "fixed", "fixed again", "fixed"]);
 
         for (target, expected) in [("grp-msg", "original"), ("dm-msg", "fixed")] {
             let mut reply = Message {

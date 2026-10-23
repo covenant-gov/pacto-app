@@ -195,7 +195,7 @@ impl Message {
     }
 
     /// Apply an edit to this message, updating content and tracking history
-    /// Handles deduplication, sorting, and ensures content reflects the latest edit
+    /// Callers deduplicate by event ID; stable sorting keeps every same-second edit.
     pub fn apply_edit(&mut self, new_content: String, edited_at: u64) {
         // Initialize edit history with original content if not present
         if self.edit_history.is_none() {
@@ -206,19 +206,14 @@ impl Message {
         }
 
         if let Some(ref mut history) = self.edit_history {
-            // Deduplicate: skip if we already have this edit (by timestamp)
-            if history.iter().any(|e| e.edited_at == edited_at) {
-                return;
-            }
-
             // Add new edit to history
             history.push(EditEntry {
                 content: new_content,
                 edited_at,
             });
 
-            // Sort by timestamp to ensure correct order
-            history.sort_by_key(|e| e.edited_at);
+            // Keep the original first, even when an edit rounds down to its second.
+            history[1..].sort_by_key(|e| e.edited_at);
 
             // Content is always the latest edit (last in sorted history)
             if let Some(latest) = history.last() {
@@ -671,6 +666,33 @@ mod edit_authorization_tests {
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].content, "helo");
         assert_eq!(history[1].edited_at, AT + 5_000);
+    }
+
+    #[test]
+    fn apply_edit_keeps_every_rapid_edit_including_reversions() {
+        let mut msg = own_text(AT);
+        msg.apply_edit("hello".to_string(), AT);
+        msg.apply_edit("hello again".to_string(), AT);
+        msg.apply_edit("helo".to_string(), AT);
+        let contents: Vec<_> = msg
+            .edit_history
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|entry| entry.content.as_str())
+            .collect();
+        assert_eq!(contents, ["helo", "hello", "hello again", "helo"]);
+        assert_eq!(msg.content, "helo");
+    }
+
+    #[test]
+    fn apply_edit_keeps_original_first_within_same_second() {
+        let mut msg = own_text(AT);
+        msg.apply_edit("hello".to_string(), AT - 250);
+        let history = msg.edit_history.as_ref().unwrap();
+        assert_eq!(history[0].content, "helo");
+        assert_eq!(history[1].content, "hello");
+        assert_eq!(msg.content, "hello");
     }
 
     #[test]

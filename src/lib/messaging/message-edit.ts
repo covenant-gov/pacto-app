@@ -70,16 +70,58 @@ export function editErrorMessage(e: unknown): string {
   return friendlyMessage(raw, 'dm_send');
 }
 
-/**
- * Prior versions, newest first, excluding the current text. Empty when the
- * message was never edited.
- */
-export function previousVersions(history: EditEntry[] | null | undefined): EditEntry[] {
+/** Original and every edit, oldest first; stable ordering keeps same-second edits. */
+export function historyVersions(history: EditEntry[] | null | undefined): EditEntry[] {
   if (!history || history.length < 2) return [];
-  return [...history]
-    .sort((a, b) => a.edited_at - b.edited_at)
-    .slice(0, -1)
-    .reverse();
+  return [history[0], ...history.slice(1).sort((a, b) => a.edited_at - b.edited_at)];
+}
+
+export interface WordChange {
+  type: 'equal' | 'delete' | 'insert';
+  text: string;
+}
+
+/** Adjacent versions as a word diff, or null when plain text is easier to read. */
+export function diffMessageWords(before: string, after: string): WordChange[] | null {
+  const previous = editableBody(before).match(/\s+|\S+/gu) ?? [];
+  const current = editableBody(after).match(/\s+|\S+/gu) ?? [];
+  // A large diff is both visually noisy and quadratic work; show its complete text instead.
+  if (previous.length * current.length > 40_000) return null;
+
+  const lengths = Array.from({ length: previous.length + 1 }, () => new Uint16Array(current.length + 1));
+  for (let i = previous.length - 1; i >= 0; i--) {
+    for (let j = current.length - 1; j >= 0; j--) {
+      lengths[i][j] = previous[i] === current[j]
+        ? lengths[i + 1][j + 1] + 1
+        : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
+    }
+  }
+
+  const changes: WordChange[] = [];
+  let sharedWords = 0;
+  function append(type: WordChange['type'], text: string) {
+    const last = changes.at(-1);
+    if (last?.type === type) last.text += text;
+    else changes.push({ type, text });
+  }
+  let i = 0;
+  let j = 0;
+  while (i < previous.length || j < current.length) {
+    if (i < previous.length && j < current.length && previous[i] === current[j]) {
+      if (previous[i].trim()) sharedWords++;
+      append('equal', previous[i]);
+      i++;
+      j++;
+    } else if (i < previous.length && (j === current.length || lengths[i + 1][j] >= lengths[i][j + 1])) {
+      append('delete', previous[i++]);
+    } else {
+      append('insert', current[j++]);
+    }
+  }
+
+  const wordCount = Math.max(previous.filter((word) => word.trim()).length, current.filter((word) => word.trim()).length);
+  // When most words changed, markup obscures the rewrite rather than explaining it.
+  return sharedWords > 0 && sharedWords >= wordCount / 2 ? changes : null;
 }
 
 /** When the current text was written: the newest history entry. */
@@ -89,8 +131,10 @@ export function lastEditedAt(history: EditEntry[] | null | undefined): number | 
 }
 
 /** Locale time of an edit, e.g. "3:42 PM". Edits land within a minute of the send, so no date. */
-export function formatEditTime(ms: number): string {
+export function formatEditTime(ms: number, includeSeconds = false): string {
   const date = new Date(ms);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString(get(locale) ?? 'en-US', { hour: 'numeric', minute: '2-digit' });
+  return date.toLocaleTimeString(get(locale) ?? 'en-US', {
+    hour: 'numeric', minute: '2-digit', ...(includeSeconds ? { second: '2-digit' } : {}),
+  });
 }

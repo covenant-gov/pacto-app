@@ -9,7 +9,8 @@ import {
   editableUntil,
   isMeaningfulEdit,
   lastEditedAt,
-  previousVersions,
+  historyVersions,
+  diffMessageWords,
 } from './message-edit';
 import { buildMentionEnvelope, parseMessageContent } from './mentions';
 
@@ -83,15 +84,42 @@ describe('edit history helpers', () => {
     { content: 'hello!', edited_at: AT + 40_000 },
   ];
 
-  it('returns prior versions newest first, without the current text', () => {
-    expect(previousVersions(history).map((v) => v.content)).toEqual(['hello', 'helo']);
-    expect(previousVersions(null)).toEqual([]);
-    expect(previousVersions([history[0]])).toEqual([]);
+  it('returns every version chronologically, keeping edits sharing a timestamp', () => {
+    const entries = [...history, { content: 'hello again', edited_at: AT + 40_000 }];
+    expect(historyVersions(entries).map((v) => v.content)).toEqual(['helo', 'hello', 'hello!', 'hello again']);
+    expect(historyVersions([history[0], history[2], history[1]])).toEqual(history);
+    expect(historyVersions([{ content: 'original', edited_at: AT + 250 }, history[0]])[0].content).toBe('original');
+    expect(historyVersions(null)).toEqual([]);
+    expect(historyVersions([history[0]])).toEqual([]);
   });
 
   it('reports the latest edit time', () => {
     expect(lastEditedAt(history)).toBe(AT + 40_000);
     expect(lastEditedAt(undefined)).toBeNull();
+  });
+});
+
+describe('diffMessageWords', () => {
+  it('marks a small word replacement, preserving spaces and line breaks', () => {
+    expect(diffMessageWords('Meet at the east gate\ntoday', 'Meet at the west gate\ntoday')).toEqual([
+      { type: 'equal', text: 'Meet at the ' },
+      { type: 'delete', text: 'east' },
+      { type: 'insert', text: 'west' },
+      { type: 'equal', text: ' gate\ntoday' },
+    ]);
+  });
+
+  it('returns plain text mode for a rewrite or a diff too large to read', () => {
+    expect(diffMessageWords('Meet at the west gate today', 'Please bring the blue folder today')).toBeNull();
+    expect(diffMessageWords('word '.repeat(500), 'other '.repeat(500))).toBeNull();
+  });
+
+  it('compares mention bodies without exposing envelopes', () => {
+    const original = buildMentionEnvelope('hello @alice see you today', [{ npub: 'npub1alice', alias: 'alice' }], 'general');
+    const edited = buildEditedContent(original, 'hello @alice see you tomorrow');
+    const diff = diffMessageWords(original, edited)!;
+    expect(diff.filter((part) => part.type !== 'insert').map((part) => part.text).join('')).toBe('hello @alice see you today');
+    expect(diff.filter((part) => part.type !== 'delete').map((part) => part.text).join('')).toBe('hello @alice see you tomorrow');
   });
 });
 

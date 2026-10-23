@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/svelte';
+import { render, screen, fireEvent, cleanup, act, within, waitFor } from '@testing-library/svelte';
 import Message from './Message.svelte';
 import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import { pendingReactionSent, clearPendingReactions } from '../../lib/messaging/reactions';
@@ -404,29 +404,55 @@ describe('Message editing', () => {
     expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
   });
 
-  it('labels edited messages with the edit time and reveals history on demand', async () => {
+  it('opens a popover with the original and every edit, readable diffs, and plain rewrites', async () => {
     const sentAt = new Date(2026, 9, 22, 15, 41, 10).getTime();
     const editedAt = new Date(2026, 9, 22, 15, 41, 40).getTime();
     render(Message, {
       props: {
         id: 'msg-edited',
-        content: 'hello',
+        content: 'Please bring the blue folder tomorrow',
         edited: true,
         editHistory: [
-          { content: 'helo', edited_at: sentAt },
-          { content: 'hello', edited_at: editedAt },
+          { content: 'Meet at the east gate today', edited_at: sentAt },
+          { content: 'Meet at the west gate today', edited_at: sentAt + 10_000 },
+          { content: 'Please bring the blue folder today', edited_at: sentAt + 20_000 },
+          { content: 'Please bring the blue folder tomorrow', edited_at: editedAt },
         ],
       },
     });
 
     const label = screen.getByRole('button', { name: '(edited 3:41 PM)' });
     expect(label.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByText('helo')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
 
+    label.focus();
     await fireEvent.click(label);
     expect(label.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByText('helo')).toBeTruthy();
-    expect(screen.getByText('Original · 3:41 PM')).toBeTruthy();
+    const popover = screen.getByRole('dialog', { name: 'Edit history' });
+    const entries = within(popover).getAllByRole('listitem');
+    expect(entries).toHaveLength(4);
+    expect(entries[0].textContent).toContain('Meet at the east gate today');
+    expect(entries[1].querySelector('del')?.textContent).toBe('east');
+    expect(entries[1].querySelector('ins')?.textContent).toBe('west');
+    expect(entries[2].textContent).toContain('Please bring the blue folder today');
+    expect(entries[2].querySelector('del, ins')).toBeNull();
+    expect(entries[3].querySelector('del')?.textContent).toBe('today');
+    expect(entries[3].querySelector('ins')?.textContent).toBe('tomorrow');
+    expect(entries[3].textContent).toContain('Current');
+    expect(entries.map((entry) => entry.querySelector('time')?.getAttribute('datetime'))).toEqual(
+      [sentAt, sentAt + 10_000, sentAt + 20_000, editedAt].map((at) => new Date(at).toISOString()),
+    );
+
+    await fireEvent.keyDown(popover, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(label));
+
+    await fireEvent.click(label);
+    expect(screen.getByRole('dialog', { name: 'Edit history' })).toBeTruthy();
+    await fireEvent.pointerDown(document.body);
+    await fireEvent.pointerUp(document.body);
+    await fireEvent.click(document.body);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('shows no edited label on unedited messages', () => {
