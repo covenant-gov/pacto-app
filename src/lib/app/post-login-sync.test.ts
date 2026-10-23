@@ -17,6 +17,7 @@ const fetchMessages = vi.fn();
 const refreshProfileNow = vi.fn();
 const loadNostrProfile = vi.fn().mockResolvedValue(true);
 const syncMlsGroupsNow = vi.fn();
+const startNotifs = vi.fn().mockResolvedValue(true);
 // Backed by a real writable store (not just a spy) so wake-sync's own `get(dmSyncStatus)`
 // guard observes the same state this module writes — needed to test the two modules'
 // interaction, not just that `.set` was called.
@@ -25,6 +26,20 @@ const dmSyncStatusSet = vi.fn((...args: [string]) => dmSyncStatusStore.set(args[
 const dmLog = vi.fn();
 const dmError = vi.fn();
 const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+// Capture the `relay_status_change` listener so a test can drive the startNotifs retry.
+type RelayStatusEvent = { payload: { url: string; status: string } };
+let relayStatusListeners: Array<(e: RelayStatusEvent) => unknown> = [];
+const unlistenMock = vi.fn();
+const listen = vi.fn(async (event: string, handler: (e: RelayStatusEvent) => unknown) => {
+  if (event === 'relay_status_change') relayStatusListeners.push(handler);
+  return unlistenMock;
+});
+
+vi.mock('../api', () => ({
+  listen: (...args: unknown[]) =>
+    listen(...(args as [string, (e: RelayStatusEvent) => unknown])),
+}));
 
 vi.mock('../api/auth', () => ({
   connect: (...args: unknown[]) => apiConnect(...args),
@@ -38,6 +53,7 @@ vi.mock('../api/nostr', () => ({
   fetchMessages: (...args: unknown[]) => fetchMessages(...args),
   loadNostrProfile: (...args: unknown[]) => loadNostrProfile(...args),
   refreshProfileNow: (...args: unknown[]) => refreshProfileNow(...args),
+  startNotifs: (...args: unknown[]) => startNotifs(...args),
   syncMlsGroupsNow: (...args: unknown[]) => syncMlsGroupsNow(...args),
 }));
 
@@ -71,6 +87,8 @@ describe('runPostLoginNetworkSync', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.clearAllMocks();
+    relayStatusListeners = [];
+    startNotifs.mockResolvedValue(true);
     loadNostrProfile.mockResolvedValue(true);
     dmSyncStatusStore.set('idle');
     resetStartupCheckSession();
@@ -116,6 +134,10 @@ describe('runPostLoginNetworkSync', () => {
     expect(refreshProfileNow).toHaveBeenCalledWith('npub1test');
     expect(loadNostrProfile.mock.invocationCallOrder[0]).toBeLessThan(
       refreshProfileNow.mock.invocationCallOrder[0]
+    );
+    expect(startNotifs).toHaveBeenCalled();
+    expect(startNotifs.mock.invocationCallOrder[0]).toBeLessThan(
+      fetchMessages.mock.invocationCallOrder[0]
     );
     expect(syncMlsGroupsNow).toHaveBeenCalledWith(null);
     expect(dmLog).toHaveBeenCalledWith('post-login: network sync done');
@@ -252,6 +274,38 @@ describe('runPostLoginNetworkSync', () => {
     await flushAsync();
 
     expect(console.error).toHaveBeenCalledWith('syncMlsGroupsNow after login failed:', err);
+  });
+
+  it('retries startNotifs when a relay connects after the first attempt fails', async () => {
+    apiConnect.mockResolvedValue(undefined);
+    fetchMessages.mockResolvedValue(undefined);
+    refreshProfileNow.mockResolvedValue(undefined);
+    syncMlsGroupsNow.mockResolvedValue(undefined);
+    // First attempt fails (relays still coming up); the retry then succeeds.
+    startNotifs.mockRejectedValueOnce(new Error('no relays specified'));
+
+    runPostLoginNetworkSync('npub1test');
+    await flushAsync();
+
+    // First attempt rejected, was logged, and a relay_status_change listener is now armed.
+    expect(startNotifs).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith('notifs failed:', expect.any(Error));
+    expect(relayStatusListeners).toHaveLength(1);
+
+    // A non-connected status must not trigger a retry.
+    await relayStatusListeners[0]({ payload: { url: 'wss://r', status: 'connecting' } });
+    expect(startNotifs).toHaveBeenCalledTimes(1);
+
+    // A relay reaching `connected` drives the retry, which succeeds and unlistens.
+    await relayStatusListeners[0]({ payload: { url: 'wss://r', status: 'connected' } });
+    await flushAsync();
+
+    expect(startNotifs).toHaveBeenCalledTimes(2);
+    expect(unlistenMock).toHaveBeenCalledTimes(1);
+
+    // Once settled, further connect events do not re-invoke startNotifs.
+    await relayStatusListeners[0]({ payload: { url: 'wss://r', status: 'connected' } });
+    expect(startNotifs).toHaveBeenCalledTimes(2);
   });
 
   describe('startup update check', () => {
