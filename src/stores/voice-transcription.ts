@@ -34,13 +34,18 @@ export type VoiceTranscript =
 export const voiceTranscripts = writable<Record<string, VoiceTranscript>>({});
 
 let modelsRefresh: Promise<void> | null = null;
+// Set only after a successful read, so a failed first read is retried.
+let modelsLoaded = false;
 
 /** Re-reads model download state. Concurrent callers share one request. */
 export function refreshWhisperModels(): Promise<void> {
   if (!get(platformFeatures)?.transcription) return Promise.resolve();
   if (!modelsRefresh) {
     modelsRefresh = listWhisperModels()
-      .then((models) => whisperModels.set(models))
+      .then((models) => {
+        whisperModels.set(models);
+        modelsLoaded = true;
+      })
       .catch(() => {})
       .finally(() => {
         modelsRefresh = null;
@@ -49,12 +54,9 @@ export function refreshWhisperModels(): Promise<void> {
   return modelsRefresh;
 }
 
-let modelsLoaded = false;
-
-/** First read of model state for this session; later reads go through `refreshWhisperModels`. */
+/** First successful read of model state for this session; later reads go through `refreshWhisperModels`. */
 export function ensureWhisperModelsLoaded(): Promise<void> {
   if (modelsLoaded || !get(platformFeatures)?.transcription) return Promise.resolve();
-  modelsLoaded = true;
   return refreshWhisperModels();
 }
 
