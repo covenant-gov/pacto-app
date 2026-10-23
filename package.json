@@ -18,6 +18,8 @@
     "tauri:dev": "tauri dev",
     "tauri:dev:iso": "make dev-isolated",
     "tauri:build": "tauri build",
+    "clean:cargo": "./scripts/cargo-target-clean.sh clean",
+    "sweep:cargo": "./scripts/cargo-target-clean.sh sweep",
     "landing:dev": "pnpm --dir landing dev",
     "landing:build": "pnpm --dir landing build",
     "landing:preview": "pnpm --dir landing preview",
