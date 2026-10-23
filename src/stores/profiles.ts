@@ -207,18 +207,28 @@ export function mergeInitProfiles(
 
 const HYDRATE_RETRY_MS = [0, 1000, 2000];
 
+const inflightLoads = new Map<string, Promise<NostrProfile>>();
+
 /**
  * Load a Nostr profile from the backend cache (or trigger fetch if not cached).
- * Empty shells (e.g. own profile after reinstall) still trigger Kind 0 hydrate.
+ * Empty shells (e.g. own profile after seed import) still trigger Kind 0 hydrate.
+ * Concurrent callers for the same npub share one hydrate.
  */
-export async function loadProfile(npub: string): Promise<NostrProfile> {
-  let existing: NostrProfile | undefined;
-  profiles.subscribe(p => { existing = p[npub]; })();
-
+export function loadProfile(npub: string): Promise<NostrProfile> {
+  const existing = get(profiles)[npub];
   if (existing && !profileNeedsRelayHydration(existing)) {
-    return existing;
+    return Promise.resolve(existing);
   }
 
+  const pending = inflightLoads.get(npub);
+  if (pending) return pending;
+
+  const load = hydrateProfile(npub).finally(() => inflightLoads.delete(npub));
+  inflightLoads.set(npub, load);
+  return load;
+}
+
+async function hydrateProfile(npub: string): Promise<NostrProfile> {
   profileLoadingStates.update(states => ({ ...states, [npub]: true }));
 
   try {

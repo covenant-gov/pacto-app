@@ -612,16 +612,30 @@ pub async fn load_profile(npub: String) -> bool {
 
     wait_for_connected_relay(&client).await;
 
-    // Attempt to fetch their status, if one exists
+    // Status and Kind 0 run concurrently so a slow status REQ never delays name/avatar.
     let status_filter = Filter::new()
         .author(profile_pubkey)
         .kind(Kind::from_u16(30315))
         .limit(1);
+    let status_fetch = client.fetch_events(status_filter, std::time::Duration::from_secs(15));
 
-    let status = match client
-        .fetch_events(status_filter, std::time::Duration::from_secs(15))
-        .await
-    {
+    // Empty profiles get a per-relay Kind 0 scan. Profiles that already have
+    // a name or avatar keep the single pooled refresh.
+    let metadata_fetch = async {
+        if lacks_metadata {
+            let hits = fetch_kind0_per_relay(&client, profile_pubkey).await;
+            Ok(nip01_kind0_winner(&hits).map(|hit| hit.metadata.clone()))
+        } else {
+            client
+                .fetch_metadata(profile_pubkey, std::time::Duration::from_secs(15))
+                .await
+                .map_err(|e| e.to_string())
+        }
+    };
+
+    let (status_result, fetch_result) = tokio::join!(status_fetch, metadata_fetch);
+
+    let status = match status_result {
         Ok(res) => {
             // Make sure they have a status available
             if !res.is_empty() {
@@ -645,18 +659,6 @@ pub async fn load_profile(npub: String) -> bool {
             }
         }
         Err(_) => old_status,
-    };
-
-    // Empty profiles get a per-relay Kind 0 scan. Profiles that already have
-    // a name or avatar keep the single pooled refresh.
-    let fetch_result = if lacks_metadata {
-        let hits = fetch_kind0_per_relay(&client, profile_pubkey).await;
-        Ok(nip01_kind0_winner(&hits).map(|hit| hit.metadata.clone()))
-    } else {
-        client
-            .fetch_metadata(profile_pubkey, std::time::Duration::from_secs(15))
-            .await
-            .map_err(|e| e.to_string())
     };
 
     match fetch_result {
