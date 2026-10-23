@@ -5,6 +5,8 @@ import { getAddress, isAddress } from 'viem';
 import { showToast } from '../../stores/toast';
 import type { SquadParamsInput } from './squad-params';
 import { validateSquadParams } from './squad-params';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 export type PactoGovDeployComplete = {
   txHash: string;
@@ -71,7 +73,7 @@ export function startPactoGovDeploy(params: {
 
   const network = params.squadNetwork;
   if (!network) {
-    const message = 'Set the squad network in Settings before deploying Pacto Gov.';
+    const message = get(t)('governance.deployPactoGov.error.noNetworkPactoGov');
     if (params.onReject) {
       params.onReject(message);
     } else {
@@ -82,7 +84,7 @@ export function startPactoGovDeploy(params: {
 
   const captain = normalizeCaptainAddress(params.captain);
   if (!captain) {
-    const message = 'Your squad-assigned EVM is required as captain.';
+    const message = get(t)('governance.deployPactoGov.error.captainRequired');
     if (params.onReject) {
       params.onReject(message);
     } else {
@@ -105,8 +107,8 @@ export function startPactoGovDeploy(params: {
     announcements && announcements !== parentId ? announcements : null;
 
   runOnChainInBackground({
-    startedToast: 'Pacto Gov deploy submitted. Confirmation continues in the background.',
-    subject: 'Pacto Gov deploy',
+    startedToast: get(t)('governance.deployPactoGov.toastSubmitted'),
+    subject: get(t)('governance.deployPactoGov.subject'),
     parentId,
     job: () =>
       deployNavePirataForParent({

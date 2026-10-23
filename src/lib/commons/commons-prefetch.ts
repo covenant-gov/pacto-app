@@ -8,6 +8,7 @@ import { fetchCommonsBroadcasts, fetchCommonsBroadcastsCached } from '../api/com
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import { COMMONS_TAG_TREE, commonsTagArtSrc } from './tag-catalog';
 import type { CommonsBroadcastDto } from './types';
+import { t } from 'svelte-i18n';
 
 export const commonsBroadcasts = writable<CommonsBroadcastDto[]>([]);
 export const commonsFeedSyncing = writable(false);
@@ -72,7 +73,7 @@ export async function refreshCommonsBroadcasts(
     commonsBroadcasts.set(rows);
     return rows;
   } catch (e: unknown) {
-    const message = getInvokeErrorMessage(e, 'Could not load Commons broadcasts.');
+    const message = getInvokeErrorMessage(e, get(t)('commons.errors.loadFeedFailed'));
     commonsFeedError.set(message);
     if (!silent) {
       commonsBroadcasts.set([]);

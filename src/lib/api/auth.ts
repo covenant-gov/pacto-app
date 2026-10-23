@@ -1,5 +1,7 @@
 import { invoke } from "./index";
 import { updateProfile } from "./nostr";
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 // Type definitions matching Rust structs
 export interface LoginKeyPair {
@@ -143,9 +145,7 @@ export async function getSessionTimeout(): Promise<number> {
 export async function exportRecoveryPhrase(): Promise<string> {
   const seed = await invoke<string | null>('get_seed');
   if (!seed?.trim()) {
-    throw new Error(
-      'No recovery phrase is stored for this account. If you unlocked with nsec only, export nsec from Nostr settings instead.'
-    );
+    throw new Error(get(t)('auth.errorNoRecoveryPhraseStored'));
   }
   return seed.trim();
 }

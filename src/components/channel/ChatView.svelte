@@ -391,7 +391,7 @@
       }
       closeChannelMenu();
     } catch (e: unknown) {
-      leaveChannelError = friendlyMessage(getInvokeErrorMessage(e, 'Failed to leave channel'));
+      leaveChannelError = friendlyMessage(getInvokeErrorMessage(e, $t('messaging.channel.leaveError')));
     } finally {
       leavingChannel = false;
     }

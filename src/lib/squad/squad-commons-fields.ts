@@ -1,5 +1,7 @@
 import type { SquadVisibility } from '../../stores/squads';
 import { normalizeSquadBroadcastTags } from '../commons/tags';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 /**
  * Catalog prefs for Commons broadcasting.
@@ -21,7 +23,7 @@ export function resolveSquadCommonsOnCreate(
 /** Create flow with Commons on: exactly 3 tags (auto `#new` broadcast). */
 export function validateCommonsOnCreateTags(tags: string[]): string | null {
   if (!normalizeSquadBroadcastTags(tags)) {
-    return 'Choose exactly 3 tags for the Commons discovery card.';
+    return get(t)('commons.errors.createTagsRequired');
   }
   return null;
 }

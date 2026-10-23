@@ -58,6 +58,7 @@ import {
   applyMlsStoreResetState,
   refreshMlsStoreResetState,
 } from '../../stores/mls-reset';
+import { t } from 'svelte-i18n';
 const TYPING_EXPIRY_SEC = 15;
 
 export interface AppEventHandlers {
@@ -407,7 +408,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
 
   register(unsubs, 'migration_complete', () => {
     dmLog('migration_complete: showing migration toast');
-    showMigrationCompleteToast('Account security updated');
+    showMigrationCompleteToast(get(t)('auth.migrationComplete'));
   });
 
   register(unsubs, 'session_locked', () => {

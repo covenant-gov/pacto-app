@@ -26,6 +26,7 @@ import {
   type DmTab,
 } from '../../stores/dm';
 import { loadProfile } from '../../stores/profiles';
+import { t } from 'svelte-i18n';
 
 /**
  * Open an existing DM thread with the author, or the New Chat compose view with a
@@ -78,11 +79,11 @@ export async function sendCommonsJoinRequest(
 
   const inboxNpub = broadcast.authorNpub?.trim() ?? '';
   if (!inboxNpub.startsWith('npub1')) {
-    return { ok: false, error: 'Squad broadcast is missing a Join inbox author.' };
+    return { ok: false, error: get(t)('commons.errors.joinInboxAuthorMissing') };
   }
 
   if (!squadId) {
-    return { ok: false, error: 'Missing squad id.' };
+    return { ok: false, error: get(t)('commons.errors.missingSquadId') };
   }
 
   const requestId = crypto.randomUUID();
@@ -106,7 +107,7 @@ export async function sendCommonsJoinRequest(
     return { ok: true };
   } catch (e: unknown) {
     clearJoinRequestRecord(squadId, requestId);
-    return { ok: false, error: getInvokeErrorMessage(e, 'Could not send join request.') };
+    return { ok: false, error: getInvokeErrorMessage(e, get(t)('commons.errors.sendJoinRequestFailed')) };
   } finally {
     clearJoinRequestInFlight(squadId);
   }

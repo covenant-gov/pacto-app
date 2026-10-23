@@ -369,5 +369,6 @@
 	"messaging.syncStatus.idle": "Idle",
 	"messaging.syncStatus.stalled": "Stalled",
 	"messaging.syncStatus.synced": "Synced",
-	"messaging.syncStatus.syncing": "Syncing…"
+	"messaging.syncStatus.syncing": "Syncing…",
+	"messaging.channel.leaveError": "Failed to leave channel"
 }

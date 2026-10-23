@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   let {
     disabled = false,
-    ariaLabel = 'Edit',
+    ariaLabel = undefined,
     title = undefined,
     className = '',
     onclick = undefined,
@@ -19,7 +20,7 @@
   type="button"
   class="edit-icon-btn {className}"
   {disabled}
-  aria-label={ariaLabel}
+  aria-label={ariaLabel ?? $t('ui.edit')}
   {title}
   {onclick}
 >

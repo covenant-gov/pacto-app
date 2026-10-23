@@ -239,7 +239,7 @@
           const parsed = out.parsed ?? parseWalletOpError(out.message);
           let msg = parsed ? userFacingDeploySafeMessage(parsed) : out.message;
           if (parsed?.txHash) {
-            msg = `${msg} Hash: ${parsed.txHash}`;
+            msg = tFn('governance.deploySafe.errorWithTxHash', { values: { message: msg, txHash: parsed.txHash } });
           }
           throw new Error(msg);
         }

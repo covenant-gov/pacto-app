@@ -2,6 +2,7 @@ import { check, type DownloadEvent } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { writable, get, type Readable } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 
 
@@ -125,13 +126,13 @@ function friendlyErrorMessage(err: unknown): string {
   const msg = rawMessage.toLowerCase();
 
   if (msg.includes('network') || msg.includes('fetch') || msg.includes('offline') || msg.includes('connection')) {
-    return 'Update check failed. Please check your internet connection and try again.';
+    return get(t)('updater.error.network');
   }
   if (msg.includes('signature') || msg.includes('verify') || msg.includes('invalid signature')) {
-    return 'Update signature mismatch. The update package could not be verified.';
+    return get(t)('updater.error.signature');
   }
   if (msg.includes('platform') || msg.includes('asset') || msg.includes('no asset')) {
-    return 'No update is available for this platform yet.';
+    return get(t)('updater.error.platform');
   }
   if (
     msg.includes('not found') ||
@@ -140,13 +141,13 @@ function friendlyErrorMessage(err: unknown): string {
     msg.includes('no release') ||
     msg.includes('unexpected http response')
   ) {
-    return 'No published release was found. This is expected until the first release is shipped.';
+    return get(t)('updater.error.noRelease');
   }
   if (msg.includes('timeout')) {
-    return 'Update check timed out. Please try again.';
+    return get(t)('updater.error.timeout');
   }
 
-  return rawMessage || 'Update check failed.';
+  return rawMessage || get(t)('updater.updateCheckFailed');
 }
 
 export async function checkForUpdates(): Promise<void> {

@@ -5,6 +5,7 @@ import { currentUser } from '../../stores/auth-session';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsJoinRequestDto, CommonsJoinRequestStatus } from '../commons/types';
 import { isJoinRequesterMuted } from './squad-join-spam';
+import { t } from 'svelte-i18n';
 
 export const JOIN_INBOX_DM_SCHEMA = 'pacto.squad.join_inbox_dm.v1';
 export const JOIN_INBOX_RESPONSE_DM_SCHEMA = 'pacto.squad.join_inbox_response.v1';
@@ -273,7 +274,7 @@ export async function fanOutJoinInboxDmsToMls(squadId: string): Promise<number> 
   try {
     dms = await syncJoinInboxDms(id);
   } catch (e) {
-    const message = getInvokeErrorMessage(e, 'Could not sync Join inbox.');
+    const message = getInvokeErrorMessage(e, get(t)('squad.joinRequests.syncInboxFailed'));
     if (isExpectedNonHolderJoinInboxSyncError(message)) return 0;
     throw new Error(message, { cause: e });
   }
@@ -347,7 +348,7 @@ export async function respondToMlsJoinRequest(input: {
   callerOwnsInFlight?: boolean;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const requestId = input.requestId.trim();
-  if (!requestId) return { ok: false, error: 'Missing join request id.' };
+  if (!requestId) return { ok: false, error: get(t)('squad.joinRequests.missingRequestId') };
   const ownsInFlight = !!input.callerOwnsInFlight;
   if (!ownsInFlight) {
     if (isJoinRequestRespondInFlight(requestId)) {
@@ -357,11 +358,11 @@ export async function respondToMlsJoinRequest(input: {
   }
   try {
     const me = get(currentUser)?.npub;
-    if (!me) return { ok: false, error: 'Not signed in.' };
+    if (!me) return { ok: false, error: get(t)('errors.notSignedIn') };
     const pending = await loadPendingJoinRequestsFromMls(input.squadId);
     const row = pending.find((r) => r.eventId === requestId);
     if (!row) {
-      return { ok: false, error: 'Join request is no longer pending.' };
+      return { ok: false, error: get(t)('squad.joinRequests.noLongerPending') };
     }
     const content = formatMlsJoinRequestResponse({
       requestId,
@@ -380,7 +381,7 @@ export async function respondToMlsJoinRequest(input: {
     }).catch((e) => console.warn('[squad-join] requester notify DM failed', e));
     return { ok: true };
   } catch (e: unknown) {
-    return { ok: false, error: getInvokeErrorMessage(e, 'Could not update join request.') };
+    return { ok: false, error: getInvokeErrorMessage(e, get(t)('squad.joinRequests.updateFailed')) };
   } finally {
     if (!ownsInFlight) {
       clearJoinRequestRespondInFlight(requestId);

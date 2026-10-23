@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { persistenceKey } from '../../stores/persistence-context';
 import type { CommonsBroadcastDto } from './types';
+import { t } from 'svelte-i18n';
 
 export const PACTO_COMMONS_JOIN_REQUESTS_PREFIX = 'pacto_commons_join_requests';
 export const COMMONS_JOIN_REQUEST_COOLDOWN_SECS = 24 * 3600;
@@ -132,9 +133,9 @@ export function commonsJoinRequestBlockReason(
 ): string | null {
   if (broadcast.subject !== 'squad') return null;
   const squadId = squadIdFromBroadcast(broadcast);
-  if (!squadId) return 'Missing squad id.';
-  if (myNpub && broadcast.authorNpub === myNpub) return 'This is your broadcast.';
-  if (isLocalSquadMember(squadId, localSquadIds)) return 'You are already in this squad.';
-  if (isJoinRequestRateLimited(squadId)) return 'Join request sent recently.';
+  if (!squadId) return get(t)('commons.errors.missingSquadId');
+  if (myNpub && broadcast.authorNpub === myNpub) return get(t)('commons.errors.ownBroadcast');
+  if (isLocalSquadMember(squadId, localSquadIds)) return get(t)('commons.errors.alreadyMember');
+  if (isJoinRequestRateLimited(squadId)) return get(t)('commons.errors.joinRequestRateLimited');
   return null;
 }

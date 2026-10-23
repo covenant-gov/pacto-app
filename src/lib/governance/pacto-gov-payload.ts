@@ -1,4 +1,6 @@
 import type { SquadAdminExecutorRolesDto } from './api';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 /** Parsed `provider_payload` v1 from a pacto-gov infra row. */
 export interface PactoGovProviderPayloadV1 {
@@ -59,14 +61,15 @@ export function pactoGovDeployAnnounceRows(params: {
   const push = (label: string, addr: string | undefined) => {
     if (isEvmAddress(addr)) rows.push({ kind: 'address', label, address: addr.trim() });
   };
-  push('Treasury Safe', parsed?.safe);
-  push('Squad Admin', parsed?.squadAdminProxy);
-  push('Quartermaster', parsed?.quartermaster);
-  push('Mutiny module', parsed?.mutinyModule);
-  push('Treasury Authority', parsed?.treasuryAuthority);
+  const tr = get(t);
+  push(tr('governance.infra.treasurySafe'), parsed?.safe);
+  push(tr('governance.roleLabel.squadAdmin'), parsed?.squadAdminProxy);
+  push(tr('governance.title.quartermaster'), parsed?.quartermaster);
+  push(tr('governance.infra.mutinyModule'), parsed?.mutinyModule);
+  push(tr('governance.title.treasuryAuthority'), parsed?.treasuryAuthority);
   const hatId = params.topHatId?.trim();
   if (hatId) {
-    rows.push({ kind: 'hat', label: 'Hat tree ID', hatId });
+    rows.push({ kind: 'hat', label: tr('governance.infra.hatTreeId'), hatId });
   }
   return rows;
 }
@@ -117,15 +120,15 @@ export function formatSquadAdminExecutorRoles(d: SquadAdminExecutorRolesDto): st
 export function treasuryProposalStatusLabel(status: string): string {
   switch (status) {
     case 'executed':
-      return 'Executed';
+      return get(t)('governance.treasuryProposal.status.executed');
     case 'captain_vetoed':
-      return 'Captain vetoed';
+      return get(t)('governance.treasuryProposal.status.captainVetoed');
     case 'expired':
-      return 'Expired';
+      return get(t)('governance.treasuryProposal.status.expired');
     case 'active_passed_crew':
-      return 'Crew passed — awaiting captain / execute';
+      return get(t)('governance.treasuryProposal.status.crewPassed');
     case 'active':
-      return 'Active';
+      return get(t)('governance.treasuryProposal.status.active');
     default:
       return status;
   }

@@ -18,5 +18,7 @@
 	"media.avatarCrop.uploading": "Subiendo…",
 	"media.avatarCrop.zoomIn": "Acercar",
 	"media.avatarCrop.zoomOut": "Alejar",
-	"media.avatarCrop.zoomSlider": "Zoom"
+	"media.avatarCrop.zoomSlider": "Zoom",
+	"media.avatarCrop.processError": "No se pudo procesar la imagen recortada.",
+	"media.avatarCrop.previewNotReady": "La vista previa aún no está lista."
 }

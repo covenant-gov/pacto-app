@@ -18,5 +18,13 @@
 	"updater.gate.storageFormatDescription": "Your data was written by a newer version of Pacto. {count, plural, one {One profile is} other {# profiles are}} affected on this machine, and every account is blocked until it is resolved.",
 	"updater.gate.storageFormatNonTransient": "This is not a temporary problem, and retrying will not help. Update to the version that wrote this data, or see the manual recovery steps in the operator documentation.",
 	"updater.gate.retry": "Retry",
-	"updater.gate.releasePageLink": "View the latest release"
+	"updater.gate.releasePageLink": "View the latest release",
+	"updater.modalTitle.error": "Update check failed",
+	"updater.modalTitle.installed": "Update installed",
+	"updater.modalTitle.available": "Update available",
+	"updater.error.network": "Update check failed. Please check your internet connection and try again.",
+	"updater.error.signature": "Update signature mismatch. The update package could not be verified.",
+	"updater.error.platform": "No update is available for this platform yet.",
+	"updater.error.noRelease": "No published release was found. This is expected until the first release is shipped.",
+	"updater.error.timeout": "Update check timed out. Please try again."
 }

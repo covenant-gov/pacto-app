@@ -5,6 +5,8 @@
 import type { Abi } from 'viem';
 import erc20Minimal from './abis/erc20-minimal.json';
 import erc20Write from './abis/erc20-write.json';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 export const SHIPPED_ABI_CATALOG: Record<string, { label: string; abi: Abi }> = {
   'erc20-minimal': { label: 'ERC-20 (balanceOf, decimals, symbol)', abi: erc20Minimal as Abi },
@@ -22,14 +24,14 @@ export function loadShippedAbi(ref: string): Abi | null {
 
 /** Parse user-pasted ABI JSON (array or `{ abi: [...] }` Foundry artifact). */
 export function parseAbiJson(raw: string): Abi {
-  const t = raw.trim();
-  if (!t) throw new Error('Paste a JSON ABI array.');
-  const parsed = JSON.parse(t) as unknown;
+  const trimmed = raw.trim();
+  if (!trimmed) throw new Error(get(t)('wallet.errors.abiRequired'));
+  const parsed = JSON.parse(trimmed) as unknown;
   if (Array.isArray(parsed)) return parsed as Abi;
   if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { abi?: unknown }).abi)) {
     return (parsed as { abi: Abi }).abi;
   }
-  throw new Error('ABI JSON must be an array or a Foundry artifact with an abi field.');
+  throw new Error(get(t)('wallet.errors.abiInvalid'));
 }
 
 /** Optional hook: future `squad_infra.provider_payload.custom_module.abiRef`. */

@@ -1,6 +1,8 @@
 import { getAddress, isAddress, parseEther } from 'viem';
 import type { SupportedChainId } from './chains';
 import { getEvmNativeBalance } from './backend-wallet';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 /** Gas/deposit payer balance shown in sponsor deploy and treasury UIs. */
 export type SignerBalance = {
@@ -31,10 +33,10 @@ export function canonicalAddress(addr: string | null | undefined): string | null
 }
 
 export function shortAddress(addr: string | null | undefined): string {
-  if (!addr) return 'Not set';
-  const t = addr.trim();
-  if (t.length < 16) return t;
-  return `${t.slice(0, 8)}…${t.slice(-6)}`;
+  if (!addr) return get(t)('wallet.signer.notSet');
+  const trimmed = addr.trim();
+  if (trimmed.length < 16) return trimmed;
+  return `${trimmed.slice(0, 8)}…${trimmed.slice(-6)}`;
 }
 
 /** True when the ETH amount leaves no room for gas against the wei balance. */
@@ -51,7 +53,7 @@ export function amountExceedsBalance(amountTrimmed: string, balanceRaw: string):
 export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   const { promise: timeout, reject } = Promise.withResolvers<never>();
   const timer = setTimeout(
-    () => reject(new Error(`${label} timed out after ${ms / 1000}s`)),
+    () => reject(new Error(get(t)('wallet.signer.timedOut', { values: { label, seconds: ms / 1000 } }))),
     ms,
   );
   return Promise.race([promise.finally(() => clearTimeout(timer)), timeout]);
@@ -65,12 +67,12 @@ export async function fetchEvmBalance(
 ): Promise<SignerBalance> {
   if (!address) return emptyBalance();
   if (!network) {
-    return { ...emptyBalance(), error: 'Squad network not set' };
+    return { ...emptyBalance(), error: get(t)('wallet.signer.squadNetworkNotSet') };
   }
   try {
     const pending = getEvmNativeBalance(network, address);
     const result = opts?.timeoutMs
-      ? await withTimeout(pending, opts.timeoutMs, 'Balance lookup')
+      ? await withTimeout(pending, opts.timeoutMs, get(t)('wallet.signer.balanceLookup'))
       : await pending;
     if (result.ok) {
       return {
@@ -86,7 +88,7 @@ export async function fetchEvmBalance(
     return {
       ...emptyBalance(),
       loading: false,
-      error: e instanceof Error ? e.message : 'Balance lookup failed',
+      error: e instanceof Error ? e.message : get(t)('wallet.signer.balanceLookupFailed'),
     };
   }
 }

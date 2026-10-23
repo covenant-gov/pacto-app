@@ -7,6 +7,8 @@ import { sendDmMessage } from '../api/nostr';
 import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
 import type { SupportedChainId } from '../wallet/chains';
 import { parseWalletOpError, type WalletOpParsedError } from '../wallet/backend-wallet';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 export const SQUAD_CONTRACT_ALLOWLIST_ANNOUNCE_TYPE = 'squad_contract_allowlist_updated';
 
@@ -161,7 +163,7 @@ export async function evmSendSquadAllowlistedContractCall(params: {
         ? e
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
-          : 'Squad allowlisted send failed.';
+          : get(t)('governance.allowlist.sendFailed');
     const parsed = parseWalletOpError(raw);
     return { ok: false, message: parsed?.message ?? raw, parsed: parsed ?? undefined };
   }

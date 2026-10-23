@@ -5,6 +5,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { sendDmMessage } from '../api/nostr';
 import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 export const SQUAD_TRACKED_TOKENS_ANNOUNCE_TYPE = 'squad_tracked_tokens_updated';
 
@@ -98,7 +100,7 @@ export async function getEvmErc20Balance(
   const token = tokenAddress.trim();
   const owner = ownerAddress.trim();
   if (!token || !owner) {
-    return { ok: false, message: 'Token and owner addresses are required.' };
+    return { ok: false, message: get(t)('governance.trackedTokens.addressesRequired') };
   }
   try {
     const balance = await invoke<EvmErc20Balance>('get_evm_erc20_balance', {
@@ -113,7 +115,7 @@ export async function getEvmErc20Balance(
         ? e
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
-          : 'Could not load ERC-20 balance.';
+          : get(t)('governance.trackedTokens.loadBalanceFailed');
     return { ok: false, message: msg };
   }
 }

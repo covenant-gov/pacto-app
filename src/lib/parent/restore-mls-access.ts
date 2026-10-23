@@ -10,6 +10,7 @@ import { squads } from '../../stores/squads';
 import { get } from 'svelte/store';
 import { sendConsentFirstSquadInvite } from '../squad/consent-first-invite';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
+import { t } from 'svelte-i18n';
 
 export type RestoreMlsAccessResult = { ok: true } | { ok: false; error: string };
 
@@ -21,7 +22,7 @@ export async function restoreMlsMemberAccess(
   const gid = groupId.trim();
   const npub = memberNpub.trim();
   if (!gid || !npub) {
-    return { ok: false, error: 'Missing group or member.' };
+    return { ok: false, error: get(t)('squad.access.missingGroupOrMember') };
   }
   try {
     await inviteMemberToGroup(gid, npub, isResend);
@@ -44,7 +45,7 @@ export async function restoreMlsMemberAccess(
   } catch (e) {
     return {
       ok: false,
-      error: friendlyMessage(getInvokeErrorMessage(e, 'Could not restore access')),
+      error: friendlyMessage(getInvokeErrorMessage(e, get(t)('squad.access.restoreFailed'))),
     };
   }
 }

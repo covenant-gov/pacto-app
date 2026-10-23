@@ -143,5 +143,19 @@
 	"commons.earlyAdopter.verified": "Verified",
 	"commons.earlyAdopter.loading": "Checking username…",
 	"commons.earlyAdopter.error": "Could not load username status.",
-	"commons.earlyAdopter.retry": "Retry"
+	"commons.earlyAdopter.retry": "Retry",
+	"commons.errors.joinInboxAuthorMissing": "Squad broadcast is missing a Join inbox author.",
+	"commons.errors.missingSquadId": "Missing squad id.",
+	"commons.errors.sendJoinRequestFailed": "Could not send join request.",
+	"commons.errors.ownBroadcast": "This is your broadcast.",
+	"commons.errors.alreadyMember": "You are already in this squad.",
+	"commons.errors.joinRequestRateLimited": "Join request sent recently.",
+	"commons.errors.loadFeedFailed": "Could not load Commons broadcasts.",
+	"commons.errors.squadBroadcastFailedToast": "Commons broadcast failed for {squadName}. {error}",
+	"commons.errors.retryBroadcast": "Retry broadcast",
+	"commons.errors.tagRequired": "Add at least one tag.",
+	"commons.errors.personalBroadcastStillActive": "A broadcast is still active. Wait until it expires.",
+	"commons.errors.publishPersonalBroadcastFailed": "Failed to publish broadcast.",
+	"commons.errors.createTagsRequired": "Choose exactly 3 tags for the Commons discovery card.",
+	"commons.errors.roleRequired": "Role required soon."
 }

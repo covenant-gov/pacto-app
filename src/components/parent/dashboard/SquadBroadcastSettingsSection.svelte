@@ -12,7 +12,7 @@
   import {
     canBroadcastSquad,
     broadcastSquadRoleDeniedReason,
-    COMMONS_BROADCAST_ROLE_DENIED_REASON,
+    commonsBroadcastRoleDeniedReason,
   } from '../../../lib/commons/permissions';
   import {
     COMMONS_MESSAGE_PREVIEW_MAX,
@@ -56,7 +56,7 @@
   const roleAllowed = $derived(canBroadcastSquad({ userNpub: $currentUser?.npub, squad: broadcastTarget }));
   const broadcastDeniedReason = $derived(
     broadcastSquadRoleDeniedReason({ userNpub: $currentUser?.npub, squad: broadcastTarget }) ??
-      COMMONS_BROADCAST_ROLE_DENIED_REASON,
+      commonsBroadcastRoleDeniedReason(),
   );
   const hasActive = $derived(!!activeBroadcast);
   const fullMessage = $derived(activeBroadcast?.message ?? '');

@@ -1,3 +1,6 @@
 {
-	"ui.close": "Close"
+	"ui.close": "Close",
+	"ui.edit": "Edit",
+	"ui.refresh": "Refresh",
+	"ui.info": "Info"
 }

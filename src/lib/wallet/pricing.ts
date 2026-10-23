@@ -6,6 +6,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { WalletAssetCode } from './assets';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 function isKnownUsdAsset(code: string): code is WalletAssetCode {
   return code === 'ETH' || code === 'USDC' || code === 'USDT';
@@ -30,8 +32,7 @@ function isTauri(): boolean {
   return typeof window !== 'undefined' && !!(window as { __TAURI__?: unknown }).__TAURI__;
 }
 
-const USER_FACING_ORACLE_FAILURE =
-  'Live USD prices are unavailable. Chainlink feeds could not be read for this network. Check your internet connection, or set ALCHEMY_RPC_KEY (see docs/wallet/USD_PRICING.md).';
+const userFacingOracleFailure = (): string => get(t)('wallet.errors.usdPricesUnavailable');
 
 /**
  * Fetches Chainlink-backed USD spot prices for `networkKey` (90s server-side cache per feed network).
@@ -53,7 +54,7 @@ export async function getWalletUsdSpotPrices(
     });
     return { ok: true, prices };
   } catch {
-    return { ok: false, message: USER_FACING_ORACLE_FAILURE };
+    return { ok: false, message: userFacingOracleFailure() };
   }
 }
 

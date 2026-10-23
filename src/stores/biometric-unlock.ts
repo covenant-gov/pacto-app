@@ -65,14 +65,14 @@ biometricUnlockEnabled.subscribe((value) => {
 export async function enrollBiometricUnlock(npub: string): Promise<void> {
   const status = await getBiometricStatus();
   if (!status.isAvailable) {
-    throw new Error('Biometric unlock is not available on this device.');
+    throw new Error(get(t)('auth.biometricEnrollUnavailable'));
   }
   await authenticateBiometric(get(t)('settings.biometricUnlockEnrollReason'));
   const keyHex = await exportEncryptionKeyMaterial();
   // The biometric prompt above is a long interactive await; guard against a mid-flight
   // account switch writing this session's key material under a different npub's entry.
   if ((await getCurrentAccount()) !== npub) {
-    throw new Error('Account changed during biometric enrollment.');
+    throw new Error(get(t)('auth.errorAccountChangedDuringBiometric'));
   }
   await setBiometricUnlockData(npub, keyHex);
   biometricUnlockEnabled.set(true);

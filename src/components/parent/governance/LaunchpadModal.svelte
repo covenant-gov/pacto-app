@@ -86,7 +86,7 @@
         (LAUNCHPAD_RECOMMENDED_OPTION_IDS[0] as LaunchpadDeployOptionId);
       selectedId = (next.options.find((o) => o.enabled)?.id ?? firstEnabled) as LaunchpadDeployOptionId;
     } catch (e) {
-      loadError = getInvokeErrorMessage(e, 'Could not load deploy options.');
+      loadError = getInvokeErrorMessage(e, $t('governance.launchpad.loadError'));
       launchpadState = null;
     } finally {
       loading = false;

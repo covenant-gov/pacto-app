@@ -1,5 +1,7 @@
 import { invoke } from "./index";
 import { setEvmAddress } from "./auth";
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 /**
  * Check if an encrypted private key is stored locally
@@ -57,7 +59,7 @@ export async function loadAndDecryptKey(pin: string): Promise<string> {
   const encryptedKey = await invoke<string | null>('get_pkey');
   
   if (!encryptedKey) {
-    throw new Error('No stored key found');
+    throw new Error(get(t)('auth.errorNoStoredKey'));
   }
   
   // Decrypt the key using the PIN as password
@@ -68,7 +70,7 @@ export async function loadAndDecryptKey(pin: string): Promise<string> {
     });
     return decryptedKey;
   } catch (error) {
-    throw new Error('Incorrect PIN', { cause: error });
+    throw new Error(get(t)('auth.errorIncorrectPin'), { cause: error });
   }
 }
 

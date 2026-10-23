@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   let {
     disabled = false,
     spinning = false,
-    ariaLabel = 'Refresh',
+    ariaLabel = undefined,
     title = undefined,
     className = '',
     onclick = undefined,
@@ -21,7 +22,7 @@
   type="button"
   class="refresh-icon-btn {className}"
   {disabled}
-  aria-label={ariaLabel}
+  aria-label={ariaLabel ?? $t('ui.refresh')}
   {title}
   {onclick}
 >

@@ -8,6 +8,7 @@ import {
 } from '../lib/api/catch-up';
 import { getInvokeErrorMessage } from '../lib/utils/tauri-errors';
 import type { Squad } from './squads';
+import { t } from 'svelte-i18n';
 
 export interface CatchUpFilter {
   kind?: string;
@@ -53,7 +54,7 @@ export async function hydrateCatchUp(): Promise<void> {
     catchUpCount.set(count);
   } catch (e) {
     if (gen !== hydrateGen) return;
-    catchUpError.set(getInvokeErrorMessage(e, 'Could not load Catch up.'));
+    catchUpError.set(getInvokeErrorMessage(e, get(t)('notifications.catchup.loadError')));
   } finally {
     if (gen === hydrateGen) catchUpLoading.set(false);
   }

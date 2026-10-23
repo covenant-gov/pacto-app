@@ -73,5 +73,6 @@
 	"profile.username.errors.bundlerConfig": "El gas patrocinado no está configurado. Añade una clave Pimlico en Estado → Gas patrocinado.",
 	"profile.username.errors.userOpFailed": "La transacción patrocinada del reclamo se revirtió en cadena.",
 	"profile.username.errors.bootstrapAfterMint": "Ya tienes un nombre de usuario; usa transferencia de dirección en lugar de reclamar.",
-	"profile.username.errors.poolLow": "El pool bootstrap está bajo. Inténtalo más tarde o contacta al operador."
+	"profile.username.errors.poolLow": "El pool bootstrap está bajo. Inténtalo más tarde o contacta al operador.",
+	"profile.unknownName": "Desconocido"
 }

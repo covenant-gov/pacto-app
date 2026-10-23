@@ -1,3 +1,6 @@
 {
-	"ui.close": "Cerrar"
+	"ui.close": "Cerrar",
+	"ui.edit": "Editar",
+	"ui.refresh": "Actualizar",
+	"ui.info": "Información"
 }
