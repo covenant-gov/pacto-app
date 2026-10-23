@@ -157,6 +157,7 @@
   import { declineWelcomeForGroup } from '../../lib/invites/pending-welcomes-store';
   import { clearPendingSquadAdmissionByGroupId } from '../../stores/pending-squad-admission';
   import { parseSquadInviteMessage } from '../../lib/api/nostr';
+  import { sendVoiceClip } from '../../lib/messaging/voice-send';
 
   const PAGE_SIZE = 100;
 
@@ -778,6 +779,13 @@
     }
   }
 
+  async function handleDmSendVoice(bytes: Uint8Array, repliedTo: string): Promise<boolean> {
+    const id = $activeDmId;
+    if (!id || !(await maybeRequireSession())) return false;
+    $dmSendError = null;
+    return sendVoiceClip(id, bytes, repliedTo, (msg) => ($dmSendError = msg));
+  }
+
   /** Payment requests: optimistic card in chat; modal closes without blocking on relay delivery. */
   function sendWalletPaymentRequestDm(npub: string, content: string): boolean {
     dmLog('sendWalletPaymentRequestDm', { receiver: npub.slice(0, 20) + '…', contentLen: content.length });
@@ -961,6 +969,7 @@
                 onSend={handleDmSend}
                 onSendFile={handleDmSendFile}
                 onSendGif={handleDmSendGif}
+                onSendVoice={handleDmSendVoice}
                 onTyping={handleDmTyping}
                 onAcceptSquadInvite={(msg) => acceptSquadOrPairInvite(msg)}
                 onAcceptChannelInSquad={acceptChannelInSquadInvite}

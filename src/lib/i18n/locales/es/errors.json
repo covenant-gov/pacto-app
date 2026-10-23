@@ -32,5 +32,6 @@
 	"errors.squadRecords.docNotFound": "Este documento ya no está en el estante.",
 	"errors.squadRecords.docNotEditable": "No puedes cambiar este documento.",
 	"errors.squadRecords.docInvalidUrl": "Usa un enlace que empiece con http:// o https://.",
-	"errors.squadRecords.docInvalidTitle": "Añade un título."
+	"errors.squadRecords.docInvalidTitle": "Añade un título.",
+	"errors.dm.voiceFailed": "No se pudo enviar el mensaje de voz"
 }
