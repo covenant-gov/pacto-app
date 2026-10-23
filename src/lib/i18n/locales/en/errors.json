@@ -11,5 +11,8 @@
 	"errors.dm.notInitialized": "Please log in first.",
 	"errors.dm.reactionFailed": "Could not add reaction",
 	"errors.dm.sendFailed": "Failed to send message",
-	"errors.mls.relayKeyPackageUnreachable": "Couldn't reach the relays to check whether {members} can be added. Nothing was created — try again."
+	"errors.mls.relayKeyPackageUnreachable": "Couldn't reach the relays to check whether {members} can be added. Nothing was created — try again.",
+	"errors.backupVerificationRequired": "Backup verification required",
+	"errors.accountChangedDuringWelcome": "Account changed during welcome accept",
+	"errors.notSignedIn": "Not signed in."
 }

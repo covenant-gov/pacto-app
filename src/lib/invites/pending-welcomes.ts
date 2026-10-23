@@ -36,6 +36,7 @@ import {
   finalizeSquadAfterAnnouncementsWelcome,
   squadInviteResolvedByMembership,
 } from './accept-invite';
+import { t } from 'svelte-i18n';
 
 export {
   clearDeclinedWelcomeGroupId,
@@ -167,7 +168,7 @@ export function offeredWelcomeFromFinalization(row: PendingWelcomeFinalization):
  * a durable finalization record keeps the card retryable without re-accepting.
  */
 export async function acceptOfferedWelcome(welcome: OfferedWelcome): Promise<void> {
-  if (!requireBackupVerified()) throw new Error('Backup verification required');
+  if (!requireBackupVerified()) throw new Error(get(t)('errors.backupVerificationRequired'));
   const startedAs = get(currentNpubForPersistence);
   const alreadyAccepted = getPendingWelcomeFinalizationByGroupId(welcome.groupId);
   if (!alreadyAccepted) {
@@ -177,11 +178,11 @@ export async function acceptOfferedWelcome(welcome: OfferedWelcome): Promise<voi
     // without re-calling acceptMlsWelcome — the engine has already consumed it.
     if (get(currentNpubForPersistence) !== startedAs) {
       if (startedAs) stashPendingWelcomeFinalizationForNpub(startedAs, row);
-      throw new Error('Account changed during welcome accept');
+      throw new Error(get(t)('errors.accountChangedDuringWelcome'));
     }
     upsertPendingWelcomeFinalization(row);
   } else if (get(currentNpubForPersistence) !== startedAs) {
-    throw new Error('Account changed during welcome accept');
+    throw new Error(get(t)('errors.accountChangedDuringWelcome'));
   }
 
   await finalizeSquadAfterAnnouncementsWelcome(

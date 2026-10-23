@@ -18,5 +18,13 @@
 	"updater.gate.storageFormatDescription": "Tus datos fueron escritos por una versión más reciente de Pacto. {count, plural, one {Hay 1 perfil afectado} other {Hay # perfiles afectados}} en esta máquina, y todas las cuentas están bloqueadas hasta resolverlo.",
 	"updater.gate.storageFormatNonTransient": "Esto no es un problema temporal y reintentar no ayudará. Actualiza a la versión que escribió estos datos, o consulta los pasos de recuperación manual en la documentación para operadores.",
 	"updater.gate.retry": "Reintentar",
-	"updater.gate.releasePageLink": "Ver la última versión"
+	"updater.gate.releasePageLink": "Ver la última versión",
+	"updater.modalTitle.error": "Falló la búsqueda de actualizaciones",
+	"updater.modalTitle.installed": "Actualización instalada",
+	"updater.modalTitle.available": "Actualización disponible",
+	"updater.error.network": "Falló la búsqueda de actualizaciones. Revisa tu conexión a internet e inténtalo de nuevo.",
+	"updater.error.signature": "La firma de la actualización no coincide. No se pudo verificar el paquete.",
+	"updater.error.platform": "Todavía no hay una actualización disponible para esta plataforma.",
+	"updater.error.noRelease": "No se encontró ninguna versión publicada. Es lo esperado hasta que se publique la primera versión.",
+	"updater.error.timeout": "Se agotó el tiempo de la búsqueda de actualizaciones. Inténtalo de nuevo."
 }

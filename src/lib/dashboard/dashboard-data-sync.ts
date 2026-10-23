@@ -9,6 +9,7 @@ import { persistSquadInfraForParent, squadInfraFetchedAtMs } from './squad-infra
 import { persistSquadMemberEvmForParent } from './squad-member-evm-cache';
 import { setSquadInfraFetchMeta, setTreasurySafesFetchMeta } from './dashboard-fetch-meta';
 import { resolveAutomatedAnnounceGroupId } from '../parent-navbar';
+import { t } from 'svelte-i18n';
 
 const treasuryInflight = new Map<string, Promise<void>>();
 const infraInflight = new Map<string, Promise<void>>();
@@ -41,7 +42,7 @@ export async function syncTreasurySafesForParent(parentId: string): Promise<void
       const curNpub = activeNpub();
       setTreasurySafesFetchMeta(parentId, {
         loading: false,
-        error: (e as Error)?.message ?? 'Could not refresh treasury safes.',
+        error: (e as Error)?.message ?? get(t)('governance.dashboard.error.refreshTreasurySafes'),
         fetchedAtMs: curNpub ? treasurySafesFetchedAtMs(curNpub, parentId) : null,
       });
     } finally {
@@ -76,7 +77,7 @@ export async function syncSquadInfraForParent(parentId: string): Promise<void> {
       const curNpub = activeNpub();
       setSquadInfraFetchMeta(parentId, {
         loading: false,
-        error: (e as Error)?.message ?? 'Could not refresh squad infra.',
+        error: (e as Error)?.message ?? get(t)('governance.dashboard.error.refreshSquadInfra'),
         fetchedAtMs: curNpub ? squadInfraFetchedAtMs(curNpub, parentId) : null,
       });
     } finally {

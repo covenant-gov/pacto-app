@@ -4,6 +4,8 @@ import {
   type PactoGovProviderPayloadV1,
 } from './pacto-gov-payload';
 import { hatIdToHex, prettyHatId } from './pretty-hat-id';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 export function shortEvmAddress(addr: string): string {
   const a = addr.trim();
@@ -94,7 +96,7 @@ export function formatWearerDisplayLabel(
   const npub = npubByAddress[key];
   if (npub) {
     const name = displayNameForNpub(npub)?.trim();
-    if (name && name !== 'Unknown') return name;
+    if (name && name !== get(t)('profile.unknownName')) return name;
   }
   const known = knownLabels?.[key]?.trim();
   if (known) return known;

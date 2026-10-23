@@ -119,5 +119,19 @@
 	"squad.pfp.change": "Change squad photo",
 	"squad.pfp.cropTitle": "Crop squad photo",
 	"squad.pfp.saveError": "Could not save squad photo.",
-	"squad.pfp.publishError": "Saved locally, but could not share the squad photo with members."
+	"squad.pfp.publishError": "Saved locally, but could not share the squad photo with members.",
+	"squad.joinRequests.syncFailed": "Could not sync join inbox.",
+	"squad.joinRequests.loadFailed": "Could not load join requests.",
+	"squad.joinRequests.syncInboxFailed": "Could not sync Join inbox.",
+	"squad.joinRequests.missingRequestId": "Missing join request id.",
+	"squad.joinRequests.noLongerPending": "Join request is no longer pending.",
+	"squad.joinRequests.updateFailed": "Could not update join request.",
+	"squad.access.notReady": "Squad not ready.",
+	"squad.access.addToAnnouncementsFailed": "Could not add to announcements.",
+	"squad.access.missingGroupOrMember": "Missing group or member.",
+	"squad.access.restoreFailed": "Could not restore access",
+	"squad.access.inviteFailed": "Failed to invite",
+	"squad.access.joinNotificationFailed": "Added to the channel, but the join notification could not be sent. Ask them to use Request sync.",
+	"squad.access.channelsNotReady": "Squad channels are not ready to send invites yet.",
+	"squad.create.noAnnouncementsChannel": "Squad \"{name}\" has no announcements channel"
 }

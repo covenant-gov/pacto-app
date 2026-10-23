@@ -54,7 +54,7 @@ export async function maybeBootstrapWarGameCrew(params: {
     });
     return 'bootstrapped';
   } catch (e) {
-    showToast(getInvokeErrorMessage(e, 'Crew bootstrap failed.'));
+    showToast(getInvokeErrorMessage(e, get(t)('governance.deployWarGame.error.bootstrapFailed')));
     return 'failed';
   }
 }
@@ -79,7 +79,7 @@ export function startWarGameDeploy(params: {
 
   const captain = normalizeCaptainAddress(params.captain);
   if (!captain) {
-    const message = 'A roster EVM is required as captain.';
+    const message = get(t)('governance.deployWarGame.error.captainRequired');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -111,8 +111,8 @@ export function startWarGameDeploy(params: {
     : DEFAULT_SQUAD_PRACTICE_NETWORK;
 
   runOnChainInBackground({
-    startedToast: 'War-game deploy submitted. Confirmation continues in the background.',
-    subject: 'War-game deploy',
+    startedToast: get(t)('governance.deployWarGame.toastSubmitted'),
+    subject: get(t)('governance.deployWarGame.subject'),
     parentId,
     job: () =>
       deployWarGameForParent({

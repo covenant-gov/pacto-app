@@ -9,6 +9,7 @@ import { recordActionNeededEntry } from '../lib/api/catch-up';
 import { hydrateCatchUpCount, resolveOneCatchUpEntry } from './catch-up';
 import { announcementsGroupIdForSquad } from './squad-hub-alerts';
 import { squads } from './squads';
+import { t } from 'svelte-i18n';
 
 /** Squad-wide pending join requests from MLS join_requests bucket. */
 export const pendingJoinRequestsBySquadId = writable<Record<string, CommonsJoinRequestDto[]>>({});
@@ -88,7 +89,7 @@ async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequest
   try {
     await fanOutJoinInboxDmsToMls(id);
   } catch (e) {
-    fanOutError = getInvokeErrorMessage(e, 'Could not sync join inbox.');
+    fanOutError = getInvokeErrorMessage(e, get(t)('squad.joinRequests.syncFailed'));
   }
   try {
     const requests = await loadPendingJoinRequestsFromMls(id);
@@ -99,7 +100,7 @@ async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequest
     }
     return requests;
   } catch (e) {
-    const message = getInvokeErrorMessage(e, 'Could not load join requests.');
+    const message = getInvokeErrorMessage(e, get(t)('squad.joinRequests.loadFailed'));
     setErrorForSquad(id, fanOutError ?? message);
     setPendingForSquad(id, []);
     throw new Error(message, { cause: e });

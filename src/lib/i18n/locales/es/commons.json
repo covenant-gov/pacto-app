@@ -143,5 +143,19 @@
 	"commons.earlyAdopter.verified": "Verificado",
 	"commons.earlyAdopter.loading": "Comprobando nombre…",
 	"commons.earlyAdopter.error": "No se pudo cargar el estado del nombre.",
-	"commons.earlyAdopter.retry": "Reintentar"
+	"commons.earlyAdopter.retry": "Reintentar",
+	"commons.errors.joinInboxAuthorMissing": "A la difusión del escuad le falta el autor de la bandeja de entrada.",
+	"commons.errors.missingSquadId": "Falta el id del escuad.",
+	"commons.errors.sendJoinRequestFailed": "No se pudo enviar la solicitud de ingreso.",
+	"commons.errors.ownBroadcast": "Esta es tu difusión.",
+	"commons.errors.alreadyMember": "Ya estás en este escuad.",
+	"commons.errors.joinRequestRateLimited": "Ya enviaste una solicitud de ingreso hace poco.",
+	"commons.errors.loadFeedFailed": "No se pudieron cargar las difusiones de Commons.",
+	"commons.errors.squadBroadcastFailedToast": "Falló la difusión de Commons para {squadName}. {error}",
+	"commons.errors.retryBroadcast": "Reintentar difusión",
+	"commons.errors.tagRequired": "Agrega al menos una etiqueta.",
+	"commons.errors.personalBroadcastStillActive": "Todavía hay una difusión activa. Espera a que expire.",
+	"commons.errors.publishPersonalBroadcastFailed": "No se pudo publicar la difusión.",
+	"commons.errors.createTagsRequired": "Elige exactamente 3 etiquetas para la tarjeta de descubrimiento de Commons.",
+	"commons.errors.roleRequired": "Pronto se requerirá un rol."
 }

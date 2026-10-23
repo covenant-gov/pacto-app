@@ -404,7 +404,7 @@
       return;
     }
     if (access === 'closed' && members.length === 0) {
-      createChannelError = 'Select at least one member';
+      createChannelError = translate('nav.parentNavbar.createChannel.noMembers');
       return;
     }
     createChannelError = '';
@@ -428,7 +428,7 @@
   async function handleOpenChannel() {
     const parent = activeParent;
     if (!parent) {
-      createChannelError = 'Squad not found';
+      createChannelError = translate('nav.parentNavbar.createChannel.squadNotFound');
       return;
     }
     creatingChannel = true;
@@ -437,7 +437,7 @@
       const members = await loadCreateChannelMemberList(parent, $currentUser?.npub);
       startCreateChannel('open', members);
     } catch {
-      createChannelError = 'Could not load squad members.';
+      createChannelError = translate('nav.parentNavbar.createChannel.loadMembersFailed');
     } finally {
       creatingChannel = false;
     }

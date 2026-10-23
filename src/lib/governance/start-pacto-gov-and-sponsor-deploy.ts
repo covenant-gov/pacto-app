@@ -121,15 +121,13 @@ async function runBootstrapCrewStep(params: {
     const rosterRaw = await resolveSquadRosterEvmAddress(params.parentId);
     const roster = normalizeAddress(rosterRaw ?? '');
     if (!roster) {
-      throw new Error('Missing squad-assigned EVM — cannot sign crew bootstrap.');
+      throw new Error(get(t)('governance.deployGovAndSponsor.error.bootstrapMissingRoster'));
     }
     const required = params.captainMustBeRoster
       ? normalizeAddress(params.captainMustBeRoster)
       : null;
     if (required && roster.toLowerCase() !== required.toLowerCase()) {
-      throw new Error(
-        'Crew bootstrap is signed by your squad-assigned EVM as captain. Mint later from Governance → Captain if needed.',
-      );
+      throw new Error(get(t)('governance.deployGovAndSponsor.error.bootstrapSignerMismatch'));
     }
     await quartermasterBootstrapCrew({
       network: params.network,
@@ -139,7 +137,7 @@ async function runBootstrapCrewStep(params: {
     });
     return { bootstrapped: true };
   } catch (e) {
-    const bootstrapError = getInvokeErrorMessage(e, 'Crew bootstrap failed.');
+    const bootstrapError = getInvokeErrorMessage(e, get(t)('governance.deployGovAndSponsor.error.bootstrapFailed'));
     return { bootstrapped: false, bootstrapError };
   }
 }
@@ -179,7 +177,7 @@ export function startPactoGovAndSponsorDeploy(params: {
 
   const network = params.squadNetwork;
   if (!network) {
-    const message = 'Set the squad network in Settings before deploying.';
+    const message = get(t)('governance.deployGovAndSponsor.error.noNetwork');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -187,14 +185,14 @@ export function startPactoGovAndSponsorDeploy(params: {
 
   const captain = normalizeAddress(params.captain);
   if (!captain) {
-    const message = 'Your squad-assigned EVM is required as captain.';
+    const message = get(t)('governance.deployGovAndSponsor.error.captainRequired');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
   }
 
   if (!isRosterHatRecipientAddress(captain, params.memberOptions)) {
-    const message = 'Captain must be your squad-assigned EVM for this parent.';
+    const message = get(t)('governance.deployGovAndSponsor.error.captainNotRoster');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -226,8 +224,7 @@ export function startPactoGovAndSponsorDeploy(params: {
       )
     : [];
   if (params.bootstrapCrew && crewCandidates.length === 0) {
-    const message =
-      'Bootstrap needs at least one shared EVM that is not the captain. Uncheck bootstrap or wait for more members.';
+    const message = get(t)('governance.deployGovAndSponsor.error.bootstrapNoCrewExcludingCaptain');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -240,16 +237,15 @@ export function startPactoGovAndSponsorDeploy(params: {
       payFrom: signerWallet,
     })
   ) {
-    const message =
-      'Bootstrap crew requires paying from your squad-assigned signer (not Default). Uncheck bootstrap or switch payer.';
+    const message = get(t)('governance.deployGovAndSponsor.error.bootstrapPayer');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
   }
 
   runOnChainInBackground({
-    startedToast: 'Pacto Gov + sponsor deploy started. Steps continue in the background.',
-    subject: 'Pacto Gov + sponsor',
+    startedToast: get(t)('governance.deployGovAndSponsor.toastStarted'),
+    subject: get(t)('governance.deployGovAndSponsor.subject'),
     parentId,
     job: async () => {
       const rosterRaw = await resolveSquadRosterEvmAddress(
@@ -257,9 +253,7 @@ export function startPactoGovAndSponsorDeploy(params: {
       );
       const roster = normalizeAddress(rosterRaw ?? '');
       if (!roster || roster.toLowerCase() !== captain.toLowerCase()) {
-        throw new Error(
-          'Captain must be your squad-assigned EVM. Bind a squad key for this squad and try again.',
-        );
+        throw new Error(get(t)('governance.deployGovAndSponsor.error.captainRosterMismatch'));
       }
 
       params.onProgress?.('gov');
@@ -287,7 +281,7 @@ export function startPactoGovAndSponsorDeploy(params: {
         });
       } catch (e) {
         finishSponsorNeeded = true;
-        sponsorError = getInvokeErrorMessage(e, 'Sponsor deploy failed after Pacto Gov succeeded.');
+        sponsorError = getInvokeErrorMessage(e, get(t)('governance.deployGovAndSponsor.error.sponsorAfterGovFailed'));
       }
 
       let bootstrapped = false;
@@ -383,7 +377,7 @@ export function startHatsSponsorOnlyDeploy(params: {
 
   const network = params.squadNetwork;
   if (!network) {
-    const message = 'Set the squad network in Settings before deploying.';
+    const message = get(t)('governance.deployGovAndSponsor.error.noNetwork');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -391,7 +385,7 @@ export function startHatsSponsorOnlyDeploy(params: {
 
   const topHatId = params.topHatId.trim();
   if (!topHatId) {
-    const message = 'Missing Pacto Gov top hat id for hats sponsor.';
+    const message = get(t)('governance.deployGovAndSponsor.error.missingTopHat');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -414,8 +408,7 @@ export function startHatsSponsorOnlyDeploy(params: {
       )
     : [];
   if (params.bootstrapCrew && crewCandidates.length === 0) {
-    const message =
-      'Bootstrap needs at least one shared EVM. Uncheck bootstrap or wait for more members.';
+    const message = get(t)('governance.deployGovAndSponsor.error.bootstrapNoCrew');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -423,7 +416,7 @@ export function startHatsSponsorOnlyDeploy(params: {
 
   const qm = params.quartermaster?.trim() ?? '';
   if (params.bootstrapCrew && !qm) {
-    const message = 'Quartermaster address required to bootstrap crew.';
+    const message = get(t)('governance.deployGovAndSponsor.error.quartermasterRequired');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -436,16 +429,15 @@ export function startHatsSponsorOnlyDeploy(params: {
       payFrom: signerWallet,
     })
   ) {
-    const message =
-      'Bootstrap crew requires paying from your squad-assigned signer (not Default). Uncheck bootstrap or switch payer.';
+    const message = get(t)('governance.deployGovAndSponsor.error.bootstrapPayer');
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
   }
 
   runOnChainInBackground({
-    startedToast: 'Hats sponsor deploy started. Confirmation continues in the background.',
-    subject: 'Hats sponsor',
+    startedToast: get(t)('governance.deployGovAndSponsor.toastSponsorStarted'),
+    subject: get(t)('governance.deployGovAndSponsor.sponsorSubject'),
     parentId,
     job: async () => {
       params.onProgress?.('sponsor');

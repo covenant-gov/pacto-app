@@ -369,5 +369,6 @@
 	"messaging.syncStatus.idle": "Inactivo",
 	"messaging.syncStatus.stalled": "Detenido",
 	"messaging.syncStatus.synced": "Sincronizado",
-	"messaging.syncStatus.syncing": "Sincronizando…"
+	"messaging.syncStatus.syncing": "Sincronizando…",
+	"messaging.channel.leaveError": "No se pudo salir del canal"
 }

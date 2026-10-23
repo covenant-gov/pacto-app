@@ -6,6 +6,7 @@ import { getSafeState, type SafeState } from '$lib/wallet/safe';
 import { withReadPlaneLimit } from '$lib/evm/read-plane-limiter';
 import { persistSafeStateCacheEntry } from '$lib/dashboard/safe-state-disk-cache';
 import { currentNpubForPersistence } from './persistence-context';
+import { t } from 'svelte-i18n';
 
 export interface SafeStateEntry {
   treasuryEntryId: string;
@@ -93,7 +94,7 @@ export async function refreshSafeStateForTreasuryEntry(
         return { ...map, [key]: nextEntry };
       });
     } catch (e) {
-      const msg = (e as Error)?.message ?? 'Failed to read Safe';
+      const msg = (e as Error)?.message ?? get(t)('governance.safe.readFailed');
       safeStateByTreasuryId.update((map) => {
         const cur = map[key];
         if (!cur || cur.safeAddress !== entry.safeAddress) return map;

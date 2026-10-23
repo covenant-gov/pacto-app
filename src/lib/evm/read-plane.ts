@@ -13,6 +13,8 @@ import {
 } from 'viem';
 import { createWalletPublicClient, type SupportedChainId } from '../wallet/chains';
 import { withReadPlaneLimit } from './read-plane-limiter';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 export class ReadPlaneError extends Error {
   readonly code: string;
@@ -28,7 +30,7 @@ function wrapReadError(e: unknown, fallbackCode: string): ReadPlaneError {
   const msg =
     e != null && typeof (e as Error).message === 'string'
       ? (e as Error).message
-      : 'Contract read failed.';
+      : get(t)('wallet.errors.contractReadFailed');
   return new ReadPlaneError(fallbackCode, msg);
 }
 
@@ -98,7 +100,7 @@ export async function simulateContractCall(params: {
     const msg =
       e != null && typeof (e as Error).message === 'string'
         ? (e as Error).message
-        : 'Simulation reverted.';
+        : get(t)('wallet.errors.simulationReverted');
     return { ok: false, message: msg };
   }
 }

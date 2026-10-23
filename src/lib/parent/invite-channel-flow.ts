@@ -5,6 +5,8 @@ import {
 } from '../api/nostr';
 import { bumpMembershipVersion } from '../../stores/mls-chat';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 export interface SquadChannelInviteContext {
   squadName: string;
@@ -25,7 +27,7 @@ export function runInviteMemberToChannel(opts: {
       await inviteMemberToGroup(groupId, memberNpub);
       bumpMembershipVersion(groupId);
     } catch (e) {
-      onError(friendlyMessage(getInvokeErrorMessage(e, 'Failed to invite')));
+      onError(friendlyMessage(getInvokeErrorMessage(e, get(t)('squad.access.inviteFailed'))));
       return;
     }
 
@@ -46,7 +48,7 @@ export function runInviteMemberToChannel(opts: {
         friendlyMessage(
           getInvokeErrorMessage(
             e,
-            'Added to the channel, but the join notification could not be sent. Ask them to use Request sync.',
+            get(t)('squad.access.joinNotificationFailed'),
           ),
         ),
       );

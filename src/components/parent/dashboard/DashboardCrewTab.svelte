@@ -116,7 +116,7 @@
   }
 
   function ownerLabel(): string {
-    if (!addressOwner) return 'Unknown';
+    if (!addressOwner) return $t('governance.crew.ownerUnknown');
     if (ownerNpub) {
       const name = getProfileDisplayName($profiles[ownerNpub]);
       if (name) return `${name} (${shortAddress(addressOwner)})`;

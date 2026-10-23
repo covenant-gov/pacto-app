@@ -273,7 +273,7 @@
       best = blob;
       if (blob.size <= MAX_JPEG_BYTES || quality <= JPEG_QUALITY_FLOOR) break;
     }
-    if (!best) throw new Error('Failed to encode the cropped image');
+    if (!best) throw new Error($t('media.avatarCrop.processError'));
     return best;
   }
 
@@ -283,26 +283,26 @@
       reader.onload = () => {
         const result = reader.result;
         if (typeof result !== 'string') {
-          reject(new Error('Unexpected FileReader result'));
+          reject(new Error($t('media.avatarCrop.processError')));
           return;
         }
         const commaIndex = result.indexOf(',');
         resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
       };
-      reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
+      reader.onerror = () => reject(reader.error ?? new Error($t('media.avatarCrop.processError')));
       reader.readAsDataURL(blob);
     });
   }
 
   async function cropToBase64Jpeg(): Promise<string> {
     if (!imgEl || !naturalWidth || !naturalHeight) {
-      throw new Error('Preview image is not ready');
+      throw new Error($t('media.avatarCrop.previewNotReady'));
     }
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas 2D context is unavailable');
+    if (!ctx) throw new Error($t('media.avatarCrop.processError'));
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, 512, 512);
     const { sx, sy, sSize } = computeCropSourceRect();

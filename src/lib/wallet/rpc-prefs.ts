@@ -8,6 +8,7 @@ import { currentNpubForPersistence } from '../../stores/app';
 import { getCuratedRpcUrlsForChain } from './rpc-catalog';
 import { WALLET_ASSETS_CHAIN_IDS } from './assets';
 import type { SupportedChainId } from './chains';
+import { t } from 'svelte-i18n';
 
 const STORAGE_VERSION = 1 as const;
 export const WALLET_RPC_PREFS_PREFIX = 'pacto_wallet_rpc_prefs_v1';
@@ -196,12 +197,12 @@ export function addPersonalRpc(
   rawUrl: string,
 ): { ok: true } | { ok: false; error: string } {
   const url = normalizeRpcUrl(rawUrl);
-  if (!url) return { ok: false, error: 'Enter a valid http(s) RPC URL.' };
+  if (!url) return { ok: false, error: get(t)('wallet.errors.invalidRpcUrl') };
 
   const prefs = loadRpcPrefs(accountNpub);
   const existing = prefs.personal[chainId] ?? [];
   if (existing.includes(url)) {
-    return { ok: false, error: 'That RPC is already in your personal list.' };
+    return { ok: false, error: get(t)('wallet.errors.rpcAlreadyAdded') };
   }
 
   prefs.personal[chainId] = [...existing, url];

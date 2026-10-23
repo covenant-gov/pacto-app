@@ -86,5 +86,6 @@
 	"nav.settings.sections.app": "App",
 	"nav.settings.sections.notifications": "Notifications",
 	"nav.settings.sections.commons": "Commons",
-	"nav.settings.sections.dangerzone": "Dangerzone"
+	"nav.settings.sections.dangerzone": "Dangerzone",
+	"nav.parentNavbar.createChannel.loadMembersFailed": "Could not load squad members."
 }

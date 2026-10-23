@@ -303,7 +303,7 @@ export async function acceptAnnouncementsInvite(
 
   // Consent-first: no welcome yet — claim to admitters and durably pend admission.
   const me = get(currentUser)?.npub?.trim();
-  if (!me) throw new Error('Not signed in');
+  if (!me) throw new Error(get(t)('errors.notSignedIn'));
 
   const admitters = [
     ...new Set(

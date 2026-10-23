@@ -404,7 +404,7 @@ describe('auth', () => {
 
     it('rejects an invalid recovery phrase', async () => {
       vi.mocked(validateRecoveryPhraseForImport).mockReturnValue(false);
-      await expect(importAccount('bad phrase', '123456')).rejects.toThrow('Enter a valid 12- or 24-word recovery phrase');
+      await expect(importAccount('bad phrase', '123456')).rejects.toThrow('Enter a valid recovery phrase of 12 or 24 words');
     });
 
     it('freezes the gate exactly once on success', async () => {

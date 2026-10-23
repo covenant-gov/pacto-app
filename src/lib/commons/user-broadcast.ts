@@ -13,6 +13,8 @@ import {
 } from './local-broadcast-state';
 import { COMMONS_NEW_TAG } from './tags';
 import { hasEverBroadcast, markHasEverBroadcast } from './first-broadcast';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 /** First broadcast ever → new user; any later one → active user. */
 export function commonsAudienceForFirstBroadcast(firstEver: boolean): CommonsBroadcastAudience {
@@ -48,7 +50,7 @@ export async function cancelUserCommonsBroadcast(
     clearCommonsBroadcastLocalState('user', npub);
     return { ok: true };
   } catch (e: unknown) {
-    return { ok: false, error: getInvokeErrorMessage(e, 'Failed to cancel broadcast.') };
+    return { ok: false, error: getInvokeErrorMessage(e, get(t)('commons.errors.cancelBroadcastFailed')) };
   }
 }
 
@@ -60,15 +62,15 @@ export async function publishUserCommonsBroadcast(input: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const message = input.message.trim();
   if (!message) {
-    return { ok: false, error: 'Message is required.' };
+    return { ok: false, error: get(t)('commons.errors.messageRequired') };
   }
   if (input.tags.length === 0) {
-    return { ok: false, error: 'Add at least one tag.' };
+    return { ok: false, error: get(t)('commons.errors.tagRequired') };
   }
 
   const active = await fetchActiveUserCommonsBroadcast(input.npub);
   if (active) {
-    return { ok: false, error: 'A broadcast is still active. Wait until it expires.' };
+    return { ok: false, error: get(t)('commons.errors.personalBroadcastStillActive') };
   }
 
   // Audience is implicit: first broadcast ever is a new user (+ reserved `#new`
@@ -91,7 +93,7 @@ export async function publishUserCommonsBroadcast(input: {
   } catch (e: unknown) {
     return {
       ok: false,
-      error: getInvokeErrorMessage(e, 'Failed to publish broadcast.'),
+      error: getInvokeErrorMessage(e, get(t)('commons.errors.publishPersonalBroadcastFailed')),
     };
   }
 }

@@ -18,5 +18,7 @@
 	"media.avatarCrop.uploading": "Uploading…",
 	"media.avatarCrop.zoomIn": "Zoom in",
 	"media.avatarCrop.zoomOut": "Zoom out",
-	"media.avatarCrop.zoomSlider": "Zoom"
+	"media.avatarCrop.zoomSlider": "Zoom",
+	"media.avatarCrop.processError": "Could not process the cropped image.",
+	"media.avatarCrop.previewNotReady": "Preview image is not ready."
 }

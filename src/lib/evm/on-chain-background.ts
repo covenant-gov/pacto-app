@@ -8,6 +8,8 @@ import {
   completeOnChainJob,
   failOnChainJob,
 } from '../../stores/pending-on-chain';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 function txHashFromUnknown(result: unknown): string | undefined {
   if (!result || typeof result !== 'object') return undefined;
@@ -18,21 +20,25 @@ function txHashFromUnknown(result: unknown): string | undefined {
 export function toastOnChainSubmitted(
   network: SupportedChainId,
   txHash: string,
-  subject = 'Transaction',
+  subject = get(t)('wallet.onChain.defaultLabel'),
 ): void {
   const short = txHash.length > 14 ? `${txHash.slice(0, 10)}…${txHash.slice(-4)}` : txHash;
   const explorer = getExplorerTxUrl(network, txHash);
   const label = explorerTxLinkLabel(network);
   showToast(
     explorer
-      ? `${subject} submitted (${short}). Track on ${label} while it confirms.`
-      : `${subject} submitted (${short}). Confirmation continues in the background.`,
+      ? get(t)('wallet.onChain.toastSubmittedExplorer', { values: { subject, txHash: short, explorer: label } })
+      : get(t)('wallet.onChain.toastSubmitted', { values: { subject, txHash: short } }),
   );
 }
 
-export function toastOnChainConfirmed(network: string, txHash: string, subject = 'Transaction'): void {
+export function toastOnChainConfirmed(
+  network: string,
+  txHash: string,
+  subject = get(t)('wallet.onChain.defaultLabel'),
+): void {
   const short = txHash.length > 14 ? `${txHash.slice(0, 10)}…${txHash.slice(-4)}` : txHash;
-  showToast(`${subject} confirmed on ${network}. Tx ${short}`);
+  showToast(get(t)('wallet.onChain.toastConfirmed', { values: { subject, network, txHash: short } }));
 }
 
 export function toastOnChainFailed(message: string): void {
@@ -53,7 +59,7 @@ export function waitForOnChainConfirmationInBackground(
     jobId?: string;
   },
 ): void {
-  const label = opts?.subject?.trim() || 'Transaction';
+  const label = opts?.subject?.trim() || get(t)('wallet.onChain.defaultLabel');
   const jobId =
     opts?.jobId ??
     beginOnChainJob({
@@ -108,7 +114,7 @@ export function runOnChainInBackground<T>(opts: RunOnChainInBackgroundOpts<T>): 
       await opts.onSuccess?.(result);
       if (jobId) completeOnChainJob(jobId, txHashFromUnknown(result));
     } catch (e) {
-      let raw = getInvokeErrorMessage(e, 'On-chain transaction failed.');
+      let raw = getInvokeErrorMessage(e, get(t)('wallet.onChain.failedFallback'));
       const parsed = parseWalletOpError(raw);
       if (parsed?.message) {
         raw = parsed.code ? `${parsed.code}: ${parsed.message}` : parsed.message;

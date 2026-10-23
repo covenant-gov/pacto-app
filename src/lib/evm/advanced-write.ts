@@ -5,6 +5,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { SupportedChainId } from '../wallet/chains';
 import { parseWalletOpError, type WalletOpParsedError } from '../wallet/backend-wallet';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 function isTauri(): boolean {
   return typeof window !== 'undefined' && !!(window as { __TAURI__?: unknown }).__TAURI__;
@@ -46,7 +48,7 @@ export async function evmSendAdvancedContractCall(params: {
         ? e
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
-          : 'Advanced send failed.';
+          : get(t)('wallet.errors.advancedSendFailed');
     const parsed = parseWalletOpError(raw);
     return { ok: false, message: parsed?.message ?? raw, parsed: parsed ?? undefined };
   }

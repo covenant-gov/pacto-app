@@ -34,6 +34,8 @@ import {
 import { withReadPlaneLimit } from '../evm/read-plane-limiter';
 
 import { parseSupportedChainId, type SupportedChainId } from '../wallet/chains';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 /** True when an async dashboard loader finished for a superseded cache key. */
 export function isSupersededLoaderKey(activeKey: string, capturedKey: string): boolean {
@@ -137,7 +139,7 @@ export async function fetchTreasuryProposals(params: {
   } catch (e) {
     return {
       proposals: [],
-      error: getInvokeErrorMessage(e, 'Could not load treasury proposals.'),
+      error: getInvokeErrorMessage(e, get(t)('governance.dashboard.error.loadTreasuryProposals')),
     };
   }
 }
@@ -157,7 +159,7 @@ export async function fetchQuartermasterPendingActions(params: {
   } catch (e) {
     return {
       pending: [],
-      error: getInvokeErrorMessage(e, 'Could not load pending crew changes.'),
+      error: getInvokeErrorMessage(e, get(t)('governance.dashboard.error.loadPendingCrewChanges')),
     };
   }
 }
@@ -177,7 +179,7 @@ export async function fetchHatsTree(params: {
   } catch (e) {
     return {
       tree: null,
-      error: getInvokeErrorMessage(e, 'Could not load Hats tree.'),
+      error: getInvokeErrorMessage(e, get(t)('governance.dashboard.error.loadHatsTree')),
     };
   }
 }
@@ -351,7 +353,7 @@ export async function fetchRolesTreeAnnotations(params: {
       roleLabelByHatId: {},
       wearerAddressesByHatId: {},
       executorRolesByAddress: {},
-      error: getInvokeErrorMessage(e, 'Could not load role labels or hat wearers.'),
+      error: getInvokeErrorMessage(e, get(t)('governance.dashboard.error.loadRoleLabels')),
     };
   }
 }
@@ -420,7 +422,7 @@ export async function fetchSettingsChainMemberMaps(params: {
     return {
       memberHatByAddress: {},
       memberRolesByAddress: {},
-      error: getInvokeErrorMessage(e, 'Could not load on-chain Hats or Roles for members.'),
+      error: getInvokeErrorMessage(e, get(t)('governance.dashboard.error.loadMemberRoles')),
     };
   }
 }

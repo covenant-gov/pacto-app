@@ -10,6 +10,7 @@ import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
 import { formatChannelInSquadMessage } from '../api/nostr';
 import type { Squad } from '../../stores/squads';
 import { squads } from '../../stores/squads';
+import { t } from 'svelte-i18n';
 
 const admitInFlight = new Set<string>();
 
@@ -55,7 +56,7 @@ export async function admitMemberToSquad(opts: {
   const announcements = getAnnouncementsChannel(parent);
   const announcementsGid = announcements.groupId?.trim();
   if (!announcementsGid || !npub) {
-    return { ok: false, announcementsOk: false, openChannelsInvited: 0, error: 'Squad not ready.' };
+    return { ok: false, announcementsOk: false, openChannelsInvited: 0, error: get(t)('squad.access.notReady') };
   }
 
   const key = admitKey(parent.id, npub);
@@ -75,7 +76,7 @@ export async function admitMemberToSquad(opts: {
         ok: false,
         announcementsOk: false,
         openChannelsInvited: 0,
-        error: lastErr || 'Could not add to announcements.',
+        error: lastErr || get(t)('squad.access.addToAnnouncementsFailed'),
       };
     }
 

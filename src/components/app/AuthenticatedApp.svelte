@@ -994,7 +994,7 @@
                   try {
                     await setNickname(id, value);
                   } catch (e) {
-                    throw new Error(getInvokeErrorMessage(e, 'Failed to set nickname'), { cause: e });
+                    throw new Error(getInvokeErrorMessage(e, $t('messaging.dm.thread.nicknameError')), { cause: e });
                   }
                 }}
                 onDeleteChat={() => {
@@ -1047,7 +1047,7 @@
                   txHash: params.txHash,
                 });
               } catch (e) {
-                showToast(getInvokeErrorMessage(e, 'Treasury saved but governance sync failed.'));
+                showToast(getInvokeErrorMessage(e, $t('governance.treasury.toastGovernanceSyncFailed')));
               }
               const gid = resolveAutomatedAnnounceGroupId(p);
               if (gid) {

@@ -126,9 +126,9 @@
     if (!replyToMessageId) return undefined;
     const msg = messages.find((m) => m.id === replyToMessageId);
     if (!msg) return undefined;
-    if (msg.attachments && msg.attachments.length > 0) return 'Attachment';
+    if (msg.attachments && msg.attachments.length > 0) return $t('messaging.message.attachment');
     if (msg.content && msg.content.length > 0) return replyQuoteExcerpt(msg.content, $stripTrackingMarkersEnabled);
-    return 'Message';
+    return $t('messaging.message.messageFallback');
   });
   let chatDeleting = $derived($deletingDmNpubs.has(npub));
 

@@ -306,7 +306,7 @@
       } else if (pending.file) {
         bytes = await pending.file.arrayBuffer();
       } else {
-        throw new Error('No file data available for attachment');
+        throw new Error($t('errors.dm.attachmentFailed'));
       }
       const repliedToId = repliedTo ?? '';
       await onSendFile!(bytes, pending.fileName, repliedToId, shouldCompressImage(pending.fileName));

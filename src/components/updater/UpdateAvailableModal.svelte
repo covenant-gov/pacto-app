@@ -2,6 +2,7 @@
   import Modal from '../ui/Modal.svelte';
   import UpdateAvailablePanel from './UpdateAvailablePanel.svelte';
   import { updateStatus } from '../../lib/updater/update-check';
+  import { t } from 'svelte-i18n';
 
   let open = $derived(
     $updateStatus.status === 'available' ||
@@ -13,10 +14,10 @@
 
   let title = $derived(
     $updateStatus.status === 'error'
-      ? 'Update check failed'
+      ? $t('updater.modalTitle.error')
       : $updateStatus.status === 'installed'
-        ? 'Update installed'
-        : 'Update available'
+        ? $t('updater.modalTitle.installed')
+        : $t('updater.modalTitle.available')
   );
 
   function closeModal(): void {

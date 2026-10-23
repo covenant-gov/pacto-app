@@ -7,6 +7,8 @@ import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
 import type { SupportedChainId } from './chains';
 import type { WalletUsdSpotPrices } from './pricing';
 import type { WatchedErc20Wire } from './watched-tokens';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 function isTauri(): boolean {
   return typeof window !== 'undefined' && !!(window as { __TAURI__?: unknown }).__TAURI__;
@@ -63,7 +65,7 @@ export async function getEvmNativeBalance(
   }
   const addr = address.trim();
   if (!addr) {
-    return { ok: false, message: 'Address is required.' };
+    return { ok: false, message: get(t)('wallet.errors.addressRequired') };
   }
   try {
     const balance = await invoke<EvmNativeBalance>('get_evm_native_balance', {
@@ -77,7 +79,7 @@ export async function getEvmNativeBalance(
         ? e
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
-          : 'Could not load balance.';
+          : get(t)('wallet.errors.loadBalanceFailed');
     return { ok: false, message: msg };
   }
 }
@@ -106,7 +108,7 @@ export async function getWalletSummary(
         ? e
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
-          : 'Could not load wallet summary.';
+          : get(t)('wallet.errors.loadSummaryFailed');
     return { ok: false, message: msg };
   }
 }
@@ -200,7 +202,7 @@ export async function walletBuildAndSendTransaction(
         ? e
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
-          : 'Send failed.';
+          : get(t)('wallet.errors.sendFailed');
     const parsed = parseWalletOpError(raw);
     return { ok: false, message: parsed?.message ?? raw, parsed: parsed ?? undefined };
   }
@@ -225,7 +227,7 @@ export async function walletWaitForTransaction(
         ? e
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
-          : 'Confirmation failed.';
+          : get(t)('wallet.errors.confirmationFailed');
     const parsed = parseWalletOpError(raw);
     return { ok: false, message: parsed?.message ?? raw, parsed: parsed ?? undefined };
   }
@@ -273,7 +275,7 @@ export async function safeDeployProxy(
         ? e
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
-          : 'Deploy failed.';
+          : get(t)('wallet.errors.deployFailed');
     const parsed = parseWalletOpError(raw);
     return { ok: false, message: parsed?.message ?? raw, parsed: parsed ?? undefined };
   }
@@ -281,16 +283,16 @@ export async function safeDeployProxy(
 
 /** Short user-facing copy for Safe deploy when the JSON message is noisy RPC text. */
 export function userFacingDeploySafeMessage(parsed: WalletOpParsedError | undefined): string {
-  if (!parsed) return 'Deploy failed.';
+  if (!parsed) return get(t)('wallet.errors.deployFailed');
   const { code, message } = parsed;
   if (code === 'SEND_FAILED' && message.length > 120) {
-    return 'Could not submit the transaction. Check your native balance and network connection.';
+    return get(t)('wallet.errors.submitFailed');
   }
   if (code === 'RPC_CONNECT') {
-    return "Couldn't reach the RPC. Try again in a moment or set ALCHEMY_RPC_KEY in `.env` (see `.env.example`).";
+    return get(t)('wallet.errors.rpcConnect');
   }
   if (code === 'NO_EVM_KEY') {
-    return 'No embedded wallet key on this account. Use an account that was created or imported with an EVM wallet.';
+    return get(t)('wallet.errors.noEvmKey');
   }
   return message;
 }

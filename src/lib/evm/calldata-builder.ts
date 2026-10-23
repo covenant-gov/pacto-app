@@ -14,36 +14,38 @@ import {
 import { parseAbiJson } from './abi-loader';
 import { simulateContractCall } from './read-plane';
 import type { SupportedChainId } from '../wallet/chains';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 export function normalizeCalldataHex(raw: string): Hex {
-  const t = raw.trim();
-  if (!t || t === '0x') return '0x';
-  const body = t.startsWith('0x') || t.startsWith('0X') ? t.slice(2) : t;
-  if (body.length % 2 !== 0) throw new Error('Calldata hex must have an even number of digits.');
-  if (!/^[0-9a-fA-F]+$/.test(body)) throw new Error('Calldata contains non-hex characters.');
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === '0x') return '0x';
+  const body = trimmed.startsWith('0x') || trimmed.startsWith('0X') ? trimmed.slice(2) : trimmed;
+  if (body.length % 2 !== 0) throw new Error(get(t)('wallet.errors.calldataOddLength'));
+  if (!/^[0-9a-fA-F]+$/.test(body)) throw new Error(get(t)('wallet.errors.calldataNonHex'));
   return `0x${body.toLowerCase()}` as Hex;
 }
 
 export function normalizeToAddress(raw: string): Address {
-  const t = raw.trim();
-  if (!isAddress(t)) throw new Error('Enter a valid 0x contract address.');
-  return t as Address;
+  const trimmed = raw.trim();
+  if (!isAddress(trimmed)) throw new Error(get(t)('wallet.errors.invalidContractAddress'));
+  return trimmed as Address;
 }
 
 /** Decimal ETH string → wei decimal string for Tauri `valueWei`. */
 export function ethAmountToWeiString(amountEth: string): string {
-  const t = amountEth.trim();
-  if (!t || t === '0') return '0';
-  return parseEther(t).toString();
+  const trimmed = amountEth.trim();
+  if (!trimmed || trimmed === '0') return '0';
+  return parseEther(trimmed).toString();
 }
 
 export function weiStringToEthDisplay(wei: string): string {
-  const t = wei.trim();
-  if (!t || t === '0') return '0';
+  const trimmed = wei.trim();
+  if (!trimmed || trimmed === '0') return '0';
   try {
-    return formatEther(BigInt(t));
+    return formatEther(BigInt(trimmed));
   } catch {
-    return t;
+    return trimmed;
   }
 }
 
@@ -61,10 +63,10 @@ export function encodeFunctionCalldata(params: {
 
 /** Parse JSON args array for ABI encode mode. */
 export function parseAbiArgsJson(raw: string): readonly unknown[] {
-  const t = raw.trim();
-  if (!t) return [];
-  const parsed = JSON.parse(t) as unknown;
-  if (!Array.isArray(parsed)) throw new Error('Function args must be a JSON array.');
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  const parsed = JSON.parse(trimmed) as unknown;
+  if (!Array.isArray(parsed)) throw new Error(get(t)('wallet.errors.argsNotArray'));
   return parsed;
 }
 
@@ -75,7 +77,7 @@ export function buildCalldataFromAbiForm(params: {
 }): Hex {
   const abi = parseAbiJson(params.abiJson);
   const fn = params.functionName.trim();
-  if (!fn) throw new Error('Function name is required.');
+  if (!fn) throw new Error(get(t)('wallet.errors.functionNameRequired'));
   const args = parseAbiArgsJson(params.argsJson);
   return encodeFunctionCalldata({ abi, functionName: fn, args });
 }
@@ -93,7 +95,7 @@ export async function simulateAdvancedTransaction(params: {
   try {
     value = BigInt(valueWei);
   } catch {
-    return { ok: false, message: 'Value must be a decimal wei string.' };
+    return { ok: false, message: get(t)('wallet.errors.valueNotWei') };
   }
   return simulateContractCall({
     chainId: params.chainId,

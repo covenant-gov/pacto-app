@@ -2,6 +2,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { get } from 'svelte/store';
 import type { NostrProfile } from '../api/nostr';
 import { torRoutingEnabled } from '../../stores/tor';
+import { t } from 'svelte-i18n';
 
 /** True when running inside Tauri WebView (so convertFileSrc works). In browser dev, false. */
 function isTauri(): boolean {
@@ -79,11 +80,11 @@ export function profileNeedsRelayHydration(
  * Prefer Vector nickname, then Nostr name/display_name, then short npub.
  */
 export function getProfileDisplayName(profile: NostrProfile | null | undefined): string {
-  if (!profile) return 'Unknown';
+  if (!profile) return get(t)('profile.unknownName');
   const name = profile.nickname?.trim() || profile.name?.trim() || profile.display_name?.trim();
   if (name) return name;
   if (profile.id) return profile.id.slice(0, 16);
-  return 'Unknown';
+  return get(t)('profile.unknownName');
 }
 
 /**

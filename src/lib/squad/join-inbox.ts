@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { get, writable } from 'svelte/store';
 import { sendDmMessage } from '../api/nostr';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
+import { t } from 'svelte-i18n';
 
 export const JOIN_INBOX_META_SCHEMA = 'pacto.squad.join_inbox.meta.v1';
 export const JOIN_INBOX_KEY_ROTATED_SCHEMA = 'pacto.squad.join_inbox.key_rotated.v1';
@@ -49,7 +50,7 @@ function clearJoinInboxHolderActionInFlight(squadId: string): void {
   if (removed) joinInboxHolderActionInFlightRevision.update((n) => n + 1);
 }
 
-const HOLDER_ACTION_BUSY = 'Join inbox holder update already in progress.';
+const holderActionBusy = (): string => get(t)('governance.joinInbox.error.holderActionBusy');
 
 export interface JoinInboxState {
   squadId: string;
@@ -117,7 +118,7 @@ export async function initJoinInbox(
     await publishBundle(id, bundle);
     return { ok: true, state: bundle.state };
   } catch (e: unknown) {
-    const error = getInvokeErrorMessage(e, 'Could not initialize Join inbox.');
+    const error = getInvokeErrorMessage(e, get(t)('governance.joinInbox.error.initFailed'));
     console.warn('[join-inbox] init failed', error);
     return { ok: false, error };
   }
@@ -148,7 +149,7 @@ export async function addJoinInboxHolder(
 ): Promise<{ ok: true; state: JoinInboxState } | { ok: false; error: string }> {
   const id = squadId.trim();
   if (!markJoinInboxHolderActionInFlight(id)) {
-    return { ok: false, error: HOLDER_ACTION_BUSY };
+    return { ok: false, error: holderActionBusy() };
   }
   try {
     const bundle = await invoke<JoinInboxPublishBundle>('join_inbox_add_holder', {
@@ -158,7 +159,7 @@ export async function addJoinInboxHolder(
     await publishBundle(id, bundle);
     return { ok: true, state: bundle.state };
   } catch (e: unknown) {
-    return { ok: false, error: getInvokeErrorMessage(e, 'Could not add Join inbox holder.') };
+    return { ok: false, error: getInvokeErrorMessage(e, get(t)('governance.joinInbox.error.addHolderFailed')) };
   } finally {
     clearJoinInboxHolderActionInFlight(id);
   }
@@ -170,7 +171,7 @@ export async function removeJoinInboxHolder(
 ): Promise<{ ok: true; state: JoinInboxState } | { ok: false; error: string }> {
   const id = squadId.trim();
   if (!markJoinInboxHolderActionInFlight(id)) {
-    return { ok: false, error: HOLDER_ACTION_BUSY };
+    return { ok: false, error: holderActionBusy() };
   }
   try {
     const bundle = await invoke<JoinInboxPublishBundle>('join_inbox_remove_holder', {
@@ -180,7 +181,7 @@ export async function removeJoinInboxHolder(
     await publishBundle(id, bundle);
     return { ok: true, state: bundle.state };
   } catch (e: unknown) {
-    return { ok: false, error: getInvokeErrorMessage(e, 'Could not remove Join inbox holder.') };
+    return { ok: false, error: getInvokeErrorMessage(e, get(t)('governance.joinInbox.error.removeHolderFailed')) };
   } finally {
     clearJoinInboxHolderActionInFlight(id);
   }
@@ -191,7 +192,7 @@ export async function rotateJoinInboxKey(
 ): Promise<{ ok: true; state: JoinInboxState } | { ok: false; error: string }> {
   const id = squadId.trim();
   if (!markJoinInboxHolderActionInFlight(id)) {
-    return { ok: false, error: HOLDER_ACTION_BUSY };
+    return { ok: false, error: holderActionBusy() };
   }
   try {
     const bundle = await invoke<JoinInboxPublishBundle>('join_inbox_rotate_key', {
@@ -200,7 +201,7 @@ export async function rotateJoinInboxKey(
     await publishBundle(id, bundle);
     return { ok: true, state: bundle.state };
   } catch (e: unknown) {
-    return { ok: false, error: getInvokeErrorMessage(e, 'Could not rotate Join inbox key.') };
+    return { ok: false, error: getInvokeErrorMessage(e, get(t)('governance.joinInbox.error.rotateKeyFailed')) };
   } finally {
     clearJoinInboxHolderActionInFlight(id);
   }
@@ -237,11 +238,11 @@ export function canAddJoinInboxHolder(
     options?.squadAdminActive &&
     !hasSquadAdminHolderManageRights(options.executorRolesLabel)
   ) {
-    return 'Squad Admin Full executor scope is required to manage Join inbox holders.';
+    return get(t)('governance.joinInbox.error.squadAdminScopeRequired');
   }
-  if (!members.includes(actorNpub)) return 'You must be a squad member.';
-  if (!members.includes(targetNpub)) return 'That person is not a current squad member.';
-  if (!holders.includes(actorNpub)) return 'Only Join inbox holders can add holders.';
-  if (holders.includes(targetNpub)) return 'Already a key holder.';
+  if (!members.includes(actorNpub)) return get(t)('governance.joinInbox.error.actorNotMember');
+  if (!members.includes(targetNpub)) return get(t)('governance.joinInbox.error.targetNotMember');
+  if (!holders.includes(actorNpub)) return get(t)('governance.joinInbox.error.actorNotHolder');
+  if (holders.includes(targetNpub)) return get(t)('governance.joinInbox.error.alreadyHolder');
   return null;
 }

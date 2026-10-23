@@ -106,7 +106,7 @@ export async function collectInviteNpubsForSquads(
   for (const squad of squadList) {
     const ann = getAnnouncementsChannel(squad);
     if (!ann?.groupId?.trim() || ann.groupId.startsWith('creating-')) {
-      throw new Error(`Squad "${squad.name}" has no announcements channel`);
+      throw new Error(get(t)('squad.create.noAnnouncementsChannel', { values: { name: squad.name } }));
     }
     const result = await fetchMembers(ann.groupId);
     for (const npub of result.members ?? []) {

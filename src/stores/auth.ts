@@ -122,7 +122,7 @@ let migrationToastTimer: TimerHandle | null = null;
 
 /** Show the migration-complete toast for five seconds, then clear it. */
 export function showMigrationCompleteToast(
-  message = "Account security updated"
+  message = get(t)("auth.migrationComplete")
 ): void {
   if (migrationToastTimer !== null) {
     clearTimeout(migrationToastTimer);
@@ -260,7 +260,7 @@ export async function checkAuthStatus(): Promise<
   } catch (error: unknown) {
     console.error("Auth check failed:", error);
     authError.set(
-      error instanceof Error ? error.message : "Failed to check auth status"
+      error instanceof Error ? error.message : get(t)("auth.errorCheckStatusFailed")
     );
     return "needs-auth";
   } finally {
@@ -342,7 +342,7 @@ export async function createAccount(
   } catch (error: unknown) {
     console.error("Create account failed:", error);
     authError.set(
-      error instanceof Error ? error.message : "Failed to create account"
+      error instanceof Error ? error.message : get(t)("auth.errorCreateAccountFailed")
     );
     authLoading.set(false);
     throw error;
@@ -370,7 +370,7 @@ export async function importAccount(
     if (!(await beginAccountSetup())) return;
 
     if (!validateRecoveryPhraseForImport(recoveryPhrase)) {
-      throw new Error("Enter a valid 12- or 24-word recovery phrase");
+      throw new Error(get(t)("auth.errorInvalidRecoveryPhrase"));
     }
 
     const keys = await loginWithRecoveryPhrase(recoveryPhrase);
@@ -390,7 +390,7 @@ export async function importAccount(
   } catch (error: unknown) {
     console.error("Import account failed:", error);
     authError.set(
-      error instanceof Error ? error.message : "Failed to import account"
+      error instanceof Error ? error.message : get(t)("auth.errorImportAccountFailed")
     );
     authLoading.set(false);
     throw error;
@@ -431,7 +431,7 @@ export async function unlockWithPin(pin: string): Promise<void> {
     authError.set(
       error instanceof Error
         ? error.message
-        : "Incorrect PIN or failed to decrypt"
+        : get(t)("auth.errorUnlockFailed")
     );
     throw error;
   } finally {
@@ -471,7 +471,7 @@ export async function unlockWithBiometrics(npub: string): Promise<void> {
     dmLog("unlockWithBiometrics: done");
   } catch (error: unknown) {
     console.error("Biometric unlock failed:", error);
-    authError.set(getInvokeErrorMessage(error, "Biometric unlock failed"));
+    authError.set(getInvokeErrorMessage(error, get(t)("auth.biometricErrorGeneric")));
     throw error;
   } finally {
     authLoading.set(false);
@@ -495,7 +495,7 @@ export async function logout(): Promise<void> {
     await invoke("logout");
   } catch (error: unknown) {
     console.error("Logout failed:", error);
-    authError.set(error instanceof Error ? error.message : "Failed to logout");
+    authError.set(error instanceof Error ? error.message : get(t)("auth.errorLogoutFailed"));
     isAuthenticated.set(false);
     currentUser.set(null);
     throw error;
@@ -519,7 +519,7 @@ export function clearAuthError(): void {
 export function handleMigrationGateError(error: unknown): boolean {
   if (isMigrationGateError(error)) {
     dropSessionState();
-    authError.set("Please unlock to update account security.");
+    authError.set(get(t)("errors.migrationGate"));
     return true;
   }
   return false;

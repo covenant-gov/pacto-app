@@ -2,6 +2,8 @@ import type { SquadVisibility } from '../../stores/squads';
 import { showToast } from '../../stores/toast';
 import { publishSquadCommonsBroadcast } from './squad-broadcast';
 import { COMMONS_NEW_TAG } from './tags';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 export type { SquadVisibility };
 
@@ -39,8 +41,9 @@ export async function publishPublicSquadCreateBroadcast(
 }
 
 function toastFailedBroadcast(squad: PublicSquadBroadcastTarget, error: string): void {
-  showToast(`Commons broadcast failed for ${squad.name}. ${error}`, undefined, {
-    label: 'Retry broadcast',
+  const tr = get(t);
+  showToast(tr('commons.errors.squadBroadcastFailedToast', { values: { squadName: squad.name, error } }), undefined, {
+    label: tr('commons.errors.retryBroadcast'),
     action: () => {
       void publishPublicSquadCreateBroadcast(squad).then((result) => {
         if (!result.ok) toastFailedBroadcast(squad, result.error);

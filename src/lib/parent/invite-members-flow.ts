@@ -9,6 +9,7 @@ import {
 } from '../squad/consent-first-invite';
 import { currentUser } from '../../stores/auth-session';
 import type { Squad } from '../../stores/squads';
+import { t } from 'svelte-i18n';
 
 export async function loadInviteCandidateNpubs(
   parent: Squad,
@@ -39,7 +40,7 @@ export function runInviteMembersToParent(opts: {
     const invitedNpubs: string[] = [];
     const myNpub = get(currentUser)?.npub;
     if (!groupId) {
-      onErrorBanner('Squad channels are not ready to send invites yet.');
+      onErrorBanner(get(t)('squad.access.channelsNotReady'));
       onComplete(invitedNpubs);
       return;
     }

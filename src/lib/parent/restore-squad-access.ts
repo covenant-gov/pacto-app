@@ -13,6 +13,7 @@ import { currentUser } from '../../stores/auth-session';
 import { bumpMembershipVersion } from '../../stores/mls-chat';
 import { refreshMlsGroupMembers } from '../../stores/mls-group-members';
 import { squads, type Channel, type Squad } from '../../stores/squads';
+import { t } from 'svelte-i18n';
 
 const restoreInFlight = new Set<string>();
 const lastRestoreAt = new Map<string, number>();
@@ -200,7 +201,7 @@ export async function restoreMemberToSquad(opts: {
   const npub = opts.memberNpub.trim();
   const announcementsGid = getAnnouncementsChannel(opts.parent).groupId?.trim() ?? '';
   if (!announcementsGid || !npub) {
-    return { ok: false, error: 'Squad not ready.' };
+    return { ok: false, error: get(t)('squad.access.notReady') };
   }
   const key = restoreKey(opts.parent.id, npub);
   if (restoreInFlight.has(key)) return { ok: true, skipped: 'in_flight' };
@@ -214,7 +215,7 @@ export async function restoreMemberToSquad(opts: {
     restoreInFlight.delete(key);
     return {
       ok: false,
-      error: friendlyMessage(getInvokeErrorMessage(e, 'Could not restore access')),
+      error: friendlyMessage(getInvokeErrorMessage(e, get(t)('squad.access.restoreFailed'))),
     };
   }
   lastRestoreAt.set(key, Date.now());
