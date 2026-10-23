@@ -325,6 +325,8 @@
       src={localSrc}
       downloading={busy}
       onRequestDownload={() => handleDownload()}
+      onSaveAs={() => handleSaveAs()}
+      saving={savingAs}
     />
   {:else if isAudio && onDisk}
     <div class="media-row">
