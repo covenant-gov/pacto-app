@@ -76,9 +76,15 @@ After this change, `make` lists the available targets, `cargo check` is clean fo
 
 ## Evidence
 
-Ask whether to capture evidence only when the change has observable behavior (UI, CLI output, workflow output, generated artifacts). For internal plumbing, type-only changes, refactors, docs, or tests, skip the prompt and proceed without a Demo section.
+UI changes always need visual evidence in a `## Demo` section above the badge. Use screenshots, or `ce-demo-reel` when the change is a flow that reads better as a GIF. For other observable behavior (CLI output, workflow output, generated artifacts), ask whether to capture evidence. For internal plumbing, type-only changes, refactors, docs, or tests, skip the prompt and proceed without a Demo section.
 
-When capturing evidence, use `ce-demo-reel` and splice the resulting URL or path into a `## Demo` section above the badge.
+Host images in [`covenant-gov/pacto-pr-assets`](https://github.com/covenant-gov/pacto-pr-assets), never in this repo:
+
+```bash
+scripts/pr-screenshot.sh <pr-number> shot-1.png shot-2.png --width 1100
+```
+
+The script uploads to `assets/pacto/pr-<number>/` through the GitHub API and prints `<img>` tags pinned to the upload commit; paste them into the PR body (`gh pr edit --body-file`). Before the PR exists, pass a feature name instead of the number. Existing files are never overwritten, so give an updated screenshot a new name. Do not commit images under `docs/` or anywhere else in this repo, and do not link `/tmp` paths. Use mock or sandbox data only: the assets repo is public.
 
 ## Closing multiple GitHub issues
 
