@@ -4,6 +4,8 @@
 	"errors.migrationGate": "Please unlock to update account security.",
 	"errors.dm.attachmentFailed": "Failed to send attachment",
 	"errors.dm.copyFailed": "Could not copy message",
+	"errors.dm.editFailed": "Could not edit message",
+	"errors.dm.editWindowClosed": "Messages can only be edited for 1 minute after sending",
 	"errors.dm.copyUnavailable": "Copy not available on this device",
 	"errors.dm.gifFailed": "Failed to send GIF",
 	"errors.dm.invalidNpub": "Please enter a valid npub (starts with npub1).",

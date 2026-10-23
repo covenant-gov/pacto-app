@@ -632,38 +632,11 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                                                                 None // Don't emit as message
                                                             }
                                                             RumorProcessingResult::Ignored => None,
-                                                            RumorProcessingResult::Edit { message_id, new_content, edited_at, event } => {
-                                                                // Skip if this edit event was already processed (deduplication)
+                                                            RumorProcessingResult::Edit { event, .. } => {
                                                                 if let Some(handle) = TAURI_APP.get() {
-                                                                    if db::event_exists(handle, &event.id).unwrap_or(false) {
-                                                                        return None; // Already processed, skip
-                                                                    }
-
-                                                                    // Save edit event to database
-                                                                    if let Ok(chat_id) = db::get_chat_id_by_identifier(handle, &group_id_for_persist) {
-                                                                        let mut event_with_chat = event;
-                                                                        event_with_chat.chat_id = chat_id;
-                                                                        let _ = db::save_event(handle, &event_with_chat).await;
-                                                                    }
+                                                                    let _ = crate::message::receive_message_edit(handle, &group_id_for_persist, event).await;
                                                                 }
-
-                                                                // Update message in state and emit to frontend
-                                                                let mut state = crate::STATE.lock().await;
-                                                                if let Some(chat) = state.get_chat_mut(&group_id_for_persist) {
-                                                                    if let Some(msg) = chat.get_message_mut(&message_id) {
-                                                                        msg.apply_edit(new_content, edited_at);
-
-                                                                        // Emit update to frontend
-                                                                        if let Some(handle) = TAURI_APP.get() {
-                                                                            let _ = handle.emit("message_update", serde_json::json!({
-                                                                                "old_id": &message_id,
-                                                                                "message": &msg,
-                                                                                "chat_id": &group_id_for_persist
-                                                                            }));
-                                                                        }
-                                                                    }
-                                                                }
-                                                                None // Don't emit as message
+                                                                None
                                                             }
                                                         }
                                                     }
@@ -833,6 +806,9 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                                 "message": record,
                                 "group_name": group_name
                             }));
+                            let _ = crate::message::reconcile_message_edits(
+                                &handle, &group_id_for_emit, &record.id,
+                            ).await;
                             db::apply_mls_virtual_bucket_side_effects(
                                 &handle,
                                 &group_id_for_emit,

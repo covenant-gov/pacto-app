@@ -8079,55 +8079,6 @@ pub async fn save_reaction_event<R: Runtime>(
     save_event(handle, &event).await
 }
 
-/// Save a message edit as a kind=16 event in the events table
-///
-/// Edit events reference the original message and contain the new content.
-/// The content is encrypted just like DM content.
-pub async fn save_edit_event<R: Runtime>(
-    handle: &AppHandle<R>,
-    edit_id: &str,
-    message_id: &str,
-    new_content: &str,
-    chat_id: i64,
-    user_id: Option<i64>,
-    npub: &str,
-) -> Result<(), String> {
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-
-    let event = StoredEvent {
-        id: edit_id.to_string(),
-        kind: event_kind::MESSAGE_EDIT,
-        chat_id,
-        user_id,
-        content: new_content.to_string(),
-        tags: vec![vec![
-            "e".to_string(),
-            message_id.to_string(),
-            "".to_string(),
-            "edit".to_string(),
-        ]],
-        reference_id: Some(message_id.to_string()),
-        created_at: now_secs,
-        received_at: now_ms,
-        mine: true,
-        pending: false,
-        failed: false,
-        wrapper_event_id: None,
-        npub: Some(npub.to_string()),
-        virtual_bucket: None,
-    };
-
-    save_event(handle, &event).await
-}
-
 /// Check if an event exists in the events table
 pub fn event_exists<R: Runtime>(handle: &AppHandle<R>, event_id: &str) -> Result<bool, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
@@ -8405,7 +8356,7 @@ pub async fn get_related_events<R: Runtime>(
                created_at, received_at, mine, pending, failed, wrapper_event_id, npub, virtual_bucket
         FROM events
         WHERE reference_id IN ({})
-        ORDER BY created_at ASC
+        ORDER BY created_at ASC, rowid ASC
         "#,
         placeholders
     );
@@ -8459,6 +8410,620 @@ struct ReplyContext {
     has_attachment: bool,
 }
 
+/// Shared persisted author/chat/signed-time/first-receipt checks for live edits
+/// and reply previews. Keep aligned with `stored_edit_is_authorized`.
+fn authorized_edits_from_sql() -> String {
+    format!(
+        r#"
+        FROM events e
+        JOIN events m ON m.id = e.reference_id
+        JOIN chats c ON c.id = m.chat_id
+        WHERE e.kind = {edit_kind}
+          AND m.kind = {text_kind}
+          AND NOT EXISTS (SELECT 1 FROM messages legacy WHERE legacy.id = m.id)
+          AND e.chat_id = m.chat_id
+          AND CASE
+                WHEN m.mine = 1 THEN e.mine = 1
+                ELSE e.mine = 0 AND e.npub = COALESCE(
+                  m.npub,
+                  CASE WHEN c.chat_type = {dm_type} THEN c.chat_identifier END
+                )
+              END
+          AND e.created_at BETWEEN m.created_at AND m.created_at + {window}
+          AND m.received_at > 0 AND e.received_at > 0
+          AND e.received_at - m.received_at <= {receipt_window}
+        "#,
+        edit_kind = event_kind::MESSAGE_EDIT,
+        text_kind = event_kind::PRIVATE_DIRECT_MESSAGE,
+        dm_type = crate::chat::ChatType::DirectMessage.to_i32(),
+        window = crate::message::EDIT_WINDOW_SECS,
+        receipt_window = crate::message::EDIT_WINDOW_SECS * 1000,
+    )
+}
+
+fn latest_authorized_edits_sql(placeholders: &str) -> String {
+    format!(
+        "SELECT e.reference_id, e.content, e.created_at, e.tags {} AND e.reference_id IN ({placeholders}) ORDER BY e.created_at DESC, e.rowid DESC",
+        authorized_edits_from_sql(),
+    )
+}
+
+fn saved_edit_is_authorized_conn(
+    conn: &rusqlite::Connection,
+    edit_id: &str,
+) -> Result<bool, String> {
+    conn.query_row(
+        &format!(
+            "SELECT EXISTS(SELECT 1 {} AND e.id = ?1)",
+            authorized_edits_from_sql()
+        ),
+        [edit_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Failed to authorize saved edit: {e}"))
+}
+
+/// Authorize using the saved edit and original, so reloads and replays cannot
+/// reset the deadline. Missing rows or receipt evidence fail closed.
+pub fn saved_edit_is_authorized<R: Runtime>(
+    handle: &AppHandle<R>,
+    edit_id: &str,
+) -> Result<bool, String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = saved_edit_is_authorized_conn(&conn, edit_id);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
+/// Saved, authorized edits used to reconcile live state when either side arrives first.
+pub(crate) async fn get_authorized_message_edits<R: Runtime>(
+    handle: &AppHandle<R>,
+    chat_id: &str,
+    message_id: &str,
+) -> Result<Vec<StoredEvent>, String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = (|| {
+        let sql = format!(
+            "SELECT e.id, e.kind, e.chat_id, e.user_id, e.content, e.tags, e.reference_id,
+                    e.created_at, e.received_at, e.mine, e.pending, e.failed,
+                    e.wrapper_event_id, e.npub, e.virtual_bucket
+             {} AND m.id = ?1 AND c.chat_identifier = ?2
+             ORDER BY e.created_at ASC, e.rowid ASC",
+            authorized_edits_from_sql(),
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([message_id, chat_id], parse_event_row)
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    })();
+    crate::account_manager::return_db_connection(conn);
+    let mut edits = result?;
+    for edit in &mut edits {
+        edit.content = internal_decrypt(edit.content.clone())
+            .await
+            .map_err(|_| "Failed to decrypt saved edit".to_string())?;
+    }
+    Ok(edits)
+}
+
+/// Check a locally built edit before publishing, using its captured first-seen
+/// time and the persisted original. V7's retained message rows lack receipt evidence.
+fn edit_is_authorized_before_save_conn(
+    conn: &rusqlite::Connection,
+    edit: &StoredEvent,
+) -> Result<bool, String> {
+    if edit.kind != event_kind::MESSAGE_EDIT {
+        return Ok(false);
+    }
+    let Some(reference_id) = edit.reference_id.as_deref() else {
+        return Ok(false);
+    };
+    let original = conn.query_row(
+        "SELECT id, kind, chat_id, user_id, content, tags, reference_id,
+                created_at, received_at, mine, pending, failed, wrapper_event_id, npub, virtual_bucket
+         FROM events m WHERE id = ?1
+           AND NOT EXISTS (SELECT 1 FROM messages legacy WHERE legacy.id = m.id)",
+        [reference_id],
+        parse_event_row,
+    ).optional().map_err(|e| format!("Failed to load edit original: {e}"))?;
+    Ok(original.is_some_and(|original| {
+        stored_edit_is_authorized(
+            &original,
+            edit,
+            dm_peer_for_chat(conn, original.chat_id).as_deref(),
+            edit.timestamp_ms(),
+        )
+    }))
+}
+
+pub fn edit_is_authorized_before_save<R: Runtime>(
+    handle: &AppHandle<R>,
+    edit: &StoredEvent,
+) -> Result<bool, String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = edit_is_authorized_before_save_conn(&conn, edit);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
+/// The peer npub when `chat_id` is a DM (DM chats are keyed by it), `None` otherwise.
+fn dm_peer_for_chat(conn: &rusqlite::Connection, chat_id: i64) -> Option<String> {
+    conn.query_row(
+        "SELECT chat_identifier FROM chats WHERE id = ?1 AND chat_type = ?2",
+        rusqlite::params![chat_id, crate::chat::ChatType::DirectMessage.to_i32()],
+        |row| row.get(0),
+    )
+    .ok()
+}
+
+#[cfg(test)]
+mod edit_authorization_sql_tests {
+    use super::*;
+    use crate::stored_event::StoredEventBuilder;
+
+    const T: i64 = 1_700_000_000;
+
+    fn insert(
+        conn: &rusqlite::Connection,
+        id: &str,
+        kind: u16,
+        chat_id: i64,
+        reference_id: Option<&str>,
+        content: &str,
+        created_at: i64,
+        mine: bool,
+        npub: Option<&str>,
+    ) {
+        conn.execute(
+            "INSERT INTO events (id, kind, chat_id, content, reference_id, created_at, received_at, mine, npub)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6 * 1000, ?7, ?8)",
+            rusqlite::params![id, kind, chat_id, content, reference_id, created_at, mine as i32, npub],
+        )
+        .expect("insert");
+    }
+
+    fn latest_edits(conn: &rusqlite::Connection, ids: &[&str]) -> Vec<(String, String)> {
+        let placeholders = (1..=ids.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut stmt = conn
+            .prepare(&latest_authorized_edits_sql(&placeholders))
+            .expect("prepare");
+        stmt.query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .expect("query")
+        .filter_map(|r| r.ok())
+        .collect()
+    }
+
+    #[test]
+    fn keeps_only_author_edits_inside_window_and_chat() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        for chat in ["chat-1", "chat-2"] {
+            conn.execute(
+                "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES (?1, 0, '[]', 0)",
+                [chat],
+            )
+            .expect("chat");
+        }
+        let text = event_kind::PRIVATE_DIRECT_MESSAGE;
+        let edit = event_kind::MESSAGE_EDIT;
+
+        insert(
+            &conn,
+            "alice-msg",
+            text,
+            1,
+            None,
+            "hi",
+            T,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "e-ok",
+            edit,
+            1,
+            Some("alice-msg"),
+            "hello",
+            T + 10,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "e-other",
+            edit,
+            1,
+            Some("alice-msg"),
+            "pwned",
+            T + 20,
+            false,
+            Some("npub1mallory"),
+        );
+        insert(
+            &conn,
+            "e-me",
+            edit,
+            1,
+            Some("alice-msg"),
+            "mine",
+            T + 20,
+            true,
+            None,
+        );
+        insert(
+            &conn,
+            "e-chat",
+            edit,
+            2,
+            Some("alice-msg"),
+            "elsewhere",
+            T + 20,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "e-late",
+            edit,
+            1,
+            Some("alice-msg"),
+            "late",
+            T + 61,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "e-early",
+            edit,
+            1,
+            Some("alice-msg"),
+            "predated",
+            T - 1,
+            false,
+            Some("npub1alice"),
+        );
+
+        insert(&conn, "my-msg", text, 1, None, "draft", T, true, None);
+        insert(
+            &conn,
+            "e-mine",
+            edit,
+            1,
+            Some("my-msg"),
+            "final",
+            T + 60,
+            true,
+            None,
+        );
+
+        let mut rows = latest_edits(&conn, &["alice-msg", "my-msg"]);
+        rows.sort();
+        assert_eq!(
+            rows,
+            vec![
+                ("alice-msg".to_string(), "hello".to_string()),
+                ("my-msg".to_string(), "final".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn null_author_fallback_applies_only_to_the_dm_peer() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES ('npub1peer', 0, '[\"npub1peer\"]', 0)",
+            [],
+        )
+        .expect("dm");
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES ('abcdef01', 1, '[]', 0)",
+            [],
+        )
+        .expect("group");
+        let text = event_kind::PRIVATE_DIRECT_MESSAGE;
+        let edit = event_kind::MESSAGE_EDIT;
+
+        // DM row with no stored sender: only the peer may edit it.
+        insert(&conn, "dm-msg", text, 1, None, "hi", T, false, None);
+        insert(
+            &conn,
+            "dm-peer",
+            edit,
+            1,
+            Some("dm-msg"),
+            "hello",
+            T + 5,
+            false,
+            Some("npub1peer"),
+        );
+        insert(
+            &conn,
+            "dm-other",
+            edit,
+            1,
+            Some("dm-msg"),
+            "pwned",
+            T + 10,
+            false,
+            Some("npub1mallory"),
+        );
+
+        // Group row with no stored sender: no member can prove authorship.
+        insert(&conn, "grp-msg", text, 2, None, "hi", T, false, None);
+        insert(
+            &conn,
+            "grp-other",
+            edit,
+            2,
+            Some("grp-msg"),
+            "pwned",
+            T + 5,
+            false,
+            Some("npub1mallory"),
+        );
+
+        assert_eq!(dm_peer_for_chat(&conn, 1).as_deref(), Some("npub1peer"));
+        assert_eq!(dm_peer_for_chat(&conn, 2), None);
+
+        let mut rows = latest_edits(&conn, &["dm-msg", "grp-msg"]);
+        rows.sort();
+        assert_eq!(rows, vec![("dm-msg".to_string(), "hello".to_string())]);
+    }
+
+    #[test]
+    fn receipt_deadline_matches_reconstruction_and_reply_preview() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES ('npub1alice', 0, '[]', 0)",
+            [],
+        ).unwrap();
+        let receipt = T as u64 * 1000;
+        let mut original = StoredEventBuilder::new()
+            .id("original".to_string())
+            .kind(event_kind::PRIVATE_DIRECT_MESSAGE)
+            .created_at(T as u64)
+            .npub(Some("npub1alice".to_string()))
+            .build();
+        original.chat_id = 1;
+        original.received_at = receipt;
+        insert(
+            &conn,
+            &original.id,
+            original.kind,
+            1,
+            None,
+            "original",
+            T,
+            false,
+            Some("npub1alice"),
+        );
+
+        for (id, signed_at, received_at, expected) in [
+            ("boundary", T + 1, receipt + 60_000, true),
+            // Backdating the signed event does not extend the local deadline.
+            ("backdated-late", T + 1, receipt + 60_001, false),
+            ("predated", T - 1, receipt + 1_000, false),
+            ("signed-late", T + 61, receipt + 1_000, false),
+            // Relay order can put a valid edit before its original.
+            ("out-of-order", T + 1, receipt - 1_000, true),
+            ("missing-receipt", T + 1, 0, false),
+        ] {
+            let mut edit = StoredEventBuilder::new()
+                .id(id.to_string())
+                .kind(event_kind::MESSAGE_EDIT)
+                .reference_id(Some(original.id.clone()))
+                .created_at(signed_at as u64)
+                .npub(Some("npub1alice".to_string()))
+                .build();
+            edit.chat_id = 1;
+            edit.received_at = received_at;
+            insert(
+                &conn,
+                id,
+                edit.kind,
+                1,
+                Some(&original.id),
+                id,
+                signed_at,
+                false,
+                Some("npub1alice"),
+            );
+            conn.execute(
+                "UPDATE events SET received_at = ?1 WHERE id = ?2",
+                rusqlite::params![received_at as i64, id],
+            )
+            .unwrap();
+            assert_eq!(
+                stored_edit_is_authorized(
+                    &original,
+                    &edit,
+                    Some("npub1alice"),
+                    edit.timestamp_ms()
+                ),
+                expected,
+                "reconstruction: {id}",
+            );
+            assert_eq!(
+                edit_is_authorized_before_save_conn(&conn, &edit).unwrap(),
+                expected,
+                "preflight: {id}"
+            );
+            assert_eq!(
+                saved_edit_is_authorized_conn(&conn, id).unwrap(),
+                expected,
+                "live gate: {id}"
+            );
+            assert_eq!(
+                latest_edits(&conn, &[&original.id])
+                    .iter()
+                    .any(|(_, content)| content == id),
+                expected,
+                "reply preview: {id}",
+            );
+        }
+
+        original.received_at = 0;
+        let mut edit = original.clone();
+        edit.kind = event_kind::MESSAGE_EDIT;
+        edit.received_at = receipt;
+        assert!(!stored_edit_is_authorized(
+            &original,
+            &edit,
+            Some("npub1alice"),
+            edit.timestamp_ms()
+        ));
+        conn.execute(
+            "UPDATE events SET received_at = 0 WHERE id = 'original'",
+            [],
+        )
+        .unwrap();
+        assert!(latest_edits(&conn, &[&original.id]).is_empty());
+        assert!(!saved_edit_is_authorized_conn(&conn, "boundary").unwrap());
+        assert!(!saved_edit_is_authorized_conn(&conn, "absent").unwrap());
+        conn.execute("DELETE FROM events WHERE id = 'original'", [])
+            .unwrap();
+        assert!(!saved_edit_is_authorized_conn(&conn, "boundary").unwrap());
+    }
+
+    #[test]
+    fn local_edit_preflight_uses_captured_first_seen_and_rejects_legacy_receipts() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        conn.execute("INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES ('npub1peer', 0, '[]', 0)", []).unwrap();
+        insert(
+            &conn,
+            "own-original",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            1,
+            None,
+            "original",
+            T,
+            true,
+            None,
+        );
+        let mut edit = StoredEventBuilder::new()
+            .id("own-edit".to_string())
+            .kind(event_kind::MESSAGE_EDIT)
+            .reference_id(Some("own-original".to_string()))
+            .created_at(T as u64 + 60)
+            .mine(true)
+            .build();
+        edit.chat_id = 1;
+        edit.received_at = T as u64 * 1000 + 60_000;
+        assert!(edit_is_authorized_before_save_conn(&conn, &edit).unwrap());
+        edit.received_at += 1;
+        assert!(!edit_is_authorized_before_save_conn(&conn, &edit).unwrap());
+        edit.received_at -= 1;
+        insert(
+            &conn,
+            &edit.id,
+            edit.kind,
+            1,
+            edit.reference_id.as_deref(),
+            "edit",
+            T + 60,
+            true,
+            None,
+        );
+        assert!(saved_edit_is_authorized_conn(&conn, &edit.id).unwrap());
+
+        // V7 copied sender time into received_at; the retained source row proves
+        // this is not a locally observed first receipt even at the boundary.
+        conn.execute("INSERT INTO messages (id, chat_id, content_encrypted, at, mine) VALUES ('own-original', 1, 'original', ?1, 1)", [T * 1000]).unwrap();
+        assert!(!edit_is_authorized_before_save_conn(&conn, &edit).unwrap());
+        assert!(!saved_edit_is_authorized_conn(&conn, &edit.id).unwrap());
+        assert!(latest_edits(&conn, &["own-original"]).is_empty());
+    }
+
+    #[test]
+    fn stored_edit_check_matches_sql_rules() {
+        let stored = |npub: Option<&str>| {
+            StoredEventBuilder::new()
+                .id("m".to_string())
+                .kind(event_kind::PRIVATE_DIRECT_MESSAGE)
+                .created_at(T as u64)
+                .mine(false)
+                .npub(npub.map(str::to_string))
+                .build()
+        };
+        let original = stored(Some("npub1alice"));
+        let edit = |npub: &str, chat_id: i64| {
+            let mut e = StoredEventBuilder::new()
+                .id("e".to_string())
+                .kind(event_kind::MESSAGE_EDIT)
+                .created_at(T as u64 + 5)
+                .mine(false)
+                .npub(Some(npub.to_string()))
+                .build();
+            e.chat_id = chat_id;
+            e
+        };
+        let chat = original.chat_id;
+        let at = (T as u64 + 5) * 1000;
+        assert!(stored_edit_is_authorized(
+            &original,
+            &edit("npub1alice", chat),
+            None,
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &original,
+            &edit("npub1mallory", chat),
+            None,
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &original,
+            &edit("npub1alice", chat + 1),
+            None,
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &original,
+            &edit("npub1alice", chat),
+            None,
+            (T as u64 + 61) * 1000
+        ));
+        assert!(!stored_edit_is_authorized(
+            &original,
+            &edit("npub1alice", chat),
+            None,
+            (T as u64 - 1) * 1000
+        ));
+
+        let legacy = stored(None);
+        assert!(stored_edit_is_authorized(
+            &legacy,
+            &edit("npub1alice", chat),
+            Some("npub1alice"),
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &legacy,
+            &edit("npub1mallory", chat),
+            Some("npub1alice"),
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &legacy,
+            &edit("npub1mallory", chat),
+            None,
+            at
+        ));
+    }
+}
+
 /// Fetch reply context for a list of message IDs
 /// Returns a HashMap of message_id -> ReplyContext
 async fn get_reply_contexts<R: Runtime>(
@@ -8472,7 +9037,7 @@ async fn get_reply_contexts<R: Runtime>(
     // Do all SQLite work synchronously in a block to avoid Send issues
     let (events, edits): (
         Vec<(String, i32, String, Option<String>, i32)>,
-        Vec<(String, String)>,
+        Vec<(String, String, u64)>,
     ) = {
         let conn = crate::account_manager::get_db_connection(handle)?;
 
@@ -8517,17 +9082,7 @@ async fn get_reply_contexts<R: Runtime>(
             rows.filter_map(|r| r.ok()).collect();
         drop(stmt);
 
-        // Query latest edits for these messages (most recent edit per message)
-        let edit_sql = format!(
-            r#"
-            SELECT reference_id, content
-            FROM events
-            WHERE kind = {} AND reference_id IN ({})
-            ORDER BY created_at DESC
-            "#,
-            event_kind::MESSAGE_EDIT,
-            placeholders
-        );
+        let edit_sql = latest_authorized_edits_sql(&placeholders);
 
         let mut edit_stmt = conn
             .prepare(&edit_sql)
@@ -8535,14 +9090,23 @@ async fn get_reply_contexts<R: Runtime>(
 
         let edit_rows = edit_stmt
             .query_map(params_dyn.as_slice(), |row| {
+                let tags: Vec<Vec<String>> =
+                    serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default();
                 Ok((
                     row.get::<_, String>(0)?, // reference_id (original message id)
                     row.get::<_, String>(1)?, // content (edited content)
+                    crate::stored_event::timestamp_ms_from_tags(
+                        row.get::<_, i64>(2)? as u64,
+                        &tags,
+                    ),
                 ))
             })
             .map_err(|e| format!("Failed to query edits: {}", e))?;
 
-        let edits_result: Vec<(String, String)> = edit_rows.filter_map(|r| r.ok()).collect();
+        let mut edits_result: Vec<(String, String, u64)> =
+            edit_rows.filter_map(|r| r.ok()).collect();
+        // Stable sort retains rowid DESC for edits with identical timestamps.
+        edits_result.sort_by_key(|(_, _, at)| std::cmp::Reverse(*at));
         drop(edit_stmt);
 
         crate::account_manager::return_db_connection(conn);
@@ -8551,7 +9115,7 @@ async fn get_reply_contexts<R: Runtime>(
 
     // Build a map of message_id -> latest edit content (first one since ordered DESC)
     let mut latest_edits: HashMap<String, String> = HashMap::new();
-    for (ref_id, content) in edits {
+    for (ref_id, content, _) in edits {
         // Only keep the first (most recent) edit for each message
         latest_edits.entry(ref_id).or_insert(content);
     }
@@ -8996,6 +9560,308 @@ mod reply_context_fallback_tests {
     }
 }
 
+/// Whether a stored edit may replace `original`: a text message in the same chat,
+/// edited by its author inside the edit window. `dm_peer` is set when the chat is a DM.
+fn stored_edit_is_authorized(
+    original: &StoredEvent,
+    edit: &StoredEvent,
+    dm_peer: Option<&str>,
+    edited_at_ms: u64,
+) -> bool {
+    use crate::message::{edit_is_authorized, EditAuthor};
+    original.kind == event_kind::PRIVATE_DIRECT_MESSAGE
+        && original.chat_id == edit.chat_id
+        && crate::message::edit_received_in_time(original.received_at, edit.received_at)
+        && edit_is_authorized(
+            EditAuthor::of_original(original.mine, original.npub.as_deref(), dm_peer),
+            original.timestamp_ms(),
+            EditAuthor::of_edit(edit.mine, edit.npub.as_deref()),
+            edited_at_ms,
+        )
+}
+
+#[cfg(test)]
+mod edit_reconstruction_tests {
+    use super::*;
+    use crate::stored_event::StoredEventBuilder;
+
+    const T: u64 = 1_700_000_000;
+
+    async fn save_edit<R: Runtime>(
+        handle: &AppHandle<R>,
+        chat_id: i64,
+        id: &str,
+        target: &str,
+        npub: &str,
+        content: &str,
+        created_at: u64,
+    ) -> StoredEvent {
+        let mut edit = StoredEventBuilder::new()
+            .id(id.to_string())
+            .kind(event_kind::MESSAGE_EDIT)
+            .content(content.to_string())
+            .reference_id(Some(target.to_string()))
+            .created_at(created_at)
+            .mine(false)
+            .npub(Some(npub.to_string()))
+            .build();
+        edit.chat_id = chat_id;
+        edit.received_at = T * 1000 + 5_000;
+        save_event(handle, &edit).await.unwrap();
+        edit
+    }
+
+    /// Rebuilds history from SQLite: a null-author group row ignores every member's
+    /// edit, a null-author DM row takes only the peer's, and predated or late edits
+    /// are dropped, in both the timeline and reply previews.
+    #[tokio::test]
+    async fn stored_edits_obey_author_and_window_rules() {
+        let test_npub = "npub1editreconstructionaccount";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let profile_dir = crate::account_manager::get_profile_directory(handle, test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+        let db_path = crate::account_manager::get_database_path(handle, test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+        crate::set_encryption_key([7u8; 32]);
+
+        let original = |id: &str| Message {
+            id: id.to_string(),
+            content: "original".to_string(),
+            at: T * 1000,
+            ..Default::default()
+        };
+
+        let group = "0e4d7c1f00ed17ec0457";
+        save_message(handle.clone(), group, &original("grp-msg"))
+            .await
+            .unwrap();
+        let group_id = get_chat_id_by_identifier(handle, group).unwrap();
+        save_edit(
+            handle,
+            group_id,
+            "grp-e1",
+            "grp-msg",
+            "npub1mallory",
+            "pwned",
+            T + 5,
+        )
+        .await;
+
+        let peer = "npub1editreconstructionpeer";
+        save_message(handle.clone(), peer, &original("dm-msg"))
+            .await
+            .unwrap();
+        let dm_id = get_chat_id_by_identifier(handle, peer).unwrap();
+        save_message(
+            handle.clone(),
+            peer,
+            &Message {
+                npub: Some(peer.to_string()),
+                ..original("legacy-msg")
+            },
+        )
+        .await
+        .unwrap();
+        save_edit(
+            handle,
+            dm_id,
+            "legacy-e1",
+            "legacy-msg",
+            peer,
+            "untrusted receipt",
+            T + 5,
+        )
+        .await;
+        save_edit(handle, dm_id, "dm-e1", "dm-msg", peer, "fixed", T + 5).await;
+        save_edit(
+            handle,
+            dm_id,
+            "dm-e2",
+            "dm-msg",
+            "npub1mallory",
+            "pwned",
+            T + 6,
+        )
+        .await;
+        save_edit(handle, dm_id, "dm-e3", "dm-msg", peer, "predated", T - 5).await;
+        save_edit(handle, dm_id, "dm-e4", "dm-msg", peer, "late", T + 61).await;
+        save_edit(handle, dm_id, "dm-e5", "dm-msg", peer, "fixed again", T + 5).await;
+        save_edit(
+            handle,
+            dm_id,
+            "dm-e6",
+            "dm-msg",
+            peer,
+            "final same second",
+            T + 5,
+        )
+        .await;
+        let mut backdated = save_edit(
+            handle,
+            dm_id,
+            "dm-e7",
+            "dm-msg",
+            peer,
+            "backdated late",
+            T + 5,
+        )
+        .await;
+
+        save_edit(handle, dm_id, "dm-e8", "dm-msg", peer, "middle ms", T + 5).await;
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        conn.execute("INSERT INTO messages (id, chat_id, content_encrypted, at, mine) VALUES ('legacy-msg', ?1, 'original', ?2, 0)", rusqlite::params![dm_id, T as i64 * 1000]).unwrap();
+        for (id, ms) in [("dm-e5", 100), ("dm-e6", 900), ("dm-e8", 500)] {
+            conn.execute("UPDATE events SET tags = json_insert(tags, '$[#]', json_array('ms', ?1)) WHERE id = ?2", rusqlite::params![ms.to_string(), id]).unwrap();
+        }
+        conn.execute(
+            "UPDATE events SET received_at = ?1 WHERE id IN ('grp-msg', 'dm-msg', 'legacy-msg')",
+            [T as i64 * 1000],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE events SET received_at = ?1 WHERE id = 'dm-e6'",
+            [T as i64 * 1000 + 60_000],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE events SET received_at = ?1 WHERE id = 'dm-e7'",
+            [T as i64 * 1000 + 60_001],
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        // A duplicate with a timely receipt cannot replace the late first receipt.
+        backdated.received_at = T * 1000 + 1;
+        save_event(handle, &backdated).await.unwrap();
+        // Re-saving an original must not give existing or future edits a fresh window.
+        save_message(handle.clone(), peer, &original("dm-msg"))
+            .await
+            .unwrap();
+        crate::account_manager::close_db_connection();
+        assert!(saved_edit_is_authorized(handle, "dm-e6").unwrap());
+        assert!(!saved_edit_is_authorized(handle, "dm-e7").unwrap());
+        assert!(!saved_edit_is_authorized(handle, "legacy-e1").unwrap());
+        let persisted = get_related_events(handle, &["dm-msg".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(
+            persisted
+                .iter()
+                .find(|e| e.id == "dm-e6")
+                .unwrap()
+                .received_at,
+            T * 1000 + 60_000
+        );
+        assert_eq!(
+            persisted
+                .iter()
+                .find(|e| e.id == "dm-e7")
+                .unwrap()
+                .received_at,
+            T * 1000 + 60_001
+        );
+
+        let group_view = get_message_views(handle, group_id, 50, 0, None)
+            .await
+            .unwrap();
+        assert_eq!(group_view.len(), 1);
+        assert_eq!(group_view[0].content, "original");
+        assert!(!group_view[0].edited);
+
+        let dm_view = get_message_views(handle, dm_id, 50, 0, None).await.unwrap();
+        assert_eq!(dm_view.len(), 2);
+        let legacy_view = dm_view.iter().find(|m| m.id == "legacy-msg").unwrap();
+        assert_eq!(legacy_view.content, "original");
+        assert!(!legacy_view.edited);
+        let edited_view = dm_view.iter().find(|m| m.id == "dm-msg").unwrap();
+        assert_eq!(edited_view.content, "final same second");
+        let history: Vec<&str> = edited_view
+            .edit_history
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|e| e.content.as_str())
+            .collect();
+        assert_eq!(
+            history,
+            vec![
+                "original",
+                "fixed",
+                "fixed again",
+                "middle ms",
+                "final same second"
+            ]
+        );
+
+        for (target, expected) in [
+            ("grp-msg", "original"),
+            ("legacy-msg", "original"),
+            ("dm-msg", "final same second"),
+        ] {
+            let mut reply = Message {
+                id: format!("reply-{target}"),
+                replied_to: target.to_string(),
+                mine: true,
+                ..Default::default()
+            };
+            populate_reply_context(handle, &mut reply).await.unwrap();
+            assert_eq!(reply.replied_to_content.as_deref(), Some(expected));
+        }
+
+        // Saving after a slow publish retains the own event's preflight receipt,
+        // rather than assigning the current (much later) wall clock at ACK time.
+        let own_peer = "npub1owneditfirstreceiptpeer";
+        save_message(
+            handle.clone(),
+            own_peer,
+            &Message {
+                mine: true,
+                ..original("own-msg")
+            },
+        )
+        .await
+        .unwrap();
+        let own_chat_id = get_chat_id_by_identifier(handle, own_peer).unwrap();
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        conn.execute(
+            "UPDATE events SET received_at = ?1 WHERE id = 'own-msg'",
+            [T as i64 * 1000],
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+        let mut own_edit = StoredEventBuilder::new()
+            .id("own-edit".to_string())
+            .kind(event_kind::MESSAGE_EDIT)
+            .reference_id(Some("own-msg".to_string()))
+            .content("own fixed".to_string())
+            .created_at(T + 60)
+            .mine(true)
+            .build();
+        own_edit.chat_id = own_chat_id;
+        own_edit.received_at = T * 1000 + 60_000;
+        assert!(edit_is_authorized_before_save(handle, &own_edit).unwrap());
+        save_event(handle, &own_edit).await.unwrap();
+        crate::account_manager::close_db_connection();
+        assert!(saved_edit_is_authorized(handle, "own-edit").unwrap());
+        let own_events = get_related_events(handle, &["own-msg".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(own_events[0].received_at, own_edit.received_at);
+        let own_view = get_message_views(handle, own_chat_id, 50, 0, None)
+            .await
+            .unwrap();
+        assert_eq!(own_view[0].content, "own fixed");
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
+}
+
 /// Get message events with their reactions composed (materialized view)
 ///
 /// This function performs a single efficient query to get messages and their
@@ -9040,10 +9906,33 @@ pub async fn get_message_views<R: Runtime>(
     // Step 2: Get related events (reactions, edits) for these messages
     let message_ids: Vec<String> = message_events.iter().map(|e| e.id.clone()).collect();
     let related_events = get_related_events(handle, &message_ids).await?;
+    let authorized_edit_ids: std::collections::HashSet<String> = {
+        let conn = crate::account_manager::get_db_connection(handle)?;
+        let placeholders = message_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT e.id {} AND e.reference_id IN ({placeholders})",
+            authorized_edits_from_sql(),
+        );
+        let ids = {
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(rusqlite::params_from_iter(message_ids.iter()), |row| {
+                    row.get(0)
+                })
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
+        };
+        crate::account_manager::return_db_connection(conn);
+        ids
+    };
 
     // Group reactions and edits by message ID
     let mut reactions_by_msg: HashMap<String, Vec<Reaction>> = HashMap::new();
-    let mut edits_by_msg: HashMap<String, Vec<(u64, String)>> = HashMap::new(); // (timestamp, content)
+    let mut edits_by_msg: HashMap<String, Vec<EditEntry>> = HashMap::new();
 
     for event in related_events {
         if let Some(ref_id) = &event.reference_id {
@@ -9061,15 +9950,22 @@ pub async fn get_message_views<R: Runtime>(
                         .push(reaction);
                 }
                 k if k == event_kind::MESSAGE_EDIT => {
+                    if !authorized_edit_ids.contains(&event.id) {
+                        continue;
+                    }
+                    let timestamp_ms = event.timestamp_ms();
                     // Edit content is encrypted, decrypt it here
                     let decrypted_content = internal_decrypt(event.content.clone())
                         .await
                         .unwrap_or_else(|_| event.content.clone());
-                    let timestamp_ms = event.created_at * 1000; // Convert to ms
                     edits_by_msg
                         .entry(ref_id.clone())
                         .or_default()
-                        .push((timestamp_ms, decrypted_content));
+                        .push(EditEntry {
+                            event_id: event.id,
+                            edited_at: timestamp_ms,
+                            content: decrypted_content,
+                        });
                 }
                 _ => {}
             }
@@ -9078,7 +9974,7 @@ pub async fn get_message_views<R: Runtime>(
 
     // Sort edits by timestamp (chronologically)
     for edits in edits_by_msg.values_mut() {
-        edits.sort_by_key(|(ts, _)| *ts);
+        edits.sort_by_key(|edit| edit.edited_at);
     }
 
     // Step 3: Parse attachments from event tags OR fall back to messages table
@@ -9173,22 +10069,18 @@ pub async fn get_message_views<R: Runtime>(
 
             // Add original as first entry
             history.push(EditEntry {
+                event_id: event.id.clone(),
                 content: original_content.clone(),
                 edited_at: at,
             });
 
             // Add all edits
-            for (edit_ts, edit_content) in &edits {
-                history.push(EditEntry {
-                    content: edit_content.clone(),
-                    edited_at: *edit_ts,
-                });
-            }
+            history.extend(edits.iter().cloned());
 
             // Use the latest edit's content
             let latest_content = edits
                 .last()
-                .map(|(_, c)| c.clone())
+                .map(|edit| edit.content.clone())
                 .unwrap_or(original_content);
 
             (latest_content, true, Some(history))

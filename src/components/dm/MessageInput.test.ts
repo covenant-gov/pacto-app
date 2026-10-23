@@ -90,6 +90,40 @@ describe('MessageInput', () => {
     expect((screen.getByLabelText(/Send message/i) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('requests the last-message editor only for an unmodified Up Arrow on an empty composer', async () => {
+    const onEditLast = vi.fn(() => true);
+    render(MessageInput, { props: { channelName: 'general', onEditLast } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    expect(await fireEvent.keyDown(input, { key: 'ArrowUp' })).toBe(false);
+    expect(onEditLast).toHaveBeenCalledTimes(1);
+
+    for (const options of [{ shiftKey: true }, { ctrlKey: true }, { altKey: true }, { metaKey: true }, { isComposing: true }]) {
+      expect(await fireEvent.keyDown(input, { key: 'ArrowUp', ...options })).toBe(true);
+    }
+    expect(onEditLast).toHaveBeenCalledTimes(1);
+    for (const value of ['draft', ' ', '\n']) {
+      await fireEvent.input(input, { target: { value } });
+      expect(await fireEvent.keyDown(input, { key: 'ArrowUp' })).toBe(true);
+      expect(input.value).toBe(value);
+    }
+    expect(onEditLast).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Up Arrow alone with no editable message, while replying, or with an attachment', async () => {
+    const onEditLast = vi.fn(() => false);
+    const { rerender } = render(MessageInput, { props: { channelName: 'general', onEditLast } });
+    const input = screen.getByPlaceholderText('Message #general');
+    expect(await fireEvent.keyDown(input, { key: 'ArrowUp' })).toBe(true);
+    expect(onEditLast).toHaveBeenCalledTimes(1);
+    await rerender({ channelName: 'general', onEditLast, repliedTo: 'reply-1' });
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(onEditLast).toHaveBeenCalledTimes(1);
+    await rerender({ channelName: 'general', onEditLast });
+    pendingFilePreview.set({ id: 'f', key: '', nonce: '', extension: 'png', url: '', path: '', fileName: 'test.png', size: 1, mimeType: 'image/png', previewUrl: 'blob://mock-preview' });
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(onEditLast).toHaveBeenCalledTimes(1);
+  });
+
   it('types text and calls onSend when Enter is pressed', async () => {
     const onSend = vi.fn();
     render(MessageInput, { props: { channelName: 'general', onSend } });

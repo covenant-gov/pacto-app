@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/svelte';
+import { render, screen, fireEvent, cleanup, act, within, waitFor } from '@testing-library/svelte';
 import Message from './Message.svelte';
 import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import { pendingReactionSent, clearPendingReactions } from '../../lib/messaging/reactions';
@@ -331,5 +331,132 @@ describe('Message copy', () => {
     const onCopy = vi.fn();
     await copyBody('https://example.com/a?utm_source=nl&id=1', onCopy);
     expect(onCopy).toHaveBeenCalledWith('msg-copy', 'https://example.com/a?utm_source=nl&id=1');
+  });
+});
+
+describe('Message editing', () => {
+  async function openMenu() {
+    await fireEvent.click(screen.getByRole('button', { name: 'Message options' }));
+  }
+
+  it('offers Edit inside the window and sends the new body on Enter', async () => {
+    const onEdit = vi.fn().mockResolvedValue(true);
+    render(Message, {
+      props: {
+        id: 'msg-edit',
+        authorName: 'You',
+        content: 'helo',
+        editableUntil: Date.now() + 30_000,
+        onEdit,
+      },
+    });
+
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    const input = screen.getByRole('textbox', { name: 'Edit message' }) as HTMLTextAreaElement;
+    expect(input.value).toBe('helo');
+
+    await fireEvent.input(input, { target: { value: 'hello' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onEdit).toHaveBeenCalledWith('msg-edit', 'hello');
+    await act(() => Promise.resolve());
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull();
+  });
+
+  it('cancels editing on Escape without sending', async () => {
+    const onEdit = vi.fn();
+    render(Message, {
+      props: { id: 'msg-esc', content: 'helo', editableUntil: Date.now() + 30_000, onEdit },
+    });
+
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    await fireEvent.keyDown(screen.getByRole('textbox', { name: 'Edit message' }), { key: 'Escape' });
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull();
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it('keeps the editor open when the edit fails', async () => {
+    const onEdit = vi.fn().mockResolvedValue(false);
+    render(Message, {
+      props: { id: 'msg-fail', content: 'helo', editableUntil: Date.now() + 30_000, onEdit },
+    });
+
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    const input = screen.getByRole('textbox', { name: 'Edit message' });
+    await fireEvent.input(input, { target: { value: 'hello' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await act(() => Promise.resolve());
+    expect(screen.getByRole('textbox', { name: 'Edit message' })).toBeTruthy();
+  });
+
+  it('hides Edit once the window has closed or for non-editable messages', async () => {
+    render(Message, {
+      props: { id: 'msg-old', content: 'old', editableUntil: Date.now() - 1, onEdit: vi.fn() },
+    });
+    await openMenu();
+    expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+    cleanup();
+
+    render(Message, { props: { id: 'msg-theirs', content: 'hi', editableUntil: null, onEdit: vi.fn() } });
+    await openMenu();
+    expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+  });
+
+  it('opens a popover with the original and every edit, readable diffs, and plain rewrites', async () => {
+    const sentAt = new Date(2026, 9, 22, 15, 41, 10).getTime();
+    const editedAt = new Date(2026, 9, 22, 15, 41, 40).getTime();
+    render(Message, {
+      props: {
+        id: 'msg-edited',
+        content: 'Please bring the blue folder tomorrow',
+        edited: true,
+        editHistory: [
+          { content: 'Meet at the east gate today', edited_at: sentAt },
+          { content: 'Meet at the west gate today', edited_at: sentAt + 10_000 },
+          { content: 'Please bring the blue folder today', edited_at: sentAt + 20_000 },
+          { content: 'Please bring the blue folder tomorrow', edited_at: editedAt },
+        ],
+      },
+    });
+
+    const label = screen.getByRole('button', { name: '(edited 3:41 PM)' });
+    expect(label.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    label.focus();
+    await fireEvent.click(label);
+    expect(label.getAttribute('aria-expanded')).toBe('true');
+    const popover = screen.getByRole('dialog', { name: 'Edit history' });
+    const entries = within(popover).getAllByRole('listitem');
+    expect(entries).toHaveLength(4);
+    expect(entries[0].textContent).toContain('Meet at the east gate today');
+    expect(entries[1].querySelector('del')?.textContent).toBe('east');
+    expect(entries[1].querySelector('ins')?.textContent).toBe('west');
+    expect(entries[2].textContent).toContain('Please bring the blue folder today');
+    expect(entries[2].querySelector('del, ins')).toBeNull();
+    expect(entries[3].querySelector('del')?.textContent).toBe('today');
+    expect(entries[3].querySelector('ins')?.textContent).toBe('tomorrow');
+    expect(entries[3].textContent).toContain('Current');
+    expect(entries.map((entry) => entry.querySelector('time')?.getAttribute('datetime'))).toEqual(
+      [sentAt, sentAt + 10_000, sentAt + 20_000, editedAt].map((at) => new Date(at).toISOString()),
+    );
+
+    await fireEvent.keyDown(popover, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(label));
+
+    await fireEvent.click(label);
+    expect(screen.getByRole('dialog', { name: 'Edit history' })).toBeTruthy();
+    await fireEvent.pointerDown(document.body);
+    await fireEvent.pointerUp(document.body);
+    await fireEvent.click(document.body);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('shows no edited label on unedited messages', () => {
+    render(Message, { props: { id: 'msg-plain', content: 'hello' } });
+    expect(screen.queryByText(/\(edited/)).toBeNull();
   });
 });

@@ -86,6 +86,8 @@ function normalizeDmPayload(message: DmMessage): DmMessage {
     attachments: message.attachments,
     reactions: message.reactions,
     preview_metadata: message.preview_metadata,
+    edited: message.edited,
+    edit_history: message.edit_history,
   };
   const ann = parseWalletTxAnnouncement(message.content ?? '');
   if (ann?.block_number) {

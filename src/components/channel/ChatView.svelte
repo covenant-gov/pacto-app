@@ -2,7 +2,7 @@
   import Message from '../dm/Message.svelte';
   import AnnounceCard from '../announcements/AnnounceCard.svelte';
   import JoinInboxAnnounceCard from '../announcements/JoinInboxAnnounceCard.svelte';
-  import MessageInput from '../dm/MessageInput.svelte';
+  import MessageShortcutComposer from '../dm/MessageShortcutComposer.svelte';
   import MlsResetNotice from './MlsResetNotice.svelte';
   import MlsMembersPanel from './MlsMembersPanel.svelte';
   import Modal from '../ui/Modal.svelte';
@@ -68,6 +68,8 @@
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { replyQuoteExcerpt } from '../../lib/utils/url-tracking';
   import { clearPendingReactions } from '../../lib/messaging/reactions';
+  import { editableUntil, type MessageEditRequest } from '../../lib/messaging/message-edit';
+  import { submitMessageEdit } from '../../lib/messaging/submit-message-edit';
   import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
@@ -206,6 +208,9 @@
       previewMetadata: msg.preview_metadata,
       pending: msg.pending,
       failed: msg.failed,
+      edited: msg.edited,
+      editHistory: msg.edit_history,
+      editableUntil: editableUntil(msg),
     };
     if (msg.mine) {
       base.authorName = tFn('messaging.message.authorYou');
@@ -616,6 +621,7 @@
     }
   }
 
+  let editRequest: MessageEditRequest | null = null;
   let replyToMessageId: string | null = null;
   $: replyPreview = channelComposerReplyPreview(
     replyToMessageId,
@@ -820,7 +826,7 @@
               </p>
             </div>
           {/if}
-          {#each virtualTimelineMessages as message, i (message.id)}
+          {#each virtualTimelineMessages as message, i (`${messagesTimelineKey}:${message.id}`)}
             {@const props = toMessageProps(message)}
             {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
             {@const joinInboxAnnounce =
@@ -846,10 +852,12 @@
             {:else}
               <Message
                 {...props}
+                editRequest={editRequest?.scope === messagesTimelineKey && editRequest.messageId === message.id ? editRequest : null}
                 chatId={$activeChannelId ?? ''}
                 {onReact}
                 {onCopy}
                 {onReply}
+                onEdit={(_id, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
                 compact={shouldStackChannelWithPrevious(
                   virtualTimelineMessages[i - 1],
                   message,
@@ -871,7 +879,10 @@
         formerMemberNpubs={panelMembers}
       />
     {:else}
-      <MessageInput
+      <MessageShortcutComposer
+        messages={virtualTimelineMessages.filter((message) => !channelMessageIsCard(message))}
+        scope={messagesTimelineKey}
+        bind:editRequest
         channelName={channelName}
         onSend={handleSendText}
         onSendMentions={handleSendMentions}

@@ -2179,45 +2179,12 @@ pub(crate) async fn handle_event(event: Event, is_new: bool) -> bool {
                             handle_unknown_event(event, &contact).await
                         }
                         RumorProcessingResult::Ignored => false,
-                        RumorProcessingResult::Edit {
-                            message_id,
-                            new_content,
-                            edited_at,
-                            mut event,
-                        } => {
-                            // Skip if this edit event was already processed (deduplication)
+                        RumorProcessingResult::Edit { mut event, .. } => {
+                            event.wrapper_event_id = Some(wrapper_event_id.clone());
                             if let Some(handle) = TAURI_APP.get() {
-                                if db::event_exists(handle, &event.id).unwrap_or(false) {
-                                    return true; // Already processed, skip
-                                }
-
-                                // Save edit event to database with proper chat_id
-                                if let Ok(chat_id) = db::get_chat_id_by_identifier(handle, &contact)
-                                {
-                                    event.chat_id = chat_id;
-                                }
-                                event.wrapper_event_id = Some(wrapper_event_id.clone());
-                                let _ = db::save_event(handle, &event).await;
-                            }
-
-                            // Update message in state and emit to frontend
-                            let mut state = STATE.lock().await;
-                            if let Some(chat) = state.get_chat_mut(&contact) {
-                                if let Some(msg) = chat.get_message_mut(&message_id) {
-                                    msg.apply_edit(new_content, edited_at);
-
-                                    // Emit update to frontend
-                                    if let Some(handle) = TAURI_APP.get() {
-                                        let _ = handle.emit(
-                                            "message_update",
-                                            serde_json::json!({
-                                                "old_id": &message_id,
-                                                "message": &msg,
-                                                "chat_id": &contact
-                                            }),
-                                        );
-                                    }
-                                }
+                                let _ =
+                                    crate::message::receive_message_edit(handle, &contact, event)
+                                        .await;
                             }
                             true
                         }
@@ -2329,6 +2296,9 @@ async fn reconcile_existing_dm_from_db(
         state.add_message_to_participant(contact, msg.clone())
     };
     if !added {
+        if let Some(handle) = TAURI_APP.get() {
+            let _ = crate::message::reconcile_message_edits(handle, contact, &msg.id).await;
+        }
         return false;
     }
     if let Some(handle) = TAURI_APP.get() {
@@ -2339,6 +2309,7 @@ async fn reconcile_existing_dm_from_db(
                 "chat_id": contact
             }),
         );
+        let _ = crate::message::reconcile_message_edits(handle, contact, &msg.id).await;
         let _ = update_unread_counter(handle.clone()).await;
     }
     true
@@ -2643,7 +2614,8 @@ pub(crate) async fn handle_text_message(
         // Save the new message to DB (chat_id = contact npub for DMs)
         if let Some(handle) = TAURI_APP.get() {
             // Only save the single new message (efficient!)
-            let _ = db::save_message(handle.clone(), contact, &msg).await;
+            let _ =
+                crate::message::persist_message_and_reconcile_edits(handle, contact, &msg).await;
         }
         // Ensure OS badge is updated immediately after accepting the message
         if let Some(handle) = TAURI_APP.get() {
