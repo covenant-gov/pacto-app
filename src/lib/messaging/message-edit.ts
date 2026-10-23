@@ -10,6 +10,7 @@ import { locale, t } from 'svelte-i18n';
 import type { DmMessage, EditEntry } from '../../stores/dm';
 import { buildMentionEnvelope, parseMessageContent, type Mention } from './mentions';
 import { friendlyMessage, getInvokeErrorMessage } from '../utils/tauri-errors';
+import { summarizeStructuredMessageContent } from './structured-content-notice';
 
 export const EDIT_WINDOW_MS = 60_000;
 
@@ -35,6 +36,23 @@ export function editableUntil(msg: DmMessage): number | null {
 export function canEditMessage(msg: DmMessage, now: number = Date.now()): boolean {
   const until = editableUntil(msg);
   return until != null && now <= until;
+}
+
+/** Newest eligible message from the visible timeline, even when receipt order differs. */
+export function lastEditableMessage(messages: DmMessage[], now: number = Date.now()): DmMessage | undefined {
+  let latest: DmMessage | undefined;
+  for (const msg of messages) {
+    if (msg.is_local_announcement || !canEditMessage(msg, now)) continue;
+    if (summarizeStructuredMessageContent(editableBody(msg.content), get(t))) continue;
+    if (!latest || msg.at >= latest.at) latest = msg;
+  }
+  return latest;
+}
+
+export interface MessageEditRequest {
+  messageId: string;
+  scope: string;
+  finish: () => void;
 }
 
 /** Text the author edits: the mention-envelope body, or the raw content. */

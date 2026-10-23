@@ -4,6 +4,7 @@ import {
   EDIT_WINDOW_MS,
   buildEditedContent,
   canEditMessage,
+  lastEditableMessage,
   editErrorMessage,
   editableBody,
   editableUntil,
@@ -38,6 +39,25 @@ describe('editableUntil / canEditMessage', () => {
     expect(
       editableUntil(own({ attachments: [{ id: 'f', key: '', nonce: '', extension: 'png', url: '', path: '', size: 1 }] }))
     ).toBeNull();
+  });
+});
+
+describe('lastEditableMessage', () => {
+  it('selects by send time while skipping non-text, unsent and non-own entries', () => {
+    const recent = own({ id: 'recent', at: AT + 2000 });
+    const attachment = { id: 'f', key: '', nonce: '', extension: 'png', url: '', path: '', size: 1 };
+    expect(lastEditableMessage([
+      recent,
+      own({ id: 'older', at: AT }),
+      own({ id: 'theirs', at: AT + 3000, mine: false }),
+      own({ id: 'failed', at: AT + 4000, failed: true }),
+      own({ id: 'pending', at: AT + 5000, pending: true }),
+      own({ id: 'file', at: AT + 6000, attachments: [attachment] }),
+      own({ id: 'notice', at: AT + 7000, content: JSON.stringify({ type: 'governance_updated' }) }),
+      own({ id: 'local', at: AT + 8000, is_local_announcement: true }),
+    ], AT + 10000)).toBe(recent);
+    expect(lastEditableMessage([own()], AT + EDIT_WINDOW_MS + 1000)).toBeUndefined();
+    expect(lastEditableMessage([], AT)).toBeUndefined();
   });
 });
 

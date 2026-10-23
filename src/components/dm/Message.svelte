@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
+  import type { MessageEditRequest } from '../../lib/messaging/message-edit';
   import FormattedMessageBody from './FormattedMessageBody.svelte';
   import MessageAttachment from './MessageAttachment.svelte';
   import LinkPreview from './LinkPreview.svelte';
@@ -57,6 +58,7 @@
     editableUntil?: number | null;
     /** Send an edit of the displayed body; resolve `true` to close the editor. */
     onEdit?: (messageId: string, newBody: string) => Promise<boolean>;
+    editRequest?: MessageEditRequest | null;
   }
 
   let {
@@ -88,6 +90,7 @@
     editHistory = null,
     editableUntil = null,
     onEdit = undefined,
+    editRequest = null,
   }: Props = $props();
 
   let displayContent = $derived(body || content);
@@ -101,6 +104,29 @@
   let structuredNotice = $derived(summarizeStructuredMessageContent(displayContent, $t));
 
   let editing = $state(false);
+  let shortcutRequest: MessageEditRequest | null = null;
+  $effect(() => {
+    const request = editRequest;
+    untrack(() => {
+      if (request) {
+        shortcutRequest = request;
+        if (!startEdit()) {
+          shortcutRequest = null;
+          request.finish();
+        }
+      } else if (shortcutRequest) {
+        shortcutRequest = null;
+        editing = false;
+      }
+    });
+  });
+
+  function closeEditor() {
+    editing = false;
+    const request = shortcutRequest;
+    shortcutRequest = null;
+    request?.finish();
+  }
   /** Re-checked on each menu open so the action disappears once the window closes. */
   let canEditNow = $state(false);
 
@@ -110,14 +136,15 @@
 
   function startEdit() {
     closeMenu();
-    if (!editWindowOpen()) return;
+    if (!editWindowOpen()) return false;
     editing = true;
+    return true;
   }
 
   async function saveEdit(newBody: string): Promise<boolean> {
     if (!onEdit) return false;
     const done = await onEdit(id, newBody);
-    if (done) editing = false;
+    if (done) closeEditor();
     return done;
   }
 
@@ -457,7 +484,7 @@
           <MessageEditForm
             initialBody={displayContent}
             onSave={saveEdit}
-            onCancel={() => (editing = false)}
+            onCancel={closeEditor}
           />
         {:else if structuredNotice}
           <span class="structured-notice">{structuredNotice}</span>
