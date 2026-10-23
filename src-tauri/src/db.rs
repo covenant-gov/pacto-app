@@ -8091,12 +8091,8 @@ pub async fn save_edit_event<R: Runtime>(
     chat_id: i64,
     user_id: Option<i64>,
     npub: &str,
+    created_at: u64,
 ) -> Result<(), String> {
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -8115,7 +8111,7 @@ pub async fn save_edit_event<R: Runtime>(
             "edit".to_string(),
         ]],
         reference_id: Some(message_id.to_string()),
-        created_at: now_secs,
+        created_at,
         received_at: now_ms,
         mine: true,
         pending: false,
@@ -8459,6 +8455,219 @@ struct ReplyContext {
     has_attachment: bool,
 }
 
+/// Edits newest-first for the given message ids, keeping only those that pass
+/// the same author/chat/window checks as `stored_edit_is_authorized`.
+fn latest_authorized_edits_sql(placeholders: &str) -> String {
+    format!(
+        r#"
+        SELECT e.reference_id, e.content
+        FROM events e
+        JOIN events m ON m.id = e.reference_id
+        WHERE e.kind = {edit_kind} AND e.reference_id IN ({placeholders})
+          AND m.kind = {text_kind}
+          AND e.chat_id = m.chat_id
+          AND e.mine = m.mine
+          AND (m.mine = 1 OR m.npub IS NULL OR m.npub = e.npub)
+          AND e.created_at <= m.created_at + {window}
+        ORDER BY e.created_at DESC
+        "#,
+        edit_kind = event_kind::MESSAGE_EDIT,
+        text_kind = event_kind::PRIVATE_DIRECT_MESSAGE,
+        window = crate::message::EDIT_WINDOW_SECS,
+    )
+}
+
+#[cfg(test)]
+mod edit_authorization_sql_tests {
+    use super::*;
+    use crate::stored_event::StoredEventBuilder;
+
+    const T: i64 = 1_700_000_000;
+
+    fn insert(
+        conn: &rusqlite::Connection,
+        id: &str,
+        kind: u16,
+        chat_id: i64,
+        reference_id: Option<&str>,
+        content: &str,
+        created_at: i64,
+        mine: bool,
+        npub: Option<&str>,
+    ) {
+        conn.execute(
+            "INSERT INTO events (id, kind, chat_id, content, reference_id, created_at, received_at, mine, npub)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8)",
+            rusqlite::params![id, kind, chat_id, content, reference_id, created_at, mine as i32, npub],
+        )
+        .expect("insert");
+    }
+
+    fn latest_edits(conn: &rusqlite::Connection, ids: &[&str]) -> Vec<(String, String)> {
+        let placeholders = (1..=ids.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut stmt = conn
+            .prepare(&latest_authorized_edits_sql(&placeholders))
+            .expect("prepare");
+        stmt.query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .expect("query")
+        .filter_map(|r| r.ok())
+        .collect()
+    }
+
+    #[test]
+    fn keeps_only_author_edits_inside_window_and_chat() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        for chat in ["chat-1", "chat-2"] {
+            conn.execute(
+                "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES (?1, 0, '[]', 0)",
+                [chat],
+            )
+            .expect("chat");
+        }
+        let text = event_kind::PRIVATE_DIRECT_MESSAGE;
+        let edit = event_kind::MESSAGE_EDIT;
+
+        insert(
+            &conn,
+            "alice-msg",
+            text,
+            1,
+            None,
+            "hi",
+            T,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "e-ok",
+            edit,
+            1,
+            Some("alice-msg"),
+            "hello",
+            T + 10,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "e-other",
+            edit,
+            1,
+            Some("alice-msg"),
+            "pwned",
+            T + 20,
+            false,
+            Some("npub1mallory"),
+        );
+        insert(
+            &conn,
+            "e-me",
+            edit,
+            1,
+            Some("alice-msg"),
+            "mine",
+            T + 20,
+            true,
+            None,
+        );
+        insert(
+            &conn,
+            "e-chat",
+            edit,
+            2,
+            Some("alice-msg"),
+            "elsewhere",
+            T + 20,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "e-late",
+            edit,
+            1,
+            Some("alice-msg"),
+            "late",
+            T + 61,
+            false,
+            Some("npub1alice"),
+        );
+
+        insert(&conn, "my-msg", text, 1, None, "draft", T, true, None);
+        insert(
+            &conn,
+            "e-mine",
+            edit,
+            1,
+            Some("my-msg"),
+            "final",
+            T + 60,
+            true,
+            None,
+        );
+
+        let mut rows = latest_edits(&conn, &["alice-msg", "my-msg"]);
+        rows.sort();
+        assert_eq!(
+            rows,
+            vec![
+                ("alice-msg".to_string(), "hello".to_string()),
+                ("my-msg".to_string(), "final".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn stored_edit_check_matches_sql_rules() {
+        let original = StoredEventBuilder::new()
+            .id("m".to_string())
+            .kind(event_kind::PRIVATE_DIRECT_MESSAGE)
+            .created_at(T as u64)
+            .mine(false)
+            .npub(Some("npub1alice".to_string()))
+            .build();
+        let edit = |npub: &str, chat_id: i64| {
+            let mut e = StoredEventBuilder::new()
+                .id("e".to_string())
+                .kind(event_kind::MESSAGE_EDIT)
+                .created_at(T as u64 + 5)
+                .mine(false)
+                .npub(Some(npub.to_string()))
+                .build();
+            e.chat_id = chat_id;
+            e
+        };
+        let at = (T as u64 + 5) * 1000;
+        assert!(stored_edit_is_authorized(
+            &original,
+            &edit("npub1alice", original.chat_id),
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &original,
+            &edit("npub1mallory", original.chat_id),
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &original,
+            &edit("npub1alice", original.chat_id + 1),
+            at
+        ));
+        assert!(!stored_edit_is_authorized(
+            &original,
+            &edit("npub1alice", original.chat_id),
+            (T as u64 + 61) * 1000
+        ));
+    }
+}
+
 /// Fetch reply context for a list of message IDs
 /// Returns a HashMap of message_id -> ReplyContext
 async fn get_reply_contexts<R: Runtime>(
@@ -8517,17 +8726,7 @@ async fn get_reply_contexts<R: Runtime>(
             rows.filter_map(|r| r.ok()).collect();
         drop(stmt);
 
-        // Query latest edits for these messages (most recent edit per message)
-        let edit_sql = format!(
-            r#"
-            SELECT reference_id, content
-            FROM events
-            WHERE kind = {} AND reference_id IN ({})
-            ORDER BY created_at DESC
-            "#,
-            event_kind::MESSAGE_EDIT,
-            placeholders
-        );
+        let edit_sql = latest_authorized_edits_sql(&placeholders);
 
         let mut edit_stmt = conn
             .prepare(&edit_sql)
@@ -8996,6 +9195,25 @@ mod reply_context_fallback_tests {
     }
 }
 
+/// Whether a stored edit may replace `original`: a text message in the same chat,
+/// edited by its author inside the edit window.
+fn stored_edit_is_authorized(
+    original: &StoredEvent,
+    edit: &StoredEvent,
+    edited_at_ms: u64,
+) -> bool {
+    original.kind == event_kind::PRIVATE_DIRECT_MESSAGE
+        && original.chat_id == edit.chat_id
+        && crate::message::edit_is_authorized(
+            original.mine,
+            original.npub.as_deref(),
+            original.timestamp_ms(),
+            edit.mine,
+            edit.npub.as_deref(),
+            edited_at_ms,
+        )
+}
+
 /// Get message events with their reactions composed (materialized view)
 ///
 /// This function performs a single efficient query to get messages and their
@@ -9061,11 +9279,17 @@ pub async fn get_message_views<R: Runtime>(
                         .push(reaction);
                 }
                 k if k == event_kind::MESSAGE_EDIT => {
+                    let timestamp_ms = event.created_at * 1000; // Convert to ms
+                    let Some(original) = message_events.iter().find(|m| &m.id == ref_id) else {
+                        continue;
+                    };
+                    if !stored_edit_is_authorized(original, &event, timestamp_ms) {
+                        continue;
+                    }
                     // Edit content is encrypted, decrypt it here
                     let decrypted_content = internal_decrypt(event.content.clone())
                         .await
                         .unwrap_or_else(|_| event.content.clone());
-                    let timestamp_ms = event.created_at * 1000; // Convert to ms
                     edits_by_msg
                         .entry(ref_id.clone())
                         .or_default()

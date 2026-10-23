@@ -2185,6 +2185,8 @@ pub(crate) async fn handle_event(event: Event, is_new: bool) -> bool {
                             edited_at,
                             mut event,
                         } => {
+                            let edit_mine = event.mine;
+                            let edit_npub = event.npub.clone();
                             // Skip if this edit event was already processed (deduplication)
                             if let Some(handle) = TAURI_APP.get() {
                                 if db::event_exists(handle, &event.id).unwrap_or(false) {
@@ -2203,7 +2205,9 @@ pub(crate) async fn handle_event(event: Event, is_new: bool) -> bool {
                             // Update message in state and emit to frontend
                             let mut state = STATE.lock().await;
                             if let Some(chat) = state.get_chat_mut(&contact) {
-                                if let Some(msg) = chat.get_message_mut(&message_id) {
+                                if let Some(msg) = chat.get_message_mut(&message_id).filter(|m| {
+                                    m.accepts_edit(edit_mine, edit_npub.as_deref(), edited_at)
+                                }) {
                                     msg.apply_edit(new_content, edited_at);
 
                                     // Emit update to frontend

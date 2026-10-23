@@ -185,6 +185,20 @@ impl Message {
         self.attachments.iter_mut().find(|p| p.id == id)
     }
 
+    /// Whether an inbound edit came from this message's author inside the edit window.
+    pub fn accepts_edit(&self, edit_mine: bool, edit_npub: Option<&str>, edited_at: u64) -> bool {
+        self.attachments.is_empty()
+            && self.rumor_kind.is_none()
+            && edit_is_authorized(
+                self.mine,
+                self.npub.as_deref(),
+                self.at,
+                edit_mine,
+                edit_npub,
+                edited_at,
+            )
+    }
+
     /// Apply an edit to this message, updating content and tracking history
     /// Handles deduplication, sorting, and ensures content reflects the latest edit
     pub fn apply_edit(&mut self, new_content: String, edited_at: u64) {
@@ -474,6 +488,191 @@ mod add_reaction_dedup_tests {
 
         assert!(was_added);
         assert_eq!(message.reactions.len(), 2);
+    }
+}
+
+/// Seconds after sending during which the author may still edit a message.
+/// Mirrored by `EDIT_WINDOW_MS` in `src/lib/messaging/message-edit.ts`.
+pub const EDIT_WINDOW_SECS: u64 = 60;
+
+/// Error returned when an edit arrives after the edit window closed.
+pub const EDIT_WINDOW_CLOSED_ERROR: &str = "edit window closed";
+
+/// Whether an edit may replace a message's content: same author, and stamped
+/// no later than `EDIT_WINDOW_SECS` after the message (second granularity, so
+/// the in-memory and SQLite paths agree). DM rows carry no sender npub; the
+/// caller scopes those to the conversation.
+pub fn edit_is_authorized(
+    msg_mine: bool,
+    msg_npub: Option<&str>,
+    msg_at_ms: u64,
+    edit_mine: bool,
+    edit_npub: Option<&str>,
+    edited_at_ms: u64,
+) -> bool {
+    if msg_mine != edit_mine {
+        return false;
+    }
+    if !msg_mine {
+        if let Some(author) = msg_npub {
+            if edit_npub != Some(author) {
+                return false;
+            }
+        }
+    }
+    edited_at_ms / 1000 <= msg_at_ms / 1000 + EDIT_WINDOW_SECS
+}
+
+/// Checks the local user may edit `msg` to `new_content` at `now_ms`.
+fn validate_own_edit(msg: &Message, new_content: &str, now_ms: u64) -> Result<(), String> {
+    if !msg.mine || msg.pending || msg.failed {
+        return Err("Only your own sent messages can be edited".to_string());
+    }
+    if !msg.attachments.is_empty() || msg.rumor_kind.is_some() {
+        return Err("Only text messages can be edited".to_string());
+    }
+    if new_content.trim().is_empty() {
+        return Err("Edited message cannot be empty".to_string());
+    }
+    if !edit_is_authorized(true, None, msg.at, true, None, now_ms) {
+        return Err(EDIT_WINDOW_CLOSED_ERROR.to_string());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod edit_authorization_tests {
+    use super::*;
+
+    const AT: u64 = 1_700_000_000_250;
+    const ALICE: &str = "npub1alice";
+    const MALLORY: &str = "npub1mallory";
+
+    fn own_text(at: u64) -> Message {
+        Message {
+            id: "m1".to_string(),
+            content: "helo".to_string(),
+            mine: true,
+            at,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn author_inside_window_is_accepted() {
+        assert!(edit_is_authorized(true, None, AT, true, None, AT + 59_000));
+        assert!(edit_is_authorized(
+            false,
+            Some(ALICE),
+            AT,
+            false,
+            Some(ALICE),
+            AT + 60_000
+        ));
+    }
+
+    #[test]
+    fn edit_after_window_is_rejected() {
+        assert!(!edit_is_authorized(true, None, AT, true, None, AT + 61_000));
+    }
+
+    #[test]
+    fn non_author_is_rejected() {
+        // Someone else editing my message.
+        assert!(!edit_is_authorized(
+            true,
+            None,
+            AT,
+            false,
+            Some(MALLORY),
+            AT + 1_000
+        ));
+        // Me editing someone else's message.
+        assert!(!edit_is_authorized(
+            false,
+            Some(ALICE),
+            AT,
+            true,
+            None,
+            AT + 1_000
+        ));
+        // A third group member editing Alice's message.
+        assert!(!edit_is_authorized(
+            false,
+            Some(ALICE),
+            AT,
+            false,
+            Some(MALLORY),
+            AT + 1_000
+        ));
+        assert!(!edit_is_authorized(
+            false,
+            Some(ALICE),
+            AT,
+            false,
+            None,
+            AT + 1_000
+        ));
+    }
+
+    #[test]
+    fn dm_peer_without_stored_npub_is_accepted() {
+        assert!(edit_is_authorized(
+            false,
+            None,
+            AT,
+            false,
+            Some(ALICE),
+            AT + 1_000
+        ));
+    }
+
+    #[test]
+    fn accepts_edit_then_apply_tracks_history() {
+        let mut msg = own_text(AT);
+        assert!(msg.accepts_edit(true, None, AT + 5_000));
+        msg.apply_edit("hello".to_string(), AT + 5_000);
+        assert!(msg.edited);
+        assert_eq!(msg.content, "hello");
+        let history = msg.edit_history.as_ref().unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].content, "helo");
+        assert_eq!(history[1].edited_at, AT + 5_000);
+    }
+
+    #[test]
+    fn validate_own_edit_rules() {
+        let msg = own_text(AT);
+        assert!(validate_own_edit(&msg, "hello", AT + 30_000).is_ok());
+        assert_eq!(
+            validate_own_edit(&msg, "hello", AT + 120_000).unwrap_err(),
+            EDIT_WINDOW_CLOSED_ERROR
+        );
+        assert!(validate_own_edit(&msg, "   ", AT + 1_000).is_err());
+
+        let theirs = Message {
+            mine: false,
+            ..own_text(AT)
+        };
+        assert!(validate_own_edit(&theirs, "hello", AT + 1_000).is_err());
+
+        let pending = Message {
+            pending: true,
+            ..own_text(AT)
+        };
+        assert!(validate_own_edit(&pending, "hello", AT + 1_000).is_err());
+
+        let with_file = Message {
+            attachments: vec![Attachment::default()],
+            ..own_text(AT)
+        };
+        assert!(validate_own_edit(&with_file, "hello", AT + 1_000).is_err());
+
+        let poll = Message {
+            rumor_kind: Some(30078),
+            ..own_text(AT)
+        };
+        assert!(validate_own_edit(&poll, "hello", AT + 1_000).is_err());
     }
 }
 
@@ -3973,30 +4172,36 @@ pub async fn edit_message(
     let my_public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
     let my_npub = my_public_key.to_bech32().map_err(|e| e.to_string())?;
 
-    // Determine chat type and get db chat_id
-    let (chat_type, db_chat_id) = {
+    // Resolve the chat and check the target is our own text message
+    let (chat_type, db_chat_id, original) = {
         let state = STATE.lock().await;
         let chat = state
             .chats
             .iter()
             .find(|c| c.id == chat_id)
             .ok_or_else(|| "Chat not found".to_string())?;
-        let chat_type = chat.chat_type.clone();
+        let original = chat
+            .messages
+            .iter()
+            .find(|m| m.id == message_id)
+            .cloned()
+            .ok_or_else(|| "Message not found".to_string())?;
 
-        // Get db chat ID
         let handle = TAURI_APP.get().ok_or("App handle not available")?;
         let db_chat_id = crate::db::get_chat_id_by_identifier(handle, &chat_id)?;
 
-        (chat_type, db_chat_id)
+        (chat.chat_type.clone(), db_chat_id, original)
     };
 
-    // Build the edit rumor
+    // Build the edit rumor; its timestamp is what receivers check against the window
     let reference_event = EventId::from_hex(&message_id).map_err(|e| e.to_string())?;
     let rumor = EventBuilder::new(Kind::from_u16(event_kind::MESSAGE_EDIT), &new_content)
         .tag(Tag::event(reference_event))
         .build(my_public_key);
     let edit_id = rumor.id.ok_or("Failed to get edit rumor ID")?.to_hex();
     let created_at = rumor.created_at.as_secs();
+    let edited_at_ms = created_at * 1000;
+    validate_own_edit(&original, &new_content, edited_at_ms)?;
 
     match chat_type {
         ChatType::DirectMessage => {
@@ -4033,6 +4238,7 @@ pub async fn edit_message(
             db_chat_id,
             None, // user_id derived from npub stored in event
             &my_npub,
+            created_at,
         )
         .await?;
     }
@@ -4041,27 +4247,7 @@ pub async fn edit_message(
     let mut state = STATE.lock().await;
     if let Some(chat) = state.chats.iter_mut().find(|c| c.id == chat_id) {
         if let Some(msg) = chat.messages.iter_mut().find(|m| m.id == message_id) {
-            // Build edit history if not present
-            if msg.edit_history.is_none() {
-                // First edit: save original content
-                msg.edit_history = Some(vec![EditEntry {
-                    content: msg.content.clone(),
-                    edited_at: msg.at,
-                }]);
-            }
-
-            // Add new edit to history
-            let edit_timestamp_ms = created_at * 1000;
-            if let Some(ref mut history) = msg.edit_history {
-                history.push(EditEntry {
-                    content: new_content.clone(),
-                    edited_at: edit_timestamp_ms,
-                });
-            }
-
-            // Update the message content and flag
-            msg.content = new_content;
-            msg.edited = true;
+            msg.apply_edit(new_content, edited_at_ms);
 
             // Clear preview metadata (URL may have changed or been removed)
             msg.preview_metadata = None;

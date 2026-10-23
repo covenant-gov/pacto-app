@@ -15,7 +15,7 @@ Pacto uses one **unified chat model** (`Chat` / `ChatType` in `src-tauri/src/cha
 | Layer | DMs (private) | MLS groups |
 |-------|----------------|------------|
 | **Wire transport** | **NIP-59** — Kind **1059** (`GiftWrap`), encrypted to recipient pubkey | Kind **444** (`MlsGroupMessage`); group = **`h` tag** (wire group id, hex) |
-| **Inner payload** | NIP-17-style **rumors**: Kind **14** (text), **15** (files), **7** (reactions), **30078** (typing), … | Same rumor kinds after MLS decryption |
+| **Inner payload** | NIP-17-style **rumors**: Kind **14** (text), **15** (files), **16** (edits), **7** (reactions), **30078** (typing), … | Same rumor kinds after MLS decryption |
 | **Invites** | Kind **443** (`MlsWelcome`) **inside** a Gift Wrap (1059) | Same — welcome is not a normal DM rumor path |
 
 **Conversation id**
@@ -57,6 +57,10 @@ Entry points include **`message`** (text), **`file_message`**, **`voice_message`
 - **DM:** `fetch_messages` loads Gift Wraps; **`handle_event`** fills state + DB. The windowed backfill loop and its `sync_progress` / `sync_slice_finished` / `sync_finished` events are documented in [`SYNC_STATUS.md`](./SYNC_STATUS.md).
 - **DM delete:** UI removes the peer from Friends immediately; `delete_dm_chat` still records **`dm_deletion_cutoffs`**, purges local chat/events (already-missing chat is success), and gift-wrap ingest discards wraps with rumored `created_at <= deleted_at` (both inbound and outbound). Open-conversation loads ignore results for deleted or deselected peers; in-flight `message_new` does not rehydrate a peer while delete is running. Unexpected backend failures restore the row and reselect it if it was the open thread. Later messages land as **Requests** until the user sends again. Blocked peers still take precedence over the cutoff.
 - **MLS:** after DM sync / init, **`sync_mls_groups_now`** (per-group cursors, Kind 444 history).
+
+### Edits
+
+Kind **16** rumors reference the original with an `e` tag and ride the same transport as text (gift wrap or MLS). Only the author may edit, and only within **`EDIT_WINDOW_SECS`** (60 s) of the original's timestamp; `edit_message` rejects later edits, and every receive path (live DM, live MLS, sync, and SQLite materialization in `get_message_views` / reply previews) drops edits from anyone else, from another chat, or stamped after the window. History stays on the message (`edit_history`) and is shown only on request.
 
 ### In-memory state
 
@@ -104,6 +108,7 @@ The backend command **`get_mls_store_reset_state`** hydrates this state on accou
 | MLS reset state | **`get_mls_store_reset_state`** hydrates; **`mls_store_reset`** pushes replacements |
 | Typing | **`typing-update`** — `conversation_id` is npub or `group_id` |
 | Reaction | **`react_to_message`** — `chatId` = npub or `group_id` |
+| Edit | **`edit_message`** — `chatId` = npub or `group_id`; result arrives as **`message_update`** with `edited` + `edit_history` |
 
 Exact payload shapes: grep `emit(` / command names in `lib.rs` and `message.rs`.
 
