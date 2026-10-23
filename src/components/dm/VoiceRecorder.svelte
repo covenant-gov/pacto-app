@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import Mic from '@lucide/svelte/icons/mic';
@@ -28,17 +28,21 @@
 
   interface Props {
     disabled?: boolean;
-    /** Sends the WAV clip; resolve `false` to keep it in the preview for a retry. */
-    onSend: (bytes: Uint8Array) => Promise<boolean>;
+    /** Conversation the composer posts to (npub or MLS group id). */
+    target: string;
+    /** Sends the WAV clip to the conversation it was recorded in; resolve `false` to keep it for a retry. */
+    onSend: (bytes: Uint8Array, target: string) => Promise<boolean>;
     /** True while the recorder owns the composer row. */
     active?: boolean;
   }
 
-  let { disabled = false, onSend, active = $bindable(false) }: Props = $props();
+  let { disabled = false, target, onSend, active = $bindable(false) }: Props = $props();
 
   let rec = $state(initialVoiceRecorderState);
   let now = $state(Date.now());
   let clip: Uint8Array | null = null;
+  // Conversation captured at record start; the clip never goes anywhere else.
+  let boundTarget: string | null = null;
   let previewUrl: string | null = $state(null);
   let previewDuration = $state(0);
   let previewEl: HTMLAudioElement | undefined = $state();
@@ -50,6 +54,14 @@
 
   $effect(() => {
     active = isVoiceRecorderActive(rec);
+  });
+
+  // Switching conversations drops the recording or preview instead of carrying it over.
+  $effect(() => {
+    const current = target;
+    untrack(() => {
+      if (rec.phase !== 'idle' && boundTarget !== null && current !== boundTarget) dispatch({ type: 'abandon' });
+    });
   });
 
   // Drives the elapsed timer and the max-length cutoff while the mic is live.
@@ -68,11 +80,13 @@
     const tooShortNow = next.tooShort && next.phase === 'idle' && rec.phase !== 'idle';
     rec = next;
     runEffect(effect);
+    if (rec.phase === 'preview') ensurePreview();
     if (tooShortNow) showToast(get(t)('messaging.voice.holdHint'));
   }
 
   function runEffect(effect: VoiceRecorderEffect) {
     if (effect === 'start') {
+      boundTarget = target;
       startRecording()
         .then(() => {
           if (destroyed) {
@@ -89,20 +103,15 @@
           });
         });
     } else if (effect === 'stop') {
-      const wantsPreview = rec.intent === 'preview';
-      const discarding = rec.intent === 'discard';
       stopRecording()
         .then((bytes) => {
           if (destroyed) return;
           clip = bytes;
-          if (wantsPreview) {
-            previewUrl = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'audio/wav' }));
-            previewDuration = wavDurationSeconds(bytes) ?? 0;
-          }
           dispatch({ type: 'finished', ok: true });
         })
         .catch((err: unknown) => {
           if (destroyed) return;
+          const discarding = rec.intent === 'discard';
           dispatch({ type: 'finished', ok: false });
           if (!discarding) {
             showToast(getInvokeErrorMessage(err, get(t)('messaging.voice.recordFailed')), undefined, undefined, {
@@ -112,11 +121,17 @@
         });
     } else if (effect === 'send') {
       const bytes = clip;
-      if (!bytes) {
+      const sendTo = boundTarget;
+      if (!bytes || sendTo === null) {
         dispatch({ type: 'sendFailed' });
         return;
       }
-      onSend(bytes)
+      if (sendTo !== target) {
+        dispatch({ type: 'abandon' });
+        dispatch({ type: 'sendFailed' });
+        return;
+      }
+      onSend(bytes, sendTo)
         .then((ok) => {
           if (!destroyed) dispatch(ok ? { type: 'sent' } : { type: 'sendFailed' });
         })
@@ -128,8 +143,16 @@
     }
   }
 
+  /** Any clip kept for the preview (stopped by hand or after a failed send) must be playable. */
+  function ensurePreview() {
+    if (!clip || previewUrl) return;
+    previewUrl = URL.createObjectURL(new Blob([new Uint8Array(clip)], { type: 'audio/wav' }));
+    previewDuration = wavDurationSeconds(clip) ?? 0;
+  }
+
   function releaseClip() {
     clip = null;
+    boundTarget = null;
     previewEl?.pause();
     previewPlaying = false;
     if (previewUrl) URL.revokeObjectURL(previewUrl);

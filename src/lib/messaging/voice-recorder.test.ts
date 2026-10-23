@@ -215,6 +215,69 @@ describe('voice recorder: hands-free and preview', () => {
   });
 });
 
+describe('voice recorder: leaving the conversation', () => {
+  const lockedHere = (): VoiceRecorderEvent[] => [{ type: 'activate' }, { type: 'started', at: T0 }];
+
+  it('discards a held recording instead of sending it on release', () => {
+    const { state, effects } = run([...holding(), { type: 'abandon' }]);
+    expect(state.phase).toBe('finishing');
+    expect(state.intent).toBe('discard');
+    const done = run([{ type: 'release', at: T0 + 2_000 }, { type: 'finished', ok: true }], state);
+    expect(done.state).toEqual(initialVoiceRecorderState);
+    expect([...effects, ...done.effects]).toEqual(['start', 'stop', 'discard']);
+  });
+
+  it('discards a preview', () => {
+    const { state, effects } = run([
+      ...lockedHere(),
+      { type: 'stop', at: T0 + 2_000 },
+      { type: 'finished', ok: true },
+      { type: 'abandon' },
+    ]);
+    expect(state).toEqual(initialVoiceRecorderState);
+    expect(effects).toEqual(['start', 'stop', 'discard']);
+  });
+
+  it('turns a release that is still stopping into a discard', () => {
+    const { state, effects } = run([
+      ...holding(),
+      { type: 'release', at: T0 + 2_000 },
+      { type: 'abandon' },
+      { type: 'finished', ok: true },
+    ]);
+    expect(state.phase).toBe('idle');
+    expect(effects).toEqual(['start', 'stop', 'discard']);
+  });
+
+  it('stops a recorder that is still starting without sending', () => {
+    const { state, effects } = run([
+      { type: 'press', x: 0, y: 0 },
+      { type: 'abandon' },
+      { type: 'started', at: T0 },
+      { type: 'finished', ok: true },
+    ]);
+    expect(state.phase).toBe('idle');
+    expect(state.tooShort).toBe(false);
+    expect(effects).toEqual(['start', 'stop', 'discard']);
+  });
+
+  it('lets an in-flight send finish but drops its retry preview', () => {
+    const sending = run([...lockedHere(), { type: 'send', at: T0 + 2_000 }, { type: 'finished', ok: true }]);
+    const failed = run([{ type: 'abandon' }, { type: 'sendFailed' }], sending.state);
+    expect(failed.state.phase).toBe('idle');
+    expect(failed.effects).toEqual(['discard']);
+    const sent = run([{ type: 'abandon' }, { type: 'sent' }], sending.state);
+    expect(sent.state.phase).toBe('idle');
+  });
+
+  it('is a no-op when idle', () => {
+    expect(voiceRecorderTransition(initialVoiceRecorderState, { type: 'abandon' })).toEqual({
+      state: initialVoiceRecorderState,
+      effect: null,
+    });
+  });
+});
+
 describe('voice recorder helpers', () => {
   it('reports activity and elapsed time', () => {
     expect(isVoiceRecorderActive(initialVoiceRecorderState)).toBe(false);

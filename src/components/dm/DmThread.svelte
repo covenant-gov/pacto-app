@@ -66,8 +66,8 @@
       useCompression: boolean
     ) => Promise<void>;
     onSendGif?: (url: string, slug: string, repliedTo: string) => Promise<void>;
-    /** Sends a recorded voice clip; resolves `false` when the send failed. */
-    onSendVoice?: (bytes: Uint8Array, repliedTo: string) => Promise<boolean>;
+    /** Sends a recorded voice clip to `npub`; resolves `false` when the send failed. */
+    onSendVoice?: (bytes: Uint8Array, repliedTo: string, npub: string) => Promise<boolean>;
     onTyping?: () => void;
     onAcceptSquadInvite?: (msg: DmMessage, groupId: string) => void;
     onAcceptChannelInSquad?: (
@@ -173,10 +173,10 @@
     cancelReply();
   }
 
-  async function handleSendVoice(bytes: Uint8Array, repliedTo: string): Promise<boolean> {
+  async function handleSendVoice(bytes: Uint8Array, repliedTo: string, target: string): Promise<boolean> {
     if (!onSendVoice) return false;
-    const ok = await onSendVoice(bytes, repliedTo);
-    if (ok) cancelReply();
+    const ok = await onSendVoice(bytes, repliedTo, target);
+    if (ok && target === npub) cancelReply();
     return ok;
   }
 
@@ -734,6 +734,7 @@
     onSendFile={handleSendFile}
     onSendGif={handleSendGif}
     onSendVoice={onSendVoice ? handleSendVoice : undefined}
+    conversationId={npub}
     onTyping={onTyping}
     repliedTo={replyToMessageId ?? undefined}
     repliedToPreview={replyPreview}

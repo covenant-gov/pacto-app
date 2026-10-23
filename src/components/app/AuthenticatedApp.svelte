@@ -776,11 +776,10 @@
     }
   }
 
-  async function handleDmSendVoice(bytes: Uint8Array, repliedTo: string): Promise<boolean> {
-    const id = $activeDmId;
-    if (!id || !(await maybeRequireSession())) return false;
+  async function handleDmSendVoice(bytes: Uint8Array, repliedTo: string, npub: string): Promise<boolean> {
+    if (!(await maybeRequireSession())) return false;
     $dmSendError = null;
-    return sendVoiceClip(id, bytes, repliedTo, (msg) => ($dmSendError = msg));
+    return sendVoiceClip(npub, bytes, repliedTo, (msg) => ($dmSendError = msg));
   }
 
   /** Payment requests: optimistic card in chat; modal closes without blocking on relay delivery. */

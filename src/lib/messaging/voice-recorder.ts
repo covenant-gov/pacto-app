@@ -12,6 +12,7 @@
  * - While holding, drag left past the cancel threshold to discard.
  * - Keyboard (or a click with no pointer hold) starts hands-free recording.
  * - Hands-free recording can be stopped into a preview, sent, or discarded.
+ * - Leaving the conversation abandons whatever is in progress.
  */
 
 /** Upward drag (px) that locks the recording so the pointer can be released. */
@@ -62,6 +63,8 @@ export type VoiceRecorderEvent =
   | { type: 'stop'; at: number }
   | { type: 'send'; at: number }
   | { type: 'cancel' }
+  /** The composer moved to another conversation; never deliver this clip. */
+  | { type: 'abandon' }
   | { type: 'tick'; at: number }
   | { type: 'finished'; ok: boolean }
   | { type: 'sent' }
@@ -166,7 +169,7 @@ export function voiceRecorderTransition(
       if (event.type === 'release' && state.viaHold && !state.pendingStop) {
         return unchanged({ ...state, pendingStop: 'release' });
       }
-      if (event.type === 'cancel') return unchanged({ ...state, pendingStop: 'cancel' });
+      if (event.type === 'cancel' || event.type === 'abandon') return unchanged({ ...state, pendingStop: 'cancel' });
       return unchanged(state);
     }
 
@@ -181,7 +184,7 @@ export function voiceRecorderTransition(
         return unchanged({ ...state, offset: { dx, dy } });
       }
       if (event.type === 'release') return finishUnlessTooShort(state, 'send', event.at);
-      if (event.type === 'cancel') return finish(state, 'discard');
+      if (event.type === 'cancel' || event.type === 'abandon') return finish(state, 'discard');
       if (event.type === 'tick' && voiceElapsedMs(state, event.at) >= VOICE_MAX_DURATION_MS) {
         return finish(state, 'preview');
       }
@@ -191,7 +194,7 @@ export function voiceRecorderTransition(
     case 'locked': {
       if (event.type === 'stop') return finishUnlessTooShort(state, 'preview', event.at);
       if (event.type === 'send') return finishUnlessTooShort(state, 'send', event.at);
-      if (event.type === 'cancel') return finish(state, 'discard');
+      if (event.type === 'cancel' || event.type === 'abandon') return finish(state, 'discard');
       if (event.type === 'tick' && voiceElapsedMs(state, event.at) >= VOICE_MAX_DURATION_MS) {
         return finish(state, 'preview');
       }
@@ -199,6 +202,7 @@ export function voiceRecorderTransition(
     }
 
     case 'finishing': {
+      if (event.type === 'abandon') return unchanged({ ...state, intent: 'discard', tooShort: false });
       if (event.type !== 'finished') return unchanged(state);
       if (!event.ok || state.intent === 'discard') {
         return { state: toIdle(state.tooShort), effect: event.ok ? 'discard' : null };
@@ -211,14 +215,19 @@ export function voiceRecorderTransition(
 
     case 'preview': {
       if (event.type === 'send') return { state: { ...state, phase: 'sending' }, effect: 'send' };
-      if (event.type === 'cancel') return { state: toIdle(), effect: 'discard' };
+      if (event.type === 'cancel' || event.type === 'abandon') return { state: toIdle(), effect: 'discard' };
       return unchanged(state);
     }
 
     case 'sending': {
+      // The send already targets the clip's own conversation; only its retry preview is dropped.
+      if (event.type === 'abandon') return unchanged({ ...state, intent: 'discard' });
       if (event.type === 'sent') return { state: toIdle(), effect: 'discard' };
       // Keep the clip so a failed send can be retried or discarded from the preview.
-      if (event.type === 'sendFailed') return { state: { ...state, phase: 'preview' }, effect: null };
+      if (event.type === 'sendFailed') {
+        if (state.intent === 'discard') return { state: toIdle(), effect: 'discard' };
+        return { state: { ...state, phase: 'preview' }, effect: null };
+      }
       return unchanged(state);
     }
   }

@@ -702,12 +702,11 @@
     }
   }
 
-  async function handleSendVoice(bytes: Uint8Array, repliedTo: string): Promise<boolean> {
-    const groupId = $activeChannelId;
-    if (!groupId) return false;
+  // The recorder binds groupId at record start, so a channel switch can't redirect the clip.
+  async function handleSendVoice(bytes: Uint8Array, repliedTo: string, groupId: string): Promise<boolean> {
     groupSendError.set(null);
     const ok = await sendVoiceClip(groupId, bytes, repliedTo, (msg) => groupSendError.set(msg));
-    if (ok) cancelReply();
+    if (ok && groupId === $activeChannelId) cancelReply();
     return ok;
   }
 
@@ -899,6 +898,7 @@
         onSendFile={handleSendFile}
         onSendGif={handleSendGif}
         onSendVoice={handleSendVoice}
+        conversationId={$activeChannelId ?? undefined}
         squadMlsGroupId={effectiveMembersGroupId ?? undefined}
         squadRosterNpubs={panelMembers}
         squadProfiles={$profiles}
