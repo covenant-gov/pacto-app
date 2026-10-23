@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { installWakeSyncHandlers, requestCatchUp, requestCatchUpIfPendingDm } from './wake-sync';
+import {
+  installWakeSyncHandlers,
+  requestCatchUp,
+  requestCatchUpIfPendingDm,
+  sendDmWithPendingCatchUp,
+} from './wake-sync';
 import { fetchMessages, syncMlsGroupsNow } from '../api/nostr';
 import { dmChatsByNpub, dmSyncStatus } from '../../stores/dm';
 
@@ -97,6 +102,38 @@ describe('wake-sync', () => {
 
     it('skips non-npub ids', () => {
       requestCatchUpIfPendingDm('mls-group-id');
+      expect(fetchMessages).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sendDmWithPendingCatchUp', () => {
+    const peer = 'npub1pendingpeer00000000000000000000000000000000';
+
+    beforeEach(() => {
+      dmChatsByNpub.set({
+        [peer]: { npub: peer, hasFromMe: true, hasFromThem: false, lastAt: 1 },
+      });
+    });
+
+    it('nudges catch-up after a successful send on Pending', async () => {
+      const send = vi.fn().mockResolvedValue(true);
+      await expect(sendDmWithPendingCatchUp(peer, send)).resolves.toBe(true);
+      expect(send).toHaveBeenCalledOnce();
+      expect(fetchMessages).toHaveBeenCalledWith(false);
+    });
+
+    it('skips catch-up when the send reports failure', async () => {
+      await expect(sendDmWithPendingCatchUp(peer, async () => false)).resolves.toBe(false);
+      expect(fetchMessages).not.toHaveBeenCalled();
+    });
+
+    it('propagates send errors without catch-up', async () => {
+      const err = new Error('relay down');
+      await expect(
+        sendDmWithPendingCatchUp(peer, async () => {
+          throw err;
+        })
+      ).rejects.toBe(err);
       expect(fetchMessages).not.toHaveBeenCalled();
     });
   });
