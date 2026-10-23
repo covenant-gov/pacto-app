@@ -330,3 +330,57 @@ export const commonsFixtures: Record<string, MockCommandHandler> = {
   commons_get_local_active: () => null,
   commons_cancel_broadcast: () => undefined,
 };
+
+/** Silent 22 kHz mono 16-bit WAV, so the browser preview can exercise the voice recorder. */
+function silentWav(seconds: number): number[] {
+  const sampleRate = 22_000;
+  const dataBytes = Math.round(seconds * sampleRate) * 2;
+  const view = new DataView(new ArrayBuffer(44 + dataBytes));
+  const ascii = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + dataBytes, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, 'data');
+  view.setUint32(40, dataBytes, true);
+  return Array.from(new Uint8Array(view.buffer));
+}
+
+const mockWhisperModels = [
+  { name: 'tiny', display_name: 'Lowest Quality - Fastest', size: 75 },
+  { name: 'base', display_name: 'Low Quality - Faster', size: 142 },
+  { name: 'small', display_name: 'Base Quality - Fast', size: 466 },
+  { name: 'medium', display_name: 'High Quality - Slow', size: 1500 },
+  { name: 'large-v3', display_name: 'Highest Quality - Slowest', size: 2900 },
+];
+const mockDownloadedModels = new Set<string>(['tiny']);
+
+export const voiceFixtures: Record<string, MockCommandHandler> = {
+  get_platform_features: () => ({
+    transcription: true,
+    notification_sounds: false,
+    os: 'web',
+    is_mobile: false,
+    debug_mode: true,
+  }),
+  start_recording: () => undefined,
+  stop_recording: () => silentWav(3),
+  voice_message: () => true,
+  list_models: () =>
+    mockWhisperModels.map((model) => ({ model, downloaded: mockDownloadedModels.has(model.name) })),
+  download_whisper_model: (args) => {
+    mockDownloadedModels.add(String(args.modelName ?? 'tiny'));
+    return '/mock/whisper/model.bin';
+  },
+  delete_whisper_model: (args) => mockDownloadedModels.delete(String(args.modelName ?? '')),
+  transcribe: () => ({ sections: [{ text: 'Mock transcript of a voice message.', at: 0 }], lang: 'GB' }),
+};

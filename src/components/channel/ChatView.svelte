@@ -57,6 +57,7 @@
   import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
+  import { sendVoiceClip } from '../../lib/messaging/voice-send';
   import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
   import { sendGifMessage } from '../../lib/api/klipy';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
@@ -701,6 +702,15 @@
     }
   }
 
+  async function handleSendVoice(bytes: Uint8Array, repliedTo: string): Promise<boolean> {
+    const groupId = $activeChannelId;
+    if (!groupId) return false;
+    groupSendError.set(null);
+    const ok = await sendVoiceClip(groupId, bytes, repliedTo, (msg) => groupSendError.set(msg));
+    if (ok) cancelReply();
+    return ok;
+  }
+
   async function handleSendGif(url: string, slug: string, repliedTo: string): Promise<void> {
     const groupId = $activeChannelId;
     if (!groupId) return;
@@ -888,6 +898,7 @@
         onSendMentions={handleSendMentions}
         onSendFile={handleSendFile}
         onSendGif={handleSendGif}
+        onSendVoice={handleSendVoice}
         squadMlsGroupId={effectiveMembersGroupId ?? undefined}
         squadRosterNpubs={panelMembers}
         squadProfiles={$profiles}

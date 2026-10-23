@@ -66,6 +66,8 @@
       useCompression: boolean
     ) => Promise<void>;
     onSendGif?: (url: string, slug: string, repliedTo: string) => Promise<void>;
+    /** Sends a recorded voice clip; resolves `false` when the send failed. */
+    onSendVoice?: (bytes: Uint8Array, repliedTo: string) => Promise<boolean>;
     onTyping?: () => void;
     onAcceptSquadInvite?: (msg: DmMessage, groupId: string) => void;
     onAcceptChannelInSquad?: (
@@ -104,6 +106,7 @@
     onSend = () => {},
     onSendFile,
     onSendGif,
+    onSendVoice,
     onTyping = () => {},
     onAcceptSquadInvite = () => {},
     onAcceptChannelInSquad = () => {},
@@ -168,6 +171,13 @@
     if (!onSendGif) return;
     await onSendGif(url, slug, repliedTo);
     cancelReply();
+  }
+
+  async function handleSendVoice(bytes: Uint8Array, repliedTo: string): Promise<boolean> {
+    if (!onSendVoice) return false;
+    const ok = await onSendVoice(bytes, repliedTo);
+    if (ok) cancelReply();
+    return ok;
   }
 
   // Reply state resets whenever the open conversation changes.
@@ -723,6 +733,7 @@
     onSend={handleSend}
     onSendFile={handleSendFile}
     onSendGif={handleSendGif}
+    onSendVoice={onSendVoice ? handleSendVoice : undefined}
     onTyping={onTyping}
     repliedTo={replyToMessageId ?? undefined}
     repliedToPreview={replyPreview}

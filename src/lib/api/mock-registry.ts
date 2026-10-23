@@ -8,6 +8,7 @@ import {
   encryptionFixtures,
   relayFixtures,
   commonsFixtures,
+  voiceFixtures,
 } from './mock-fixtures';
 
 export const mockCommandRegistry: Record<string, MockCommandHandler> = {
@@ -19,4 +20,5 @@ export const mockCommandRegistry: Record<string, MockCommandHandler> = {
   ...encryptionFixtures,
   ...relayFixtures,
   ...commonsFixtures,
+  ...voiceFixtures,
 };
