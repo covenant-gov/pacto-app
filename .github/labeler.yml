@@ -1,0 +1,60 @@
+# Path-based labels applied by .github/workflows/labeler.yaml. Each risk:*
+# label marks a PR that touches files able to change CI, the supply chain,
+# the build, agent behavior, or app permissions, so reviewers look closer.
+# Labels are removed again when a later push no longer touches the paths.
+
+risk:ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'Dockerfile.ci'
+
+# .npmrc is not tracked today; adding one can redirect the package registry.
+risk:dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'package.json'
+          - 'pnpm-lock.yaml'
+          - 'pnpm-workspace.yaml'
+          - 'landing/package.json'
+          - 'src-tauri/Cargo.toml'
+          - 'src-tauri/Cargo.lock'
+          - '.cargo/**'
+          - '.npmrc'
+
+risk:build-scripts:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'scripts/**'
+          - 'Makefile'
+          - 'src-tauri/build.rs'
+          - 'cliff.toml'
+          - 'vite.config*.ts'
+          - 'svelte.config.js'
+
+risk:agent-instructions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'AGENTS.md'
+          - 'CLAUDE.md'
+          - '.agents/**'
+          - '.claude/**'
+          - '.codex/**'
+          - '.cursor/**'
+          - '.mcp.json'
+          - 'ai.json'
+          - 'skills-lock.json'
+
+risk:app-permissions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src-tauri/capabilities/**'
+          - 'src-tauri/tauri.conf.json'
+          - 'src-tauri/Entitlements.plist'
+          - 'src-tauri/Info.plist'
+
+database:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src-tauri/src/migrations/**'
+          - 'src-tauri/src/mls_migrations/**'

@@ -1,0 +1,29 @@
+name: PR risk labels
+
+# Labels PRs by changed paths using .github/labeler.yml.
+#
+# pull_request_target runs this file and the labeler config from the base
+# branch with a write token, so fork PRs get labeled too. It must never check
+# out or run PR code: the labeler only reads the changed-file list through the
+# API. Do not add actions/checkout or any step that uses the PR head.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# Labeling is idempotent, so only the latest push per PR needs to run.
+concurrency:
+  group: labeler-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d  # v6.2.0
+        with:
+          sync-labels: true
