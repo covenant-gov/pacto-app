@@ -4,10 +4,9 @@
 
 use crate::{
     db, get_file_type_description, get_nostr_client, handle_event_guarded, mls, nostr_sign,
-    nostr_tags, notification, process_rumor, save_chat_messages, trusted_relays,
-    wait_for_populated_relay_pool, ChatState, ChatType, ConversationType, Message, MlsService,
-    Reaction, RumorContext, RumorEvent, RumorProcessingResult, StoredEvent, SyncMode, STATE,
-    TAURI_APP, WRAPPER_ID_CACHE,
+    nostr_tags, notification, process_rumor, save_chat_messages, wait_for_populated_relay_pool,
+    ChatState, ChatType, ConversationType, Message, MlsService, Reaction, RumorContext, RumorEvent,
+    RumorProcessingResult, StoredEvent, SyncMode, STATE, TAURI_APP, WRAPPER_ID_CACHE,
 };
 use crate::{profile, Profile};
 #[cfg(test)]
@@ -1556,7 +1555,7 @@ pub(crate) async fn start_typing(receiver: String) -> bool {
                 )))
                 .build(my_public_key);
 
-            // Gift Wrap and send our Typing Indicator to receiver via our Trusted Relay
+            // Gift Wrap and send our Typing Indicator via the same trusted∩pool set as DMs.
             // Note: we set a 30-second expiry so that relays can purge typing indicators quickly
             let expiry_time = Timestamp::from_secs(
                 std::time::SystemTime::now()
@@ -1565,18 +1564,14 @@ pub(crate) async fn start_typing(receiver: String) -> bool {
                     .as_secs()
                     + 30,
             );
-            match client
-                .gift_wrap_to(
-                    trusted_relays::trusted_relays().iter().cloned(),
-                    &pubkey,
-                    rumor,
-                    [Tag::expiration(expiry_time)],
-                )
-                .await
-            {
-                Ok(_) => true,
-                Err(_) => false,
-            }
+            crate::message::gift_wrap_to_trusted_in_pool(
+                &client,
+                &pubkey,
+                rumor,
+                vec![Tag::expiration(expiry_time)],
+            )
+            .await
+            .is_ok()
         }
         Err(_) => {
             // This is a group chat - use MLS

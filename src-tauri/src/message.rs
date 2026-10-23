@@ -63,47 +63,92 @@ async fn trusted_relays_in_pool(client: &Client) -> Vec<RelayUrl> {
     filter_trusted_relays_in_pool(crate::trusted_relays::trusted_relays(), &pool)
 }
 
-/// Publish a NIP-17 gift wrap to trusted relays still in the pool (same chokepoint as typing/MLS).
+const DM_NO_ACK_ERROR: &str = "no trusted relay acknowledged the gift wrap";
+const DM_PUBLISH_MAX_ATTEMPTS: u32 = 12;
+const DM_PUBLISH_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum DmPublishError {
+    /// Every trusted relay is disabled or missing from the pool; retrying cannot help.
+    NoTrustedRelayInPool,
+    Send(String),
+}
+
+impl std::fmt::Display for DmPublishError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoTrustedRelayInPool => {
+                f.write_str("no trusted relays available in the relay pool")
+            }
+            Self::Send(e) => f.write_str(e),
+        }
+    }
+}
+
+/// Publish a NIP-17 gift wrap to trusted relays still in the pool. Shared by DMs and typing.
+pub(crate) async fn gift_wrap_to_trusted_in_pool(
+    client: &Client,
+    receiver: &PublicKey,
+    rumor: UnsignedEvent,
+    extra_tags: Vec<Tag>,
+) -> Result<Output<EventId>, DmPublishError> {
+    let targets = trusted_relays_in_pool(client).await;
+    if targets.is_empty() {
+        return Err(DmPublishError::NoTrustedRelayInPool);
+    }
+    client
+        .gift_wrap_to(targets, receiver, rumor, extra_tags)
+        .await
+        .map_err(|e| DmPublishError::Send(e.to_string()))
+}
+
 async fn gift_wrap_dm_to_trusted(
     client: &Client,
     receiver: &PublicKey,
     rumor: UnsignedEvent,
-) -> Result<Output<EventId>, String> {
-    let targets = trusted_relays_in_pool(client).await;
-    if targets.is_empty() {
-        return Err("no trusted relays available in the relay pool".to_string());
-    }
-    client
-        .gift_wrap_to(targets, receiver, rumor, [])
-        .await
-        .map_err(|e| e.to_string())
+) -> Result<Output<EventId>, DmPublishError> {
+    gift_wrap_to_trusted_in_pool(client, receiver, rumor, Vec::new()).await
 }
 
-/// Same publish path as [`gift_wrap_dm_to_trusted`], with the bounded retry used by text DMs.
+/// [`gift_wrap_dm_to_trusted`] with the bounded retry shared by text, file, GIF, reaction and edit DMs.
 async fn gift_wrap_dm_to_trusted_with_retry(
     client: &Client,
     receiver: &PublicKey,
     rumor: UnsignedEvent,
 ) -> Result<Output<EventId>, String> {
-    const MAX_ATTEMPTS: u32 = 12;
-    const RETRY_DELAY_SECS: u64 = 5;
+    retry_dm_publish(DM_PUBLISH_MAX_ATTEMPTS, DM_PUBLISH_RETRY_DELAY, move || {
+        gift_wrap_dm_to_trusted(client, receiver, rumor.clone())
+    })
+    .await
+}
+
+/// Retries until a trusted relay ACKs; an empty trusted∩pool set fails on the first attempt.
+async fn retry_dm_publish<F, Fut>(
+    max_attempts: u32,
+    delay: std::time::Duration,
+    mut publish: F,
+) -> Result<Output<EventId>, String>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<Output<EventId>, DmPublishError>>,
+{
     let mut attempts = 0u32;
     loop {
         attempts += 1;
-        match gift_wrap_dm_to_trusted(client, receiver, rumor.clone()).await {
+        let err = match publish().await {
             Ok(output) if dm_gift_wrap_output_ok(&output) => return Ok(output),
-            Ok(_) => {
-                if attempts >= MAX_ATTEMPTS {
-                    return Err("no trusted relay acknowledged the gift wrap".to_string());
-                }
-            }
-            Err(e) => {
-                if attempts >= MAX_ATTEMPTS {
-                    return Err(e);
-                }
-            }
+            Ok(_) => DM_NO_ACK_ERROR.to_string(),
+            Err(e @ DmPublishError::NoTrustedRelayInPool) => return Err(e.to_string()),
+            Err(DmPublishError::Send(e)) => e,
+        };
+        eprintln!(
+            "[DM] gift wrap publish failed (attempt {}/{}): {}",
+            attempts, max_attempts, err
+        );
+        if attempts >= max_attempts {
+            return Err(err);
         }
-        tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY_SECS)).await;
+        tokio::time::sleep(delay).await;
     }
 }
 
@@ -1199,133 +1244,84 @@ pub async fn message(
             }
         }
     } else {
-        // DM - use NIP-17 giftwrap
-        // Send message to the real receiver with retry logic
-        let mut send_attempts = 0;
-        const MAX_ATTEMPTS: u32 = 12;
-        const RETRY_DELAY: u64 = 5; // 5 seconds
+        // DM - use NIP-17 giftwrap; success requires at least one trusted ACK.
+        let output = match gift_wrap_dm_to_trusted_with_retry(
+            &client,
+            &receiver_pubkey,
+            built_rumor.clone(),
+        )
+        .await
+        {
+            Ok(output) => output,
+            Err(e) => {
+                eprintln!("Failed to send message: {}", e);
+                mark_message_failed(Arc::clone(&pending_id), &receiver).await;
+                return Ok(false);
+            }
+        };
+        let wrapper_id = output.id().to_hex();
 
-        let mut final_output = None;
+        // Immediately update frontend and save to DB
+        // This provides faster visual feedback without waiting for the self-send
+        {
+            let pending_id_for_early_update = Arc::clone(&pending_id);
+            let mut state = STATE.lock().await;
+            if let Some(chat) = state
+                .chats
+                .iter_mut()
+                .find(|chat| chat.id() == &receiver || chat.has_participant(&receiver))
+            {
+                // Update the message in-place and capture a clone for the backfill.
+                let original = chat
+                    .messages
+                    .iter_mut()
+                    .find(|m| m.id == *pending_id_for_early_update)
+                    .map(|msg| {
+                        msg.id = rumor_id.to_hex();
+                        msg.pending = false;
+                        msg.wrapper_event_id = Some(wrapper_id);
+                        msg.clone()
+                    });
 
-        while send_attempts < MAX_ATTEMPTS {
-            send_attempts += 1;
+                if let Some(original) = original {
+                    // Backfill reply context for any messages that arrived before
+                    // this outbound message was persisted under its real rumor id.
+                    // The bot can reply faster than we receive the relay's publish ack,
+                    // so its reply may already be in state with empty context.
+                    let updated_replies = chat.update_replies_to_message(&original, true);
 
-            match gift_wrap_dm_to_trusted(&client, &receiver_pubkey, built_rumor.clone()).await {
-                Ok(output) => {
-                    // Trusted-relay publish: non-empty success means at least one trusted ACK.
-                    if dm_gift_wrap_output_ok(&output) {
-                        // Extract wrapper_event_id BEFORE moving output
-                        let wrapper_id = output.id().to_hex();
-                        final_output = Some(output);
-
-                        // Immediately update frontend and save to DB
-                        // This provides faster visual feedback without waiting for the self-send
-                        {
-                            let pending_id_for_early_update = Arc::clone(&pending_id);
-                            let mut state = STATE.lock().await;
-                            if let Some(chat) = state.chats.iter_mut().find(|chat| {
-                                chat.id() == &receiver || chat.has_participant(&receiver)
-                            }) {
-                                // Update the message in-place and capture a clone for the backfill.
-                                let original = chat
-                                    .messages
-                                    .iter_mut()
-                                    .find(|m| m.id == *pending_id_for_early_update)
-                                    .map(|msg| {
-                                        msg.id = rumor_id.to_hex();
-                                        msg.pending = false;
-                                        msg.wrapper_event_id = Some(wrapper_id);
-                                        msg.clone()
-                                    });
-
-                                if let Some(original) = original {
-                                    // Backfill reply context for any messages that arrived before
-                                    // this outbound message was persisted under its real rumor id.
-                                    // The bot can reply faster than we receive the relay's publish ack,
-                                    // so its reply may already be in state with empty context.
-                                    let updated_replies =
-                                        chat.update_replies_to_message(&original, true);
-
-                                    // Emit update to frontend for immediate visual feedback
-                                    let handle = TAURI_APP.get().unwrap();
-                                    let _ = handle.emit(
-                                        "message_update",
-                                        serde_json::json!({
-                                            "old_id": pending_id_for_early_update.as_ref(),
-                                            "message": &original,
-                                            "chat_id": &receiver
-                                        }),
-                                    );
-
-                                    // Also emit updates for replies whose context was backfilled
-                                    for reply in updated_replies {
-                                        let reply_id = reply.id.clone();
-                                        let _ = handle.emit(
-                                            "message_update",
-                                            serde_json::json!({
-                                                "old_id": reply_id,
-                                                "message": reply,
-                                                "chat_id": &receiver
-                                            }),
-                                        );
-                                    }
-
-                                    // Save to DB immediately (don't wait for self-send)
-                                    let chat_to_save = chat.clone();
-                                    drop(state); // Release lock before async DB operations
-
-                                    let _ = save_chat(handle.clone(), &chat_to_save).await;
-                                    let _ = crate::db::save_message(
-                                        handle.clone(),
-                                        &receiver,
-                                        &original,
-                                    )
-                                    .await;
-                                }
-                            }
-                        }
-
-                        break;
-                    } else if output.failed.is_empty() {
-                        // No success but also no failures - this might be a temporary network issue
-                        // Continue retrying
-                    } else {
-                        // We have failures but no successes
-                        if send_attempts == MAX_ATTEMPTS {
-                            // Final attempt failed
-                            mark_message_failed(Arc::clone(&pending_id), &receiver).await;
-                            return Ok(false);
-                        }
-                    }
-
-                    // If we're here and haven't reached max attempts, wait before retrying
-                    if send_attempts < MAX_ATTEMPTS {
-                        tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY)).await;
-                    }
-                }
-                Err(e) => {
-                    // Network or other error - log and retry if we haven't exceeded attempts
-                    eprintln!(
-                        "Failed to send message (attempt {}/{}): {:?}",
-                        send_attempts, MAX_ATTEMPTS, e
+                    // Emit update to frontend for immediate visual feedback
+                    let handle = TAURI_APP.get().unwrap();
+                    let _ = handle.emit(
+                        "message_update",
+                        serde_json::json!({
+                            "old_id": pending_id_for_early_update.as_ref(),
+                            "message": &original,
+                            "chat_id": &receiver
+                        }),
                     );
 
-                    if send_attempts == MAX_ATTEMPTS {
-                        // Final attempt failed
-                        mark_message_failed(Arc::clone(&pending_id), &receiver).await;
-                        return Ok(false);
+                    // Also emit updates for replies whose context was backfilled
+                    for reply in updated_replies {
+                        let reply_id = reply.id.clone();
+                        let _ = handle.emit(
+                            "message_update",
+                            serde_json::json!({
+                                "old_id": reply_id,
+                                "message": reply,
+                                "chat_id": &receiver
+                            }),
+                        );
                     }
 
-                    // Wait before retrying
-                    tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY)).await;
+                    // Save to DB immediately (don't wait for self-send)
+                    let chat_to_save = chat.clone();
+                    drop(state); // Release lock before async DB operations
+
+                    let _ = save_chat(handle.clone(), &chat_to_save).await;
+                    let _ = crate::db::save_message(handle.clone(), &receiver, &original).await;
                 }
             }
-        }
-
-        // If we get here without final_output, all attempts failed
-        if final_output.is_none() {
-            mark_message_failed(Arc::clone(&pending_id), &receiver).await;
-            return Ok(false);
         }
 
         // Self-wrap for multi-device recovery (best-effort; peer send already succeeded).
@@ -1474,45 +1470,17 @@ pub async fn klipy_gif_message(
     }
 
     // DM: NIP-17 giftwrap with retry, mirroring `message()`.
-    let mut send_attempts = 0;
-    const MAX_ATTEMPTS: u32 = 12;
-    const RETRY_DELAY: u64 = 5;
-    let mut succeeded = false;
-    let mut wrapper_id_hex = String::new();
-
-    while send_attempts < MAX_ATTEMPTS {
-        send_attempts += 1;
-        match gift_wrap_dm_to_trusted(&client, &receiver_pubkey, built_rumor.clone()).await {
-            Ok(output) => {
-                if dm_gift_wrap_output_ok(&output) {
-                    wrapper_id_hex = output.id().to_hex();
-                    succeeded = true;
-                    break;
-                } else if !output.failed.is_empty() && send_attempts == MAX_ATTEMPTS {
-                    mark_message_failed(Arc::clone(&pending_id), &receiver).await;
-                    return Ok(false);
-                }
-            }
+    let wrapper_id_hex =
+        match gift_wrap_dm_to_trusted_with_retry(&client, &receiver_pubkey, built_rumor.clone())
+            .await
+        {
+            Ok(output) => output.id().to_hex(),
             Err(e) => {
-                eprintln!(
-                    "Failed to send Klipy GIF (attempt {}/{}): {:?}",
-                    send_attempts, MAX_ATTEMPTS, e
-                );
-                if send_attempts == MAX_ATTEMPTS {
-                    mark_message_failed(Arc::clone(&pending_id), &receiver).await;
-                    return Ok(false);
-                }
+                eprintln!("Failed to send Klipy GIF: {}", e);
+                mark_message_failed(Arc::clone(&pending_id), &receiver).await;
+                return Ok(false);
             }
-        }
-        if !succeeded && send_attempts < MAX_ATTEMPTS {
-            tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY)).await;
-        }
-    }
-
-    if !succeeded {
-        mark_message_failed(Arc::clone(&pending_id), &receiver).await;
-        return Ok(false);
-    }
+        };
 
     // Update the pending message in place, persist, and notify the frontend.
     {
@@ -3543,7 +3511,7 @@ pub async fn react_to_message(
             gift_wrap_dm_to_trusted_with_retry(&client, &receiver_pubkey, rumor.clone())
                 .await
                 .map_err(|e| {
-                    if e == "no trusted relay acknowledged the gift wrap" {
+                    if e == DM_NO_ACK_ERROR {
                         "no trusted relay acknowledged the reaction".to_string()
                     } else {
                         e
@@ -4007,7 +3975,7 @@ pub async fn edit_message(
             gift_wrap_dm_to_trusted_with_retry(&client, &receiver_pubkey, rumor.clone())
                 .await
                 .map_err(|e| {
-                    if e == "no trusted relay acknowledged the gift wrap" {
+                    if e == DM_NO_ACK_ERROR {
                         "no trusted relay acknowledged the edit".to_string()
                     } else {
                         e
@@ -4135,15 +4103,23 @@ pub fn envelope_names_npub(content: &str, member_npub: &str) -> bool {
 
 #[cfg(test)]
 mod dm_gift_wrap_target_tests {
-    use super::{dm_gift_wrap_output_ok, filter_trusted_relays_in_pool};
+    use super::{
+        dm_gift_wrap_output_ok, filter_trusted_relays_in_pool, retry_dm_publish, DmPublishError,
+        DM_NO_ACK_ERROR,
+    };
     use nostr_sdk::prelude::*;
     use std::collections::{HashMap, HashSet};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     fn url(s: &str) -> RelayUrl {
         RelayUrl::parse(s).unwrap()
     }
 
-    fn output_with(success: HashSet<RelayUrl>, failed: HashMap<RelayUrl, String>) -> Output<EventId> {
+    fn output_with(
+        success: HashSet<RelayUrl>,
+        failed: HashMap<RelayUrl, String>,
+    ) -> Output<EventId> {
         Output {
             val: EventId::all_zeros(),
             success,
@@ -4155,14 +4131,20 @@ mod dm_gift_wrap_target_tests {
     fn ok_when_at_least_one_relay_acked() {
         let mut success = HashSet::new();
         success.insert(url("wss://jskitty.cat/nostr"));
-        assert!(dm_gift_wrap_output_ok(&output_with(success, HashMap::new())));
+        assert!(dm_gift_wrap_output_ok(&output_with(
+            success,
+            HashMap::new()
+        )));
     }
 
     #[test]
     fn not_ok_when_no_relay_acked() {
         let mut failed = HashMap::new();
         failed.insert(url("wss://relay.damus.io"), "timeout".to_string());
-        assert!(!dm_gift_wrap_output_ok(&output_with(HashSet::new(), failed)));
+        assert!(!dm_gift_wrap_output_ok(&output_with(
+            HashSet::new(),
+            failed
+        )));
     }
 
     #[test]
@@ -4185,6 +4167,85 @@ mod dm_gift_wrap_target_tests {
         let mut pool: HashMap<RelayUrl, ()> = HashMap::new();
         pool.insert(url("wss://relay.damus.io"), ());
         assert!(filter_trusted_relays_in_pool(&trusted, &pool).is_empty());
+    }
+
+    fn acked() -> Output<EventId> {
+        let mut success = HashSet::new();
+        success.insert(url("wss://jskitty.cat/nostr"));
+        output_with(success, HashMap::new())
+    }
+
+    async fn run_retry(
+        max_attempts: u32,
+        mut results: Vec<Result<Output<EventId>, DmPublishError>>,
+    ) -> (Result<Output<EventId>, String>, usize) {
+        let calls = AtomicUsize::new(0);
+        results.reverse();
+        let results = std::sync::Mutex::new(results);
+        let out = retry_dm_publish(max_attempts, Duration::ZERO, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            let next = results
+                .lock()
+                .unwrap()
+                .pop()
+                .expect("unexpected extra attempt");
+            async move { next }
+        })
+        .await;
+        (out, calls.load(Ordering::SeqCst))
+    }
+
+    #[tokio::test]
+    async fn empty_trusted_pool_fails_on_first_attempt() {
+        let (out, calls) = run_retry(12, vec![Err(DmPublishError::NoTrustedRelayInPool)]).await;
+        assert_eq!(calls, 1);
+        assert_eq!(
+            out.unwrap_err(),
+            "no trusted relays available in the relay pool"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_trusted_pool_after_transient_error_stops_retrying() {
+        let (out, calls) = run_retry(
+            12,
+            vec![
+                Err(DmPublishError::Send("timeout".to_string())),
+                Err(DmPublishError::NoTrustedRelayInPool),
+            ],
+        )
+        .await;
+        assert_eq!(calls, 2);
+        assert!(out.is_err());
+    }
+
+    #[tokio::test]
+    async fn transient_errors_retry_until_ack() {
+        let (out, calls) = run_retry(
+            12,
+            vec![
+                Err(DmPublishError::Send("timeout".to_string())),
+                Ok(output_with(HashSet::new(), HashMap::new())),
+                Ok(acked()),
+            ],
+        )
+        .await;
+        assert_eq!(calls, 3);
+        assert!(out.is_ok());
+    }
+
+    #[tokio::test]
+    async fn no_ack_exhausts_attempts() {
+        let (out, calls) = run_retry(
+            2,
+            vec![
+                Ok(output_with(HashSet::new(), HashMap::new())),
+                Ok(output_with(HashSet::new(), HashMap::new())),
+            ],
+        )
+        .await;
+        assert_eq!(calls, 2);
+        assert_eq!(out.unwrap_err(), DM_NO_ACK_ERROR);
     }
 }
 
