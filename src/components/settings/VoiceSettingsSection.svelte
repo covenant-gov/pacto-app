@@ -4,6 +4,7 @@
   import { get } from 'svelte/store';
   import { deleteWhisperModel, downloadWhisperModel } from '../../lib/api/voice';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
+  import { currentNpubForPersistence } from '../../stores/persistence-context';
   import { ensurePlatformFeatures, platformFeatures } from '../../stores/platform-features';
   import { updateVoiceSettings, voiceSettings } from '../../stores/voice-settings';
   import {
@@ -40,14 +41,20 @@
     return key ? $t(key) : fallback;
   }
 
+  /** Models are shared on disk, but the selection belongs to the account that started the action. */
+  function sameAccount(account: string | null): boolean {
+    return get(currentNpubForPersistence) === account;
+  }
+
   async function handleDownload(name: string): Promise<void> {
     if (downloading) return;
     downloading = name;
     error = null;
+    const account = get(currentNpubForPersistence);
     try {
       await downloadWhisperModel(name);
       await refreshWhisperModels();
-      if (!get(voiceSettings).model) updateVoiceSettings({ model: name });
+      if (sameAccount(account) && !get(voiceSettings).model) updateVoiceSettings({ model: name });
     } catch (e) {
       error = getInvokeErrorMessage(e, $t('settings.voiceDownloadError'));
     } finally {
@@ -60,11 +67,20 @@
     if (deleting) return;
     deleting = name;
     error = null;
+    const account = get(currentNpubForPersistence);
     try {
-      await deleteWhisperModel(name);
+      const deleted = await deleteWhisperModel(name);
       await refreshWhisperModels();
+      // `false` also covers a file that was already gone; only a model still on disk is a failure.
+      const stillOnDisk = get(whisperModels).some((m) => m.model.name === name && m.downloaded);
+      if (!sameAccount(account)) return;
+      if (!deleted && stillOnDisk) {
+        error = $t('settings.voiceDeleteError');
+        return;
+      }
       if (get(voiceSettings).model === name) updateVoiceSettings({ model: null });
     } catch (e) {
+      if (!sameAccount(account)) return;
       error = getInvokeErrorMessage(e, $t('settings.voiceDeleteError'));
     } finally {
       deleting = null;
