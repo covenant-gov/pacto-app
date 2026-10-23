@@ -283,6 +283,7 @@ export const settingFixtures: Record<string, MockCommandHandler> = {
     customTokenSymbolMaxLength: 16,
     pinDigitCount: 6,
     analyticsEnabled: false,
+    featureFlags: [{ key: 'advanced_evm_accounts', defaultEnabled: false }],
   }),
 };
 
