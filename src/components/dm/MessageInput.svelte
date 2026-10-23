@@ -82,8 +82,10 @@
       content: string,
       mentions?: Mention[],
     ) => Promise<void>;
-    /** Optional: sends a recorded voice clip (WAV bytes); resolve `false` to keep it for a retry. */
-    onSendVoice?: (bytes: Uint8Array, repliedTo: string) => Promise<boolean>;
+    /** Optional: sends a recorded voice clip (WAV bytes) to `conversationId`; resolve `false` to keep it for a retry. */
+    onSendVoice?: (bytes: Uint8Array, repliedTo: string, conversationId: string) => Promise<boolean>;
+    /** Conversation this composer posts to (npub or MLS group id); voice clips are bound to it. */
+    conversationId?: string;
     /** Optional squad context; when provided, typing `@` opens the member mention picker. */
     squadMlsGroupId?: string;
     squadRosterNpubs?: string[];
@@ -111,6 +113,7 @@
     onSendFile,
     onSendGif,
     onSendVoice,
+    conversationId,
     squadMlsGroupId,
     squadRosterNpubs,
     squadProfiles,
@@ -157,6 +160,7 @@
   // The mic takes the send button's slot while the draft is empty.
   let showVoice = $derived(
     Boolean(onSendVoice) &&
+      Boolean(conversationId) &&
       $platformFeatures != null &&
       (voiceActive || (!messageText.trim() && !$pendingFilePreview)),
   );
@@ -339,8 +343,8 @@
     await clearComposerDraft();
   }
 
-  function handleSendVoice(bytes: Uint8Array): Promise<boolean> {
-    return onSendVoice ? onSendVoice(bytes, repliedTo ?? '') : Promise.resolve(false);
+  function handleSendVoice(bytes: Uint8Array, target: string): Promise<boolean> {
+    return onSendVoice ? onSendVoice(bytes, repliedTo ?? '', target) : Promise.resolve(false);
   }
 
   async function sendPendingAttachment(pending: PendingFileAttachment) {
@@ -1436,6 +1440,7 @@
       {/if}
       {#if showVoice}
         <VoiceRecorder
+          target={conversationId ?? ''}
           disabled={disabled || isSendingAttachment}
           onSend={handleSendVoice}
           bind:active={voiceActive}
