@@ -4,911 +4,419 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## Unreleased
+## v0.7.4
 
 ### Bug Fixes
-- Accept quote-bearing preview urls and clear the typecheck
-- Dispatch publish after the release tag is created (ci)
-- Isolate the pending clipboard flag across parallel tests (export)
-- Unbreak ci by fixing the flag path and wiring clipboard clear (export)
-- Harden trusted-relay dm delivery and heal stuck pending threads (#402)
-- Autofocus composer when starting a reply
-- Require kind-0 relay acknowledgement and read-back before saving profile
-- Harden kind-0 relay proof against stale repair and cross-account merge
-- Keep dm threads pinned to the newest message
-- Stop polls hub badge from mirroring announcements unread
-- Restore squads after a local storage wipe
-- Harden squad-rejoin after storage wipe and isolate polls-hub badge from announcements unread
-- Stop rejoin retries from burning their budget and repaint restored members
-- Start live subscriptions from login, not a racy startup event (relays)
+- Start publish when the release tag is created (ci) (#399) by @logicminds, closes #397
+- Restore green CI and wire the clipboard clear action (export) (#404) by @logicminds
+- Harden trusted-relay dm delivery and heal stuck pending threads (#402) by @daopunk
+- Prove kind-0 relay storage and autofocus reply composer (#406) by @daopunk
+- Keep dm threads pinned to the newest message (#403) by @logicminds, closes #401
+- Isolate polls hub badge and restore squads after storage wipe (#412) by @daopunk
+- Authenticate squad rejoin requests and harden restore after wipe (#414) by @daopunk
+- Start live subscriptions from login, not a racy startup event (relays) (#417) by @logicminds
 
 
 ### Chores
-- Bump astro from 7.1.6 to 7.2.8 (deps)
-- Bump proxy-addr from 2.0.7 to 2.0.8 (deps)
-- Bump devalue from 5.9.0 to 5.9.4 (deps)
+- Bump astro from 7.1.6 to 7.2.8 (deps) (#408) by @dependabot[bot]
+- Bump proxy-addr from 2.0.7 to 2.0.8 (deps) (#409) by @dependabot[bot]
+- Bump devalue from 5.9.0 to 5.9.4 (deps) (#415) by @dependabot[bot]
 
 
 ### Features
-- Strip tracking markers from message urls
-- Backend-mediated clipboard export and frontend export modals (export)
-- Show new broadcasts live instead of on a 60s poll (commons)
-- Surface standalone Squad Admin deploys on Status (dashboard)
+- Strip tracking markers from message urls (#388) by @logicminds, closes #171
+- Backend-mediated clipboard export for sensitive secrets (export) (#97) by @logicminds
+- Show new broadcasts live instead of on a 60s poll (commons) (#413) by @logicminds, closes #396
+- Surface standalone Squad Admin deploys on Status (dashboard) (#418) by @logicminds, closes #380
 
 
 ### Other
-- Verify and merge the homebrew cask bump automatically (release)
-- Address PR review feedback (#417)
-
-- relays.rs: make claim_notifs_loop a CAS loop that never replaces an
-  equal-or-newer owner (u64::MAX stays the free sentinel), so a stale
-  out-of-order notifs() cannot swap its generation back in; re-check the
-  captured login generation after the relay-pool wait before subscribing;
-  add an out-of-order stale-claim test.
-- post-login-sync.ts: retry startNotifs on relay_status_change=connected
-  when the first attempt fails, so a transient startup failure no longer
-  leaves the session with no live delivery; add a failure-then-recovery test.
-
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
-- Fix lint: use const for unlisten in startNotifsWithRetry (#417)
-
-The relay_status_change unlisten handle is assigned once, so eslint's
-prefer-const rejected the `let`. The callback only runs on later events,
-after assignment, so a const closes over it fine.
-
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+- Finish the release with the homebrew tap already updated (release) (#410) by @logicminds, closes #398
 
 
 ### Refactor
-- Keep the shell retry reactive in runes mode (svelte5)
-
-
-### Testing
-- Lock the tag-release skip so a rerun cannot start a second publish
+- Keep shell retry working under forced runes (svelte5) (#400) by @logicminds, closes #391
 
 ## v0.7.3
 
-### Bug Fixes
-- Harden username-nft claim path from pr review
-- Harden username claim layer-1 and document sponsored-userop 7702 method
-- Heal squad-hub navigation after create to stop infinite loading
-- Add gas-router fall through to pay with eoa
-- Surface global pool-low errors instead of generic gov write failure
-- Focus modal panel instead of dismiss control (ui)
-- Keep transfer modal ids reactive to mode (wallet)
-- Close code-review findings on auth gallery redesign (review)
-- Align e2e and shell load with the gallery login (auth)
-
-
 ### Chores
-- Pin sepolia address book for app-1 username/squad cutover
-- Pin sepolia sponsor-policy registry and nave-pirata factory for tophat cutover
-- Update contract deployment addresses
-- Isolate feature-branch app data and move Catch up off the mode switch (#389)
-- Bump version to 0.7.3 (#390) (release)
-
-
-### Documentation
-- Username nft and gas-sponsor router
-- Document global-tophat router and add cross-squad path regression tests
-- Correct prefersreducedmotion to svelte/motion
-- Add gallery welcome screenshots across themes (auth)
+- Isolate feature-branch app data and move Catch up off the mode switch (#389) by @daopunk
 
 
 ### Features
-- Alloy bindings and global sponsor path
-- Backend validation
-- Ui components to mint nft
-- Debug bin env
-- Username claim client parity
-- Add tophat policy registry bindings and factory sponsor action catalog
-- Add shared sponsor preflight helpers for global and squad paths
-- Route gov writes through squad, global-tophat, or eoa by eligibility
-- Route factory deploys through global tophat pool for eligible members
-- Allow zero-deposit squad sponsor deploy in backend and deploy wizards
-- Scenario-driven deploy governance launchpad with on-chain owner gates and optional sponsor deposit
-- Consolidate mutiny lock copy into a single warning banner
-- Consolidate governance gate blockers into panel banners
-- Add global sponsored fee ledger and wire all global userop paths
-- Rebuild landing as branded long-scroll marketing page
-- Add landing theme toggle, blog banner, and edge-matched overscroll (website)
-- Gallery login shell with shared dither module (auth)
-- Hang gallery piece with ambient light and quieter credits (auth)
-- Demote import cta and open backup after create (auth)
-- Polish pin otp and add post-pin success beat (auth)
-- Invite designers to shape pacto's next identity (website)
-
-
-### Performance
-- Defer shell and messaging work until after unlock (auth)
-
-
-### Refactor
-- Remove policy checks on gas-sponsorship registrar
-
-
-### Styling
-- Update logo and website links
-- App images
-
-
-### Testing
-- Retarget currentUser mocks to auth-session
-- Align dither and timestamp coverage assertions
+- Name-claim nft-gated gas sponsorship (#375) by @daopunk, closes #369, #371, #372, #373, #374, #377
+- Global-tophat gas routing for username-nft-eligible members (#378) by @daopunk, closes #379
+- Rebuild landing as branded long-scroll marketing page (#383) by @daopunk
+- Add how-it-works explainer to landing site (#384) by @daopunk
+- Add theme toggle, blog banner, and overscroll colors (website) (#386) by @daopunk
+- Gallery onboarding splash across themes (auth) (#385) by @thebeyondr
+- Invite designers to shape pacto's next identity (website) (#387) by @logicminds
 
 ## v0.7.2
 
 ### Bug Fixes
-- Use an eye-off icon for the commons hide action instead of an x
-- Statically link liblzma to stop macos startup crash
-- Report tor traffic live instead of only at connection close (privacy)
-- Gate whisper import behind feature flag in cmds/storage and cmds/voice
-
-
-### Chores
-- Bump version to 0.7.2 (release)
+- Statically link liblzma to stop macos startup crash (#362) by @logicminds
+- Show live tor transfer stats in the status popover (privacy) (#365) by @logicminds
 
 
 ### Documentation
-- Research concord protocol migration feasibility
+- Research concord protocol migration feasibility (#364) by @logicminds
 
 
 ### Features
-- Hide commons broadcasts and default categories the user is not interested in
+- Hide commons broadcasts and categories the user is not interested in (#357) by @logicminds, closes #134
 
 
 ### Refactor
-- Split tauri commands out of lib.rs into domain modules
-
-
-### Testing
-- Cover progressive byte reporting in copy_and_count (privacy)
+- Split tauri commands out of lib.rs into domain modules (#366) by @logicminds
 
 ## v0.7.1
 
 ### Bug Fixes
-- Sandbox cargo-test profile writes to a disposable temp dir (#348)
-- Create new squad sticker packs instead of failing with pack_id is empty (#349)
-- Consent-first mls acceptance (#346)
-- Parallelize rust ci tests with cargo-nextest, report timing (#350)
-- Close Tor routing leaks, cover avatars and link previews (privacy)
-
-
-### Chores
-- Bump version to 0.7.1 (release)
+- Sandbox cargo-test profile writes to a disposable temp dir (#348) by @logicminds, closes #347
+- Create new squad sticker packs instead of failing with pack_id is empty (#349) by @logicminds, closes #285
+- Consent-first mls acceptance (#346) by @daopunk
+- Parallelize rust ci tests with cargo-nextest, report timing (#350) by @logicminds, closes #279
+- Translate remaining hardcoded aria-label and toast strings (#353) by @logicminds
 
 
 ### Documentation
-- Publish pacto design-system rules (#269) (ui)
-- Note invoke-spy limitation in tauri mcp troubleshooting
-- Document tor transport architecture (privacy)
+- Publish pacto design-system rules (ui) (#269) by @thebeyondr
 
 
 ### Features
-- Gov guide built into hats tree display (#345)
-- Add a presentational squad layout playground (#273) (shell)
-- Add send-typing-indicators privacy setting
-- Route traffic through an embedded Tor client (privacy)
-- Add route-traffic-through-tor toggle to privacy settings (settings)
-- Show live tor status and add a disconnect toggle in the nav bar (privacy)
-- Add web-previews setting to gate link-preview fetching and rendering
-- Add opt-in biometric unlock via touch id and windows hello
+- Gov guide built into hats tree display (#345) by @daopunk
+- Add a presentational squad layout playground (shell) (#273) by @thebeyondr
+- Add send-typing-indicators privacy setting (#354) by @logicminds, closes #170
+- Route traffic through an embedded tor client (privacy) (#355) by @logicminds, closes #173
+- Add web-previews setting to gate link-preview fetching (#359) by @logicminds, closes #172
+- Add opt-in biometric unlock via touch id and windows hello (#356) by @logicminds, closes #179
 
 ## v0.7.0
 
 ### Bug Fixes
-- Ad-hoc sign macOS app builds (#307)
-- Clear make build warnings by deleting dead code, not suppressing it (#306)
-- Create squads when a member's key package is stale, and say so when creation fails (#313)
-- Stop reclassifying failed MLS welcome retries as transient (#336)
-- Stop mls welcome-delivery failures from orphaning groups (#339)
-
-
-### Chores
-- Bump version to 0.7.0 (#344) (release)
+- Ad-hoc sign macOS app builds (#307) by @logicminds
+- Clear make build warnings by deleting dead code, not suppressing it (#306) by @logicminds
+- Create squads when a member's key package is stale, and say so when creation fails (#313) by @logicminds, closes #311
+- Stop reclassifying failed MLS welcome retries as transient (#336) by @logicminds
+- Stop mls welcome-delivery failures from orphaning groups (#339) by @logicminds, closes #321
 
 
 ### Features
-- Convert root layout to svelte 5 runes (#322) (pacto-app-a7r.21)
-- Convert channel modals and roster item to svelte 5 runes (#323) (pacto-app-a7r.12)
-- Convert parent/ dashboard-polls, create-poll, deploy-safe, my-dashboard, setting-up to svelte 5 runes (#324) (pacto-app-a7r.15)
-- Convert governance treasury, roles, and security panels to svelte 5 runes (#325) (pacto-app-a7r.19)
-- Convert commons/ components to svelte 5 runes (#326) (pacto-app-a7r.14)
-- Convert settings components to svelte 5 runes (#327) (pacto-app-a7r.11)
-- Convert governance deploy-and-launch modals to svelte 5 runes (#328) (pacto-app-a7r.17)
-- Convert dm/ composer and thread to svelte 5 runes (#329) (pacto-app-a7r.26)
-- Convert governance actions and proposals to svelte 5 runes (#330) (pacto-app-a7r.18)
-- Convert small-file cluster to svelte 5 runes (#331) (pacto-app-a7r.10)
-- Convert layout navbar/sidebar components to svelte 5 runes (#332) (pacto-app-a7r.20)
-- Convert wallet/ components to svelte 5 runes (#333) (pacto-app-a7r.13)
-- Convert parent dashboard tabs and modals to svelte-5 runes (#334) (pacto-app-a7r.16)
-- Convert dm/ message-rendering components to svelte 5 runes (#335) (pacto-app-a7r.25)
-- Dual-publish MLS key packages on kind 30443, accept legacy 443 (#338)
-- Wargames (#305)
-- Nostr-to-evm eip-712 cert (#342)
-- Speed up two-window sandbox demo (#343)
+- Convert root layout to svelte 5 runes (pacto-app-a7r.21) (#322) by @logicminds
+- Convert channel modals and roster item to svelte 5 runes (pacto-app-a7r.12) (#323) by @logicminds
+- Convert parent/ dashboard-polls, create-poll, deploy-safe, my-dashboard, setting-up to svelte 5 runes (pacto-app-a7r.15) (#324) by @logicminds
+- Convert governance treasury, roles, and security panels to svelte 5 runes (pacto-app-a7r.19) (#325) by @logicminds
+- Convert commons/ components to svelte 5 runes (pacto-app-a7r.14) (#326) by @logicminds
+- Convert settings components to svelte 5 runes (pacto-app-a7r.11) (#327) by @logicminds
+- Convert governance deploy-and-launch modals to svelte 5 runes (pacto-app-a7r.17) (#328) by @logicminds
+- Convert dm/ composer and thread to svelte 5 runes (pacto-app-a7r.26) (#329) by @logicminds
+- Convert governance actions and proposals to svelte 5 runes (pacto-app-a7r.18) (#330) by @logicminds
+- Convert small-file cluster to svelte 5 runes (pacto-app-a7r.10) (#331) by @logicminds
+- Convert layout navbar/sidebar components to svelte 5 runes (pacto-app-a7r.20) (#332) by @logicminds
+- Convert wallet/ components to svelte 5 runes (pacto-app-a7r.13) (#333) by @logicminds
+- Convert parent dashboard tabs and modals to svelte-5 runes (pacto-app-a7r.16) (#334) by @logicminds
+- Convert dm/ message-rendering components to svelte 5 runes (pacto-app-a7r.25) (#335) by @logicminds
+- Dual-publish MLS key packages on kind 30443, accept legacy 443 (#338) by @logicminds, closes #312
+- Wargames (#305) by @daopunk, closes #138, #290, #291, #292, #293, #294, #295, #296, #297, #298, #299, #300, #301, #302, #303, #304, #316, #317, #318, #319
+- Nostr-to-evm eip-712 cert (#342) by @daopunk
+- Speed up two-window sandbox demo (#343) by @logicminds
 
 
 ### Refactor
-- Dedupe commons-broadcast presentation logic (#308)
-- Convert on: directives to Svelte 5 event attributes repo-wide (#309)
-- Convert dm/ dispatchers to callback props (#310)
-- Convert ui/ to Svelte 5 runes (#314)
-- Convert announcements/ to Svelte 5 runes (#315)
-- War-game (#341)
+- Dedupe commons-broadcast presentation logic (#308) by @logicminds
+- Convert on: directives to Svelte 5 event attributes repo-wide (#309) by @logicminds
+- Convert dm/ dispatchers to callback props (#310) by @logicminds
+- Convert ui/ to Svelte 5 runes (#314) by @logicminds
+- Convert announcements/ to Svelte 5 runes (#315) by @logicminds
+- War-game (#341) by @daopunk
 
 ## v0.6.1
 
 ### Bug Fixes
-- Size gif-picker thumbnails to a readable 3-column grid
-- Close klipy and sticker egress holes found in review (#243)
-- Recognize pre-0.6.0 migration checksums so upgrades don't trip the storage-format gate
-- Reconcile legacy checksums for the MLS store too, not just pacto.db
-- Reconcile MLS legacy checksums on every store open, not once per reset (#275)
-- Patch nanoid and hono to close dependabot alerts (#287)
-- Dm relay bug and error messaging in ui (#281)
-
-
-### Chores
-- Unblock two-account testing and stop migration tests pinning a version
-- Bump version to 0.6.1 (#289) (release)
+- Stop 0.5.x upgrades from tripping the storage-format gate (#275) by @logicminds
+- Patch nanoid and hono to close dependabot alerts (#287) by @logicminds
+- Dm relay bug and error messaging in ui (#281) by @daopunk, closes #158
 
 
 ### Features
-- Offer a refusable join for groups that added you without an invite dm
-- Add squad sticker packs and an opt-in klipy gif picker to the composer
-- Make squad governance process readable and actionable (#256)
-- Relay connection diagnostics, pre-add probe, and TLS certificate inspection (#270)
-- Squad pfp and pfp picker (#278)
+- Offer a refusable join for groups that added you without an invite dm (#267) by @logicminds
+- Add sticker packs and an opt-in klipy gif picker to composer (#243) by @logicminds, closes #200
+- Make squad governance process readable and actionable (#256) by @daopunk, closes #221, #223
+- Relay connection diagnostics, pre-add probe, and TLS certificate inspection (#270) by @logicminds
+- Squad pfp and pfp picker (#278) by @daopunk, closes #209, #276
 
 
 ### Other
-- Address PR review feedback (#267)
-
-- Persist engine-accepted bare welcomes so a persistSquad failure can retry without re-calling acceptMlsWelcome
-- Keep the join card mounted during in-flight accept so Joining… is reachable
-- Reset joiningWelcomeGroupIds on account clear and abort materialization if the npub changed
-- Add referrerpolicy/lazy on unvetted welcome images and void the fire-and-forget accept handler
-- Cover acceptOfferedWelcome and declineWelcomeForGroup, and log failed Catch up resolves
-- Address PR review feedback (#267)
-
-- Cap pending-welcome cards to the 20 newest; keep engine-accepted recovery rows uncapped
-- Update pacto.app to Pacto.app (#288)
+- Update pacto.app to Pacto.app (#288) by @logicminds
 
 
 ### Refactor
-- Use squad-evm language and escuad slang in member copy (#280)
+- Use squad-evm language and escuad slang in member copy (#280) by @daopunk, closes #257
 
 ## v0.6.0
 
 ### Bug Fixes
-- Clean up chat, messages, and cursor on voluntary group leave (mls)
-- Durably remove mls_groups row on voluntary leave
-- Make dm delete purge history and gate relay replay (#233)
-- Switch refinery migration versions to UTC timestamps
-- Recover mls on wake and route poll creates to announcements (#235)
-- Treat the whole loopback range and .localhost aliases as local
-- Give dev sandboxes a stable branch-scoped root and named personas
-- Keep public default relays out of an overridden sandbox
-- Mark dev-login identities backup-verified so sandboxes can act
-- Retry account-wide sync and live subscriptions after an empty relay pool
-- Make dev-ports index claims atomic across concurrent sandboxes
-- Satisfy checkJs on the claim helpers
-- Durable consent-first invite admit and Join inbox reliability (#241)
-- Harden tailwind and shadcn foundation for review blockers (ui)
-- Satisfy svelte-check for foundation test harness (ui)
-- Let dev sandboxes run beside each other
-- Stop the dev server watching sandbox and worktree trees
-- Never derive a port set browsers refuse to fetch from
-- Address review findings on the sandbox concurrency fix
-- Run the harness CI steps under the image's dash shell
-- Refuse a second launch against one sandbox root
-- Fail closed on non-unix sandbox lock liveness (review)
-- Address PR review feedback (#263)
-- Default cargo run to pacto binary over relay-free-harness
-- Seed a squads catalog row for the relay-free harness squad
-- Restore the pr gate by quoting an unparseable ci step
-
-
-### Chores
-- Raise legacy sequential migration ceiling to V32
-- Correct the deferral comment and drop tracker ids from source
-- Drop tracker id from a test name
-- Bump version to 0.6.0 (release)
+- Clean up chat rows and cursor on voluntary group leave (mls) (#234) by @logicminds, closes #219
+- Make dm delete purge history and gate relay replay (#233) by @daopunk, closes #220
+- Switch refinery migration versions to UTC timestamps (#240) by @logicminds, closes #238
+- Recover mls on wake and route poll creates to announcements (#235) by @daopunk, closes #139
+- Recover the event stream when relays arrive after login (#254) by @logicminds
+- Make the sandbox port claim atomic across concurrent launches (#255) by @logicminds
+- Durable consent-first invite admit and Join inbox reliability (#241) by @daopunk, closes #210, #211
+- Let two dev sandboxes run at once (#261) by @logicminds
+- Refuse a second launch against one sandbox root (#264) by @logicminds
+- Seed a reachable squad and add a one-command dev sandbox (#265) by @logicminds
+- Restore the pr gate by quoting an unparseable ci step (#268) by @logicminds
 
 
 ### Features
-- Add make new-migration generator plus CI format check
-- Persist sponsored userop fee ledger for treasury (#242)
-- Boot agent sandboxes authenticated, local-routed, and collision-free
-- Let debug builds reach a locally-issued wss relay
-- Refuse stale local-chain artifacts and delegate the world verb
-- Seed a populated sandbox with no docker and no network
-- Quarantine stale sandbox profiles instead of bricking boot
-- Widen storage-doctor quarantine gate to non-io.pacto identifiers
-- Add dev-sandbox-seeded for a one-command populated sandbox
+- Persist sponsored userop fee ledger for treasury (#242) by @daopunk, closes #222
+- Seed a populated sandbox with no docker and no network (#262) by @logicminds
+- Quarantine stale sandbox profiles instead of bricking boot (#263) by @logicminds
 
 
 ### Other
-- Add shared tailwind v4 and shadcn-svelte base (ui)
-- Address PR review feedback (#262)
-
-    Stamp fixture identities sandbox-only, embed local-only relays, harden
-    sandbox-root/mnemonic policy, make mid-squad crashes recoverable, and
-    scope CI network isolation with unshare plus stronger seed assertions.
+- Boot agent sandboxes authenticated, local-routed, and collision-free (#244) by @logicminds
+- Let debug builds reach a locally-issued wss relay (#248) by @logicminds
+- Give dev sandboxes a stable branch-scoped root and named personas (#249) by @logicminds
+- Keep public default relays out of an overridden sandbox (#250) by @logicminds
+- Let dev-login sandboxes act: mark the identity backup-verified (#251) by @logicminds
+- Refuse stale local-chain artifacts instead of failing inside a contract call (#252) by @logicminds
+- Add shared tailwind v4 and shadcn-svelte base (ui) (#258) by @thebeyondr
 
 
 ### Refactor
-- Give pacto tokens one clear meaning (#259) (theme)
-
-
-### Testing
-- Guard PRODUCTION_IDENTIFIER against tauri.conf.json drift
+- Give pacto tokens one clear meaning (theme) (#259) by @thebeyondr
 
 ## v0.5.5
 
 ### Bug Fixes
-- Local-only cleanup when leaving an mls-store-reset group
-- Deploy the download page from the release run (ci)
-- Avoid following symlinks when scanning profile directories (#230)
-- Match any commit in the push for release auto-tagging
-
-
-### Chores
-- Bump version to 0.5.5 (release)
+- Allow leaving mls groups with lost store-reset state (#218) by @logicminds, closes #216
+- Deploy the download page from the release run (ci) (#229) by @logicminds, closes #213
+- Auto-tag releases regardless of merge strategy (ci) (#232) by @logicminds
 
 
 ### Features
-- Sponsor zero-eth squad gov writes via eip-7702 userops (#121)
-- Expandable chat input (#231)
-
-
-### Other
-- Address PR review feedback (#218)
-
-- Match typed mdk_core::Error::GroupNotFound variant in leave_group instead of substring-matching the display text, avoiding misclassification of other engine/provider failures as already-left
-- Remove tracker ID from test doc comment, describe the store-reset scenario directly
+- Sponsor zero-eth squad gov writes via eip-7702 userops (#121) by @daopunk
+- Expandable chat input (#231) by @daopunk, closes #212
 
 
 ### Refactor
-- Rename app database from vector.db to pacto.db
-- Rename MLS engine store from vector-mls.db to pacto-mls.db (#230)
-
-## v0.5.4
-
-### Chores
-- Bump version to 0.5.4 (release)
+- Rename app database from vector.db to pacto.db (#230) by @logicminds, closes #217
 
 ## v0.5.3
 
 ### Bug Fixes
-- Bump @tauri-apps npm packages to match cargo-updated tauri crates
-- Install default rustls crypto provider to fix startup panic
-- Eliminate svelte-check warnings across frontend components
-- Enable additional TypeScript strictness checks and fix findings
-- Recover channels after the mls store reset
-- Harden mls store reset recovery and split reset module boundaries
-- Expose mls restore access for post-upgrade members
-- Prefill squad recreate with preserved mls members
-- Harden mls harvest matching and post-reset prune
-- Quarantine gift-wrap timeouts and harden mls reset floors
-- Harden mls prune-test cleanup and clear unused rust imports
-
-
-### Chores
-- Record upgrade task completion
-- Bump version to 0.5.3 (#204) (release)
-
-
-### Documentation
-- Explain the mls reset recovery model
-- Clarify mls upgrade rollout and archive non-revocation
+- Eliminate svelte-check warnings across frontend components (#195) by @logicminds
+- Enable additional TypeScript strictness checks and fix findings (#196) by @logicminds
 
 
 ### Features
-- Mandatory update gate for breaking releases (#202)
+- Mandatory update gate for breaking releases (#202) by @logicminds
 
 
 ### Other
-- Cargo update to patch mls-crypto, openssl, quinn-proto, tar, tauri cves
-- Pnpm update to patch vitest critical + vite/kit/svelte/astro cascade
-- Pnpm.overrides for residual cookie/esbuild/ws transitive pins
-- Upgrade nostr and MDK dependencies
+- Patch mls-crypto, openssl, quinn-proto, tar, tauri cves (#192) by @logicminds
+- Pnpm update patches vitest critical + vite/kit/svelte/astro cascade (#193) by @logicminds
+- Pnpm.overrides for residual cookie/esbuild/ws pins (#194) by @logicminds
+- Upgrade nostr and recover incompatible mls state (#198) by @logicminds, closes #53
 
 
 ### Styling
-- Run cargo fmt across src-tauri
-
-
-### Testing
-- Keep the archive-move failure gate honest under root
+- Run cargo fmt across src-tauri (#201) by @logicminds
 
 ## v0.5.2
 
 ### Bug Fixes
-- Recover missed dm/giftwrap traffic on long-lived sessions
-- Harden session-recovery sync state machine against restart, panic, and clock races
-- Close wake-sync race and relay-toggle staleness in the DM sync UI
-
-
-### Chores
-- Bump version to 0.5.2 (release)
+- Recover missed dm/giftwrap traffic on long-lived sessions (#189) by @logicminds
 
 ## v0.5.1
 
 ### Bug Fixes
-- Build linux amd64 release on ubuntu-22.04 to avoid appimage wayland egl crash
-- Add canonical, og:image:alt, and twitter creator metadata to landing page
-- Update create-pull-request action to v8
-- Grant release workflow contents:write permission
-- Sign commits created by create-pull-request action
+- Build linux amd64 release on ubuntu-22.04 to avoid appimage wayland egl crash (#184) by @logicminds, closes #81
+- Landing OpenGraph metadata and workflow permissions (#186) by @logicminds
 
 
 ### Chores
-- Automate version-bump PR and homebrew tap update
-- Bump version to 0.5.1 (release)
-- Auto-tag releases after prepare-release PR merges
+- Automate version-bump PR and homebrew tap update (#183) by @logicminds
+- Auto-tag releases after prepare-release PR merges (#188) by @logicminds
 
 
 ### Other
-- Update signing public key
+- Update signing public key (#185) by @logicminds
 
 ## v0.5.0
 
 ### Bug Fixes
-- Add messaging namespace to i18n translation keys
-- Consent-first squad admit, channel catch-up, and nav reorder
-- Point to current deployment for squad-sponsor
-- CR late-joiner findings for welcome fallback, i18n, nav persistence, and admit guard
-- Add rich link previews and fix social icons on landing page (#163)
-- Guard account cleanup scan against in-flight account creation
-- Send groupId (not group_id) to sync_mls_groups_now invoke
-- Guard evm ensure_ready against unset encryption key during restore
-- Stop boot-time account scan from deleting valid accounts on query error
-- Prevent relay input overflow from content-box width sizing
-- Dedupe mls welcome wrapper events on resync
-- Make relay refresh spinner visibly spin, drop flashing detail-loading text
-- Account list no longer excludes the auto-selected account
-- Retry transient mls welcome failures instead of discarding them
-- Start relay health-check monitor and catch future orphaned tauri commands in ci
-- Orphaned-tauri-commands scanner misses nested generic invoke<>()
-
-
-### Chores
-- Add i18n lint rule and locale parity tests
-- Chore: ignore AppImage build artifacts
-       - Fix issues with make lint
-- Bump version to 0.5.0 (release)
+- Channel sync (#155) by @daopunk, closes #149
+- Add rich link previews and fix social icons on landing page (#163) by @logicminds, closes #151
+- Stop invite-to-channel modal hanging on a full-account MLS sync (#177) by @logicminds, closes #150
 
 
 ### Documentation
-- Plan the svelte-5-runes migration and require runes in new files
-- Close out calm-notifications epic; dev tooling notes
+- Plan the svelte-5-runes migration and require runes in new files (#167) by @logicminds
+- Add visual identity and commons dashboard ideation artifacts (#168) by @logicminds
 
 
 ### Features
-- Scaffold svelte-i18n runtime, locale store, and persistence wiring
-- Extract auth, navigation, and messaging strings for i18n
-- Extract settings, profile, and wallet strings for i18n
-- Extract governance, commons, and announcement strings for i18n
-- Extract lib-module strings and backend error mapping for i18n
-- Complete spanish i18n coverage across app ui
-- Add missing spanish i18n locale catalogs
-- Explain mls history limits with a local channel welcome
-- Gov-event gossip for status view and custom squad-level rpc with backup to avoid rate limits (#140)
-- Add backend-owned app-config with frontend validation and enforcement
-- Messaging enhancements — reactions, attachments, image viewer, sync status (#157)
-- Crop and resize avatar images before upload
-- Cap squad and channel name length via app-config
-- Instrument events_received/bytes_down on event receipt (relays)
-- Instrument events_sent/bytes_up at send call sites (relays)
-- Add relay metrics/logs API wrappers and health-state helper (relays)
-- Add inline expandable relay health detail panel (relays)
-- Notification core — per-chat levels, severity tiers, coalesced emit
-- Notification settings, backend unread counts, catch-up store
-- Catch-up destination — counts, filters, navigation & UI
-
-
-### Other
-- Add visual identity
-- Simplify relay health instrumentation and detail panel (relays)
-- Correct receive-count undercount, relay-detail retry dead end, and log flooding (review)
-
-
-### Testing
-- Expand frontend coverage
+- Complete spanish i18n coverage across app ui (#153) by @logicminds
+- Gov-event gossip for status view and custom squad-level rpc with backup to avoid rate limits (#140) by @daopunk
+- Add backend-owned app-config with frontend validation and enforcement (#161) by @logicminds, closes #154
+- Messaging enhancements — reactions, attachments, image viewer, sync status (#157) by @logicminds, closes #143
+- Cap squad and channel name length via app-config (#164) by @logicminds, closes #152
+- Crop and resize avatar images before upload (#166) by @logicminds, closes #127
+- Add per-relay health detail to Nostr settings (relays) (#169) by @logicminds
+- Calm notifications with unified counts and Catch up review (#176) by @logicminds, closes #148
 
 ## v0.4.0
 
 ### Bug Fixes
-- Update ai.json tauri mcp command to use direct node path
-- Repair tauri-e2e job after docker image update (ci)
-- Make updater relaunch restart the updated app on macOS
-
-
-### Chores
-- Record closures for pacto-app-ayq mention feature (beads)
-- Bump version to 0.4.0 (release)
-
-
-### Documentation
-- Docs(mentions) - Add initial plan and idea files
-- Add tauri mcp integration guide and ui validation policy
+- Capitalize product name in desktop app config (#123) by @logicminds
+- Ensure updater relaunch restarts the updated app on macOS (#133) by @logicminds
 
 
 ### Features
-- Add @ mentions to squad channels (mentions)
-- Add self-correcting AI testing architecture
+- Add beads issue tracking for persistent agent task management (#128) by @logicminds
+- Add @ mentions to squad channels (mentions) (#129) by @logicminds
+- Add self-correcting AI testing architecture (#131) by @logicminds, closes #47
 
 
 ### Other
-- Capitalize product name
-- Bd init: initialize beads issue tracking
-- Update beads ignore file and create bead
-- Add vulkan deps and rust/pnpm caches for faster linux builds
-- Add prebuilt CI base image
-- Switch backend-tests job to pacto-ci container image
-- Switch release-symbol-check to pacto-ci container and add tauri-e2e diagnostics
+- Fix linux tauri build and add reusable CI base image (#132) by @logicminds
 
 ## v0.3.2
 
 ### Bug Fixes
-- Clarify install/relaunch state and error messages (#117) (updater)
-- Sync squad MLS state across peers and stop raw JSON in UI (#111)
-
-
-### Chores
-- Bump version to 0.3.2 (#120) (release)
+- Clarify install/relaunch state and error messages (updater) (#117) by @logicminds
+- Sync squad MLS state across peers and stop raw JSON in UI (#111) by @daopunk
 
 
 ### Refactor
-- Adopt refinery for SQLite migrations (#119)
+- Adopt refinery for SQLite migrations (#119) by @logicminds
 
 ## v0.3.1
 
-### Chores
-- Bump version to 0.3.1 (#115) (release)
-
-
 ### Documentation
-- Add install instructions for macOS, Linux, and Windows (#107)
+- Add install instructions for macOS, Linux, and Windows (#107) by @logicminds
 
 
 ### Features
-- Add automatic idle lock and migration gate for sensitive operations (#96) (session)
-- Add verified seed-backup gate for risky actions (#114)
+- Add automatic idle lock and migration gate for sensitive operations (session) (#96) by @logicminds
+- Add verified seed-backup gate for risky actions (#114) by @logicminds, closes #112
 
 
 ### Other
-- Include install instructions in release notes (#108)
-- Docs/install instructions (#109)
-
-* docs: add install instructions for macOS, Linux, and Windows
-
-* ci: include install instructions in release notes
+- Include install instructions in release notes (#108) by @logicminds
+- Docs/install instructions (#109) by @logicminds
 
 ## v0.3.0
 
 ### Bug Fixes
-- Grant build job artifact write permission for landing deploy (ci)
-- Resolve release tag from GITHUB_REF only for tag refs (ci)
-- Add pages and id-token permissions to landing build job (ci)
-- Replace withastro/action with explicit build/upload steps (#79) (ci)
-- Keep payout addresses private to consent-based DM exchange
-- In-app Check for Updates with build introspection (#104) (updater)
-
-
-### Chores
-- Bump version to 0.3.0 (#106) (release)
+- Grant build job artifact write permission for landing deploy (ci) by @logicminds
+- Resolve release tag from GITHUB_REF only for tag refs (ci) by @logicminds
+- Add pages and id-token permissions to landing build job (ci) by @logicminds
+- Replace withastro/action with explicit build/upload steps (ci) (#79) by @logicminds
+- Keep payout addresses private to consent-based DM exchange (#77) by @daopunk
+- In-app Check for Updates with build introspection (updater) (#104) by @logicminds, closes #70
 
 
 ### Documentation
-- Add macOS install quarantine note (#80) (readme)
-- Document encryption architecture and user-facing cryptography guidance (#99)
+- Add macOS install quarantine note (readme) (#80) by @logicminds
+- Document encryption architecture and user-facing cryptography guidance (#99) by @logicminds
 
 
 ### Features
-- Operable governance UI with roles tree and module panels (#83) (squad)
-- Per-device salt and migration to v2 (#95) (crypto)
-- Hats-first sponsor deploy with ext ala carte and ungated safe (#86) (squad)
-- Hats-first sponsor deploy, sponsored gov writes, and orchestrated launchpad (#100) (squad)
+- Operable governance UI with roles tree and module panels (squad) (#83) by @daopunk
+- Per-device salt and migration to v2 (crypto) (#95) by @logicminds
+- Hats-first sponsor deploy with ext ala carte and ungated safe (squad) (#86) by @daopunk, closes #89
+- Hats-first sponsor deploy, sponsored gov writes, and orchestrated launchpad (squad) (#100) by @daopunk
 
 ## v0.2.0
 
 ### Bug Fixes
-- Pin encryption decryption
-- Rm channel modal
-- Logout restart
-- Squad channel filter
-- Track mls group membership across devices
-- Path name correction
-- Release workflow
-- Workflow
-- Workflow windows + delete android
-- No key-package for member bug
-- Poll rumor
-- Add missing resetDashboardPrefetchSession import
-- Balance read bug
-- Allow-build
-- Harden local-dev defaults and fix relay/env issues (review)
-- Resolve P1/P2/P3 local-dev review findings (review)
-- Restore missing lastDm localStorage read (persistence)
-- Gate local Anvil to dev/test builds and tighten tests (dev)
-- Squad-dashboard hydratation on-start
-- Mls exit channel asymmetry
-- Address Copilot PR review (PinInput, hub replay race, wallet dedupe)
-- Backfill reply context for bot replies that beat original message persistence (dm)
-- Clean up cargo check diagnostics (rust)
-- Resolve svelte-check errors (frontend)
-- Finish resolving svelte-check errors (frontend)
-- Source testability tweaks for new frontend test coverage
-- Resolve svelte-check type errors (frontend)
-- Resolve ESLint errors and align config with legacy Svelte patterns (#67) (lint)
-- Install xdg-utils for Ubuntu AppImage bundling (ci)
+- Path name correction by @daopunk
+- Release workflow by @exo404
+- Workflow by @exo404
+- Workflow windows + delete android by @exo404
+- Add missing resetDashboardPrefetchSession import (#39) by @logicminds
+- Ux bugs (#38) by @daopunk
+- Resolve svelte-check errors (frontend) (#58) by @logicminds
+- Source testability tweaks for new frontend test coverage (#64) by @logicminds
+- Resolve svelte-check type errors (frontend) (#66) by @logicminds
+- Resolve ESLint errors and align config with legacy Svelte patterns (lint) (#67) by @logicminds
+- Install xdg-utils for Ubuntu AppImage bundling (ci) by @logicminds
 
 
 ### Chores
-- Init
-- Remove mock data
-- Change argon-2-id salt
-- Update package
-- Update lockfile
-- Lock file update
-- Delete docs from gitignore
-- Add release workflow
-- Rules
-- Cleanup
-- Add @vitest/coverage-v8@3.2.4 for test coverage reports (dev)
-- Add coverage npm scripts (dev)
-- Restore missing android module stubs (android)
-- Land safe mechanical lint fixes so lint stays green (#71) (lint)
-- Add changelog automation and align package version (#75) (release)
-- V0.2.0 changelog and ARM64 CI fix (#76) (release)
+- Init by @daopunk
+- Land safe mechanical lint fixes so lint stays green (lint) (#71) by @logicminds
 
 
 ### Documentation
-- Update README
-- Add all OS guides
-- Add sub-folder
-- Rename windows guide
-- Agent docs
-- Edit
-- Update
-- Consolidate
-- Update squads
-- Mark P1/P2/P3 findings as resolved (review)
-- Document Local Anvil dev setup (wallet)
-- Rename local setup doc and consolidate dev guidance (wallet)
-- Add AGENTS.md repository guidelines and Tauri v2 agent skills (agents)
-- Add strategy, concepts, and architecture docs for humans and agents
-- Update
-- Add value-based-pr skill and reference in AGENTS.md
-- Split out documentation and skills from PR #59
-- Correct NIP-17 terminology, read-plane split, storage nuance, and remove Aztec (ARCHITECTURE)
+- Add sub-folder by @daopunk
+- Add AGENTS.md repository guidelines and Tauri v2 agent skills (agents) (#52) by @logicminds
+- Add strategy, concepts, and architecture docs (#55) by @logicminds
+- Make contributor guidance accurate and discoverable (#60) by @logicminds
 
 
 ### Features
-- Add vector backend logic
-- Nav/tab button
-- Icons
-- Community channels
-- Messages and input
-- Message channel filter
-- Profile page
-- Key encryption and retrieval
-- New cp
-- Create and export keys
-- Avatar pull and offline logic
-- Profile fetching from relays
-- Auto profile pull on start
-- Direct messenger UX
-- Message to relay
-- Message fetching
-- Fetch msgs w/ notifs
-- Message sorting
-- Pfp and nostr account network changes from app
-- Mls channel creation
-- Invite to squad modal
-- Exit squad
-- Pin dms
-- Emoji library
-- Storage wipe on logout
-- Mls group invite card
-- Network invite card
-- Network & channel handling & storage
-- Break network into squad
-- Exit modal
-- Evm key derivation
-- Add viem
-- Squad dashboard
-- Embedded evm wallet and viem read functions
-- Backend evm signatures
-- Wallet sidebar
-- Etherscan tx hash tracking
-- Private key exchange
-- Multisig-safe deployment
-- Themes
-- Seed-phrase-based accounts
-- Block user
-- Resizable wallet bar
-- Safe deployer
-- Deployer modal
-- Backend and nostr rumors for poll voting
-- Governance launch pad
-- Mod squad infra
-- Contract api
-- Squad-sponsor flow
-- Generic chain reads
-- Hat tree
-- Dm deployment update
-- Gov modal deployment flow
-- Deploy stand-alone safes
-- Advanced wallet
-- Signer for advanced wallet
-- Chat date-n-time
-- Network selector
-- Rpc setup
-- Pinned internal app inbox
-- Commons
-- Common card
-- Common filter
-- Commons modal
-- Commons ux
-- Export nsec button
-- Export seed button
-- Sponsor-contract deploy modal
-- Optimistic payment request
-- Unread notifications
-- Add Local Anvil chain (31337) for dockerized dev stack (wallet)
-- Auto-wire local Docker dev stack in dev mode
-- Add commons categories
-- Mls squad-inbox gossip
-- Backend network snapshot extraction
-- Add gnosis-safe contracts on arbitrum
-- Squad-wide network selection
-- Allow ws:// localhost/127.0.0.1 dev relay URLs (relays)
-- Pacto Gov deploy flow, squad-bot join inbox, and governance dashboard (#68) (governance)
-- Public download site with arch-aware downloads and native ARM64 CI (#74)
+- Frontend (#2) by @daopunk
+- Login (#4) by @daopunk
+- Create and export keys (#6) by @daopunk
+- Dms (#8) by @daopunk
+- DM UX improvements (#12) by @daopunk
+- Pfp and nostr account network changes from app (#13) by @daopunk
+- Dm-ux (#14) by @daopunk
+- Mls-channel creation (#15) by @daopunk
+- Emoji library (#16) by @daopunk
+- Mls invites (#18) by @daopunk
+- Networks (#19) by @daopunk
+- Network-deconstruction (#20) by @daopunk
+- Evm wallet (#23) by @daopunk
+- Backend evm signatures (#25) by @daopunk
+- Chain and network selectors (#27) by @daopunk
+- Basic payment on-chain transaction (#28) by @daopunk
+- Multisig-safe deployment (#29) by @daopunk
+- Ux (#30) by @daopunk
+- Dm-wallet (#31) by @daopunk
+- Resizable wallet bar by @daopunk
+- Safe deployer by @daopunk
+- Deployer modal (#34) by @daopunk
+- Gov core (#35) by @daopunk
+- Ux improvements (#36) by @daopunk
+- Commons ux (#37) by @daopunk
+- Gov ui (#41) by @daopunk
+- Auto-wire local Docker dev stack and add Local Anvil chain (dev) (#44) by @logicminds, closes #40
+- Sponsor squad flow (#51) by @daopunk
+- Pacto Gov deploy flow, squad-bot join inbox, and governance dashboard (governance) (#68) by @daopunk
+- Public download site with arch-aware downloads and native ARM64 CI (#74) by @logicminds
 
 
 ### Other
-- Edit capabilities and config
-- Rm template code
-- Vector backend pull
-- Vector mini-apps pull
-- Cargo toml
-- Vector sound pull
-- Packages
-- Add init-finished logic
-- Error handling
-- Communities => squads
-- Add dm error handling
-- Message pagination
-- Typing notif & fetching notif
-- Persistent last message
-- Sort dms into friends, requests, & pending
-- Icon update
-- Squad & default channel creation
-- Allow 1-member mls groups on squad creation
-- Optional themes
-- Typing improvement
-- Typing improvement
-- Flow
-- Improvements
-- Mls groups from friends & pinned
-- Fix
-- Fix
-- Mls invites
-- Comments
-- Sync channel names
-- Notifications
-- Improvements
-- State persistance from settings view
-- Enhance README with platform details and features
-
-Expanded the README to include detailed platform features, architecture, and technology stack.
-- Simplify Pacto description in README
-
-Removed redundant mention of cryptographic and database management logic in the Pacto description.
-- Sidebar wallet
-- Clear sessions on logout-in
-- Comments
-- Aztec theme
-- Dms
-- Tx notifications
-- Safe-deploy modal
-- Dm wallet exchange
-- Poll voting
-- Add pacto-gov as pinned submodule under third_party/pacto-gov
-
-Document clone/init and bump policy in docs/wallet/PACTO_GOV_SUBMODULE.md;
-link from root README and wallet docs index.
-
-Co-authored-by: Cursor <cursoragent@cursor.com>
-- Checkout pacto-gov submodule recursively before Tauri build
-- Hydration standardization
-- Commons mode
-- Key mgmt
-- View squad signer
-- Upgrade pnpm to 11.7.0 and update action versions
-- Add typecheck, lint, and unit test quality gate
-- Squad dashboard & polls
-- Potential fix for pull request finding
-
-Co-authored-by: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>
-- Potential fix for pull request finding
-
-Co-authored-by: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>
-- Potential fix for pull request finding
-
-Co-authored-by: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>
-- Potential fix for pull request finding
-
-Co-authored-by: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>
-- Address PR review feedback (#54)
-
-- Fix use-after-move in message.rs backfill emit loop by cloning reply.id
-- Fix use-after-move and remove stderr spam in lib.rs backfill emit loop
-- Allow ws://127.0.0.1 without port in relay validation to match error message
-- Update relay validation tests for loopback without port
-
-Note: pre-existing failure in npm run check (unrelated TypeScript/vite errors) not addressed by this PR.
-- Add Makefile for app lifecycle commands
-- Address PR review feedback (#58)
-
-- Reorder import type before export re-exports in src/lib/commons/types.ts to match codebase convention.
-- Fix indentation of parseSupportedChainId import in src/routes/+page.svelte to align with surrounding imports.
-- Split CI into frontend and backend jobs and remove ignore-failure gates (ci)
+- Feat/login (#3) by @daopunk
+- Update/vector-backend-pull (#5) by @daopunk
+- Feat/avatar (#7) by @daopunk
+- Update README with all OS prerequisites (#24) by @exo404
+- Enhance README with platform details and features by @daopunk
+- Update docs and release workflow (#26) by @exo404
+- Simplify Pacto description in README by @daopunk
+- Add typecheck, lint, and unit test quality gate (#46) by @logicminds
+- Message handling improvements + codebase audit doc (#54) by @logicminds
+- Add Makefile and clean up cargo check diagnostics (#57) by @logicminds
+- Split CI into frontend and backend jobs and remove ignore-failure gates (ci) (#62) by @logicminds
 
 
 ### Refactor
-- Reduce aargon2id iterations for faster decryption
-- Rm pivx payments
-- Cache trusted relays
-- Simplify code
-- Rm PROFILE_CACHE_DEBUG.md
-- Enforce >1 mls group creation
-- Rm packages in favor of minified files
-- Separate squad invite from channel invite
-- Networks functionality
-- Remove bloat
-- Modular re-usable approach to squads and networks
-- Ux components to match backend refactor
-- Reveal evm address in update account creation
-- Virtual channel buckets
-- Governance modes
-- Evm alloy
-- Dashboard tabs
-- Monitor to inbox
-- User settings
-- Cleanup
-- Reduce loc
-- Dashboard onchain fetching
-- Chain refreshing
-- Settings
-- Hydrate
-- Squad channel life-cycle
-- Optimistic dm-wallet announcements
-- Add timeout guard to local-dev relay setup
-- Chain network optionality
-- Replace anvil term with local
-
-
-### Revert
-- Mls proposal handling
-
-
-### Styling
-- Collaspable settings sections
-- Chains selector
-- Ux
+- Reduce aargon2id iterations for faster decryption by @daopunk
+- Minified files (#17) by @daopunk
+- Squad & network channels (#22) by @daopunk
+- Sqlite squad catalog (#42) by @daopunk
 
 
 ### Testing
-- Scaffold smoke
-- Add coverage for Local Anvil chain (31337) (wallet)
-- Add backend unit tests for crypto, EVM, storage, and catalog helpers (rust)
-- Add frontend unit tests for stores, utils, API, app, dashboard, governance, and parent flows (#65) (frontend)
+- Add backend unit tests for crypto, EVM, storage, and catalog helpers (rust) (#63) by @logicminds
+- Add frontend unit tests for stores, utils, API, app, dashboard, governance, and parent flows (frontend) (#65) by @logicminds
 
 
 

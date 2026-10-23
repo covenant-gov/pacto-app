@@ -19,6 +19,11 @@ concurrency:
 jobs:
   release-notes:
     runs-on: ubuntu-24.04
+    # Changelog entries look up PR authors and the issues each PR closes.
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
     steps:
       - name: Require a v* tag ref
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -31,22 +36,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Generate changelog
-        id: changelog
-        uses: orhun/git-cliff-action@v4
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
         with:
-          config: cliff.toml
-          args: --latest
+          tool: git-cliff@2.14.2
+
+      - name: Generate changelog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/changelog.mjs --latest --output release-changelog.md
 
       - name: Write release body
         id: notes
         env:
-          CHANGELOG: ${{ steps.changelog.outputs.content }}
           TAG: ${{ github.ref_name }}
         run: |
           VERSION="${TAG#v}"
           {
-            printf '%s\n' "$CHANGELOG"
+            cat release-changelog.md
             sed -e "s/{{TAG}}/$TAG/g" -e "s/{{VERSION}}/$VERSION/g" .github/release-install-notes.md
           } > release-body.md
 
@@ -58,10 +65,11 @@ jobs:
           retention-days: 1
 
       - name: Generate CHANGELOG.md
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --output CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/changelog.mjs --output CHANGELOG.md
+          ./scripts/post-process-changelog.sh
 
       - name: Upload CHANGELOG
         uses: actions/upload-artifact@v7
