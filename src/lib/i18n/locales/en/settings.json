@@ -165,5 +165,11 @@
 	"settings.routeTrafficThroughTorUnavailable": "Tor routing is not available on this build.",
 	"settings.routeTrafficThroughTorStartupWarning": "Tor could not start automatically:",
 	"settings.routeTrafficThroughTorLoadError": "Could not load the Tor routing setting.",
-	"settings.routeTrafficThroughTorSaveError": "Could not apply the Tor routing setting."
+	"settings.routeTrafficThroughTorSaveError": "Could not apply the Tor routing setting.",
+	"settings.experimental.title": "Experimental features",
+	"settings.experimental.intro": "These features are still in development. They may change, break, or be removed in a future update. Turn one off at any time to return to the standard behavior.",
+	"settings.experimental.badge": "Experimental",
+	"settings.experimental.empty": "No experimental features are available in this version.",
+	"settings.experimental.flags.advanced_evm_accounts.name": "Advanced EVM accounts",
+	"settings.experimental.flags.advanced_evm_accounts.description": "Create or import standalone EVM keys and send raw contract calls with them. They are not linked to squads or your profile. Advanced accounts you already have stay available either way."
 }
