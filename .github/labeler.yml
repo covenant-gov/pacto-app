@@ -1,0 +1,68 @@
+# Path-based labels applied by .github/workflows/labeler.yaml. Each risk:*
+# label marks a PR that touches files able to change CI, the supply chain,
+# the build, agent behavior, or app permissions, so reviewers look closer.
+# Labels are removed again when a later push no longer touches the paths.
+
+risk:ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'Dockerfile.ci'
+
+# Some of these files are not tracked today. Adding one can redirect a package
+# registry or run code during install, so creation is flagged too.
+risk:dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'package.json'
+          - 'pnpm-lock.yaml'
+          - 'pnpm-workspace.yaml'
+          - 'landing/package.json'
+          - 'src-tauri/Cargo.toml'
+          - 'src-tauri/Cargo.lock'
+          - '**/.cargo/**'
+          - '**/.npmrc'
+          - '.pnpmfile.cjs'
+          - '**/rust-toolchain*'
+
+risk:build-scripts:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'scripts/**'
+          - 'Makefile'
+          - 'src-tauri/build.rs'
+          - 'cliff.toml'
+          - 'vite.config*.ts'
+          - 'svelte.config.js'
+          - 'eslint.config.js'
+          - 'playwright.config.ts'
+          - 'landing/astro.config.mjs'
+          - 'src-tauri/.config/**'
+          - '.beads/hooks/**'
+
+risk:agent-instructions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/AGENTS.md'
+          - '**/CLAUDE.md'
+          - '.agents/**'
+          - '.claude/**'
+          - '.codex/**'
+          - '.cursor/**'
+          - '.mcp.json'
+          - 'ai.json'
+          - 'skills-lock.json'
+
+risk:app-permissions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src-tauri/capabilities/**'
+          - 'src-tauri/tauri.conf.json'
+          - 'src-tauri/Entitlements.plist'
+          - 'src-tauri/Info.plist'
+
+database:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'src-tauri/src/migrations/**'
+          - 'src-tauri/src/mls_migrations/**'
