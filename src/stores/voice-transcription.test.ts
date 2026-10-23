@@ -58,6 +58,21 @@ describe('transcriptionState', () => {
     expect(mockInvoke).toHaveBeenCalledWith('list_models');
     expect(get(transcriptionState)).toEqual({ availability: 'ready', model: 'tiny' });
   });
+
+  it('retries the model list after a failed first read', async () => {
+    platformFeatures.set(FEATURES);
+    mockInvoke.mockRejectedValueOnce(new Error('busy'));
+    await ensureWhisperModelsLoaded();
+    expect(get(transcriptionState).availability).toBe('no-model');
+
+    mockInvoke.mockResolvedValueOnce(MODELS);
+    await ensureWhisperModelsLoaded();
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
+    expect(get(transcriptionState)).toEqual({ availability: 'ready', model: 'tiny' });
+
+    await ensureWhisperModelsLoaded();
+    expect(mockInvoke).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('requestTranscription', () => {
