@@ -4,6 +4,7 @@
   import Play from '@lucide/svelte/icons/play';
   import Pause from '@lucide/svelte/icons/pause';
   import Captions from '@lucide/svelte/icons/captions';
+  import Download from '@lucide/svelte/icons/download';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import type { Attachment } from '../../stores/dm';
   import { estimateVoiceDurationFromSize, formatVoiceDuration } from '../../lib/messaging/voice-message';
@@ -25,9 +26,13 @@
     downloading?: boolean;
     /** Fetches and decrypts the clip; `src` arrives via a later prop update. */
     onRequestDownload: () => void | Promise<void>;
+    /** Exports the decrypted clip via the native save dialog; shown once it is on disk. */
+    onSaveAs?: () => void | Promise<void>;
+    /** True while a save is in progress. */
+    saving?: boolean;
   }
 
-  let { attachment, src, downloading = false, onRequestDownload }: Props = $props();
+  let { attachment, src, downloading = false, onRequestDownload, onSaveAs, saving = false }: Props = $props();
 
   let audioEl: HTMLAudioElement | undefined = $state();
   let playing = $state(false);
@@ -142,13 +147,26 @@
     {#if canTranscribe && (!transcript || transcript.status === 'error')}
       <button
         type="button"
-        class="voice-transcribe"
+        class="voice-action"
         onclick={handleTranscribe}
         disabled={transcribeRequested}
         aria-label={transcript?.status === 'error' ? $t('messaging.voice.retryTranscribe') : $t('messaging.voice.transcribe')}
         title={transcript?.status === 'error' ? $t('messaging.voice.retryTranscribe') : $t('messaging.voice.transcribe')}
       >
         <Captions size={18} aria-hidden="true" />
+      </button>
+    {/if}
+
+    {#if onSaveAs && onDisk}
+      <button
+        type="button"
+        class="voice-action"
+        onclick={() => void onSaveAs()}
+        disabled={saving}
+        aria-label={$t('messaging.attachment.saveAs')}
+        title={$t('messaging.attachment.saveAs')}
+      >
+        <Download size={18} aria-hidden="true" />
       </button>
     {/if}
   </div>
@@ -222,7 +240,7 @@
   }
 
   .voice-play:focus-visible,
-  .voice-transcribe:focus-visible,
+  .voice-action:focus-visible,
   .voice-seek:focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 2px;
@@ -263,7 +281,7 @@
     color: var(--text-muted);
   }
 
-  .voice-transcribe {
+  .voice-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -278,12 +296,12 @@
     cursor: pointer;
   }
 
-  .voice-transcribe:hover:not(:disabled) {
+  .voice-action:hover:not(:disabled) {
     color: var(--text-primary);
     background: var(--bg-hover);
   }
 
-  .voice-transcribe:disabled {
+  .voice-action:disabled {
     opacity: 0.5;
     cursor: progress;
   }
