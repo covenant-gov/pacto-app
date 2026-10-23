@@ -2295,13 +2295,83 @@ pub(crate) fn try_wallet_tx_announcement_notify_body(
     })
 }
 
+/// Why an inbound DM must not reach STATE / `message_new`.
+#[derive(Debug, PartialEq)]
+enum DmIntakeSuppression {
+    /// Channel invite for a squad we already belong to; accepted in the background instead.
+    ChannelInSquadAccepted,
+    /// Wallet transfer announcement already shown in this DM.
+    DuplicateWalletTx,
+}
+
+/// True when `announcements_group_id` matches a squad we have joined.
+fn is_joined_squad(announcements_group_id: &str, groups: &[mls::MlsGroupMetadata]) -> bool {
+    let aid = announcements_group_id.to_lowercase();
+    groups
+        .iter()
+        .any(|g| g.group_id.to_lowercase() == aid || g.engine_group_id.to_lowercase() == aid)
+}
+
+/// MLS groups needed to evaluate `msg`; empty unless it is an inbound channel-in-squad invite.
+async fn mls_groups_for_dm_intake(msg: &Message, is_mine: bool) -> Vec<mls::MlsGroupMetadata> {
+    if is_mine || parse_channel_in_squad_dm(&msg.content).is_none() {
+        return Vec::new();
+    }
+    match TAURI_APP.get() {
+        Some(handle) => db::load_mls_groups(handle).await.unwrap_or_default(),
+        None => Vec::new(),
+    }
+}
+
+/// Guards shared by cold intake and DB reconcile. Starts the channel auto-accept when it applies.
+async fn dm_intake_suppression(
+    msg: &Message,
+    contact: &str,
+    is_mine: bool,
+    groups: &[mls::MlsGroupMetadata],
+) -> Option<DmIntakeSuppression> {
+    if !is_mine {
+        if let Some((announcements_group_id, channel_group_id, channel_name)) =
+            parse_channel_in_squad_dm(&msg.content)
+        {
+            if is_joined_squad(&announcements_group_id, groups) {
+                crate::cmds::mls_groups::spawn_accept_channel_welcome_and_emit(
+                    announcements_group_id,
+                    channel_group_id,
+                    channel_name,
+                );
+                return Some(DmIntakeSuppression::ChannelInSquadAccepted);
+            }
+        }
+    }
+    if let Some(tx_hash) = wallet_tx_hash_from_announcement_content(&msg.content) {
+        let state = STATE.lock().await;
+        if dm_chat_has_wallet_tx_hash(&state, contact, &tx_hash) {
+            return Some(DmIntakeSuppression::DuplicateWalletTx);
+        }
+    }
+    None
+}
+
 /// When a rumor is already in SQLite but missing from in-memory STATE (e.g. prior intake
 /// persisted without the webview applying `message_new`), put it in STATE and re-emit.
-/// Returns true when a reconcile emit happened.
+/// Applies the same intake suppressions as cold intake. Returns true when a reconcile emit happened.
 async fn reconcile_existing_dm_from_db(
+    msg: Message,
+    contact: &str,
+    is_mine: bool,
+    wrapper_event_id: &str,
+) -> bool {
+    let groups = mls_groups_for_dm_intake(&msg, is_mine).await;
+    reconcile_existing_dm(msg, contact, is_mine, wrapper_event_id, &groups).await
+}
+
+async fn reconcile_existing_dm(
     mut msg: Message,
     contact: &str,
+    is_mine: bool,
     wrapper_event_id: &str,
+    groups: &[mls::MlsGroupMetadata],
 ) -> bool {
     if let Some(handle) = TAURI_APP.get() {
         if let Ok(updated) = db::update_wrapper_event_id(&handle, &msg.id, wrapper_event_id).await {
@@ -2312,6 +2382,12 @@ async fn reconcile_existing_dm_from_db(
         }
     }
     if !contact.starts_with("npub1") {
+        return false;
+    }
+    if dm_intake_suppression(&msg, contact, is_mine, groups)
+        .await
+        .is_some()
+    {
         return false;
     }
     if !msg.replied_to.is_empty() {
@@ -2359,12 +2435,117 @@ mod reconcile_existing_dm_from_db_tests {
         state.profiles.retain(|p| p.id != contact);
     }
 
+    fn joined_group(group_id: &str) -> mls::MlsGroupMetadata {
+        mls::MlsGroupMetadata {
+            group_id: group_id.to_string(),
+            engine_group_id: String::new(),
+            creator_pubkey: String::new(),
+            name: "Squad".to_string(),
+            avatar_ref: None,
+            created_at: 0,
+            updated_at: 0,
+            evicted: false,
+            pending_welcomes: Vec::new(),
+        }
+    }
+
+    fn channel_invite_msg(id: &str, announcements_group_id: &str) -> Message {
+        Message {
+            content: serde_json::json!({
+                "type": "channel_in_squad",
+                "announcementsGroupId": announcements_group_id,
+                "channelGroupId": "c0ffee",
+                "channelName": "general",
+            })
+            .to_string(),
+            ..test_msg(id)
+        }
+    }
+
+    fn state_has_message(state: &ChatState, contact: &str, id: &str) -> bool {
+        state
+            .chats
+            .iter()
+            .filter(|c| c.has_participant(contact))
+            .any(|c| c.messages.iter().any(|m| m.id == id))
+    }
+
     #[tokio::test]
     async fn non_npub_contact_returns_false() {
         let msg = test_msg("reconcile-non-npub");
         assert!(
-            !reconcile_existing_dm_from_db(msg, "mls-group-not-dm", "wrap-non-npub").await
+            !reconcile_existing_dm_from_db(msg, "mls-group-not-dm", false, "wrap-non-npub").await
         );
+    }
+
+    #[tokio::test]
+    async fn channel_in_squad_invite_for_joined_squad_is_not_surfaced() {
+        let contact = "npub1reconcilechannelinsquad0000000000000000000000000";
+        remove_dm_chat(contact).await;
+        let msg = channel_invite_msg("reconcile-channel-joined", "ABCDEF");
+        let groups = [joined_group("abcdef")];
+        assert!(
+            !reconcile_existing_dm(msg, contact, false, "wrap-channel-joined", &groups).await,
+            "joined-squad channel invite must be auto-accepted, not re-emitted"
+        );
+        assert!(!state_has_message(
+            &*STATE.lock().await,
+            contact,
+            "reconcile-channel-joined"
+        ));
+        remove_dm_chat(contact).await;
+    }
+
+    #[tokio::test]
+    async fn channel_in_squad_invite_for_unjoined_squad_is_surfaced() {
+        let contact = "npub1reconcilechannelnotjoined000000000000000000000000";
+        remove_dm_chat(contact).await;
+        let msg = channel_invite_msg("reconcile-channel-unjoined", "abcdef");
+        let groups = [joined_group("123456")];
+        assert!(reconcile_existing_dm(msg, contact, false, "wrap-channel-unjoined", &groups).await);
+        assert!(state_has_message(
+            &*STATE.lock().await,
+            contact,
+            "reconcile-channel-unjoined"
+        ));
+        remove_dm_chat(contact).await;
+    }
+
+    #[tokio::test]
+    async fn own_channel_in_squad_invite_is_surfaced() {
+        let contact = "npub1reconcilechannelmine00000000000000000000000000000";
+        remove_dm_chat(contact).await;
+        let msg = Message {
+            mine: true,
+            ..channel_invite_msg("reconcile-channel-mine", "abcdef")
+        };
+        let groups = [joined_group("abcdef")];
+        assert!(reconcile_existing_dm(msg, contact, true, "wrap-channel-mine", &groups).await);
+        remove_dm_chat(contact).await;
+    }
+
+    #[tokio::test]
+    async fn duplicate_wallet_tx_announcement_is_not_surfaced() {
+        let contact = "npub1reconcilewallettxdup000000000000000000000000000000";
+        remove_dm_chat(contact).await;
+        let announcement = |id: &str| Message {
+            content: serde_json::json!({
+                "type": "wallet_tx_announcement",
+                "tx_hash": "0xABC",
+                "amount": "1",
+                "asset": "ETH",
+            })
+            .to_string(),
+            ..test_msg(id)
+        };
+        assert!(
+            reconcile_existing_dm(announcement("wallet-tx-1"), contact, false, "w1", &[]).await
+        );
+        assert!(
+            !reconcile_existing_dm(announcement("wallet-tx-2"), contact, false, "w2", &[]).await,
+            "same tx hash under a new rumor id must stay suppressed"
+        );
+        remove_dm_chat(contact).await;
     }
 
     #[tokio::test]
@@ -2373,7 +2554,7 @@ mod reconcile_existing_dm_from_db_tests {
         remove_dm_chat(contact).await;
         let msg = test_msg("reconcile-add-1");
         assert!(
-            reconcile_existing_dm_from_db(msg, contact, "wrap-add-1").await,
+            reconcile_existing_dm_from_db(msg, contact, false, "wrap-add-1").await,
             "expected reconcile emit when STATE lacked the message"
         );
         {
@@ -2394,11 +2575,11 @@ mod reconcile_existing_dm_from_db_tests {
         remove_dm_chat(contact).await;
         let msg = test_msg("reconcile-dup-1");
         assert!(
-            reconcile_existing_dm_from_db(msg.clone(), contact, "wrap-dup-1").await,
+            reconcile_existing_dm_from_db(msg.clone(), contact, false, "wrap-dup-1").await,
             "first reconcile should add"
         );
         assert!(
-            !reconcile_existing_dm_from_db(msg, contact, "wrap-dup-2").await,
+            !reconcile_existing_dm_from_db(msg, contact, false, "wrap-dup-2").await,
             "second reconcile should be a no-op"
         );
         remove_dm_chat(contact).await;
@@ -2418,54 +2599,25 @@ pub(crate) async fn handle_text_message(
         if let Ok(exists) = db::message_exists_in_db(&handle, &msg.id).await {
             if exists {
                 // Heal STATE as a side effect; do not count as a network-new message for sync.
-                let _ = reconcile_existing_dm_from_db(msg, contact, wrapper_event_id).await;
+                let _ =
+                    reconcile_existing_dm_from_db(msg, contact, is_mine, wrapper_event_id).await;
                 return false;
             }
         }
     }
 
-    // Shared: parse channel-in-* DM → check user in parent → get pending welcome → accept → emit.
-    // Channel-in-squad: if this DM is a channel invite for a squad we're already in, auto-accept
-    // on the backend and never show it as an invite (don't add to chat, don't emit message_new).
-    if !is_mine {
-        if let Some((announcements_group_id, channel_group_id, channel_name)) =
-            parse_channel_in_squad_dm(&msg.content)
-        {
-            if let Some(handle) = TAURI_APP.get() {
-                let handle = handle.clone();
-                let in_squad = match db::load_mls_groups(&handle).await {
-                    Ok(groups) => {
-                        let aid = announcements_group_id.to_lowercase();
-                        groups.iter().any(|g| {
-                            g.group_id.to_lowercase() == aid
-                                || g.engine_group_id.to_lowercase() == aid
-                        })
-                    }
-                    Err(_) => false,
-                };
-                if in_squad {
-                    crate::cmds::mls_groups::spawn_accept_channel_welcome_and_emit(
-                        announcements_group_id,
-                        channel_group_id,
-                        channel_name,
-                    );
-                    return true;
-                }
-            }
-        }
+    // Channel invites for joined squads are auto-accepted and never shown as a DM invite.
+    let groups = mls_groups_for_dm_intake(&msg, is_mine).await;
+    match dm_intake_suppression(&msg, contact, is_mine, &groups).await {
+        Some(DmIntakeSuppression::ChannelInSquadAccepted) => return true,
+        Some(DmIntakeSuppression::DuplicateWalletTx) => return false,
+        None => {}
     }
 
     // Populate reply context before emitting (for replies to old messages not in frontend cache)
     if !msg.replied_to.is_empty() {
         if let Some(handle) = TAURI_APP.get() {
             let _ = db::populate_reply_context(&handle, &mut msg).await;
-        }
-    }
-
-    if let Some(tx_hash) = wallet_tx_hash_from_announcement_content(&msg.content) {
-        let state = STATE.lock().await;
-        if dm_chat_has_wallet_tx_hash(&state, contact, &tx_hash) {
-            return false;
         }
     }
 
@@ -2664,7 +2816,8 @@ pub(crate) async fn handle_file_attachment(
         if let Ok(exists) = db::message_exists_in_db(&handle, &msg.id).await {
             if exists {
                 // Heal STATE as a side effect; do not count as a network-new message for sync.
-                let _ = reconcile_existing_dm_from_db(msg, contact, wrapper_event_id).await;
+                let _ =
+                    reconcile_existing_dm_from_db(msg, contact, is_mine, wrapper_event_id).await;
                 return false;
             }
         }
