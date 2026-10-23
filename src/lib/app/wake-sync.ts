@@ -34,6 +34,16 @@ export function requestCatchUpIfPendingDm(npub: string): void {
   }
 }
 
+/** Run an outbound DM send (text, file, GIF) and nudge catch-up when it succeeds. */
+export async function sendDmWithPendingCatchUp(
+  npub: string,
+  send: () => Promise<boolean>
+): Promise<boolean> {
+  const ok = await send();
+  if (ok) requestCatchUpIfPendingDm(npub);
+  return ok;
+}
+
 /** MLS wake catch-up; coalesces overlapping invokes while one is in flight. */
 function requestMlsCatchUp(): void {
   if (mlsWakeInFlight) return;
