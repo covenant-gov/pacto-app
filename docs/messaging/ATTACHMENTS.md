@@ -248,6 +248,21 @@ Playback is always local: an undownloaded video downloads first and mounts the
 player when the decrypted path arrives as a prop. Nothing streams from the blob
 URL, because the blob is ciphertext.
 
+### Voice messages
+
+A voice message is an ordinary encrypted attachment: `voice_message` sends the
+native recorder's WAV (22 kHz mono 16-bit) through the same `message` path as
+any file, to an npub or an MLS group id. It carries **no file name**, which is
+how `isVoiceMessageAttachment()` tells it apart from a user-picked `.wav`.
+`VoiceMessagePlayer.svelte` renders it with play/seek and a duration that is
+estimated from the encrypted size until the audio's own metadata loads.
+
+Transcription runs locally with Whisper (`transcribe`) on the decrypted file,
+only on builds where `get_platform_features().transcription` is true and once a
+model is downloaded in **App settings → Voice transcription**. Transcripts stay
+in memory (`stores/voice-transcription.ts`); they are message content and
+`localStorage` is not encrypted.
+
 ### Saving to a chosen destination
 
 The decrypted file always lands at the cache path `<Download>/vector/<hash>.<ext>`,

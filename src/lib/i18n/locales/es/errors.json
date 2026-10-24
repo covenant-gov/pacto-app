@@ -16,5 +16,6 @@
 	"errors.mls.relayKeyPackageUnreachable": "No se pudo contactar a los relays para verificar si {members} puede unirse. No se creó nada; inténtalo de nuevo.",
 	"errors.backupVerificationRequired": "Se requiere verificar la copia de seguridad",
 	"errors.accountChangedDuringWelcome": "La cuenta cambió mientras se aceptaba la invitación",
-	"errors.notSignedIn": "No has iniciado sesión."
+	"errors.notSignedIn": "No has iniciado sesión.",
+	"errors.dm.voiceFailed": "No se pudo enviar el mensaje de voz"
 }

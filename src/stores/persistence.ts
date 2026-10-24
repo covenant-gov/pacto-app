@@ -63,6 +63,7 @@ import { loadStartupCheckPreference } from './startup-check';
 import { loadSendTypingIndicatorsPreference } from './typing-indicators';
 import { loadStripTrackingMarkersPreference } from './strip-tracking-markers';
 import { loadWebPreviewsPreference } from './web-previews';
+import { loadVoiceSettings } from './voice-settings';
 import { loadBiometricUnlockPreference } from './biometric-unlock';
 import { loadMlsHistoryWelcome } from './mls-history-welcome';
 import { loadLastSeenPollCreatedAt } from './polls-hub-alerts';
@@ -176,6 +177,7 @@ export function loadAccountState(npub: string): void {
   loadSendTypingIndicatorsPreference(npub);
   loadStripTrackingMarkersPreference(npub);
   loadWebPreviewsPreference(npub);
+  loadVoiceSettings(npub);
   loadBiometricUnlockPreference(npub);
   loadLastSeenPollCreatedAt(npub);
   loadDeferredSquadRosterKeyParentIds();
