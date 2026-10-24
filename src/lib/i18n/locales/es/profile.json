@@ -1,6 +1,7 @@
 {
 	"profile.title": "Perfil",
 	"profile.loading": "Cargando perfil…",
+	"profile.restoring": "Restaurando tu perfil desde los relays…",
 	"profile.errorDetail": "Asegúrate de haber iniciado sesión y de que el npub sea correcto.",
 	"profile.editProfile": "Editar perfil",
 	"profile.avatarFallback": "U",

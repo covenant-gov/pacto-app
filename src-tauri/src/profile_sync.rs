@@ -257,7 +257,7 @@ pub async fn start_profile_sync_processor() {
         // Process the batch
         for entry in &batch {
             // Fetch the profile
-            profile::load_profile(entry.npub.clone()).await;
+            profile::load_profile_and_status(entry.npub.clone()).await;
 
             // Mark as done
             {

@@ -7,9 +7,10 @@ import { get } from 'svelte/store';
 import { listen, type UnlistenFn } from '../api';
 import { connect as apiConnect } from '../api/auth';
 import { monitorRelayConnections, type RelayStatus } from '../api/relays';
-import { fetchMessages, loadNostrProfile, refreshProfileNow, startNotifs, syncMlsGroupsNow } from '../api/nostr';
+import { fetchMessages, refreshProfileNow, startNotifs, syncMlsGroupsNow } from '../api/nostr';
 import { dmLog } from '../utils/dm-debug';
 import { dmSyncStatus } from '../../stores/dm';
+import { startProfileLoad } from '../../stores/profiles';
 import { scheduleCommonsStartupPrefetch } from '../commons/commons-prefetch';
 import { checkForUpdates } from '../updater/update-check';
 import {
@@ -56,14 +57,20 @@ export function runPostLoginNetworkSync(npub: string): void {
     dmLog('post-login: startNotifs()');
     void startNotifsWithRetry();
 
+    // Own Kind 0 is requested before the message backfill: after a seed import it is what
+    // turns Anonymous back into the user's name/avatar. Settings shows it as restoring.
+    // Only the cache read is awaited here, never the relay response.
+    dmLog('post-login: loadProfile(own)');
+    const ownProfile = startProfileLoad(npub);
+    const ownProfileLoad = ownProfile.profile.catch((e) =>
+      console.error('Own profile hydrate failed:', e)
+    );
+    await ownProfile.requested;
+
     dmLog('post-login: fetchMessages(true)');
     fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
 
-    try {
-      await loadNostrProfile(npub);
-    } catch (e) {
-      console.error('Own profile hydrate failed:', e);
-    }
+    await ownProfileLoad;
 
     try {
       await refreshProfileNow(npub);
