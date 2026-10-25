@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { withPactoGovProviderPayloadTxHash } from './pacto-gov-payload';
-import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
+import { withPactoGovProviderPayloadTxHash } from '../pacto-gov-payload';
+import { squadRpcUrlsForInvoke } from '../../squad/squad-rpc-invoke';
 
 /** Warn when pool balance falls below this wei threshold (0.005 ETH). */
 export const SPONSOR_LOW_BALANCE_WEI = 5_000_000_000_000_000n;
@@ -209,8 +209,8 @@ export async function deploySquadSponsorHatsForParent(params: {
 export {
   startHatsSponsorOnlyDeploy,
   startPactoGovAndSponsorDeploy,
-} from './start-pacto-gov-and-sponsor-deploy';
-export type { CombinedGovSponsorDeployComplete } from './start-pacto-gov-and-sponsor-deploy';
+} from '../start-pacto-gov-and-sponsor-deploy';
+export type { CombinedGovSponsorDeployComplete } from '../start-pacto-gov-and-sponsor-deploy';
 
 /** Mirrors `SquadSponsorSummary` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadSponsorSummaryDto {

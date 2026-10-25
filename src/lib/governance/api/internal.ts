@@ -1,7 +1,7 @@
-import type { GovernanceProcessKind } from '../announcements';
-import { announceGovernanceProcessUpdated } from './governance-process-announce';
-import { recordMutinyProcessTx } from './mutiny-process-tx';
-import { bumpGovernanceProcessNonce } from '../../stores/navigation';
+import type { GovernanceProcessKind } from '../../announcements';
+import { announceGovernanceProcessUpdated } from '../governance-process-announce';
+import { recordMutinyProcessTx } from '../mutiny-process-tx';
+import { bumpGovernanceProcessNonce } from '../../../stores/navigation';
 
 export async function afterGovWrite<T extends { txHash?: string }>(
   result: T,
@@ -26,10 +26,10 @@ export async function afterGovWrite<T extends { txHash?: string }>(
     stack: 'pacto_gov' | 'pacto_gov_wargame';
     round: string;
     blockNumber: number;
-    snapshot: import('./gov-replica').GovReplicaSnapshot;
+    snapshot: import('../gov-replica').GovReplicaSnapshot;
   } | null;
   try {
-    const { buildWriterGovReplicaSnapshot } = await import('./gov-replica-writer');
+    const { buildWriterGovReplicaSnapshot } = await import('../gov-replica-writer');
     replica = await buildWriterGovReplicaSnapshot({
       parentId: hint.parentId,
       kind: hint.kind,
@@ -40,7 +40,7 @@ export async function afterGovWrite<T extends { txHash?: string }>(
   }
   if (replica) {
     try {
-      const { persistGovReplicaSnapshot } = await import('./gov-replica');
+      const { persistGovReplicaSnapshot } = await import('../gov-replica');
       await persistGovReplicaSnapshot({
         parentId: hint.parentId,
         stack: replica.stack,

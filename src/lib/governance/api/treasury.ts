@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
-import { afterGovWrite } from './api-internal';
+import { squadRpcUrlsForInvoke } from '../../squad/squad-rpc-invoke';
+import { afterGovWrite } from './internal';
 
 /** Mirrors `TreasuryProposalDto` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface TreasuryProposalDto {
@@ -92,7 +92,7 @@ export async function treasuryAuthorityPropose(params: {
   operation?: string;
 }): Promise<GovernanceWriteResultDto> {
   const dataHex = params.dataHex?.trim() || '0x';
-  const { rememberTreasuryProposeCalldata } = await import('./treasury-proposal-calldata');
+  const { rememberTreasuryProposeCalldata } = await import('../treasury-proposal-calldata');
   rememberTreasuryProposeCalldata(params.parentId, dataHex);
   return afterGovWrite(
     (await invoke('treasury_authority_propose', {

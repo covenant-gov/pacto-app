@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
-import { afterGovWrite } from './api-internal';
-import type { SquadInfraDto } from './api-squad-infra';
+import { squadRpcUrlsForInvoke } from '../../squad/squad-rpc-invoke';
+import { afterGovWrite } from './internal';
+import type { SquadInfraDto } from './squad-infra';
 
 export interface SquadAdminExecutorRolesDto {
   address: string;

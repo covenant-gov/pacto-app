@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
+import { squadRpcUrlsForInvoke } from '../../squad/squad-rpc-invoke';
 
 /** Mirrors `HatTreeNodeDto` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface HatTreeNodeDto {

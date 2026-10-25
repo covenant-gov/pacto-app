@@ -1,10 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
-import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
-import { DEFAULT_SQUAD_PRACTICE_NETWORK } from '../squad/squad-network';
-import type { SquadParamsInput } from './squad-params';
-import { squadParamsToInvoke } from './squad-params';
-import type { SquadInfraDto } from './api-squad-infra';
-import type { SquadSponsorDeploySignerWallet } from './api-sponsor';
+import { squadRpcUrlsForInvoke } from '../../squad/squad-rpc-invoke';
+import { DEFAULT_SQUAD_PRACTICE_NETWORK } from '../../squad/squad-network';
+import type { SquadParamsInput } from '../squad-params';
+import { squadParamsToInvoke } from '../squad-params';
+import type { SquadInfraDto } from './squad-infra';
+import type { SquadSponsorDeploySignerWallet } from './sponsor';
 
 /** Mirrors `NavePirataDeployResult` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface NavePirataDeployResultDto {

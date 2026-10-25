@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
-import { afterGovWrite } from './api-internal';
-import type { GovernanceWriteResultDto } from './api-treasury';
+import { squadRpcUrlsForInvoke } from '../../squad/squad-rpc-invoke';
+import { afterGovWrite } from './internal';
+import type { GovernanceWriteResultDto } from './treasury';
 
 export interface CrewOffboardDto {
   offboardId: string;
