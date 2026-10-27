@@ -25,6 +25,7 @@
     "landing:preview": "pnpm --dir landing preview",
     "lint": "eslint .",
     "check:tauri-commands": "node scripts/check-orphaned-tauri-commands.mjs",
+    "check:i18n-toasts": "node scripts/check-hardcoded-toasts.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

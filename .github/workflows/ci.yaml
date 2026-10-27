@@ -55,6 +55,9 @@ jobs:
       - name: Check Tauri command wiring
         run: pnpm check:tauri-commands
 
+      - name: Check hardcoded toast strings
+        run: pnpm check:i18n-toasts
+
   frontend-tests:
     runs-on: ubuntu-latest
     steps:

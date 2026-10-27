@@ -386,11 +386,7 @@ function toastRestoring(parentId: string): void {
   const key = parentId.toLowerCase();
   if (toastedParents.has(key)) return;
   toastedParents.add(key);
-  try {
-    showToast(get(t)('messaging.channel.mlsRejoinRestoring'));
-  } catch {
-    showToast('Restoring squad access…');
-  }
+  showToast(get(t)('messaging.channel.mlsRejoinRestoring'));
 }
 
 function newRow(planned: PlannedRejoin, now: number): PendingRejoin {

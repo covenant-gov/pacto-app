@@ -1,7 +1,14 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import type { Attachment } from '../../stores/dm';
 
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+type FileSizeUnit = 'B' | 'KB' | 'MB' | 'GB' | 'TB';
+
+function fileSizeUnitLabel(unit: FileSizeUnit): string {
+  return get(t)(`messaging.fileSize.unit.${unit}`);
+}
 
 const IMAGE_EXTENSIONS: Record<string, true> = {
   jpg: true,
@@ -75,17 +82,17 @@ export function shouldCompressImage(fileName: string): boolean {
 }
 
 export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
+  if (bytes < 1024) return `${bytes} ${fileSizeUnitLabel('B')}`;
+  const units: FileSizeUnit[] = ['KB', 'MB', 'GB', 'TB'];
   let value = bytes / 1024;
   for (const unit of units) {
     if (value < 1024 || unit === units[units.length - 1]) {
       const decimals = value < 10 ? 1 : 0;
-      return `${Number(value.toFixed(decimals)).toString()} ${unit}`;
+      return `${Number(value.toFixed(decimals)).toString()} ${fileSizeUnitLabel(unit)}`;
     }
     value /= 1024;
   }
-  return `${bytes} B`;
+  return `${bytes} ${fileSizeUnitLabel('B')}`;
 }
 
 export function isAttachmentOversized(size: number): boolean {

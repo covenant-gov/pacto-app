@@ -28,10 +28,12 @@
 		'long',
 	];
 
-	const themeLabel = $derived(
-		[...THEME_OPTIONS, ...SKETCH_THEME_OPTIONS].find((option) => option.value === theme)?.label ??
-			theme,
-	);
+	const themeLabel = $derived.by(() => {
+		const shipped = THEME_OPTIONS.find((option) => option.value === theme);
+		if (shipped) return $t(shipped.labelKey);
+		const sketch = SKETCH_THEME_OPTIONS.find((option) => option.value === theme);
+		return sketch?.label ?? theme;
+	});
 
 	const themeGroups = $derived([
 		{ headingKey: 'design.toolbar.themeShipped' as const, options: THEME_OPTIONS },
@@ -87,7 +89,7 @@
 							</DropdownMenu.GroupHeading>
 							{#each group.options as option (option.value)}
 								<DropdownMenu.RadioItem value={option.value}>
-									{option.label}
+									{'labelKey' in option ? $t(option.labelKey) : option.label}
 								</DropdownMenu.RadioItem>
 							{/each}
 						{/each}

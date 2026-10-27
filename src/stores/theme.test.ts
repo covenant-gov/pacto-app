@@ -56,9 +56,11 @@ describe('theme', () => {
     );
   });
 
-  it('names paired light/dark skins as {theme} Light and {theme} Dark', () => {
-    expect(THEME_OPTIONS.find((o) => o.value === 'techno')?.label).toBe('Techno Light');
-    expect(THEME_OPTIONS.find((o) => o.value === 'dark-techno')?.label).toBe('Techno Dark');
+  it('maps paired light/dark skins to settings.theme.* label keys', () => {
+    expect(THEME_OPTIONS.find((o) => o.value === 'techno')?.labelKey).toBe('settings.theme.techno');
+    expect(THEME_OPTIONS.find((o) => o.value === 'dark-techno')?.labelKey).toBe(
+      'settings.theme.darkTechno',
+    );
   });
 
   it('stores and applies a valid theme', () => {

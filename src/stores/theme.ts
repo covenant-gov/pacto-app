@@ -4,16 +4,16 @@ import { writable } from 'svelte/store';
  * Single registry for skins. To add one:
  * 1. Create `src/styles/themes/<id>.css` with `[data-theme="<id>"] { ...shared --tokens }`
  * 2. `@import` it in `app.css` (default skin should also target `:root` and load first)
- * 3. Append `{ value, label }` below
+ * 3. Append `{ value, labelKey }` below and add matching `settings.theme.*` keys in en+es
  * 4. Allow `<id>` in the inline script in `src/app.html` (prevents theme flash on load)
  * 5. Mark dark skins in `DARK_THEME_IDS` so `color-scheme: dark` stays in sync
  */
 export const THEME_OPTIONS = [
-  { value: 'techno', label: 'Techno Light' },
-  { value: 'dark-techno', label: 'Techno Dark' },
-  { value: 'union', label: 'Union' },
-  { value: 'midnight', label: 'Midnight' },
-  { value: 'aztec', label: 'Aztec' },
+  { value: 'techno', labelKey: 'settings.theme.techno' },
+  { value: 'dark-techno', labelKey: 'settings.theme.darkTechno' },
+  { value: 'union', labelKey: 'settings.theme.union' },
+  { value: 'midnight', labelKey: 'settings.theme.midnight' },
+  { value: 'aztec', labelKey: 'settings.theme.aztec' },
 ] as const;
 
 export type Theme = (typeof THEME_OPTIONS)[number]['value'];
