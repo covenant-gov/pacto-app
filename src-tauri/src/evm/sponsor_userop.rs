@@ -2120,6 +2120,7 @@ mod tests {
 
         let resign = captainResignCall {
             _newCaptain: address!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            _seatFormerCaptain: true,
         }
         .abi_encode();
         assert_eq!(call_gas_ceiling_for_calldata(&resign), HEAVY_CALL_GAS_LIMIT);

@@ -102,7 +102,14 @@
       label: tFn('governance.action.randomizeCaptain'),
       parentId,
       actionKey: 'randomize-captain',
-      job: () => mutinyCaptainResign({ network, parentId, mutinyModule, newCaptain: picked }),
+      job: () =>
+        mutinyCaptainResign({
+          network,
+          parentId,
+          mutinyModule,
+          newCaptain: picked,
+          seatFormerCaptain: true,
+        }),
       onSettled: () => onRefreshMutiny(),
     });
   }

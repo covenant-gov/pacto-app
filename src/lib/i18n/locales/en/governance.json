@@ -213,6 +213,7 @@
 	"governance.mutiny.startOption.eoa": "To Squad member",
 	"governance.mutiny.startOption.contract": "To arbitrary contract",
 	"governance.mutiny.startOption.pause": "Pause captain (hat → Safe)",
+	"governance.mutiny.seatFormerCaptain": "Seat the outgoing captain as crew",
 	"governance.offboard.hint": "Crew can remove inactive members so a later mutiny can reach 51% of the remaining snapshot. One target at a time. Quorum of votes cast; the captain does not act on this path.",
 	"governance.offboard.active": "Offboard #{id} of {address} · yeas {yeas} / nays {nays} · snapshot {snapshot}",
 	"governance.offboard.deadline": "Deadline {when}",

@@ -45,6 +45,7 @@
 
   let startKind: 'crew' | 'committee' | 'eoa' | 'contract' | 'pause' = $state('crew');
   let proposed = $state('');
+  let seatFormerCaptain = $state(true);
 
   let startPickerOptions = $derived.by(() => {
     const src =
@@ -73,6 +74,7 @@
         : tFn('governance.action.startMutiny');
     const proposedAddr = proposed;
     const kind = startKind;
+    const seat = seatFormerCaptain;
     onClose();
     runGovWriteInBackground({
       label,
@@ -80,14 +82,38 @@
       actionKey: `mutiny-start:${kind}`,
       job: () =>
         kind === 'pause'
-          ? mutinyStartToPauseCaptain({ network, parentId, mutinyModule })
+          ? mutinyStartToPauseCaptain({ network, parentId, mutinyModule, seatFormerCaptain: seat })
           : kind === 'crew'
-            ? mutinyStartToCrewMember({ network, parentId, mutinyModule, proposed: proposedAddr })
+            ? mutinyStartToCrewMember({
+                network,
+                parentId,
+                mutinyModule,
+                proposed: proposedAddr,
+                seatFormerCaptain: seat,
+              })
             : kind === 'committee'
-              ? mutinyStartToCommittee({ network, parentId, mutinyModule, proposed: proposedAddr })
+              ? mutinyStartToCommittee({
+                  network,
+                  parentId,
+                  mutinyModule,
+                  proposed: proposedAddr,
+                  seatFormerCaptain: seat,
+                })
               : kind === 'eoa'
-                ? mutinyStartToArbitraryEoa({ network, parentId, mutinyModule, proposed: proposedAddr })
-                : mutinyStartToArbitraryContract({ network, parentId, mutinyModule, proposed: proposedAddr }),
+                ? mutinyStartToArbitraryEoa({
+                    network,
+                    parentId,
+                    mutinyModule,
+                    proposed: proposedAddr,
+                    seatFormerCaptain: seat,
+                  })
+                : mutinyStartToArbitraryContract({
+                    network,
+                    parentId,
+                    mutinyModule,
+                    proposed: proposedAddr,
+                    seatFormerCaptain: seat,
+                  }),
       onSettled: () => onSubmitted(),
     });
   }
@@ -130,6 +156,10 @@
           />
         {/if}
       {/key}
+      <label class="seat-former">
+        <input type="checkbox" bind:checked={seatFormerCaptain} disabled={!kindGate.enabled} />
+        <span>{$t('governance.mutiny.seatFormerCaptain')}</span>
+      </label>
       <GovCtaButton
         label={tFn('governance.action.startMutiny')}
         variant="primary"
@@ -162,5 +192,16 @@
     background: var(--bg-panel);
     color: var(--text-primary);
     font-size: 0.8125rem;
+  }
+  .seat-former {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+  .seat-former input {
+    margin-top: 2px;
+    padding: 0;
   }
 </style>

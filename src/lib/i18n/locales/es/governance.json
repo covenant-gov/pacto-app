@@ -213,6 +213,7 @@
 	"governance.mutiny.startOption.eoa": "A un miembro del escuad",
 	"governance.mutiny.startOption.contract": "A contrato arbitrario",
 	"governance.mutiny.startOption.pause": "Pausar capitán (hat → Safe)",
+	"governance.mutiny.seatFormerCaptain": "Asentar al capitán saliente como equipo",
 	"governance.offboard.hint": "El equipo puede dar de baja a inactivos para que un motín posterior alcance el 51% del snapshot restante. Un objetivo a la vez. Quórum de votos emitidos; el capitán no actúa en este camino.",
 	"governance.offboard.active": "Baja #{id} de {address} · a favor {yeas} / en contra {nays} · snapshot {snapshot}",
 	"governance.offboard.deadline": "Fecha límite {when}",

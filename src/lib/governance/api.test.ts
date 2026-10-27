@@ -35,8 +35,10 @@ import {
   pactoGovWargameInfraId,
   pactoGovWargameInfraRow,
   primaryGovernanceView,
+  mutinyCaptainResign,
   mutinyExpire,
   mutinyExecute,
+  mutinyStartToCrewMember,
   quartermasterBootstrapCrew,
   quartermasterProposeOffboard,
   quartermasterCrewOffboardVote,
@@ -583,6 +585,38 @@ describe('api command wrappers', () => {
       quartermaster: '0xqm',
       rpcUrls: expect.any(Array),
     });
+  });
+
+  it('mutiny start and resign send seatFormerCaptain', async () => {
+    mockedInvoke.mockResolvedValue({ txHash: '0xseat', chain: 'sepolia', chainId: 11155111 });
+    await mutinyStartToCrewMember({
+      network: NETWORK,
+      parentId: ' parent1 ',
+      mutinyModule: ' 0xmu ',
+      proposed: ' 0xcrew ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'mutiny_start_to_crew_member',
+      expect.objectContaining({
+        proposed: '0xcrew',
+        seatFormerCaptain: true,
+      }),
+    );
+
+    await mutinyCaptainResign({
+      network: NETWORK,
+      parentId: 'parent1',
+      mutinyModule: '0xmu',
+      newCaptain: '0xnew',
+      seatFormerCaptain: false,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'mutiny_captain_resign',
+      expect.objectContaining({
+        newCaptain: '0xnew',
+        seatFormerCaptain: false,
+      }),
+    );
   });
 
   it('mutinyExpire and offboard writes send trimmed ids', async () => {
