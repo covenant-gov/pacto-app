@@ -2109,6 +2109,7 @@ mod tests {
             bootstrapCrewCall, executeAddCrewCall, executeOffboardCall, executeRemoveCrewCall,
         };
         use crate::evm::contracts::pacto_gov::read_bindings::ITreasuryAuthority::executeCall;
+        use alloy::primitives::Bytes;
         use alloy::sol_types::SolCall;
 
         let exec = executeMutinyCall {
@@ -2125,6 +2126,7 @@ mod tests {
 
         let treasury = executeCall {
             _proposalId: U256::from(1u64),
+            _data: Bytes::new(),
         }
         .abi_encode();
         assert_eq!(

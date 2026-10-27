@@ -106,5 +106,14 @@ describe('govWriteErrorMessage', () => {
     expect(govWriteErrorMessage('{"code":"TX_REVERTED","message":"mined but reverted"}', 'Vote')).toBe(
       'governance.error.govCallReverted',
     );
+    expect(
+      govWriteErrorMessage(
+        '{"code":"SEND_FAILED","message":"execution reverted, data: \'0xc561eb66\'"}',
+        'Execute',
+      ),
+    ).toBe('governance.error.dataHashMismatch');
+    expect(
+      govWriteErrorMessage('{"code":"DATA_HASH_MISMATCH","message":"x"}', 'Execute'),
+    ).toBe('governance.error.dataHashMismatch');
   });
 });

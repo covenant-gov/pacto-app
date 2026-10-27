@@ -36,6 +36,11 @@ import { withReadPlaneLimit } from '../evm/read-plane-limiter';
 import { parseSupportedChainId, type SupportedChainId } from '../wallet/chains';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
+import { listSquadGovReplica } from '../governance/gov-replica';
+import {
+  overlayTreasuryProposalCalldata,
+  treasuryProposalsFromReplicaRows,
+} from '../governance/treasury-proposal-calldata';
 
 /** True when an async dashboard loader finished for a superseded cache key. */
 export function isSupersededLoaderKey(activeKey: string, capturedKey: string): boolean {
@@ -125,6 +130,7 @@ export async function fetchTreasuryProposals(params: {
   network: SupportedChainId;
   treasuryAuthority: string;
   parentId?: string | null;
+  extraCalldata?: string | null;
 }): Promise<{ proposals: TreasuryProposalDto[]; error: string }> {
   try {
     const rows = await listTreasuryProposals({
@@ -132,8 +138,23 @@ export async function fetchTreasuryProposals(params: {
       treasuryAuthority: params.treasuryAuthority,
       parentId: params.parentId,
     });
+    let prior: TreasuryProposalDto[] = [];
+    const parentId = params.parentId?.trim() ?? '';
+    if (parentId) {
+      try {
+        prior = treasuryProposalsFromReplicaRows(await listSquadGovReplica(parentId));
+      } catch {
+        prior = [];
+      }
+    }
+    const overlaid = overlayTreasuryProposalCalldata({
+      chain: rows,
+      prior,
+      extraCalldata: params.extraCalldata,
+      parentId,
+    });
     return {
-      proposals: [...rows].sort((a, b) => Number(b.proposalId) - Number(a.proposalId)),
+      proposals: [...overlaid].sort((a, b) => Number(b.proposalId) - Number(a.proposalId)),
       error: '',
     };
   } catch (e) {

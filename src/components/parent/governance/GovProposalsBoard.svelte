@@ -39,6 +39,7 @@
   } from '../../../lib/governance/gov-process';
   import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
   import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
+  import { hasTreasuryProposalCalldata } from '../../../lib/governance/treasury-proposal-calldata';
   import { isCrewOffboardActive, parseQuorumBps } from '../../../lib/governance/crew-offboard';
   import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { hasPendingJob, pendingOnChainJobs } from '../../../stores/pending-on-chain';
@@ -150,14 +151,16 @@
     return `${card.kind}:${verb}:${govProcessCardKey(card)}`;
   }
 
-  function runTreasuryExecute(proposalId: string) {
+  function runTreasuryExecute(proposal: TreasuryProposalDto) {
     if (!execGate.enabled) return;
-    runBoardWrite(tFn('governance.action.execute'), `treasury-exec:${proposalId}`, () =>
+    if (!hasTreasuryProposalCalldata(proposal.dataHex)) return;
+    runBoardWrite(tFn('governance.action.execute'), `treasury-exec:${proposal.proposalId}`, () =>
       treasuryAuthorityExecute({
         network,
         parentId,
         treasuryAuthority,
-        proposalId,
+        proposalId: proposal.proposalId,
+        dataHex: proposal.dataHex,
       }),
     );
   }
@@ -223,7 +226,7 @@
 
   function executeForCard(card: GovProcessCard) {
     if (card.kind === 'treasury') {
-      void runTreasuryExecute(card.proposal.proposalId);
+      void runTreasuryExecute(card.proposal);
     } else if (card.kind === 'mutiny') {
       void runMutinyExecute();
     } else if (card.kind === 'crew_offboard') {

@@ -59,6 +59,7 @@ export async function resolveWriterReplicaTarget(parentId: string): Promise<{
 export async function buildWriterGovReplicaSnapshot(params: {
   parentId: string;
   kind: string;
+  proposedDataHex?: string;
 }): Promise<{
   stack: GovReplicaStack;
   round: string;
@@ -110,6 +111,7 @@ export async function buildWriterGovReplicaSnapshot(params: {
       network: target.network,
       treasuryAuthority: target.treasuryAuthority,
       parentId: params.parentId,
+      extraCalldata: params.proposedDataHex,
     });
     if (!proposals.error) snapshot.treasuryProposals = proposals.proposals;
   }
