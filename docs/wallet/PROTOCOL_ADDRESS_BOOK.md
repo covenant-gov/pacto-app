@@ -21,6 +21,10 @@ Covenant / Pacto **deploy infra** (factories, paymaster, Safe bundle, Hats maste
 
 Registry, war-game, and role-hat aux addresses come from pacto-gov **`deployments/11155111/infra.json`** (paired with `navePirataFactory`). Master impls, Hats, and Safe bundle stay from pacto-gov `full-system.json` / `external.json`. Do **not** mix `infra.json` factory with legacy `full-system.json` registry.
 
+### Phase 2 address cutover (after this ABI PR)
+
+Bindings already track the post-gas-ops ABI; **do not** edit Sepolia pins in this JSON until [pacto-gov-system-tests](https://github.com/covenant-gov/pacto-gov-system-tests) broadcasts. Copy from `deployments/11155111/stack.json` (gov `infra.json` / `full-system.json` for nave registry; username `full-system.json`; sponsor `full-system.json`). Do not mix the sponsor artifact’s recorded registry. pacto-aa / `erc4337.accountImplementation` stays on the current pin. Until that copy, live Sepolia clones will not decode.
+
 ### Cutover after username-nft redeploy
 
 1. In pacto-username-nft: `pnpm deploy:sepolia` → new `deployments/11155111/full-system.json` (then `fund:paymaster:sepolia` + bootstrap pool deposit).

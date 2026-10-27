@@ -223,6 +223,35 @@ mod tests {
             "majority"
         );
     }
+
+    #[test]
+    fn proposal_dto_serializes_empty_data_hex_and_data_hash() {
+        use super::TreasuryProposalDto;
+        let json = serde_json::to_value(TreasuryProposalDto {
+            proposal_id: "1".into(),
+            proposer: "0x1".into(),
+            to: "0x2".into(),
+            value_wei: "0".into(),
+            operation: "call".into(),
+            data_hex: String::new(),
+            data_hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .into(),
+            deadline: 1,
+            snapshot: 1,
+            yeas: 0,
+            nays: 0,
+            captain_approved: false,
+            captain_defeated: false,
+            executed: false,
+            status: "active".into(),
+        })
+        .expect("json");
+        assert_eq!(json["dataHex"], "");
+        assert_eq!(
+            json["dataHash"],
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+    }
 }
 
 #[tauri::command]

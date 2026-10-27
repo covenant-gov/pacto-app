@@ -39,6 +39,7 @@ import {
   mutinyExpire,
   mutinyExecute,
   mutinyStartToCrewMember,
+  treasuryAuthorityExecute,
   quartermasterBootstrapCrew,
   quartermasterProposeOffboard,
   quartermasterCrewOffboardVote,
@@ -585,6 +586,26 @@ describe('api command wrappers', () => {
       quartermaster: '0xqm',
       rpcUrls: expect.any(Array),
     });
+  });
+
+  it('treasury execute sends overlay dataHex', async () => {
+    mockedInvoke.mockResolvedValue({ txHash: '0xexec', chain: 'sepolia', chainId: 11155111 });
+    await treasuryAuthorityExecute({
+      network: NETWORK,
+      parentId: ' parent1 ',
+      treasuryAuthority: ' 0xta ',
+      proposalId: ' 3 ',
+      dataHex: '0xdeadbeef',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'treasury_authority_execute',
+      expect.objectContaining({
+        parentId: 'parent1',
+        treasuryAuthority: '0xta',
+        proposalId: '3',
+        dataHex: '0xdeadbeef',
+      }),
+    );
   });
 
   it('mutiny start and resign send seatFormerCaptain', async () => {
