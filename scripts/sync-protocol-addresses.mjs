@@ -159,7 +159,7 @@ function loadGithubJsonViaGh(owner, repo, ref, path) {
   try {
     b64 = execFileSync('gh', ['api', apiPath, '--jq', '.content'], { encoding: 'utf8' }).trim();
   } catch (err) {
-    throw new Error(`gh api ${apiPath} failed: ${err.message}`);
+    throw new Error(`gh api ${apiPath} failed: ${err.message}`, { cause: err });
   }
   if (!b64) throw new Error(`gh api ${apiPath} returned empty content`);
   return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
