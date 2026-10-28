@@ -16,7 +16,6 @@ sol! {
             address mutinyModule;
             address treasuryAuthority;
             address squadAdminProxy;
-            uint256 topHatId;
             uint256 captainHatId;
             uint256 crewHatId;
             uint256 squadAdminHatId;
@@ -29,9 +28,15 @@ sol! {
 
         function deployment(uint256 _topHatId) external view returns (Deployment memory _deployment);
 
+        function crewAndCaptainHats(uint256 _topHatId)
+            external
+            view
+            returns (uint256 _captainHatId, uint256 _crewHatId);
+
         event NavePirataRegistered(
             uint256 indexed _topHatId,
-            Deployment _deployment
+            address indexed _safe,
+            address indexed _deployer
         );
     }
 
@@ -42,7 +47,6 @@ sol! {
             address mutinyModule;
             address treasuryAuthority;
             address squadAdminProxy;
-            uint256 topHatId;
             uint256 captainHatId;
             uint256 crewHatId;
             uint256 squadAdminHatId;
@@ -55,12 +59,19 @@ sol! {
 
         function deployment(uint256 _topHatId) external view returns (Deployment memory _deployment);
 
-        function active(bytes32 squadId) external view returns (Deployment memory _deployment);
+        function active(bytes32 _squadId) external view returns (Deployment memory _deployment);
+
+        function activeTopHatId(bytes32 _squadId) external view returns (uint256 _topHatId);
+
+        function crewAndCaptainHats(uint256 _topHatId)
+            external
+            view
+            returns (uint256 _captainHatId, uint256 _crewHatId);
 
         event WarGameRegistered(
             bytes32 indexed _squadId,
             uint256 indexed _topHatId,
-            Deployment _deployment
+            address indexed _safe
         );
 
         event WarGameRetired(bytes32 indexed _squadId, uint256 indexed _topHatId);
@@ -80,7 +91,7 @@ sol! {
                 address _to,
                 uint256 _value,
                 Operation _op,
-                bytes memory _data,
+                bytes32 _dataHash,
                 uint64 _deadline,
                 uint64 _snapshot,
                 uint64 _yeas,
@@ -104,7 +115,7 @@ sol! {
 
         function captainVote(uint256 _proposalId, bool _support) external;
 
-        function execute(uint256 _proposalId) external;
+        function execute(uint256 _proposalId, bytes calldata _data) external;
 
         function crewVoteMode() external view returns (CrewVoteMode _mode);
 
@@ -116,15 +127,15 @@ sol! {
     }
 
     interface IMutinyModule {
-        function startMutinyToCrewMember(address _proposedCrewMember) external;
-        function startMutinyToCommittee(address _proposedMultisigCommittee) external;
-        function startMutinyToArbitraryEoa(address _proposedArbitraryEoa) external;
-        function startMutinyToArbitraryContract(address _proposedArbitraryContract) external;
-        function startMutinyToPauseCaptain() external;
+        function startMutinyToCrewMember(address _proposedCrewMember, bool _seatFormerCaptain) external;
+        function startMutinyToCommittee(address _proposedMultisigCommittee, bool _seatFormerCaptain) external;
+        function startMutinyToArbitraryEoa(address _proposedArbitraryEoa, bool _seatFormerCaptain) external;
+        function startMutinyToArbitraryContract(address _proposedArbitraryContract, bool _seatFormerCaptain) external;
+        function startMutinyToPauseCaptain(bool _seatFormerCaptain) external;
         function castVote(uint256 _mutinyId) external;
         function executeMutiny(uint256 _mutinyId) external;
         function expireMutiny(uint256 _mutinyId) external;
-        function captainResign(address _newCaptain) external;
+        function captainResign(address _newCaptain, bool _seatFormerCaptain) external;
         function activeMutinyId() external view returns (uint256 _id);
         function mutiny(uint256 _id)
             external
@@ -136,7 +147,8 @@ sol! {
                 uint64 _deadline,
                 uint64 _snapshot,
                 uint64 _yeas,
-                bool _executed
+                bool _executed,
+                bool _seatFormerCaptain
             );
         function hasVoted(uint256 _mutinyId, address _voter) external view returns (bool _voted);
         function captain() external view returns (address _captain);

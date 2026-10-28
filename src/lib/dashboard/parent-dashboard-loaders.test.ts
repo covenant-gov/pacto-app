@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { keccak256 } from 'viem';
 import { invoke } from '@tauri-apps/api/core';
 import {
   fetchSquadMemberEvmByNpub,
@@ -200,6 +201,30 @@ describe('fetchTreasuryProposals', () => {
 
     expect(result.proposals).toEqual([]);
     expect(result.error).toBe('rpc down');
+  });
+
+  it('overlays replica calldata onto chain rows missing dataHex', async () => {
+    const dataHex = '0xdeadbeef';
+    mockedListTreasuryProposals.mockResolvedValueOnce([
+      { ...baseProposal, proposalId: '10', dataHex: '', dataHash: keccak256(dataHex) },
+    ]);
+    mockedInvoke.mockResolvedValueOnce([
+      {
+        snapshotJson: JSON.stringify({
+          treasuryProposals: [{ ...baseProposal, proposalId: '10', dataHex }],
+        }),
+        updatedAtMs: 1,
+      },
+    ]);
+
+    const result = await fetchTreasuryProposals({
+      network: 'sepolia',
+      treasuryAuthority: '0xAuth',
+      parentId: 'g1',
+    });
+
+    expect(result.error).toBe('');
+    expect(result.proposals[0]?.dataHex).toBe(dataHex);
   });
 });
 

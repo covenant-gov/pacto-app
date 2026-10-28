@@ -4,23 +4,30 @@ import {
   pactoProtocolBookVersion,
 } from './pacto-protocol-addresses';
 
+const ADDR = /^0x[a-fA-F0-9]{40}$/;
+
+function expectAddr(value: string | undefined) {
+  expect(value).toMatch(ADDR);
+}
+
 describe('pacto-protocol-addresses', () => {
-  it('loads Sepolia sponsor and gov factories from the book', () => {
+  it('loads a complete Sepolia book without pinning live hex', () => {
     const sepolia = pactoProtocolNetworkBook('sepolia');
     expect(sepolia?.chainId).toBe(11155111);
-    expect(sepolia?.squadSponsor?.factory).toBe('0x9F6b1936e1817A074033591bb55DC65CBB29e4d7');
-    expect(sepolia?.squadSponsor?.paymaster).toBe('0xD84337C18dB089DF78c69Ea0df619bD48EEBBcC3');
-    expect(sepolia?.erc4337?.accountImplementation).toBe(
-      '0x2E9156deE65d7946305C334824e2648Ff9128f45',
-    );
+    expectAddr(sepolia?.squadSponsor?.factory);
+    expectAddr(sepolia?.squadSponsor?.paymaster);
+    expectAddr(sepolia?.squadSponsor?.entryPoint);
+    expectAddr(sepolia?.pactoGov?.navePirataFactory);
+    expectAddr(sepolia?.pactoGov?.warGameRegistry);
+    expectAddr(sepolia?.pactoGov?.masterQuartermaster);
+    expectAddr(sepolia?.pactoGov?.masterMutiny);
+    expectAddr(sepolia?.erc4337?.accountImplementation);
     expect(sepolia?.squadSponsor?.navePirataRegistry).toBe(
-      '0xb4e9349540ed00A7a76Da52e1BBe562D9587ba23',
+      sepolia?.pactoGov?.navePirataRegistry,
     );
-    expect(sepolia?.pactoGov?.navePirataFactory).toBe('0xd540B03A83d3Fc78922cAb9742e67B8B272bC2b9');
-    expect(sepolia?.pactoGov?.navePirataRegistry).toBe(
-      '0xb4e9349540ed00A7a76Da52e1BBe562D9587ba23',
+    expect(sepolia?.erc4337?.accountImplementation).toBe(
+      sepolia?.globalUsernameSponsor?.allowed7702Implementation,
     );
-    expect(sepolia?.pactoGov?.warGameRegistry).toBe('0x2F2BbEdAc920B890A90414C03c4bf6627a9035E9');
   });
 
   it('exposes the book version', () => {
@@ -34,28 +41,39 @@ describe('pacto-protocol-addresses', () => {
 
   it('exposes all Safe infrastructure addresses on Sepolia', () => {
     const sepolia = pactoProtocolNetworkBook('sepolia');
-    expect(sepolia?.safe?.proxyFactory).toMatch(/^0x[a-fA-F0-9]{40}$/);
-    expect(sepolia?.safe?.singleton).toMatch(/^0x[a-fA-F0-9]{40}$/);
-    expect(sepolia?.safe?.fallbackHandler).toMatch(/^0x[a-fA-F0-9]{40}$/);
+    expectAddr(sepolia?.safe?.proxyFactory);
+    expectAddr(sepolia?.safe?.singleton);
+    expectAddr(sepolia?.safe?.fallbackHandler);
   });
 
-  it('exposes PactoGov addresses on Sepolia', () => {
+  it('does not keep retired September Sepolia pins', () => {
     const sepolia = pactoProtocolNetworkBook('sepolia');
-    expect(sepolia?.pactoGov?.masterQuartermaster).toMatch(/^0x[a-fA-F0-9]{40}$/);
-    expect(sepolia?.pactoGov?.masterMutiny).toMatch(/^0x[a-fA-F0-9]{40}$/);
+    expect(sepolia?.pactoGov?.navePirataFactory?.toLowerCase()).not.toBe(
+      '0xd540b03a83d3fc78922cab9742e67b8b272bc2b9',
+    );
+    expect(sepolia?.pactoGov?.navePirataRegistry?.toLowerCase()).not.toBe(
+      '0xb4e9349540ed00a7a76da52e1bbe562d9587ba23',
+    );
+    expect(sepolia?.globalUsernameSponsor?.sponsorPolicyRegistry?.toLowerCase()).not.toBe(
+      '0x1350f096fa383e0d73c02fc13797f207295ef248',
+    );
+    expect(sepolia?.squadSponsor?.factory?.toLowerCase()).not.toBe(
+      '0x9f6b1936e1817a074033591bb55dc65cbb29e4d7',
+    );
   });
 
   it('exposes Sepolia globalUsernameSponsor pins', () => {
     const g = pactoProtocolNetworkBook('sepolia')?.globalUsernameSponsor;
-    expect(g?.protocolRegistry).toBe('0xAF61198bf3b9D8d49FA82888121c187720D6Cfe8');
-    expect(g?.pactoUsernameNft).toBe('0x09e08dB9B4275979Bb2aE8C86f3bB5d406c120d1');
-    expect(g?.pactoGlobalPaymaster).toBe('0x04Fc205adA4c0c5C5024546E87972C4c4bB30D0F');
-    expect(g?.nostrClaimLink).toBe('0xCc0de30d2926995FB6458De7808E41E2a17B0e29');
-    expect(g?.bootstrapMintPool).toBe('0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B');
-    expect(g?.sponsorPolicyRegistry).toBe('0x1350F096FA383e0D73C02fc13797F207295ef248');
-    expect(g?.entryPoint).toBe('0x0000000071727De22E5E9d8BAf0edAc6f37da032');
-    expect(g?.allowed7702Implementation).toBe(
-      '0x2E9156deE65d7946305C334824e2648Ff9128f45',
-    );
+    expectAddr(g?.protocolRegistry);
+    expectAddr(g?.usernameSystemFactory);
+    expectAddr(g?.pactoUsernameNft);
+    expectAddr(g?.globalSponsorPool);
+    expectAddr(g?.bootstrapMintPool);
+    expectAddr(g?.sponsorPolicyRegistry);
+    expectAddr(g?.bootstrapClaimPolicy);
+    expectAddr(g?.pactoGlobalPaymaster);
+    expectAddr(g?.nostrClaimLink);
+    expectAddr(g?.allowed7702Implementation);
+    expectAddr(g?.entryPoint);
   });
 });

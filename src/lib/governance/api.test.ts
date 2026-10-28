@@ -35,8 +35,11 @@ import {
   pactoGovWargameInfraId,
   pactoGovWargameInfraRow,
   primaryGovernanceView,
+  mutinyCaptainResign,
   mutinyExpire,
   mutinyExecute,
+  mutinyStartToCrewMember,
+  treasuryAuthorityExecute,
   quartermasterBootstrapCrew,
   quartermasterProposeOffboard,
   quartermasterCrewOffboardVote,
@@ -583,6 +586,58 @@ describe('api command wrappers', () => {
       quartermaster: '0xqm',
       rpcUrls: expect.any(Array),
     });
+  });
+
+  it('treasury execute sends overlay dataHex', async () => {
+    mockedInvoke.mockResolvedValue({ txHash: '0xexec', chain: 'sepolia', chainId: 11155111 });
+    await treasuryAuthorityExecute({
+      network: NETWORK,
+      parentId: ' parent1 ',
+      treasuryAuthority: ' 0xta ',
+      proposalId: ' 3 ',
+      dataHex: '0xdeadbeef',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'treasury_authority_execute',
+      expect.objectContaining({
+        parentId: 'parent1',
+        treasuryAuthority: '0xta',
+        proposalId: '3',
+        dataHex: '0xdeadbeef',
+      }),
+    );
+  });
+
+  it('mutiny start and resign send seatFormerCaptain', async () => {
+    mockedInvoke.mockResolvedValue({ txHash: '0xseat', chain: 'sepolia', chainId: 11155111 });
+    await mutinyStartToCrewMember({
+      network: NETWORK,
+      parentId: ' parent1 ',
+      mutinyModule: ' 0xmu ',
+      proposed: ' 0xcrew ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'mutiny_start_to_crew_member',
+      expect.objectContaining({
+        proposed: '0xcrew',
+        seatFormerCaptain: true,
+      }),
+    );
+
+    await mutinyCaptainResign({
+      network: NETWORK,
+      parentId: 'parent1',
+      mutinyModule: '0xmu',
+      newCaptain: '0xnew',
+      seatFormerCaptain: false,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'mutiny_captain_resign',
+      expect.objectContaining({
+        newCaptain: '0xnew',
+        seatFormerCaptain: false,
+      }),
+    );
   });
 
   it('mutinyExpire and offboard writes send trimmed ids', async () => {

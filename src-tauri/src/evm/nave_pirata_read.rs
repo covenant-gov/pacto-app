@@ -6,7 +6,9 @@ use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
 use super::contracts::pacto_gov::read_bindings::INavePirataRegistry::deploymentCall;
-use super::contracts::pacto_gov::read_bindings::IWarGameRegistry::activeCall;
+use super::contracts::pacto_gov::read_bindings::IWarGameRegistry::{
+    activeCall, activeTopHatIdCall,
+};
 use super::gov_read::{connect_gov_read_provider, parse_top_hat_id};
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
@@ -31,6 +33,62 @@ pub struct NavePirataDeploymentDto {
     pub treasury_authority_role_hat_id: String,
     pub deployed_at: u64,
     pub deployer: String,
+}
+
+/// `(topHatId, captainOrDeployer, safe, quartermaster, mutiny, treasury, squadAdmin)`.
+pub(crate) type NaveCloneAddresses = (
+    U256,
+    Address,
+    Address,
+    Address,
+    Address,
+    Address,
+    Address,
+);
+
+/// Clone tuple from a registry `deployment()` row. `topHatId` is the registry key, not a struct field.
+pub(crate) fn clones_from_registry_row(
+    top_hat: U256,
+    captain_or_deployer: Address,
+    d: super::contracts::pacto_gov::read_bindings::INavePirataRegistry::Deployment,
+) -> Result<NaveCloneAddresses, String> {
+    if d.safe.is_zero() {
+        return Err(wallet_err_json(
+            "DEPLOYMENT_NOT_FOUND",
+            "no registry deployment for this top hat id",
+            None,
+        ));
+    }
+    Ok((
+        top_hat,
+        captain_or_deployer,
+        d.safe,
+        d.quartermaster,
+        d.mutinyModule,
+        d.treasuryAuthority,
+        d.squadAdminProxy,
+    ))
+}
+
+pub(crate) async fn clones_from_registry_deployment<P: Provider>(
+    provider: &P,
+    registry: Address,
+    top_hat: U256,
+    captain_or_deployer: Address,
+    event_safe: Address,
+) -> Result<NaveCloneAddresses, String> {
+    let d = eth_call_decode(provider, registry, &deploymentCall { _topHatId: top_hat })
+        .await
+        .map_err(|e| wallet_err_json("REGISTRY_READ", e, None))?;
+    let out = clones_from_registry_row(top_hat, captain_or_deployer, d)?;
+    if !event_safe.is_zero() && out.2 != event_safe {
+        return Err(wallet_err_json(
+            "REGISTRY_READ",
+            "registry deployment safe does not match registered event",
+            None,
+        ));
+    }
+    Ok(out)
 }
 
 /// True when `to` is one of the five on-chain gov modules for this deployment.
@@ -96,6 +154,7 @@ pub async fn read_nave_pirata_deployment<P: Provider>(
 fn war_game_deployment_to_dto(
     chain: &str,
     chain_id: u64,
+    top_hat: U256,
     d: super::contracts::pacto_gov::read_bindings::IWarGameRegistry::Deployment,
 ) -> Option<NavePirataDeploymentDto> {
     if d.safe.is_zero() {
@@ -104,7 +163,7 @@ fn war_game_deployment_to_dto(
     Some(NavePirataDeploymentDto {
         chain: chain.to_string(),
         chain_id,
-        top_hat_id: d.topHatId.to_string(),
+        top_hat_id: top_hat.to_string(),
         safe: format!("{:#x}", d.safe),
         quartermaster: format!("{:#x}", d.quartermaster),
         mutiny_module: format!("{:#x}", d.mutinyModule),
@@ -129,10 +188,16 @@ pub async fn read_war_game_active_deployment<P: Provider>(
     chain: &str,
     chain_id: u64,
 ) -> Result<Option<NavePirataDeploymentDto>, String> {
-    let d = eth_call_decode(provider, registry, &activeCall { squadId: squad_id })
+    let top_hat = eth_call_decode(provider, registry, &activeTopHatIdCall { _squadId: squad_id })
         .await
         .map_err(|e| wallet_err_json("REGISTRY_READ", e, None))?;
-    Ok(war_game_deployment_to_dto(chain, chain_id, d))
+    if top_hat.is_zero() {
+        return Ok(None);
+    }
+    let d = eth_call_decode(provider, registry, &activeCall { _squadId: squad_id })
+        .await
+        .map_err(|e| wallet_err_json("REGISTRY_READ", e, None))?;
+    Ok(war_game_deployment_to_dto(chain, chain_id, top_hat, d))
 }
 
 async fn read_registry_deployment_for_network(
@@ -212,6 +277,38 @@ mod tests {
             deployed_at: 0,
             deployer: "0x7777777777777777777777777777777777777777".into(),
         }
+    }
+
+    #[test]
+    fn clones_from_registry_row_uses_call_top_hat_not_struct_field() {
+        use super::clones_from_registry_row;
+        use crate::evm::contracts::pacto_gov::read_bindings::INavePirataRegistry::Deployment;
+        use alloy::primitives::U256;
+
+        let d = Deployment {
+            safe: address!("0x1111111111111111111111111111111111111111"),
+            quartermaster: address!("0x2222222222222222222222222222222222222222"),
+            mutinyModule: address!("0x3333333333333333333333333333333333333333"),
+            treasuryAuthority: address!("0x4444444444444444444444444444444444444444"),
+            squadAdminProxy: address!("0x5555555555555555555555555555555555555555"),
+            captainHatId: U256::from(1u64),
+            crewHatId: U256::from(2u64),
+            squadAdminHatId: U256::from(3u64),
+            mutinyRoleHatId: U256::from(4u64),
+            quartermasterRoleHatId: U256::from(5u64),
+            treasuryAuthorityRoleHatId: U256::from(6u64),
+            deployedAt: 9,
+            deployer: address!("0x7777777777777777777777777777777777777777"),
+        };
+        let top = U256::from(99u64);
+        let deployer = address!("0x8888888888888888888888888888888888888888");
+        let out = clones_from_registry_row(top, deployer, d).expect("row");
+        assert_eq!(out.0, top);
+        assert_eq!(out.1, deployer);
+        assert_eq!(
+            out.2,
+            address!("0x1111111111111111111111111111111111111111")
+        );
     }
 
     #[test]

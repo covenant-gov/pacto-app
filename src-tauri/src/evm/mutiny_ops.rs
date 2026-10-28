@@ -29,11 +29,15 @@ fn parse_mutiny_id(raw: &str) -> Result<U256, String> {
         .map_err(|e| wallet_err_json("INVALID_MUTINY_ID", e.to_string(), None))
 }
 
-fn encode_start_to_crew_member(proposed: &str) -> Result<Vec<u8>, String> {
+fn encode_start_to_crew_member(
+    proposed: &str,
+    seat_former_captain: bool,
+) -> Result<Vec<u8>, String> {
     let addr =
         parse_address(proposed.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     Ok(startMutinyToCrewMemberCall {
         _proposedCrewMember: addr,
+        _seatFormerCaptain: seat_former_captain,
     }
     .abi_encode())
 }
@@ -126,10 +130,17 @@ async fn preflight_mutiny_write(
     Ok(())
 }
 
-fn encode_captain_resign(new_captain: &str) -> Result<Vec<u8>, String> {
+fn encode_captain_resign(
+    new_captain: &str,
+    seat_former_captain: bool,
+) -> Result<Vec<u8>, String> {
     let addr = parse_address(new_captain.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
-    Ok(captainResignCall { _newCaptain: addr }.abi_encode())
+    Ok(captainResignCall {
+        _newCaptain: addr,
+        _seatFormerCaptain: seat_former_captain,
+    }
+    .abi_encode())
 }
 
 #[derive(Serialize)]
@@ -143,6 +154,7 @@ pub struct MutinyStatusDto {
     pub snapshot: u64,
     pub yeas: u64,
     pub executed: bool,
+    pub seat_former_captain: bool,
     pub captain: String,
 }
 
@@ -184,6 +196,7 @@ pub async fn get_mutiny_status<R: Runtime>(
             snapshot: 0,
             yeas: 0,
             executed: false,
+            seat_former_captain: false,
             captain: format!("{:#x}", captain),
         });
     }
@@ -201,6 +214,7 @@ pub async fn get_mutiny_status<R: Runtime>(
         snapshot: m._snapshot,
         yeas: m._yeas,
         executed: m._executed,
+        seat_former_captain: m._seatFormerCaptain,
         captain: format!("{:#x}", captain),
     })
 }
@@ -263,9 +277,10 @@ pub async fn mutiny_start_to_crew_member<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     proposed: String,
+    seat_former_captain: bool,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
-    let calldata = encode_start_to_crew_member(&proposed)?;
+    let calldata = encode_start_to_crew_member(&proposed, seat_former_captain)?;
     mutiny_write(
         app,
         network,
@@ -285,12 +300,14 @@ pub async fn mutiny_start_to_committee<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     proposed: String,
+    seat_former_captain: bool,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let addr =
         parse_address(proposed.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = startMutinyToCommitteeCall {
         _proposedMultisigCommittee: addr,
+        _seatFormerCaptain: seat_former_captain,
     }
     .abi_encode();
     mutiny_write(
@@ -312,12 +329,14 @@ pub async fn mutiny_start_to_arbitrary_eoa<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     proposed: String,
+    seat_former_captain: bool,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let addr =
         parse_address(proposed.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = startMutinyToArbitraryEoaCall {
         _proposedArbitraryEoa: addr,
+        _seatFormerCaptain: seat_former_captain,
     }
     .abi_encode();
     mutiny_write(
@@ -339,12 +358,14 @@ pub async fn mutiny_start_to_arbitrary_contract<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     proposed: String,
+    seat_former_captain: bool,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let addr =
         parse_address(proposed.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = startMutinyToArbitraryContractCall {
         _proposedArbitraryContract: addr,
+        _seatFormerCaptain: seat_former_captain,
     }
     .abi_encode();
     mutiny_write(
@@ -365,9 +386,13 @@ pub async fn mutiny_start_to_pause_captain<R: Runtime>(
     network: String,
     parent_id: String,
     mutiny_module: String,
+    seat_former_captain: bool,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
-    let calldata = startMutinyToPauseCaptainCall {}.abi_encode();
+    let calldata = startMutinyToPauseCaptainCall {
+        _seatFormerCaptain: seat_former_captain,
+    }
+    .abi_encode();
     mutiny_write(
         app,
         network,
@@ -469,9 +494,10 @@ pub async fn mutiny_captain_resign<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     new_captain: String,
+    seat_former_captain: bool,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
-    let calldata = encode_captain_resign(&new_captain)?;
+    let calldata = encode_captain_resign(&new_captain, seat_former_captain)?;
     mutiny_write(
         app,
         network,
@@ -511,15 +537,20 @@ mod tests {
 
     #[test]
     fn start_cast_execute_encode_selectors() {
-        let start = encode_start_to_crew_member(ADDR).expect("start");
+        let start = encode_start_to_crew_member(ADDR, true).expect("start");
         assert_eq!(
             start,
             startMutinyToCrewMemberCall {
                 _proposedCrewMember: parse_address(ADDR).unwrap(),
+                _seatFormerCaptain: true,
             }
             .abi_encode()
         );
-        assert!(encode_start_to_crew_member("bad").is_err());
+        assert_ne!(
+            start,
+            encode_start_to_crew_member(ADDR, false).expect("start-unseated")
+        );
+        assert!(encode_start_to_crew_member("bad", true).is_err());
 
         let vote = encode_cast_vote("3").expect("vote");
         assert_eq!(
@@ -616,14 +647,19 @@ mod tests {
 
     #[test]
     fn captain_resign_encodes_new_captain() {
-        let encoded = encode_captain_resign(ADDR).expect("resign");
+        let encoded = encode_captain_resign(ADDR, true).expect("resign");
         assert_eq!(
             encoded,
             captainResignCall {
                 _newCaptain: parse_address(ADDR).unwrap(),
+                _seatFormerCaptain: true,
             }
             .abi_encode()
         );
-        assert!(encode_captain_resign("0xzz").is_err());
+        assert_ne!(
+            encoded,
+            encode_captain_resign(ADDR, false).expect("resign-unseated")
+        );
+        assert!(encode_captain_resign("0xzz", true).is_err());
     }
 }

@@ -6,6 +6,7 @@ import {
   isMutinyExecutable,
   isMutinyExpirable,
 } from './gov-proposal-lists';
+import { hasTreasuryProposalCalldata } from './treasury-proposal-calldata';
 
 export type GovExecuteUiState = {
   showExecute: boolean;
@@ -58,10 +59,28 @@ export function govExecuteUiState(params: {
     }
     case 'treasury': {
       const show = executableTreasuryProposals([card.proposal]).length > 0;
+      if (!show) {
+        return {
+          showExecute: false,
+          executeEnabled: false,
+          disabledReasonKey: '',
+          unlockAtSec: null,
+          ...NO_EXPIRE,
+        };
+      }
+      if (!hasTreasuryProposalCalldata(card.proposal.dataHex)) {
+        return {
+          showExecute: true,
+          executeEnabled: false,
+          disabledReasonKey: 'governance.gate.proposalCalldataMissing',
+          unlockAtSec: null,
+          ...NO_EXPIRE,
+        };
+      }
       return {
-        showExecute: show,
-        executeEnabled: show && !privilegeKey,
-        disabledReasonKey: show ? privilegeKey : '',
+        showExecute: true,
+        executeEnabled: !privilegeKey,
+        disabledReasonKey: privilegeKey,
         unlockAtSec: null,
         ...NO_EXPIRE,
       };

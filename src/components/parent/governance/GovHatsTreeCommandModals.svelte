@@ -67,6 +67,7 @@
           parentId: command.parentId,
           mutinyModule: command.mutinyModule,
           newCaptain: picked,
+          seatFormerCaptain: true,
         }),
       onSettled: () => command.refreshMutiny(),
     });

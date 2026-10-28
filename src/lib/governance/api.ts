@@ -649,6 +649,8 @@ export interface TreasuryProposalDto {
   valueWei: string;
   operation: string;
   dataHex: string;
+  /** keccak256 of execute bytes; empty `dataHex` is filled from replica. */
+  dataHash?: string;
   deadline: number;
   snapshot: number;
   yeas: number;
@@ -727,6 +729,7 @@ async function afterGovWrite<T extends { txHash?: string }>(
     address?: string;
     proposalId?: string;
     mutinyStart?: boolean;
+    proposedDataHex?: string;
   },
 ): Promise<T> {
   if (hint.kind === 'mutiny' && result.txHash?.trim()) {
@@ -748,6 +751,7 @@ async function afterGovWrite<T extends { txHash?: string }>(
     replica = await buildWriterGovReplicaSnapshot({
       parentId: hint.parentId,
       kind: hint.kind,
+      proposedDataHex: hint.proposedDataHex,
     });
   } catch {
     replica = null;
@@ -790,6 +794,9 @@ export async function treasuryAuthorityPropose(params: {
   dataHex?: string;
   operation?: string;
 }): Promise<GovernanceWriteResultDto> {
+  const dataHex = params.dataHex?.trim() || '0x';
+  const { rememberTreasuryProposeCalldata } = await import('./treasury-proposal-calldata');
+  rememberTreasuryProposeCalldata(params.parentId, dataHex);
   return afterGovWrite(
     (await invoke('treasury_authority_propose', {
       network: params.network,
@@ -797,11 +804,11 @@ export async function treasuryAuthorityPropose(params: {
       treasuryAuthority: params.treasuryAuthority.trim(),
       to: params.to.trim(),
       valueWei: params.valueWei?.trim() || '0',
-      dataHex: params.dataHex?.trim() || '0x',
+      dataHex,
       operation: params.operation?.trim() || 'call',
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'ta_proposal' },
+    { parentId: params.parentId, kind: 'ta_proposal', proposedDataHex: dataHex },
   );
 }
 
@@ -850,6 +857,7 @@ export async function treasuryAuthorityExecute(params: {
   parentId: string;
   treasuryAuthority: string;
   proposalId: string;
+  dataHex: string;
 }): Promise<GovernanceWriteResultDto> {
   return afterGovWrite(
     (await invoke('treasury_authority_execute', {
@@ -857,6 +865,7 @@ export async function treasuryAuthorityExecute(params: {
       parentId: params.parentId.trim(),
       treasuryAuthority: params.treasuryAuthority.trim(),
       proposalId: params.proposalId.trim(),
+      dataHex: params.dataHex.trim() || '0x',
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
     { parentId: params.parentId, kind: 'ta_proposal', proposalId: params.proposalId },
@@ -872,6 +881,7 @@ export interface MutinyStatusDto {
   snapshot: number;
   yeas: number;
   executed: boolean;
+  seatFormerCaptain?: boolean;
   captain: string;
 }
 
@@ -908,6 +918,7 @@ export async function mutinyStartToCrewMember(params: {
   parentId: string;
   mutinyModule: string;
   proposed: string;
+  seatFormerCaptain?: boolean;
 }): Promise<GovernanceWriteResultDto> {
   return afterGovWrite(
     (await invoke('mutiny_start_to_crew_member', {
@@ -915,6 +926,7 @@ export async function mutinyStartToCrewMember(params: {
       parentId: params.parentId.trim(),
       mutinyModule: params.mutinyModule.trim(),
       proposed: params.proposed.trim(),
+      seatFormerCaptain: params.seatFormerCaptain !== false,
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
     { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
@@ -926,6 +938,7 @@ export async function mutinyStartToCommittee(params: {
   parentId: string;
   mutinyModule: string;
   proposed: string;
+  seatFormerCaptain?: boolean;
 }): Promise<GovernanceWriteResultDto> {
   return afterGovWrite(
     (await invoke('mutiny_start_to_committee', {
@@ -933,6 +946,7 @@ export async function mutinyStartToCommittee(params: {
       parentId: params.parentId.trim(),
       mutinyModule: params.mutinyModule.trim(),
       proposed: params.proposed.trim(),
+      seatFormerCaptain: params.seatFormerCaptain !== false,
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
     { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
@@ -944,6 +958,7 @@ export async function mutinyStartToArbitraryEoa(params: {
   parentId: string;
   mutinyModule: string;
   proposed: string;
+  seatFormerCaptain?: boolean;
 }): Promise<GovernanceWriteResultDto> {
   return afterGovWrite(
     (await invoke('mutiny_start_to_arbitrary_eoa', {
@@ -951,6 +966,7 @@ export async function mutinyStartToArbitraryEoa(params: {
       parentId: params.parentId.trim(),
       mutinyModule: params.mutinyModule.trim(),
       proposed: params.proposed.trim(),
+      seatFormerCaptain: params.seatFormerCaptain !== false,
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
     { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
@@ -962,6 +978,7 @@ export async function mutinyStartToArbitraryContract(params: {
   parentId: string;
   mutinyModule: string;
   proposed: string;
+  seatFormerCaptain?: boolean;
 }): Promise<GovernanceWriteResultDto> {
   return afterGovWrite(
     (await invoke('mutiny_start_to_arbitrary_contract', {
@@ -969,6 +986,7 @@ export async function mutinyStartToArbitraryContract(params: {
       parentId: params.parentId.trim(),
       mutinyModule: params.mutinyModule.trim(),
       proposed: params.proposed.trim(),
+      seatFormerCaptain: params.seatFormerCaptain !== false,
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
     { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
@@ -979,12 +997,14 @@ export async function mutinyStartToPauseCaptain(params: {
   network: string;
   parentId: string;
   mutinyModule: string;
+  seatFormerCaptain?: boolean;
 }): Promise<GovernanceWriteResultDto> {
   return afterGovWrite(
     (await invoke('mutiny_start_to_pause_captain', {
       network: params.network,
       parentId: params.parentId.trim(),
       mutinyModule: params.mutinyModule.trim(),
+      seatFormerCaptain: params.seatFormerCaptain !== false,
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
     { parentId: params.parentId, kind: 'mutiny', mutinyStart: true },
@@ -1050,6 +1070,7 @@ export async function mutinyCaptainResign(params: {
   parentId: string;
   mutinyModule: string;
   newCaptain: string;
+  seatFormerCaptain?: boolean;
 }): Promise<GovernanceWriteResultDto> {
   return afterGovWrite(
     (await invoke('mutiny_captain_resign', {
@@ -1057,6 +1078,7 @@ export async function mutinyCaptainResign(params: {
       parentId: params.parentId.trim(),
       mutinyModule: params.mutinyModule.trim(),
       newCaptain: params.newCaptain.trim(),
+      seatFormerCaptain: params.seatFormerCaptain !== false,
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
     { parentId: params.parentId, kind: 'mutiny', address: params.newCaptain },

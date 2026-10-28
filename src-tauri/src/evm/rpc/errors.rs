@@ -17,6 +17,8 @@ const SEL_MUTINY_NOT_ACTIVE: &str = "c4aedfdd";
 const SEL_MUTINY_NOT_EXPIRED: &str = "06dc7f6f";
 /// MutinyModule_Expired(uint256)
 const SEL_MUTINY_EXPIRED: &str = "42af4065";
+/// TreasuryAuthority_DataHashMismatch()
+const SEL_DATA_HASH_MISMATCH: &str = "c561eb66";
 
 pub fn wallet_err_json(code: &str, message: impl Into<String>, npub: Option<String>) -> String {
     serde_json::to_string(&WalletOpError {
@@ -85,6 +87,12 @@ pub fn classify_gov_call_revert(raw: &str) -> Option<(&'static str, &'static str
             SEL_MUTINY_EXPIRED => {
                 return Some(("MUTINY_EXPIRED", "mutiny deadline has passed"));
             }
+            SEL_DATA_HASH_MISMATCH => {
+                return Some((
+                    "DATA_HASH_MISMATCH",
+                    "proposal calldata does not match on-chain hash",
+                ));
+            }
             _ => {}
         }
     }
@@ -96,6 +104,12 @@ pub fn classify_gov_call_revert(raw: &str) -> Option<(&'static str, &'static str
     }
     if lower.contains("mutinymodule_expired") {
         return Some(("MUTINY_EXPIRED", "mutiny deadline has passed"));
+    }
+    if lower.contains("datahashmismatch") {
+        return Some((
+            "DATA_HASH_MISMATCH",
+            "proposal calldata does not match on-chain hash",
+        ));
     }
     None
 }
@@ -139,6 +153,14 @@ mod tests {
         assert_eq!(
             classify_gov_call_revert("reason: MutinyModule_Expired").map(|p| p.0),
             Some("MUTINY_EXPIRED")
+        );
+        assert_eq!(
+            classify_gov_call_revert("data: '0xc561eb66'").map(|p| p.0),
+            Some("DATA_HASH_MISMATCH")
+        );
+        assert_eq!(
+            classify_gov_call_revert("reason: TreasuryAuthority_DataHashMismatch").map(|p| p.0),
+            Some("DATA_HASH_MISMATCH")
         );
         assert!(classify_gov_call_revert("data: '0xdeadbeef'").is_none());
     }

@@ -19,11 +19,14 @@ use super::contracts::pacto_sponsor::ISquadSponsorFactory::{
 use super::deploy_gas_router::{send_factory_call, FactoryRouteContext};
 use super::gov_read::rpc_urls_or_default;
 use super::nave_pirata_deploy::{
-    ensure_captain_for_parent_deploy, nave_pirata_addresses_from_receipt,
+    ensure_captain_for_parent_deploy, nave_pirata_addresses_from_factory_log,
     nave_pirata_deploy_params, resolve_war_game_squad_params, roster_signing_parent_id,
     validate_metadata_uri, SquadParamsDto,
 };
-use super::nave_pirata_read::{read_nave_pirata_deployment, NavePirataDeploymentDto};
+use super::nave_pirata_read::{
+    clones_from_registry_deployment, read_nave_pirata_deployment, NaveCloneAddresses,
+    NavePirataDeploymentDto,
+};
 use super::pacto_chain_config;
 use super::rpc::signer::{
     load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
@@ -300,35 +303,35 @@ fn existing_wargame_canonical_ref<R: Runtime>(
 fn addresses_from_war_game_registered_log(
     log: &alloy::rpc::types::Log,
     registry: Address,
-) -> Result<(U256, Address, Address, Address, Address, Address, Address), String> {
+) -> Result<(U256, Address), String> {
     if log.address() != registry {
         return Err("log address mismatch".to_string());
     }
     let decoded = WarGameRegistered::decode_raw_log(log.topics(), log.data().data.as_ref())
         .map_err(|e| format!("WarGameRegistered decode: {e}"))?;
-    let d = decoded._deployment;
-    Ok((
-        decoded._topHatId,
-        d.deployer,
-        d.safe,
-        d.quartermaster,
-        d.mutinyModule,
-        d.treasuryAuthority,
-        d.squadAdminProxy,
-    ))
+    Ok((decoded._topHatId, decoded._safe))
 }
 
-fn war_game_addresses_from_receipt(
+async fn war_game_addresses_from_receipt<P: Provider>(
+    provider: &P,
     receipt: &TransactionReceipt,
     factory: Address,
     war_game_registry: Address,
-) -> Result<(U256, Address, Address, Address, Address, Address, Address), String> {
-    if let Ok(all) = nave_pirata_addresses_from_receipt(receipt, factory, None) {
+) -> Result<NaveCloneAddresses, String> {
+    if let Ok(all) = nave_pirata_addresses_from_factory_log(receipt, factory) {
         return Ok(all);
     }
     for log in receipt.logs() {
-        if let Ok(all) = addresses_from_war_game_registered_log(log, war_game_registry) {
-            return Ok(all);
+        if let Ok((top_hat, safe)) = addresses_from_war_game_registered_log(log, war_game_registry)
+        {
+            return clones_from_registry_deployment(
+                provider,
+                war_game_registry,
+                top_hat,
+                Address::ZERO,
+                safe,
+            )
+            .await;
         }
     }
     Err("no NavePirataDeployed or WarGameRegistered log in receipt".into())
@@ -548,11 +551,14 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
         )
         .await?;
         let deploy_tx = format!("0x{:x}", deploy_receipt.transaction_hash);
-        let parsed =
-            war_game_addresses_from_receipt(&deploy_receipt, factory_gov, war_game_registry)
-                .map_err(|e| {
-                    wallet_err_json_with_tx_hash("PARSE_RECEIPT", e, None, deploy_tx.clone())
-                })?;
+        let parsed = war_game_addresses_from_receipt(
+            &read_provider,
+            &deploy_receipt,
+            factory_gov,
+            war_game_registry,
+        )
+        .await
+        .map_err(|e| wallet_err_json_with_tx_hash("PARSE_RECEIPT", e, None, deploy_tx.clone()))?;
         let pending_stack = PendingNextStack {
             deploy_tx,
             top_hat: parsed.0,
@@ -696,6 +702,29 @@ mod tests {
     fn selector(signature: &str) -> [u8; 4] {
         let hash = keccak256(signature.as_bytes());
         [hash[0], hash[1], hash[2], hash[3]]
+    }
+
+    fn address_topic(addr: Address) -> B256 {
+        let mut word = [0u8; 32];
+        word[12..].copy_from_slice(addr.as_slice());
+        B256::from(word)
+    }
+
+    #[test]
+    fn war_game_registered_decodes_indexed_squad_hat_and_safe() {
+        let squad_id = B256::repeat_byte(0xab);
+        let top = U256::from(7u64);
+        let safe = Address::repeat_byte(0x11);
+        let topics = [
+            WarGameRegistered::SIGNATURE_HASH,
+            squad_id,
+            B256::from(top.to_be_bytes::<32>()),
+            address_topic(safe),
+        ];
+        let decoded = WarGameRegistered::decode_raw_log(&topics, &[]).expect("decode");
+        assert_eq!(decoded._squadId, squad_id);
+        assert_eq!(decoded._topHatId, top);
+        assert_eq!(decoded._safe, safe);
     }
 
     #[test]

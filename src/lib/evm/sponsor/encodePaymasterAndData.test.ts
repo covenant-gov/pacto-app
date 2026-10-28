@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import book from '../pacto-protocol-addresses.json';
 import {
   encodePaymasterAndData,
   encodePaymasterPayload,
@@ -33,10 +32,6 @@ const vectors = JSON.parse(
   headroom: {
     maxCostWei: string;
     requiredBalanceWei: string;
-  };
-  sepolia: {
-    squadSponsorFactory: string;
-    pactoSponsorPaymaster: string;
   };
   fixtureAddresses: {
     paymaster: Address;
@@ -112,13 +107,9 @@ describe('encodePaymasterAndData (golden vectors)', () => {
     );
   });
 
-  it('Sepolia addresses match the protocol address book redeploy', () => {
-    const sepolia = book.networks.sepolia.squadSponsor;
-    expect(vectors.sepolia.squadSponsorFactory.toLowerCase()).toBe(sepolia.factory.toLowerCase());
-    expect(vectors.sepolia.pactoSponsorPaymaster.toLowerCase()).toBe(
-      sepolia.paymaster.toLowerCase(),
+  it('keeps encoding goldens on a fixture paymaster, not the live book pin', () => {
+    expect(vectors.encoding.inputs.paymaster.toLowerCase()).toBe(
+      vectors.fixtureAddresses.paymaster.toLowerCase(),
     );
-    expect(vectors.encoding.inputs.paymaster.toLowerCase()).toBe(sepolia.paymaster.toLowerCase());
-    expect(vectors.fixtureAddresses.paymaster.toLowerCase()).toBe(sepolia.paymaster.toLowerCase());
   });
 });

@@ -169,6 +169,23 @@ describe('govExecuteUiState', () => {
     });
   });
 
+  it('treasury: disables execute when overlay calldata is missing', () => {
+    const passed: GovProcessCard = {
+      kind: 'treasury',
+      proposal: treasury({
+        status: 'active_passed_crew',
+        captainApproved: true,
+        dataHex: '',
+      }),
+      sortKey: 1,
+    };
+    expect(govExecuteUiState({ card: passed })).toMatchObject({
+      showExecute: true,
+      executeEnabled: false,
+      disabledReasonKey: 'governance.gate.proposalCalldataMissing',
+    });
+  });
+
   it('mutiny: hidden below threshold; shown at 51%; expire after deadline', () => {
     const below: GovProcessCard = {
       kind: 'mutiny',

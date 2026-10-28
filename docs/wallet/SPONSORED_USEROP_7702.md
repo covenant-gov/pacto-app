@@ -8,7 +8,7 @@ Incident staging notes: [`docs/solutions/wallet/sponsored-userop-7702-debug-meth
 
 | Piece | Pin / rule |
 |-------|------------|
-| Account | `PactoSimple7702Account` (`erc4337.accountImplementation` / global `allowed7702Implementation`; Sepolia `0x2E9156de…` from pacto-aa) |
+| Account | `PactoSimple7702Account` (`erc4337.accountImplementation` / global `allowed7702Implementation` in the address book; pacto-aa) |
 | EntryPoint | v0.7 `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
 | Bundler | Pimlico (Settings Sponsored gas / `PIMLICO_API_KEY` / `BUNDLER_RPC_URL`) — **not** Alchemy AA |
 | Auth | `sign_eip7702_authorization` (yParity 0/1); skip when sender already has correct `0xef0100` stub |
@@ -76,19 +76,16 @@ Address book: [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol
 ### Re-check with `cast` (Sepolia RPC)
 
 ```bash
-# BootstrapMintPool.spendablePoolWei()
-cast call 0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B 'spendablePoolWei()(uint256)' --rpc-url $SEPOLIA_RPC
+BOOK=src/lib/evm/pacto-protocol-addresses.json
+BOOTSTRAP=$(jq -r '.networks.sepolia.globalUsernameSponsor.bootstrapMintPool' "$BOOK")
+GLOBAL=$(jq -r '.networks.sepolia.globalUsernameSponsor.globalSponsorPool' "$BOOK")
+PM=$(jq -r '.networks.sepolia.globalUsernameSponsor.pactoGlobalPaymaster' "$BOOK")
+EP=$(jq -r '.networks.sepolia.globalUsernameSponsor.entryPoint' "$BOOK")
 
-# GlobalSponsorPool.spendablePoolWei() — rotation only
-cast call 0x4EfeE104cF969bF70F342DFCd234f73A3bebEbeD 'spendablePoolWei()(uint256)' --rpc-url $SEPOLIA_RPC
-
-# EntryPoint balanceOf(paymaster)
-cast call 0x0000000071727De22E5E9d8BAf0edAc6f37da032 \
-  'balanceOf(address)(uint256)' 0x04Fc205adA4c0c5C5024546E87972C4c4bB30D0F --rpc-url $SEPOLIA_RPC
-
-# ALLOWED_7702 on global PM
-cast call 0x04Fc205adA4c0c5C5024546E87972C4c4bB30D0F \
-  'ALLOWED_7702_IMPLEMENTATION()(address)' --rpc-url $SEPOLIA_RPC
+cast call "$BOOTSTRAP" 'spendablePoolWei()(uint256)' --rpc-url $SEPOLIA_RPC
+cast call "$GLOBAL" 'spendablePoolWei()(uint256)' --rpc-url $SEPOLIA_RPC
+cast call "$EP" 'balanceOf(address)(uint256)' "$PM" --rpc-url $SEPOLIA_RPC
+cast call "$PM" 'ALLOWED_7702_IMPLEMENTATION()(address)' --rpc-url $SEPOLIA_RPC
 ```
 
 ## Next-sponsor plug-in surface

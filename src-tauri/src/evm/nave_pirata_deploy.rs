@@ -14,6 +14,7 @@ use tauri::{AppHandle, Runtime};
 use crate::db;
 
 use super::contracts::pacto_gov::read_bindings::INavePirataRegistry::NavePirataRegistered;
+use super::nave_pirata_read::{clones_from_registry_deployment, NaveCloneAddresses};
 use super::contracts::pacto_gov::INavePirataFactory::{
     deployNavePirataCall, CrewVoteMode, DeployParams, SquadParams, StackKind,
 };
@@ -218,39 +219,45 @@ fn addresses_from_nave_pirata_deployed_log(
 fn addresses_from_nave_pirata_registered_log(
     log: &alloy::rpc::types::Log,
     registry: Address,
-) -> Result<(U256, Address, Address, Address, Address, Address, Address), String> {
+) -> Result<(U256, Address, Address), String> {
     if log.address() != registry {
         return Err("log address mismatch".to_string());
     }
     let decoded = NavePirataRegistered::decode_raw_log(log.topics(), log.data().data.as_ref())
         .map_err(|e| format!("NavePirataRegistered decode: {e}"))?;
-    let d = decoded._deployment;
-    Ok((
-        decoded._topHatId,
-        d.deployer,
-        d.safe,
-        d.quartermaster,
-        d.mutinyModule,
-        d.treasuryAuthority,
-        d.squadAdminProxy,
-    ))
+    Ok((decoded._topHatId, decoded._deployer, decoded._safe))
 }
 
-pub(crate) fn nave_pirata_addresses_from_receipt(
+pub(crate) fn nave_pirata_addresses_from_factory_log(
     receipt: &TransactionReceipt,
     factory: Address,
-    registry: Option<Address>,
-) -> Result<(U256, Address, Address, Address, Address, Address, Address), String> {
+) -> Result<NaveCloneAddresses, String> {
     for log in receipt.logs() {
         if let Ok(all) = addresses_from_nave_pirata_deployed_log(log, factory) {
             return Ok(all);
         }
     }
-    if let Some(registry) = registry {
-        for log in receipt.logs() {
-            if let Ok(all) = addresses_from_nave_pirata_registered_log(log, registry) {
-                return Ok(all);
-            }
+    Err("no NavePirataDeployed log in receipt".into())
+}
+
+pub(crate) async fn nave_pirata_addresses_from_receipt<P: Provider>(
+    provider: &P,
+    receipt: &TransactionReceipt,
+    factory: Address,
+    registry: Option<Address>,
+) -> Result<NaveCloneAddresses, String> {
+    if let Ok(all) = nave_pirata_addresses_from_factory_log(receipt, factory) {
+        return Ok(all);
+    }
+    let Some(registry) = registry else {
+        return Err("no NavePirataDeployed or NavePirataRegistered log in receipt".into());
+    };
+    for log in receipt.logs() {
+        if let Ok((top_hat, deployer, safe)) =
+            addresses_from_nave_pirata_registered_log(log, registry)
+        {
+            return clones_from_registry_deployment(provider, registry, top_hat, deployer, safe)
+                .await;
         }
     }
     Err("no NavePirataDeployed or NavePirataRegistered log in receipt".into())
@@ -525,16 +532,21 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     let receipt = outcome.receipt;
 
     let (top_hat, _captain_out, safe_a, qm_a, mm_a, ta_a, admin_a) =
-        nave_pirata_addresses_from_receipt(&receipt, factory, addrs.nave_pirata_registry).map_err(
-            |e| {
-                wallet_err_json_with_tx_hash(
-                    "PARSE_RECEIPT",
-                    e,
-                    None,
-                    format!("0x{:x}", receipt.transaction_hash),
-                )
-            },
-        )?;
+        nave_pirata_addresses_from_receipt(
+            &read_provider,
+            &receipt,
+            factory,
+            addrs.nave_pirata_registry,
+        )
+        .await
+        .map_err(|e| {
+            wallet_err_json_with_tx_hash(
+                "PARSE_RECEIPT",
+                e,
+                None,
+                format!("0x{:x}", receipt.transaction_hash),
+            )
+        })?;
 
     let tx_hash = format!("0x{:x}", receipt.transaction_hash);
     let top_hat_str = top_hat.to_string();
@@ -581,8 +593,8 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::{Address, B256};
-    use alloy::sol_types::SolCall;
+    use alloy::primitives::{Address, B256, U256};
+    use alloy::sol_types::{SolCall, SolEvent};
 
     fn wallet_err_code(err: String) -> String {
         serde_json::from_str::<serde_json::Value>(&err)
@@ -591,6 +603,29 @@ mod tests {
             .and_then(|c| c.as_str())
             .expect("wallet error must carry a code")
             .to_string()
+    }
+
+    fn address_topic(addr: Address) -> B256 {
+        let mut word = [0u8; 32];
+        word[12..].copy_from_slice(addr.as_slice());
+        B256::from(word)
+    }
+
+    #[test]
+    fn nave_pirata_registered_decodes_indexed_safe_and_deployer() {
+        let top = U256::from(42u64);
+        let safe = Address::repeat_byte(0x11);
+        let deployer = Address::repeat_byte(0x22);
+        let topics = [
+            NavePirataRegistered::SIGNATURE_HASH,
+            B256::from(top.to_be_bytes::<32>()),
+            address_topic(safe),
+            address_topic(deployer),
+        ];
+        let decoded = NavePirataRegistered::decode_raw_log(&topics, &[]).expect("decode");
+        assert_eq!(decoded._topHatId, top);
+        assert_eq!(decoded._safe, safe);
+        assert_eq!(decoded._deployer, deployer);
     }
 
     #[test]

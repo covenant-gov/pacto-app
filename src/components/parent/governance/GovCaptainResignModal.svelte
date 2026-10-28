@@ -41,11 +41,13 @@
   const titleId = 'gov-captain-resign-title';
 
   let resignTo = $state('');
+  let seatFormerCaptain = $state(true);
   let busy = $derived(parentActing);
 
   function resign() {
     const label = tFn('governance.action.captainResign');
     const nextCaptain = resignTo;
+    const seat = seatFormerCaptain;
     onClose();
     runGovWriteInBackground({
       label,
@@ -57,6 +59,7 @@
           parentId,
           mutinyModule,
           newCaptain: nextCaptain,
+          seatFormerCaptain: seat,
         }),
       onSettled: () => onSubmitted(),
     });
@@ -71,6 +74,14 @@
       placeholder={$t('governance.field.newCaptainPlaceholder')}
       disabled={!captainGateEnabled || busy || mutinyActive}
     />
+    <label class="seat-former">
+      <input
+        type="checkbox"
+        bind:checked={seatFormerCaptain}
+        disabled={!captainGateEnabled || busy || mutinyActive}
+      />
+      <span>{$t('governance.mutiny.seatFormerCaptain')}</span>
+    </label>
     <div class="row">
       <GovCtaButton
         label={tFn('governance.action.resignCaptain')}
@@ -114,5 +125,18 @@
     background: var(--bg-panel);
     color: var(--text-primary);
     font-size: 0.8125rem;
+  }
+  .seat-former {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+  .seat-former input {
+    width: auto;
+    margin-top: 2px;
+    padding: 0;
   }
 </style>

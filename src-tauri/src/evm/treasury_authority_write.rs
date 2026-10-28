@@ -175,14 +175,21 @@ pub async fn treasury_authority_execute<R: Runtime>(
     parent_id: String,
     treasury_authority: String,
     proposal_id: String,
+    data_hex: String,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<TreasuryAuthorityWriteResult, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
     let pid_u = U256::from_str_radix(proposal_id.trim(), 10)
         .map_err(|e| wallet_err_json("INVALID_PROPOSAL_ID", e.to_string(), None))?;
+    let data =
+        parse_data_hex(data_hex.as_str()).map_err(|e| wallet_err_json("INVALID_DATA", e, None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", ta))?;
-    let calldata = executeCall { _proposalId: pid_u }.abi_encode();
+    let calldata = executeCall {
+        _proposalId: pid_u,
+        _data: data,
+    }
+    .abi_encode();
     let (tx_hash, chain, chain_id, funded_by) = send_gov_module_call(
         app,
         network,
@@ -220,5 +227,21 @@ mod tests {
         assert!(parse_data_hex("").unwrap().is_empty());
         assert_eq!(parse_data_hex("0xabcd").unwrap().as_ref(), &[0xab, 0xcd]);
         assert!(parse_data_hex("0xzz").is_err());
+    }
+
+    #[test]
+    fn execute_encodes_proposal_id_and_data() {
+        use alloy::primitives::{Bytes, U256};
+        use alloy::sol_types::SolCall;
+        use super::executeCall;
+
+        let encoded = executeCall {
+            _proposalId: U256::from(3u64),
+            _data: Bytes::from(vec![0xab, 0xcd]),
+        }
+        .abi_encode();
+        let decoded = executeCall::abi_decode(&encoded).expect("decode");
+        assert_eq!(decoded._proposalId, U256::from(3u64));
+        assert_eq!(decoded._data.as_ref(), &[0xab, 0xcd]);
     }
 }

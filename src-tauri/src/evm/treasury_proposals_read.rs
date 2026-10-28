@@ -35,6 +35,7 @@ pub struct TreasuryProposalDto {
     pub value_wei: String,
     pub operation: String,
     pub data_hex: String,
+    pub data_hash: String,
     pub deadline: u64,
     pub snapshot: u64,
     pub yeas: u64,
@@ -115,7 +116,8 @@ pub async fn list_treasury_proposals_on_chain<P: Provider>(
             to: format!("{:#x}", decoded._to),
             value_wei: decoded._value.to_string(),
             operation: operation_label(decoded._op).to_string(),
-            data_hex: format!("0x{}", hex::encode(decoded._data.as_ref())),
+            data_hex: String::new(),
+            data_hash: format!("{:#x}", decoded._dataHash),
             deadline: decoded._deadline,
             snapshot: decoded._snapshot,
             yeas: decoded._yeas,
@@ -219,6 +221,35 @@ mod tests {
         assert_eq!(
             crew_vote_mode_wire(CrewVoteMode::MAJORITY_SNAPSHOT),
             "majority"
+        );
+    }
+
+    #[test]
+    fn proposal_dto_serializes_empty_data_hex_and_data_hash() {
+        use super::TreasuryProposalDto;
+        let json = serde_json::to_value(TreasuryProposalDto {
+            proposal_id: "1".into(),
+            proposer: "0x1".into(),
+            to: "0x2".into(),
+            value_wei: "0".into(),
+            operation: "call".into(),
+            data_hex: String::new(),
+            data_hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .into(),
+            deadline: 1,
+            snapshot: 1,
+            yeas: 0,
+            nays: 0,
+            captain_approved: false,
+            captain_defeated: false,
+            executed: false,
+            status: "active".into(),
+        })
+        .expect("json");
+        assert_eq!(json["dataHex"], "");
+        assert_eq!(
+            json["dataHash"],
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
     }
 }

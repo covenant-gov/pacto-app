@@ -30,6 +30,7 @@ const CODE_TO_I18N: Record<string, string> = {
   MUTINY_NOT_ACTIVE: 'governance.error.mutinyNotActive',
   MUTINY_NOT_EXPIRED: 'governance.error.mutinyNotExpired',
   MUTINY_EXPIRED: 'governance.error.mutinyExpired',
+  DATA_HASH_MISMATCH: 'governance.error.dataHashMismatch',
   SEND_FAILED: 'governance.error.govCallReverted',
   USEROP_FAILED: 'governance.error.govCallReverted',
   TX_REVERTED: 'governance.error.govCallReverted',
@@ -41,6 +42,7 @@ const REVERT_SELECTOR_TO_CODE: Record<string, string> = {
   '0xc4aedfdd': 'MUTINY_NOT_ACTIVE',
   '0x06dc7f6f': 'MUTINY_NOT_EXPIRED',
   '0x42af4065': 'MUTINY_EXPIRED',
+  '0xc561eb66': 'DATA_HASH_MISMATCH',
 };
 
 function errorBlob(e: unknown): string {
@@ -62,6 +64,7 @@ export function revertCodeFromError(e: unknown): string | null {
   if (raw.includes('mutinymodule_noactivemutiny')) return 'MUTINY_NOT_ACTIVE';
   if (raw.includes('mutinymodule_notexpired')) return 'MUTINY_NOT_EXPIRED';
   if (raw.includes('mutinymodule_expired')) return 'MUTINY_EXPIRED';
+  if (raw.includes('datahashmismatch')) return 'DATA_HASH_MISMATCH';
   const match = raw.match(/0x([0-9a-f]{8})/);
   if (!match) return null;
   return REVERT_SELECTOR_TO_CODE[`0x${match[1]}`] ?? null;
