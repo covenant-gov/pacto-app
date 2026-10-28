@@ -6,6 +6,7 @@
   import { onDestroy, untrack } from 'svelte';
   import type { Attachment } from '../../stores/dm';
   import { attachmentKind, attachmentDisplayName, type AttachmentKind } from '../../lib/messaging/attachment-display';
+  import { formatFileSize } from '../../lib/messaging/attachment-composer';
   import ImageViewer from './ImageViewer.svelte';
   import fileIcon from '../../icons/file.svg';
   import playIcon from '../../icons/play.svg';
@@ -135,7 +136,7 @@
       : '4 / 3',
   );
 
-  let sizeLabel = $derived(formatBytes(attachment.size));
+  let sizeLabel = $derived(formatFileSize(attachment.size));
 
   /** Exactly one accessible name per tile state: fetch, play, or view. */
   let tileActionLabel = $derived(
@@ -166,14 +167,6 @@
       return convertFileSrc(pathOrUrl);
     }
     return pathOrUrl;
-  }
-
-  function formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   }
 
   async function handleDownload(event?: MouseEvent) {

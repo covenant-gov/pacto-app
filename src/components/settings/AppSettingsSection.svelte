@@ -182,7 +182,7 @@
               checked={$theme === opt.value}
               onchange={() => setTheme(opt.value)}
             />
-            <span class="theme-option-label">{opt.label}</span>
+            <span class="theme-option-label">{$t(opt.labelKey)}</span>
           </label>
         {/each}
       </div>
