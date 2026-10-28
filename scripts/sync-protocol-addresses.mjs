@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Maps pacto-gov-system-tests Sepolia artifacts into the tracked protocol address book.
+// Maps pacto-onchain-orchestrator Sepolia artifacts into the tracked protocol address book.
 // Does not generate Alloy bindings. Operators full-restart Tauri after a book write
 // (`include_str!` embed). Usage:
-//   node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests
+//   node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-onchain-orchestrator
 //   node scripts/sync-protocol-addresses.mjs --from-github owner/repo@sha
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -347,11 +347,11 @@ export function applySepoliaCutover(book, mapped) {
   };
 }
 
-export const HELP = `Map pacto-gov-system-tests Sepolia artifacts into src/lib/evm/pacto-protocol-addresses.json.
+export const HELP = `Map pacto-onchain-orchestrator Sepolia artifacts into src/lib/evm/pacto-protocol-addresses.json.
 
 Usage:
-  node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests
-  node scripts/sync-protocol-addresses.mjs --from-github covenant-gov/pacto-gov-system-tests@<sha>
+  node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-onchain-orchestrator
+  node scripts/sync-protocol-addresses.mjs --from-github covenant-gov/pacto-onchain-orchestrator@<sha>
 
 Options:
   --book <path>     Address book JSON (default: src/lib/evm/pacto-protocol-addresses.json)
@@ -372,8 +372,8 @@ export async function run(argv, { fetchImpl = fetch, stdout = process.stdout } =
   const sourceLabel =
     args.sourceLabel ??
     (args.fromGithub
-      ? `pacto-gov-system-tests ${args.fromGithub}`
-      : `pacto-gov-system-tests dir ${resolve(args.fromDir)}`);
+      ? `pacto-onchain-orchestrator ${args.fromGithub}`
+      : `pacto-onchain-orchestrator dir ${resolve(args.fromDir)}`);
   const artifacts = args.fromGithub
     ? await loadArtifactsFromGithub(args.fromGithub, args.chainId, fetchImpl)
     : await loadArtifactsFromDir(resolve(args.fromDir), args.chainId);

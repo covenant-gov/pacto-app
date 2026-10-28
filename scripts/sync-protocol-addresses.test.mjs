@@ -188,16 +188,16 @@ describe('parseArgs', () => {
       help: false,
       sourceLabel: null,
     });
-    const gh = parseArgs(['--from-github=covenant-gov/pacto-gov-system-tests@abc1234']);
-    assert.equal(gh.fromGithub, 'covenant-gov/pacto-gov-system-tests@abc1234');
+    const gh = parseArgs(['--from-github=covenant-gov/pacto-onchain-orchestrator@abc1234']);
+    assert.equal(gh.fromGithub, 'covenant-gov/pacto-onchain-orchestrator@abc1234');
   });
 });
 
 describe('parseGithubRef', () => {
   it('splits owner/repo@ref', () => {
-    assert.deepEqual(parseGithubRef('covenant-gov/pacto-gov-system-tests@deadbeef'), {
+    assert.deepEqual(parseGithubRef('covenant-gov/pacto-onchain-orchestrator@deadbeef'), {
       owner: 'covenant-gov',
-      repo: 'pacto-gov-system-tests',
+      repo: 'pacto-onchain-orchestrator',
       ref: 'deadbeef',
     });
   });
@@ -307,10 +307,10 @@ describe('applySepoliaCutover', () => {
     const mapped = mapSepoliaCutover({
       artifacts: artifactsFrom(addrs),
       currentBook: liveBook,
-      sourceLabel: 'pacto-gov-system-tests fixture@1',
+      sourceLabel: 'pacto-onchain-orchestrator fixture@1',
     });
     const next = applySepoliaCutover({ ...liveBook, networks: { ...liveBook.networks, mainnet: {} } }, mapped);
-    assert.match(next.$comment, /synced from pacto-gov-system-tests fixture@1/);
+    assert.match(next.$comment, /synced from pacto-onchain-orchestrator fixture@1/);
     assert.equal(next.networks.sepolia.pactoGov.navePirataFactory, addrs.factory);
     assert.deepEqual(next.networks.mainnet, {});
     assert.equal(next.version, liveBook.version);
@@ -386,10 +386,10 @@ describe('loadArtifactsFromDir + run', () => {
     writeFileSync(outBook, JSON.stringify(liveBook, null, 2));
     try {
       const result = await run(
-        ['--from-github', 'covenant-gov/pacto-gov-system-tests@abc1234', '--book', outBook, '--dry-run'],
+        ['--from-github', 'covenant-gov/pacto-onchain-orchestrator@abc1234', '--book', outBook, '--dry-run'],
         {
           fetchImpl: async (url) => {
-            const path = url.replace('https://raw.githubusercontent.com/covenant-gov/pacto-gov-system-tests/abc1234/', '');
+            const path = url.replace('https://raw.githubusercontent.com/covenant-gov/pacto-onchain-orchestrator/abc1234/', '');
             const body = byPath[path];
             if (!body) return { ok: false, status: 404 };
             return { ok: true, json: async () => body };

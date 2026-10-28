@@ -21,18 +21,18 @@ Rust accessors: `pacto_gov_deploy_addresses`, `squad_sponsor_deploy_addresses`, 
 
 ## Updating Sepolia
 
-Canonical artifacts live in [pacto-gov-system-tests](https://github.com/covenant-gov/pacto-gov-system-tests) (`deployments/11155111/stack.json` plus per-package `full-system.json` / `infra.json` / `external.json`). Do **not** copy from an individual package repo’s `deployments/11155111` tree. `stack.json` alone is not enough (master impls are in gov `full-system.json`). Private-repo `--from-github` falls back to `gh api` when raw.githubusercontent.com 404s.
+Canonical artifacts live in [pacto-onchain-orchestrator](https://github.com/covenant-gov/pacto-onchain-orchestrator) (`deployments/11155111/stack.json` plus per-package `full-system.json` / `infra.json` / `external.json`). Do **not** copy from an individual package repo’s `deployments/11155111` tree. `stack.json` alone is not enough (master impls are in gov `full-system.json`). Private-repo `--from-github` falls back to `gh api` when raw.githubusercontent.com 404s.
 
 ```bash
 # from a local checkout
-node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests \
-  --source-label 'pacto-gov-system-tests covenant-gov/pacto-gov-system-tests@<sha>'
+node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-onchain-orchestrator \
+  --source-label 'pacto-onchain-orchestrator covenant-gov/pacto-onchain-orchestrator@<sha>'
 
 # or
-node scripts/sync-protocol-addresses.mjs --from-github covenant-gov/pacto-gov-system-tests@<sha>
+node scripts/sync-protocol-addresses.mjs --from-github covenant-gov/pacto-onchain-orchestrator@<sha>
 
 # inspect without writing
-node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests --dry-run
+node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-onchain-orchestrator --dry-run
 ```
 
 The mapper:

@@ -1,5 +1,5 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia synced from pacto-gov-system-tests covenant-gov/pacto-gov-system-tests@af07e40851cf7d152b4e63cd4a809586061c0db5. pins: pacto-aa 3cc8c947, pacto-gov 9de626fb, pacto-username-nft 4b7af310, pacto-squad-sponsor ca3d271d. navePirataRegistry is the gov registry (not the sponsor artifact). EIP-7702 accountImplementation must match the previous book pin unless pacto-aa is redeployed. Full Tauri restart after this write.",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia synced from pacto-onchain-orchestrator covenant-gov/pacto-onchain-orchestrator@af07e40851cf7d152b4e63cd4a809586061c0db5. pins: pacto-aa 3cc8c947, pacto-gov 9de626fb, pacto-username-nft 4b7af310, pacto-squad-sponsor ca3d271d. navePirataRegistry is the gov registry (not the sponsor artifact). EIP-7702 accountImplementation must match the previous book pin unless pacto-aa is redeployed. Full Tauri restart after this write.",
   "version": 1,
   "networks": {
     "sepolia": {
