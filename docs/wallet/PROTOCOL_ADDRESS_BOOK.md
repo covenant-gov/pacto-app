@@ -19,18 +19,17 @@ Do **not** copy live hex into operator docs, tests, or encoding vectors. Read pi
 
 Rust accessors: `pacto_gov_deploy_addresses`, `squad_sponsor_deploy_addresses`, `global_username_sponsor_addresses`, `safe_factory_addresses`. Claim/rotation: [USERNAME_NFT.md](./USERNAME_NFT.md). Ops smoke: [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md).
 
-## Updating Sepolia (verified stack only)
+## Updating Sepolia
 
-Canonical artifacts live in [pacto-gov-system-tests](https://github.com/covenant-gov/pacto-gov-system-tests) (`deployments/11155111/stack.json` plus per-package `full-system.json` / `infra.json` / `external.json`). Do **not** copy from an individual package repo’s `deployments/11155111` tree — those can lag a withdrawn or unverified broadcast. `stack.json` alone is not enough (master impls are in gov `full-system.json`).
-
-Wait for factories to **verify** on Etherscan, then:
+Canonical artifacts live in [pacto-gov-system-tests](https://github.com/covenant-gov/pacto-gov-system-tests) (`deployments/11155111/stack.json` plus per-package `full-system.json` / `infra.json` / `external.json`). Do **not** copy from an individual package repo’s `deployments/11155111` tree. `stack.json` alone is not enough (master impls are in gov `full-system.json`). Private-repo `--from-github` falls back to `gh api` when raw.githubusercontent.com 404s.
 
 ```bash
 # from a local checkout
-node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests
+node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests \
+  --source-label 'pacto-gov-system-tests covenant-gov/pacto-gov-system-tests@<sha>'
 
 # or
-node scripts/sync-protocol-addresses.mjs --from-github covenant-gov/pacto-gov-system-tests@<verified-sha>
+node scripts/sync-protocol-addresses.mjs --from-github covenant-gov/pacto-gov-system-tests@<sha>
 
 # inspect without writing
 node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests --dry-run
@@ -53,9 +52,7 @@ The mapper:
 
 It refuses: retired September factory / registry / policy pins, a no-op rewrite of the current book, sponsor `navePirataRegistry` ≠ gov registry, and a 7702 pin that does not match the current book.
 
-Then: `cargo test --lib pacto_chain_config`, `pnpm test -- pacto-protocol-addresses`, full Tauri restart, [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md). Recreate squad sponsor clones on the new factory (greenfield; no dual-read of old clones).
-
-Sepolia pins stay on the current book until that verified cutover. Bindings already match the post-gas-ops ABI.
+Then: `cargo test --lib pacto_chain_config`, `pnpm test -- pacto-protocol-addresses`, full Tauri restart, [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md). Recreate squad sponsor clones on the new factory (greenfield; no dual-read of old clones). Bindings already match the post-gas-ops ABI.
 
 ### Username-nft-only (rare)
 
@@ -65,8 +62,9 @@ Prefer a full system-tests stack. If only username infra moved: copy `networks.s
 
 Superseded Sepolia factories / paymasters — confirm `clone.paymaster()` / `clone.factory()` match the **current** address book before sponsored writes:
 
-- Factories: `0xD8bdc2e5…`, `0xb758DB17…`
-- Paymasters: `0xc7c3Ea95…`, `0x78197483…`
+- Factories: `0xD8bdc2e5…`, `0xb758DB17…`, September `0xd540B03A…`, SS-3 `0x9F6b1936…`
+- Registries / policy: September `0xb4e93495…`, `0x1350F096…`
+- Paymasters: `0xc7c3Ea95…`, `0x78197483…`, SS-3 `0xD84337C1…`
 
 ## Rust (Alloy UX)
 

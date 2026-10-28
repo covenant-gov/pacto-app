@@ -4,6 +4,7 @@
 // (`include_str!` embed). Usage:
 //   node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests
 //   node scripts/sync-protocol-addresses.mjs --from-github owner/repo@sha
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -60,6 +61,7 @@ export function parseArgs(argv) {
     chainId: DEFAULT_CHAIN_ID,
     dryRun: false,
     help: false,
+    sourceLabel: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -80,6 +82,8 @@ export function parseArgs(argv) {
     else if (arg.startsWith('--network=')) out.network = arg.slice('--network='.length);
     else if (arg === '--chain-id') out.chainId = Number(take());
     else if (arg.startsWith('--chain-id=')) out.chainId = Number(arg.slice('--chain-id='.length));
+    else if (arg === '--source-label') out.sourceLabel = take();
+    else if (arg.startsWith('--source-label=')) out.sourceLabel = arg.slice('--source-label='.length);
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (!Number.isInteger(out.chainId) || out.chainId <= 0) {
@@ -149,6 +153,18 @@ async function asyncReadJson(path, label) {
   }
 }
 
+function loadGithubJsonViaGh(owner, repo, ref, path) {
+  const apiPath = `repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`;
+  let b64;
+  try {
+    b64 = execFileSync('gh', ['api', apiPath, '--jq', '.content'], { encoding: 'utf8' }).trim();
+  } catch (err) {
+    throw new Error(`gh api ${apiPath} failed: ${err.message}`);
+  }
+  if (!b64) throw new Error(`gh api ${apiPath} returned empty content`);
+  return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+}
+
 export async function loadArtifactsFromGithub(spec, chainId, fetchImpl = fetch) {
   const { owner, repo, ref } = parseGithubRef(spec);
   const artifacts = {};
@@ -156,10 +172,14 @@ export async function loadArtifactsFromGithub(spec, chainId, fetchImpl = fetch) 
     const path = rel(chainId);
     const url = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`;
     const res = await fetchImpl(url);
-    if (!res.ok) {
+    if (res.ok) {
+      artifacts[key] = await res.json();
+      continue;
+    }
+    if (fetchImpl !== fetch) {
       throw new Error(`GET ${url} → ${res.status}`);
     }
-    artifacts[key] = await res.json();
+    artifacts[key] = loadGithubJsonViaGh(owner, repo, ref, path);
   }
   return artifacts;
 }
@@ -337,6 +357,7 @@ Options:
   --book <path>     Address book JSON (default: src/lib/evm/pacto-protocol-addresses.json)
   --network sepolia
   --chain-id 11155111
+  --source-label <text>  Override $comment source (default: github spec or dir path)
   --dry-run         Print the mapped book; do not write
 `;
 
@@ -348,9 +369,11 @@ export async function run(argv, { fetchImpl = fetch, stdout = process.stdout } =
   }
   const bookRaw = await readFile(args.book, 'utf8');
   const currentBook = JSON.parse(bookRaw);
-  const sourceLabel = args.fromGithub
-    ? `pacto-gov-system-tests ${args.fromGithub}`
-    : `pacto-gov-system-tests dir ${resolve(args.fromDir)}`;
+  const sourceLabel =
+    args.sourceLabel ??
+    (args.fromGithub
+      ? `pacto-gov-system-tests ${args.fromGithub}`
+      : `pacto-gov-system-tests dir ${resolve(args.fromDir)}`);
   const artifacts = args.fromGithub
     ? await loadArtifactsFromGithub(args.fromGithub, args.chainId, fetchImpl)
     : await loadArtifactsFromDir(resolve(args.fromDir), args.chainId);

@@ -186,6 +186,7 @@ describe('parseArgs', () => {
       chainId: 11155111,
       dryRun: true,
       help: false,
+      sourceLabel: null,
     });
     const gh = parseArgs(['--from-github=covenant-gov/pacto-gov-system-tests@abc1234']);
     assert.equal(gh.fromGithub, 'covenant-gov/pacto-gov-system-tests@abc1234');
