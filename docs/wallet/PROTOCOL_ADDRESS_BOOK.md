@@ -15,38 +15,62 @@ Covenant / Pacto **deploy infra** (factories, paymaster, Safe bundle, Hats maste
 | `erc4337.accountImplementation` | EIP-7702 set-code target for sponsored gov UserOps (roster EOA); optional `PACTO_ERC4337_ACCOUNT_IMPL` override |
 | `meta.deployer` | Reference only (upstream deployer; not a runtime signer) |
 
-`globalUsernameSponsor` pins Sepolia from pacto-username-nft `deployments/11155111/full-system.json` (includes `protocolRegistry`, `nostrClaimLink`, bootstrap pool/policy, global pool/paymaster). Rust accessor: `global_username_sponsor_addresses(net_key)`. Claim/rotation backend: [USERNAME_NFT.md](./USERNAME_NFT.md). Ops fund + Sepolia smoke: [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §10.
+Do **not** copy live hex into operator docs, tests, or encoding vectors. Read pins from this JSON (Rust `include_str!`; TS `pacto-protocol-addresses.ts`). After a book write, **fully restart** Tauri.
 
-### Sepolia pactoGov pins
+Rust accessors: `pacto_gov_deploy_addresses`, `squad_sponsor_deploy_addresses`, `global_username_sponsor_addresses`, `safe_factory_addresses`. Claim/rotation: [USERNAME_NFT.md](./USERNAME_NFT.md). Ops smoke: [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md).
 
-Registry, war-game, and role-hat aux addresses come from pacto-gov **`deployments/11155111/infra.json`** (paired with `navePirataFactory`). Master impls, Hats, and Safe bundle stay from pacto-gov `full-system.json` / `external.json`. Do **not** mix `infra.json` factory with legacy `full-system.json` registry.
+## Updating Sepolia (verified stack only)
 
-### Phase 2 address cutover (after this ABI PR)
+Canonical artifacts live in [pacto-gov-system-tests](https://github.com/covenant-gov/pacto-gov-system-tests) (`deployments/11155111/stack.json` plus per-package `full-system.json` / `infra.json` / `external.json`). Do **not** copy from an individual package repo’s `deployments/11155111` tree — those can lag a withdrawn or unverified broadcast. `stack.json` alone is not enough (master impls are in gov `full-system.json`).
 
-Bindings already track the post-gas-ops ABI; **do not** edit Sepolia pins in this JSON until [pacto-gov-system-tests](https://github.com/covenant-gov/pacto-gov-system-tests) broadcasts. Copy from `deployments/11155111/stack.json` (gov `infra.json` / `full-system.json` for nave registry; username `full-system.json`; sponsor `full-system.json`). Do not mix the sponsor artifact’s recorded registry. pacto-aa / `erc4337.accountImplementation` stays on the current pin. Until that copy, live Sepolia clones will not decode.
+Wait for factories to **verify** on Etherscan, then:
 
-### Cutover after username-nft redeploy
+```bash
+# from a local checkout
+node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests
 
-1. In pacto-username-nft: `pnpm deploy:sepolia` → new `deployments/11155111/full-system.json` (then `fund:paymaster:sepolia` + bootstrap pool deposit).
-2. Copy into pacto-app `src/lib/evm/pacto-protocol-addresses.json` → `networks.sepolia.globalUsernameSponsor` (all fields including `protocolRegistry`, `allowed7702Implementation`, `entryPoint`).
-3. Update the JSON `$comment` with the upstream commit / artifact note.
-4. Full Tauri restart (compile-time embed).
-5. **Hard gate:** [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) harness must mint before calling redeploy / APP-1 done — [pacto-app#377](https://github.com/covenant-gov/pacto-app/issues/377) (epic [pacto-aa#1](https://github.com/covenant-gov/pacto-aa/issues/1)).
+# or
+node scripts/sync-protocol-addresses.mjs --from-github covenant-gov/pacto-gov-system-tests@<verified-sha>
 
-`erc4337.accountImplementation` / `PACTO_ERC4337_ACCOUNT_IMPL` is the shared EIP-7702 account bytecode the roster EOA set-codes to for paymaster-sponsored UserOps (must match EntryPoint v0.7 and the registry-backed paymaster allowlist). Sepolia pins Pacto `PactoSimple7702Account` from [pacto-aa](https://github.com/covenant-gov/pacto-aa) `deployments/11155111/eip7702-account.json` (`0x2E9156de…`). Details: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
+# inspect without writing
+node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-gov-system-tests --dry-run
+```
 
-**Sepolia** (`chainId` 11155111) `squadSponsor` factory/paymaster from pacto-squad-sponsor `deployments/11155111/full-system.json` (SS-3); `navePirataRegistry` matches pacto-gov `infra.json`. `pactoGov` deploy aux from pacto-gov `infra.json`. `erc4337` from pacto-aa `eip7702-account.json`. `globalUsernameSponsor` from pacto-username-nft `full-system.json`.
+The mapper:
+
+| Book field | Source |
+|------------|--------|
+| `globalUsernameSponsor.*` | username `full-system.json` |
+| `squadSponsor.factory` / `paymaster` / `entryPoint` | sponsor `full-system.json` |
+| `squadSponsor.navePirataRegistry` | **gov** registry (`stack` / gov `infra`), never sponsor-artifact drift |
+| `pactoGov` factory / registry / warGame / roleHat* | gov `infra.json` |
+| `pactoGov` master* / `hats` | gov `full-system.json` (`masterMutinyModule` → `masterMutiny`) |
+| `safe.proxyFactory` / `singleton` | gov `external.json` |
+| `safe.fallbackHandler` | keep existing book value |
+| `erc4337.accountImplementation` | `stack.addresses.pactoSimple7702Account` (must match the previous book pin unless pacto-aa is redeployed) |
+| `meta.deployer` | gov `full-system.json` deployer |
+| `$comment` | source ref + package pins |
+
+It refuses: retired September factory / registry / policy pins, a no-op rewrite of the current book, sponsor `navePirataRegistry` ≠ gov registry, and a 7702 pin that does not match the current book.
+
+Then: `cargo test --lib pacto_chain_config`, `pnpm test -- pacto-protocol-addresses`, full Tauri restart, [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md). Recreate squad sponsor clones on the new factory (greenfield; no dual-read of old clones).
+
+Sepolia pins stay on the current book until that verified cutover. Bindings already match the post-gas-ops ABI.
+
+### Username-nft-only (rare)
+
+Prefer a full system-tests stack. If only username infra moved: copy `networks.sepolia.globalUsernameSponsor` from that repo’s `full-system.json`, keep 7702 / EntryPoint, restart Tauri, then hard-gate [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
+
+## Retired clones (do not send UserOps)
+
+Superseded Sepolia factories / paymasters — confirm `clone.paymaster()` / `clone.factory()` match the **current** address book before sponsored writes:
+
+- Factories: `0xD8bdc2e5…`, `0xb758DB17…`
+- Paymasters: `0xc7c3Ea95…`, `0x78197483…`
 
 ## Rust (Alloy UX)
 
-**`src-tauri/src/evm/pacto_chain_config.rs`** embeds the same JSON at compile time (`include_str!`). All curated deploy/read commands resolve addresses through:
-
-- `pacto_gov_deploy_addresses(net_key)`
-- `squad_sponsor_deploy_addresses(net_key)`
-- `global_username_sponsor_addresses(net_key)`
-- `safe_factory_addresses(net_key, chain_id)`
-
-Resolution order for each field: **`PACTO_*` env override** (optional) → **JSON book** → error (required fields) or safe-global defaults (Safe only).
+**`src-tauri/src/evm/pacto_chain_config.rs`** embeds the same JSON at compile time. Resolution order for each field: **`PACTO_*` env override** (optional) → **JSON book** → error (required fields) or safe-global defaults (Safe only).
 
 ## TypeScript
 
@@ -58,8 +82,8 @@ JSON-RPC URLs are **not** in the address book. Set **`ALCHEMY_RPC_KEY`** in `.en
 
 ## Adding a network
 
-1. Add a `networks.<key>` block to `pacto-protocol-addresses.json` (match `wallet-assets.json` keys: `mainnet`, `arbitrum`, `sepolia`, `local`).
-2. Run `cargo test pacto_chain_config` and `npm test -- pacto-protocol-addresses`.
+1. Add a `networks.<key>` block to `pacto-protocol-addresses.json` (match `wallet-assets.json` keys: `mainnet`, `arbitrum`, `sepolia`, `local`). Sepolia cutovers use the sync script above, not a hand edit.
+2. Run `cargo test --lib pacto_chain_config` and `pnpm test -- pacto-protocol-addresses`.
 3. Document the upstream deploy revision in the JSON `$comment` or commit message.
 
 ## Related
@@ -68,3 +92,4 @@ JSON-RPC URLs are **not** in the address book. Set **`ALCHEMY_RPC_KEY`** in `.en
 - [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) — sponsor repo
 - [covenant-gov/pacto-username-nft](https://github.com/covenant-gov/pacto-username-nft) — username NFT + global/bootstrap sponsor
 - [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) — manual deploy checklists (RPC + `.env` for keys only)
+- [`scripts/sync-protocol-addresses.mjs`](../../scripts/sync-protocol-addresses.mjs) — Sepolia mapper
