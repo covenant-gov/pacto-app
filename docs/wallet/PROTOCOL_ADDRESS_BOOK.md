@@ -21,7 +21,7 @@ Rust accessors: `pacto_gov_deploy_addresses`, `squad_sponsor_deploy_addresses`, 
 
 ## Updating Sepolia
 
-Canonical artifacts live in [pacto-onchain-orchestrator](https://github.com/covenant-gov/pacto-onchain-orchestrator) (`deployments/11155111/stack.json` plus per-package `full-system.json` / `infra.json` / `external.json`). Do **not** copy from an individual package repo’s `deployments/11155111` tree. `stack.json` alone is not enough (master impls are in gov `full-system.json`). Private-repo `--from-github` falls back to `gh api` when raw.githubusercontent.com 404s.
+Canonical artifacts live in [pacto-onchain-orchestrator](https://github.com/covenant-gov/pacto-onchain-orchestrator) (`deployments/11155111/stack.json`: flat `addresses`, `meta.deployer`, package `pins`, and `vars.policyVersion`). Private-repo `--from-github` falls back to `gh api` when raw.githubusercontent.com 404s.
 
 ```bash
 # from a local checkout
@@ -35,22 +35,22 @@ node scripts/sync-protocol-addresses.mjs --from-github covenant-gov/pacto-onchai
 node scripts/sync-protocol-addresses.mjs --from-dir /path/to/pacto-onchain-orchestrator --dry-run
 ```
 
-The mapper:
+The mapper reads **`deployments/11155111/stack.json` only** and maps flat `addresses` into the book:
 
-| Book field | Source |
-|------------|--------|
-| `globalUsernameSponsor.*` | username `full-system.json` |
-| `squadSponsor.factory` / `paymaster` / `entryPoint` | sponsor `full-system.json` |
-| `squadSponsor.navePirataRegistry` | **gov** registry (`stack` / gov `infra`), never sponsor-artifact drift |
-| `pactoGov` factory / registry / warGame / roleHat* | gov `infra.json` |
-| `pactoGov` master* / `hats` | gov `full-system.json` (`masterMutinyModule` → `masterMutiny`) |
-| `safe.proxyFactory` / `singleton` | gov `external.json` |
+| Book field | Source (`stack.json`) |
+|------------|------------------------|
+| `globalUsernameSponsor.*` | username / global keys in `addresses` |
+| `squadSponsor.factory` / `paymaster` / `entryPoint` | `squadSponsorFactory`, `pactoSponsorPaymaster`, `entryPoint` |
+| `squadSponsor.navePirataRegistry` | `navePirataRegistry` (gov registry) |
+| `pactoGov` factory / registry / warGame / roleHat* | gov keys in `addresses` |
+| `pactoGov` master* / `hats` | `masterQuartermaster`, `masterMutinyModule` → `masterMutiny`, etc. |
+| `safe.proxyFactory` / `singleton` | `safeProxyFactory`, `safeSingleton` |
 | `safe.fallbackHandler` | keep existing book value |
-| `erc4337.accountImplementation` | `stack.addresses.pactoSimple7702Account` (must match the previous book pin unless pacto-aa is redeployed) |
-| `meta.deployer` | gov `full-system.json` deployer |
-| `$comment` | source ref + package pins |
+| `erc4337.accountImplementation` | `pactoSimple7702Account` (must match the previous book pin unless pacto-aa is redeployed) |
+| `meta.deployer` | `meta.deployer` |
+| `$comment` | source ref + `pins` |
 
-It refuses: retired September factory / registry / policy pins, a no-op rewrite of the current book, sponsor `navePirataRegistry` ≠ gov registry, and a 7702 pin that does not match the current book.
+It refuses: retired September and Oct 2026 archive pins, a no-op rewrite of the current book, and a 7702 pin that does not match the current book.
 
 Then: `cargo test --lib pacto_chain_config`, `pnpm test -- pacto-protocol-addresses`, full Tauri restart, [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md). Recreate squad sponsor clones on the new factory (greenfield; no dual-read of old clones). Bindings already match the post-gas-ops ABI.
 
@@ -62,9 +62,9 @@ Prefer a full system-tests stack. If only username infra moved: copy `networks.s
 
 Superseded Sepolia factories / paymasters — confirm `clone.paymaster()` / `clone.factory()` match the **current** address book before sponsored writes:
 
-- Factories: `0xD8bdc2e5…`, `0xb758DB17…`, September `0xd540B03A…`, SS-3 `0x9F6b1936…`
-- Registries / policy: September `0xb4e93495…`, `0x1350F096…`
-- Paymasters: `0xc7c3Ea95…`, `0x78197483…`, SS-3 `0xD84337C1…`
+- Factories: `0xD8bdc2e5…`, `0xb758DB17…`, September `0xd540B03A…`, SS-3 `0x9F6b1936…`, Oct 2026 archive `0x97d2dbA0…` (nave), `0x28075576…` (squad)
+- Registries / policy: September `0xb4e93495…`, `0x1350F096…`, Oct 2026 archive `0xEDe67E7f…` (gov registry), `0xa70590C0…` (policy)
+- Paymasters: `0xc7c3Ea95…`, `0x78197483…`, SS-3 `0xD84337C1…`, Oct 2026 archive `0x86480317…` (squad), `0x7F628e9F…` (global)
 
 ## Rust (Alloy UX)
 
