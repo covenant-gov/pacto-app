@@ -480,83 +480,92 @@ mod tests {
     use super::*;
     use alloy::primitives::address;
 
+    fn sepolia() -> &'static NetworkBook {
+        book_for("sepolia").expect("sepolia in embedded book")
+    }
+
+    fn book_addr(raw: &str) -> Address {
+        parse_book_addr(raw).expect("embedded book address")
+    }
+
+    fn book_addr_opt(raw: Option<&str>) -> Option<Address> {
+        raw.map(book_addr)
+    }
+
     #[test]
     fn sepolia_book_loads_sponsor_and_gov() {
+        let net = sepolia();
+        let sp_book = net.squad_sponsor.as_ref().expect("squadSponsor");
+        let gov_book = net.pacto_gov.as_ref().expect("pactoGov");
         let sp = squad_sponsor_deploy_addresses("sepolia").expect("sponsor book");
+        assert_eq!(sp.squad_sponsor_factory, book_addr(&sp_book.factory));
+        assert_eq!(sp.pacto_sponsor_paymaster, book_addr(&sp_book.paymaster));
         assert_eq!(
-            sp.squad_sponsor_factory,
-            address!("0x9F6b1936e1817A074033591bb55DC65CBB29e4d7")
-        );
-        assert_eq!(
-            sp.pacto_sponsor_paymaster,
-            address!("0xD84337C18dB089DF78c69Ea0df619bD48EEBBcC3")
+            sp.nave_pirata_registry,
+            book_addr_opt(sp_book.nave_pirata_registry.as_deref())
         );
 
         let gov = pacto_gov_deploy_addresses("sepolia").expect("gov book");
         assert_eq!(
             gov.nave_pirata_factory,
-            address!("0xd540B03A83d3Fc78922cAb9742e67B8B272bC2b9")
+            book_addr(&gov_book.nave_pirata_factory)
         );
         assert_eq!(
             gov.nave_pirata_registry,
-            Some(address!("0xb4e9349540ed00A7a76Da52e1BBe562D9587ba23"))
+            book_addr_opt(gov_book.nave_pirata_registry.as_deref())
         );
         assert_eq!(
             gov.war_game_registry,
-            Some(address!("0x2F2BbEdAc920B890A90414C03c4bf6627a9035E9"))
+            book_addr_opt(gov_book.war_game_registry.as_deref())
         );
         assert_eq!(
             gov.master_quartermaster,
-            address!("0xFDA42686358503Cf89Bc94f6BD108CB4Af274d74")
+            book_addr(&gov_book.master_quartermaster)
+        );
+        assert_eq!(
+            gov.nave_pirata_registry, sp.nave_pirata_registry,
+            "gov and squad sponsor must share the gov registry pin"
         );
     }
 
     #[test]
     fn sepolia_book_loads_global_username_sponsor() {
+        let g_book = sepolia()
+            .global_username_sponsor
+            .as_ref()
+            .expect("globalUsernameSponsor");
         let g = global_username_sponsor_addresses("sepolia").expect("username book");
-        assert_eq!(
-            g.protocol_registry,
-            address!("0xAF61198bf3b9D8d49FA82888121c187720D6Cfe8")
-        );
+        assert_eq!(g.protocol_registry, book_addr(&g_book.protocol_registry));
         assert_eq!(
             g.username_system_factory,
-            address!("0x83BEDd6Ef7FBe62a8aCe6521137e86670D1Fd2E3")
+            book_addr(&g_book.username_system_factory)
         );
-        assert_eq!(
-            g.pacto_username_nft,
-            address!("0x09e08dB9B4275979Bb2aE8C86f3bB5d406c120d1")
-        );
+        assert_eq!(g.pacto_username_nft, book_addr(&g_book.pacto_username_nft));
         assert_eq!(
             g.global_sponsor_pool,
-            address!("0x4EfeE104cF969bF70F342DFCd234f73A3bebEbeD")
+            book_addr(&g_book.global_sponsor_pool)
         );
         assert_eq!(
             g.bootstrap_mint_pool,
-            address!("0x95d3B8B97C4ff48af010191E80CcAA9F55749A2B")
+            book_addr(&g_book.bootstrap_mint_pool)
         );
         assert_eq!(
             g.sponsor_policy_registry,
-            address!("0x1350F096FA383e0D73C02fc13797F207295ef248")
+            book_addr(&g_book.sponsor_policy_registry)
         );
         assert_eq!(
             g.bootstrap_claim_policy,
-            address!("0x2BAC17B2aE2aA068bEa3064A3553EDee5D60aB6e")
+            book_addr(&g_book.bootstrap_claim_policy)
         );
         assert_eq!(
             g.pacto_global_paymaster,
-            address!("0x04Fc205adA4c0c5C5024546E87972C4c4bB30D0F")
+            book_addr(&g_book.pacto_global_paymaster)
         );
-        assert_eq!(
-            g.nostr_claim_link,
-            address!("0xCc0de30d2926995FB6458De7808E41E2a17B0e29")
-        );
-        assert_eq!(
-            g.entry_point,
-            address!("0x0000000071727De22E5E9d8BAf0edAc6f37da032")
-        );
+        assert_eq!(g.nostr_claim_link, book_addr(&g_book.nostr_claim_link));
+        assert_eq!(g.entry_point, book_addr(&g_book.entry_point));
         assert_eq!(
             g.allowed_7702_implementation,
-            address!("0x2E9156deE65d7946305C334824e2648Ff9128f45")
+            book_addr(&g_book.allowed7702_implementation)
         );
     }
 
@@ -568,15 +577,10 @@ mod tests {
             "PACTO_SAFE_SINGLETON",
             "PACTO_SAFE_FALLBACK_HANDLER",
         ]);
+        let safe_book = sepolia().safe.as_ref().expect("safe");
         let safe = safe_factory_addresses("sepolia", 11_155_111).expect("safe book");
-        assert_eq!(
-            safe.proxy_factory,
-            address!("0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67")
-        );
-        assert_eq!(
-            safe.singleton,
-            address!("0x41675C099F32341bf84BFc5382aF534df5C7461a")
-        );
+        assert_eq!(safe.proxy_factory, book_addr(&safe_book.proxy_factory));
+        assert_eq!(safe.singleton, book_addr(&safe_book.singleton));
     }
 
     #[test]

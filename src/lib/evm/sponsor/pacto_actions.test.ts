@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { pactoProtocolNetworkBook } from '../pacto-protocol-addresses';
 import {
   factoryTargetAddress,
   getPactoAction,
@@ -41,15 +42,12 @@ describe('pacto_actions', () => {
   });
 
   it('resolves factory targets from the Sepolia address book', () => {
+    const sepolia = pactoProtocolNetworkBook('sepolia');
     expect(factoryTargetAddress('navePirataFactory')).toBe(
-      '0xd540B03A83d3Fc78922cAb9742e67B8B272bC2b9',
+      sepolia?.pactoGov?.navePirataFactory,
     );
-    expect(factoryTargetAddress('squadSponsorFactory')).toBe(
-      '0x9F6b1936e1817A074033591bb55DC65CBB29e4d7',
-    );
-    expect(factoryTargetAddress('safeProxyFactory')).toBe(
-      '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
-    );
+    expect(factoryTargetAddress('squadSponsorFactory')).toBe(sepolia?.squadSponsor?.factory);
+    expect(factoryTargetAddress('safeProxyFactory')).toBe(sepolia?.safe?.proxyFactory);
   });
 
   it('keeps PACTO_ACTIONS as an alias for username actions', () => {
