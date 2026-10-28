@@ -46,11 +46,12 @@ export function protocolWearerLabelByAddress(
     if (!a || !/^0x[a-fA-F0-9]{40}$/.test(a)) return;
     out[a.toLowerCase()] = label;
   };
-  put(payload?.safe, 'Treasury Safe');
-  put(payload?.treasuryAuthority, 'Treasury Authority');
-  put(payload?.mutinyModule, 'Mutiny module');
-  put(payload?.quartermaster, 'Quartermaster');
-  put(payload?.squadAdminProxy, 'Squad Admin');
+  const tFn = get(t);
+  put(payload?.safe, tFn('governance.infra.treasurySafe'));
+  put(payload?.treasuryAuthority, tFn('governance.title.treasuryAuthority'));
+  put(payload?.mutinyModule, tFn('governance.infra.mutinyModule'));
+  put(payload?.quartermaster, tFn('governance.title.quartermaster'));
+  put(payload?.squadAdminProxy, tFn('governance.hats.info.name.squadAdmin'));
   return out;
 }
 

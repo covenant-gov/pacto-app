@@ -1,11 +1,14 @@
 #!/usr/bin/env node
-// Flags string-literal toast copy that bypasses svelte-i18n.
-// `@intlify/svelte/no-raw-text` only sees Svelte template text nodes; toasts
-// built in TS modules and `<script>` never trip it. This ratchet catches the
-// common escape hatch: `showToast('English…')`.
+// Flags string-literal UI copy that bypasses svelte-i18n.
+// `@intlify/svelte/no-raw-text` only sees Svelte template text nodes; copy built
+// in TS modules and `<script>` never trips it. This ratchet catches common
+// escape hatches: `showToast('English…')`, `confirm`/`alert` literals, and
+// non-empty `getInvokeErrorMessage` string-literal fallbacks (including raw
+// i18n keys passed instead of `get(t)('…')`).
 //
-// Allowed: `showToast(get(t)('…'))`, `showToast(variable)`, template literals
-// that are not plain quoted English. Failures are new hardcoded literals only.
+// Allowed: `showToast(get(t)('…'))`, `getInvokeErrorMessage(e, get(t)('…'))`,
+// `getInvokeErrorMessage(e, '')` (empty = no fallback for marker matching),
+// variables, and template literals that are not plain quoted English.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
@@ -28,6 +31,17 @@ const SKIP_FILE_RE = /\.test\.(ts|js|svelte)$/;
 
 /** `showToast('…')` / `showToast("…")` with a non-empty literal first arg. */
 const LITERAL_TOAST_RE = /\bshowToast\s*\(\s*(['"])((?:\\.|(?!\1).)+)\1/g;
+
+/** `confirm('…')` / `alert('…')` / `window.confirm('…')` / `window.alert('…')`. */
+const LITERAL_DIALOG_RE =
+	/\b(?:window\s*\.\s*)?(?:confirm|alert)\s*\(\s*(['"])((?:\\.|(?!\1).)+)\1/g;
+
+/**
+ * Second arg to getInvokeErrorMessage that is a non-empty string literal.
+ * Empty `''` is allowed (marker matching). Callers must pass `get(t)('…')`.
+ */
+const LITERAL_INVOKE_FALLBACK_RE =
+	/\bgetInvokeErrorMessage\s*\(\s*[^,)]+,\s*(['"])((?:\\.|(?!\1).)+)\1/g;
 
 function shouldSkipDir(relFromSrc) {
 	return [...SKIP_DIRS].some((d) => relFromSrc === d || relFromSrc.startsWith(`${d}/`));
@@ -54,18 +68,26 @@ function stripComments(source) {
 		.replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 }
 
+function collectHits(content, re, kind) {
+	const hits = [];
+	re.lastIndex = 0;
+	let m;
+	while ((m = re.exec(content))) {
+		const before = content.slice(0, m.index);
+		const line = before.split('\n').length;
+		hits.push({ line, kind, text: m[2] });
+	}
+	return hits;
+}
+
 function findHits(filePath) {
 	const raw = readFileSync(filePath, 'utf8');
 	const content = stripComments(raw);
-	const hits = [];
-	let m;
-	LITERAL_TOAST_RE.lastIndex = 0;
-	while ((m = LITERAL_TOAST_RE.exec(content))) {
-		const before = content.slice(0, m.index);
-		const line = before.split('\n').length;
-		hits.push({ line, text: m[2] });
-	}
-	return hits;
+	return [
+		...collectHits(content, LITERAL_TOAST_RE, 'showToast'),
+		...collectHits(content, LITERAL_DIALOG_RE, 'confirm/alert'),
+		...collectHits(content, LITERAL_INVOKE_FALLBACK_RE, 'getInvokeErrorMessage'),
+	];
 }
 
 const files = [];
@@ -79,12 +101,14 @@ for (const file of files) {
 
 if (offenders.length > 0) {
 	console.error(
-		'Hardcoded showToast() string literals found. Pass get(t)(\'namespace.key\') (or a localized variable) instead:\n',
+		'Hardcoded UI string literals found. Pass get(t)(\'namespace.key\') (or a localized variable) instead:\n',
 	);
 	for (const o of offenders) {
-		console.error(`  ${o.file}:${o.line}  showToast('${o.text}')`);
+		console.error(`  ${o.file}:${o.line}  [${o.kind}] '${o.text}'`);
 	}
 	process.exit(1);
 }
 
-console.log('check-hardcoded-toasts: ok (0 literal showToast strings)');
+console.log(
+	'check-hardcoded-toasts: ok (0 literal showToast / confirm|alert / getInvokeErrorMessage fallbacks)',
+);

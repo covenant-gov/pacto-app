@@ -160,6 +160,8 @@
 	"settings.toast.couldNotRemoveRelay": "Could not remove relay.",
 	"settings.toast.personalRpcAdded": "Personal RPC added.",
 	"settings.toast.personalRpcRemoved": "Personal RPC removed.",
+	"settings.rpcOption.personal": "{url} (personal)",
+	"settings.rpcOption.public": "{url} (public)",
 
 	"settings.privacyTitle": "Privacy",
 	"settings.routeTrafficThroughTorLabel": "Route Traffic Through Tor",

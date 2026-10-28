@@ -113,10 +113,9 @@
   function variantLabel(variant: string | null | undefined): string {
     const v = variant?.trim();
     if (!v) return '';
-    if (v === 'ext') return 'Ext';
-    if (v === 'hats' || v === 'SPONSOR') return 'Hats';
-    if (v === 'gov') return 'Gov';
-    if (v === 'ext_standalone') return 'Ext';
+    if (v === 'ext' || v === 'ext_standalone') return $t('governance.launchpad.variant.ext');
+    if (v === 'hats' || v === 'SPONSOR') return $t('governance.launchpad.variant.hats');
+    if (v === 'gov') return $t('governance.launchpad.variant.gov');
     return v;
   }
 </script>

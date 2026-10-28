@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import {
   addEvmAccountRow,
   isSquadPurposeAccount,
@@ -27,13 +29,17 @@ export async function bindDefaultSquadSigner(announcementsGroupId: string): Prom
 }
 
 /** Create a new squad-purpose derived account for this parent without changing global active signer. */
-export async function bindNewSquadKey(announcementsGroupId: string, label = 'Squad key'): Promise<boolean> {
+export async function bindNewSquadKey(
+  announcementsGroupId: string,
+  label?: string,
+): Promise<boolean> {
   const rosterId = announcementsGroupId.trim();
   if (!rosterId) return false;
+  const resolvedLabel = label?.trim() || get(t)('wallet.squadKeyDefaultLabel');
   let row;
   try {
     row = await addEvmAccountRow({
-      label,
+      label: resolvedLabel,
       setActiveSigner: false,
       setDefaultShared: false,
       purpose: 'squad',

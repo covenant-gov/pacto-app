@@ -298,5 +298,8 @@
 	"wallet.errors.functionNameRequired": "El nombre de la función es obligatorio.",
 	"wallet.errors.valueNotWei": "El valor debe ser una cadena decimal en wei.",
 	"wallet.errors.abiRequired": "Pega un arreglo ABI en JSON.",
-	"wallet.errors.abiInvalid": "El JSON del ABI debe ser un arreglo o un artefacto de Foundry con un campo abi."
+	"wallet.errors.abiInvalid": "El JSON del ABI debe ser un arreglo o un artefacto de Foundry con un campo abi.",
+	"wallet.abi.erc20Minimal": "ERC-20 (balanceOf, decimals, symbol)",
+	"wallet.abi.erc20Write": "ERC-20 (transfer, approve)",
+	"wallet.squadKeyDefaultLabel": "Clave del escuad"
 }

@@ -111,7 +111,7 @@ export async function initJoinInbox(
 ): Promise<{ ok: true; state: JoinInboxState } | { ok: false; error: string }> {
   const id = squadId.trim();
   if (!id) {
-    return { ok: false, error: 'squadId is required' };
+    return { ok: false, error: get(t)('governance.joinInbox.error.squadIdRequired') };
   }
   try {
     const bundle = await invoke<JoinInboxPublishBundle>('join_inbox_init', { squadId: id });

@@ -1,4 +1,5 @@
 import { derived, get, writable } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import {
   usernameCancelAddressTransfer,
   usernameClaim,
@@ -121,11 +122,11 @@ let refreshGen = 0;
 export function ensurePubkeyHex(pubkey: string): Hex {
   const raw = pubkey.trim();
   if (raw.toLowerCase().startsWith('npub1')) {
-    throw new Error('pubkey must be 32 bytes hex (got npub)');
+    throw new Error(get(t)('profile.username.errors.pubkeyGotNpub'));
   }
   const body = raw.startsWith('0x') || raw.startsWith('0X') ? raw.slice(2) : raw;
   if (!/^[0-9a-fA-F]{64}$/.test(body)) {
-    throw new Error('pubkey must be 32 bytes hex');
+    throw new Error(get(t)('profile.username.errors.pubkeyNotHex'));
   }
   return `0x${body.toLowerCase()}` as Hex;
 }

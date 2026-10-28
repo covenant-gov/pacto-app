@@ -74,5 +74,7 @@
 	"profile.username.errors.userOpFailed": "La transacción patrocinada del reclamo se revirtió en cadena.",
 	"profile.username.errors.bootstrapAfterMint": "Ya tienes un nombre de usuario; usa transferencia de dirección en lugar de reclamar.",
 	"profile.username.errors.poolLow": "El pool bootstrap está bajo. Inténtalo más tarde o contacta al operador.",
+	"profile.username.errors.pubkeyGotNpub": "La pubkey debe ser hex de 32 bytes (recibiste npub).",
+	"profile.username.errors.pubkeyNotHex": "La pubkey debe ser hex de 32 bytes.",
 	"profile.unknownName": "Desconocido"
 }

@@ -158,17 +158,18 @@ export function listDefaultRpcOptions(
   const curated = getCuratedRpcUrlsForChain(chainId);
   const options: RpcDefaultOption[] = [];
 
+  const tFn = get(t);
   for (const url of personal) {
     options.push({
       value: url,
-      label: `${formatRpcDisplay(url)} (personal)`,
+      label: tFn('settings.rpcOption.personal', { values: { url: formatRpcDisplay(url) } }),
       group: 'personal',
     });
   }
   for (const url of curated) {
     options.push({
       value: url,
-      label: `${formatRpcDisplay(url)} (public)`,
+      label: tFn('settings.rpcOption.public', { values: { url: formatRpcDisplay(url) } }),
       group: 'curated',
     });
   }

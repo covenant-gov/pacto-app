@@ -74,5 +74,7 @@
 	"profile.username.errors.userOpFailed": "Sponsored claim transaction reverted on-chain.",
 	"profile.username.errors.bootstrapAfterMint": "You already have a username; use address transfer instead of claim.",
 	"profile.username.errors.poolLow": "Bootstrap sponsor pool is low. Try again later or contact the operator.",
+	"profile.username.errors.pubkeyGotNpub": "Pubkey must be 32 bytes hex (got npub).",
+	"profile.username.errors.pubkeyNotHex": "Pubkey must be 32 bytes hex.",
 	"profile.unknownName": "Unknown"
 }

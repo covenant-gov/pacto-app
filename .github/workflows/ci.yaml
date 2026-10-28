@@ -55,7 +55,7 @@ jobs:
       - name: Check Tauri command wiring
         run: pnpm check:tauri-commands
 
-      - name: Check hardcoded toast strings
+      - name: Check hardcoded i18n UI literals
         run: pnpm check:i18n-toasts
 
   frontend-tests:
