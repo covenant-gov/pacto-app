@@ -40,6 +40,16 @@ describe('gov-proposal-lists', () => {
     expect(captainVotableProposals(proposals).map((p) => p.proposalId)).toEqual(['2']);
   });
 
+  it('treats a Safe-held captain hat as satisfied without a captain vote', () => {
+    const paused = proposal({
+      status: 'active_passed_crew',
+      captainApproved: false,
+      captainSatisfied: true,
+    });
+    expect(executableTreasuryProposals([paused])).toHaveLength(1);
+    expect(captainVotableProposals([paused])).toHaveLength(0);
+  });
+
   it('lists executable treasury proposals only after captain approval', () => {
     const proposals = [
       proposal({ status: 'active' }),

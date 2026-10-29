@@ -105,6 +105,8 @@ sol! {
 
         function SAFE() external view returns (address _safe);
 
+        function captainHatId() external view returns (uint256 _captainHatId);
+
         function propose(address _to, uint256 _value, bytes calldata _data, Operation _op)
             external
             returns (uint256 _proposalId);
