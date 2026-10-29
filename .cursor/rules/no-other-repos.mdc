@@ -1,0 +1,10 @@
+---
+description: Do not edit sibling or other repos unless explicitly asked
+alwaysApply: true
+---
+
+# No edits outside the requested repo
+
+- Only change files in the repo (or path) the user asked about.
+- Do **not** edit sibling checkouts, other local clones, or other remotes “while you’re at it.”
+- If follow-up work belongs in another repo: open a GitHub **issue** there (or in that repo’s tracker), tell the user you filed it and link it. Do not implement the follow-up unless they ask.

@@ -1,0 +1,10 @@
+---
+description: Do not create, switch, or rename branches unless the user explicitly asks
+alwaysApply: true
+---
+
+# No branch changes without consulting
+
+- Do **not** create, checkout, switch, rename, or delete git branches unless the user explicitly asks.
+- That includes `git checkout -b`, `git switch`, `git branch -m`, and similar.
+- If a new branch or switch seems needed, propose it and wait for approval.

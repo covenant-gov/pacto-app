@@ -21,7 +21,7 @@ Rust accessors: `pacto_gov_deploy_addresses`, `squad_sponsor_deploy_addresses`, 
 
 ## Updating Sepolia
 
-Canonical artifacts live in [pacto-onchain-orchestrator](https://github.com/covenant-gov/pacto-onchain-orchestrator) (`deployments/11155111/stack.json`: flat `addresses`, `meta.deployer`, package `pins`, and `vars.policyVersion`). Private-repo `--from-github` falls back to `gh api` when raw.githubusercontent.com 404s.
+Canonical artifacts live in [pacto-onchain-orchestrator](https://github.com/covenant-gov/pacto-onchain-orchestrator) (`deployments/11155111/stack.json`: flat `addresses`, `meta.deployer`, package `pins`). `vars.policyVersion` is artifact metadata — not a live chain read and not copied into this book. Same for sponsor impl keys (`sponsorImplementation` / `extImplementation` / `poolImplementation`). Private-repo `--from-github` falls back to `gh api` when raw.githubusercontent.com 404s.
 
 ```bash
 # from a local checkout
@@ -56,7 +56,7 @@ Then: `cargo test --lib pacto_chain_config`, `pnpm test -- pacto-protocol-addres
 
 ### Username-nft-only (rare)
 
-Prefer a full system-tests stack. If only username infra moved: copy `networks.sepolia.globalUsernameSponsor` from that repo’s `full-system.json`, keep 7702 / EntryPoint, restart Tauri, then hard-gate [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
+Prefer a full orchestrator `stack.json`. If only username infra moved: copy `networks.sepolia.globalUsernameSponsor` from that package’s `full-system.json`, keep 7702 / EntryPoint, restart Tauri, then hard-gate [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
 
 ## Retired clones (do not send UserOps)
 

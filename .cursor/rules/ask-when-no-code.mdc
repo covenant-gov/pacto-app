@@ -1,0 +1,19 @@
+---
+description: If the issue or plan does not need code, stop and ask the human for direction
+alwaysApply: true
+---
+
+# Ask the human when no code is required
+
+If the GitHub issue, plan, or current ask does **not** need a code change, stop. Tell the human what you found and ask what they want.
+
+## Treat as no-code (ask first)
+
+- Already implemented on the current branch
+- Docs/copy leftover, commit, push, or PR-only wrap-up
+- Ops steps (restart Tauri, recreate clones, smoke) with no source change
+- Process or product decisions
+
+Do **not** invent extra edits, leftover polish, mapper tweaks, or PR scaffolding to fill the turn.
+
+If it is unclear whether code is required, ask once and wait.

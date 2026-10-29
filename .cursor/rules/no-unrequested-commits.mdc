@@ -26,4 +26,4 @@ Stop with a short summary of what changed and which files to review. Do **not** 
 
 ## Related
 
-Do not remove or narrow this rule unless the user asked to delete or replace it (see `no-unrequested-deletions`).
+PRs are a separate explicit ask: [no-unrequested-prs.mdc](no-unrequested-prs.mdc). Do not remove or narrow this rule unless the user asked to delete or replace it (see `no-unrequested-deletions`).
