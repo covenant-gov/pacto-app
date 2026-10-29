@@ -1,5 +1,5 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia synced from pacto-gov-system-tests covenant-gov/pacto-gov-system-tests@af07e40851cf7d152b4e63cd4a809586061c0db5. pins: pacto-aa 3cc8c947, pacto-gov 9de626fb, pacto-username-nft 4b7af310, pacto-squad-sponsor ca3d271d. navePirataRegistry is the gov registry (not the sponsor artifact). EIP-7702 accountImplementation must match the previous book pin unless pacto-aa is redeployed. Full Tauri restart after this write.",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia synced from pacto-onchain-orchestrator covenant-gov/pacto-onchain-orchestrator@d1db442. pins: pacto-aa 3cc8c947, pacto-gov 12ec3d65, pacto-username-nft db9a38b4, pacto-squad-sponsor 8432117a. navePirataRegistry is the gov registry (not the sponsor artifact). EIP-7702 accountImplementation must match the previous book pin unless pacto-aa is redeployed. Full Tauri restart after this write.",
   "version": 1,
   "networks": {
     "sepolia": {
@@ -8,36 +8,36 @@
         "deployer": "0x897Aae53c0255b02EFF66bF2D623b19FA87e2d69"
       },
       "globalUsernameSponsor": {
-        "protocolRegistry": "0x68B652BCB0E783943313859e7Ca34Dab0389C267",
-        "usernameSystemFactory": "0x840FA9EcF2aBB52C1Ad1891f16238ebB258a6fED",
-        "pactoUsernameNft": "0xaB4B5E1E988f07b77Ae2d0aC5f97088292341485",
-        "globalSponsorPool": "0x2D1775c04AD89EEde8ff1EbF8a48aDe7238bD357",
-        "bootstrapMintPool": "0x663b5D704E665b14402d7Ae48a9a351A3B5A04B3",
-        "sponsorPolicyRegistry": "0xa70590C06fEab74a2df569290d8CD8392b699ae4",
-        "bootstrapClaimPolicy": "0x4e6f6b01d923301BEf75504C4063bF613a26E7a0",
-        "pactoGlobalPaymaster": "0x7F628e9F5874c7d777bA7889951A13C996407E49",
-        "nostrClaimLink": "0x7D7EA6cb2178f5384220499e4f27EDF73Cc4d841",
+        "protocolRegistry": "0xe0E57bb881E7B58eE99221221eB6cF1e662CD5fc",
+        "usernameSystemFactory": "0xae7F302E8C4C5f4A677471cb49D17e04E28052C0",
+        "pactoUsernameNft": "0x52E9f9Cf69341cf4E3a6705d067C3Ab86C850eD7",
+        "globalSponsorPool": "0x69d5Bae544913fA7840cDD2B7F99073f688c9460",
+        "bootstrapMintPool": "0x619D5a645e416c7aCf96a04F5c490AACAA887153",
+        "sponsorPolicyRegistry": "0xafB6d0F476e5D6c7b0F706ED103828CEf02d2803",
+        "bootstrapClaimPolicy": "0x7ed5f6d46eC767acdbEA80747A79E180Da0658F1",
+        "pactoGlobalPaymaster": "0x30904d91BeD6EeB720499A48d8840B483369637d",
+        "nostrClaimLink": "0x6b280efc5e7ddc6a0072dc1ce3970f71169d87a4",
         "allowed7702Implementation": "0x2E9156deE65d7946305C334824e2648Ff9128f45",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
       },
       "squadSponsor": {
-        "factory": "0x280755769367DDD108020eEF353A6dF0f8355f36",
-        "paymaster": "0x86480317e27CF7019E966b098AF10588e021DA8f",
+        "factory": "0xEd1dAd3d42159CA504e86151beAfBce6c86f86ae",
+        "paymaster": "0x734Cd82B6732f2067De52A3B9F6a5f86843ee424",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-        "navePirataRegistry": "0xEDe67E7f75cD12F3517AaFD15D711956F3d95850"
+        "navePirataRegistry": "0x36e32e1f2769B0CF873bFaf5C1BFb8d4e087DC00"
       },
       "pactoGov": {
-        "navePirataFactory": "0x97d2dbA09FCA62f3E634d850aB7d8fd7AdC7d9E4",
-        "navePirataRegistry": "0xEDe67E7f75cD12F3517AaFD15D711956F3d95850",
-        "warGameRegistry": "0x7aA436BccEeD2552FdDcE21974681DcC53f07154",
-        "masterQuartermaster": "0x1e406185c9266B194123552E35521dF0bcF4C9a3",
-        "masterMutiny": "0x515243870Aa1D3302FffC928091c7cB38F740B5A",
-        "masterTreasuryAuthority": "0xF1eDCe50443f36B6AbeaCDb31dCF5210Ed9459a5",
-        "masterSquadAdminImpl": "0x5d76F9eB290FD3675dB7302197a60dCf49E377cd",
-        "masterSquadAdminExtImpl": "0x91CE269e6FBF4B3D6570baF2F79B7a58A549c298",
+        "navePirataFactory": "0x309A529D1735Fd0c416ae42c1d1A587bF464706E",
+        "navePirataRegistry": "0x36e32e1f2769B0CF873bFaf5C1BFb8d4e087DC00",
+        "warGameRegistry": "0x2E4FcF4eB0bA0Dfb98FF32986faB6AF29C8A7918",
+        "masterQuartermaster": "0x9e59f3CF6133e463D405103c90cd8a35A1303494",
+        "masterMutiny": "0xCe1F9f762c5aBb61bCB6314d78fc4771E41741C3",
+        "masterTreasuryAuthority": "0xAec45353181B5abEd911C164a4C9D29fE94b4eEa",
+        "masterSquadAdminImpl": "0x1c73468dd2b0A23Bb9288090F8d89347530754b8",
+        "masterSquadAdminExtImpl": "0x34e458883a7FbD94094c25A4eCEDa27BE9e02c72",
         "hats": "0x3bc1A0Ad72417f2d411118085256fC53CBdDd137",
-        "roleHatClonesFactory": "0xF16BeA014cFDC75788B9a8563e46F58e91d39603",
-        "roleHatUpgrader": "0x225bf409e1583C68d5e696Da77e25ee0fA9ccb59"
+        "roleHatClonesFactory": "0x616f615692F88457B8CF5D3E4B5AFBB5933B0b13",
+        "roleHatUpgrader": "0x1Ae039c75c1a017aD0Cb30696C6cf4454E0eA01f"
       },
       "safe": {
         "proxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",

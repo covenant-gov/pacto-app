@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  RETIRED_OCT_2026_SEPOLIA,
   RETIRED_SEPOLIA_PINS,
   applySepoliaCutover,
   eqAddr,
@@ -57,115 +58,58 @@ function cutoverAddrs() {
   };
 }
 
-function artifactsFrom(addrs, { sponsorRegistry, stackFactory } = {}) {
-  const registry = addrs.registry;
+function stackFrom(addrs) {
   const chainId = 11155111;
   return {
-    stack: {
-      chainId,
-      broadcast: true,
-      pins: {
-        'pacto-aa': 'aaaaaaaa',
-        'pacto-gov': 'bbbbbbbb',
-        'pacto-username-nft': 'cccccccc',
-        'pacto-squad-sponsor': 'dddddddd',
-      },
-      addresses: {
-        pactoSimple7702Account: addrs.account7702,
-        allowed7702Implementation: addrs.account7702,
-        sponsorPolicyRegistry: addrs.policy,
-        protocolRegistry: addrs.protocolRegistry,
-        usernameSystemFactory: addrs.usernameFactory,
-        pactoUsernameNft: addrs.usernameNft,
-        pactoGlobalPaymaster: addrs.globalPaymaster,
-        navePirataFactory: stackFactory ?? addrs.factory,
-        navePirataRegistry: registry,
-        roleHatUpgrader: addrs.roleHatUpgrader,
-        warGameRegistry: addrs.warGame,
-        roleHatClonesFactory: addrs.roleHatFactory,
-        globalSponsorPool: addrs.globalPool,
-        bootstrapMintPool: addrs.bootstrapPool,
-        bootstrapClaimPolicy: addrs.bootstrapPolicy,
-        nostrClaimLink: addrs.nostrClaim,
-        entryPoint: addrs.entryPoint,
-        squadSponsorFactory: addrs.sponsorFactory,
-        pactoSponsorPaymaster: addrs.sponsorPaymaster,
-      },
+    chainId,
+    broadcast: true,
+    pins: {
+      'pacto-aa': 'aaaaaaaa',
+      'pacto-gov': 'bbbbbbbb',
+      'pacto-username-nft': 'cccccccc',
+      'pacto-squad-sponsor': 'dddddddd',
     },
-    govInfra: {
-      chainId,
-      deployer: addrs.deployer,
-      navePirataFactory: addrs.factory,
-      navePirataRegistry: registry,
-      roleHatClonesFactory: addrs.roleHatFactory,
-      roleHatUpgrader: addrs.roleHatUpgrader,
-      sponsorPolicyRegistry: addrs.policy,
-      warGameRegistry: addrs.warGame,
-    },
-    govFull: {
-      chainId,
-      deployer: addrs.deployer,
-      hats: addrs.hats,
-      masterMutinyModule: addrs.mutiny,
-      masterQuartermaster: addrs.qm,
-      masterSquadAdminExtImpl: addrs.squadAdminExt,
-      masterSquadAdminImpl: addrs.squadAdmin,
-      masterTreasuryAuthority: addrs.treasury,
-      navePirataFactory: addrs.factory,
-      navePirataRegistry: registry,
-      roleHatClonesFactory: addrs.roleHatFactory,
-      roleHatUpgrader: addrs.roleHatUpgrader,
-      safeProxyFactory: addrs.safeFactory,
-      safeSingleton: addrs.safeSingleton,
-      sponsorPolicyRegistry: addrs.policy,
-      warGameRegistry: addrs.warGame,
-    },
-    govExternal: {
-      chainId,
-      hats: addrs.hats,
-      safeProxyFactory: addrs.safeFactory,
-      safeSingleton: addrs.safeSingleton,
-    },
-    username: {
+    meta: { deployer: addrs.deployer },
+    addresses: {
+      pactoSimple7702Account: addrs.account7702,
       allowed7702Implementation: addrs.account7702,
-      bootstrapClaimPolicy: addrs.bootstrapPolicy,
-      bootstrapMintPool: addrs.bootstrapPool,
-      chainId,
-      deployer: addrs.deployer,
-      entryPoint: addrs.entryPoint,
-      globalSponsorPool: addrs.globalPool,
-      nostrClaimLink: addrs.nostrClaim,
-      pactoGlobalPaymaster: addrs.globalPaymaster,
-      pactoUsernameNft: addrs.usernameNft,
-      protocolRegistry: addrs.protocolRegistry,
       sponsorPolicyRegistry: addrs.policy,
+      protocolRegistry: addrs.protocolRegistry,
       usernameSystemFactory: addrs.usernameFactory,
-    },
-    sponsor: {
-      chainId,
-      deployer: addrs.deployer,
+      pactoUsernameNft: addrs.usernameNft,
+      pactoGlobalPaymaster: addrs.globalPaymaster,
+      navePirataFactory: addrs.factory,
+      navePirataRegistry: addrs.registry,
+      roleHatUpgrader: addrs.roleHatUpgrader,
+      warGameRegistry: addrs.warGame,
+      roleHatClonesFactory: addrs.roleHatFactory,
+      globalSponsorPool: addrs.globalPool,
+      bootstrapMintPool: addrs.bootstrapPool,
+      bootstrapClaimPolicy: addrs.bootstrapPolicy,
+      nostrClaimLink: addrs.nostrClaim,
       entryPoint: addrs.entryPoint,
-      navePirataRegistry: sponsorRegistry ?? registry,
-      pactoSponsorPaymaster: addrs.sponsorPaymaster,
       squadSponsorFactory: addrs.sponsorFactory,
+      pactoSponsorPaymaster: addrs.sponsorPaymaster,
+      masterQuartermaster: addrs.qm,
+      masterMutinyModule: addrs.mutiny,
+      masterTreasuryAuthority: addrs.treasury,
+      masterSquadAdminImpl: addrs.squadAdmin,
+      masterSquadAdminExtImpl: addrs.squadAdminExt,
+      hats: addrs.hats,
+      safeProxyFactory: addrs.safeFactory,
+      safeSingleton: addrs.safeSingleton,
     },
   };
 }
 
-function writeTree(dir, artifacts) {
-  const files = {
-    'deployments/11155111/stack.json': artifacts.stack,
-    'deployments/pacto-gov/11155111/infra.json': artifacts.govInfra,
-    'deployments/pacto-gov/11155111/full-system.json': artifacts.govFull,
-    'deployments/pacto-gov/11155111/external.json': artifacts.govExternal,
-    'deployments/pacto-username-nft/11155111/full-system.json': artifacts.username,
-    'deployments/pacto-squad-sponsor/11155111/full-system.json': artifacts.sponsor,
-  };
-  for (const [rel, body] of Object.entries(files)) {
-    const path = join(dir, rel);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(body, null, 2));
-  }
+function artifactsFrom(addrs) {
+  return { stack: stackFrom(addrs) };
+}
+
+function writeStack(dir, stack) {
+  const path = join(dir, 'deployments/11155111/stack.json');
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(stack, null, 2));
 }
 
 describe('parseArgs', () => {
@@ -188,23 +132,23 @@ describe('parseArgs', () => {
       help: false,
       sourceLabel: null,
     });
-    const gh = parseArgs(['--from-github=covenant-gov/pacto-gov-system-tests@abc1234']);
-    assert.equal(gh.fromGithub, 'covenant-gov/pacto-gov-system-tests@abc1234');
+    const gh = parseArgs(['--from-github=covenant-gov/pacto-onchain-orchestrator@abc1234']);
+    assert.equal(gh.fromGithub, 'covenant-gov/pacto-onchain-orchestrator@abc1234');
   });
 });
 
 describe('parseGithubRef', () => {
   it('splits owner/repo@ref', () => {
-    assert.deepEqual(parseGithubRef('covenant-gov/pacto-gov-system-tests@deadbeef'), {
+    assert.deepEqual(parseGithubRef('covenant-gov/pacto-onchain-orchestrator@deadbeef'), {
       owner: 'covenant-gov',
-      repo: 'pacto-gov-system-tests',
+      repo: 'pacto-onchain-orchestrator',
       ref: 'deadbeef',
     });
   });
 });
 
 describe('mapSepoliaCutover', () => {
-  it('maps system-tests artifacts onto the book shape and keeps Safe fallback + 7702', () => {
+  it('maps stack.json onto the book shape and keeps Safe fallback + 7702', () => {
     const addrs = cutoverAddrs();
     const mapped = mapSepoliaCutover({
       artifacts: artifactsFrom(addrs),
@@ -235,7 +179,21 @@ describe('mapSepoliaCutover', () => {
           currentBook: liveBook,
           sourceLabel: 'fixture',
         }),
-      /retired September pin/,
+      /retired pin/,
+    );
+  });
+
+  it('refuses retired Oct 2026 archive factory', () => {
+    const addrs = cutoverAddrs();
+    addrs.factory = RETIRED_OCT_2026_SEPOLIA.navePirataFactory;
+    assert.throws(
+      () =>
+        mapSepoliaCutover({
+          artifacts: artifactsFrom(addrs),
+          currentBook: liveBook,
+          sourceLabel: 'fixture',
+        }),
+      /retired navePirataFactory pin/,
     );
   });
 
@@ -260,19 +218,6 @@ describe('mapSepoliaCutover', () => {
     );
   });
 
-  it('refuses sponsor registry drift from the gov registry', () => {
-    const addrs = cutoverAddrs();
-    assert.throws(
-      () =>
-        mapSepoliaCutover({
-          artifacts: artifactsFrom(addrs, { sponsorRegistry: A(0x99) }),
-          currentBook: liveBook,
-          sourceLabel: 'fixture',
-        }),
-      /gov registry must match sponsor/,
-    );
-  });
-
   it('refuses a 7702 pin that does not match the current book', () => {
     const addrs = cutoverAddrs();
     addrs.account7702 = A(0x77);
@@ -287,16 +232,18 @@ describe('mapSepoliaCutover', () => {
     );
   });
 
-  it('refuses stack.json that disagrees with gov infra', () => {
+  it('refuses allowed7702Implementation drift from pactoSimple7702Account', () => {
     const addrs = cutoverAddrs();
+    const stack = stackFrom(addrs);
+    stack.addresses.allowed7702Implementation = A(0x99);
     assert.throws(
       () =>
         mapSepoliaCutover({
-          artifacts: artifactsFrom(addrs, { stackFactory: A(0x88) }),
+          artifacts: { stack },
           currentBook: liveBook,
           sourceLabel: 'fixture',
         }),
-      /stack.addresses.navePirataFactory mismatch/,
+      /allowed7702Implementation must match pactoSimple7702Account/,
     );
   });
 });
@@ -307,10 +254,10 @@ describe('applySepoliaCutover', () => {
     const mapped = mapSepoliaCutover({
       artifacts: artifactsFrom(addrs),
       currentBook: liveBook,
-      sourceLabel: 'pacto-gov-system-tests fixture@1',
+      sourceLabel: 'pacto-onchain-orchestrator fixture@1',
     });
     const next = applySepoliaCutover({ ...liveBook, networks: { ...liveBook.networks, mainnet: {} } }, mapped);
-    assert.match(next.$comment, /synced from pacto-gov-system-tests fixture@1/);
+    assert.match(next.$comment, /synced from pacto-onchain-orchestrator fixture@1/);
     assert.equal(next.networks.sepolia.pactoGov.navePirataFactory, addrs.factory);
     assert.deepEqual(next.networks.mainnet, {});
     assert.equal(next.version, liveBook.version);
@@ -336,15 +283,15 @@ describe('requireAddr / eqAddr', () => {
 });
 
 describe('loadArtifactsFromDir + run', () => {
-  it('loads the system-tests tree and dry-runs a mapped book without writing the live file', async () => {
+  it('loads stack.json and dry-runs a mapped book without writing the live file', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pacto-sync-addr-'));
     const outBook = join(dir, 'book.json');
     const addrs = cutoverAddrs();
     try {
-      writeTree(dir, artifactsFrom(addrs));
+      writeStack(dir, stackFrom(addrs));
       writeFileSync(outBook, JSON.stringify(liveBook, null, 2));
       const loaded = await loadArtifactsFromDir(dir, 11155111);
-      assert.equal(loaded.govInfra.navePirataFactory, addrs.factory);
+      assert.equal(loaded.stack.addresses.navePirataFactory, addrs.factory);
 
       const chunks = [];
       const result = await run(['--from-dir', dir, '--book', outBook, '--dry-run'], {
@@ -370,29 +317,21 @@ describe('loadArtifactsFromDir + run', () => {
     }
   });
 
-  it('loads GitHub artifacts through fetchImpl', async () => {
+  it('loads GitHub stack.json through fetchImpl', async () => {
     const addrs = cutoverAddrs();
-    const artifacts = artifactsFrom(addrs);
-    const byPath = {
-      'deployments/11155111/stack.json': artifacts.stack,
-      'deployments/pacto-gov/11155111/infra.json': artifacts.govInfra,
-      'deployments/pacto-gov/11155111/full-system.json': artifacts.govFull,
-      'deployments/pacto-gov/11155111/external.json': artifacts.govExternal,
-      'deployments/pacto-username-nft/11155111/full-system.json': artifacts.username,
-      'deployments/pacto-squad-sponsor/11155111/full-system.json': artifacts.sponsor,
-    };
+    const stack = stackFrom(addrs);
     const dir = mkdtempSync(join(tmpdir(), 'pacto-sync-gh-'));
     const outBook = join(dir, 'book.json');
     writeFileSync(outBook, JSON.stringify(liveBook, null, 2));
     try {
       const result = await run(
-        ['--from-github', 'covenant-gov/pacto-gov-system-tests@abc1234', '--book', outBook, '--dry-run'],
+        ['--from-github', 'covenant-gov/pacto-onchain-orchestrator@abc1234', '--book', outBook, '--dry-run'],
         {
           fetchImpl: async (url) => {
-            const path = url.replace('https://raw.githubusercontent.com/covenant-gov/pacto-gov-system-tests/abc1234/', '');
-            const body = byPath[path];
-            if (!body) return { ok: false, status: 404 };
-            return { ok: true, json: async () => body };
+            if (url.endsWith('/deployments/11155111/stack.json')) {
+              return { ok: true, json: async () => stack };
+            }
+            return { ok: false, status: 404 };
           },
           stdout: { write: () => {} },
         },

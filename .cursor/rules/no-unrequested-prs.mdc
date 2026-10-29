@@ -1,0 +1,26 @@
+---
+description: Cursor agents only — never open or update a GitHub PR unless the user explicitly asks
+alwaysApply: true
+---
+
+# No unrequested pull requests (Cursor agents)
+
+Never create, push-to-open, or update a pull request unless the user **explicitly** asked to do that in this turn.
+
+## Off-limits without an explicit ask
+
+- `gh pr create`, `gh pr edit`, `gh pr merge`
+- Cursor / MCP `create_pull_request` (or equivalent)
+- `git push -u` whose purpose is to enable or open a PR
+- Filling in a PR body, title, closing keywords, or screenshots **on GitHub**
+
+## Never treat these as PR permission
+
+- Implementing or “building” a plan
+- Tests passing, issue definition of done, or “closes #n” in an issue/plan
+- “Done”, “ship it”, or leftover docs/copy polish
+- The user saying they will open the PR, or that a PR already exists
+
+Drafting a title/body **in chat** is fine when asked. Creating the PR is not.
+
+Related: [no-unrequested-commits.mdc](no-unrequested-commits.mdc). Do not remove or narrow this rule unless the user asked (see [no-unrequested-deletions.mdc](no-unrequested-deletions.mdc)).
