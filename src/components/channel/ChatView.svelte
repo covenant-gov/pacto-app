@@ -57,6 +57,7 @@
   import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
+  import { sendVoiceClip } from '../../lib/messaging/voice-send';
   import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
   import { sendGifMessage } from '../../lib/api/klipy';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
@@ -701,6 +702,14 @@
     }
   }
 
+  // The recorder binds groupId at record start, so a channel switch can't redirect the clip.
+  async function handleSendVoice(bytes: Uint8Array, repliedTo: string, groupId: string): Promise<boolean> {
+    groupSendError.set(null);
+    const ok = await sendVoiceClip(groupId, bytes, repliedTo, (msg) => groupSendError.set(msg));
+    if (ok && groupId === $activeChannelId) cancelReply();
+    return ok;
+  }
+
   async function handleSendGif(url: string, slug: string, repliedTo: string): Promise<void> {
     const groupId = $activeChannelId;
     if (!groupId) return;
@@ -888,6 +897,8 @@
         onSendMentions={handleSendMentions}
         onSendFile={handleSendFile}
         onSendGif={handleSendGif}
+        onSendVoice={handleSendVoice}
+        conversationId={$activeChannelId ?? undefined}
         squadMlsGroupId={effectiveMembersGroupId ?? undefined}
         squadRosterNpubs={panelMembers}
         squadProfiles={$profiles}

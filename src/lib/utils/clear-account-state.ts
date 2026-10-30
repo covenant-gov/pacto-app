@@ -143,6 +143,8 @@ import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
 import { TYPING_INDICATORS_PREFIX } from '../../stores/typing-indicators';
 import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import { WEB_PREVIEWS_PREFIX } from '../../stores/web-previews';
+import { VOICE_SETTINGS_PREFIX, resetVoiceSettings } from '../../stores/voice-settings';
+import { resetVoiceTranscription } from '../../stores/voice-transcription';
 import { BIOMETRIC_UNLOCK_PREFIX } from '../../stores/biometric-unlock';
 import { backupVerified } from '../../stores/backup-verification';
 import { profiles } from '../../stores/profiles';
@@ -191,6 +193,7 @@ const SCOPED_KEY_PREFIXES = [
   STARTUP_CHECK_PREFIX,
   TYPING_INDICATORS_PREFIX,
   WEB_PREVIEWS_PREFIX,
+  VOICE_SETTINGS_PREFIX,
   BIOMETRIC_UNLOCK_PREFIX,
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
@@ -247,6 +250,8 @@ export function clearAccountState(npub?: string): void {
   clearPendingReactions();
   clearPendingAttachment();
   clearLinkPreviewRequests();
+  resetVoiceSettings();
+  resetVoiceTranscription();
   clearWalletSummaryCacheStore();
   clearDashboardFetchMetaStores();
   clearGovernanceSnapshotCacheStore();

@@ -52,6 +52,7 @@ import {
 } from '../../stores/app';
 import { mergeUnreadCounts } from '../../stores/unread';
 import { applyStickerPacksUpdate } from '../../stores/stickers';
+import { setWhisperDownloadProgress } from '../../stores/voice-transcription';
 import type { StickerPack } from '../api/stickers';
 
 import {
@@ -157,6 +158,11 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       seedRelayHealth(relays.map((r) => ({ url: r.url, status: r.status, enabled: r.enabled })))
     )
     .catch((e) => dmError('seedRelayHealth: listRelays failed', e));
+
+  register(unsubs, 'whisper_download_progress', (event) => {
+    const { model, progress } = event.payload as { model?: string; progress?: number };
+    if (typeof model === 'string' && typeof progress === 'number') setWhisperDownloadProgress(model, progress);
+  });
 
   register(unsubs, 'message_new', (event) => {
     const { message, chat_id } = event.payload as { message: DmMessage; chat_id: string };
