@@ -1,4 +1,6 @@
 import type { ParentGovernanceDto } from '$lib/governance/api';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 /** Mirrors governance hydration / SQLite row shape for the Permissions tab. */
 export type DashboardPermissionsGovPhase =
@@ -16,42 +18,39 @@ export interface PermissionsCatalogRow {
 
 /** Conceptual rows aligned with SquadAdminBase: bytes32 roles, FULL/PAUSE executor scopes, captain gate. */
 export function pactoGovPermissionsCatalog(): PermissionsCatalogRow[] {
+  const tFn = get(t);
   return [
     {
       id: 'bytes32_roles',
-      title: 'On-chain role identifiers',
-      summary:
-        'Logical roles are fixed bytes32 keys on SquadAdmin; hat holders, allowlists, and squad-key binding map members to those slots.',
+      title: tFn('governance.dashboard.permissions.catalog.bytes32Roles.title'),
+      summary: tFn('governance.dashboard.permissions.catalog.bytes32Roles.summary'),
     },
     {
       id: 'full_pause',
-      title: 'FULL versus PAUSE executor scopes',
-      summary:
-        'Executors may receive full operational authority on a module or a narrower pause-bounded scope, depending on how the squad wired allowances.',
+      title: tFn('governance.dashboard.permissions.catalog.fullPause.title'),
+      summary: tFn('governance.dashboard.permissions.catalog.fullPause.summary'),
     },
     {
       id: 'captain_gate',
-      title: 'Captain-gated admin mutations',
-      summary:
-        'Structural changes to roles, executors, and sensitive parameters route through the captain-controlled admin paths enforced by SquadAdminBase.',
+      title: tFn('governance.dashboard.permissions.catalog.captainGate.title'),
+      summary: tFn('governance.dashboard.permissions.catalog.captainGate.summary'),
     },
   ];
 }
 
 /** Safe-multisig anchoring without SquadAdmin deployment yet. */
 export function treasurySafePermissionsCatalog(): PermissionsCatalogRow[] {
+  const tFn = get(t);
   return [
     {
       id: 'safe_threshold',
-      title: 'Safe multisig authority',
-      summary:
-        'Treasury actions on linked Safes follow the wallet-defined signing threshold and owner set configured on-chain.',
+      title: tFn('governance.dashboard.permissions.catalog.safeThreshold.title'),
+      summary: tFn('governance.dashboard.permissions.catalog.safeThreshold.summary'),
     },
     {
       id: 'squad_admin_inactive',
-      title: 'SquadAdmin role graph',
-      summary:
-        'bytes32 role slots, executor mappings, and captain-gated upgrades stay inactive until Pacto Gov is deployed for this parent.',
+      title: tFn('governance.dashboard.permissions.catalog.squadAdminInactive.title'),
+      summary: tFn('governance.dashboard.permissions.catalog.squadAdminInactive.summary'),
     },
   ];
 }
@@ -68,6 +67,7 @@ export interface DashboardPermissionsContext {
 export function resolveDashboardPermissionsContext(
   governanceConfig: ParentGovernanceDto | null | undefined,
 ): DashboardPermissionsContext {
+  const tFn = get(t);
   if (governanceConfig === undefined) {
     return {
       phase: 'loading',
@@ -79,8 +79,7 @@ export function resolveDashboardPermissionsContext(
   if (!governanceConfig) {
     return {
       phase: 'mls_only',
-      leadNote:
-        'On-chain role catalog and executor mappings appear after you deploy Pacto Gov from Deploy. Until then, use Crew for membership and shared EVM addresses.',
+      leadNote: tFn('governance.dashboard.permissions.lead.mlsOnly'),
       catalogRows: [],
       showExecutorMappingPlaceholder: false,
     };
@@ -89,8 +88,7 @@ export function resolveDashboardPermissionsContext(
     const rev = governanceConfig.pactoGovRevision?.trim();
     return {
       phase: 'pacto_gov',
-      leadNote:
-        'Role identifiers, executor scopes, and captain-gated admin actions follow SquadAdminBase. Member Hats and executor Roles load from chain on this tab.',
+      leadNote: tFn('governance.dashboard.permissions.lead.pactoGov'),
       catalogRows: pactoGovPermissionsCatalog(),
       ...(rev ? { pactoGovRevision: rev } : {}),
       showExecutorMappingPlaceholder: false,
@@ -99,15 +97,14 @@ export function resolveDashboardPermissionsContext(
   if (governanceConfig.provider === 'gnosis_safe') {
     return {
       phase: 'treasury_safe_only',
-      leadNote:
-        'This parent anchors governance on a Safe multisig. SquadAdmin-style role rows remain placeholders until Pacto Gov is deployed.',
+      leadNote: tFn('governance.dashboard.permissions.lead.treasurySafe'),
       catalogRows: treasurySafePermissionsCatalog(),
       showExecutorMappingPlaceholder: false,
     };
   }
   return {
     phase: 'other_provider',
-    leadNote: 'Permissions details for this governance provider are not wired in the UI yet.',
+    leadNote: tFn('governance.dashboard.permissions.lead.otherProvider'),
     catalogRows: [],
     showExecutorMappingPlaceholder: false,
   };

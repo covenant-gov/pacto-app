@@ -64,10 +64,12 @@ describe('hasSquadAdminHolderManageRights', () => {
   it('accepts Full scope', () => {
     expect(hasSquadAdminHolderManageRights('Full')).toBe(true);
     expect(hasSquadAdminHolderManageRights('FULL, PAUSE')).toBe(true);
+    expect(hasSquadAdminHolderManageRights({ fullPermission: true, paused: false })).toBe(true);
   });
 
   it('rejects paused or empty', () => {
     expect(hasSquadAdminHolderManageRights('Full (paused)')).toBe(false);
+    expect(hasSquadAdminHolderManageRights({ fullPermission: true, paused: true })).toBe(false);
     expect(hasSquadAdminHolderManageRights('—')).toBe(false);
     expect(hasSquadAdminHolderManageRights(undefined)).toBe(false);
   });

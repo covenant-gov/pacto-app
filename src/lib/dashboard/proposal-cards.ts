@@ -1,5 +1,7 @@
 import type { ParentGovernanceDto } from '$lib/governance/api';
 import type { TreasurySafeEntry } from '$lib/treasury/treasury-safes';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 
 /** Unified dashboard proposal feed; vote and eligibility wiring stay per-tool. */
 export type DashboardProposalTool = 'pacto_gov' | 'safe' | 'nostr_poll';
@@ -14,13 +16,14 @@ export interface DashboardProposalCard {
 }
 
 export function dashboardProposalToolLabel(tool: DashboardProposalTool): string {
+  const tFn = get(t);
   switch (tool) {
     case 'pacto_gov':
-      return 'Pacto Gov';
+      return tFn('governance.dashboard.proposalCards.tool.pactoGov');
     case 'safe':
-      return 'Safe';
+      return tFn('governance.dashboard.proposalCards.tool.safe');
     case 'nostr_poll':
-      return 'Poll';
+      return tFn('governance.dashboard.proposalCards.tool.poll');
   }
 }
 
@@ -32,6 +35,7 @@ export function buildDashboardProposalCards(params: {
   treasurySafes: TreasurySafeEntry[];
   governanceConfig: ParentGovernanceDto | null | undefined;
 }): DashboardProposalCard[] {
+  const tFn = get(t);
   const out: DashboardProposalCard[] = [];
   const gov = params.governanceConfig;
   if (gov?.provider === 'pacto_gov' && gov.canonicalRef?.trim()) {
@@ -39,7 +43,7 @@ export function buildDashboardProposalCards(params: {
       tool: 'pacto_gov',
       ref: gov.canonicalRef.trim(),
       chain: gov.chain?.trim() || undefined,
-      title: 'Pacto Gov deployment',
+      title: tFn('governance.dashboard.proposalCards.title.pactoGovDeployment'),
     });
   }
   for (const e of params.treasurySafes ?? []) {
@@ -50,7 +54,7 @@ export function buildDashboardProposalCards(params: {
       ref: addr,
       chain: e.chain?.trim() || undefined,
       treasuryEntryId: e.id,
-      title: e.label?.trim() || 'Safe multisig',
+      title: e.label?.trim() || tFn('governance.dashboard.proposalCards.title.safeMultisig'),
     });
   }
   return out;
