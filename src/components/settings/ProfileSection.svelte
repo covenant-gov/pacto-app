@@ -4,7 +4,7 @@
   import { loadProfile, profiles, profileLoadingStates } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
   import { updateProfile } from '../../lib/api/nostr';
-  import { getProfileAvatarSrc, getProfileBannerSrc } from '../../lib/utils/profile';
+  import { getProfileAvatarSrc, getProfileBannerSrc, profileNeedsRelayHydration } from '../../lib/utils/profile';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
@@ -19,6 +19,8 @@
   let userNpub = $derived($currentUser?.npub || '');
   let profile = $derived(userNpub ? $profiles[userNpub] : null);
   let loading = $derived(userNpub ? ($profileLoadingStates[userNpub] || false) : false);
+  // Empty local profile while loading means a relay restore (e.g. after seed import).
+  let restoring = $derived(loading && profileNeedsRelayHydration(profile));
 
   // Compute avatar and banner sources with caching priority
   let avatarSrc = $derived(getProfileAvatarSrc(profile));
@@ -112,7 +114,7 @@
       {#if loading}
         <div class="loading-state">
           <div class="spinner"></div>
-          <p>{$t('profile.loading')}</p>
+          <p>{restoring ? $t('profile.restoring') : $t('profile.loading')}</p>
         </div>
       {:else if error}
         <div class="error-state">

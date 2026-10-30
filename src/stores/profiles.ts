@@ -207,18 +207,45 @@ export function mergeInitProfiles(
 
 const HYDRATE_RETRY_MS = [0, 1000, 2000];
 
+export interface ProfileLoad {
+  profile: Promise<NostrProfile>;
+  /** Resolves once the cache read is done and any relay Kind 0 request has been sent. Never rejects. */
+  requested: Promise<void>;
+}
+
+const inflightLoads = new Map<string, ProfileLoad>();
+
 /**
  * Load a Nostr profile from the backend cache (or trigger fetch if not cached).
- * Empty shells (e.g. own profile after reinstall) still trigger Kind 0 hydrate.
+ * Empty shells (e.g. own profile after seed import) still trigger Kind 0 hydrate.
+ * Concurrent callers for the same npub share one hydrate.
  */
-export async function loadProfile(npub: string): Promise<NostrProfile> {
-  let existing: NostrProfile | undefined;
-  profiles.subscribe(p => { existing = p[npub]; })();
+export function loadProfile(npub: string): Promise<NostrProfile> {
+  return startProfileLoad(npub).profile;
+}
 
+/** Same as `loadProfile`, plus a signal for when the relay request is in flight. */
+export function startProfileLoad(npub: string): ProfileLoad {
+  const existing = get(profiles)[npub];
   if (existing && !profileNeedsRelayHydration(existing)) {
-    return existing;
+    return { profile: Promise.resolve(existing), requested: Promise.resolve() };
   }
 
+  const pending = inflightLoads.get(npub);
+  if (pending) return pending;
+
+  let markRequested!: () => void;
+  const requested = new Promise<void>((resolve) => (markRequested = resolve));
+  const profile = hydrateProfile(npub, markRequested).finally(() => {
+    markRequested();
+    inflightLoads.delete(npub);
+  });
+  const load = { profile, requested };
+  inflightLoads.set(npub, load);
+  return load;
+}
+
+async function hydrateProfile(npub: string, onRequested: () => void): Promise<NostrProfile> {
   profileLoadingStates.update(states => ({ ...states, [npub]: true }));
 
   try {
@@ -238,7 +265,9 @@ export async function loadProfile(npub: string): Promise<NostrProfile> {
       if (delay > 0) {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
-      await loadNostrProfile(npub);
+      const relayLoad = loadNostrProfile(npub);
+      onRequested();
+      await relayLoad;
       profile = await fetchNostrProfile(npub);
       profiles.update(p => ({ ...p, [npub]: profile! }));
       if (!profileNeedsRelayHydration(profile)) {

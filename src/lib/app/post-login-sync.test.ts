@@ -15,7 +15,12 @@ const apiConnect = vi.fn();
 const monitorRelayConnections = vi.fn().mockResolvedValue(undefined);
 const fetchMessages = vi.fn();
 const refreshProfileNow = vi.fn();
-const loadNostrProfile = vi.fn().mockResolvedValue(true);
+const ownProfileResult = vi.fn().mockResolvedValue({ id: 'npub1test' });
+const ownProfileRequested = vi.fn().mockResolvedValue(undefined);
+const startProfileLoad = vi.fn((npub: string) => ({
+  profile: ownProfileResult(npub),
+  requested: ownProfileRequested(npub),
+}));
 const syncMlsGroupsNow = vi.fn();
 const startNotifs = vi.fn().mockResolvedValue(true);
 // Backed by a real writable store (not just a spy) so wake-sync's own `get(dmSyncStatus)`
@@ -51,7 +56,6 @@ vi.mock('../api/relays', () => ({
 
 vi.mock('../api/nostr', () => ({
   fetchMessages: (...args: unknown[]) => fetchMessages(...args),
-  loadNostrProfile: (...args: unknown[]) => loadNostrProfile(...args),
   refreshProfileNow: (...args: unknown[]) => refreshProfileNow(...args),
   startNotifs: (...args: unknown[]) => startNotifs(...args),
   syncMlsGroupsNow: (...args: unknown[]) => syncMlsGroupsNow(...args),
@@ -68,6 +72,10 @@ vi.mock('../../stores/dm', () => ({
     subscribe: (...args: Parameters<typeof dmSyncStatusStore.subscribe>) =>
       dmSyncStatusStore.subscribe(...args),
   },
+}));
+
+vi.mock('../../stores/profiles', () => ({
+  startProfileLoad: (npub: string) => startProfileLoad(npub),
 }));
 
 vi.mock('../commons/commons-prefetch', () => ({
@@ -89,7 +97,8 @@ describe('runPostLoginNetworkSync', () => {
     vi.clearAllMocks();
     relayStatusListeners = [];
     startNotifs.mockResolvedValue(true);
-    loadNostrProfile.mockResolvedValue(true);
+    ownProfileResult.mockResolvedValue({ id: 'npub1test' });
+    ownProfileRequested.mockResolvedValue(undefined);
     dmSyncStatusStore.set('idle');
     resetStartupCheckSession();
     startupCheckEnabled.set(false);
@@ -130,9 +139,12 @@ describe('runPostLoginNetworkSync', () => {
     expect(dmLog).toHaveBeenCalledWith('post-login: fetchMessages(true)');
     expect(dmSyncStatusSet).toHaveBeenCalledWith('syncing');
     expect(fetchMessages).toHaveBeenCalledWith(true);
-    expect(loadNostrProfile).toHaveBeenCalledWith('npub1test');
+    expect(startProfileLoad).toHaveBeenCalledWith('npub1test');
     expect(refreshProfileNow).toHaveBeenCalledWith('npub1test');
-    expect(loadNostrProfile.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(startProfileLoad.mock.invocationCallOrder[0]).toBeLessThan(
+      fetchMessages.mock.invocationCallOrder[0]
+    );
+    expect(startProfileLoad.mock.invocationCallOrder[0]).toBeLessThan(
       refreshProfileNow.mock.invocationCallOrder[0]
     );
     expect(startNotifs).toHaveBeenCalled();
@@ -183,6 +195,63 @@ describe('runPostLoginNetworkSync', () => {
     cleanupWakeSync();
     connectDeferred.resolve();
     await flushAsync();
+  });
+
+  it('restores own Kind 0 before the message backfill and waits for it before refresh', async () => {
+    apiConnect.mockResolvedValue(undefined);
+    fetchMessages.mockReturnValue(Promise.withResolvers<void>().promise); // backfill still running
+    refreshProfileNow.mockResolvedValue(undefined);
+    syncMlsGroupsNow.mockResolvedValue(undefined);
+    const ownProfile = Promise.withResolvers<{ id: string }>();
+    ownProfileResult.mockReturnValue(ownProfile.promise);
+
+    runPostLoginNetworkSync('npub1test');
+    await flushAsync();
+
+    expect(startProfileLoad).toHaveBeenCalledWith('npub1test');
+    expect(fetchMessages).toHaveBeenCalledWith(true);
+    expect(refreshProfileNow).not.toHaveBeenCalled();
+
+    ownProfile.resolve({ id: 'npub1test' });
+    await flushAsync();
+
+    expect(refreshProfileNow).toHaveBeenCalledWith('npub1test');
+  });
+
+  it('holds the message backfill until the own Kind 0 request is sent', async () => {
+    apiConnect.mockResolvedValue(undefined);
+    fetchMessages.mockResolvedValue(undefined);
+    refreshProfileNow.mockResolvedValue(undefined);
+    syncMlsGroupsNow.mockResolvedValue(undefined);
+    const requested = Promise.withResolvers<void>();
+    ownProfileRequested.mockReturnValue(requested.promise);
+
+    runPostLoginNetworkSync('npub1test');
+    await flushAsync();
+
+    expect(startProfileLoad).toHaveBeenCalledWith('npub1test');
+    expect(fetchMessages).not.toHaveBeenCalled();
+
+    requested.resolve();
+    await flushAsync();
+
+    expect(fetchMessages).toHaveBeenCalledWith(true);
+  });
+
+  it('logs own profile hydrate failure and continues', async () => {
+    apiConnect.mockResolvedValue(undefined);
+    fetchMessages.mockResolvedValue(undefined);
+    refreshProfileNow.mockResolvedValue(undefined);
+    syncMlsGroupsNow.mockResolvedValue(undefined);
+    const err = new Error('relays down');
+    ownProfileResult.mockRejectedValueOnce(err);
+
+    runPostLoginNetworkSync('npub1test');
+    await flushAsync();
+
+    expect(console.error).toHaveBeenCalledWith('Own profile hydrate failed:', err);
+    expect(refreshProfileNow).toHaveBeenCalledWith('npub1test');
+    expect(syncMlsGroupsNow).toHaveBeenCalledWith(null);
   });
 
   it('sets hasRunPostLoginNetworkSyncThisSession synchronously, before any async work starts', () => {
