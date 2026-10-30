@@ -66,7 +66,7 @@ In DMs and squad channels, pressing Up Arrow in an empty composer opens the late
 
 ### In-memory state
 
-**`STATE`** (`ChatState` in `lib.rs`): DMs keyed by npub; MLS by `group_id`. Durable rows in SQLite — see **`docs/storage-layout/`**.
+**`STATE`** (`ChatState` in `lib.rs`): DMs keyed by npub; MLS by `group_id`. Durable chat/event/message rows and materialized views live in **`src-tauri/src/db/messaging.rs`**, behind unchanged **`crate::db`** APIs — see **`docs/storage-layout/`**. MLS announcement persistence and squad side-effect dispatch live in **`src-tauri/src/db/squad.rs`**.
 
 ---
 
@@ -129,7 +129,7 @@ Exact payload shapes: grep `emit(` / command names in `lib.rs` and `message.rs`.
 
 ## 6. Pulling from relays (DM)
 
-Historical sync uses filters such as **`pubkey(self).kind(GiftWrap).since…`**; each event goes through **`handle_event`** → unwrap → DM or welcome branch. Dedup uses DB + **`wrapper_event_id`** where applicable. Details in `lib.rs` and `db.rs` (`save_event`, message existence checks).
+Historical sync uses filters such as **`pubkey(self).kind(GiftWrap).since…`**; each event goes through **`handle_event`** → unwrap → DM or welcome branch. Dedup uses DB + **`wrapper_event_id`** where applicable. Details in `lib.rs` and `db/messaging.rs` (`save_event`, message existence checks).
 
 ---
 
