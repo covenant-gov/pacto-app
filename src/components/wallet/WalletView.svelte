@@ -31,6 +31,7 @@
     setActiveEvmAccount,
     setActiveAdvancedEvmAccount,
     squadEvmAccounts,
+    advancedEvmAccounts,
     type EvmAccountPurpose,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
@@ -41,6 +42,7 @@
   import { portal } from '../../lib/utils/portal';
   import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
   import { appConfig } from '../../stores/app-config';
+  import { featureEnabled } from '../../stores/feature-flags';
 
   const tFn = get(t);
 
@@ -65,6 +67,11 @@
   let evmAddress: string | null = $state(null);
 
   let evmAccountList: EvmAccountRow[] = $state([]);
+  const advancedAccountsEnabled = featureEnabled('advanced_evm_accounts');
+  // Opted-out users who already hold advanced keys keep the panel that uses them.
+  const showAdvancedPanel = $derived(
+    $advancedAccountsEnabled || advancedEvmAccounts(evmAccountList).length > 0,
+  );
   let accountsLoading = $state(false);
   let importKeyModalOpen = $state(false);
   let importKeyInput = $state('');
@@ -376,9 +383,11 @@
         }}
       />
 
-      <div class="wallet-view-section">
-        <WalletAdvancedPanel enabledChainIds={enabledChainsOrdered} {embeddedInSettings} />
-      </div>
+      {#if showAdvancedPanel}
+        <div class="wallet-view-section">
+          <WalletAdvancedPanel enabledChainIds={enabledChainsOrdered} {embeddedInSettings} />
+        </div>
+      {/if}
     {/if}
 
     {#if !embeddedInSettings}

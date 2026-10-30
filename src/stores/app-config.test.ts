@@ -30,7 +30,11 @@ describe('app-config store', () => {
   });
 
   it('loadAppConfig populates appConfig with a valid backend response and shows no toast', async () => {
-    const fetched = { ...DEFAULT_APP_CONFIG, squadNameMaxLength: 80 };
+    const fetched = {
+      ...DEFAULT_APP_CONFIG,
+      squadNameMaxLength: 80,
+      featureFlags: [{ key: 'advanced_evm_accounts', defaultEnabled: false }],
+    };
     mockedGetAppConfig.mockResolvedValueOnce(fetched);
 
     await loadAppConfig();
@@ -60,6 +64,18 @@ describe('app-config store', () => {
     expect(mockedShowToast).toHaveBeenCalledTimes(1);
   });
 
+  it('loadAppConfig falls back when a feature flag descriptor is malformed', async () => {
+    mockedGetAppConfig.mockResolvedValueOnce({
+      ...DEFAULT_APP_CONFIG,
+      featureFlags: [{ key: '', defaultEnabled: 'yes' }],
+    } as never);
+
+    await loadAppConfig();
+
+    expect(get(appConfig)).toEqual(DEFAULT_APP_CONFIG);
+    expect(mockedShowToast).toHaveBeenCalledTimes(1);
+  });
+
   // Must be kept in sync with the compiled constants in src-tauri/src/app_config.rs
   // (SQUAD_NAME_MAX_LENGTH, CHANNEL_NAME_MAX_LENGTH, COMMONS_MAX_TAGS,
   // DEPLOY_SAFE_MAX_SIGNERS, ROLE_LABEL_MAX_LENGTH, WALLET_ACCOUNT_LABEL_MAX_LENGTH,
@@ -75,6 +91,7 @@ describe('app-config store', () => {
       customTokenSymbolMaxLength: 16,
       pinDigitCount: 6,
       analyticsEnabled: false,
+      featureFlags: [],
     });
   });
 

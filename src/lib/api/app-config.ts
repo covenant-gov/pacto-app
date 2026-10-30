@@ -1,5 +1,11 @@
 import { invoke } from './index';
 
+/** One registered experimental feature, mirrored by `FeatureFlagDescriptorSchema`. */
+export interface FeatureFlagDescriptorDto {
+  key: string;
+  defaultEnabled: boolean;
+}
+
 /** Runtime application configuration and feature flags, mirrored by `AppConfigSchema`. */
 export interface AppConfigDto {
   squadNameMaxLength: number;
@@ -11,6 +17,7 @@ export interface AppConfigDto {
   customTokenSymbolMaxLength: number;
   pinDigitCount: number;
   analyticsEnabled: boolean;
+  featureFlags: FeatureFlagDescriptorDto[];
 }
 
 /** Fetch the backend-owned runtime application configuration. */

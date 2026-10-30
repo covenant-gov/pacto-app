@@ -22,6 +22,7 @@ describe('app-config command wrappers', () => {
       customTokenSymbolMaxLength: 16,
       pinDigitCount: 6,
       analyticsEnabled: false,
+      featureFlags: [{ key: 'advanced_evm_accounts', defaultEnabled: false }],
     };
     mockedInvoke.mockResolvedValueOnce(dto);
 

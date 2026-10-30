@@ -8,6 +8,7 @@
   import AppSettingsSection from '../settings/AppSettingsSection.svelte';
   import NotificationsSection from '../settings/NotificationsSection.svelte';
   import HiddenCommonsSection from '../settings/HiddenCommonsSection.svelte';
+  import ExperimentalSection from '../settings/ExperimentalSection.svelte';
   import DangerZoneSection from '../settings/DangerZoneSection.svelte';
   import WalletView from '../wallet/WalletView.svelte';
   import SettingsCollapsibleSection from '../settings/SettingsCollapsibleSection.svelte';
@@ -37,6 +38,7 @@
       <AppSettingsSection />
       <NotificationsSection />
       <HiddenCommonsSection />
+      <ExperimentalSection />
     {/if}
 
     <DangerZoneSection />

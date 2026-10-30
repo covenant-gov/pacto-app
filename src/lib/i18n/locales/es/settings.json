@@ -168,5 +168,11 @@
 	"settings.routeTrafficThroughTorUnavailable": "El enrutamiento por Tor no está disponible en esta compilación.",
 	"settings.routeTrafficThroughTorStartupWarning": "Tor no pudo iniciarse automáticamente:",
 	"settings.routeTrafficThroughTorLoadError": "No se pudo cargar el ajuste de enrutamiento por Tor.",
-	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor."
+	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor.",
+	"settings.experimental.title": "Funciones experimentales",
+	"settings.experimental.intro": "Estas funciones siguen en desarrollo. Pueden cambiar, fallar o eliminarse en una futura actualización. Desactívalas en cualquier momento para volver al comportamiento estándar.",
+	"settings.experimental.badge": "Experimental",
+	"settings.experimental.empty": "No hay funciones experimentales disponibles en esta versión.",
+	"settings.experimental.flags.advanced_evm_accounts.name": "Cuentas EVM avanzadas",
+	"settings.experimental.flags.advanced_evm_accounts.description": "Crea o importa claves EVM independientes y envía llamadas directas a contratos con ellas. No están vinculadas a escuads ni a tu perfil. Las cuentas avanzadas que ya tienes siguen disponibles en cualquier caso."
 }
