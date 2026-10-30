@@ -47,7 +47,7 @@ Indexes and foreign keys are defined next to each table in the migration files.
 
 ## Encryption vs plaintext
 
-`account_manager.rs` documents intent: **message content and secrets** are stored encrypted where noted; **profiles and indexing metadata** are plaintext for performance and search. Exact encrypt/decrypt paths live in **`crypto.rs`** and call sites in **`db.rs`** / **`lib.rs`**. The app database remains an unkeyed SQLite file even though the binary now links SQLCipher; its file format and hot-WAL behavior remain compatible.
+`account_manager.rs` documents intent: **message content and secrets** are stored encrypted where noted; **profiles and indexing metadata** are plaintext for performance and search. Exact encrypt/decrypt paths live in **`crypto.rs`** and call sites in **`db/accounts.rs`**, **`db/messaging.rs`**, and **`lib.rs`**. The app database remains an unkeyed SQLite file even though the binary now links SQLCipher; its file format and hot-WAL behavior remain compatible.
 
 The active MLS database is SQLCipher-encrypted with a key domain-separated from the unlocked account session key. The shipped native stack is **SQLCipher 4.6.1 Community**, **SQLite 3.46.1**, `openssl-src` **300.6.1+3.6.3**, and `openssl-sys` **0.9.117**. These libraries are vendored into application releases and must be matched against future security advisories explicitly.
 
@@ -57,9 +57,23 @@ The active MLS database is SQLCipher-encrypted with a key domain-separated from 
 
 The pending wrapper ids are removed from `discarded_giftwraps` and retained in a durable exact-refetch queue, because the normal forward sync window may no longer include an old invitation. Lost group ids remain in a settings value until a welcome restores that group; while listed, participant synchronization does not replace the surviving chat roster with an empty fresh-engine roster.
 
-## `db.rs` usage pattern
+## Database module usage pattern
 
-Most Tauri **`#[command]`** database entry points are implemented in **`db.rs`**: get/return connection via **`account_manager::get_db_connection`** / **`return_db_connection`**, parameterized SQL, map rows to structs used by the UI.
+**`src-tauri/src/db/mod.rs`** is the stable façade for existing **`crate::db::…`** APIs and generated Tauri command exports. Private domain modules own the implementation: **`accounts.rs`** (profiles, settings, username claims, export audit), **`ids.rs`** (shared ID caches), **`squad.rs`** (infra, roster, announcement side effects), **`sponsored_fees.rs`** (fee ledgers), **`mls.rs`** (app metadata/reset support), and **`messaging.rs`** (chats, events, edits, reactions, reply views, maintenance).
+
+Database entry points retain the same pattern: get/return connections via **`account_manager::get_db_connection`** / **`return_db_connection`**, parameterized SQL, and row mapping to structs used by the UI. The connection pool remains in **`account_manager.rs`**; schemas remain in migrations. Cross-domain membership/sponsor-presence tests live in **`db/sponsor_preflight_tests.rs`**.
+
+Domain-local tests moved from **`db::<test_module>::…`** to **`db::<domain>::<test_module>::…`**, with every test retained:
+
+| New domain prefix | Original test modules (unchanged names) |
+|-------------------|-----------------------------------------|
+| `db::accounts::` | `username_claims_cache_tests` |
+| `db::sponsored_fees::` | `sponsored_fee_usage_tests`, `global_sponsored_fee_usage_tests` |
+| `db::squad::` | `allowlist_tests`, `tracked_token_tests`, `squad_infra_row_id_tests`, `sticker_pack_local_storage_tests`, `sticker_pack_announce_tests`, `war_game_announce_tests`, `squad_binding_list_tests`, `certified_roster_list_tests` |
+| `db::mls::` | `mls_group_metadata_persistence_tests`, `legacy_mls_store_harvest_tests` |
+| `db::messaging::` | `dm_deletion_cutoff_tests`, `link_preview_persistence_tests`, `edit_authorization_sql_tests`, `legacy_reaction_npub_repair_tests`, `chat_notification_level_schema_tests`, `reply_context_fallback_tests`, `edit_reconstruction_tests` |
+
+For example, filter with `cargo nextest run --lib db::mls::mls_group_metadata_persistence_tests` or `cargo nextest run --lib db::messaging::edit_authorization_sql_tests`. **`db::sponsor_preflight_tests::…`** paths are unchanged.
 
 When adding a column or table:
 

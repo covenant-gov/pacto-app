@@ -15,7 +15,14 @@ Local persistence is **per Nostr account (`npub`)**: one profile directory under
 | Concern | Location |
 |---------|----------|
 | Schema migrations | `src-tauri/src/migrations/` |
-| Connection pool, most queries and commands | `src-tauri/src/db.rs` |
+| Connection pool and account lifecycle | `src-tauri/src/account_manager.rs` |
+| Stable database API and command exports | `src-tauri/src/db/mod.rs` |
+| Profiles, settings, username claims, export audit | `src-tauri/src/db/accounts.rs` |
+| Shared chat/user ID caches and resolution | `src-tauri/src/db/ids.rs` |
+| Squad persistence and MLS announcement side effects | `src-tauri/src/db/squad.rs` |
+| Squad/global sponsored fee ledgers | `src-tauri/src/db/sponsored_fees.rs` |
+| App-side MLS metadata and reset-support persistence | `src-tauri/src/db/mls.rs` |
+| Chat/event/message storage and materialization | `src-tauri/src/db/messaging.rs` |
 | Event row shape / kinds | `src-tauri/src/stored_event.rs` |
 | Profile row / Nostr profile merge | `src-tauri/src/profile.rs` |
 
