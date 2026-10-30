@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatSquadAdminExecutorRoles,
+  localizeSquadAdminExecutorRolesLabel,
   parsePactoGovProviderPayload,
   withPactoGovProviderPayloadTxHash,
   pactoGovDeployAnnounceRows,
+  squadAdminExecutorManageScopeFromCanonicalLabel,
+  squadAdminExecutorManageScopeFromDto,
   txHashFromPactoGovProviderPayload,
 } from './pacto-gov-payload';
 
@@ -55,5 +59,61 @@ describe('txHashFromPactoGovProviderPayload', () => {
   it('reads txHash and tx_hash', () => {
     expect(txHashFromPactoGovProviderPayload(JSON.stringify({ txHash: '0xabc' }))).toBe('0xabc');
     expect(txHashFromPactoGovProviderPayload(JSON.stringify({ tx_hash: '0xdef' }))).toBe('0xdef');
+  });
+});
+
+describe('squad admin executor role labels', () => {
+  it('formats canonical Full / paused tokens', () => {
+    expect(
+      formatSquadAdminExecutorRoles({
+        address: '0x1',
+        fullPermission: true,
+        paused: false,
+        roles: [],
+      }),
+    ).toBe('Full');
+    expect(
+      formatSquadAdminExecutorRoles({
+        address: '0x1',
+        fullPermission: true,
+        paused: true,
+        roles: [],
+      }),
+    ).toBe('Full (paused)');
+    expect(
+      formatSquadAdminExecutorRoles({
+        address: '0x1',
+        fullPermission: false,
+        paused: true,
+        roles: [],
+      }),
+    ).toBe('Paused');
+  });
+
+  it('derives manage scope from DTO and canonical labels', () => {
+    expect(
+      squadAdminExecutorManageScopeFromDto({
+        address: '0x1',
+        fullPermission: true,
+        paused: false,
+        roles: [],
+      }),
+    ).toEqual({ fullPermission: true, paused: false });
+    expect(squadAdminExecutorManageScopeFromCanonicalLabel('Full')).toEqual({
+      fullPermission: true,
+      paused: false,
+    });
+    expect(squadAdminExecutorManageScopeFromCanonicalLabel('Full (paused)')).toEqual({
+      fullPermission: true,
+      paused: true,
+    });
+    expect(squadAdminExecutorManageScopeFromCanonicalLabel('—')).toBeUndefined();
+  });
+
+  it('localizes Full / paused display tokens', () => {
+    expect(localizeSquadAdminExecutorRolesLabel('Full')).toBe('Full');
+    expect(localizeSquadAdminExecutorRolesLabel('Full (paused)')).toBe('Full (paused)');
+    expect(localizeSquadAdminExecutorRolesLabel('TREASURY (paused)')).toBe('TREASURY (paused)');
+    expect(localizeSquadAdminExecutorRolesLabel('—')).toBe('—');
   });
 });

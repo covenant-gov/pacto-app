@@ -104,7 +104,23 @@ export function hatChecksFromNaveDeployment(d: {
   ];
 }
 
-/** Compact label for Settings **Roles** column (SquadAdmin executor scopes). */
+/** Structured Full/paused bits for Join-inbox holder rights (not display copy). */
+export type SquadAdminExecutorManageScope = {
+  fullPermission: boolean;
+  paused: boolean;
+};
+
+export function squadAdminExecutorManageScopeFromDto(
+  d: SquadAdminExecutorRolesDto,
+): SquadAdminExecutorManageScope {
+  return { fullPermission: d.fullPermission, paused: d.paused };
+}
+
+/**
+ * Canonical English tokens for role maps / caches / rights parsing.
+ * Protocol role ids (e.g. TREASURY) stay as-is. Localize at display with
+ * `localizeSquadAdminExecutorRolesLabel`.
+ */
 export function formatSquadAdminExecutorRoles(d: SquadAdminExecutorRolesDto): string {
   if (d.fullPermission) {
     return d.paused ? 'Full (paused)' : 'Full';
@@ -115,6 +131,35 @@ export function formatSquadAdminExecutorRoles(d: SquadAdminExecutorRolesDto): st
   }
   const label = enabled.join(', ');
   return d.paused ? `${label} (paused)` : label;
+}
+
+const PAUSED_SUFFIX_RE = /\s*\(paused\)\s*$/i;
+
+/** Derive manage-scope from a canonical `formatSquadAdminExecutorRoles` token. */
+export function squadAdminExecutorManageScopeFromCanonicalLabel(
+  label: string | undefined,
+): SquadAdminExecutorManageScope | undefined {
+  const raw = label?.trim();
+  if (!raw || raw === '—') return undefined;
+  const paused = PAUSED_SUFFIX_RE.test(raw);
+  const base = raw.replace(PAUSED_SUFFIX_RE, '').trim();
+  if (/^paused$/i.test(base)) return { fullPermission: false, paused: true };
+  const fullPermission = /^full$/i.test(base) || /(^|,\s*)full(,|$)/i.test(base);
+  return { fullPermission, paused };
+}
+
+/** Localized Roles-column copy from a canonical executor-roles token. */
+export function localizeSquadAdminExecutorRolesLabel(canonical: string | undefined): string {
+  const tFn = get(t);
+  const raw = canonical?.trim() ?? '';
+  if (!raw || raw === '—') return tFn('governance.crew.dash');
+  const paused = PAUSED_SUFFIX_RE.test(raw);
+  const base = raw.replace(PAUSED_SUFFIX_RE, '').trim();
+  if (/^paused$/i.test(base)) return tFn('governance.executorRoles.paused');
+  const localizedBase = /^full$/i.test(base) ? tFn('governance.executorRoles.full') : base;
+  return paused
+    ? tFn('governance.executorRoles.pausedSuffix', { values: { roles: localizedBase } })
+    : localizedBase;
 }
 
 export function treasuryProposalStatusLabel(status: string): string {
