@@ -46,7 +46,11 @@ export function buildCaptainMemberOptions(
       if (!address) return null;
       const name = displayNameForNpub(npub)?.trim() || `${npub.slice(0, 12)}…`;
       const isMe = npub === me;
-      return { npub, address, label: isMe ? `${name} (you)` : name };
+      return {
+        npub,
+        address,
+        label: isMe ? get(t)('governance.captainPicker.youSuffix', { values: { name } }) : name,
+      };
     })
     .filter((row): row is PactoGovCaptainOption => row != null);
   rows.sort((a, b) => {

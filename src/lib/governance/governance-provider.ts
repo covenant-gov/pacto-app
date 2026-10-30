@@ -1,3 +1,5 @@
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import type { SquadInfraDto } from './api';
 import { pactoGovInfraRow } from './api';
 import { resolveAbiRefFromInfraPayload } from '../evm/abi-loader';
@@ -52,46 +54,54 @@ export function pactoGovModuleDescriptors(
   const open = opts?.openProposalCount ?? 0;
   const mutinyActive = opts?.mutinyActive ?? false;
   const mutinyMode = opts?.mutinyModeQm ?? false;
+  const tFn = get(t);
 
   const modules: GovernanceModuleDescriptor[] = [];
   if (payload.treasuryAuthority?.trim()) {
     modules.push({
       id: 'treasury_authority',
-      label: 'Treasury Authority',
+      label: tFn('governance.title.treasuryAuthority'),
       address: payload.treasuryAuthority.trim(),
-      summary: open > 0 ? `${open} open proposal${open === 1 ? '' : 's'}` : 'Propose · vote · execute',
+      summary:
+        open > 0
+          ? tFn('governance.governance.openProposals', { values: { count: open } })
+          : tFn('governance.module.treasuryAuthority.idle'),
     });
   }
   if (payload.mutinyModule?.trim()) {
     modules.push({
       id: 'mutiny',
-      label: 'Mutiny',
+      label: tFn('governance.title.mutiny'),
       address: payload.mutinyModule.trim(),
-      summary: mutinyActive ? 'Mutiny active' : 'Replace or resign captain',
+      summary: mutinyActive
+        ? tFn('governance.module.mutiny.active')
+        : tFn('governance.module.mutiny.idle'),
     });
   }
   if (payload.quartermaster?.trim()) {
     modules.push({
       id: 'quartermaster',
-      label: 'Quartermaster',
+      label: tFn('governance.title.quartermaster'),
       address: payload.quartermaster.trim(),
-      summary: mutinyMode ? 'Mutiny mode — crew locked' : 'Add / remove crew (timelock)',
+      summary: mutinyMode
+        ? tFn('governance.module.quartermaster.locked')
+        : tFn('governance.module.quartermaster.idle'),
     });
   }
   if (payload.squadAdminProxy?.trim()) {
     modules.push({
       id: 'squad_admin',
-      label: 'Squad Admin',
+      label: tFn('governance.hats.info.name.squadAdmin'),
       address: payload.squadAdminProxy.trim(),
-      summary: 'Executor roles — manage in Crew',
+      summary: tFn('governance.module.squadAdmin.summary'),
     });
   }
   if (payload.safe?.trim()) {
     modules.push({
       id: 'safe',
-      label: 'Treasury Safe',
+      label: tFn('governance.infra.treasurySafe'),
       address: payload.safe.trim(),
-      summary: 'Shared vault (Zodiac avatar)',
+      summary: tFn('governance.module.safe.summary'),
     });
   }
   return modules;

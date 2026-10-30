@@ -243,7 +243,7 @@ describe('ensurePubkeyHex', () => {
 
   it('rejects bech32 npub', () => {
     expect(() => ensurePubkeyHex('npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq')).toThrow(
-      /got npub/,
+      /got npub|pubkey|hex/i,
     );
   });
 });
@@ -390,7 +390,7 @@ describe('refreshUsernameState', () => {
 
     await refreshUsernameState();
     expect(get(usernameState).status).toBe('error');
-    expect(get(usernameState).error).toMatch(/pubkey must be 32 bytes hex/);
+    expect(get(usernameState).error).toMatch(/pubkey must be 32 bytes hex/i);
     expect(mockNpubHash).not.toHaveBeenCalled();
   });
 

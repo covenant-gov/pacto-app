@@ -8,13 +8,17 @@ import erc20Write from './abis/erc20-write.json';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 
-export const SHIPPED_ABI_CATALOG: Record<string, { label: string; abi: Abi }> = {
-  'erc20-minimal': { label: 'ERC-20 (balanceOf, decimals, symbol)', abi: erc20Minimal as Abi },
-  'erc20-write': { label: 'ERC-20 (transfer, approve)', abi: erc20Write as Abi },
+const SHIPPED_ABI_CATALOG: Record<string, { labelKey: string; abi: Abi }> = {
+  'erc20-minimal': { labelKey: 'wallet.abi.erc20Minimal', abi: erc20Minimal as Abi },
+  'erc20-write': { labelKey: 'wallet.abi.erc20Write', abi: erc20Write as Abi },
 };
 
 export function listShippedAbiRefs(): { ref: string; label: string }[] {
-  return Object.entries(SHIPPED_ABI_CATALOG).map(([ref, meta]) => ({ ref, label: meta.label }));
+  const tFn = get(t);
+  return Object.entries(SHIPPED_ABI_CATALOG).map(([ref, meta]) => ({
+    ref,
+    label: tFn(meta.labelKey),
+  }));
 }
 
 export function loadShippedAbi(ref: string): Abi | null {

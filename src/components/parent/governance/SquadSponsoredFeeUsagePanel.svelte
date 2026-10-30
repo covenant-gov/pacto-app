@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import {
     listSquadSponsoredFeeUsage,
@@ -48,7 +49,7 @@
       rows = next;
     } catch (e) {
       if (seq !== loadSeq) return;
-      loadError = getInvokeErrorMessage(e, 'governance.treasury.feeUsage.error');
+      loadError = getInvokeErrorMessage(e, get(t)('governance.treasury.feeUsage.error'));
       rows = [];
     } finally {
       if (seq === loadSeq) loading = false;

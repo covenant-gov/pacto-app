@@ -309,5 +309,8 @@
 	"wallet.errors.functionNameRequired": "Function name is required.",
 	"wallet.errors.valueNotWei": "Value must be a decimal wei string.",
 	"wallet.errors.abiRequired": "Paste a JSON ABI array.",
-	"wallet.errors.abiInvalid": "ABI JSON must be an array or a Foundry artifact with an abi field."
+	"wallet.errors.abiInvalid": "ABI JSON must be an array or a Foundry artifact with an abi field.",
+	"wallet.abi.erc20Minimal": "ERC-20 (balanceOf, decimals, symbol)",
+	"wallet.abi.erc20Write": "ERC-20 (transfer, approve)",
+	"wallet.squadKeyDefaultLabel": "Squad key"
 }
