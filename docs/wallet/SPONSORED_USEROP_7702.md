@@ -14,7 +14,7 @@ Incident staging notes: [`docs/solutions/wallet/sponsored-userop-7702-debug-meth
 | Auth | `sign_eip7702_authorization` (yParity 0/1); skip when sender already has correct `0xef0100` stub |
 | Signature | Bare ECDSA `sign_hash(userOpHash)` (65 bytes) — not `personal_sign`, not MAv2 |
 | Nonce | EntryPoint nonce **key 0** |
-| Gas | Two-pass `eth_estimateUserOperationGas` (skip pass 2 when 1.2× would exceed 16M; clamp echo otherwise). Factory `deployNavePirata` skips estimate and sends at 16M; if the bundler still rejects, `FACTORY_USEROP_TOO_LARGE` and a funded EOA. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). |
+| Gas | Two-pass `eth_estimateUserOperationGas` for squad / gov / username (skip pass 2 when 1.2× would exceed 16M; clamp echo otherwise). Factory `deployNavePirata`: one estimate with a ~14M `callGasLimit` ceiling, **no** 1.2× pad, five-limit sum ≤ 16M, then send. `16794127 > 16000000` means the client padded a ~14M estimate; it is not proof the factory call itself is over the cap. A 0-ETH username-NFT `deployNavePirata` is the intended Launchpad path (`funded_by: global_sponsored`). If the bundler still rejects after that clamp, `FACTORY_USEROP_TOO_LARGE`. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). |
 | Fees | `pimlico_getUserOperationGasPrice` (`standard` tier). Alchemy `estimate_eip1559_fees` only if that RPC fails, then clamp maxFee to 30 gwei so Sepolia cannot send a 1 gwei UserOp. |
 | Helpers | `user_op_json`, `sign_eip7702_authorization`, estimate/send in `sponsor_userop.rs` |
 
@@ -37,7 +37,7 @@ Do **not** re-debug 7702 while Layer 1 fails.
 2. **L1 Inner call** — `eth_call`/`cast` with `from=roster` for the inner target calldata. Require success **or** a named 4-byte selector. Username: claim preflight in `global_sponsor_userop` before estimate.
 3. **L2 7702** — Only after L1 OK. `code_len`, `eip7702_auth=some|none`, allowlist match; field-diff shared UserOp keys vs squad golden path.
 4. **L3 Paymaster** — Product encoder + pool headroom; username keeps `policy=0`.
-5. **L4 Bundler** — Classify stderr (`[pacto_wallet] bundler …`). Empty `reason: 0x` **after** L1 OK ⇒ transport; **before** L1 OK ⇒ ignore 7702.
+5. **L4 Bundler** — Classify stderr (`[pacto_wallet] bundler …`). Empty `reason: 0x` **after** L1 OK ⇒ transport; **before** L1 OK ⇒ ignore 7702. Factory lane: `[pacto_wallet] global UserOp lane=factory_target … sum=` must be ≤ 16_000_000. A `16794… > 16000000` reject is a padded estimate, not an inner Solidity over-cap.
 
 ```mermaid
 flowchart TB
@@ -161,4 +161,5 @@ On failure: client fix or registry NFT swap — not a third full-system broadcas
 - [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §1 (squad) and §10 (username)
 - [PROTOCOL_ADDRESS_BOOK.md](./PROTOCOL_ADDRESS_BOOK.md)
 - Incident staging: [`docs/solutions/wallet/sponsored-userop-7702-debug-method.md`](../solutions/wallet/sponsored-userop-7702-debug-method.md)
+- Factory gas policy and later squad-lane share: [`docs/solutions/wallet/factory-userop-gas-policy.md`](../solutions/wallet/factory-userop-gas-policy.md)
 - Tracking: [pacto-username-nft#5](https://github.com/covenant-gov/pacto-username-nft/issues/5)

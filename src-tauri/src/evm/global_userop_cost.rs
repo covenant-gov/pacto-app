@@ -14,6 +14,12 @@ use super::sponsor_userop::{
 
 pub const CLAIM_USERNAME_SELECTOR: [u8; 4] = [0x98, 0x24, 0x55, 0x0d];
 
+/// Estimate-pass ceilings for `deployNavePirata`. Sum is 15.8M, under the 16M bundler cap.
+const FACTORY_VERIFICATION_GAS_LIMIT: u128 = 1_000_000;
+const FACTORY_CALL_GAS_LIMIT: u128 = 14_000_000;
+const FACTORY_PRE_VERIFICATION_GAS: u128 = 200_000;
+const FACTORY_PM_POST_OP_GAS: u128 = 100_000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalUseropPlaceholderLane {
     GovModule,
@@ -35,36 +41,43 @@ pub fn global_userop_gas_ceilings(
     calldata: &[u8],
     lane: GlobalUseropPlaceholderLane,
 ) -> GlobalUseropGasCeilings {
-    let call = match lane {
-        GlobalUseropPlaceholderLane::GovModule | GlobalUseropPlaceholderLane::FactoryTarget => {
-            if calldata.len() >= 4 {
-                HEAVY_CALL_GAS_LIMIT
-            } else {
-                FALLBACK_CALL_GAS_LIMIT
-            }
-        }
-        GlobalUseropPlaceholderLane::UsernameBootstrap => {
-            if calldata.len() >= 4 && calldata[..4] == CLAIM_USERNAME_SELECTOR {
-                HEAVY_CALL_GAS_LIMIT
-            } else {
-                FALLBACK_CALL_GAS_LIMIT
-            }
-        }
-        GlobalUseropPlaceholderLane::UsernameMember => FALLBACK_CALL_GAS_LIMIT,
-    };
-    let verification = match lane {
-        GlobalUseropPlaceholderLane::FactoryTarget => DEFAULT_VERIFICATION_GAS_LIMIT.max(400_000),
-        _ => DEFAULT_VERIFICATION_GAS_LIMIT,
-    };
-    GlobalUseropGasCeilings {
-        call,
-        verification,
-        pre_verification: match lane {
-            GlobalUseropPlaceholderLane::FactoryTarget => 200_000,
-            _ => 80_000,
+    match lane {
+        GlobalUseropPlaceholderLane::FactoryTarget => GlobalUseropGasCeilings {
+            call: FACTORY_CALL_GAS_LIMIT,
+            verification: FACTORY_VERIFICATION_GAS_LIMIT,
+            pre_verification: FACTORY_PRE_VERIFICATION_GAS,
+            pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
+            pm_post: FACTORY_PM_POST_OP_GAS,
         },
-        pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+        GlobalUseropPlaceholderLane::GovModule => GlobalUseropGasCeilings {
+            call: if calldata.len() >= 4 {
+                HEAVY_CALL_GAS_LIMIT
+            } else {
+                FALLBACK_CALL_GAS_LIMIT
+            },
+            verification: DEFAULT_VERIFICATION_GAS_LIMIT,
+            pre_verification: 80_000,
+            pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
+            pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+        },
+        GlobalUseropPlaceholderLane::UsernameBootstrap => GlobalUseropGasCeilings {
+            call: if calldata.len() >= 4 && calldata[..4] == CLAIM_USERNAME_SELECTOR {
+                HEAVY_CALL_GAS_LIMIT
+            } else {
+                FALLBACK_CALL_GAS_LIMIT
+            },
+            verification: DEFAULT_VERIFICATION_GAS_LIMIT,
+            pre_verification: 80_000,
+            pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
+            pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+        },
+        GlobalUseropPlaceholderLane::UsernameMember => GlobalUseropGasCeilings {
+            call: FALLBACK_CALL_GAS_LIMIT,
+            verification: DEFAULT_VERIFICATION_GAS_LIMIT,
+            pre_verification: 80_000,
+            pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
+            pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+        },
     }
 }
 
@@ -111,7 +124,28 @@ mod tests {
         let gov = global_userop_gas_ceilings(&call, GlobalUseropPlaceholderLane::GovModule);
         assert!(factory.verification > gov.verification);
         assert!(factory.pre_verification > gov.pre_verification);
-        assert_eq!(factory.call, gov.call);
+        assert_eq!(gov.call, HEAVY_CALL_GAS_LIMIT);
+        assert_ne!(factory.call, gov.call);
+    }
+
+    #[test]
+    fn factory_target_call_ceiling_is_fourteen_million() {
+        let call = [0xde, 0xad, 0xbe, 0xef];
+        let factory = global_userop_gas_ceilings(&call, GlobalUseropPlaceholderLane::FactoryTarget);
+        assert_eq!(factory.call, 14_000_000);
+        assert_ne!(factory.call, HEAVY_CALL_GAS_LIMIT);
+        assert_eq!(factory.verification, 1_000_000);
+        assert_eq!(factory.pre_verification, 200_000);
+        assert_eq!(factory.pm_verification, 500_000);
+        assert_eq!(factory.pm_post, 100_000);
+        assert_eq!(
+            factory.call
+                + factory.verification
+                + factory.pre_verification
+                + factory.pm_verification
+                + factory.pm_post,
+            15_800_000
+        );
     }
 
     #[test]

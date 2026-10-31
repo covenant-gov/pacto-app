@@ -28,11 +28,12 @@ use super::sponsor_preflight::{
 use super::sponsor_userop::{
     bundler_cap_fallback_estimate, bundler_estimate_user_operation_gas,
     bundler_rpc_url_with_stored, bundler_send_user_operation, clamp_estimated_gas_to_bundler_cap,
-    dummy_userop_signature, erc4337_account_implementation, factory_userop_too_large_error,
-    finalize_userop_gas_limits, is_bundler_gas_limit_error, load_stored_pimlico_key, pack_u128s,
-    paymaster_data, paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
-    should_skip_estimate_calibrate, sign_eip7702_authorization, user_op_json, userop_max_cost_wei,
-    EstimatedUserOpGas, FinalGasLimits, SponsoredUserOpSend, UserOpParams,
+    clamp_userop_gas_limits_to_cap, dummy_userop_signature, erc4337_account_implementation,
+    factory_userop_too_large_error, finalize_factory_userop_gas_limits, finalize_userop_gas_limits,
+    is_bundler_gas_limit_error, load_stored_pimlico_key, pack_u128s, paymaster_data,
+    paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
+    should_skip_estimate_calibrate, sign_eip7702_authorization, user_op_json, userop_gas_limit_sum,
+    userop_max_cost_wei, EstimatedUserOpGas, FinalGasLimits, SponsoredUserOpSend, UserOpParams,
 };
 use super::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use super::wallet_chain_config;
@@ -529,14 +530,9 @@ pub async fn send_sponsored_global_factory_userop<R: Runtime>(
 
     eprintln_global_userop_context(&ctx, code.len(), account_impl);
 
-    // Pimlico estimate pads deployNavePirata (~14M) to ~16.79M and rejects. Send at 16M.
-    let estimated = bundler_cap_fallback_estimate(
-        placeholders.verification,
-        placeholders.pre_verification,
-        placeholders.pm_verification,
-        placeholders.pm_post,
-    );
-    let limits = finalize_userop_gas_limits(&estimated)?;
+    let estimated = estimate_global_factory_gas(&bundler, &ctx, placeholders).await?;
+    let limits = clamp_userop_gas_limits_to_cap(finalize_factory_userop_gas_limits(&estimated));
+    eprintln_factory_userop_gas(&limits);
     match sign_and_send_global_user_op(&read_provider, &signer, &bundler, &ctx, limits).await {
         Ok(user_op_hash) => Ok(SponsoredUserOpSend {
             user_op_hash,
@@ -730,6 +726,57 @@ async fn pool_headroom_preflight<P: Provider>(
         ));
     }
     Ok(())
+}
+
+/// One estimate for factory deploys. No pass-2 calibrate and no 1.2× pad.
+async fn estimate_global_factory_gas(
+    bundler_url: &str,
+    ctx: &GlobalSponsoredSendParts,
+    ceilings: GlobalUseropGasCeilings,
+) -> Result<EstimatedUserOpGas, String> {
+    let dummy_sig = dummy_userop_signature();
+    let paymaster_and_data = encode_global_paymaster_and_data(
+        ctx.paymaster,
+        ctx.npub_hash,
+        ctx.member,
+        Address::ZERO,
+        ceilings.pm_verification,
+        ceilings.pm_post,
+    );
+    let _ = paymaster_data(paymaster_and_data.as_ref())?;
+    let estimate_op = user_op_json(UserOpParams {
+        sender: ctx.member,
+        nonce: ctx.nonce,
+        call_data: &ctx.execute_calldata,
+        call_gas_limit: ceilings.call,
+        verification_gas_limit: ceilings.verification,
+        pre_verification_gas: ceilings.pre_verification,
+        max_fee_per_gas: ctx.max_fee,
+        max_priority_fee_per_gas: ctx.max_priority,
+        paymaster: ctx.paymaster,
+        paymaster_verification_gas_limit: ceilings.pm_verification,
+        paymaster_post_op_gas_limit: ceilings.pm_post,
+        paymaster_and_data: paymaster_and_data.as_ref(),
+        signature: &dummy_sig,
+        eip7702_auth: ctx.eip7702_auth.clone(),
+    })?;
+    match bundler_estimate_user_operation_gas(bundler_url, &estimate_op, ctx.entry_point).await {
+        Ok(g) => Ok(g),
+        Err(e) if is_bundler_gas_limit_error(&e) => {
+            log::warn!(
+                target: "pacto_wallet",
+                "factory estimate hit bundler gas cap; sending at factory ceilings"
+            );
+            Ok(EstimatedUserOpGas {
+                call_gas_limit: ceilings.call,
+                verification_gas_limit: ceilings.verification,
+                pre_verification_gas: ceilings.pre_verification,
+                paymaster_verification_gas_limit: ceilings.pm_verification,
+                paymaster_post_op_gas_limit: ceilings.pm_post,
+            })
+        }
+        Err(e) => Err(e),
+    }
 }
 
 async fn estimate_global_sponsored_gas(
@@ -980,6 +1027,25 @@ fn eprintln_global_userop_context(
         },
         account_impl,
         npub_prefix,
+    );
+}
+
+fn eprintln_factory_userop_gas(limits: &FinalGasLimits) {
+    let sum = userop_gas_limit_sum(
+        limits.call_gas_limit,
+        limits.verification_gas_limit,
+        limits.pre_verification_gas,
+        limits.paymaster_verification_gas_limit,
+        limits.paymaster_post_op_gas_limit,
+    );
+    eprintln!(
+        "[pacto_wallet] global UserOp lane=factory_target call={} verification={} pre_verification={} pm_verification={} pm_post={} sum={}",
+        limits.call_gas_limit,
+        limits.verification_gas_limit,
+        limits.pre_verification_gas,
+        limits.paymaster_verification_gas_limit,
+        limits.paymaster_post_op_gas_limit,
+        sum,
     );
 }
 
