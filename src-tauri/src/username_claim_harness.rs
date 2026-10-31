@@ -38,10 +38,10 @@ use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
 use crate::evm::sponsor_userop::{
     apply_userop_gas_margin, apply_verification_gas_margin, bundler_estimate_user_operation_gas,
-    bundler_send_user_operation, clamp_userop_eip1559_fees, dummy_userop_signature, pack_u128s,
-    paymaster_data, paymaster_entry_point_deposit_preflight, sign_eip7702_authorization,
-    user_op_json, userop_max_cost_wei, wait_for_user_operation_receipt, UserOpParams,
-    FALLBACK_MAX_FEE, FALLBACK_MAX_PRIORITY_FEE, HEAVY_CALL_GAS_LIMIT,
+    bundler_send_user_operation, dummy_userop_signature, pack_u128s, paymaster_data,
+    paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
+    sign_eip7702_authorization, user_op_json, userop_max_cost_wei, wait_for_user_operation_receipt,
+    UserOpParams, HEAVY_CALL_GAS_LIMIT,
 };
 use crate::evm::{derive_eth_bip44_v1_from_mnemonic_phrase, wallet_security};
 
@@ -325,10 +325,8 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         }
     );
 
-    let (max_priority, max_fee) = match provider.estimate_eip1559_fees().await {
-        Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
-        Err(_) => (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE),
-    };
+    let (max_priority, max_fee) =
+        resolve_userop_eip1559_fees(&bundler_url, &provider).await;
     let placeholder_max_cost = userop_max_cost_wei(
         HEAVY_CALL_GAS_LIMIT,
         DEFAULT_VERIFICATION_GAS_LIMIT,

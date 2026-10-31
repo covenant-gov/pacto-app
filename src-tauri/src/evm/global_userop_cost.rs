@@ -8,7 +8,8 @@ use super::global_paymaster::{
 };
 use super::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
 use super::sponsor_userop::{
-    userop_max_cost_wei, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE, HEAVY_CALL_GAS_LIMIT,
+    clamp_userop_eip1559_fees, userop_max_cost_wei, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
+    HEAVY_CALL_GAS_LIMIT,
 };
 
 pub const CLAIM_USERNAME_SELECTOR: [u8; 4] = [0x98, 0x24, 0x55, 0x0d];
@@ -84,7 +85,7 @@ pub async fn global_userop_placeholder_max_cost<P: Provider>(
     let max_fee = provider
         .estimate_eip1559_fees()
         .await
-        .map(|fees| fees.max_fee_per_gas)
+        .map(|fees| clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas).1)
         .unwrap_or(FALLBACK_MAX_FEE);
     global_userop_placeholder_max_cost_wei(calldata, lane, max_fee)
 }
@@ -104,5 +105,11 @@ mod tests {
         );
         let eoa_style = U256::from(300_000u64) * U256::from(30_000_000_000u64);
         assert!(heavy > eoa_style);
+        let cheap = global_userop_placeholder_max_cost_wei(
+            &boot,
+            GlobalUseropPlaceholderLane::GovModule,
+            1_000_000_000,
+        );
+        assert!(heavy > cheap);
     }
 }

@@ -30,11 +30,11 @@ use super::sponsor_preflight::{
 use super::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use super::sponsor_userop::{
     apply_userop_gas_margin, apply_verification_gas_margin, bundler_estimate_user_operation_gas,
-    bundler_rpc_url_with_stored, bundler_send_user_operation, clamp_userop_eip1559_fees,
-    dummy_userop_signature, erc4337_account_implementation, load_stored_pimlico_key, pack_u128s,
-    paymaster_data, paymaster_entry_point_deposit_preflight, sign_eip7702_authorization,
-    user_op_json, userop_max_cost_wei, EstimatedUserOpGas, SponsoredUserOpSend, UserOpParams,
-    FALLBACK_MAX_FEE, FALLBACK_MAX_PRIORITY_FEE,
+    bundler_rpc_url_with_stored, bundler_send_user_operation, dummy_userop_signature,
+    erc4337_account_implementation, load_stored_pimlico_key, pack_u128s, paymaster_data,
+    paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
+    sign_eip7702_authorization, user_op_json, userop_max_cost_wei, EstimatedUserOpGas,
+    SponsoredUserOpSend, UserOpParams,
 };
 use super::wallet_chain_config;
 
@@ -134,13 +134,8 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
-        Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
-        Err(_) => {
-            log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
-            (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
-        }
-    };
+    let (max_priority, max_fee) =
+        resolve_userop_eip1559_fees(&bundler, &read_provider).await;
 
     let placeholders = username_placeholder_ceilings(&calldata, lane);
     let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
@@ -307,13 +302,8 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
-        Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
-        Err(_) => {
-            log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
-            (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
-        }
-    };
+    let (max_priority, max_fee) =
+        resolve_userop_eip1559_fees(&bundler, &read_provider).await;
 
     let placeholders = global_userop_gas_ceilings(&calldata, GlobalUseropPlaceholderLane::GovModule);
     let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
@@ -478,13 +468,8 @@ pub async fn send_sponsored_global_factory_userop<R: Runtime>(
         }
     }
 
-    let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
-        Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
-        Err(_) => {
-            log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
-            (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
-        }
-    };
+    let (max_priority, max_fee) =
+        resolve_userop_eip1559_fees(&bundler, &read_provider).await;
 
     let placeholders =
         global_userop_gas_ceilings(&calldata, GlobalUseropPlaceholderLane::FactoryTarget);

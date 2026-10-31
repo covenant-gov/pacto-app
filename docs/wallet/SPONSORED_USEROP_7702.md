@@ -15,6 +15,7 @@ Incident staging notes: [`docs/solutions/wallet/sponsored-userop-7702-debug-meth
 | Signature | Bare ECDSA `sign_hash(userOpHash)` (65 bytes) — not `personal_sign`, not MAv2 |
 | Nonce | EntryPoint nonce **key 0** |
 | Gas | Two-pass `eth_estimateUserOperationGas`, then margins (see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md)) |
+| Fees | `pimlico_getUserOperationGasPrice` (`standard` tier). Alchemy `estimate_eip1559_fees` only if that RPC fails, then clamp maxFee to 30 gwei so Sepolia cannot send a 1 gwei UserOp. |
 | Helpers | `user_op_json`, `sign_eip7702_authorization`, estimate/send in `sponsor_userop.rs` |
 
 **Forbidden:** eth-infinitism Simple7702Account (EP v0.8), Alchemy SemiModularAccount7702, hand-rolled relay lists for MLS, mega-merging `send_sponsored_*` unless Layer 2 proves transport drift.

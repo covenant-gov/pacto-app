@@ -155,8 +155,9 @@ pub async fn send_factory_call<R: Runtime>(
                 ));
             }
             Err(e) if is_hard_sponsor_preflight_error(&e) => return Err(e),
+            Err(e) if !eoa_can_pay => return Err(e),
             Err(_) => {
-                // Fall through to self-funded EOA when global sponsorship fails at runtime.
+                // Fall through to self-funded EOA only when the payer can cover gas.
             }
         }
     }
@@ -266,10 +267,9 @@ async fn estimate_eoa_gas_cost_wei<P: Provider>(
 #[cfg(test)]
 mod tests {
     use crate::evm::gov_sponsor_path::{
-        fallback_paths_after, select_gov_sponsor_path, GovSponsorPath,
+        fallback_paths_after, gov_path_attempt_order, select_gov_sponsor_path, GovSponsorPath,
     };
     use crate::evm::sponsor_userop::is_soft_sponsor_config_error;
-    use super::*;
 
     #[test]
     fn soft_sponsor_config_classification() {
@@ -303,6 +303,10 @@ mod tests {
         assert_eq!(
             fallback_paths_after(true, GovSponsorPath::GlobalTopHat),
             vec![GovSponsorPath::Eoa]
+        );
+        assert_eq!(
+            gov_path_attempt_order(true, false, true, false),
+            vec![GovSponsorPath::GlobalTopHat]
         );
     }
 }

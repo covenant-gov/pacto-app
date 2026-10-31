@@ -442,13 +442,8 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
-        Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
-        Err(_) => {
-            log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
-            (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
-        }
-    };
+    let (max_priority, max_fee) =
+        resolve_userop_eip1559_fees(&bundler, &read_provider).await;
 
     let placeholders = placeholder_gas_ceilings(&calldata);
     let placeholder_max_cost = userop_max_cost_wei(
@@ -886,11 +881,40 @@ pub(crate) fn apply_verification_gas_margin(estimate: u128) -> u128 {
     padded.min(cap).max(estimate)
 }
 
-/// Raise RPC tip/max-fee to bundler floors; ensure maxFee ≥ maxPriorityFee.
+/// Raise RPC tip to 1 gwei and maxFee to `FALLBACK_MAX_FEE` so bundler prechecks
+/// do not reject near-zero Alchemy estimates. Pimlico prices skip this clamp.
 pub(crate) fn clamp_userop_eip1559_fees(priority: u128, max_fee: u128) -> (u128, u128) {
     let priority = priority.max(FALLBACK_MAX_PRIORITY_FEE);
-    let max_fee = max_fee.max(priority);
+    let max_fee = max_fee.max(priority).max(FALLBACK_MAX_FEE);
     (priority, max_fee)
+}
+
+/// Bundler `standard` tier first; Alchemy + clamp if `pimlico_getUserOperationGasPrice` fails.
+pub(crate) async fn resolve_userop_eip1559_fees<P: Provider>(
+    bundler_url: &str,
+    provider: &P,
+) -> (u128, u128) {
+    match bundler_get_user_operation_gas_price(bundler_url).await {
+        Ok(fees) => fees,
+        Err(e) => {
+            log::warn!(
+                target: "pacto_wallet",
+                "pimlico_getUserOperationGasPrice failed; falling back to RPC eip-1559: {e}"
+            );
+            match provider.estimate_eip1559_fees().await {
+                Ok(fees) => {
+                    clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas)
+                }
+                Err(_) => {
+                    log::warn!(
+                        target: "pacto_wallet",
+                        "eip-1559 fee estimation failed; using fallback"
+                    );
+                    (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
+                }
+            }
+        }
+    }
 }
 
 /// Shared paymaster must hold EntryPoint deposit ≥ UserOp maxCost (bundler precheck).
@@ -1050,6 +1074,97 @@ pub(crate) struct EstimatedUserOpGas {
     pub(crate) pre_verification_gas: u128,
     pub(crate) paymaster_verification_gas_limit: u128,
     pub(crate) paymaster_post_op_gas_limit: u128,
+}
+
+pub(crate) async fn bundler_get_user_operation_gas_price(
+    bundler_url: &str,
+) -> Result<(u128, u128), String> {
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "pimlico_getUserOperationGasPrice",
+        "params": []
+    });
+    let mut attempt = 0u32;
+    let res = loop {
+        attempt += 1;
+        match bundler_rpc(bundler_url, &body).await {
+            Err(e) if e.retriable && attempt < BUNDLER_MAX_ATTEMPTS => {
+                tokio::time::sleep(bundler_retry_delay(attempt)).await;
+            }
+            result => break result,
+        }
+    };
+    let res = res.map_err(|e| {
+        wallet_err_json(
+            "BUNDLER_FEE",
+            format!(
+                "pimlico_getUserOperationGasPrice failed after {attempt} attempt(s): {}",
+                e.message
+            ),
+            None,
+        )
+    })?;
+    parse_user_operation_gas_price_response(&res)
+}
+
+pub(crate) fn parse_user_operation_gas_price_response(res: &Value) -> Result<(u128, u128), String> {
+    if let Some(err) = res.get("error") {
+        let raw = crate::evm::wallet_security::redact_urls_in_text(&err.to_string());
+        return Err(wallet_err_json(
+            "BUNDLER_FEE",
+            format!("pimlico_getUserOperationGasPrice failed: {raw}"),
+            None,
+        ));
+    }
+    let standard = res
+        .get("result")
+        .and_then(|r| r.get("standard"))
+        .ok_or_else(|| {
+            wallet_err_json(
+                "BUNDLER_FEE",
+                "pimlico_getUserOperationGasPrice returned no standard tier",
+                None,
+            )
+        })?;
+    let max_fee = parse_gas_price_field(standard, "maxFeePerGas")?;
+    let priority = parse_gas_price_field(standard, "maxPriorityFeePerGas")?;
+    if max_fee == 0 || priority == 0 {
+        return Err(wallet_err_json(
+            "BUNDLER_FEE",
+            "pimlico_getUserOperationGasPrice standard tier has zero fees",
+            None,
+        ));
+    }
+    Ok((priority, max_fee.max(priority)))
+}
+
+fn parse_gas_price_field(obj: &Value, key: &str) -> Result<u128, String> {
+    let Some(v) = obj.get(key) else {
+        return Err(wallet_err_json(
+            "BUNDLER_FEE",
+            format!("pimlico_getUserOperationGasPrice missing {key}"),
+            None,
+        ));
+    };
+    if let Some(raw) = v.as_str() {
+        return parse_hex_u128(raw).ok_or_else(|| {
+            wallet_err_json(
+                "BUNDLER_FEE",
+                format!("pimlico_getUserOperationGasPrice invalid {key}: {raw}"),
+                None,
+            )
+        });
+    }
+    v.as_u64()
+        .map(u128::from)
+        .ok_or_else(|| {
+            wallet_err_json(
+                "BUNDLER_FEE",
+                format!("pimlico_getUserOperationGasPrice invalid {key}"),
+                None,
+            )
+        })
 }
 
 pub(crate) async fn bundler_estimate_user_operation_gas(
@@ -1256,10 +1371,10 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
                 "Bundler rejected paymaster validation (-32502 / banned opcode). Usually an old clone still wired to a pre-redeploy paymaster, or a stale Tauri binary after an address-book cutover. Recreate the squad sponsor under the current factory, restart tauri:dev, and confirm factory stake + EP deposit. Detail: {raw}"
             ),
         )
-    } else if lower.contains("maxpriorityfeepergas") {
+    } else if lower.contains("maxpriorityfeepergas") || lower.contains("maxfeepergas") {
         (
             "BUNDLER_FEE",
-            "Bundler rejected UserOp gas fees (priority fee below floor). Retry after updating the client.".into(),
+            "Bundler rejected UserOp gas fees (maxFeePerGas or priority fee below floor). Retry after updating the client.".into(),
         )
     } else if lower.contains("aa23")
         || lower.contains("validationfunctionmissing")
@@ -1600,6 +1715,7 @@ pub(crate) fn is_hard_sponsor_preflight_error(err: &str) -> bool {
                 | "PAYMASTER_DEPOSIT_LOW"
                 | "PAYMASTER_STAKE_LOW"
                 | "SPONSOR_POLICY_READ"
+                | "BUNDLER_FEE"
         )
     )
 }
@@ -1614,12 +1730,12 @@ mod tests {
         eip7702_auth_json, encode_eip7702_authorization, explicit_bundler_rpc_url, host_is_alchemy,
         is_userop_call_gas_error, pack_u128s, parse_estimate_user_op_gas_response, parse_hex_u128,
         parse_send_user_op_response, parse_sponsored_user_op_receipt,
-        parse_war_game_userop_context, paymaster_data, pimlico_bundler_rpc_url,
-        pimlico_chain_id_for_network, receipt_transaction_hash, resolve_sponsored_squad_id,
-        retriable_bundler_status,     user_op_json, userop_max_cost_wei, validate_pimlico_api_key,
-    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
-    SponsoredUserOpReceipt, UserOpParams, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_PRIORITY_FEE,
-        HEAVY_CALL_GAS_LIMIT,
+        parse_user_operation_gas_price_response, parse_war_game_userop_context, paymaster_data,
+        pimlico_bundler_rpc_url, pimlico_chain_id_for_network, receipt_transaction_hash,
+        resolve_sponsored_squad_id, retriable_bundler_status, user_op_json, userop_max_cost_wei,
+        validate_pimlico_api_key, is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
+        SponsoredUserOpReceipt, UserOpParams, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
+        FALLBACK_MAX_PRIORITY_FEE, HEAVY_CALL_GAS_LIMIT,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
@@ -1634,6 +1750,7 @@ mod tests {
         let err = |code: &str| format!(r#"{{"code":"{code}","message":"x"}}"#);
         assert!(is_hard_sponsor_preflight_error(&err("USERNAME_POOL_LOW")));
         assert!(is_hard_sponsor_preflight_error(&err("PAYMASTER_DEPOSIT_LOW")));
+        assert!(is_hard_sponsor_preflight_error(&err("BUNDLER_FEE")));
         assert!(!is_hard_sponsor_preflight_error(&err("BUNDLER_CONFIG")));
         assert!(is_soft_sponsor_config_error(&err("BUNDLER_CONFIG")));
     }
@@ -2042,6 +2159,12 @@ mod tests {
         assert!(msg.contains("priority fee"));
 
         let (code, msg) = classify_bundler_userop_reject(
+            "maxFeePerGas must be at least 11000000002 (current maxFeePerGas: 1000000000) - use pimlico_getUserOperationGasPrice to get the current gas price",
+        );
+        assert_eq!(code, "BUNDLER_FEE");
+        assert!(msg.contains("maxFeePerGas") || msg.contains("priority fee"));
+
+        let (code, msg) = classify_bundler_userop_reject(
             r#"{"code":-32500,"data":{"reason":"AA23 reverted","revertData":"0xcf7b49f6b61d27f6"},"message":"validation reverted"}"#,
         );
         assert_eq!(code, "ACCOUNT_VALIDATION");
@@ -2219,15 +2342,41 @@ mod tests {
     fn clamp_userop_fees_raises_tip_floor_and_keeps_max_fee_above_tip() {
         let (p, f) = clamp_userop_eip1559_fees(1_500_000, 20_000_000_000);
         assert_eq!(p, FALLBACK_MAX_PRIORITY_FEE);
-        assert_eq!(f, 20_000_000_000);
+        assert_eq!(f, FALLBACK_MAX_FEE);
 
         let (p, f) = clamp_userop_eip1559_fees(1_500_000, 500_000);
         assert_eq!(p, FALLBACK_MAX_PRIORITY_FEE);
-        assert_eq!(f, FALLBACK_MAX_PRIORITY_FEE);
+        assert_eq!(f, FALLBACK_MAX_FEE);
 
         let (p, f) = clamp_userop_eip1559_fees(2_000_000_000, 40_000_000_000);
         assert_eq!(p, 2_000_000_000);
         assert_eq!(f, 40_000_000_000);
+    }
+
+    #[test]
+    fn parse_pimlico_standard_userop_gas_price() {
+        let res = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "slow": {
+                    "maxFeePerGas": "0x2540be400",
+                    "maxPriorityFeePerGas": "0x3b9aca00"
+                },
+                "standard": {
+                    "maxFeePerGas": "0x28fa6ae00",
+                    "maxPriorityFeePerGas": "0x3b9aca00"
+                },
+                "fast": {
+                    "maxFeePerGas": "0x2cb417800",
+                    "maxPriorityFeePerGas": "0x77359400"
+                }
+            }
+        });
+        let (priority, max_fee) = parse_user_operation_gas_price_response(&res).expect("parse");
+        assert_eq!(priority, 1_000_000_000);
+        assert_eq!(max_fee, 11_000_000_000);
+        assert!(max_fee >= 11_000_000_000);
     }
 
     #[test]
