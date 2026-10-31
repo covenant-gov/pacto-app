@@ -1,3 +1,5 @@
+import policy from '../userop-bundler-policy.json';
+
 /**
  * Encode `paymasterAndData` for `PactoGlobalPaymaster` (ERC-4337 EntryPoint v0.7).
  *
@@ -11,10 +13,11 @@
  */
 
 export const GLOBAL_PAYMASTER_DATA_VERSION = 1 as const;
-export const GLOBAL_PAYMASTER_DATA_OFFSET = 52 as const;
-export const GLOBAL_BALANCE_HEADROOM_BPS = 11_500 as const;
-export const DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT = 500_000 as const;
-export const DEFAULT_GLOBAL_POST_OP_GAS_LIMIT = 50_000 as const;
+export const GLOBAL_PAYMASTER_DATA_OFFSET = policy.paymasterDataOffset;
+export const GLOBAL_BALANCE_HEADROOM_BPS = policy.poolBalanceHeadroomBps;
+export const DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT =
+  policy.defaultPaymasterVerificationGasLimit;
+export const DEFAULT_GLOBAL_POST_OP_GAS_LIMIT = policy.defaultPostOpGasLimit;
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
 export type Address = `0x${string}`;

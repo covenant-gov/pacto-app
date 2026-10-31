@@ -1,0 +1,20 @@
+{
+  "bundlerUserOpGasCap": 16000000,
+  "callGasMarginBps": 12000,
+  "verificationGasMaxPadBps": 20000,
+  "fallbackCallGasLimit": 500000,
+  "heavyCallGasLimit": 1500000,
+  "fallbackPreVerificationGas": 80000,
+  "defaultVerificationGasLimit": 100000,
+  "defaultPaymasterVerificationGasLimit": 500000,
+  "defaultPostOpGasLimit": 50000,
+  "factoryCallGasLimit": 14000000,
+  "factoryVerificationGasLimit": 1000000,
+  "factoryPreVerificationGas": 200000,
+  "factoryPaymasterPostOpGasLimit": 100000,
+  "fallbackMaxPriorityFeeWei": 1000000000,
+  "fallbackMaxFeeWei": 30000000000,
+  "poolBalanceHeadroomBps": 11500,
+  "paymasterDataOffset": 52,
+  "notes": "Route and eligibility probes require Pimlico pricing and fail closed. Final sends may use fallbackMaxPriorityFeeWei (1 gwei) and fallbackMaxFeeWei (30 gwei) only as a last-resort when Pimlico pricing fails; final deposit and pool safety checks use the actual selected send fee, including fallback. Never price a UserOp from an Alchemy EIP-1559 quote or clamp one to 30 gwei."
+}

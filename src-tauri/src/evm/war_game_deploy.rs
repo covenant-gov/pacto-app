@@ -384,6 +384,21 @@ async fn send_factory_call_for_wargame<R: Runtime>(
     Ok(outcome.receipt)
 }
 
+/// Parent `squads(keccak256(parentId))` must not change during `createWarGameSponsor`.
+/// Empty after, or the same live sponsor as before, is coexistence-safe.
+fn assert_war_game_parent_slot_unchanged(
+    before: Option<Address>,
+    after: Option<Address>,
+) -> Result<(), String> {
+    if after == before || after.is_none() {
+        return Ok(());
+    }
+    if before.is_none() {
+        return Err("war-game create registered the live parent sponsor slot".into());
+    }
+    Err("war-game create changed the live parent sponsor address".into())
+}
+
 #[tauri::command]
 pub async fn deploy_war_game_for_parent<R: Runtime>(
     app: AppHandle<R>,
@@ -583,6 +598,11 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
         parsed
     };
 
+    let parent_before = read_squad_record_opt(&read_provider, factory_sponsor, parent_squad_id)
+        .await
+        .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?
+        .map(|(addr, _, _)| addr);
+
     let round_calldata = createWarGameSponsorCall {
         parentSquadId: parent_squad_id,
         topHatId: top_hat,
@@ -616,14 +636,14 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
             round_tx.clone(),
         ));
     }
-    let parent_still_empty =
-        read_squad_record_opt(&read_provider, factory_sponsor, parent_squad_id)
-            .await
-            .map_err(|e| wallet_err_json_with_tx_hash("SPONSOR_READ", e, None, round_tx.clone()))?;
-    if parent_still_empty.is_some() {
+    let parent_after = read_squad_record_opt(&read_provider, factory_sponsor, parent_squad_id)
+        .await
+        .map_err(|e| wallet_err_json_with_tx_hash("SPONSOR_READ", e, None, round_tx.clone()))?
+        .map(|(addr, _, _)| addr);
+    if let Err(msg) = assert_war_game_parent_slot_unchanged(parent_before, parent_after) {
         return Err(wallet_err_json_with_tx_hash(
             "SPONSOR_PARENT_SLOT",
-            "war-game create occupied the live parent sponsor slot",
+            msg,
             None,
             round_tx.clone(),
         ));
@@ -862,6 +882,32 @@ mod tests {
         assert_eq!(decoded.topHatId, top_hat);
         assert_eq!(decoded.registry, registry);
         assert!(decoded.customEligibleHats.is_empty());
+    }
+
+    #[test]
+    fn war_game_parent_slot_allows_empty_and_unchanged_live_sponsor() {
+        let live = Address::repeat_byte(0x11);
+        let other = Address::repeat_byte(0x22);
+        let cases: &[(Option<Address>, Option<Address>, bool)] = &[
+            (None, None, true),
+            (None, Some(live), false),
+            (Some(live), Some(live), true),
+            (Some(live), Some(other), false),
+            (Some(live), None, true),
+        ];
+        for (before, after, ok) in cases {
+            let result = assert_war_game_parent_slot_unchanged(*before, *after);
+            if *ok {
+                assert!(result.is_ok(), "expected ok for {before:?} -> {after:?}");
+            } else {
+                let msg = result.expect_err("expected err");
+                if before.is_none() {
+                    assert!(msg.contains("registered"));
+                } else {
+                    assert!(msg.contains("changed"));
+                }
+            }
+        }
     }
 
     #[test]

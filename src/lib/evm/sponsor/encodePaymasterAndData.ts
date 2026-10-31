@@ -1,3 +1,5 @@
+import policy from '../userop-bundler-policy.json';
+
 /**
  * Encode `paymasterAndData` for `PactoSponsorPaymaster` (ERC-4337 EntryPoint v0.7).
  *
@@ -12,11 +14,12 @@
  */
 
 export const PAYMASTER_DATA_VERSION = 1 as const;
-export const PAYMASTER_DATA_OFFSET = 52 as const;
-export const BALANCE_HEADROOM_BPS = 11_500 as const;
-/** Paymaster header verification gas (matches Rust DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT). */
-export const DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT = 500_000 as const;
-export const DEFAULT_POST_OP_GAS_LIMIT = 50_000 as const;
+export const PAYMASTER_DATA_OFFSET = policy.paymasterDataOffset;
+export const BALANCE_HEADROOM_BPS = policy.poolBalanceHeadroomBps;
+/** Paymaster header verification gas (matches Rust `default_paymaster_verification_gas_limit`). */
+export const DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT =
+  policy.defaultPaymasterVerificationGasLimit;
+export const DEFAULT_POST_OP_GAS_LIMIT = policy.defaultPostOpGasLimit;
 
 export type Address = `0x${string}`;
 export type Hex = `0x${string}`;

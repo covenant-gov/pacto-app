@@ -5,7 +5,6 @@ use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{Address, Bytes, Uint, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
-use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
 use bip39::Mnemonic;
 use nostr_sdk::nips::nip06::FromMnemonic;
@@ -24,9 +23,7 @@ use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
 };
 use crate::evm::global_paymaster::{
     encode_global_paymaster_and_data, required_global_pool_balance,
-    DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT, DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
 };
-use crate::evm::global_sponsor_userop::eip7702_delegation_impl;
 use crate::evm::nostr_claim_link::{
     hash_nostr_claim, npub_hash_from_pubkey, sign_nostr_claim, verify_nostr_claim,
 };
@@ -34,44 +31,15 @@ use crate::evm::pacto_chain_config::{
     erc4337_account_implementation, global_username_sponsor_addresses,
 };
 use crate::evm::rpc::call::eth_call_decode;
-use crate::evm::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
-use crate::evm::sponsor_userop::{
-    bundler_cap_fallback_estimate, bundler_estimate_user_operation_gas,
-    bundler_send_user_operation, clamp_estimated_gas_to_bundler_cap, dummy_userop_signature,
-    finalize_userop_gas_limits, is_bundler_gas_limit_error, pack_u128s, paymaster_data,
-    paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
-    should_skip_estimate_calibrate, sign_eip7702_authorization, user_op_json, userop_max_cost_wei,
-    wait_for_user_operation_receipt, UserOpParams, HEAVY_CALL_GAS_LIMIT,
-};
 use crate::evm::username_claim_preflight::preflight_bootstrap_claim_userop_path;
+use crate::evm::userop::{
+    dummy_userop_signature, estimate_sponsored_userop, paymaster_entry_point_deposit_preflight,
+    resolve_eip7702_auth_for_sender, resolve_userop_send_fees, sign_and_send_sponsored_userop,
+    user_op_json, userop_gas_ceilings, userop_max_cost_wei, wait_for_user_operation_receipt,
+    IAccountExecute, IEntryPointV07, SponsoredUserOpBuild, SponsoredUserOpLane, UserOpParams,
+    UseropPlaceholderLane,
+};
 use crate::evm::{derive_eth_bip44_v1_from_mnemonic_phrase, wallet_security};
-
-alloy::sol! {
-    #[sol(rpc)]
-    interface IAccountExecute {
-        function execute(address dest, uint256 value, bytes data) external;
-    }
-
-    #[sol(rpc)]
-    interface IEntryPointV07 {
-        function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
-        function getUserOpHash(PackedUserOperation userOp) external view returns (bytes32);
-        function balanceOf(address account) external view returns (uint256);
-    }
-
-    #[derive(Debug)]
-    struct PackedUserOperation {
-        address sender;
-        uint256 nonce;
-        bytes initCode;
-        bytes callData;
-        bytes32 accountGasLimits;
-        uint256 preVerificationGas;
-        bytes32 gasFees;
-        bytes paymasterAndData;
-        bytes signature;
-    }
-}
 
 const NETWORK: &str = "sepolia";
 const CLAIM_NAME: &str = "test";
@@ -290,21 +258,15 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
 
     // --- Sponsored UserOp ---
     eprintln!("[username_claim_harness] stage=4 sponsored UserOp (no EOA ETH)");
-    let eip7702_auth = if code.is_empty()
-        || eip7702_delegation_impl(code.as_ref()).is_some_and(|impl_addr| impl_addr != account_impl)
-    {
-        let eoa_nonce = provider
-            .get_transaction_count(member)
-            .await
-            .map_err(|e| format!("tx count: {e}"))?;
-        Some(sign_eip7702_authorization(&signer, CHAIN_ID, account_impl, eoa_nonce).await?)
-    } else {
-        eprintln!(
-            "[username_claim_harness] roster has code_len={} — skipping 7702 auth (must already be correct stub)",
-            code.len()
-        );
-        None
-    };
+    let eip7702_auth = resolve_eip7702_auth_for_sender(
+        &provider,
+        &signer,
+        member,
+        code.as_ref(),
+        CHAIN_ID,
+        account_impl,
+    )
+    .await?;
     eprintln!(
         "[username_claim_harness] eip7702_auth={}",
         if eip7702_auth.is_some() {
@@ -314,14 +276,15 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         }
     );
 
-    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler_url, &provider).await;
+    let (max_priority, max_fee) = resolve_userop_send_fees(&bundler_url).await;
+    let ceilings = userop_gas_ceilings(&claim_calldata, UseropPlaceholderLane::UsernameBootstrap);
     let placeholder_max_cost = userop_max_cost_wei(
-        HEAVY_CALL_GAS_LIMIT,
-        DEFAULT_VERIFICATION_GAS_LIMIT,
-        80_000,
+        ceilings.call,
+        ceilings.verification,
+        ceilings.pre_verification,
         max_fee,
-        DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+        ceilings.pm_verification,
+        ceilings.pm_post,
     );
     let pool_need = required_global_pool_balance(placeholder_max_cost);
     eprintln!(
@@ -352,182 +315,78 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
     .await
     .map_err(|e| format!("EP getNonce: {e}"))?;
 
-    let dummy_sig = dummy_userop_signature();
-    let mut paymaster_and_data = encode_global_paymaster_and_data(
-        addrs.pacto_global_paymaster,
-        npub_hash,
-        member,
-        Address::ZERO,
-        DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
-    );
-    let _ = paymaster_data(paymaster_and_data.as_ref())?;
-
-    let estimate_op = user_op_json(UserOpParams {
+    let paymaster = addrs.pacto_global_paymaster;
+    let entry_point = addrs.entry_point;
+    let encode = |pm_v: u128, pm_post: u128| {
+        encode_global_paymaster_and_data(paymaster, npub_hash, member, Address::ZERO, pm_v, pm_post)
+            .to_vec()
+    };
+    let build = SponsoredUserOpBuild {
         sender: member,
         nonce: ep_nonce,
         call_data: &execute_calldata,
-        call_gas_limit: HEAVY_CALL_GAS_LIMIT,
-        verification_gas_limit: DEFAULT_VERIFICATION_GAS_LIMIT,
-        pre_verification_gas: 80_000,
-        max_fee_per_gas: max_fee,
-        max_priority_fee_per_gas: max_priority,
-        paymaster: addrs.pacto_global_paymaster,
-        paymaster_verification_gas_limit: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        paymaster_post_op_gas_limit: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
-        paymaster_and_data: paymaster_and_data.as_ref(),
-        signature: &dummy_sig,
-        eip7702_auth: eip7702_auth.clone(),
-    })?;
-    let first = match bundler_estimate_user_operation_gas(
+        entry_point,
+        paymaster,
+        max_fee,
+        max_priority,
+        eip7702_auth,
+    };
+    let limits = match estimate_sponsored_userop(
         &bundler_url,
-        &estimate_op,
-        addrs.entry_point,
+        &build,
+        ceilings,
+        SponsoredUserOpLane::Small,
+        "claim",
+        &encode,
     )
     .await
     {
-        Ok(g) => g,
-        Err(e) if is_bundler_gas_limit_error(&e) => bundler_cap_fallback_estimate(
-            DEFAULT_VERIFICATION_GAS_LIMIT,
-            80_000,
-            DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-            DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
-        ),
+        Ok(gas) => gas,
         Err(e) => {
-            dump_tenderly_simulator_recipe(
-                member,
-                account_impl,
-                &execute_calldata,
-                &estimate_op,
-                addrs.entry_point,
-                addrs.pacto_global_paymaster,
-            );
-            return Err(format!(
-                    "L4 STOP after L1+L1.5 OK (estimate pass 1): {}. No txHash until send — use Simulator dump above (not Tenderly Explorer). Work-backward: field-diff UserOp vs squad (eip7702Auth, paymasterData policy=0, execute). App: global_sponsor_userop → username_claim → Commons.",
-                    wallet_security::redact_urls_in_text(&e)
-                ));
-        }
-    };
-    let estimated = if should_skip_estimate_calibrate(&first) {
-        first
-    } else {
-        let calibrate = clamp_estimated_gas_to_bundler_cap(&first);
-        paymaster_and_data = encode_global_paymaster_and_data(
-            addrs.pacto_global_paymaster,
-            npub_hash,
-            member,
-            Address::ZERO,
-            calibrate.paymaster_verification_gas_limit,
-            calibrate.paymaster_post_op_gas_limit,
-        );
-        let calibrate_op = user_op_json(UserOpParams {
-            sender: member,
-            nonce: ep_nonce,
-            call_data: &execute_calldata,
-            call_gas_limit: calibrate.call_gas_limit,
-            verification_gas_limit: calibrate.verification_gas_limit,
-            pre_verification_gas: calibrate.pre_verification_gas,
-            max_fee_per_gas: max_fee,
-            max_priority_fee_per_gas: max_priority,
-            paymaster: addrs.pacto_global_paymaster,
-            paymaster_verification_gas_limit: calibrate.paymaster_verification_gas_limit,
-            paymaster_post_op_gas_limit: calibrate.paymaster_post_op_gas_limit,
-            paymaster_and_data: paymaster_and_data.as_ref(),
-            signature: &dummy_sig,
-            eip7702_auth: eip7702_auth.clone(),
-        })?;
-        bundler_estimate_user_operation_gas(&bundler_url, &calibrate_op, addrs.entry_point)
-            .await
-            .map_err(|e| {
+            let pm = encode(ceilings.pm_verification, ceilings.pm_post);
+            let dummy = dummy_userop_signature();
+            if let Ok(op) = user_op_json(UserOpParams {
+                sender: member,
+                nonce: ep_nonce,
+                call_data: &execute_calldata,
+                call_gas_limit: ceilings.call,
+                verification_gas_limit: ceilings.verification,
+                pre_verification_gas: ceilings.pre_verification,
+                max_fee_per_gas: max_fee,
+                max_priority_fee_per_gas: max_priority,
+                paymaster,
+                paymaster_verification_gas_limit: ceilings.pm_verification,
+                paymaster_post_op_gas_limit: ceilings.pm_post,
+                paymaster_and_data: &pm,
+                signature: &dummy,
+                eip7702_auth: build.eip7702_auth.clone(),
+            }) {
                 dump_tenderly_simulator_recipe(
                     member,
                     account_impl,
                     &execute_calldata,
-                    &calibrate_op,
-                    addrs.entry_point,
-                    addrs.pacto_global_paymaster,
+                    &op,
+                    entry_point,
+                    paymaster,
                 );
-                format!(
-                    "L4 STOP after L1+L1.5 OK (estimate pass 2): {}. No txHash — use Simulator dump above.",
-                    wallet_security::redact_urls_in_text(&e)
-                )
-            })?
+            }
+            return Err(format!(
+                "L4 STOP after L1+L1.5 OK (estimate): {}. No txHash until send — use Simulator dump above (not Tenderly Explorer). Work-backward: field-diff UserOp vs squad (eip7702Auth, paymasterData policy=0, execute). App: global_sponsor_userop → username_claim → Commons.",
+                wallet_security::redact_urls_in_text(&e)
+            ));
+        }
     };
-
-    let limits = finalize_userop_gas_limits(&estimated)?;
-    let call_gas_limit = limits.call_gas_limit;
-    let verification_gas_limit = limits.verification_gas_limit;
-    let pre_verification_gas = limits.pre_verification_gas;
-    let pm_verification = limits.paymaster_verification_gas_limit;
-    let pm_post = limits.paymaster_post_op_gas_limit;
-
-    let paymaster_and_data = encode_global_paymaster_and_data(
-        addrs.pacto_global_paymaster,
-        npub_hash,
-        member,
-        Address::ZERO,
-        pm_verification,
-        pm_post,
-    );
-    let final_max_cost = userop_max_cost_wei(
-        call_gas_limit,
-        verification_gas_limit,
-        pre_verification_gas,
-        max_fee,
-        pm_verification,
-        pm_post,
-    );
-    paymaster_entry_point_deposit_preflight(
+    let user_op_hash_hex = sign_and_send_sponsored_userop(
         &provider,
-        addrs.entry_point,
-        addrs.pacto_global_paymaster,
-        final_max_cost,
-    )
-    .await?;
-
-    let packed = PackedUserOperation {
-        sender: member,
-        nonce: ep_nonce,
-        initCode: Bytes::new(),
-        callData: Bytes::from(execute_calldata.clone()),
-        accountGasLimits: pack_u128s(verification_gas_limit, call_gas_limit),
-        preVerificationGas: U256::from(pre_verification_gas),
-        gasFees: pack_u128s(max_priority, max_fee),
-        paymasterAndData: paymaster_and_data.clone(),
-        signature: Bytes::new(),
-    };
-    let user_op_hash: B256 = eth_call_decode(
-        &provider,
-        addrs.entry_point,
-        &IEntryPointV07::getUserOpHashCall { userOp: packed },
+        &signer,
+        &bundler_url,
+        &build,
+        limits,
+        &encode,
+        |_| async { Ok(()) },
     )
     .await
-    .map_err(|e| format!("getUserOpHash: {e}"))?;
-    let sig = signer
-        .sign_hash(&user_op_hash)
-        .await
-        .map_err(|e| format!("sign userOpHash: {e}"))?;
-    let signature = sig.as_bytes().to_vec();
-
-    let user_op = user_op_json(UserOpParams {
-        sender: member,
-        nonce: ep_nonce,
-        call_data: &execute_calldata,
-        call_gas_limit,
-        verification_gas_limit,
-        pre_verification_gas,
-        max_fee_per_gas: max_fee,
-        max_priority_fee_per_gas: max_priority,
-        paymaster: addrs.pacto_global_paymaster,
-        paymaster_verification_gas_limit: pm_verification,
-        paymaster_post_op_gas_limit: pm_post,
-        paymaster_and_data: paymaster_and_data.as_ref(),
-        signature: &signature,
-        eip7702_auth,
-    })?;
-
-    let user_op_hash_hex =
-        bundler_send_user_operation(&bundler_url, &user_op, addrs.entry_point).await?;
+    .map_err(|e| format!("L4 STOP send: {}", wallet_security::redact_urls_in_text(&e)))?;
     eprintln!("[username_claim_harness] sent userOpHash={user_op_hash_hex}");
     let receipt = wait_for_user_operation_receipt(&bundler_url, &user_op_hash_hex).await?;
     if !receipt.success {

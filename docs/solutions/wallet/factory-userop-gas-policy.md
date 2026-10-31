@@ -42,7 +42,7 @@ Policy:
 
 `16.79M > 16M` was the client padding a ~14M estimate (`16794127 / 1.2 ≈ 14.0M`). It was not the factory Solidity needing 16.79M. Do not split `deployNavePirata`.
 
-Squad and username sends still use two-pass estimate plus the 1.2× pad when the padded sum is already under 16M. Small ops still take the full pad. `HEAVY_CALL_GAS_LIMIT` (1.5M) is vote / propose / bootstrap only — not the factory estimate ceiling.
+Squad and username sends estimate pass 1, use pass 2 only when pass 1 and its padded form fit under 16M, then finalize the returned estimate. If pass 2 hits the cap, the clamped pass-1 limits are sent unchanged without another pad. `HEAVY_CALL_GAS_LIMIT` (1.5M) is vote / propose / bootstrap only — not the factory estimate ceiling.
 
 ## 30 gwei vs ~1.2 gwei
 
@@ -50,26 +50,25 @@ Squad and username sends still use two-pass estimate plus the 1.2× pad when the
 
 The war-game deploy paid **Pimlico `standard`** (~1.2 gwei per gas), not an Alchemy estimate. Before `0b609191`, the factory pool probe priced 15.8M gas at 30 gwei plus 15% headroom (~0.55 ETH). The global pool had ~0.084 ETH spendable, so the router returned `global factory ok=false` for an eligible 0-ETH NFT member. At ~1.2 gwei the same envelope is ~0.022 ETH, which that pool already covered. The pool was not topped up. After the probe used the Pimlico quote, the same member deployed a war-game.
 
-Never use 30 gwei to price pool headroom or factory `maxCost`. If the Pimlico price RPC is down, fail closed or use a last-resort send fallback. Do not pull fees from Alchemy and clamp.
+Route probes require Pimlico pricing and fail closed when it is unavailable. A final send may use the 30 gwei last-resort fee, but its final pool and deposit checks must use that actual selected fee. Do not pull fees from Alchemy and clamp.
 
-## Squad lane (leave the send path; share the pipeline later)
+## Squad-lane evidence
 
 Sepolia tx [`0xa6f0e670…977ed7`](https://sepolia.etherscan.io/tx/0xa6f0e67092af09683ea0419d2ab70ac7ef3283f554cfc90e472eb3624f977ed7) is a working **squad-sponsor** UserOp, not a global one. Sender `0x2634FA7c…70a3b` held no ETH. Paymaster `0x734Cd82B…ee424` (squad clone). `CrewOffboardProposed` offboard id 11. Submitted five-limit sum about 1.51M (verification 204,421 + call 688,634 + preVerification 365,211 + pm verification 161,215 + postOp 86,874). `actualGasUsed` 1,138,656. UI: “gas sponsored from the squad pool.” The username NFT on that member did not choose the paymaster. Call nesting + gas settlement: [SPONSORED_USEROP_SEPOLIA_EXAMPLE.md](../../wallet/SPONSORED_USEROP_SEPOLIA_EXAMPLE.md).
 
 A funded-ETH key deploying gov and the squad sponsor is the EOA factory arm. That also worked and is a different path.
 
-Do not retune that squad send to chase the factory cap. Small ops keep 1.2× and pass 2 because the padded sum fits under 16M. That is what the offboard already does.
+Do not retune that squad send to chase the factory cap. Small ops keep their padding policy and use pass 2 when the pass-1 result leaves room under 16M. That is what the offboard already does.
 
-## What is still split
+## Follow-up consolidation
 
-The client still has three estimate loops and two finalize functions:
+The follow-up work consolidated the product-specific estimate loops into one typed pipeline:
 
-- squad `estimate_sponsored_gas`
-- global small `estimate_global_sponsored_gas`
-- factory `estimate_global_factory_gas`
-- `finalize_userop_gas_limits` vs `finalize_factory_userop_gas_limits`
+- `SponsoredUserOpLane::Small` uses the small-lane pad and optional pass 2.
+- `SponsoredUserOpLane::Factory` uses factory ceilings, no pad, and one estimate.
+- Product-specific paymaster encoding, eligibility, and routing remain outside the shared transport.
 
-Live-sepolia already picks this with `factoryStyle` on one sender. Next work is that shape in the desktop client, not a second factory hotfix:
+The tracking sequence that led to that shape was:
 
 | Issue | What |
 |-------|------|

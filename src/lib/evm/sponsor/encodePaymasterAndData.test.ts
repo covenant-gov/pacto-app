@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import policy from '../userop-bundler-policy.json';
 import {
+  BALANCE_HEADROOM_BPS,
   encodePaymasterAndData,
   encodePaymasterPayload,
   requiredPoolBalance,
@@ -14,6 +16,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const vectors = JSON.parse(
   readFileSync(join(here, 'paymasterAndData.vectors.json'), 'utf8'),
 ) as {
+  constants: {
+    BALANCE_HEADROOM_BPS: number;
+  };
   encoding: {
     inputs: {
       paymaster: Address;
@@ -105,6 +110,12 @@ describe('encodePaymasterAndData (golden vectors)', () => {
     expect(requiredPoolBalance(BigInt(vectors.headroom.maxCostWei))).toBe(
       BigInt(vectors.headroom.requiredBalanceWei),
     );
+  });
+
+  it('reads pool headroom from the bundler policy', () => {
+    expect(BALANCE_HEADROOM_BPS).toBe(policy.poolBalanceHeadroomBps);
+    expect(vectors.constants.BALANCE_HEADROOM_BPS).toBe(policy.poolBalanceHeadroomBps);
+    expect(policy.poolBalanceHeadroomBps).toBe(11500);
   });
 
   it('keeps encoding goldens on a fixture paymaster, not the live book pin', () => {
