@@ -9,9 +9,12 @@ use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use tauri::{AppHandle, Runtime};
 
-use super::global_sponsored_fee_ledger::{self, LANE_FACTORY};
+use super::global_paymaster::required_global_pool_balance;
 use super::global_sponsor_userop::send_sponsored_global_factory_userop;
-use super::global_userop_cost::{global_userop_placeholder_max_cost, GlobalUseropPlaceholderLane};
+use super::global_sponsored_fee_ledger::{self, LANE_FACTORY};
+use super::global_userop_cost::{
+    global_userop_placeholder_max_cost_wei, GlobalUseropPlaceholderLane,
+};
 use super::gov_read::rpc_urls_or_default;
 use super::gov_sponsor_path::{select_gov_sponsor_path, GovSponsorPath};
 use super::pacto_chain_config;
@@ -20,11 +23,16 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wait_for_transaction_receipt, wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::sponsor_preflight::{global_factory_path_ok, read_eligible_member};
+use super::sponsor_preflight::{
+    factory_target_allowed, global_factory_path_ok, global_pool_headroom_ok, read_eligible_member,
+    read_global_pool_spendable,
+};
 use super::sponsor_userop::{
-    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
-    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, roster_native_balance_wei,
-    wait_for_user_operation_receipt, FALLBACK_MAX_FEE,
+    bundler_rpc_url_with_stored, call_gas_ceiling_for_calldata, call_gas_with_margin,
+    estimate_call_gas, factory_userop_too_large_error, is_bundler_gas_limit_error,
+    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, load_stored_pimlico_key,
+    resolve_userop_eip1559_fees, roster_native_balance_wei, wait_for_user_operation_receipt,
+    FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config::WalletNetworkConfig;
 
@@ -64,6 +72,7 @@ pub async fn send_factory_call<R: Runtime>(
     let pay_balance = roster_native_balance_wei(&read_provider, ctx.eoa_pay_signer).await?;
     let eoa_can_pay = pay_balance >= eoa_total;
 
+    let mut factory_block: Option<String> = None;
     let (eligible_member, global_factory_ok) = match ctx.roster_parent_id {
         Some(pid) => {
             let (roster_signer, _) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
@@ -71,28 +80,37 @@ pub async fn send_factory_call<R: Runtime>(
             let global_addrs = pacto_chain_config::global_username_sponsor_addresses(&net.key);
             match global_addrs.as_ref() {
                 Ok(addrs) => {
-                    let eligible = read_eligible_member(
-                        &read_provider,
-                        addrs.pacto_username_nft,
-                        roster,
-                    )
-                    .await?
-                    .is_some();
+                    let eligible =
+                        read_eligible_member(&read_provider, addrs.pacto_username_nft, roster)
+                            .await?
+                            .is_some();
                     let global_ok = if eligible {
-                        let placeholder_max_cost = global_userop_placeholder_max_cost(
-                            &read_provider,
+                        let max_fee = factory_probe_max_fee(&app, &read_provider, &net.key).await;
+                        let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
                             &calldata,
                             GlobalUseropPlaceholderLane::FactoryTarget,
-                        )
-                        .await;
-                        global_factory_path_ok(
+                            max_fee,
+                        );
+                        let ok = global_factory_path_ok(
                             &read_provider,
                             addrs,
                             roster,
                             factory,
                             placeholder_max_cost,
                         )
-                        .await?
+                        .await?;
+                        if !ok {
+                            factory_block = Some(
+                                factory_probe_block_reason(
+                                    &read_provider,
+                                    addrs,
+                                    factory,
+                                    placeholder_max_cost,
+                                )
+                                .await,
+                            );
+                        }
+                        ok
                     } else {
                         false
                     };
@@ -104,8 +122,7 @@ pub async fn send_factory_call<R: Runtime>(
         None => (false, false),
     };
 
-    let selected =
-        select_gov_sponsor_path(eligible_member, false, global_factory_ok, eoa_can_pay);
+    let selected = select_gov_sponsor_path(eligible_member, false, global_factory_ok, eoa_can_pay);
 
     if selected == GovSponsorPath::GlobalTopHat {
         let pid = ctx.roster_parent_id.ok_or_else(|| {
@@ -139,11 +156,11 @@ pub async fn send_factory_call<R: Runtime>(
                     &send,
                     confirm_timeout,
                 )
-                    .await
-                    .map(|receipt| FactoryCallOutcome {
-                        receipt,
-                        funded_by: "global_sponsored".to_string(),
-                    });
+                .await
+                .map(|receipt| FactoryCallOutcome {
+                    receipt,
+                    funded_by: "global_sponsored".to_string(),
+                });
             }
             Err(e) if is_soft_sponsor_config_error(&e) => {
                 return Err(wallet_err_json(
@@ -155,14 +172,25 @@ pub async fn send_factory_call<R: Runtime>(
                 ));
             }
             Err(e) if is_hard_sponsor_preflight_error(&e) => return Err(e),
+            Err(e) if is_bundler_gas_limit_error(&e) => {
+                if eoa_can_pay {
+                    // Pimlico will not take this factory UserOp; funded EOA can.
+                } else {
+                    return Err(factory_userop_too_large_error());
+                }
+            }
+            Err(e) if !eoa_can_pay => return Err(e),
             Err(_) => {
-                // Fall through to self-funded EOA when global sponsorship fails at runtime.
+                // Fall through to self-funded EOA only when the payer can cover gas.
             }
         }
     }
 
     if selected == GovSponsorPath::Fail {
         if eligible_member {
+            if let Some(err) = factory_block {
+                return Err(err);
+            }
             return Err(wallet_err_json(
                 "SPONSOR_PATH_UNAVAILABLE",
                 format!(
@@ -207,8 +235,7 @@ async fn finish_sponsored_factory_call<R: Runtime, P: Provider>(
             "USEROP_FAILED",
             format!(
                 "sponsored factory UserOp {} was included but reverted (tx {})",
-                send.user_op_hash,
-                userop_receipt.tx_hash
+                send.user_op_hash, userop_receipt.tx_hash
             ),
             None,
             userop_receipt.tx_hash.clone(),
@@ -236,13 +263,72 @@ async fn finish_sponsored_factory_call<R: Runtime, P: Provider>(
         );
     }
     let hash = TxHash::from_str(userop_receipt.tx_hash.as_str()).map_err(|_| {
-            wallet_err_json(
-                "USEROP_RECEIPT",
-                "invalid L1 transaction hash from bundler receipt",
-                None,
-            )
-        })?;
+        wallet_err_json(
+            "USEROP_RECEIPT",
+            "invalid L1 transaction hash from bundler receipt",
+            None,
+        )
+    })?;
     wait_for_transaction_receipt(provider, hash, confirm_timeout).await
+}
+
+/// Same fee the factory UserOp will submit. Do not raise a live Pimlico quote to the 30 gwei floor.
+async fn factory_probe_max_fee<R: Runtime, P: Provider>(
+    app: &AppHandle<R>,
+    provider: &P,
+    network_key: &str,
+) -> u128 {
+    let stored = load_stored_pimlico_key(app);
+    if let Ok(Some(url)) = bundler_rpc_url_with_stored(network_key, stored.as_deref()) {
+        return resolve_userop_eip1559_fees(&url, provider).await.1;
+    }
+    provider
+        .estimate_eip1559_fees()
+        .await
+        .map(|fees| fees.max_fee_per_gas.max(fees.max_priority_fee_per_gas))
+        .unwrap_or(FALLBACK_MAX_FEE)
+}
+
+async fn factory_probe_block_reason<P: Provider>(
+    provider: &P,
+    addrs: &pacto_chain_config::GlobalUsernameSponsorAddresses,
+    factory: Address,
+    placeholder_max_cost: U256,
+) -> String {
+    match factory_target_allowed(provider, addrs.sponsor_policy_registry, factory).await {
+        Ok(false) => {
+            return wallet_err_json(
+                "SPONSOR_POLICY_READ",
+                format!(
+                    "factory target {factory:#x} is not allowed by the sponsor policy registry"
+                ),
+                None,
+            );
+        }
+        Err(e) => return e,
+        Ok(true) => {}
+    }
+    let spendable = read_global_pool_spendable(provider, addrs.global_sponsor_pool)
+        .await
+        .unwrap_or(U256::ZERO);
+    let need = required_global_pool_balance(placeholder_max_cost);
+    if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, placeholder_max_cost)
+        .await
+        .unwrap_or(false)
+    {
+        return wallet_err_json(
+            "USERNAME_POOL_LOW",
+            format!(
+                "global sponsor pool spendable {spendable} wei is below required headroom {need} wei for this factory UserOp"
+            ),
+            None,
+        );
+    }
+    wallet_err_json(
+        "SPONSOR_PATH_UNAVAILABLE",
+        "eligible username member has no global factory gas path",
+        None,
+    )
 }
 
 async fn estimate_eoa_gas_cost_wei<P: Provider>(
@@ -266,10 +352,12 @@ async fn estimate_eoa_gas_cost_wei<P: Provider>(
 #[cfg(test)]
 mod tests {
     use crate::evm::gov_sponsor_path::{
-        fallback_paths_after, select_gov_sponsor_path, GovSponsorPath,
+        fallback_paths_after, gov_path_attempt_order, select_gov_sponsor_path, GovSponsorPath,
     };
-    use crate::evm::sponsor_userop::is_soft_sponsor_config_error;
-    use super::*;
+    use crate::evm::sponsor_userop::{
+        factory_userop_too_large_error, is_bundler_gas_limit_error, is_soft_sponsor_config_error,
+        wallet_error_code,
+    };
 
     #[test]
     fn soft_sponsor_config_classification() {
@@ -299,10 +387,26 @@ mod tests {
     }
 
     #[test]
+    fn factory_bundler_gas_cap_maps_to_funded_signer_when_broke() {
+        let err = r#"{"code":"BUNDLER_GAS_LIMIT","message":"User operation gas limits exceeded the max gas per userOp: 16794127 > 16000000"}"#;
+        assert!(is_bundler_gas_limit_error(err));
+        let mapped = factory_userop_too_large_error();
+        assert_eq!(
+            wallet_error_code(&mapped).as_deref(),
+            Some("FACTORY_USEROP_TOO_LARGE")
+        );
+        assert!(mapped.to_lowercase().contains("fund the paying key"));
+    }
+
+    #[test]
     fn factory_global_failure_falls_through_to_eoa_arm() {
         assert_eq!(
             fallback_paths_after(true, GovSponsorPath::GlobalTopHat),
             vec![GovSponsorPath::Eoa]
+        );
+        assert_eq!(
+            gov_path_attempt_order(true, false, true, false),
+            vec![GovSponsorPath::GlobalTopHat]
         );
     }
 }

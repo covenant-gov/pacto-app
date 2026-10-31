@@ -1,5 +1,10 @@
 import type { MutinyStatusDto, TreasuryProposalDto } from './api';
 
+/** Captain vote recorded, or the list marked the Safe as wearing the captain hat. */
+export function treasuryCaptainSatisfied(proposal: TreasuryProposalDto): boolean {
+  return proposal.captainSatisfied ?? proposal.captainApproved;
+}
+
 /** Proposals in crew voting phase. */
 export function crewVotableProposals(proposals: TreasuryProposalDto[]): TreasuryProposalDto[] {
   return proposals.filter((p) => p.status === 'active' && !p.executed);
@@ -8,14 +13,18 @@ export function crewVotableProposals(proposals: TreasuryProposalDto[]): Treasury
 /** Proposals awaiting captain approval after crew pass. */
 export function captainVotableProposals(proposals: TreasuryProposalDto[]): TreasuryProposalDto[] {
   return proposals.filter(
-    (p) => p.status === 'active_passed_crew' && !p.captainDefeated && !p.captainApproved && !p.executed,
+    (p) =>
+      p.status === 'active_passed_crew' &&
+      !p.captainDefeated &&
+      !treasuryCaptainSatisfied(p) &&
+      !p.executed,
   );
 }
 
-/** Treasury proposals executable on-chain (crew pass + captain approval). */
+/** Treasury proposals executable on-chain (crew pass and captain path). */
 export function executableTreasuryProposals(proposals: TreasuryProposalDto[]): TreasuryProposalDto[] {
   return proposals.filter(
-    (p) => p.status === 'active_passed_crew' && p.captainApproved && !p.executed,
+    (p) => p.status === 'active_passed_crew' && treasuryCaptainSatisfied(p) && !p.executed,
   );
 }
 

@@ -17,6 +17,8 @@ export interface TreasuryProposalDto {
   yeas: number;
   nays: number;
   captainApproved: boolean;
+  /** Captain vote, or the squad Safe wears the captain hat. Older snapshots omit it. */
+  captainSatisfied?: boolean;
   captainDefeated: boolean;
   executed: boolean;
   status: string;

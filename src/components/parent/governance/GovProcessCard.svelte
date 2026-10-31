@@ -9,7 +9,7 @@
     isTreasuryProposalPast,
     treasuryProposalOutcomeLabel,
   } from '../../../lib/governance/treasury-proposal-ui';
-  import { executableTreasuryProposals, isMutinyActive, isMutinyExecutable, isMutinyExpirable } from '../../../lib/governance/gov-proposal-lists';
+  import { executableTreasuryProposals, isMutinyActive, isMutinyExecutable, isMutinyExpirable, treasuryCaptainSatisfied } from '../../../lib/governance/gov-proposal-lists';
   import { isCrewOffboardExecutable, isCrewOffboardExpirable } from '../../../lib/governance/crew-offboard';
   import { mutinyTxExplorerUrl, shortTxHash } from '../../../lib/governance/mutiny-process-tx';
   import { openExternalUrl } from '../../../lib/utils/open-external';
@@ -73,7 +73,7 @@
     showVotes &&
       card.kind === 'treasury' &&
       card.proposal.status === 'active_passed_crew' &&
-      !card.proposal.captainApproved &&
+      !treasuryCaptainSatisfied(card.proposal) &&
       !card.proposal.captainDefeated &&
       !card.proposal.executed,
   );

@@ -40,7 +40,10 @@ pub fn select_gov_sponsor_path(
 }
 
 /// Remaining arms to try after a sponsored path fails at runtime (non-soft).
-pub fn fallback_paths_after(eligible_member: bool, attempted: GovSponsorPath) -> Vec<GovSponsorPath> {
+pub fn fallback_paths_after(
+    eligible_member: bool,
+    attempted: GovSponsorPath,
+) -> Vec<GovSponsorPath> {
     match (eligible_member, attempted) {
         (true, GovSponsorPath::Squad) => {
             vec![GovSponsorPath::GlobalTopHat, GovSponsorPath::Eoa]
@@ -68,6 +71,9 @@ pub fn gov_path_attempt_order(
     }
     let mut paths = vec![primary];
     for path in fallback_paths_after(eligible_member, primary) {
+        if path == GovSponsorPath::Eoa && !eoa_can_pay {
+            continue;
+        }
         if !paths.contains(&path) {
             paths.push(path);
         }
@@ -199,6 +205,14 @@ mod tests {
         assert_eq!(
             gov_path_attempt_order(true, false, false, false),
             vec![GovSponsorPath::Fail]
+        );
+        assert_eq!(
+            gov_path_attempt_order(true, false, true, false),
+            vec![GovSponsorPath::GlobalTopHat]
+        );
+        assert_eq!(
+            gov_path_attempt_order(true, true, true, false),
+            vec![GovSponsorPath::Squad, GovSponsorPath::GlobalTopHat]
         );
     }
 }

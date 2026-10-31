@@ -147,6 +147,22 @@ describe('govExecuteUiState', () => {
       unlockAtSec: null,
     });
 
+    const pauseCaptain: GovProcessCard = {
+      kind: 'treasury',
+      proposal: treasury({
+        status: 'active_passed_crew',
+        captainApproved: false,
+        captainSatisfied: true,
+        dataHex: '0x1234',
+      }),
+      sortKey: 1,
+    };
+    expect(govExecuteUiState({ card: pauseCaptain })).toMatchObject({
+      showExecute: true,
+      executeEnabled: true,
+      disabledReasonKey: '',
+    });
+
     const passed: GovProcessCard = {
       kind: 'treasury',
       proposal: treasury({ status: 'active_passed_crew', captainApproved: true }),

@@ -303,7 +303,7 @@ End-to-end for an **`eligibleMember`** with **0 ETH** on the roster EOA. Require
 
 ### Happy path
 
-- [ ] **Deploy Pacto Gov + squad sponsor** (Launchpad): initial sponsor deposit **0** → `deployNavePirata` succeeds via **global** factory sponsorship (`funded_by: global_sponsored` in logs / no roster ETH spent on gas).
+- [ ] **Deploy Pacto Gov + squad sponsor** (Launchpad): initial sponsor deposit **0** → `deployNavePirata` succeeds via **global** factory sponsorship (`funded_by: global_sponsored` in logs / no roster ETH spent on gas). Stderr `[pacto_wallet] global UserOp lane=factory_target` shows five-limit `sum` ≤ 16_000_000 and no `16794… > 16000000`. Policy: one `eth_estimateUserOperationGas` with a ~14M call ceiling, no 1.2× pad, then clamp.
 - [ ] Optional **bootstrap crew** in same wizard → quartermaster `bootstrapCrew` succeeds via global gov-module sponsorship when roster still has 0 ETH.
 - [ ] **Deploy squad sponsor** step with **0 deposit** → `createSquadSponsor` succeeds (global or EOA per payer); clone exists with empty pool.
 - [ ] Fund **squad sponsor pool** from Governance → Sponsor treasury (any positive deposit).

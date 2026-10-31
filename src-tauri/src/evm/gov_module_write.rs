@@ -164,6 +164,7 @@ pub async fn send_gov_module_call<R: Runtime>(
         eoa_can_pay,
     );
 
+    let mut last_sponsor_err: Option<String> = None;
     for path in path_order {
         match path {
             GovSponsorPath::Squad => {
@@ -204,7 +205,7 @@ pub async fn send_gov_module_call<R: Runtime>(
                         if is_hard_sponsor_preflight_error(&e) {
                             return Err(e);
                         }
-                        continue;
+                        last_sponsor_err = Some(e);
                     }
                 }
             }
@@ -246,7 +247,7 @@ pub async fn send_gov_module_call<R: Runtime>(
                         if is_hard_sponsor_preflight_error(&e) {
                             return Err(e);
                         }
-                        continue;
+                        last_sponsor_err = Some(e);
                     }
                 }
             }
@@ -270,6 +271,16 @@ pub async fn send_gov_module_call<R: Runtime>(
             }
             GovSponsorPath::Eoa => break,
         }
+    }
+
+    if !eoa_can_pay {
+        return Err(last_sponsor_err.unwrap_or_else(|| {
+            wallet_err_json(
+                "SPONSOR_PATH_UNAVAILABLE",
+                "sponsored UserOp failed and the roster key cannot cover gas",
+                None,
+            )
+        }));
     }
 
     let provider = connect_signing_provider(&urls, wallet).await?;
