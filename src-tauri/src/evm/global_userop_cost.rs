@@ -52,10 +52,17 @@ pub fn global_userop_gas_ceilings(
         }
         GlobalUseropPlaceholderLane::UsernameMember => FALLBACK_CALL_GAS_LIMIT,
     };
+    let verification = match lane {
+        GlobalUseropPlaceholderLane::FactoryTarget => DEFAULT_VERIFICATION_GAS_LIMIT.max(400_000),
+        _ => DEFAULT_VERIFICATION_GAS_LIMIT,
+    };
     GlobalUseropGasCeilings {
         call,
-        verification: DEFAULT_VERIFICATION_GAS_LIMIT,
-        pre_verification: 80_000,
+        verification,
+        pre_verification: match lane {
+            GlobalUseropPlaceholderLane::FactoryTarget => 200_000,
+            _ => 80_000,
+        },
         pm_verification: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
         pm_post: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
     }
@@ -85,7 +92,9 @@ pub async fn global_userop_placeholder_max_cost<P: Provider>(
     let max_fee = provider
         .estimate_eip1559_fees()
         .await
-        .map(|fees| clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas).1)
+        .map(|fees| {
+            clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas).1
+        })
         .unwrap_or(FALLBACK_MAX_FEE);
     global_userop_placeholder_max_cost_wei(calldata, lane, max_fee)
 }
@@ -94,6 +103,16 @@ pub async fn global_userop_placeholder_max_cost<P: Provider>(
 mod tests {
     use super::*;
     use alloy::primitives::U256;
+
+    #[test]
+    fn factory_target_uses_heavier_verification_than_gov_module() {
+        let call = [0xde, 0xad, 0xbe, 0xef];
+        let factory = global_userop_gas_ceilings(&call, GlobalUseropPlaceholderLane::FactoryTarget);
+        let gov = global_userop_gas_ceilings(&call, GlobalUseropPlaceholderLane::GovModule);
+        assert!(factory.verification > gov.verification);
+        assert!(factory.pre_verification > gov.pre_verification);
+        assert_eq!(factory.call, gov.call);
+    }
 
     #[test]
     fn gov_module_placeholder_exceeds_typical_eoa_estimate() {

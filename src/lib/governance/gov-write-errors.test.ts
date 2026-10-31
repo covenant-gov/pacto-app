@@ -65,6 +65,12 @@ describe('govWriteErrorMessage', () => {
     expect(govWriteErrorMessage('{"code":"PAYMASTER_VALIDATION","message":"x"}', 'Vote')).toBe(
       'governance.error.paymasterValidation',
     );
+    expect(govWriteErrorMessage('{"code":"FACTORY_USEROP_TOO_LARGE","message":"x"}', 'Deploy')).toBe(
+      'governance.error.factoryUseropTooLarge',
+    );
+    expect(govWriteErrorMessage('{"code":"BUNDLER_GAS_LIMIT","message":"x"}', 'Deploy')).toBe(
+      'governance.error.factoryUseropTooLarge',
+    );
   });
 
   it('shows mapped errors with error toast styling', () => {

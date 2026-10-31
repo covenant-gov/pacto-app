@@ -28,9 +28,9 @@ use super::sponsor_preflight::{
 use super::sponsor_userop::{
     bundler_cap_fallback_estimate, bundler_estimate_user_operation_gas,
     bundler_rpc_url_with_stored, bundler_send_user_operation, clamp_estimated_gas_to_bundler_cap,
-    dummy_userop_signature, erc4337_account_implementation, finalize_userop_gas_limits,
-    is_bundler_gas_limit_error, load_stored_pimlico_key, pack_u128s, paymaster_data,
-    paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
+    dummy_userop_signature, erc4337_account_implementation, factory_userop_too_large_error,
+    finalize_userop_gas_limits, is_bundler_gas_limit_error, load_stored_pimlico_key, pack_u128s,
+    paymaster_data, paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
     should_skip_estimate_calibrate, sign_eip7702_authorization, user_op_json, userop_max_cost_wei,
     EstimatedUserOpGas, FinalGasLimits, SponsoredUserOpSend, UserOpParams,
 };
@@ -529,14 +529,22 @@ pub async fn send_sponsored_global_factory_userop<R: Runtime>(
 
     eprintln_global_userop_context(&ctx, code.len(), account_impl);
 
-    let estimated = estimate_global_sponsored_gas(&bundler, &ctx, placeholders).await?;
+    // Pimlico estimate pads deployNavePirata (~14M) to ~16.79M and rejects. Send at 16M.
+    let estimated = bundler_cap_fallback_estimate(
+        placeholders.verification,
+        placeholders.pre_verification,
+        placeholders.pm_verification,
+        placeholders.pm_post,
+    );
     let limits = finalize_userop_gas_limits(&estimated)?;
-    let user_op_hash =
-        sign_and_send_global_user_op(&read_provider, &signer, &bundler, &ctx, limits).await?;
-    Ok(SponsoredUserOpSend {
-        user_op_hash,
-        bundler_url: bundler,
-    })
+    match sign_and_send_global_user_op(&read_provider, &signer, &bundler, &ctx, limits).await {
+        Ok(user_op_hash) => Ok(SponsoredUserOpSend {
+            user_op_hash,
+            bundler_url: bundler,
+        }),
+        Err(e) if is_bundler_gas_limit_error(&e) => Err(factory_userop_too_large_error()),
+        Err(e) => Err(e),
+    }
 }
 
 struct GlobalSponsoredSendParts {

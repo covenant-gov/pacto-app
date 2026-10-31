@@ -25,6 +25,8 @@ const CODE_TO_I18N: Record<string, string> = {
   PAYMASTER_GAS_EFFICIENCY: 'governance.error.paymasterOperator',
   PAYMASTER_DATA: 'governance.error.paymasterOperator',
   USEROP_CALL_GAS: 'governance.error.useropCallGas',
+  BUNDLER_GAS_LIMIT: 'governance.error.factoryUseropTooLarge',
+  FACTORY_USEROP_TOO_LARGE: 'governance.error.factoryUseropTooLarge',
   USEROP_CALL_REVERTED: 'governance.error.useropCallReverted',
   GOV_CALL_REVERTED: 'governance.error.govCallReverted',
   MUTINY_NOT_ACTIVE: 'governance.error.mutinyNotActive',

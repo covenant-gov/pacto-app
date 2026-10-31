@@ -681,8 +681,18 @@ pub(crate) fn should_skip_estimate_calibrate(first: &EstimatedUserOpGas) -> bool
 }
 
 pub(crate) fn is_bundler_gas_limit_error(err: &str) -> bool {
-    wallet_error_code(err).as_deref() == Some("BUNDLER_GAS_LIMIT")
-        || err.to_lowercase().contains("max gas per userop")
+    matches!(
+        wallet_error_code(err).as_deref(),
+        Some("BUNDLER_GAS_LIMIT" | "FACTORY_USEROP_TOO_LARGE")
+    ) || err.to_lowercase().contains("max gas per userop")
+}
+
+pub(crate) fn factory_userop_too_large_error() -> String {
+    wallet_err_json(
+        "FACTORY_USEROP_TOO_LARGE",
+        "This factory deploy needs more gas than the bundler allows in one sponsored UserOp. Fund the paying key with ETH and retry as a normal transaction.",
+        None,
+    )
 }
 
 /// When the bundler refuses to return an over-cap estimate, fill the 16M cap from placeholders.
@@ -1919,17 +1929,17 @@ mod tests {
         bundler_status_source_with_stored, call_gas_ceiling_for_calldata, call_gas_with_margin,
         clamp_estimated_gas_to_bundler_cap, clamp_userop_eip1559_fees,
         classify_bundler_userop_reject, dummy_userop_signature, eip7702_auth_json,
-        encode_eip7702_authorization, explicit_bundler_rpc_url, finalize_userop_gas_limits,
-        host_is_alchemy, is_bundler_gas_limit_error, is_hard_sponsor_preflight_error,
-        is_soft_sponsor_config_error, is_userop_call_gas_error, pack_u128s,
-        parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
-        parse_sponsored_user_op_receipt, parse_user_operation_gas_price_response,
-        parse_war_game_userop_context, paymaster_data, pimlico_bundler_rpc_url,
-        pimlico_chain_id_for_network, receipt_transaction_hash, resolve_sponsored_squad_id,
-        retriable_bundler_status, should_skip_estimate_calibrate, user_op_json,
-        userop_max_cost_wei, validate_pimlico_api_key, EstimatedUserOpGas, SponsoredUserOpReceipt,
-        UserOpParams, BUNDLER_USEROP_GAS_CAP, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
-        FALLBACK_MAX_PRIORITY_FEE, HEAVY_CALL_GAS_LIMIT,
+        encode_eip7702_authorization, explicit_bundler_rpc_url, factory_userop_too_large_error,
+        finalize_userop_gas_limits, host_is_alchemy, is_bundler_gas_limit_error,
+        is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, is_userop_call_gas_error,
+        pack_u128s, parse_estimate_user_op_gas_response, parse_hex_u128,
+        parse_send_user_op_response, parse_sponsored_user_op_receipt,
+        parse_user_operation_gas_price_response, parse_war_game_userop_context, paymaster_data,
+        pimlico_bundler_rpc_url, pimlico_chain_id_for_network, receipt_transaction_hash,
+        resolve_sponsored_squad_id, retriable_bundler_status, should_skip_estimate_calibrate,
+        user_op_json, userop_max_cost_wei, validate_pimlico_api_key, EstimatedUserOpGas,
+        SponsoredUserOpReceipt, UserOpParams, BUNDLER_USEROP_GAS_CAP, FALLBACK_CALL_GAS_LIMIT,
+        FALLBACK_MAX_FEE, FALLBACK_MAX_PRIORITY_FEE, HEAVY_CALL_GAS_LIMIT,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
@@ -2233,6 +2243,7 @@ mod tests {
         assert!(!is_bundler_gas_limit_error(
             r#"{"code":"BUNDLER_FEE","message":"x"}"#
         ));
+        assert!(is_bundler_gas_limit_error(&factory_userop_too_large_error()));
     }
 
     #[test]

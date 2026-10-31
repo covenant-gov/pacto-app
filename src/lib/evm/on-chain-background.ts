@@ -1,6 +1,7 @@
 import type { SupportedChainId } from '../wallet/chains';
 import { getExplorerTxUrl, explorerTxLinkLabel } from '../wallet/assets';
 import { walletWaitForTransaction, parseWalletOpError } from '../wallet/backend-wallet';
+import { govWriteErrorMessage, parseWalletErrorCode } from '../governance/gov-write-errors';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import { showToast } from '../../stores/toast';
 import {
@@ -116,7 +117,10 @@ export function runOnChainInBackground<T>(opts: RunOnChainInBackgroundOpts<T>): 
     } catch (e) {
       let raw = getInvokeErrorMessage(e, get(t)('wallet.onChain.failedFallback'));
       const parsed = parseWalletOpError(raw);
-      if (parsed?.message) {
+      const code = parseWalletErrorCode(e) ?? parsed?.code;
+      if (code === 'FACTORY_USEROP_TOO_LARGE' || code === 'BUNDLER_GAS_LIMIT') {
+        raw = govWriteErrorMessage(e, raw);
+      } else if (parsed?.message) {
         raw = parsed.code ? `${parsed.code}: ${parsed.message}` : parsed.message;
       }
       const handled = opts.onError?.(raw, e);
