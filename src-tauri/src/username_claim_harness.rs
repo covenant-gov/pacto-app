@@ -19,15 +19,14 @@ use crate::evm::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiC
 use crate::evm::contracts::pacto_username::IPactoGlobalPaymaster::ALLOWED_7702_IMPLEMENTATIONCall;
 use crate::evm::contracts::pacto_username::IPactoProtocolRegistry::usernameNftCall;
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
-    canBootstrapClaimCall, claimCall, hashClaimBindingCall, nameAvailableCall,
-    npubOfCall, recordOfCall, usedNonceCall,
+    canBootstrapClaimCall, claimCall, hashClaimBindingCall, nameAvailableCall, npubOfCall,
+    recordOfCall, usedNonceCall,
 };
 use crate::evm::global_paymaster::{
     encode_global_paymaster_and_data, required_global_pool_balance,
     DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT, DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
 };
 use crate::evm::global_sponsor_userop::eip7702_delegation_impl;
-use crate::evm::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use crate::evm::nostr_claim_link::{
     hash_nostr_claim, npub_hash_from_pubkey, sign_nostr_claim, verify_nostr_claim,
 };
@@ -37,12 +36,14 @@ use crate::evm::pacto_chain_config::{
 use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
 use crate::evm::sponsor_userop::{
-    apply_userop_gas_margin, apply_verification_gas_margin, bundler_estimate_user_operation_gas,
-    bundler_send_user_operation, dummy_userop_signature, pack_u128s, paymaster_data,
+    bundler_cap_fallback_estimate, bundler_estimate_user_operation_gas,
+    bundler_send_user_operation, clamp_estimated_gas_to_bundler_cap, dummy_userop_signature,
+    finalize_userop_gas_limits, is_bundler_gas_limit_error, pack_u128s, paymaster_data,
     paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
-    sign_eip7702_authorization, user_op_json, userop_max_cost_wei, wait_for_user_operation_receipt,
-    UserOpParams, HEAVY_CALL_GAS_LIMIT,
+    should_skip_estimate_calibrate, sign_eip7702_authorization, user_op_json, userop_max_cost_wei,
+    wait_for_user_operation_receipt, UserOpParams, HEAVY_CALL_GAS_LIMIT,
 };
+use crate::evm::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use crate::evm::{derive_eth_bip44_v1_from_mnemonic_phrase, wallet_security};
 
 alloy::sol! {
@@ -120,13 +121,10 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
 
     // --- L0 ---
     eprintln!("[username_claim_harness] stage=1 L0 reads");
-    let registry_nft: Address = eth_call_decode(
-        &provider,
-        addrs.protocol_registry,
-        &usernameNftCall {},
-    )
-    .await
-    .map_err(|e| format!("protocolRegistry.usernameNft: {e}"))?;
+    let registry_nft: Address =
+        eth_call_decode(&provider, addrs.protocol_registry, &usernameNftCall {})
+            .await
+            .map_err(|e| format!("protocolRegistry.usernameNft: {e}"))?;
     if registry_nft != nft {
         return Err(format!(
             "L0 FAIL: book pactoUsernameNft {nft:#x} != REGISTRY.usernameNft() {registry_nft:#x}"
@@ -166,10 +164,13 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
     )
     .await
     .map_err(|e| format!("usedNonce: {e}"))?;
-    let bootstrap_pool: U256 =
-        eth_call_decode(&provider, addrs.bootstrap_mint_pool, &bootstrapSpendableCall {})
-            .await
-            .map_err(|e| format!("bootstrap spendable: {e}"))?;
+    let bootstrap_pool: U256 = eth_call_decode(
+        &provider,
+        addrs.bootstrap_mint_pool,
+        &bootstrapSpendableCall {},
+    )
+    .await
+    .map_err(|e| format!("bootstrap spendable: {e}"))?;
     let pm_deposit: U256 = eth_call_decode(
         &provider,
         addrs.entry_point,
@@ -229,14 +230,7 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
     .await
     .map_err(|e| format!("hashClaimBinding: {e}"))?;
     let local_binding = claim_binding_signing_hash(
-        CHAIN_ID,
-        nft,
-        npub_hash,
-        member,
-        CLAIM_NAME,
-        nonce,
-        issued_at,
-        salt,
+        CHAIN_ID, nft, npub_hash, member, CLAIM_NAME, nonce, issued_at, salt,
     );
     if on_chain_binding != local_binding {
         return Err(format!(
@@ -252,14 +246,7 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         return Err("local BIP-340 verify failed".into());
     }
     let evm_sig = sign_claim_binding(
-        &signer,
-        CHAIN_ID,
-        nft,
-        npub_hash,
-        CLAIM_NAME,
-        nonce,
-        issued_at,
-        salt,
+        &signer, CHAIN_ID, nft, npub_hash, CLAIM_NAME, nonce, issued_at, salt,
     )?;
 
     let claim_calldata = claimCall {
@@ -286,7 +273,9 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         .await
         .map_err(|e| format!("get_code: {e}"))?;
 
-    eprintln!("[username_claim_harness] stage=3 L1+L1.5 preflight (shared with global_sponsor_userop)");
+    eprintln!(
+        "[username_claim_harness] stage=3 L1+L1.5 preflight (shared with global_sponsor_userop)"
+    );
     preflight_bootstrap_claim_userop_path(
         &provider,
         member,
@@ -301,8 +290,8 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
 
     // --- Sponsored UserOp ---
     eprintln!("[username_claim_harness] stage=4 sponsored UserOp (no EOA ETH)");
-    let eip7702_auth = if code.is_empty() || eip7702_delegation_impl(code.as_ref())
-        .is_some_and(|impl_addr| impl_addr != account_impl)
+    let eip7702_auth = if code.is_empty()
+        || eip7702_delegation_impl(code.as_ref()).is_some_and(|impl_addr| impl_addr != account_impl)
     {
         let eoa_nonce = provider
             .get_transaction_count(member)
@@ -325,8 +314,7 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         }
     );
 
-    let (max_priority, max_fee) =
-        resolve_userop_eip1559_fees(&bundler_url, &provider).await;
+    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler_url, &provider).await;
     let placeholder_max_cost = userop_max_cost_wei(
         HEAVY_CALL_GAS_LIMIT,
         DEFAULT_VERIFICATION_GAS_LIMIT,
@@ -391,48 +379,63 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         signature: &dummy_sig,
         eip7702_auth: eip7702_auth.clone(),
     })?;
-    let first =
-        bundler_estimate_user_operation_gas(&bundler_url, &estimate_op, addrs.entry_point)
-            .await
-            .map_err(|e| {
-                dump_tenderly_simulator_recipe(
-                    member,
-                    account_impl,
-                    &execute_calldata,
-                    &estimate_op,
-                    addrs.entry_point,
-                    addrs.pacto_global_paymaster,
-                );
-                format!(
+    let first = match bundler_estimate_user_operation_gas(
+        &bundler_url,
+        &estimate_op,
+        addrs.entry_point,
+    )
+    .await
+    {
+        Ok(g) => g,
+        Err(e) if is_bundler_gas_limit_error(&e) => bundler_cap_fallback_estimate(
+            DEFAULT_VERIFICATION_GAS_LIMIT,
+            80_000,
+            DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
+            DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+        ),
+        Err(e) => {
+            dump_tenderly_simulator_recipe(
+                member,
+                account_impl,
+                &execute_calldata,
+                &estimate_op,
+                addrs.entry_point,
+                addrs.pacto_global_paymaster,
+            );
+            return Err(format!(
                     "L4 STOP after L1+L1.5 OK (estimate pass 1): {}. No txHash until send — use Simulator dump above (not Tenderly Explorer). Work-backward: field-diff UserOp vs squad (eip7702Auth, paymasterData policy=0, execute). App: global_sponsor_userop → username_claim → Commons.",
                     wallet_security::redact_urls_in_text(&e)
-                )
-            })?;
-    paymaster_and_data = encode_global_paymaster_and_data(
-        addrs.pacto_global_paymaster,
-        npub_hash,
-        member,
-        Address::ZERO,
-        first.paymaster_verification_gas_limit,
-        first.paymaster_post_op_gas_limit,
-    );
-    let calibrate_op = user_op_json(UserOpParams {
-        sender: member,
-        nonce: ep_nonce,
-        call_data: &execute_calldata,
-        call_gas_limit: first.call_gas_limit,
-        verification_gas_limit: first.verification_gas_limit,
-        pre_verification_gas: first.pre_verification_gas,
-        max_fee_per_gas: max_fee,
-        max_priority_fee_per_gas: max_priority,
-        paymaster: addrs.pacto_global_paymaster,
-        paymaster_verification_gas_limit: first.paymaster_verification_gas_limit,
-        paymaster_post_op_gas_limit: first.paymaster_post_op_gas_limit,
-        paymaster_and_data: paymaster_and_data.as_ref(),
-        signature: &dummy_sig,
-        eip7702_auth: eip7702_auth.clone(),
-    })?;
-    let estimated =
+                ));
+        }
+    };
+    let estimated = if should_skip_estimate_calibrate(&first) {
+        first
+    } else {
+        let calibrate = clamp_estimated_gas_to_bundler_cap(&first);
+        paymaster_and_data = encode_global_paymaster_and_data(
+            addrs.pacto_global_paymaster,
+            npub_hash,
+            member,
+            Address::ZERO,
+            calibrate.paymaster_verification_gas_limit,
+            calibrate.paymaster_post_op_gas_limit,
+        );
+        let calibrate_op = user_op_json(UserOpParams {
+            sender: member,
+            nonce: ep_nonce,
+            call_data: &execute_calldata,
+            call_gas_limit: calibrate.call_gas_limit,
+            verification_gas_limit: calibrate.verification_gas_limit,
+            pre_verification_gas: calibrate.pre_verification_gas,
+            max_fee_per_gas: max_fee,
+            max_priority_fee_per_gas: max_priority,
+            paymaster: addrs.pacto_global_paymaster,
+            paymaster_verification_gas_limit: calibrate.paymaster_verification_gas_limit,
+            paymaster_post_op_gas_limit: calibrate.paymaster_post_op_gas_limit,
+            paymaster_and_data: paymaster_and_data.as_ref(),
+            signature: &dummy_sig,
+            eip7702_auth: eip7702_auth.clone(),
+        })?;
         bundler_estimate_user_operation_gas(&bundler_url, &calibrate_op, addrs.entry_point)
             .await
             .map_err(|e| {
@@ -448,13 +451,15 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
                     "L4 STOP after L1+L1.5 OK (estimate pass 2): {}. No txHash — use Simulator dump above.",
                     wallet_security::redact_urls_in_text(&e)
                 )
-            })?;
+            })?
+    };
 
-    let call_gas_limit = apply_userop_gas_margin(estimated.call_gas_limit);
-    let verification_gas_limit = apply_verification_gas_margin(estimated.verification_gas_limit);
-    let pre_verification_gas = apply_userop_gas_margin(estimated.pre_verification_gas);
-    let pm_verification = apply_verification_gas_margin(estimated.paymaster_verification_gas_limit);
-    let pm_post = apply_userop_gas_margin(estimated.paymaster_post_op_gas_limit);
+    let limits = finalize_userop_gas_limits(&estimated)?;
+    let call_gas_limit = limits.call_gas_limit;
+    let verification_gas_limit = limits.verification_gas_limit;
+    let pre_verification_gas = limits.pre_verification_gas;
+    let pm_verification = limits.paymaster_verification_gas_limit;
+    let pm_post = limits.paymaster_post_op_gas_limit;
 
     let paymaster_and_data = encode_global_paymaster_and_data(
         addrs.pacto_global_paymaster,
@@ -570,10 +575,7 @@ fn dump_tenderly_simulator_recipe(
         .get("sender")
         .and_then(|v| v.as_str())
         .unwrap_or("?");
-    let nonce = user_op
-        .get("nonce")
-        .cloned()
-        .unwrap_or(Value::Null);
+    let nonce = user_op.get("nonce").cloned().unwrap_or(Value::Null);
     let call_gas = user_op.get("callGasLimit").cloned().unwrap_or(Value::Null);
     let ver_gas = user_op
         .get("verificationGasLimit")
