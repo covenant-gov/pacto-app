@@ -36,10 +36,10 @@ use super::sponsor_preflight::{
     global_gov_module_path_ok, read_eligible_member, squad_sponsor_path_ok,
 };
 use super::sponsor_userop::{
-    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
-    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
-    resolve_sponsored_squad_id, roster_native_balance_wei, send_sponsored_gov_userop,
-    wait_for_user_operation_receipt, SponsoredUserOpSend, FALLBACK_MAX_FEE,
+    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas, fallback_max_fee,
+    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, resolve_sponsored_squad_id,
+    roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
+    SponsoredUserOpSend,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -396,7 +396,7 @@ async fn estimate_eoa_cost_wei<P: Provider>(
         .estimate_eip1559_fees()
         .await
         .map(|fees| fees.max_fee_per_gas)
-        .unwrap_or(FALLBACK_MAX_FEE);
+        .unwrap_or(fallback_max_fee());
     U256::from(gas) * U256::from(max_fee)
 }
 

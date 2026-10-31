@@ -29,10 +29,10 @@ use super::sponsor_preflight::{
 };
 use super::sponsor_userop::{
     bundler_rpc_url_with_stored, call_gas_ceiling_for_calldata, call_gas_with_margin,
-    estimate_call_gas, factory_userop_too_large_error, is_bundler_gas_limit_error,
-    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, load_stored_pimlico_key,
-    resolve_userop_eip1559_fees, roster_native_balance_wei, wait_for_user_operation_receipt,
-    FALLBACK_MAX_FEE,
+    estimate_call_gas, factory_userop_too_large_error, fallback_max_fee,
+    is_bundler_gas_limit_error, is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
+    load_stored_pimlico_key, resolve_userop_eip1559_fees, roster_native_balance_wei,
+    wait_for_user_operation_receipt,
 };
 use super::wallet_chain_config::WalletNetworkConfig;
 
@@ -286,7 +286,7 @@ async fn factory_probe_max_fee<R: Runtime, P: Provider>(
         .estimate_eip1559_fees()
         .await
         .map(|fees| fees.max_fee_per_gas.max(fees.max_priority_fee_per_gas))
-        .unwrap_or(FALLBACK_MAX_FEE)
+        .unwrap_or(fallback_max_fee())
 }
 
 async fn factory_probe_block_reason<P: Provider>(
@@ -345,7 +345,7 @@ async fn estimate_eoa_gas_cost_wei<P: Provider>(
         .estimate_eip1559_fees()
         .await
         .map(|fees| fees.max_fee_per_gas)
-        .unwrap_or(FALLBACK_MAX_FEE);
+        .unwrap_or(fallback_max_fee());
     U256::from(gas) * U256::from(max_fee)
 }
 

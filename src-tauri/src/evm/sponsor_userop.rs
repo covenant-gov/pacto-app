@@ -29,10 +29,12 @@ use super::rpc::call::eth_call_decode;
 use super::rpc::signer::load_squad_roster_embedded_signer;
 use super::rpc::{classify_gov_call_revert, connect_read_provider, parse_address, wallet_err_json};
 use super::sponsor_paymaster::{
-    encode_paymaster_and_data, required_pool_balance, DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-    DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
+    default_paymaster_verification_gas_limit, default_post_op_gas_limit,
+    default_verification_gas_limit, encode_paymaster_and_data, paymaster_data_offset,
+    required_pool_balance,
 };
 use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id};
+use super::userop_policy::policy;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -561,10 +563,10 @@ struct GasCeilings {
 fn placeholder_gas_ceilings(calldata: &[u8]) -> GasCeilings {
     GasCeilings {
         call: call_gas_ceiling_for_calldata(calldata),
-        verification: DEFAULT_VERIFICATION_GAS_LIMIT,
-        pre_verification: 80_000,
-        pm_verification: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        pm_post: DEFAULT_POST_OP_GAS_LIMIT,
+        verification: default_verification_gas_limit(),
+        pre_verification: policy().fallback_pre_verification_gas,
+        pm_verification: default_paymaster_verification_gas_limit(),
+        pm_post: default_post_op_gas_limit(),
     }
 }
 
@@ -586,14 +588,17 @@ fn is_heavy_gov_calldata(calldata: &[u8]) -> bool {
 /// UserOp / EOA fallback call-gas ceiling for this inner gov selector.
 pub(crate) fn call_gas_ceiling_for_calldata(calldata: &[u8]) -> u128 {
     if is_heavy_gov_calldata(calldata) {
-        HEAVY_CALL_GAS_LIMIT
+        heavy_call_gas_limit()
     } else {
-        FALLBACK_CALL_GAS_LIMIT
+        fallback_call_gas_limit()
     }
 }
 
-/// Pimlico Sepolia / mainnet precheck: sum of the five ERC-4337 gas limits.
-pub(crate) const BUNDLER_USEROP_GAS_CAP: u128 = 16_000_000;
+/// Pimlico precheck: sum of the five ERC-4337 gas limits.
+#[inline]
+pub(crate) fn bundler_userop_gas_cap() -> u128 {
+    policy().bundler_user_op_gas_cap
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct FinalGasLimits {
@@ -643,16 +648,16 @@ pub(crate) fn limits_from_estimated(estimated: &EstimatedUserOpGas) -> FinalGasL
 /// Shrink five-limit sum to ≤ 16M. No pad. Prefer cutting `callGasLimit`.
 pub(crate) fn clamp_userop_gas_limits_to_cap(limits: FinalGasLimits) -> FinalGasLimits {
     let sum = limits.sum();
-    if sum <= BUNDLER_USEROP_GAS_CAP {
+    if sum <= bundler_userop_gas_cap() {
         return limits;
     }
-    let overflow = sum - BUNDLER_USEROP_GAS_CAP;
+    let overflow = sum - bundler_userop_gas_cap();
     if limits.call_gas_limit > overflow {
         let mut out = limits;
         out.call_gas_limit = limits.call_gas_limit - overflow;
         return out;
     }
-    let scale = |v: u128| v.saturating_mul(BUNDLER_USEROP_GAS_CAP) / sum;
+    let scale = |v: u128| v.saturating_mul(bundler_userop_gas_cap()) / sum;
     let verification_gas_limit = scale(limits.verification_gas_limit);
     let pre_verification_gas = scale(limits.pre_verification_gas);
     let paymaster_verification_gas_limit = scale(limits.paymaster_verification_gas_limit);
@@ -662,7 +667,7 @@ pub(crate) fn clamp_userop_gas_limits_to_cap(limits: FinalGasLimits) -> FinalGas
         + paymaster_verification_gas_limit
         + paymaster_post_op_gas_limit;
     FinalGasLimits {
-        call_gas_limit: BUNDLER_USEROP_GAS_CAP.saturating_sub(others),
+        call_gas_limit: bundler_userop_gas_cap().saturating_sub(others),
         verification_gas_limit,
         pre_verification_gas,
         paymaster_verification_gas_limit,
@@ -676,8 +681,8 @@ pub(crate) fn clamp_estimated_gas_to_bundler_cap(estimated: &EstimatedUserOpGas)
 
 /// Pass-2 `eth_estimateUserOperationGas` re-pads. Skip it when that pad would exceed 16M.
 pub(crate) fn should_skip_estimate_calibrate(first: &EstimatedUserOpGas) -> bool {
-    limits_from_estimated(first).sum() > BUNDLER_USEROP_GAS_CAP
-        || pad_userop_gas_limits(first).sum() > BUNDLER_USEROP_GAS_CAP
+    limits_from_estimated(first).sum() > bundler_userop_gas_cap()
+        || pad_userop_gas_limits(first).sum() > bundler_userop_gas_cap()
 }
 
 pub(crate) fn is_bundler_gas_limit_error(err: &str) -> bool {
@@ -685,6 +690,37 @@ pub(crate) fn is_bundler_gas_limit_error(err: &str) -> bool {
         wallet_error_code(err).as_deref(),
         Some("BUNDLER_GAS_LIMIT" | "FACTORY_USEROP_TOO_LARGE")
     ) || err.to_lowercase().contains("max gas per userop")
+}
+
+fn estimated_from_final(limits: FinalGasLimits) -> EstimatedUserOpGas {
+    EstimatedUserOpGas {
+        call_gas_limit: limits.call_gas_limit,
+        verification_gas_limit: limits.verification_gas_limit,
+        pre_verification_gas: limits.pre_verification_gas,
+        paymaster_verification_gas_limit: limits.paymaster_verification_gas_limit,
+        paymaster_post_op_gas_limit: limits.paymaster_post_op_gas_limit,
+    }
+}
+
+/// Pass 2 hit the bundler cap. Return clamped pass 1 instead of surfacing the reject.
+pub(crate) fn pass2_or_clamped_pass1(
+    lane: &str,
+    pass2: Result<EstimatedUserOpGas, String>,
+    pass1: &EstimatedUserOpGas,
+) -> Result<EstimatedUserOpGas, String> {
+    match pass2 {
+        Ok(gas) => Ok(gas),
+        Err(err) if is_bundler_gas_limit_error(&err) => {
+            log::warn!(
+                target: "pacto_wallet",
+                "estimate pass 2 hit bundler gas cap; using clamped pass 1 ({lane})"
+            );
+            Ok(estimated_from_final(clamp_estimated_gas_to_bundler_cap(
+                pass1,
+            )))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 pub(crate) fn factory_userop_too_large_error() -> String {
@@ -707,7 +743,7 @@ pub(crate) fn bundler_cap_fallback_estimate(
         .saturating_add(paymaster_verification_gas_limit)
         .saturating_add(paymaster_post_op_gas_limit);
     EstimatedUserOpGas {
-        call_gas_limit: BUNDLER_USEROP_GAS_CAP.saturating_sub(others),
+        call_gas_limit: bundler_userop_gas_cap().saturating_sub(others),
         verification_gas_limit,
         pre_verification_gas,
         paymaster_verification_gas_limit,
@@ -733,12 +769,12 @@ pub(crate) fn finalize_userop_gas_limits(
 ) -> Result<FinalGasLimits, String> {
     let raw = limits_from_estimated(estimated);
     let raw_sum = raw.sum();
-    if raw_sum > BUNDLER_USEROP_GAS_CAP {
+    if raw_sum > bundler_userop_gas_cap() {
         return Ok(clamp_userop_gas_limits_to_cap(raw));
     }
     let padded = pad_userop_gas_limits(estimated);
     let padded_sum = padded.sum();
-    if padded_sum <= BUNDLER_USEROP_GAS_CAP {
+    if padded_sum <= bundler_userop_gas_cap() {
         return Ok(padded);
     }
     let surplus = padded_sum - raw_sum;
@@ -746,12 +782,13 @@ pub(crate) fn finalize_userop_gas_limits(
         return Err(wallet_err_json(
             "BUNDLER_GAS_LIMIT",
             format!(
-                "User operation gas limits exceeded the max gas per userOp: {padded_sum} > {BUNDLER_USEROP_GAS_CAP}"
+                "User operation gas limits exceeded the max gas per userOp: {padded_sum} > {}",
+                bundler_userop_gas_cap()
             ),
             None,
         ));
     }
-    let keep_surplus = BUNDLER_USEROP_GAS_CAP - raw_sum;
+    let keep_surplus = bundler_userop_gas_cap() - raw_sum;
     let scale = |raw_f: u128, padded_f: u128| {
         let pad = padded_f.saturating_sub(raw_f);
         raw_f + pad * keep_surplus / surplus
@@ -771,20 +808,20 @@ pub(crate) fn finalize_userop_gas_limits(
         + paymaster_verification_gas_limit
         + paymaster_post_op_gas_limit;
     let limits = FinalGasLimits {
-        call_gas_limit: BUNDLER_USEROP_GAS_CAP.saturating_sub(others),
+        call_gas_limit: bundler_userop_gas_cap().saturating_sub(others),
         verification_gas_limit,
         pre_verification_gas,
         paymaster_verification_gas_limit,
         paymaster_post_op_gas_limit,
     };
-    debug_assert!(limits.sum() <= BUNDLER_USEROP_GAS_CAP);
+    debug_assert!(limits.sum() <= bundler_userop_gas_cap());
     Ok(limits)
 }
 
 /// Factory deploys: no 1.2× pad. Shrink the five-limit sum to ≤ 16M, cutting call gas first.
 pub(crate) fn finalize_factory_userop_gas_limits(estimated: &EstimatedUserOpGas) -> FinalGasLimits {
     let limits = clamp_userop_gas_limits_to_cap(limits_from_estimated(estimated));
-    debug_assert!(limits.sum() <= BUNDLER_USEROP_GAS_CAP);
+    debug_assert!(limits.sum() <= bundler_userop_gas_cap());
     limits
 }
 
@@ -795,14 +832,15 @@ async fn estimate_sponsored_gas(
 ) -> Result<EstimatedUserOpGas, String> {
     match estimate_sponsored_gas_with_ceilings(bundler_url, ctx, ceilings).await {
         Ok(estimated) => Ok(estimated),
-        Err(e) if ceilings.call < HEAVY_CALL_GAS_LIMIT && is_userop_call_gas_error(&e) => {
+        Err(e) if ceilings.call < heavy_call_gas_limit() && is_userop_call_gas_error(&e) => {
             log::warn!(
                 target: "pacto_wallet",
-                "sponsored estimate OOG at {} call gas; retrying at {HEAVY_CALL_GAS_LIMIT}",
-                ceilings.call
+                "sponsored estimate OOG at {} call gas; retrying at {}",
+                ceilings.call,
+                heavy_call_gas_limit()
             );
             let mut heavy = ceilings;
-            heavy.call = HEAVY_CALL_GAS_LIMIT;
+            heavy.call = heavy_call_gas_limit();
             estimate_sponsored_gas_with_ceilings(bundler_url, ctx, heavy).await
         }
         Err(e) => Err(e),
@@ -896,7 +934,11 @@ async fn estimate_sponsored_gas_with_ceilings(
         signature: &dummy_sig,
         eip7702_auth: ctx.eip7702_auth.clone(),
     })?;
-    bundler_estimate_user_operation_gas(bundler_url, &calibrate_op, ctx.entry_point).await
+    pass2_or_clamped_pass1(
+        "sponsored",
+        bundler_estimate_user_operation_gas(bundler_url, &calibrate_op, ctx.entry_point).await,
+        &first,
+    )
 }
 
 async fn sign_and_send_user_op<P: Provider, S: Signer + Sync>(
@@ -1039,7 +1081,7 @@ pub(crate) fn user_op_json(p: UserOpParams) -> Result<Value, String> {
 /// `paymasterData` is `paymasterAndData` past its fixed header; short input is a bug, not a panic.
 pub(crate) fn paymaster_data(paymaster_and_data: &[u8]) -> Result<&[u8], String> {
     paymaster_and_data
-        .get(PAYMASTER_DATA_OFFSET..)
+        .get(paymaster_data_offset()..)
         .ok_or_else(|| {
             wallet_err_json(
                 "PAYMASTER_DATA",
@@ -1056,20 +1098,32 @@ pub(crate) fn pack_u128s(hi: u128, lo: u128) -> B256 {
     B256::from(buf)
 }
 
-/// Fallback gas values when RPC estimation is unavailable.
-pub(crate) const FALLBACK_CALL_GAS_LIMIT: u128 = 500_000;
+/// Fallback call gas when estimation is unavailable.
+#[inline]
+pub(crate) fn fallback_call_gas_limit() -> u128 {
+    policy().fallback_call_gas_limit
+}
+
 /// Hats / Safe execute estimate ceiling (captain transfer + crew handoff).
-pub(crate) const HEAVY_CALL_GAS_LIMIT: u128 = 1_500_000;
-/// Floor tip so common bundler prechecks do not reject near-zero RPC estimates.
-pub(crate) const FALLBACK_MAX_PRIORITY_FEE: u128 = 1_000_000_000; // 1 gwei
-pub(crate) const FALLBACK_MAX_FEE: u128 = 30_000_000_000; // 30 gwei
-/// Headroom over bundler / `eth_estimateGas` estimates (1.2x).
-const CALL_GAS_MARGIN_BPS: u128 = 12_000;
-/// Cap on verification / paymaster-verification pad (Alchemy efficiency floor ≈ 0.4 ⇒ max ~2.5×).
-const VERIFICATION_GAS_MAX_PAD_BPS: u128 = 20_000;
+#[inline]
+pub(crate) fn heavy_call_gas_limit() -> u128 {
+    policy().heavy_call_gas_limit
+}
+
+/// Floor tip so bundler prechecks do not reject a near-zero quote.
+#[inline]
+pub(crate) fn fallback_max_priority_fee() -> u128 {
+    policy().fallback_max_priority_fee_wei
+}
+
+/// Send last-resort max fee when the Pimlico price RPC is down.
+#[inline]
+pub(crate) fn fallback_max_fee() -> u128 {
+    policy().fallback_max_fee_wei
+}
 
 pub(crate) fn call_gas_with_margin(estimate: u128) -> u128 {
-    estimate * CALL_GAS_MARGIN_BPS / 10_000
+    estimate * policy().call_gas_margin_bps / 10_000
 }
 
 pub(crate) fn apply_userop_gas_margin(estimate: u128) -> u128 {
@@ -1079,15 +1133,15 @@ pub(crate) fn apply_userop_gas_margin(estimate: u128) -> u128 {
 /// 1.2× headroom, never above 2.0× estimate (bundler verification efficiency floor).
 pub(crate) fn apply_verification_gas_margin(estimate: u128) -> u128 {
     let padded = call_gas_with_margin(estimate);
-    let cap = estimate.saturating_mul(VERIFICATION_GAS_MAX_PAD_BPS) / 10_000;
+    let cap = estimate.saturating_mul(policy().verification_gas_max_pad_bps) / 10_000;
     padded.min(cap).max(estimate)
 }
 
-/// Raise RPC tip to 1 gwei and maxFee to `FALLBACK_MAX_FEE` so bundler prechecks
-/// do not reject near-zero Alchemy estimates. Pimlico prices skip this clamp.
+/// Raise a non-Pimlico quote to the policy last-resort tip and max fee.
+/// Pimlico prices skip this clamp.
 pub(crate) fn clamp_userop_eip1559_fees(priority: u128, max_fee: u128) -> (u128, u128) {
-    let priority = priority.max(FALLBACK_MAX_PRIORITY_FEE);
-    let max_fee = max_fee.max(priority).max(FALLBACK_MAX_FEE);
+    let priority = priority.max(fallback_max_priority_fee());
+    let max_fee = max_fee.max(priority).max(fallback_max_fee());
     (priority, max_fee)
 }
 
@@ -1112,7 +1166,7 @@ pub(crate) async fn resolve_userop_eip1559_fees<P: Provider>(
                         target: "pacto_wallet",
                         "eip-1559 fee estimation failed; using fallback"
                     );
-                    (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
+                    (fallback_max_priority_fee(), fallback_max_fee())
                 }
             }
         }
@@ -1433,7 +1487,7 @@ fn parse_estimate_user_op_gas_response(res: &Value) -> Result<EstimatedUserOpGas
         paymaster_post_op_gas_limit: parse_hex_u128_field_or(
             result,
             "paymasterPostOpGasLimit",
-            DEFAULT_POST_OP_GAS_LIMIT,
+            default_post_op_gas_limit(),
         )?,
     })
 }
@@ -1932,23 +1986,24 @@ mod tests {
     use super::{
         apply_userop_gas_margin, apply_verification_gas_margin, bundler_cap_fallback_estimate,
         bundler_retry_delay, bundler_rpc_url, bundler_rpc_url_with_stored, bundler_status_source,
-        bundler_status_source_with_stored, call_gas_ceiling_for_calldata, call_gas_with_margin,
-        clamp_estimated_gas_to_bundler_cap, clamp_userop_eip1559_fees,
+        bundler_status_source_with_stored, bundler_userop_gas_cap, call_gas_ceiling_for_calldata,
+        call_gas_with_margin, clamp_estimated_gas_to_bundler_cap, clamp_userop_eip1559_fees,
         classify_bundler_userop_reject, dummy_userop_signature, eip7702_auth_json,
         encode_eip7702_authorization, explicit_bundler_rpc_url, factory_userop_too_large_error,
-        finalize_factory_userop_gas_limits, finalize_userop_gas_limits, host_is_alchemy,
-        is_bundler_gas_limit_error, is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
-        is_userop_call_gas_error, pack_u128s, parse_estimate_user_op_gas_response, parse_hex_u128,
-        parse_send_user_op_response, parse_sponsored_user_op_receipt,
-        parse_user_operation_gas_price_response, parse_war_game_userop_context, paymaster_data,
+        fallback_call_gas_limit, fallback_max_fee, fallback_max_priority_fee,
+        finalize_factory_userop_gas_limits, finalize_userop_gas_limits, heavy_call_gas_limit,
+        host_is_alchemy, is_bundler_gas_limit_error, is_hard_sponsor_preflight_error,
+        is_soft_sponsor_config_error, is_userop_call_gas_error, pack_u128s,
+        parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
+        parse_sponsored_user_op_receipt, parse_user_operation_gas_price_response,
+        parse_war_game_userop_context, pass2_or_clamped_pass1, paymaster_data,
         pimlico_bundler_rpc_url, pimlico_chain_id_for_network, receipt_transaction_hash,
         resolve_sponsored_squad_id, retriable_bundler_status, should_skip_estimate_calibrate,
         user_op_json, userop_max_cost_wei, validate_pimlico_api_key, EstimatedUserOpGas,
-        SponsoredUserOpReceipt, UserOpParams, BUNDLER_USEROP_GAS_CAP, FALLBACK_CALL_GAS_LIMIT,
-        FALLBACK_MAX_FEE, FALLBACK_MAX_PRIORITY_FEE, HEAVY_CALL_GAS_LIMIT,
+        SponsoredUserOpReceipt, UserOpParams,
     };
-    use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
-    use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
+    use crate::evm::sponsor_paymaster::paymaster_data_offset;
+    use crate::evm::sponsor_paymaster::{default_post_op_gas_limit, encode_paymaster_and_data};
     use crate::evm::squad_sponsor_common::squad_id_from_parent_id;
     use alloy::primitives::{address, b256, B256, U256};
     use reqwest::StatusCode;
@@ -2020,7 +2075,7 @@ mod tests {
         );
         assert_ne!(encoded, parent_encoded);
         assert_eq!(
-            &encoded[PAYMASTER_DATA_OFFSET + 32..PAYMASTER_DATA_OFFSET + 64],
+            &encoded[paymaster_data_offset() + 32..paymaster_data_offset() + 64],
             game_squad_id.as_slice()
         );
     }
@@ -2115,7 +2170,7 @@ mod tests {
             limits.paymaster_post_op_gas_limit,
             apply_userop_gas_margin(50_000)
         );
-        assert!(limits.sum() <= BUNDLER_USEROP_GAS_CAP);
+        assert!(limits.sum() <= bundler_userop_gas_cap());
     }
 
     #[test]
@@ -2141,9 +2196,9 @@ mod tests {
             + apply_userop_gas_margin(200_000)
             + apply_verification_gas_margin(400_000)
             + apply_userop_gas_margin(100_000);
-        assert!(padded_sum > BUNDLER_USEROP_GAS_CAP);
+        assert!(padded_sum > bundler_userop_gas_cap());
         let limits = finalize_factory_userop_gas_limits(&estimated);
-        assert!(limits.sum() <= BUNDLER_USEROP_GAS_CAP);
+        assert!(limits.sum() <= bundler_userop_gas_cap());
         assert_eq!(limits.call_gas_limit, estimated.call_gas_limit);
         assert_eq!(
             limits.verification_gas_limit,
@@ -2182,7 +2237,7 @@ mod tests {
             16_794_139
         );
         let limits = finalize_factory_userop_gas_limits(&estimated);
-        assert_eq!(limits.sum(), BUNDLER_USEROP_GAS_CAP);
+        assert_eq!(limits.sum(), bundler_userop_gas_cap());
         assert_eq!(limits.verification_gas_limit, 800_000);
         assert_eq!(limits.pre_verification_gas, 400_000);
         assert_eq!(limits.paymaster_verification_gas_limit, 800_000);
@@ -2200,8 +2255,8 @@ mod tests {
             paymaster_post_op_gas_limit: 294_139,
         };
         let limits = finalize_userop_gas_limits(&estimated).expect("clamp over-cap raw");
-        assert!(limits.sum() <= BUNDLER_USEROP_GAS_CAP);
-        assert_eq!(limits.sum(), BUNDLER_USEROP_GAS_CAP);
+        assert!(limits.sum() <= bundler_userop_gas_cap());
+        assert_eq!(limits.sum(), bundler_userop_gas_cap());
     }
 
     #[test]
@@ -2222,7 +2277,7 @@ mod tests {
             16_794_139
         );
         let limits = clamp_estimated_gas_to_bundler_cap(&estimated);
-        assert_eq!(limits.sum(), BUNDLER_USEROP_GAS_CAP);
+        assert_eq!(limits.sum(), bundler_userop_gas_cap());
         assert_eq!(limits.verification_gas_limit, 800_000);
         assert_eq!(limits.pre_verification_gas, 400_000);
         assert_eq!(limits.paymaster_verification_gas_limit, 800_000);
@@ -2276,6 +2331,47 @@ mod tests {
     }
 
     #[test]
+    fn small_op_calibrate_request_stays_under_cap() {
+        let small = EstimatedUserOpGas {
+            call_gas_limit: 100_000,
+            verification_gas_limit: 100_000,
+            pre_verification_gas: 80_000,
+            paymaster_verification_gas_limit: 100_000,
+            paymaster_post_op_gas_limit: 50_000,
+        };
+        assert!(!should_skip_estimate_calibrate(&small));
+        let request = clamp_estimated_gas_to_bundler_cap(&small);
+        assert!(request.sum() <= bundler_userop_gas_cap());
+    }
+
+    #[test]
+    fn pass2_gas_cap_returns_clamped_pass1() {
+        let pass1 = EstimatedUserOpGas {
+            call_gas_limit: 100_000,
+            verification_gas_limit: 100_000,
+            pre_verification_gas: 80_000,
+            paymaster_verification_gas_limit: 100_000,
+            paymaster_post_op_gas_limit: 50_000,
+        };
+        let err = r#"{"code":"BUNDLER_GAS_LIMIT","message":"User operation gas limits exceeded the max gas per userOp: 16800000 > 16000000"}"#;
+        let got = pass2_or_clamped_pass1("sponsored", Err(err.to_string()), &pass1).unwrap();
+        let clamped = clamp_estimated_gas_to_bundler_cap(&pass1);
+        assert_eq!(got.call_gas_limit, clamped.call_gas_limit);
+        assert_eq!(got.verification_gas_limit, clamped.verification_gas_limit);
+        assert_eq!(got.pre_verification_gas, clamped.pre_verification_gas);
+        assert_eq!(
+            got.paymaster_verification_gas_limit,
+            clamped.paymaster_verification_gas_limit
+        );
+        assert_eq!(
+            got.paymaster_post_op_gas_limit,
+            clamped.paymaster_post_op_gas_limit
+        );
+        let other = pass2_or_clamped_pass1("sponsored", Err("USEROP_CALL_GAS".into()), &pass1);
+        assert!(other.is_err());
+    }
+
+    #[test]
     fn bundler_cap_fallback_fills_sixteen_million() {
         let estimated = bundler_cap_fallback_estimate(100_000, 80_000, 500_000, 50_000);
         assert_eq!(
@@ -2284,7 +2380,7 @@ mod tests {
                 + estimated.pre_verification_gas
                 + estimated.paymaster_verification_gas_limit
                 + estimated.paymaster_post_op_gas_limit,
-            BUNDLER_USEROP_GAS_CAP
+            bundler_userop_gas_cap()
         );
         assert_eq!(estimated.call_gas_limit, 15_270_000);
     }
@@ -2313,7 +2409,7 @@ mod tests {
             paymaster_post_op_gas_limit: 100_001,
         };
         let limits = finalize_userop_gas_limits(&estimated).expect("clamp over-cap return");
-        assert_eq!(limits.sum(), BUNDLER_USEROP_GAS_CAP);
+        assert_eq!(limits.sum(), bundler_userop_gas_cap());
         assert_eq!(limits.verification_gas_limit, 500_000);
         assert!(limits.call_gas_limit < estimated.call_gas_limit);
     }
@@ -2356,7 +2452,7 @@ mod tests {
         assert_eq!(op["paymaster"], json!(format!("{paymaster:#x}")));
         assert_eq!(op["paymasterVerificationGasLimit"], json!("0x21386"));
         assert_eq!(op["paymasterPostOpGasLimit"], json!("0xea60"));
-        let expected_pmd = hex::encode(&paymaster_and_data[PAYMASTER_DATA_OFFSET..]);
+        let expected_pmd = hex::encode(&paymaster_and_data[paymaster_data_offset()..]);
         assert_eq!(op["paymasterData"], json!(format!("0x{expected_pmd}")));
         assert_eq!(op["signature"], json!(format!("0x{}", "aa".repeat(65))));
         assert!(op["eip7702Auth"].is_null());
@@ -2387,7 +2483,7 @@ mod tests {
         let member = address!("0x3333333333333333333333333333333333333333");
         let paymaster = address!("0x1C2eb4Ac1cD57aF67ad8B20838A28FB23d39d5b8");
         let paymaster_and_data = {
-            let mut v = vec![0u8; PAYMASTER_DATA_OFFSET];
+            let mut v = vec![0u8; paymaster_data_offset()];
             v.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);
             v
         };
@@ -2492,7 +2588,7 @@ mod tests {
         });
         let g = parse_estimate_user_op_gas_response(&res).unwrap();
         assert_eq!(g.paymaster_verification_gas_limit, 113_408);
-        assert_eq!(g.paymaster_post_op_gas_limit, DEFAULT_POST_OP_GAS_LIMIT);
+        assert_eq!(g.paymaster_post_op_gas_limit, default_post_op_gas_limit());
 
         let null_post = json!({
             "jsonrpc": "2.0",
@@ -2506,7 +2602,7 @@ mod tests {
             }
         });
         let g = parse_estimate_user_op_gas_response(&null_post).unwrap();
-        assert_eq!(g.paymaster_post_op_gas_limit, DEFAULT_POST_OP_GAS_LIMIT);
+        assert_eq!(g.paymaster_post_op_gas_limit, default_post_op_gas_limit());
     }
 
     #[test]
@@ -2542,7 +2638,7 @@ mod tests {
     #[test]
     fn paymaster_data_slices_past_header_and_rejects_short_input() {
         let pmd = paymaster_data(&[0u8; 180]).unwrap();
-        assert_eq!(pmd.len(), 180 - PAYMASTER_DATA_OFFSET);
+        assert_eq!(pmd.len(), 180 - paymaster_data_offset());
         assert_eq!(paymaster_data(&[0u8; 52]).unwrap(), &[] as &[u8]);
         let err = paymaster_data(&[0u8; 51]).unwrap_err();
         assert!(err.contains("PAYMASTER_DATA"));
@@ -2689,14 +2785,17 @@ mod tests {
             _mutinyId: U256::from(1u64),
         }
         .abi_encode();
-        assert_eq!(call_gas_ceiling_for_calldata(&exec), HEAVY_CALL_GAS_LIMIT);
+        assert_eq!(call_gas_ceiling_for_calldata(&exec), heavy_call_gas_limit());
 
         let resign = captainResignCall {
             _newCaptain: address!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
             _seatFormerCaptain: true,
         }
         .abi_encode();
-        assert_eq!(call_gas_ceiling_for_calldata(&resign), HEAVY_CALL_GAS_LIMIT);
+        assert_eq!(
+            call_gas_ceiling_for_calldata(&resign),
+            heavy_call_gas_limit()
+        );
 
         let treasury = executeCall {
             _proposalId: U256::from(1u64),
@@ -2705,14 +2804,14 @@ mod tests {
         .abi_encode();
         assert_eq!(
             call_gas_ceiling_for_calldata(&treasury),
-            HEAVY_CALL_GAS_LIMIT
+            heavy_call_gas_limit()
         );
 
         let boot = bootstrapCrewCall {
             _candidates: vec![],
         }
         .abi_encode();
-        assert_eq!(call_gas_ceiling_for_calldata(&boot), HEAVY_CALL_GAS_LIMIT);
+        assert_eq!(call_gas_ceiling_for_calldata(&boot), heavy_call_gas_limit());
         assert_eq!(
             call_gas_ceiling_for_calldata(
                 &executeAddCrewCall {
@@ -2720,7 +2819,7 @@ mod tests {
                 }
                 .abi_encode()
             ),
-            HEAVY_CALL_GAS_LIMIT
+            heavy_call_gas_limit()
         );
         assert_eq!(
             call_gas_ceiling_for_calldata(
@@ -2729,7 +2828,7 @@ mod tests {
                 }
                 .abi_encode()
             ),
-            HEAVY_CALL_GAS_LIMIT
+            heavy_call_gas_limit()
         );
         assert_eq!(
             call_gas_ceiling_for_calldata(
@@ -2738,7 +2837,7 @@ mod tests {
                 }
                 .abi_encode()
             ),
-            HEAVY_CALL_GAS_LIMIT
+            heavy_call_gas_limit()
         );
 
         let vote = castVoteCall {
@@ -2747,9 +2846,12 @@ mod tests {
         .abi_encode();
         assert_eq!(
             call_gas_ceiling_for_calldata(&vote),
-            FALLBACK_CALL_GAS_LIMIT
+            fallback_call_gas_limit()
         );
-        assert_eq!(call_gas_ceiling_for_calldata(&[]), FALLBACK_CALL_GAS_LIMIT);
+        assert_eq!(
+            call_gas_ceiling_for_calldata(&[]),
+            fallback_call_gas_limit()
+        );
     }
 
     #[test]
@@ -2791,12 +2893,12 @@ mod tests {
     #[test]
     fn clamp_userop_fees_raises_tip_floor_and_keeps_max_fee_above_tip() {
         let (p, f) = clamp_userop_eip1559_fees(1_500_000, 20_000_000_000);
-        assert_eq!(p, FALLBACK_MAX_PRIORITY_FEE);
-        assert_eq!(f, FALLBACK_MAX_FEE);
+        assert_eq!(p, fallback_max_priority_fee());
+        assert_eq!(f, fallback_max_fee());
 
         let (p, f) = clamp_userop_eip1559_fees(1_500_000, 500_000);
-        assert_eq!(p, FALLBACK_MAX_PRIORITY_FEE);
-        assert_eq!(f, FALLBACK_MAX_FEE);
+        assert_eq!(p, fallback_max_priority_fee());
+        assert_eq!(f, fallback_max_fee());
 
         let (p, f) = clamp_userop_eip1559_fees(2_000_000_000, 40_000_000_000);
         assert_eq!(p, 2_000_000_000);

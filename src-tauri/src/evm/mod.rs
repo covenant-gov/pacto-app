@@ -49,6 +49,7 @@ pub mod treasury_proposals_read;
 pub mod username;
 pub mod username_claim_preflight;
 pub mod username_nostr_link;
+pub mod userop_policy;
 pub mod wallet_chain_config;
 pub mod wallet_ops;
 pub mod wallet_prices;

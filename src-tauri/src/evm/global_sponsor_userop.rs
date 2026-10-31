@@ -30,8 +30,8 @@ use super::sponsor_userop::{
     bundler_rpc_url_with_stored, bundler_send_user_operation, clamp_estimated_gas_to_bundler_cap,
     clamp_userop_gas_limits_to_cap, dummy_userop_signature, erc4337_account_implementation,
     factory_userop_too_large_error, finalize_factory_userop_gas_limits, finalize_userop_gas_limits,
-    is_bundler_gas_limit_error, load_stored_pimlico_key, pack_u128s, paymaster_data,
-    paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
+    is_bundler_gas_limit_error, load_stored_pimlico_key, pack_u128s, pass2_or_clamped_pass1,
+    paymaster_data, paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
     should_skip_estimate_calibrate, sign_eip7702_authorization, user_op_json, userop_gas_limit_sum,
     userop_max_cost_wei, EstimatedUserOpGas, FinalGasLimits, SponsoredUserOpSend, UserOpParams,
 };
@@ -861,7 +861,11 @@ async fn estimate_global_sponsored_gas(
         signature: &dummy_sig,
         eip7702_auth: ctx.eip7702_auth.clone(),
     })?;
-    bundler_estimate_user_operation_gas(bundler_url, &calibrate_op, ctx.entry_point).await
+    pass2_or_clamped_pass1(
+        "global",
+        bundler_estimate_user_operation_gas(bundler_url, &calibrate_op, ctx.entry_point).await,
+        &first,
+    )
 }
 
 async fn sign_and_send_global_user_op<P: Provider, S: Signer + Sync>(

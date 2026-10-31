@@ -23,8 +23,8 @@ use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
     recordOfCall, usedNonceCall,
 };
 use crate::evm::global_paymaster::{
+    default_global_paymaster_verification_gas_limit, default_global_post_op_gas_limit,
     encode_global_paymaster_and_data, required_global_pool_balance,
-    DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT, DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
 };
 use crate::evm::global_sponsor_userop::eip7702_delegation_impl;
 use crate::evm::nostr_claim_link::{
@@ -34,16 +34,17 @@ use crate::evm::pacto_chain_config::{
     erc4337_account_implementation, global_username_sponsor_addresses,
 };
 use crate::evm::rpc::call::eth_call_decode;
-use crate::evm::sponsor_paymaster::DEFAULT_VERIFICATION_GAS_LIMIT;
+use crate::evm::sponsor_paymaster::default_verification_gas_limit;
 use crate::evm::sponsor_userop::{
     bundler_cap_fallback_estimate, bundler_estimate_user_operation_gas,
     bundler_send_user_operation, clamp_estimated_gas_to_bundler_cap, dummy_userop_signature,
-    finalize_userop_gas_limits, is_bundler_gas_limit_error, pack_u128s, paymaster_data,
-    paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
-    should_skip_estimate_calibrate, sign_eip7702_authorization, user_op_json, userop_max_cost_wei,
-    wait_for_user_operation_receipt, UserOpParams, HEAVY_CALL_GAS_LIMIT,
+    finalize_userop_gas_limits, heavy_call_gas_limit, is_bundler_gas_limit_error, pack_u128s,
+    pass2_or_clamped_pass1, paymaster_data, paymaster_entry_point_deposit_preflight,
+    resolve_userop_eip1559_fees, should_skip_estimate_calibrate, sign_eip7702_authorization,
+    user_op_json, userop_max_cost_wei, wait_for_user_operation_receipt, UserOpParams,
 };
 use crate::evm::username_claim_preflight::preflight_bootstrap_claim_userop_path;
+use crate::evm::userop_policy::policy;
 use crate::evm::{derive_eth_bip44_v1_from_mnemonic_phrase, wallet_security};
 
 alloy::sol! {
@@ -316,12 +317,12 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
 
     let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler_url, &provider).await;
     let placeholder_max_cost = userop_max_cost_wei(
-        HEAVY_CALL_GAS_LIMIT,
-        DEFAULT_VERIFICATION_GAS_LIMIT,
-        80_000,
+        heavy_call_gas_limit(),
+        default_verification_gas_limit(),
+        policy().fallback_pre_verification_gas,
         max_fee,
-        DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+        default_global_paymaster_verification_gas_limit(),
+        default_global_post_op_gas_limit(),
     );
     let pool_need = required_global_pool_balance(placeholder_max_cost);
     eprintln!(
@@ -358,8 +359,8 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         npub_hash,
         member,
         Address::ZERO,
-        DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+        default_global_paymaster_verification_gas_limit(),
+        default_global_post_op_gas_limit(),
     );
     let _ = paymaster_data(paymaster_and_data.as_ref())?;
 
@@ -367,14 +368,14 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         sender: member,
         nonce: ep_nonce,
         call_data: &execute_calldata,
-        call_gas_limit: HEAVY_CALL_GAS_LIMIT,
-        verification_gas_limit: DEFAULT_VERIFICATION_GAS_LIMIT,
-        pre_verification_gas: 80_000,
+        call_gas_limit: heavy_call_gas_limit(),
+        verification_gas_limit: default_verification_gas_limit(),
+        pre_verification_gas: policy().fallback_pre_verification_gas,
         max_fee_per_gas: max_fee,
         max_priority_fee_per_gas: max_priority,
         paymaster: addrs.pacto_global_paymaster,
-        paymaster_verification_gas_limit: DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        paymaster_post_op_gas_limit: DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+        paymaster_verification_gas_limit: default_global_paymaster_verification_gas_limit(),
+        paymaster_post_op_gas_limit: default_global_post_op_gas_limit(),
         paymaster_and_data: paymaster_and_data.as_ref(),
         signature: &dummy_sig,
         eip7702_auth: eip7702_auth.clone(),
@@ -388,10 +389,10 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
     {
         Ok(g) => g,
         Err(e) if is_bundler_gas_limit_error(&e) => bundler_cap_fallback_estimate(
-            DEFAULT_VERIFICATION_GAS_LIMIT,
-            80_000,
-            DEFAULT_GLOBAL_PAYMASTER_VERIFICATION_GAS_LIMIT,
-            DEFAULT_GLOBAL_POST_OP_GAS_LIMIT,
+            default_verification_gas_limit(),
+            policy().fallback_pre_verification_gas,
+            default_global_paymaster_verification_gas_limit(),
+            default_global_post_op_gas_limit(),
         ),
         Err(e) => {
             dump_tenderly_simulator_recipe(
@@ -436,9 +437,14 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
             signature: &dummy_sig,
             eip7702_auth: eip7702_auth.clone(),
         })?;
-        bundler_estimate_user_operation_gas(&bundler_url, &calibrate_op, addrs.entry_point)
-            .await
-            .map_err(|e| {
+        match pass2_or_clamped_pass1(
+            "claim",
+            bundler_estimate_user_operation_gas(&bundler_url, &calibrate_op, addrs.entry_point)
+                .await,
+            &first,
+        ) {
+            Ok(gas) => gas,
+            Err(e) => {
                 dump_tenderly_simulator_recipe(
                     member,
                     account_impl,
@@ -447,11 +453,12 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
                     addrs.entry_point,
                     addrs.pacto_global_paymaster,
                 );
-                format!(
+                return Err(format!(
                     "L4 STOP after L1+L1.5 OK (estimate pass 2): {}. No txHash — use Simulator dump above.",
                     wallet_security::redact_urls_in_text(&e)
-                )
-            })?
+                ));
+            }
+        }
     };
 
     let limits = finalize_userop_gas_limits(&estimated)?;
