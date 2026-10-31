@@ -82,33 +82,41 @@ pub async fn send_factory_call<R: Runtime>(
                             .await?
                             .is_some();
                     let global_ok = if eligible {
-                        let max_fee =
-                            super::sponsor_userop::sponsored_userop_max_fee(&app, &net.key).await;
-                        let placeholder_max_cost = userop_placeholder_max_cost_wei(
-                            &calldata,
-                            UseropPlaceholderLane::FactoryTarget,
-                            max_fee,
-                        );
-                        let ok = global_factory_path_ok(
-                            &read_provider,
-                            addrs,
-                            roster,
-                            factory,
-                            placeholder_max_cost,
-                        )
-                        .await?;
-                        if !ok {
-                            factory_block = Some(
-                                factory_probe_block_reason(
+                        match super::sponsor_userop::sponsored_userop_probe_max_fee(&app, &net.key)
+                            .await
+                        {
+                            Ok(max_fee) => {
+                                let placeholder_max_cost = userop_placeholder_max_cost_wei(
+                                    &calldata,
+                                    UseropPlaceholderLane::FactoryTarget,
+                                    max_fee,
+                                );
+                                let ok = global_factory_path_ok(
                                     &read_provider,
                                     addrs,
+                                    roster,
                                     factory,
                                     placeholder_max_cost,
                                 )
-                                .await,
-                            );
+                                .await?;
+                                if !ok {
+                                    factory_block = Some(
+                                        factory_probe_block_reason(
+                                            &read_provider,
+                                            addrs,
+                                            factory,
+                                            placeholder_max_cost,
+                                        )
+                                        .await,
+                                    );
+                                }
+                                ok
+                            }
+                            Err(e) => {
+                                factory_block = Some(e);
+                                false
+                            }
                         }
-                        ok
                     } else {
                         false
                     };

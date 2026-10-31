@@ -12,11 +12,9 @@
   "factoryVerificationGasLimit": 1000000,
   "factoryPreVerificationGas": 200000,
   "factoryPaymasterPostOpGasLimit": 100000,
-  "factoryPad": false,
-  "factoryCalibrate": false,
   "fallbackMaxPriorityFeeWei": 1000000000,
   "fallbackMaxFeeWei": 30000000000,
   "poolBalanceHeadroomBps": 11500,
   "paymasterDataOffset": 52,
-  "notes": "fallbackMaxPriorityFeeWei (1 gwei) and fallbackMaxFeeWei (30 gwei) are send last-resort only when the Pimlico price RPC is down. Never use them for pool maxCost. Do not price a UserOp from an Alchemy EIP-1559 quote and then clamp to 30 gwei."
+  "notes": "Route and eligibility probes require Pimlico pricing and fail closed. Final sends may use fallbackMaxPriorityFeeWei (1 gwei) and fallbackMaxFeeWei (30 gwei) only as a last-resort when Pimlico pricing fails; final deposit and pool safety checks use the actual selected send fee, including fallback. Never price a UserOp from an Alchemy EIP-1559 quote or clamp one to 30 gwei."
 }

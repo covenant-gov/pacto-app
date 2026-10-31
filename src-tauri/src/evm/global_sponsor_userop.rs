@@ -28,10 +28,10 @@ use super::sponsor_userop::{
 };
 use super::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use super::userop::{
-    estimate_sponsored_userop, finalize_for_style, paymaster_entry_point_deposit_preflight,
-    resolve_eip7702_auth_for_sender, resolve_userop_eip1559_fees, sign_and_send_sponsored_userop,
+    estimate_sponsored_userop, paymaster_entry_point_deposit_preflight,
+    resolve_eip7702_auth_for_sender, resolve_userop_send_fees, sign_and_send_sponsored_userop,
     userop_gas_ceilings, userop_gas_limit_sum, userop_placeholder_max_cost_wei, FinalGasLimits,
-    IAccountExecute, IEntryPointV07, SponsoredUserOpBuild, UseropGasCeilings,
+    IAccountExecute, IEntryPointV07, SponsoredUserOpBuild, SponsoredUserOpLane, UseropGasCeilings,
     UseropPlaceholderLane,
 };
 use super::wallet_chain_config;
@@ -105,7 +105,7 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler).await;
+    let (max_priority, max_fee) = resolve_userop_send_fees(&bundler).await;
 
     let placeholders = username_placeholder_ceilings(&calldata, lane);
     let placeholder_max_cost =
@@ -206,7 +206,7 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
         &bundler,
         &ctx,
         placeholders,
-        false,
+        SponsoredUserOpLane::Small,
         "global",
         |max_cost| {
             username_lane_preflight(
@@ -279,7 +279,7 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler).await;
+    let (max_priority, max_fee) = resolve_userop_send_fees(&bundler).await;
 
     let placeholders = userop_gas_ceilings(&calldata, UseropPlaceholderLane::GovModule);
     let placeholder_max_cost =
@@ -367,7 +367,7 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
         &bundler,
         &ctx,
         placeholders,
-        false,
+        SponsoredUserOpLane::Small,
         "global",
         move |max_cost| async move {
             assert_global_gov_module_preflight(provider, gov_addrs, gov_member, gov_to, max_cost)
@@ -448,7 +448,7 @@ pub async fn send_sponsored_global_factory_userop<R: Runtime>(
         }
     }
 
-    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler).await;
+    let (max_priority, max_fee) = resolve_userop_send_fees(&bundler).await;
 
     let placeholders = userop_gas_ceilings(&calldata, UseropPlaceholderLane::FactoryTarget);
     let placeholder_max_cost =
@@ -537,7 +537,7 @@ pub async fn send_sponsored_global_factory_userop<R: Runtime>(
         &bundler,
         &ctx,
         placeholders,
-        true,
+        SponsoredUserOpLane::Factory,
         "factory_target",
         move |max_cost| async move {
             assert_global_factory_preflight(
@@ -762,7 +762,7 @@ async fn run_global_userop<P, S, F, Fut>(
     bundler_url: &str,
     ctx: &GlobalSponsoredSendParts,
     ceilings: UseropGasCeilings,
-    factory_style: bool,
+    lane: SponsoredUserOpLane,
     lane_label: &str,
     preflight: F,
 ) -> Result<String, String>
@@ -793,17 +793,9 @@ where
         max_priority: ctx.max_priority,
         eip7702_auth: ctx.eip7702_auth.clone(),
     };
-    let estimated = estimate_sponsored_userop(
-        bundler_url,
-        &build,
-        ceilings,
-        factory_style,
-        lane_label,
-        &encode,
-    )
-    .await?;
-    let limits = finalize_for_style(factory_style, &estimated)?;
-    if factory_style {
+    let limits =
+        estimate_sponsored_userop(bundler_url, &build, ceilings, lane, lane_label, &encode).await?;
+    if lane == SponsoredUserOpLane::Factory {
         eprintln_factory_userop_gas(&limits);
     }
     sign_and_send_sponsored_userop(

@@ -25,12 +25,6 @@ pub(crate) struct BundlerPolicy {
     pub(crate) factory_verification_gas_limit: u128,
     pub(crate) factory_pre_verification_gas: u128,
     pub(crate) factory_paymaster_post_op_gas_limit: u128,
-    /// Locked by the JSON test. The pipeline switches on `factory_style`.
-    #[allow(dead_code)]
-    pub(crate) factory_pad: bool,
-    /// Locked by the JSON test. The pipeline switches on `factory_style`.
-    #[allow(dead_code)]
-    pub(crate) factory_calibrate: bool,
     pub(crate) fallback_max_priority_fee_wei: u128,
     pub(crate) fallback_max_fee_wei: u128,
     pub(crate) pool_balance_headroom_bps: u64,
@@ -68,8 +62,6 @@ mod tests {
         assert_eq!(p.factory_verification_gas_limit, 1_000_000);
         assert_eq!(p.factory_pre_verification_gas, 200_000);
         assert_eq!(p.factory_paymaster_post_op_gas_limit, 100_000);
-        assert!(!p.factory_pad);
-        assert!(!p.factory_calibrate);
         assert_eq!(p.fallback_max_priority_fee_wei, 1_000_000_000);
         assert_eq!(p.fallback_max_fee_wei, 30_000_000_000);
         assert_eq!(p.pool_balance_headroom_bps, 11_500);
@@ -84,5 +76,18 @@ mod tests {
         );
         assert!(p.notes.contains("Pimlico"));
         assert!(p.notes.to_lowercase().contains("last-resort"));
+    }
+
+    #[test]
+    fn removed_factory_switches_are_rejected() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(EMBEDDED_JSON).expect("policy value");
+        value
+            .as_object_mut()
+            .expect("policy object")
+            .insert("factoryPad".into(), serde_json::Value::Bool(false));
+
+        let err = serde_json::from_value::<BundlerPolicy>(value).expect_err("unknown field");
+        assert!(err.to_string().contains("unknown field `factoryPad`"));
     }
 }

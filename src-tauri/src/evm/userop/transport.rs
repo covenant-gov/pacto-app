@@ -138,37 +138,6 @@ pub(crate) fn is_bundler_gas_limit_error(err: &str) -> bool {
     ) || err.to_lowercase().contains("max gas per userop")
 }
 
-fn estimated_from_final(limits: FinalGasLimits) -> EstimatedUserOpGas {
-    EstimatedUserOpGas {
-        call_gas_limit: limits.call_gas_limit,
-        verification_gas_limit: limits.verification_gas_limit,
-        pre_verification_gas: limits.pre_verification_gas,
-        paymaster_verification_gas_limit: limits.paymaster_verification_gas_limit,
-        paymaster_post_op_gas_limit: limits.paymaster_post_op_gas_limit,
-    }
-}
-
-/// Pass 2 hit the bundler cap. Return clamped pass 1 instead of surfacing the reject.
-pub(crate) fn pass2_or_clamped_pass1(
-    lane: &str,
-    pass2: Result<EstimatedUserOpGas, String>,
-    pass1: &EstimatedUserOpGas,
-) -> Result<EstimatedUserOpGas, String> {
-    match pass2 {
-        Ok(gas) => Ok(gas),
-        Err(err) if is_bundler_gas_limit_error(&err) => {
-            log::warn!(
-                target: "pacto_wallet",
-                "estimate pass 2 hit bundler gas cap; using clamped pass 1 ({lane})"
-            );
-            Ok(estimated_from_final(clamp_estimated_gas_to_bundler_cap(
-                pass1,
-            )))
-        }
-        Err(err) => Err(err),
-    }
-}
-
 pub(crate) fn factory_userop_too_large_error() -> String {
     wallet_err_json(
         "FACTORY_USEROP_TOO_LARGE",
@@ -1359,33 +1328,6 @@ mod tests {
         assert!(!should_skip_estimate_calibrate(&small));
         let request = clamp_estimated_gas_to_bundler_cap(&small);
         assert!(request.sum() <= bundler_userop_gas_cap());
-    }
-
-    #[test]
-    fn pass2_gas_cap_returns_clamped_pass1() {
-        let pass1 = EstimatedUserOpGas {
-            call_gas_limit: 100_000,
-            verification_gas_limit: 100_000,
-            pre_verification_gas: 80_000,
-            paymaster_verification_gas_limit: 100_000,
-            paymaster_post_op_gas_limit: 50_000,
-        };
-        let err = r#"{"code":"BUNDLER_GAS_LIMIT","message":"User operation gas limits exceeded the max gas per userOp: 16800000 > 16000000"}"#;
-        let got = pass2_or_clamped_pass1("sponsored", Err(err.to_string()), &pass1).unwrap();
-        let clamped = clamp_estimated_gas_to_bundler_cap(&pass1);
-        assert_eq!(got.call_gas_limit, clamped.call_gas_limit);
-        assert_eq!(got.verification_gas_limit, clamped.verification_gas_limit);
-        assert_eq!(got.pre_verification_gas, clamped.pre_verification_gas);
-        assert_eq!(
-            got.paymaster_verification_gas_limit,
-            clamped.paymaster_verification_gas_limit
-        );
-        assert_eq!(
-            got.paymaster_post_op_gas_limit,
-            clamped.paymaster_post_op_gas_limit
-        );
-        let other = pass2_or_clamped_pass1("sponsored", Err("USEROP_CALL_GAS".into()), &pass1);
-        assert!(other.is_err());
     }
 
     #[test]

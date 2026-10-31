@@ -19,10 +19,10 @@ use super::rpc::{connect_read_provider, parse_address, wallet_err_json};
 use super::sponsor_paymaster::{encode_paymaster_and_data, required_pool_balance};
 use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id};
 use super::userop::{
-    estimate_sponsored_userop, finalize_for_style, paymaster_entry_point_deposit_preflight,
-    resolve_eip7702_auth_for_sender, resolve_userop_eip1559_fees, sign_and_send_sponsored_userop,
-    userop_gas_ceilings, userop_max_cost_wei, IAccountExecute, IEntryPointV07,
-    SponsoredUserOpBuild, UseropPlaceholderLane,
+    estimate_sponsored_userop, paymaster_entry_point_deposit_preflight,
+    resolve_eip7702_auth_for_sender, resolve_userop_probe_fees, resolve_userop_send_fees,
+    sign_and_send_sponsored_userop, userop_gas_ceilings, userop_max_cost_wei, IAccountExecute,
+    IEntryPointV07, SponsoredUserOpBuild, SponsoredUserOpLane, UseropPlaceholderLane,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -37,9 +37,9 @@ pub(crate) use super::userop::{
     factory_userop_too_large_error, fallback_call_gas_limit, fallback_max_fee,
     fallback_max_priority_fee, finalize_factory_userop_gas_limits, finalize_userop_gas_limits,
     heavy_call_gas_limit, is_bundler_gas_limit_error, pack_u128s,
-    parse_user_operation_gas_price_response, pass2_or_clamped_pass1, paymaster_data,
-    should_skip_estimate_calibrate, sign_eip7702_authorization, user_op_json, userop_gas_limit_sum,
-    wallet_error_code, EstimatedUserOpGas, FinalGasLimits, UserOpParams,
+    parse_user_operation_gas_price_response, paymaster_data, should_skip_estimate_calibrate,
+    sign_eip7702_authorization, user_op_json, userop_gas_limit_sum, wallet_error_code,
+    EstimatedUserOpGas, FinalGasLimits, UserOpParams,
 };
 
 pub fn erc4337_account_implementation(network_key: &str) -> Option<Address> {
@@ -352,16 +352,22 @@ pub struct SponsoredUserOpSend {
     pub bundler_url: String,
 }
 
-/// Pimlico `standard` fee for UserOp maxCost. Last-resort policy fee when no bundler URL is configured.
-pub(crate) async fn sponsored_userop_max_fee<R: Runtime>(
+/// Pimlico `standard` max fee for route eligibility probes.
+pub(crate) async fn sponsored_userop_probe_max_fee<R: Runtime>(
     app: &AppHandle<R>,
     network_key: &str,
-) -> u128 {
+) -> Result<u128, String> {
     let stored = load_stored_pimlico_key(app);
-    if let Ok(Some(url)) = bundler_rpc_url_with_stored(network_key, stored.as_deref()) {
-        return resolve_userop_eip1559_fees(&url).await.1;
-    }
-    fallback_max_fee()
+    let url = bundler_rpc_url_with_stored(network_key, stored.as_deref())?.ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_CONFIG",
+            "Pimlico pricing is unavailable for the sponsored route probe.",
+            None,
+        )
+    })?;
+    resolve_userop_probe_fees(&url)
+        .await
+        .map(|(_, max_fee)| max_fee)
 }
 
 /// Attempt a sponsored UserOp; returns EntryPoint userOp hash + accepting bundler on success.
@@ -432,7 +438,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler).await;
+    let (max_priority, max_fee) = resolve_userop_send_fees(&bundler).await;
 
     let ceilings = userop_gas_ceilings(&calldata, UseropPlaceholderLane::Squad);
     let placeholder_max_cost = userop_max_cost_wei(
@@ -511,9 +517,15 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let encode = |pm_v: u128, pm_post: u128| {
         encode_paymaster_and_data(paymaster, squad_id, sponsor, member, pm_v, pm_post).to_vec()
     };
-    let estimated =
-        estimate_sponsored_userop(&bundler, &build, ceilings, false, "sponsored", &encode).await?;
-    let limits = finalize_for_style(false, &estimated)?;
+    let limits = estimate_sponsored_userop(
+        &bundler,
+        &build,
+        ceilings,
+        SponsoredUserOpLane::Small,
+        "sponsored",
+        &encode,
+    )
+    .await?;
     let user_op_hash = sign_and_send_sponsored_userop(
         &read_provider,
         &signer,

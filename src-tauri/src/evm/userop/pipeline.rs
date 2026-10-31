@@ -11,10 +11,10 @@ use super::transport::{
     bundler_cap_fallback_estimate, bundler_estimate_user_operation_gas,
     bundler_send_user_operation, clamp_estimated_gas_to_bundler_cap, dummy_userop_signature,
     finalize_factory_userop_gas_limits, finalize_userop_gas_limits, heavy_call_gas_limit,
-    is_bundler_gas_limit_error, is_userop_call_gas_error, pack_u128s, pass2_or_clamped_pass1,
-    paymaster_data, paymaster_entry_point_deposit_preflight, should_skip_estimate_calibrate,
-    user_op_json, userop_max_cost_wei, EstimatedUserOpGas, FinalGasLimits, IEntryPointV07,
-    PackedUserOperation, UserOpParams,
+    is_bundler_gas_limit_error, is_userop_call_gas_error, pack_u128s, paymaster_data,
+    paymaster_entry_point_deposit_preflight, should_skip_estimate_calibrate, user_op_json,
+    userop_max_cost_wei, EstimatedUserOpGas, FinalGasLimits, IEntryPointV07, PackedUserOperation,
+    UserOpParams,
 };
 use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::rpc::wallet_err_json;
@@ -31,22 +31,42 @@ pub(crate) struct SponsoredUserOpBuild<'a> {
     pub(crate) eip7702_auth: Option<serde_json::Value>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SponsoredUserOpLane {
+    Small,
+    Factory,
+}
+
+enum EstimateOutcome {
+    Normal(EstimatedUserOpGas),
+    Final(FinalGasLimits),
+}
+
+impl EstimateOutcome {
+    fn into_final_limits(self, lane: SponsoredUserOpLane) -> Result<FinalGasLimits, String> {
+        match self {
+            Self::Normal(estimated) => finalize_for_lane(lane, &estimated),
+            Self::Final(limits) => Ok(limits),
+        }
+    }
+}
+
 /// Small lanes pad. Factory does not.
-pub(crate) fn estimate_pads(factory_style: bool) -> bool {
-    !factory_style
+fn estimate_pads(lane: SponsoredUserOpLane) -> bool {
+    lane == SponsoredUserOpLane::Small
 }
 
 /// 500k → 1.5M retry. Factory never enters it, even if the call ceiling is under 1.5M.
-pub(crate) fn heavy_call_retry_applies(factory_style: bool, call_ceiling: u128) -> bool {
-    !factory_style && call_ceiling < heavy_call_gas_limit()
+fn heavy_call_retry_applies(lane: SponsoredUserOpLane, call_ceiling: u128) -> bool {
+    lane == SponsoredUserOpLane::Small && call_ceiling < heavy_call_gas_limit()
 }
 
 /// Factory gas-cap errors send the lane ceilings. Small lanes fill the 16M cap.
-pub(crate) fn gas_cap_estimate_fallback(
-    factory_style: bool,
+fn gas_cap_estimate_fallback(
+    lane: SponsoredUserOpLane,
     ceilings: &UseropGasCeilings,
 ) -> EstimatedUserOpGas {
-    if factory_style {
+    if lane == SponsoredUserOpLane::Factory {
         EstimatedUserOpGas {
             call_gas_limit: ceilings.call,
             verification_gas_limit: ceilings.verification,
@@ -64,11 +84,11 @@ pub(crate) fn gas_cap_estimate_fallback(
     }
 }
 
-pub(crate) fn finalize_for_style(
-    factory_style: bool,
+fn finalize_for_lane(
+    lane: SponsoredUserOpLane,
     estimated: &EstimatedUserOpGas,
 ) -> Result<FinalGasLimits, String> {
-    if estimate_pads(factory_style) {
+    if estimate_pads(lane) {
         finalize_userop_gas_limits(estimated)
     } else {
         Ok(finalize_factory_userop_gas_limits(estimated))
@@ -79,10 +99,10 @@ pub(crate) async fn estimate_sponsored_userop<E>(
     bundler_url: &str,
     op: &SponsoredUserOpBuild<'_>,
     ceilings: UseropGasCeilings,
-    factory_style: bool,
+    lane: SponsoredUserOpLane,
     lane_label: &str,
     encode_paymaster: &E,
-) -> Result<EstimatedUserOpGas, String>
+) -> Result<FinalGasLimits, String>
 where
     E: Fn(u128, u128) -> Vec<u8>,
 {
@@ -90,17 +110,14 @@ where
         bundler_url,
         op,
         ceilings,
-        factory_style,
+        lane,
         lane_label,
         encode_paymaster,
     )
     .await
     {
-        Ok(estimated) => Ok(estimated),
-        Err(e)
-            if heavy_call_retry_applies(factory_style, ceilings.call)
-                && is_userop_call_gas_error(&e) =>
-        {
+        Ok(outcome) => outcome.into_final_limits(lane),
+        Err(e) if heavy_call_retry_applies(lane, ceilings.call) && is_userop_call_gas_error(&e) => {
             log::warn!(
                 target: "pacto_wallet",
                 "{lane_label} estimate OOG at {} call gas; retrying at {}",
@@ -109,15 +126,9 @@ where
             );
             let mut heavy = ceilings;
             heavy.call = heavy_call_gas_limit();
-            estimate_with_ceilings(
-                bundler_url,
-                op,
-                heavy,
-                factory_style,
-                lane_label,
-                encode_paymaster,
-            )
-            .await
+            estimate_with_ceilings(bundler_url, op, heavy, lane, lane_label, encode_paymaster)
+                .await?
+                .into_final_limits(lane)
         }
         Err(e) => Err(e),
     }
@@ -127,10 +138,10 @@ async fn estimate_with_ceilings<E>(
     bundler_url: &str,
     op: &SponsoredUserOpBuild<'_>,
     ceilings: UseropGasCeilings,
-    factory_style: bool,
+    lane: SponsoredUserOpLane,
     lane_label: &str,
     encode_paymaster: &E,
-) -> Result<EstimatedUserOpGas, String>
+) -> Result<EstimateOutcome, String>
 where
     E: Fn(u128, u128) -> Vec<u8>,
 {
@@ -148,7 +159,7 @@ where
     {
         Ok(gas) => gas,
         Err(e) if is_bundler_gas_limit_error(&e) => {
-            if factory_style {
+            if lane == SponsoredUserOpLane::Factory {
                 log::warn!(
                     target: "pacto_wallet",
                     "factory estimate hit bundler gas cap; sending at factory ceilings"
@@ -159,18 +170,19 @@ where
                     "{lane_label} estimate pass 1 hit bundler 16M cap; using fallback limits"
                 );
             }
-            return Ok(gas_cap_estimate_fallback(factory_style, &ceilings));
+            let fallback = gas_cap_estimate_fallback(lane, &ceilings);
+            return Ok(EstimateOutcome::Final(finalize_for_lane(lane, &fallback)?));
         }
         Err(e) => return Err(e),
     };
-    if factory_style || should_skip_estimate_calibrate(&first) {
-        if !factory_style {
+    if lane == SponsoredUserOpLane::Factory || should_skip_estimate_calibrate(&first) {
+        if lane == SponsoredUserOpLane::Small {
             log::warn!(
                 target: "pacto_wallet",
                 "skip {lane_label} estimate calibrate; pass-1 sum would exceed 16M after bundler pad"
             );
         }
-        return Ok(first);
+        return Ok(EstimateOutcome::Normal(first));
     }
     let calibrate = clamp_estimated_gas_to_bundler_cap(&first);
     paymaster_and_data = encode_paymaster(
@@ -179,11 +191,31 @@ where
     );
     let _ = paymaster_data(&paymaster_and_data)?;
     let calibrate_op = user_op_for(op, &calibrate, &paymaster_and_data, &dummy_sig)?;
-    pass2_or_clamped_pass1(
+    pass2_outcome(
         lane_label,
         bundler_estimate_user_operation_gas(bundler_url, &calibrate_op, op.entry_point).await,
         &first,
     )
+}
+
+fn pass2_outcome(
+    lane: &str,
+    pass2: Result<EstimatedUserOpGas, String>,
+    pass1: &EstimatedUserOpGas,
+) -> Result<EstimateOutcome, String> {
+    match pass2 {
+        Ok(gas) => Ok(EstimateOutcome::Normal(gas)),
+        Err(err) if is_bundler_gas_limit_error(&err) => {
+            log::warn!(
+                target: "pacto_wallet",
+                "estimate pass 2 hit bundler gas cap; using clamped pass 1 ({lane})"
+            );
+            Ok(EstimateOutcome::Final(clamp_estimated_gas_to_bundler_cap(
+                pass1,
+            )))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 fn ceilings_as_limits(ceilings: &UseropGasCeilings) -> FinalGasLimits {
@@ -285,13 +317,25 @@ mod tests {
     use crate::evm::userop::transport::bundler_userop_gas_cap;
 
     #[test]
-    fn factory_style_skips_pad_and_heavy_retry() {
-        assert!(!estimate_pads(true));
-        assert!(estimate_pads(false));
-        assert!(!heavy_call_retry_applies(true, 500_000));
-        assert!(!heavy_call_retry_applies(true, 14_000_000));
-        assert!(heavy_call_retry_applies(false, 500_000));
-        assert!(!heavy_call_retry_applies(false, heavy_call_gas_limit()));
+    fn factory_lane_skips_pad_and_heavy_retry() {
+        assert!(!estimate_pads(SponsoredUserOpLane::Factory));
+        assert!(estimate_pads(SponsoredUserOpLane::Small));
+        assert!(!heavy_call_retry_applies(
+            SponsoredUserOpLane::Factory,
+            500_000
+        ));
+        assert!(!heavy_call_retry_applies(
+            SponsoredUserOpLane::Factory,
+            14_000_000
+        ));
+        assert!(heavy_call_retry_applies(
+            SponsoredUserOpLane::Small,
+            500_000
+        ));
+        assert!(!heavy_call_retry_applies(
+            SponsoredUserOpLane::Small,
+            heavy_call_gas_limit()
+        ));
 
         let ceilings = UseropGasCeilings {
             call: 14_000_000,
@@ -300,9 +344,9 @@ mod tests {
             pm_verification: 500_000,
             pm_post: 100_000,
         };
-        let factory = gas_cap_estimate_fallback(true, &ceilings);
+        let factory = gas_cap_estimate_fallback(SponsoredUserOpLane::Factory, &ceilings);
         assert_eq!(factory.call_gas_limit, 14_000_000);
-        let small = gas_cap_estimate_fallback(false, &ceilings);
+        let small = gas_cap_estimate_fallback(SponsoredUserOpLane::Small, &ceilings);
         assert_eq!(
             small.call_gas_limit
                 + small.verification_gas_limit
@@ -319,13 +363,45 @@ mod tests {
             paymaster_verification_gas_limit: 100_000,
             paymaster_post_op_gas_limit: 50_000,
         };
-        let padded = finalize_for_style(false, &raw).expect("small finalize");
-        let factory_limits = finalize_for_style(true, &raw).expect("factory finalize");
+        let padded = finalize_for_lane(SponsoredUserOpLane::Small, &raw).expect("small finalize");
+        let factory_limits =
+            finalize_for_lane(SponsoredUserOpLane::Factory, &raw).expect("factory finalize");
         assert!(padded.call_gas_limit > raw.call_gas_limit);
         assert_eq!(factory_limits.call_gas_limit, raw.call_gas_limit);
         assert_eq!(
             factory_limits.verification_gas_limit,
             raw.verification_gas_limit
+        );
+    }
+
+    #[test]
+    fn pass2_cap_fallback_survives_finalization_unchanged() {
+        let pass1 = EstimatedUserOpGas {
+            call_gas_limit: 100_000,
+            verification_gas_limit: 100_000,
+            pre_verification_gas: 80_000,
+            paymaster_verification_gas_limit: 100_000,
+            paymaster_post_op_gas_limit: 50_000,
+        };
+        let err = r#"{"code":"BUNDLER_GAS_LIMIT","message":"over cap"}"#.to_string();
+        let limits = pass2_outcome("sponsored", Err(err), &pass1)
+            .expect("fallback")
+            .into_final_limits(SponsoredUserOpLane::Small)
+            .expect("final limits");
+        let expected = clamp_estimated_gas_to_bundler_cap(&pass1);
+
+        assert_eq!(limits, expected);
+        assert!(
+            limits.call_gas_limit
+                + limits.verification_gas_limit
+                + limits.pre_verification_gas
+                + limits.paymaster_verification_gas_limit
+                + limits.paymaster_post_op_gas_limit
+                <= bundler_userop_gas_cap()
+        );
+        assert_ne!(
+            limits,
+            finalize_for_lane(SponsoredUserOpLane::Small, &pass1).expect("normal finalize")
         );
     }
 }

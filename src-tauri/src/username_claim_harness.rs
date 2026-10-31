@@ -33,11 +33,11 @@ use crate::evm::pacto_chain_config::{
 use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use crate::evm::userop::{
-    dummy_userop_signature, estimate_sponsored_userop, finalize_for_style,
-    paymaster_entry_point_deposit_preflight, resolve_eip7702_auth_for_sender,
-    resolve_userop_eip1559_fees, sign_and_send_sponsored_userop, user_op_json, userop_gas_ceilings,
-    userop_max_cost_wei, wait_for_user_operation_receipt, IAccountExecute, IEntryPointV07,
-    SponsoredUserOpBuild, UserOpParams, UseropPlaceholderLane,
+    dummy_userop_signature, estimate_sponsored_userop, paymaster_entry_point_deposit_preflight,
+    resolve_eip7702_auth_for_sender, resolve_userop_send_fees, sign_and_send_sponsored_userop,
+    user_op_json, userop_gas_ceilings, userop_max_cost_wei, wait_for_user_operation_receipt,
+    IAccountExecute, IEntryPointV07, SponsoredUserOpBuild, SponsoredUserOpLane, UserOpParams,
+    UseropPlaceholderLane,
 };
 use crate::evm::{derive_eth_bip44_v1_from_mnemonic_phrase, wallet_security};
 
@@ -276,7 +276,7 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         }
     );
 
-    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler_url).await;
+    let (max_priority, max_fee) = resolve_userop_send_fees(&bundler_url).await;
     let ceilings = userop_gas_ceilings(&claim_calldata, UseropPlaceholderLane::UsernameBootstrap);
     let placeholder_max_cost = userop_max_cost_wei(
         ceilings.call,
@@ -331,11 +331,11 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
         max_priority,
         eip7702_auth,
     };
-    let estimated = match estimate_sponsored_userop(
+    let limits = match estimate_sponsored_userop(
         &bundler_url,
         &build,
         ceilings,
-        false,
+        SponsoredUserOpLane::Small,
         "claim",
         &encode,
     )
@@ -376,12 +376,6 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> Result<(), String> {
             ));
         }
     };
-    let limits = finalize_for_style(false, &estimated).map_err(|e| {
-        format!(
-            "L4 STOP finalize: {}",
-            wallet_security::redact_urls_in_text(&e)
-        )
-    })?;
     let user_op_hash_hex = sign_and_send_sponsored_userop(
         &provider,
         &signer,
