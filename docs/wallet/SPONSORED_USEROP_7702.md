@@ -1,12 +1,12 @@
-# Sponsored UserOp + EIP-7702 (Layer 0–4)
+# Sponsored UserOp + EIP-7702
 
-Reusable debug playbook for **roster-EOA → EIP-7702 account → EntryPoint v0.7 → Pimlico** sponsored writes. Squad gov and username claim share this transport; they differ only in paymaster / eligibility.
+Normative transport spec for **roster-EOA → EIP-7702 account → EntryPoint v0.7 → Pimlico** sponsored writes. Squad gov, username claim, and factory deploy share this transport. They differ in paymaster, eligibility, and lane.
 
-Numeric caps, pads, factory ceilings, headroom, and last-resort fees live in [`src/lib/evm/userop-bundler-policy.json`](../../src/lib/evm/userop-bundler-policy.json).
+Numeric caps, pads, factory ceilings, headroom, and last-resort fees live only in [`src/lib/evm/userop-bundler-policy.json`](../../src/lib/evm/userop-bundler-policy.json). A new gas or fee literal in Rust or TypeScript is a bug; change the JSON.
 
 Worked Sepolia example (call nesting + gas settlement diagrams): [SPONSORED_USEROP_SEPOLIA_EXAMPLE.md](./SPONSORED_USEROP_SEPOLIA_EXAMPLE.md).
 
-Incident staging notes: [`docs/solutions/wallet/sponsored-userop-7702-debug-method.md`](../solutions/wallet/sponsored-userop-7702-debug-method.md).
+Incident notes stay incident-only: [`docs/solutions/wallet/sponsored-userop-7702-debug-method.md`](../solutions/wallet/sponsored-userop-7702-debug-method.md), [`docs/solutions/wallet/factory-userop-gas-policy.md`](../solutions/wallet/factory-userop-gas-policy.md).
 
 ## Shared transport contract
 
@@ -18,11 +18,68 @@ Incident staging notes: [`docs/solutions/wallet/sponsored-userop-7702-debug-meth
 | Auth | `sign_eip7702_authorization` (yParity 0/1); skip when sender already has correct `0xef0100` stub |
 | Signature | Bare ECDSA `sign_hash(userOpHash)` (65 bytes) — not `personal_sign`, not MAv2 |
 | Nonce | EntryPoint nonce **key 0** |
-| Gas | Two-pass `eth_estimateUserOperationGas` for squad / gov / username (skip pass 2 when 1.2× would exceed 16M; clamp echo otherwise). Factory `deployNavePirata`: one estimate with a ~14M `callGasLimit` ceiling, **no** 1.2× pad, five-limit sum ≤ 16M, then send. `16794127 > 16000000` means the client padded a ~14M estimate; it is not proof the factory call itself is over the cap. A 0-ETH username-NFT `deployNavePirata` is the intended Launchpad path (`funded_by: global_sponsored`). If the bundler still rejects after that clamp, `FACTORY_USEROP_TOO_LARGE`. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). |
-| Fees | Pimlico ERC-4337: `pimlico_getUserOperationGasPrice` (`standard`), then `eth_estimateUserOperationGas` / `eth_sendUserOperation`. Factory pool `maxCost` uses that same Pimlico quote. Not Alchemy AA, not Alchemy EIP-1559. If the Pimlico price RPC is down, fail closed or use a last-resort send fallback — do not pull fees from Alchemy and clamp to 30 gwei. |
-| Helpers | `user_op_json`, `sign_eip7702_authorization`, estimate/send in `sponsor_userop.rs` |
+| Gas | Two lanes below. Knobs in the policy JSON. |
+| Fees | Pimlico `pimlico_getUserOperationGasPrice` (`standard`) for estimate, send, and pool `maxCost`. See Fees. |
+| Helpers | [`src-tauri/src/evm/userop/`](../../src-tauri/src/evm/userop/) — `policy`, `pipeline`, `fees`, `eip7702`, `placeholder`, `transport` |
 
 **Forbidden:** eth-infinitism Simple7702Account (EP v0.8), Alchemy SemiModularAccount7702, hand-rolled relay lists for MLS, mega-merging `send_sponsored_*` unless Layer 2 proves transport drift.
+
+## Bundler policy
+
+[`userop-bundler-policy.json`](../../src/lib/evm/userop-bundler-policy.json) is the only copy of these knobs. Rust loads it from `evm/userop/policy.rs`. TypeScript reads the same file. The meanings below describe the current JSON; edit the file, not this table, when a number moves.
+
+| Key | Why |
+|-----|-----|
+| `bundlerUserOpGasCap` | Pimlico five-limit sum ceiling (16M). |
+| `callGasMarginBps` | Small-lane pad on call / preVerification / postOp (12000 = 1.2×). |
+| `verificationGasMaxPadBps` | Cap on account and paymaster verification pads (20000 = 2.0×). |
+| `fallbackCallGasLimit` | Small-lane placeholder `callGasLimit` (500k). |
+| `heavyCallGasLimit` | Retry ceiling when the 500k placeholder OOGs (1.5M). Hats/Safe execute selectors start here. |
+| `fallbackPreVerificationGas` | Small-lane placeholder preVerification. |
+| `defaultVerificationGasLimit` | Small-lane placeholder account verification. |
+| `defaultPaymasterVerificationGasLimit` | Small-lane placeholder paymaster verification. |
+| `defaultPostOpGasLimit` | Small-lane placeholder postOp. |
+| `factoryCallGasLimit` | Factory estimate ceiling for `callGasLimit` (~14M). |
+| `factoryVerificationGasLimit` | Factory account verification ceiling. |
+| `factoryPreVerificationGas` | Factory preVerification ceiling. |
+| `factoryPaymasterPostOpGasLimit` | Factory paymaster postOp ceiling. |
+| `factoryPad` | Factory lane does not apply `callGasMarginBps`. |
+| `factoryCalibrate` | Factory lane does not run estimate pass 2. |
+| `fallbackMaxPriorityFeeWei` | Send last-resort tip (1 gwei) when the Pimlico price RPC fails. Not a pool price. |
+| `fallbackMaxFeeWei` | Send last-resort max fee (30 gwei) when the Pimlico price RPC fails. Not a pool price. Do not clamp an Alchemy quote to this. |
+| `poolBalanceHeadroomBps` | Pool spendable must cover `maxCost` plus headroom (11500 = 115%). |
+| `paymasterDataOffset` | Byte offset of the inner paymaster payload. |
+
+## Two lanes
+
+`factory_style` selects the lane inside `estimate_sponsored_userop` and `finalize_for_style`.
+
+**Small** (squad gov, global gov-module, username claim): placeholders, then `eth_estimateUserOperationGas`. Apply the call margin and verification pad, then pass 2 only when the padded five-limit sum fits under `bundlerUserOpGasCap`. A bundler cap error on pass 2 sends the clamped pass 1.
+
+**Factory** (`deployNavePirata`, `lane=factory_target`): one estimate at the factory ceilings. No call margin and no pass 2. Clamp the five-limit sum to the cap, cutting `callGasLimit` first. `FACTORY_USEROP_TOO_LARGE` only if the bundler still rejects after that clamp. A 0-ETH username-NFT deploy is the Launchpad path (`funded_by: global_sponsored`). A reject of the form `16794127 > 16000000` is the client padding a ~14M estimate. It is not proof the factory call itself exceeds the cap.
+
+## Fees
+
+Estimate, send, and UserOp gas price are Pimlico: `pimlico_getUserOperationGasPrice` (`standard`), then `eth_estimateUserOperationGas` / `eth_sendUserOperation`. `resolve_userop_eip1559_fees` in `evm/userop/fees.rs`.
+
+Factory pool `maxCost` and pool headroom use that same Pimlico quote.
+
+Alchemy (`ALCHEMY_RPC_KEY`) is chain RPC only (`eth_call`, receipts). It is not the 4337 fee path and not the bundler.
+
+When the Pimlico price RPC fails, send uses `fallbackMaxPriorityFeeWei` and `fallbackMaxFeeWei`. Do not price the UserOp from an Alchemy EIP-1559 quote.
+
+## Mandatory pipeline
+
+1. Lane flag (`factory_style`).
+2. `estimate_sponsored_userop` — ceilings from `placeholder`, then the bundler estimate.
+3. `finalize_for_style` — small lanes pad and clamp; factory clamps without the pad.
+4. `sign_and_send_sponsored_userop` — deposit preflight, sign `userOpHash`, `eth_sendUserOperation`.
+
+Product code supplies the paymaster encoder and the eligibility preflight. It does not call the bundler itself.
+
+## Agent rule
+
+New gas or fee literals in Rust or TypeScript are a bug. Change [`userop-bundler-policy.json`](../../src/lib/evm/userop-bundler-policy.json). Do not source UserOp fees from Alchemy.
 
 ## Two sponsors, one transport
 
@@ -105,7 +162,7 @@ Do not fork authorization, UserOp JSON shape, or estimate/sign loop unless L2 fi
 
 ## Layer 2 smoke (after Layer 1 OK)
 
-Unit baseline: `user_op_json_shared_keys_stable_for_username_and_squad` in `sponsor_userop.rs` (same key set for both sponsors).
+Unit baseline: `user_op_json_shared_keys_stable_for_username_and_squad` in `evm/userop/transport.rs` (same key set for both sponsors).
 
 Operator Sepolia checklist (empty-code roster):
 
@@ -160,7 +217,7 @@ On failure: client fix or registry NFT swap — not a third full-system broadcas
 
 ## Related
 
-- [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) — squad path + gas margins
+- [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) — squad paymaster and pool ops
 - [USERNAME_NFT.md](./USERNAME_NFT.md) — claim dual attestation
 - [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §1 (squad) and §10 (username)
 - [PROTOCOL_ADDRESS_BOOK.md](./PROTOCOL_ADDRESS_BOOK.md)
