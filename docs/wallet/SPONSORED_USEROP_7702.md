@@ -17,7 +17,7 @@ Incident staging notes: [`docs/solutions/wallet/sponsored-userop-7702-debug-meth
 | Signature | Bare ECDSA `sign_hash(userOpHash)` (65 bytes) — not `personal_sign`, not MAv2 |
 | Nonce | EntryPoint nonce **key 0** |
 | Gas | Two-pass `eth_estimateUserOperationGas` for squad / gov / username (skip pass 2 when 1.2× would exceed 16M; clamp echo otherwise). Factory `deployNavePirata`: one estimate with a ~14M `callGasLimit` ceiling, **no** 1.2× pad, five-limit sum ≤ 16M, then send. `16794127 > 16000000` means the client padded a ~14M estimate; it is not proof the factory call itself is over the cap. A 0-ETH username-NFT `deployNavePirata` is the intended Launchpad path (`funded_by: global_sponsored`). If the bundler still rejects after that clamp, `FACTORY_USEROP_TOO_LARGE`. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). |
-| Fees | `pimlico_getUserOperationGasPrice` (`standard` tier). Alchemy `estimate_eip1559_fees` only if that RPC fails, then clamp maxFee to 30 gwei so Sepolia cannot send a 1 gwei UserOp. |
+| Fees | Pimlico ERC-4337: `pimlico_getUserOperationGasPrice` (`standard`), then `eth_estimateUserOperationGas` / `eth_sendUserOperation`. Factory pool `maxCost` uses that same Pimlico quote. Not Alchemy AA, not Alchemy EIP-1559. If the Pimlico price RPC is down, fail closed or use a last-resort send fallback — do not pull fees from Alchemy and clamp to 30 gwei. |
 | Helpers | `user_op_json`, `sign_eip7702_authorization`, estimate/send in `sponsor_userop.rs` |
 
 **Forbidden:** eth-infinitism Simple7702Account (EP v0.8), Alchemy SemiModularAccount7702, hand-rolled relay lists for MLS, mega-merging `send_sponsored_*` unless Layer 2 proves transport drift.
