@@ -5,11 +5,10 @@ use alloy::sol_types::SolCall;
 use tauri::{AppHandle, Runtime};
 
 use super::contracts::pacto_username::IPactoUsernameNFT::{
-    cancelAddressTransferCall, claimAddressTransferCall, claimCall,
-    initiateAddressTransferCall,
+    cancelAddressTransferCall, claimAddressTransferCall, claimCall, initiateAddressTransferCall,
 };
-use super::global_userop_cost::CLAIM_USERNAME_SELECTOR;
 use super::gov_module_write::gov_call_action_label;
+use super::userop::CLAIM_USERNAME_SELECTOR;
 use crate::db;
 
 pub const LANE_GOV_MODULE: &str = "gov_module";

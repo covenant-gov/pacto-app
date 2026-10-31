@@ -4,7 +4,7 @@
 use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::sol_types::SolValue;
 
-use super::userop_policy::policy;
+use super::userop::policy::policy;
 
 pub const GLOBAL_PAYMASTER_DATA_VERSION: u8 = 1;
 

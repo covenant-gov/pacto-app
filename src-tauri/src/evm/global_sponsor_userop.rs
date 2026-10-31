@@ -13,10 +13,6 @@ use super::contracts::pacto_username::IPactoGlobalPaymaster::ALLOWED_7702_IMPLEM
 use super::contracts::pacto_username::IPactoUsernameNFT::{eligibleMemberCall, npubOfCall};
 use super::contracts::pacto_username::ISponsorPolicyRegistry::isSelectorAllowedCall;
 use super::global_paymaster::{encode_global_paymaster_and_data, required_global_pool_balance};
-use super::global_userop_cost::{
-    global_userop_gas_ceilings, global_userop_placeholder_max_cost_wei, GlobalUseropGasCeilings,
-    GlobalUseropPlaceholderLane,
-};
 use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
 use super::rpc::call::eth_call_decode;
@@ -26,44 +22,19 @@ use super::sponsor_preflight::{
     assert_global_factory_preflight, assert_global_gov_module_preflight,
 };
 use super::sponsor_userop::{
-    bundler_cap_fallback_estimate, bundler_estimate_user_operation_gas,
-    bundler_rpc_url_with_stored, bundler_send_user_operation, clamp_estimated_gas_to_bundler_cap,
-    clamp_userop_gas_limits_to_cap, dummy_userop_signature, erc4337_account_implementation,
-    factory_userop_too_large_error, finalize_factory_userop_gas_limits, finalize_userop_gas_limits,
-    is_bundler_gas_limit_error, load_stored_pimlico_key, pack_u128s, pass2_or_clamped_pass1,
-    paymaster_data, paymaster_entry_point_deposit_preflight, resolve_userop_eip1559_fees,
-    should_skip_estimate_calibrate, sign_eip7702_authorization, user_op_json, userop_gas_limit_sum,
-    userop_max_cost_wei, EstimatedUserOpGas, FinalGasLimits, SponsoredUserOpSend, UserOpParams,
+    bundler_rpc_url_with_stored, erc4337_account_implementation, factory_userop_too_large_error,
+    is_bundler_gas_limit_error, load_stored_pimlico_key, roster_native_balance_wei,
+    SponsoredUserOpSend,
 };
 use super::username_claim_preflight::preflight_bootstrap_claim_userop_path;
+use super::userop::{
+    estimate_sponsored_userop, finalize_for_style, paymaster_entry_point_deposit_preflight,
+    resolve_eip7702_auth_for_sender, resolve_userop_eip1559_fees, sign_and_send_sponsored_userop,
+    userop_gas_ceilings, userop_gas_limit_sum, userop_placeholder_max_cost_wei, FinalGasLimits,
+    IAccountExecute, IEntryPointV07, SponsoredUserOpBuild, UseropGasCeilings,
+    UseropPlaceholderLane,
+};
 use super::wallet_chain_config;
-
-alloy::sol! {
-    #[sol(rpc)]
-    interface IAccountExecute {
-        function execute(address dest, uint256 value, bytes data) external;
-    }
-
-    #[sol(rpc)]
-    interface IEntryPointV07 {
-        function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
-        function getUserOpHash(PackedUserOperation userOp) external view returns (bytes32);
-        function balanceOf(address account) external view returns (uint256);
-    }
-
-    #[derive(Debug)]
-    struct PackedUserOperation {
-        address sender;
-        uint256 nonce;
-        bytes initCode;
-        bytes callData;
-        bytes32 accountGasLimits;
-        uint256 preVerificationGas;
-        bytes32 gasFees;
-        bytes paymasterAndData;
-        bytes signature;
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsernameSponsorLane {
@@ -79,7 +50,7 @@ enum GlobalPreflightLane {
 }
 
 /// claim() selector from pacto_actions / alloy — 0x9824550d
-pub use super::global_userop_cost::CLAIM_USERNAME_SELECTOR;
+pub use super::userop::CLAIM_USERNAME_SELECTOR;
 
 /// Attempt a global-paymaster sponsored UserOp; returns EntryPoint userOp hash + accepting bundler.
 pub async fn send_sponsored_username_userop<R: Runtime>(
@@ -134,11 +105,11 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler, &read_provider).await;
+    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler).await;
 
     let placeholders = username_placeholder_ceilings(&calldata, lane);
     let placeholder_max_cost =
-        global_userop_placeholder_max_cost_wei(&calldata, username_placeholder_lane(lane), max_fee);
+        userop_placeholder_max_cost_wei(&calldata, username_placeholder_lane(lane), max_fee);
 
     paymaster_entry_point_deposit_preflight(
         &read_provider,
@@ -229,10 +200,28 @@ pub async fn send_sponsored_username_userop<R: Runtime>(
 
     eprintln_global_userop_context(&ctx, code.len(), account_impl);
 
-    let estimated = estimate_global_sponsored_gas(&bundler, &ctx, placeholders).await?;
-    let limits = finalize_userop_gas_limits(&estimated)?;
-    let user_op_hash =
-        sign_and_send_global_user_op(&read_provider, &signer, &bundler, &ctx, limits).await?;
+    let user_op_hash = run_global_userop(
+        &read_provider,
+        &signer,
+        &bundler,
+        &ctx,
+        placeholders,
+        false,
+        "global",
+        |max_cost| {
+            username_lane_preflight(
+                &read_provider,
+                &ctx.addrs,
+                lane,
+                ctx.member,
+                ctx.inner_to,
+                ctx.inner_selector,
+                ctx.npub_hash,
+                max_cost,
+            )
+        },
+    )
+    .await?;
     Ok(SponsoredUserOpSend {
         user_op_hash,
         bundler_url: bundler,
@@ -290,15 +279,11 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler, &read_provider).await;
+    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler).await;
 
-    let placeholders =
-        global_userop_gas_ceilings(&calldata, GlobalUseropPlaceholderLane::GovModule);
-    let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
-        &calldata,
-        GlobalUseropPlaceholderLane::GovModule,
-        max_fee,
-    );
+    let placeholders = userop_gas_ceilings(&calldata, UseropPlaceholderLane::GovModule);
+    let placeholder_max_cost =
+        userop_placeholder_max_cost_wei(&calldata, UseropPlaceholderLane::GovModule, max_fee);
 
     paymaster_entry_point_deposit_preflight(
         &read_provider,
@@ -372,10 +357,25 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
 
     eprintln_global_userop_context(&ctx, code.len(), account_impl);
 
-    let estimated = estimate_global_sponsored_gas(&bundler, &ctx, placeholders).await?;
-    let limits = finalize_userop_gas_limits(&estimated)?;
-    let user_op_hash =
-        sign_and_send_global_user_op(&read_provider, &signer, &bundler, &ctx, limits).await?;
+    let provider = &read_provider;
+    let gov_addrs = &ctx.addrs;
+    let gov_member = ctx.member;
+    let gov_to = ctx.inner_to;
+    let user_op_hash = run_global_userop(
+        provider,
+        &signer,
+        &bundler,
+        &ctx,
+        placeholders,
+        false,
+        "global",
+        move |max_cost| async move {
+            assert_global_gov_module_preflight(provider, gov_addrs, gov_member, gov_to, max_cost)
+                .await
+                .map(|_| ())
+        },
+    )
+    .await?;
     Ok(SponsoredUserOpSend {
         user_op_hash,
         bundler_url: bundler,
@@ -448,15 +448,11 @@ pub async fn send_sponsored_global_factory_userop<R: Runtime>(
         }
     }
 
-    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler, &read_provider).await;
+    let (max_priority, max_fee) = resolve_userop_eip1559_fees(&bundler).await;
 
-    let placeholders =
-        global_userop_gas_ceilings(&calldata, GlobalUseropPlaceholderLane::FactoryTarget);
-    let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
-        &calldata,
-        GlobalUseropPlaceholderLane::FactoryTarget,
-        max_fee,
-    );
+    let placeholders = userop_gas_ceilings(&calldata, UseropPlaceholderLane::FactoryTarget);
+    let placeholder_max_cost =
+        userop_placeholder_max_cost_wei(&calldata, UseropPlaceholderLane::FactoryTarget, max_fee);
 
     paymaster_entry_point_deposit_preflight(
         &read_provider,
@@ -530,10 +526,45 @@ pub async fn send_sponsored_global_factory_userop<R: Runtime>(
 
     eprintln_global_userop_context(&ctx, code.len(), account_impl);
 
-    let estimated = estimate_global_factory_gas(&bundler, &ctx, placeholders).await?;
-    let limits = clamp_userop_gas_limits_to_cap(finalize_factory_userop_gas_limits(&estimated));
-    eprintln_factory_userop_gas(&limits);
-    match sign_and_send_global_user_op(&read_provider, &signer, &bundler, &ctx, limits).await {
+    let provider = &read_provider;
+    let factory_addrs = &ctx.addrs;
+    let factory_member = ctx.member;
+    let factory_to = ctx.inner_to;
+    let factory_value = ctx.inner_value;
+    match run_global_userop(
+        provider,
+        &signer,
+        &bundler,
+        &ctx,
+        placeholders,
+        true,
+        "factory_target",
+        move |max_cost| async move {
+            assert_global_factory_preflight(
+                provider,
+                factory_addrs,
+                factory_member,
+                factory_to,
+                max_cost,
+            )
+            .await?;
+            if !factory_value.is_zero() {
+                let balance = roster_native_balance_wei(provider, factory_member).await?;
+                if balance < factory_value {
+                    return Err(wallet_err_json(
+                        "INSUFFICIENT_FUNDS",
+                        format!(
+                            "roster key holds {balance} wei but this factory call needs {factory_value} wei msg.value"
+                        ),
+                        None,
+                    ));
+                }
+            }
+            Ok(())
+        },
+    )
+    .await
+    {
         Ok(user_op_hash) => Ok(SponsoredUserOpSend {
             user_op_hash,
             bundler_url: bundler,
@@ -560,18 +591,15 @@ struct GlobalSponsoredSendParts {
     eip7702_auth: Option<Value>,
 }
 
-fn username_placeholder_lane(lane: UsernameSponsorLane) -> GlobalUseropPlaceholderLane {
+fn username_placeholder_lane(lane: UsernameSponsorLane) -> UseropPlaceholderLane {
     match lane {
-        UsernameSponsorLane::Bootstrap => GlobalUseropPlaceholderLane::UsernameBootstrap,
-        UsernameSponsorLane::Member => GlobalUseropPlaceholderLane::UsernameMember,
+        UsernameSponsorLane::Bootstrap => UseropPlaceholderLane::UsernameBootstrap,
+        UsernameSponsorLane::Member => UseropPlaceholderLane::UsernameMember,
     }
 }
 
-fn username_placeholder_ceilings(
-    calldata: &[u8],
-    lane: UsernameSponsorLane,
-) -> GlobalUseropGasCeilings {
-    global_userop_gas_ceilings(calldata, username_placeholder_lane(lane))
+fn username_placeholder_ceilings(calldata: &[u8], lane: UsernameSponsorLane) -> UseropGasCeilings {
+    userop_gas_ceilings(calldata, username_placeholder_lane(lane))
 }
 
 fn calldata_selector(calldata: &[u8]) -> Result<[u8; 4], String> {
@@ -728,272 +756,66 @@ async fn pool_headroom_preflight<P: Provider>(
     Ok(())
 }
 
-/// One estimate for factory deploys. No pass-2 calibrate and no 1.2× pad.
-async fn estimate_global_factory_gas(
-    bundler_url: &str,
-    ctx: &GlobalSponsoredSendParts,
-    ceilings: GlobalUseropGasCeilings,
-) -> Result<EstimatedUserOpGas, String> {
-    let dummy_sig = dummy_userop_signature();
-    let paymaster_and_data = encode_global_paymaster_and_data(
-        ctx.paymaster,
-        ctx.npub_hash,
-        ctx.member,
-        Address::ZERO,
-        ceilings.pm_verification,
-        ceilings.pm_post,
-    );
-    let _ = paymaster_data(paymaster_and_data.as_ref())?;
-    let estimate_op = user_op_json(UserOpParams {
-        sender: ctx.member,
-        nonce: ctx.nonce,
-        call_data: &ctx.execute_calldata,
-        call_gas_limit: ceilings.call,
-        verification_gas_limit: ceilings.verification,
-        pre_verification_gas: ceilings.pre_verification,
-        max_fee_per_gas: ctx.max_fee,
-        max_priority_fee_per_gas: ctx.max_priority,
-        paymaster: ctx.paymaster,
-        paymaster_verification_gas_limit: ceilings.pm_verification,
-        paymaster_post_op_gas_limit: ceilings.pm_post,
-        paymaster_and_data: paymaster_and_data.as_ref(),
-        signature: &dummy_sig,
-        eip7702_auth: ctx.eip7702_auth.clone(),
-    })?;
-    match bundler_estimate_user_operation_gas(bundler_url, &estimate_op, ctx.entry_point).await {
-        Ok(g) => Ok(g),
-        Err(e) if is_bundler_gas_limit_error(&e) => {
-            log::warn!(
-                target: "pacto_wallet",
-                "factory estimate hit bundler gas cap; sending at factory ceilings"
-            );
-            Ok(EstimatedUserOpGas {
-                call_gas_limit: ceilings.call,
-                verification_gas_limit: ceilings.verification,
-                pre_verification_gas: ceilings.pre_verification,
-                paymaster_verification_gas_limit: ceilings.pm_verification,
-                paymaster_post_op_gas_limit: ceilings.pm_post,
-            })
-        }
-        Err(e) => Err(e),
-    }
-}
-
-async fn estimate_global_sponsored_gas(
-    bundler_url: &str,
-    ctx: &GlobalSponsoredSendParts,
-    ceilings: GlobalUseropGasCeilings,
-) -> Result<EstimatedUserOpGas, String> {
-    let dummy_sig = dummy_userop_signature();
-    let mut paymaster_and_data = encode_global_paymaster_and_data(
-        ctx.paymaster,
-        ctx.npub_hash,
-        ctx.member,
-        Address::ZERO,
-        ceilings.pm_verification,
-        ceilings.pm_post,
-    );
-    // paymasterData is the bytes past the shared 52-byte ERC-4337 header.
-    let _ = paymaster_data(paymaster_and_data.as_ref())?;
-    let estimate_op = user_op_json(UserOpParams {
-        sender: ctx.member,
-        nonce: ctx.nonce,
-        call_data: &ctx.execute_calldata,
-        call_gas_limit: ceilings.call,
-        verification_gas_limit: ceilings.verification,
-        pre_verification_gas: ceilings.pre_verification,
-        max_fee_per_gas: ctx.max_fee,
-        max_priority_fee_per_gas: ctx.max_priority,
-        paymaster: ctx.paymaster,
-        paymaster_verification_gas_limit: ceilings.pm_verification,
-        paymaster_post_op_gas_limit: ceilings.pm_post,
-        paymaster_and_data: paymaster_and_data.as_ref(),
-        signature: &dummy_sig,
-        eip7702_auth: ctx.eip7702_auth.clone(),
-    })?;
-    let first =
-        match bundler_estimate_user_operation_gas(bundler_url, &estimate_op, ctx.entry_point).await
-        {
-            Ok(g) => g,
-            Err(e) if is_bundler_gas_limit_error(&e) => {
-                log::warn!(
-                    target: "pacto_wallet",
-                    "global estimate pass 1 hit bundler 16M cap; using fallback limits"
-                );
-                return Ok(bundler_cap_fallback_estimate(
-                    ceilings.verification,
-                    ceilings.pre_verification,
-                    ceilings.pm_verification,
-                    ceilings.pm_post,
-                ));
-            }
-            Err(e) => return Err(e),
-        };
-    if should_skip_estimate_calibrate(&first) {
-        log::warn!(
-            target: "pacto_wallet",
-            "skip global estimate calibrate; pass-1 sum would exceed 16M after bundler pad"
-        );
-        return Ok(first);
-    }
-    let calibrate = clamp_estimated_gas_to_bundler_cap(&first);
-    paymaster_and_data = encode_global_paymaster_and_data(
-        ctx.paymaster,
-        ctx.npub_hash,
-        ctx.member,
-        Address::ZERO,
-        calibrate.paymaster_verification_gas_limit,
-        calibrate.paymaster_post_op_gas_limit,
-    );
-    let calibrate_op = user_op_json(UserOpParams {
-        sender: ctx.member,
-        nonce: ctx.nonce,
-        call_data: &ctx.execute_calldata,
-        call_gas_limit: calibrate.call_gas_limit,
-        verification_gas_limit: calibrate.verification_gas_limit,
-        pre_verification_gas: calibrate.pre_verification_gas,
-        max_fee_per_gas: ctx.max_fee,
-        max_priority_fee_per_gas: ctx.max_priority,
-        paymaster: ctx.paymaster,
-        paymaster_verification_gas_limit: calibrate.paymaster_verification_gas_limit,
-        paymaster_post_op_gas_limit: calibrate.paymaster_post_op_gas_limit,
-        paymaster_and_data: paymaster_and_data.as_ref(),
-        signature: &dummy_sig,
-        eip7702_auth: ctx.eip7702_auth.clone(),
-    })?;
-    pass2_or_clamped_pass1(
-        "global",
-        bundler_estimate_user_operation_gas(bundler_url, &calibrate_op, ctx.entry_point).await,
-        &first,
-    )
-}
-
-async fn sign_and_send_global_user_op<P: Provider, S: Signer + Sync>(
+async fn run_global_userop<P, S, F, Fut>(
     provider: &P,
     signer: &S,
     bundler_url: &str,
     ctx: &GlobalSponsoredSendParts,
-    limits: FinalGasLimits,
-) -> Result<String, String> {
-    let paymaster_and_data = encode_global_paymaster_and_data(
-        ctx.paymaster,
-        ctx.npub_hash,
-        ctx.member,
-        Address::ZERO,
-        limits.paymaster_verification_gas_limit,
-        limits.paymaster_post_op_gas_limit,
-    );
-    let final_max_cost = userop_max_cost_wei(
-        limits.call_gas_limit,
-        limits.verification_gas_limit,
-        limits.pre_verification_gas,
-        ctx.max_fee,
-        limits.paymaster_verification_gas_limit,
-        limits.paymaster_post_op_gas_limit,
-    );
-    paymaster_entry_point_deposit_preflight(
-        provider,
-        ctx.entry_point,
-        ctx.paymaster,
-        final_max_cost,
-    )
-    .await?;
-    match ctx.preflight_lane {
-        GlobalPreflightLane::Username(lane) => {
-            username_lane_preflight(
-                provider,
-                &ctx.addrs,
-                lane,
-                ctx.member,
-                ctx.inner_to,
-                ctx.inner_selector,
-                ctx.npub_hash,
-                final_max_cost,
-            )
-            .await?;
-        }
-        GlobalPreflightLane::GovModule => {
-            assert_global_gov_module_preflight(
-                provider,
-                &ctx.addrs,
-                ctx.member,
-                ctx.inner_to,
-                final_max_cost,
-            )
-            .await?;
-        }
-        GlobalPreflightLane::FactoryTarget => {
-            assert_global_factory_preflight(
-                provider,
-                &ctx.addrs,
-                ctx.member,
-                ctx.inner_to,
-                final_max_cost,
-            )
-            .await?;
-            if !ctx.inner_value.is_zero() {
-                let balance =
-                    super::sponsor_userop::roster_native_balance_wei(provider, ctx.member).await?;
-                if balance < ctx.inner_value {
-                    return Err(wallet_err_json(
-                        "INSUFFICIENT_FUNDS",
-                        format!(
-                            "roster key holds {balance} wei but this factory call needs {} wei msg.value",
-                            ctx.inner_value
-                        ),
-                        None,
-                    ));
-                }
-            }
-        }
-    }
-
-    let account_gas_limits = pack_u128s(limits.verification_gas_limit, limits.call_gas_limit);
-    let gas_fees = pack_u128s(ctx.max_priority, ctx.max_fee);
-    let packed = PackedUserOperation {
-        sender: ctx.member,
-        nonce: ctx.nonce,
-        initCode: Bytes::new(),
-        callData: Bytes::from(ctx.execute_calldata.clone()),
-        accountGasLimits: account_gas_limits,
-        preVerificationGas: U256::from(limits.pre_verification_gas),
-        gasFees: gas_fees,
-        paymasterAndData: paymaster_and_data.clone(),
-        signature: Bytes::new(),
+    ceilings: UseropGasCeilings,
+    factory_style: bool,
+    lane_label: &str,
+    preflight: F,
+) -> Result<String, String>
+where
+    P: Provider,
+    S: Signer + Sync,
+    F: FnOnce(U256) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    let encode = |pm_v: u128, pm_post: u128| {
+        encode_global_paymaster_and_data(
+            ctx.paymaster,
+            ctx.npub_hash,
+            ctx.member,
+            Address::ZERO,
+            pm_v,
+            pm_post,
+        )
+        .to_vec()
     };
-
-    let user_op_hash: B256 = eth_call_decode(
-        provider,
-        ctx.entry_point,
-        &IEntryPointV07::getUserOpHashCall { userOp: packed },
-    )
-    .await
-    .map_err(|e| wallet_err_json("USEROP_HASH", e, None))?;
-
-    let sig = signer
-        .sign_hash(&user_op_hash)
-        .await
-        .map_err(|e| wallet_err_json("USEROP_SIGN", e.to_string(), None))?;
-    let signature = sig.as_bytes().to_vec();
-
-    let user_op = user_op_json(UserOpParams {
+    let build = SponsoredUserOpBuild {
         sender: ctx.member,
         nonce: ctx.nonce,
         call_data: &ctx.execute_calldata,
-        call_gas_limit: limits.call_gas_limit,
-        verification_gas_limit: limits.verification_gas_limit,
-        pre_verification_gas: limits.pre_verification_gas,
-        max_fee_per_gas: ctx.max_fee,
-        max_priority_fee_per_gas: ctx.max_priority,
+        entry_point: ctx.entry_point,
         paymaster: ctx.paymaster,
-        paymaster_verification_gas_limit: limits.paymaster_verification_gas_limit,
-        paymaster_post_op_gas_limit: limits.paymaster_post_op_gas_limit,
-        paymaster_and_data: paymaster_and_data.as_ref(),
-        signature: &signature,
+        max_fee: ctx.max_fee,
+        max_priority: ctx.max_priority,
         eip7702_auth: ctx.eip7702_auth.clone(),
-    })?;
-
-    bundler_send_user_operation(bundler_url, &user_op, ctx.entry_point).await
+    };
+    let estimated = estimate_sponsored_userop(
+        bundler_url,
+        &build,
+        ceilings,
+        factory_style,
+        lane_label,
+        &encode,
+    )
+    .await?;
+    let limits = finalize_for_style(factory_style, &estimated)?;
+    if factory_style {
+        eprintln_factory_userop_gas(&limits);
+    }
+    sign_and_send_sponsored_userop(
+        provider,
+        signer,
+        bundler_url,
+        &build,
+        limits,
+        &encode,
+        preflight,
+    )
+    .await
 }
 
 fn preflight_lane_label(lane: GlobalPreflightLane) -> &'static str {
@@ -1074,70 +896,10 @@ async fn ensure_paymaster_7702_impl<P: Provider>(
     Ok(())
 }
 
-/// EIP-7702 designated-code: `0xef0100 || address` (23 bytes).
-const EIP7702_CODE_LEN: usize = 23;
-const EIP7702_PREFIX: [u8; 3] = [0xef, 0x01, 0x00];
-
-/// Parse EIP-7702 delegation stub → implementation address.
-pub(crate) fn eip7702_delegation_impl(code: &[u8]) -> Option<Address> {
-    if code.len() != EIP7702_CODE_LEN || code[..3] != EIP7702_PREFIX {
-        return None;
-    }
-    Some(Address::from_slice(&code[3..23]))
-}
-
-/// Empty code or stale delegation → sign 7702 auth; correct impl → no auth.
-async fn resolve_eip7702_auth_for_sender<P: Provider, S: Signer + Sync>(
-    provider: &P,
-    signer: &S,
-    member: Address,
-    code: &[u8],
-    chain_id: u64,
-    account_impl: Address,
-) -> Result<Option<Value>, String> {
-    let needs_auth = match eip7702_delegation_impl(code) {
-        None if code.is_empty() => true,
-        None => {
-            return Err(wallet_err_json(
-                "USERNAME_7702_SENDER",
-                format!(
-                    "roster EOA {member:#x} has non-empty code (len {}) that is not an EIP-7702 stub; sponsored UserOp execute cannot run",
-                    code.len()
-                ),
-                None,
-            ));
-        }
-        Some(impl_addr) if impl_addr == account_impl => false,
-        Some(_stale) => {
-            eprintln!(
-                "[pacto_wallet] username eip7702_auth=upgrade member={:#x} stale_impl→{:#x}",
-                member, account_impl
-            );
-            true
-        }
-    };
-    if !needs_auth {
-        return Ok(None);
-    }
-    let eoa_nonce = provider.get_transaction_count(member).await.map_err(|e| {
-        wallet_err_json(
-            "RPC_NONCE",
-            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
-    })?;
-    let auth = sign_eip7702_authorization(signer, chain_id, account_impl, eoa_nonce).await?;
-    Ok(Some(auth))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        assert_lane_matches_selector, eip7702_delegation_impl, UsernameSponsorLane,
-        CLAIM_USERNAME_SELECTOR,
-    };
+    use super::{assert_lane_matches_selector, UsernameSponsorLane, CLAIM_USERNAME_SELECTOR};
     use crate::evm::username_claim_preflight::wallet_err_from_claim_eth_call_failure;
-    use alloy::primitives::address;
 
     #[test]
     fn member_lane_rejects_claim_selector() {
@@ -1187,16 +949,5 @@ mod tests {
         );
         assert!(err.contains("USERNAME_CLAIM_REVERTED"));
         assert!(err.contains("empty or unknown"));
-    }
-
-    #[test]
-    fn eip7702_delegation_impl_parses_designated_code() {
-        let impl_addr = address!("0x2E9156deE65d7946305C334824e2648Ff9128f45");
-        let mut code = vec![0xef, 0x01, 0x00];
-        code.extend_from_slice(impl_addr.as_slice());
-        assert_eq!(eip7702_delegation_impl(&code), Some(impl_addr));
-        assert_eq!(eip7702_delegation_impl(&[]), None);
-        assert_eq!(eip7702_delegation_impl(&[0x00; 23]), None);
-        assert_eq!(eip7702_delegation_impl(&code[..22]), None);
     }
 }

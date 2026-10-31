@@ -19,7 +19,11 @@ use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
 use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
     captainVoteCall, crewVoteCall, executeCall, proposeCall,
 };
+use super::global_sponsor_userop::send_sponsored_global_gov_userop;
+use super::global_sponsored_fee_ledger::{self, LANE_GOV_MODULE};
 use super::gov_read::rpc_urls_or_default;
+use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
+use super::pacto_chain_config;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
@@ -27,11 +31,6 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::global_sponsored_fee_ledger::{self, LANE_GOV_MODULE};
-use super::global_sponsor_userop::send_sponsored_global_gov_userop;
-use super::global_userop_cost::{global_userop_placeholder_max_cost, GlobalUseropPlaceholderLane};
-use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
-use super::pacto_chain_config;
 use super::sponsor_preflight::{
     global_gov_module_path_ok, read_eligible_member, squad_sponsor_path_ok,
 };
@@ -41,6 +40,7 @@ use super::sponsor_userop::{
     roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
     SponsoredUserOpSend,
 };
+use super::userop::{userop_placeholder_max_cost_wei, UseropPlaceholderLane};
 use super::wallet_chain_config;
 use crate::db;
 
@@ -139,12 +139,12 @@ pub async fn send_gov_module_call<R: Runtime>(
 
     let global_tophat_ok = match global_addrs.as_ref() {
         Ok(addrs) => {
-            let placeholder_max_cost = global_userop_placeholder_max_cost(
-                &read_provider,
+            let max_fee = super::sponsor_userop::sponsored_userop_max_fee(&app, &net.key).await;
+            let placeholder_max_cost = userop_placeholder_max_cost_wei(
                 &calldata,
-                GlobalUseropPlaceholderLane::GovModule,
-            )
-            .await;
+                UseropPlaceholderLane::GovModule,
+                max_fee,
+            );
             global_gov_module_path_ok(
                 &read_provider,
                 addrs,
@@ -552,12 +552,12 @@ pub fn explicit_parent_id(parent_id: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        explicit_parent_id, gov_call_action_label, wallet_error_code,
-    };
+    use super::{explicit_parent_id, gov_call_action_label, wallet_error_code};
     use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::castVoteCall;
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::bootstrapCrewCall;
-    use crate::evm::sponsor_userop::{is_hard_sponsor_preflight_error, is_soft_sponsor_config_error};
+    use crate::evm::sponsor_userop::{
+        is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
+    };
     use alloy::primitives::U256;
     use alloy::sol_types::SolCall;
 

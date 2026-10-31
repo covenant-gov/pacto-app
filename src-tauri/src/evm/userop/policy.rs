@@ -25,7 +25,11 @@ pub(crate) struct BundlerPolicy {
     pub(crate) factory_verification_gas_limit: u128,
     pub(crate) factory_pre_verification_gas: u128,
     pub(crate) factory_paymaster_post_op_gas_limit: u128,
+    /// Locked by the JSON test. The pipeline switches on `factory_style`.
+    #[allow(dead_code)]
     pub(crate) factory_pad: bool,
+    /// Locked by the JSON test. The pipeline switches on `factory_style`.
+    #[allow(dead_code)]
     pub(crate) factory_calibrate: bool,
     pub(crate) fallback_max_priority_fee_wei: u128,
     pub(crate) fallback_max_fee_wei: u128,
