@@ -3,10 +3,10 @@
 use alloy::primitives::{Address, B256, U256};
 use alloy::providers::Provider;
 
-use super::contracts::pacto_username::IPactoUsernameNFT::eligibleMemberCall;
-use super::contracts::pacto_username::IGlobalSponsorPool::spendablePoolWeiCall as globalSpendablePoolWeiCall;
-use super::contracts::pacto_username::ISponsorPolicyRegistry::isContractAllowedCall;
 use super::contracts::pacto_sponsor::ISquadSponsorBase::spendablePoolWeiCall as squadSpendablePoolWeiCall;
+use super::contracts::pacto_username::IGlobalSponsorPool::spendablePoolWeiCall as globalSpendablePoolWeiCall;
+use super::contracts::pacto_username::IPactoUsernameNFT::eligibleMemberCall;
+use super::contracts::pacto_username::ISponsorPolicyRegistry::isContractAllowedCall;
 use super::global_paymaster::required_global_pool_balance;
 use super::pacto_chain_config::GlobalUsernameSponsorAddresses;
 use super::rpc::call::eth_call_decode;
@@ -139,18 +139,16 @@ pub async fn squad_sponsor_path_ok<P: Provider>(
     member: Address,
     estimated_max_cost_wei: U256,
 ) -> Result<bool, String> {
-    Ok(
-        sponsor_eligibility_preflight(
-            provider,
-            factory,
-            expected_paymaster,
-            squad_id,
-            member,
-            estimated_max_cost_wei,
-        )
-        .await
-        .is_ok(),
+    Ok(sponsor_eligibility_preflight(
+        provider,
+        factory,
+        expected_paymaster,
+        squad_id,
+        member,
+        estimated_max_cost_wei,
     )
+    .await
+    .is_ok())
 }
 
 /// Global factory deploy lane: `eligibleMember` + `isContractAllowed(factory)` + pool headroom.
@@ -167,13 +165,7 @@ pub async fn global_factory_path_ok<P: Provider>(
     {
         return Ok(false);
     }
-    if !factory_target_allowed(
-        provider,
-        addrs.sponsor_policy_registry,
-        factory,
-    )
-    .await?
-    {
+    if !factory_target_allowed(provider, addrs.sponsor_policy_registry, factory).await? {
         return Ok(false);
     }
     global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei).await
@@ -193,8 +185,7 @@ pub async fn global_gov_module_path_ok<P: Provider>(
     {
         return Ok(false);
     }
-    let status =
-        gov_module_tophat_status(provider, addrs.sponsor_policy_registry, module).await?;
+    let status = gov_module_tophat_status(provider, addrs.sponsor_policy_registry, module).await?;
     if !gov_module_tophat_ok(status) {
         return Ok(false);
     }
@@ -218,8 +209,7 @@ pub async fn assert_global_gov_module_preflight<P: Provider>(
                 None,
             )
         })?;
-    let status =
-        gov_module_tophat_status(provider, addrs.sponsor_policy_registry, module).await?;
+    let status = gov_module_tophat_status(provider, addrs.sponsor_policy_registry, module).await?;
     if !gov_module_tophat_ok(status) {
         return Err(wallet_err_json(
             "SPONSOR_POLICY_READ",
@@ -227,8 +217,7 @@ pub async fn assert_global_gov_module_preflight<P: Provider>(
             None,
         ));
     }
-    if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei)
-        .await?
+    if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei).await?
     {
         return Err(global_pool_headroom_error(
             provider,
@@ -257,21 +246,14 @@ pub async fn assert_global_factory_preflight<P: Provider>(
                 None,
             )
         })?;
-    if !factory_target_allowed(
-        provider,
-        addrs.sponsor_policy_registry,
-        factory,
-    )
-    .await?
-    {
+    if !factory_target_allowed(provider, addrs.sponsor_policy_registry, factory).await? {
         return Err(wallet_err_json(
             "SPONSOR_POLICY_READ",
             format!("factory target {factory:#x} is not allowed by sponsor policy registry"),
             None,
         ));
     }
-    if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei)
-        .await?
+    if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, estimated_max_cost_wei).await?
     {
         return Err(global_pool_headroom_error(
             provider,
@@ -327,11 +309,36 @@ mod tests {
     }
 
     #[test]
+    fn factory_placeholder_at_pimlico_fee_fits_pool_the_30_gwei_floor_rejects() {
+        use super::super::global_userop_cost::{
+            global_userop_placeholder_max_cost_wei, GlobalUseropPlaceholderLane,
+        };
+        let call = [0xab, 0xcd, 0xef, 0x01];
+        let floor = global_userop_placeholder_max_cost_wei(
+            &call,
+            GlobalUseropPlaceholderLane::FactoryTarget,
+            30_000_000_000,
+        );
+        let pimlico = global_userop_placeholder_max_cost_wei(
+            &call,
+            GlobalUseropPlaceholderLane::FactoryTarget,
+            1_200_000_000,
+        );
+        // Spendable global pool when a 0-ETH factory deploy was rejected.
+        let pool = U256::from(83_775_487_507_141_591u128);
+        assert!(!global_pool_covers_cost(pool, floor));
+        assert!(global_pool_covers_cost(pool, pimlico));
+    }
+
+    #[test]
     fn pool_headroom_helpers_use_paymaster_margins() {
         let max = U256::from(1_000_000u64);
         let global_need = required_global_pool_balance(max);
         let squad_need = required_pool_balance(max);
-        assert!(!global_pool_covers_cost(global_need - U256::from(1u64), max));
+        assert!(!global_pool_covers_cost(
+            global_need - U256::from(1u64),
+            max
+        ));
         assert!(global_pool_covers_cost(global_need, max));
         assert!(!squad_pool_covers_cost(squad_need - U256::from(1u64), max));
         assert!(squad_pool_covers_cost(squad_need, max));

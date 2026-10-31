@@ -9,9 +9,12 @@ use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use tauri::{AppHandle, Runtime};
 
+use super::global_paymaster::required_global_pool_balance;
 use super::global_sponsor_userop::send_sponsored_global_factory_userop;
 use super::global_sponsored_fee_ledger::{self, LANE_FACTORY};
-use super::global_userop_cost::{global_userop_placeholder_max_cost, GlobalUseropPlaceholderLane};
+use super::global_userop_cost::{
+    global_userop_placeholder_max_cost_wei, GlobalUseropPlaceholderLane,
+};
 use super::gov_read::rpc_urls_or_default;
 use super::gov_sponsor_path::{select_gov_sponsor_path, GovSponsorPath};
 use super::pacto_chain_config;
@@ -20,11 +23,15 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wait_for_transaction_receipt, wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::sponsor_preflight::{global_factory_path_ok, read_eligible_member};
+use super::sponsor_preflight::{
+    factory_target_allowed, global_factory_path_ok, global_pool_headroom_ok, read_eligible_member,
+    read_global_pool_spendable,
+};
 use super::sponsor_userop::{
-    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
-    factory_userop_too_large_error, is_bundler_gas_limit_error, is_hard_sponsor_preflight_error,
-    is_soft_sponsor_config_error, roster_native_balance_wei, wait_for_user_operation_receipt,
+    bundler_rpc_url_with_stored, call_gas_ceiling_for_calldata, call_gas_with_margin,
+    estimate_call_gas, factory_userop_too_large_error, is_bundler_gas_limit_error,
+    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, load_stored_pimlico_key,
+    resolve_userop_eip1559_fees, roster_native_balance_wei, wait_for_user_operation_receipt,
     FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config::WalletNetworkConfig;
@@ -65,6 +72,7 @@ pub async fn send_factory_call<R: Runtime>(
     let pay_balance = roster_native_balance_wei(&read_provider, ctx.eoa_pay_signer).await?;
     let eoa_can_pay = pay_balance >= eoa_total;
 
+    let mut factory_block: Option<String> = None;
     let (eligible_member, global_factory_ok) = match ctx.roster_parent_id {
         Some(pid) => {
             let (roster_signer, _) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
@@ -77,20 +85,32 @@ pub async fn send_factory_call<R: Runtime>(
                             .await?
                             .is_some();
                     let global_ok = if eligible {
-                        let placeholder_max_cost = global_userop_placeholder_max_cost(
-                            &read_provider,
+                        let max_fee = factory_probe_max_fee(&app, &read_provider, &net.key).await;
+                        let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
                             &calldata,
                             GlobalUseropPlaceholderLane::FactoryTarget,
-                        )
-                        .await;
-                        global_factory_path_ok(
+                            max_fee,
+                        );
+                        let ok = global_factory_path_ok(
                             &read_provider,
                             addrs,
                             roster,
                             factory,
                             placeholder_max_cost,
                         )
-                        .await?
+                        .await?;
+                        if !ok {
+                            factory_block = Some(
+                                factory_probe_block_reason(
+                                    &read_provider,
+                                    addrs,
+                                    factory,
+                                    placeholder_max_cost,
+                                )
+                                .await,
+                            );
+                        }
+                        ok
                     } else {
                         false
                     };
@@ -168,6 +188,9 @@ pub async fn send_factory_call<R: Runtime>(
 
     if selected == GovSponsorPath::Fail {
         if eligible_member {
+            if let Some(err) = factory_block {
+                return Err(err);
+            }
             return Err(wallet_err_json(
                 "SPONSOR_PATH_UNAVAILABLE",
                 format!(
@@ -247,6 +270,65 @@ async fn finish_sponsored_factory_call<R: Runtime, P: Provider>(
         )
     })?;
     wait_for_transaction_receipt(provider, hash, confirm_timeout).await
+}
+
+/// Same fee the factory UserOp will submit. Do not raise a live Pimlico quote to the 30 gwei floor.
+async fn factory_probe_max_fee<R: Runtime, P: Provider>(
+    app: &AppHandle<R>,
+    provider: &P,
+    network_key: &str,
+) -> u128 {
+    let stored = load_stored_pimlico_key(app);
+    if let Ok(Some(url)) = bundler_rpc_url_with_stored(network_key, stored.as_deref()) {
+        return resolve_userop_eip1559_fees(&url, provider).await.1;
+    }
+    provider
+        .estimate_eip1559_fees()
+        .await
+        .map(|fees| fees.max_fee_per_gas.max(fees.max_priority_fee_per_gas))
+        .unwrap_or(FALLBACK_MAX_FEE)
+}
+
+async fn factory_probe_block_reason<P: Provider>(
+    provider: &P,
+    addrs: &pacto_chain_config::GlobalUsernameSponsorAddresses,
+    factory: Address,
+    placeholder_max_cost: U256,
+) -> String {
+    match factory_target_allowed(provider, addrs.sponsor_policy_registry, factory).await {
+        Ok(false) => {
+            return wallet_err_json(
+                "SPONSOR_POLICY_READ",
+                format!(
+                    "factory target {factory:#x} is not allowed by the sponsor policy registry"
+                ),
+                None,
+            );
+        }
+        Err(e) => return e,
+        Ok(true) => {}
+    }
+    let spendable = read_global_pool_spendable(provider, addrs.global_sponsor_pool)
+        .await
+        .unwrap_or(U256::ZERO);
+    let need = required_global_pool_balance(placeholder_max_cost);
+    if !global_pool_headroom_ok(provider, addrs.global_sponsor_pool, placeholder_max_cost)
+        .await
+        .unwrap_or(false)
+    {
+        return wallet_err_json(
+            "USERNAME_POOL_LOW",
+            format!(
+                "global sponsor pool spendable {spendable} wei is below required headroom {need} wei for this factory UserOp"
+            ),
+            None,
+        );
+    }
+    wallet_err_json(
+        "SPONSOR_PATH_UNAVAILABLE",
+        "eligible username member has no global factory gas path",
+        None,
+    )
 }
 
 async fn estimate_eoa_gas_cost_wei<P: Provider>(

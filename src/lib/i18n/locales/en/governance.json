@@ -633,7 +633,7 @@
 	"governance.sponsorInitialDeposit.hintOptional": "Zero deposit is fine — fund the pool later.",
 	"governance.sponsorInitialDeposit.error.invalid": "Enter a valid ETH amount.",
 	"governance.sponsorInitialDeposit.error.exceedsBalance": "Deposit exceeds available balance ({balance} {symbol}).",
-	"governance.usernameNftSponsor.note": "Username NFT sponsorship covers votes and similar writes. Deploying Pacto Gov or a war-game needs ETH on the paying key.",
+	"governance.usernameNftSponsor.note": "A username NFT can sponsor a 0-ETH deploy of Pacto Gov or a war-game from the global pool. ETH on the paying key is only needed when that path is unavailable.",
 	"governance.deployGovAndSponsor.deposit.checkbox": "Seed sponsor pool on deploy",
 	"governance.deployGovAndSponsor.deposit.hintOptional": "Skip for now and fund the pool after deploy.",
 	"governance.deploySquadSponsorExt.deposit.checkbox": "Seed sponsor pool on deploy",

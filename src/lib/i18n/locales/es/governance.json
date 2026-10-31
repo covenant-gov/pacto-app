@@ -633,7 +633,7 @@
 	"governance.sponsorInitialDeposit.hintOptional": "Depósito cero está bien — financia el pool después.",
 	"governance.sponsorInitialDeposit.error.invalid": "Ingresa un monto válido en ETH.",
 	"governance.sponsorInitialDeposit.error.exceedsBalance": "El depósito supera el saldo disponible ({balance} {symbol}).",
-	"governance.usernameNftSponsor.note": "El patrocinio del NFT de usuario cubre votos y escrituras similares. Desplegar Pacto Gov o un wargame necesita ETH en la clave que paga.",
+	"governance.usernameNftSponsor.note": "Un NFT de usuario puede patrocinar un despliegue de Pacto Gov o un wargame con 0 ETH desde el pool global. Solo hace falta ETH en la clave que paga si esa vía no está disponible.",
 	"governance.deployGovAndSponsor.deposit.checkbox": "Sembrar el pool del patrocinador al desplegar",
 	"governance.deployGovAndSponsor.deposit.hintOptional": "Omitir por ahora y financiar el pool después del despliegue.",
 	"governance.deploySquadSponsorExt.deposit.checkbox": "Sembrar el pool del patrocinador al desplegar",
