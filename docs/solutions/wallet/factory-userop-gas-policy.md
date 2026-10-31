@@ -33,7 +33,7 @@ Squad and username sends still use two-pass estimate plus the 1.2× pad when the
 
 ## Squad lane (leave the code; share the policy later)
 
-Sepolia tx [`0xa6f0e670…977ed7`](https://sepolia.etherscan.io/tx/0xa6f0e67092af09683ea0419d2ab70ac7ef3283f554cfc90e472eb3624f977ed7) is a working squad-sponsor UserOp, not a global one. Sender `0x2634FA7c…70a3b` held no ETH. Paymaster `0x734Cd82B…ee424` (squad clone). `CrewOffboardProposed` offboard id 1. Submitted five-limit sum about 1.51M (verification 204,421 + call 688,634 + preVerification 365,211 + pm verification 161,215 + postOp 86,874). `actualGasUsed` 1,138,656. UI: “gas sponsored from the squad pool.” The username NFT on that member did not choose the paymaster.
+Sepolia tx [`0xa6f0e670…977ed7`](https://sepolia.etherscan.io/tx/0xa6f0e67092af09683ea0419d2ab70ac7ef3283f554cfc90e472eb3624f977ed7) is a working squad-sponsor UserOp, not a global one. Sender `0x2634FA7c…70a3b` held no ETH. Paymaster `0x734Cd82B…ee424` (squad clone). `CrewOffboardProposed` offboard id 11. Submitted five-limit sum about 1.51M (verification 204,421 + call 688,634 + preVerification 365,211 + pm verification 161,215 + postOp 86,874). `actualGasUsed` 1,138,656. UI: “gas sponsored from the squad pool.” The username NFT on that member did not choose the paymaster. Call nesting + gas settlement diagrams: [SPONSORED_USEROP_SEPOLIA_EXAMPLE.md](../../wallet/SPONSORED_USEROP_SEPOLIA_EXAMPLE.md).
 
 A funded-ETH key deploying gov and the squad sponsor is the EOA factory arm. That also worked and is a different path.
 
