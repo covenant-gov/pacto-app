@@ -143,6 +143,7 @@ import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
 import { TYPING_INDICATORS_PREFIX } from '../../stores/typing-indicators';
 import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import { WEB_PREVIEWS_PREFIX } from '../../stores/web-previews';
+import { FEATURE_FLAG_OVERRIDES_PREFIX, featureFlagOverrides } from '../../stores/feature-flags';
 import { BIOMETRIC_UNLOCK_PREFIX } from '../../stores/biometric-unlock';
 import { backupVerified } from '../../stores/backup-verification';
 import { profiles } from '../../stores/profiles';
@@ -191,6 +192,7 @@ const SCOPED_KEY_PREFIXES = [
   STARTUP_CHECK_PREFIX,
   TYPING_INDICATORS_PREFIX,
   WEB_PREVIEWS_PREFIX,
+  FEATURE_FLAG_OVERRIDES_PREFIX,
   BIOMETRIC_UNLOCK_PREFIX,
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
@@ -217,6 +219,7 @@ function clearAccountLocalStorage(npub?: string): void {
 export function clearAccountState(npub?: string): void {
   setCurrentNpubForPersistence(null);
   stripTrackingMarkersEnabled.set(true);
+  featureFlagOverrides.set({});
   resetInviteAcceptState();
   stopJoinInboxHolderSync();
   stopPendingAdmitDrain();

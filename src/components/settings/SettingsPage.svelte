@@ -13,6 +13,7 @@
     { id: 'settings-app', labelKey: 'nav.settings.sections.app' },
     { id: 'settings-notifications', labelKey: 'nav.settings.sections.notifications' },
     { id: 'settings-commons', labelKey: 'nav.settings.sections.commons' },
+    { id: 'settings-experimental', labelKey: 'nav.settings.sections.experimental' },
     { id: 'settings-dangerzone', labelKey: 'nav.settings.sections.dangerzone' },
   ] as const;
 

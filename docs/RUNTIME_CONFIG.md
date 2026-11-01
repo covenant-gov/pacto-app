@@ -51,7 +51,27 @@ flowchart LR
 5. Wire the UI: import `appConfig` from `../stores/app-config` (adjust relative depth), read it reactively, bind it to the relevant `maxlength`/validation.
 6. Update the parity test in `src/stores/app-config.test.ts` and the table above.
 
+## Experimental feature flags
+
+User-toggleable experiments ride on the same snapshot as `featureFlags`, sourced from the `FEATURE_FLAGS` registry in `app_config.rs`. Each `FeatureFlagDescriptor` is a stable `key` plus `default_enabled`. Settings → Experimental (`src/components/settings/ExperimentalSection.svelte`) renders one row per registered flag; no per-flag UI code exists.
+
+- **Resolution:** `src/stores/feature-flags.ts` owns the single rule (`resolveFeatureFlag`): the user's stored choice wins, otherwise the registry default. Keys missing from the registry resolve to off, so retiring a flag ignores stale choices. Gate code with `featureEnabled(key)` (reactive store) or `isFeatureEnabled(key)` (point-in-time).
+- **Persistence:** choices live in npub-scoped `localStorage` (`pacto_feature_flag_overrides_v1_<npub>`), load with the rest of account state at login, apply immediately without restart, and are cleared with the account on logout.
+- **Fallback:** `DEFAULT_APP_CONFIG.featureFlags` is empty, so if `get_app_config` fails every experiment is off and the section shows its empty state.
+- **Scope:** overrides are frontend-only today. A flag that must gate Rust behavior needs its resolved value passed to the command that cares.
+
+### Adding a flag
+
+1. Append a `FeatureFlagDescriptor` to `FEATURE_FLAGS` (snake_case `key`; never rename a shipped key).
+2. Add `settings.experimental.flags.<key>.name` and `.description` to `en` and `es` `settings.json`. `cargo test --lib app_config` fails if either is missing.
+3. Gate the feature with `featureEnabled('<key>')` / `isFeatureEnabled('<key>')`.
+4. Add the descriptor to the `get_app_config` mock fixture in `src/lib/api/mock-fixtures.ts` so browser-mode dev shows it.
+
+| Key | Default | Gates |
+|---|---|---|
+| `advanced_evm_accounts` | off | "Add advanced account" / "Import private key" and the "Advanced contract call" panel (`EvmAccountsSection`, `WalletView`). Users who already hold advanced accounts keep the list and the panel. |
+
 ## Non-goals
 
-- Not a remote feature-flag service — values are compiled into the binary, fetched once at boot. No hot reload, no per-account overrides.
+- Not a remote feature-flag service — values are compiled into the binary, fetched once at boot. The only per-account state is the experimental-flag choices above.
 - `analyticsEnabled` is scaffolding for a future flag; nothing reads it yet.

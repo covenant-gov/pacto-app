@@ -4,6 +4,14 @@ import { z } from 'zod';
 import { getAppConfig } from '../lib/api/app-config';
 import { showToast } from './toast';
 
+/** Mirrors the Rust `FeatureFlagDescriptor` struct. */
+export const FeatureFlagDescriptorSchema = z.object({
+  key: z.string().min(1),
+  defaultEnabled: z.boolean(),
+});
+
+export type FeatureFlagDescriptor = z.infer<typeof FeatureFlagDescriptorSchema>;
+
 /** Mirrors the Rust `AppConfig` struct (`src-tauri/src/app_config.rs`). See `docs/RUNTIME_CONFIG.md`. */
 export const AppConfigSchema = z.object({
   squadNameMaxLength: z.number().int().positive(),
@@ -15,11 +23,15 @@ export const AppConfigSchema = z.object({
   customTokenSymbolMaxLength: z.number().int().positive(),
   pinDigitCount: z.number().int().min(4),
   analyticsEnabled: z.boolean(),
+  featureFlags: z.array(FeatureFlagDescriptorSchema),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
-/** Compiled fallback; must match `default_app_config()` in `src-tauri/src/app_config.rs`. */
+/**
+ * Compiled fallback; must match `default_app_config()` in `src-tauri/src/app_config.rs`,
+ * except `featureFlags`, which stays empty so experiments are off when the backend is unreachable.
+ */
 export const DEFAULT_APP_CONFIG: AppConfig = {
   squadNameMaxLength: 50,
   channelNameMaxLength: 35,
@@ -30,6 +42,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   customTokenSymbolMaxLength: 16,
   pinDigitCount: 6,
   analyticsEnabled: false,
+  featureFlags: [],
 };
 
 /** Runtime application configuration, fetched from the backend at boot. */
