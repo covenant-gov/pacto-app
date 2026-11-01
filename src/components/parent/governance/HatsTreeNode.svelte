@@ -13,6 +13,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { localizeRoleLabel } from '../../../lib/governance/governance-privilege';
+  import { localizeSquadAdminExecutorRolesLabel } from '../../../lib/governance/pacto-gov-payload';
   import { getContext } from 'svelte';
   import {
     HATS_TREE_ACTIONS_KEY,
@@ -80,7 +81,8 @@
   }
 
   function executorRolesLabel(address: string): string {
-    return executorRolesByAddress[address.trim().toLowerCase()] ?? '';
+    const canonical = executorRolesByAddress[address.trim().toLowerCase()];
+    return canonical ? localizeSquadAdminExecutorRolesLabel(canonical) : '';
   }
 
   function footerSupply(): string {

@@ -29,6 +29,7 @@
   import { onMount } from 'svelte';
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind, uniqueRpcReadErrorKinds } from '../../../lib/squad/rpc-read-error';
+  import { localizeSquadAdminExecutorRolesLabel } from '../../../lib/governance/pacto-gov-payload';
 
   let {
     announcementsGroupId = null,
@@ -271,7 +272,11 @@
                 >{settingsChainLoading && !memberRolesByAddress[rosterEvm?.toLowerCase() ?? '']
                   ? $t('governance.crew.loadingShort')
                   : rosterEvm
-                    ? memberRolesByAddress[rosterEvm.toLowerCase()] || $t('governance.crew.dash')
+                    ? memberRolesByAddress[rosterEvm.toLowerCase()]
+                      ? localizeSquadAdminExecutorRolesLabel(
+                          memberRolesByAddress[rosterEvm.toLowerCase()],
+                        )
+                      : $t('governance.crew.dash')
                     : $t('governance.crew.notShared')}
                 </span
               >

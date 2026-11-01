@@ -1,6 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { get, writable } from 'svelte/store';
 import { sendDmMessage } from '../api/nostr';
+import {
+  squadAdminExecutorManageScopeFromCanonicalLabel,
+  type SquadAdminExecutorManageScope,
+} from '../governance/pacto-gov-payload';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import { t } from 'svelte-i18n';
 
@@ -208,22 +212,25 @@ export async function rotateJoinInboxKey(
 }
 
 /** When SquadAdmin is live, holder management requires Full executor scope on roster EVM. */
-export function hasSquadAdminHolderManageRights(executorRolesLabel: string | undefined): boolean {
-  const label = executorRolesLabel?.trim();
-  if (!label || label === '—') return false;
-  const lower = label.toLowerCase();
-  if (lower.includes('(paused)')) return false;
-  return lower.startsWith('full') || /\bfull\b/.test(lower);
+export function hasSquadAdminHolderManageRights(
+  scopeOrCanonicalLabel: SquadAdminExecutorManageScope | string | undefined,
+): boolean {
+  const scope =
+    typeof scopeOrCanonicalLabel === 'object' && scopeOrCanonicalLabel != null
+      ? scopeOrCanonicalLabel
+      : squadAdminExecutorManageScopeFromCanonicalLabel(scopeOrCanonicalLabel);
+  return !!scope && scope.fullPermission && !scope.paused;
 }
 
 export function canManageJoinInboxHolders(input: {
   squadAdminActive: boolean;
   executorRolesLabel?: string;
+  executorManageScope?: SquadAdminExecutorManageScope;
   state: JoinInboxState | null;
 }): boolean {
   if (!input.state?.iAmHolder || !input.state?.hasLocalSecret) return false;
   if (!input.squadAdminActive) return true;
-  return hasSquadAdminHolderManageRights(input.executorRolesLabel);
+  return hasSquadAdminHolderManageRights(input.executorManageScope ?? input.executorRolesLabel);
 }
 
 /** Pure eligibility: actor and target must be MLS members; actor must already be a holder. */
@@ -232,11 +239,15 @@ export function canAddJoinInboxHolder(
   actorNpub: string,
   targetNpub: string,
   holders: string[],
-  options?: { squadAdminActive?: boolean; executorRolesLabel?: string }
+  options?: {
+    squadAdminActive?: boolean;
+    executorRolesLabel?: string;
+    executorManageScope?: SquadAdminExecutorManageScope;
+  }
 ): string | null {
   if (
     options?.squadAdminActive &&
-    !hasSquadAdminHolderManageRights(options.executorRolesLabel)
+    !hasSquadAdminHolderManageRights(options.executorManageScope ?? options.executorRolesLabel)
   ) {
     return get(t)('governance.joinInbox.error.squadAdminScopeRequired');
   }
