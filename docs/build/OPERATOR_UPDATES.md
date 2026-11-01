@@ -17,7 +17,9 @@ That URL is configured in `src-tauri/tauri.conf.json` under `plugins.updater.end
 The usual path needs no manual tag:
 
 1. Run **Prepare Release** (Actions → Prepare Release) and choose `patch`, `minor`, or `major`.
-2. Merge the pull request it opens.
+2. Use the rendered **What's New handoff prompt** in its description to prepare
+   `whats-new/<version>.json`; review both locales in the release PR and add
+   `whats-new-ready`. Then merge the pull request (see below).
 3. **Tag Release** reads the bumped version, pushes `vX.Y.Z` when that tag is new, and dispatches **publish** (`.github/workflows/release.yaml`) on that tag.
 4. `release.yaml` runs the `publish-tauri` job for:
    - macOS (`aarch64-apple-darwin`, `x86_64-apple-darwin`)
@@ -32,6 +34,62 @@ The usual path needs no manual tag:
    - `deploy-landing` — refreshes the public download page (see below).
 
 Pushing a `v*` tag yourself still starts publish through the `push` trigger. The automatic push cannot: Tag Release authenticates with `GITHUB_TOKEN`, and GitHub does not start `push` workflows from that token. Re-running Tag Release after the tag exists does not dispatch a second publish.
+
+### User-facing What's New notes
+
+Prepare Release renders `.github/release-pr-handoff.md` with the new version,
+previous version, release branch, and repository. A maintainer pastes that prompt
+into their coding assistant. No AI runs in CI and no AI API secret is needed.
+The assistant writes only the notes file; the repository's human-signed commit
+policy still applies. Review happens in the release PR before marking it ready.
+
+`whats-new/schema.json` requires a stable `X.Y.Z` version and either 3–6 items or
+an empty `items` array. Each item has `new`, `improved`, or `fixed` kind, with
+English and Spanish titles (80 characters maximum) and details (240 maximum).
+Validate locally with `pnpm whats-new:check <version>`; CI validates all files
+with `pnpm whats-new:check --all`.
+
+The **Release notes** workflow publishes the **`Release notes / whats-new`**
+commit status on each PR head targeting `main`. Other base branches cannot
+overwrite that status for the same commit. It reads the exact head's `package.json` as
+bounded JSON and compares its version with the trusted base package. Every
+version-changing PR requires valid notes for the head package version and
+`whats-new-ready`, even when its branch has a different name. A
+`chore/release-*` suffix must also match that package version, including when
+skipping notes. Version-changing branches must belong to this repository;
+forks cannot publish a passing status for the same release commit. For a release with no
+user-visible changes, a maintainer can explicitly use `whats-new-skip` instead.
+An empty notes file plus `whats-new-ready` is also valid. The Prepare Release
+workflow creates both labels if missing; it never marks a release ready or
+skipped automatically.
+
+**One-time repository admin setup is still required:** after this workflow is
+on `main` and has reported its status, add `Release notes / whats-new` as a
+required status check in the rule protecting `main`. The source change does
+not change branch protection. Until an admin enables that requirement, GitHub
+can still permit merging despite a failed or absent status. Existing open PRs
+need a synchronize, reopen, edit, or label event after the workflow reaches
+`main` to trigger their first check.
+
+The guard runs from the trusted base checkout under `pull_request_target`.
+It reads the head notes through the GitHub API as JSON data; it never checks
+out or runs code from the PR head. Keep the checker and schema on `main` before
+using the new release flow. PRs with no version change receive a passing status so the same
+required check can cover the protected branch without blocking feature work.
+
+All versioned notes files are bundled into the app, so this feature makes no
+network request after an update. **Retain old `whats-new/*.json` files**: they
+let an update across several versions include every intervening release.
+`CHANGELOG.md` remains the full developer changelog; the modal links to the
+installed version's GitHub release. Fresh installs, downgrades, empty notes,
+and unreadable or malformed notes are silent.
+
+The updater captures the signed-in account and current version before download
+and persists that baseline immediately before `install()`, because the Windows
+installer can quit the app without calling the relaunch action. A failed install
+rolls the marker back. The relaunch action also records a baseline as a fallback.
+After login on the new version, the modal collects bundled notes since that
+baseline; dismissal marks the installed version as seen for that account.
 
 If publish did not start, dispatch it against the tag that is already on the repo:
 

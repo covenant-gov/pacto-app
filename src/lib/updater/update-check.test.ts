@@ -18,6 +18,9 @@ import {
   type UpdaterUpdate,
 } from './update-check';
 
+import { rememberVersionBeforeUpdate } from './whats-new';
+import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
+
 import { showToast } from '../../stores/toast';
 
 
@@ -39,8 +42,10 @@ const mockedShowToast = vi.mocked(showToast);
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mockedGetVersion.mockResolvedValue('0.2.0');
   resetUpdateStatus();
   resetMemoizedUpdateCheckForTest();
+  setCurrentNpubForPersistence(null);
 });
 
 afterEach(() => {
@@ -187,7 +192,7 @@ describe('downloadAndInstallUpdate', () => {
 
   it('transitions through downloading/installing and sets installed status on success', async () => {
     setIsDevBuildForTest(false);
-    const downloadAndInstall = vi.fn().mockImplementation((onEvent) => {
+    const download = vi.fn().mockImplementation((onEvent) => {
       onEvent({ event: 'Started', data: { contentLength: 100 } });
       onEvent({ event: 'Progress', data: { chunkLength: 25 } });
       onEvent({ event: 'Progress', data: { chunkLength: 25 } });
@@ -196,7 +201,7 @@ describe('downloadAndInstallUpdate', () => {
       onEvent({ event: 'Finished' });
       return Promise.resolve();
     });
-    mockedCheck.mockResolvedValue({ version: '0.3.0', downloadAndInstall } as unknown as UpdaterUpdate);
+    mockedCheck.mockResolvedValue({ version: '0.3.0', download, install: vi.fn().mockResolvedValue(undefined) } as unknown as UpdaterUpdate);
 
     updateStatus.setStatus('available', { availableVersion: '0.3.0' });
     await downloadAndInstallUpdate();
@@ -204,25 +209,77 @@ describe('downloadAndInstallUpdate', () => {
     const state = get(updateStatus);
     expect(state.status).toBe('installed');
     expect(state.downloadProgress).toBe(1);
-    expect(downloadAndInstall).toHaveBeenCalled();
+    expect(download).toHaveBeenCalled();
   });
 
-  it('sets error when install fails', async () => {
-    setIsDevBuildForTest(false);
-    const downloadAndInstall = vi.fn().mockRejectedValue(new Error('network error'));
-    mockedCheck.mockResolvedValue({ version: '0.3.0', downloadAndInstall } as unknown as UpdaterUpdate);
-
-    updateStatus.setStatus('available', { availableVersion: '0.3.0' });
+  it('persists the captured version before the installer can quit the process', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
+    setCurrentNpubForPersistence('alice');
+    mockedGetVersion.mockResolvedValue('0.8.0');
+    const install = vi.fn(async () => { expect(values.get('pacto_whats_new_seen_alice')).toBe('0.8.0'); });
+    mockedCheck.mockResolvedValue({ version: '0.9.0', download: vi.fn().mockResolvedValue(undefined), install } as unknown as UpdaterUpdate);
+    updateStatus.setStatus('available', { availableVersion: '0.9.0' });
     await downloadAndInstallUpdate();
+    expect(install).toHaveBeenCalledOnce();
+    expectStatus('installed');
+  });
 
-    const state = get(updateStatus);
-    expect(state.status).toBe('error');
-    expect(state.error).toContain('internet connection');
+  it.each([null, '0.10.0'])('restores the previous marker %s when installation fails', async (previous) => {
+    const key = 'pacto_whats_new_seen_alice';
+    const values = new Map<string, string>(previous ? [[key, previous]] : []);
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
+    setCurrentNpubForPersistence('alice');
+    mockedGetVersion.mockResolvedValue('0.8.0');
+    const install = vi.fn().mockRejectedValue(new Error('network error'));
+    mockedCheck.mockResolvedValue({ version: '0.9.0', download: vi.fn().mockResolvedValue(undefined), install } as unknown as UpdaterUpdate);
+    updateStatus.setStatus('available', { availableVersion: '0.9.0' });
+    await downloadAndInstallUpdate();
+    expect(values.get(key) ?? null).toBe(previous);
+    expectStatus('error');
     expect(mockedShowToast).not.toHaveBeenCalled();
   });
+
+  it('does not roll back a newer origin operation after a failed installer', async () => {
+    const key = 'pacto_whats_new_seen_alice';
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
+    setCurrentNpubForPersistence('alice');
+    mockedGetVersion.mockResolvedValue('0.8.0');
+    const install = vi.fn(async () => { rememberVersionBeforeUpdate('0.8.0'); throw new Error('failed'); });
+    mockedCheck.mockResolvedValue({ version: '0.9.0', download: vi.fn().mockResolvedValue(undefined), install } as unknown as UpdaterUpdate);
+    updateStatus.setStatus('available', { availableVersion: '0.9.0' });
+    await downloadAndInstallUpdate();
+    expect(values.get(key)).toBe('0.8.0');
+  });
+
+  it('does not enroll another account if it switches during download', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
+    setCurrentNpubForPersistence('alice');
+    mockedGetVersion.mockResolvedValue('0.8.0');
+    const download = vi.fn(async () => { setCurrentNpubForPersistence('bob'); });
+    mockedCheck.mockResolvedValue({ version: '0.9.0', download, install: vi.fn().mockResolvedValue(undefined) } as unknown as UpdaterUpdate);
+    updateStatus.setStatus('available', { availableVersion: '0.9.0' });
+    await downloadAndInstallUpdate();
+    expect(values.size).toBe(0);
+  });
+
 });
 
 describe('relaunchApp', () => {
+  it('records the old version before restarting after an installed update', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) });
+    setCurrentNpubForPersistence('alice');
+    mockedGetVersion.mockResolvedValue('0.8.0');
+    updateStatus.setStatus('installed');
+    mockedInvoke.mockImplementation(async () => {
+      expect(values.get('pacto_whats_new_seen_alice')).toBe('0.8.0');
+    });
+    await relaunchApp();
+  });
+
   it('calls the backend relaunch command', async () => {
     mockedInvoke.mockResolvedValue(undefined);
     await relaunchApp();

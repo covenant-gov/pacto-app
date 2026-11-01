@@ -401,6 +401,16 @@ jobs:
         with:
           node-version: 24.18.0
 
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - name: Install script test dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Run release script tests
-        run: node --test scripts/generate-release-manifest.test.mjs scripts/stamp-updater-compatibility.test.mjs scripts/nextest-slow-summary.test.mjs scripts/release-dispatch-contract.test.mjs scripts/homebrew-tap-merge.test.mjs scripts/changelog.test.mjs
+        run: |
+          pnpm whats-new:check --all
+          node --test scripts/generate-release-manifest.test.mjs scripts/stamp-updater-compatibility.test.mjs scripts/nextest-slow-summary.test.mjs scripts/release-dispatch-contract.test.mjs scripts/homebrew-tap-merge.test.mjs scripts/changelog.test.mjs scripts/check-whats-new.test.mjs
 

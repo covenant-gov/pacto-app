@@ -6,6 +6,7 @@
   import TopNavbar from '../../components/layout/TopNavbar.svelte';
   import CommonsView from '../../components/commons/CommonsView.svelte';
   import PersonalBroadcastModal from '../../components/commons/PersonalBroadcastModal.svelte';
+  import PostUpdateNotes from '../updater/PostUpdateNotes.svelte';
   import UpdateAvailableModal from '../../components/updater/UpdateAvailableModal.svelte';
   import ParentNavbar from '../../components/layout/ParentNavbar.svelte';
   import SquadHubMain from '../../components/layout/SquadHubMain.svelte';
@@ -1103,6 +1104,7 @@
     </div>
   {/if}
   <UpdateAvailableModal />
+  <PostUpdateNotes />
 </div>
 
 <style>
