@@ -1,5 +1,6 @@
 import { check, type DownloadEvent } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
+import { rememberVersionBeforeUpdate, whatsNewStorageKey } from './whats-new';
 import { invoke } from '@tauri-apps/api/core';
 import { writable, get, type Readable } from 'svelte/store';
 import { t } from 'svelte-i18n';
@@ -210,17 +211,25 @@ export async function downloadAndInstallUpdate(): Promise<void> {
   if (state.status !== 'available') return;
 
   resetDownloadProgress();
+  const accountKey = whatsNewStorageKey();
+  let rollbackOrigin: (() => void) | null = null;
 
   try {
+    const currentVersion = await resolveInstalledVersion();
     const update = await check();
     if (!update) {
       updateStatus.setStatus('no-update');
       return;
     }
 
-    await update.downloadAndInstall((event) => handleDownloadEvent(event));
+    await update.download((event) => handleDownloadEvent(event));
+    updateStatus.setStatus('installing', { downloadProgress: 1 });
+    // Windows can quit inside install(), before the relaunch button is reached.
+    rollbackOrigin = rememberVersionBeforeUpdate(currentVersion, accountKey);
+    await update.install();
     updateStatus.setStatus('installed', { downloadProgress: 1 });
   } catch (err) {
+    rollbackOrigin?.();
     console.error('[updater] Download or install failed:', err);
     const message = friendlyErrorMessage(err);
     updateStatus.setStatus('error', { error: message, availableVersion: null });
@@ -228,6 +237,10 @@ export async function downloadAndInstallUpdate(): Promise<void> {
 }
 
 export async function relaunchApp(): Promise<void> {
+  if (get(updateStatus).status === 'installed') {
+    const key = whatsNewStorageKey();
+    rememberVersionBeforeUpdate(await resolveInstalledVersion(), key);
+  }
   // Use the backend restart command: it runs cleanup and then spawns the
   // new process directly, avoiding the macOS event-loop race described in
   // https://github.com/tauri-apps/tauri/issues/11392.

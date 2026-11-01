@@ -18,7 +18,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  issues: read
+  issues: write
 
 jobs:
   prepare-release:
@@ -53,6 +53,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libvulkan-dev libxdo-dev libssl-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libasound2-dev xdg-utils glslc
 
+      - name: Read previous version
+        id: previous
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: bump version, changelog, checks
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,19 +66,39 @@ jobs:
         id: bumped
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      - name: Render release handoff
+        env:
+          VERSION: ${{ steps.bumped.outputs.version }}
+          PREV_VERSION: ${{ steps.previous.outputs.version }}
+        run: |
+          sed -e "s/{{VERSION}}/$VERSION/g" \
+            -e "s|{{BRANCH}}|chore/release-$VERSION|g" \
+            -e "s/{{PREV_VERSION}}/$PREV_VERSION/g" \
+            -e "s|{{REPO}}|$GITHUB_REPOSITORY|g" \
+            .github/release-pr-handoff.md > "$RUNNER_TEMP/release-pr-body.md"
+
+      - name: Ensure release notes labels exist
+        uses: actions/github-script@v8
+        with:
+          script: |
+            for (const [name, color, description] of [
+              ['whats-new-ready', '0e8a16', 'User-facing release notes reviewed and ready'],
+              ['whats-new-skip', 'ededed', 'Explicitly skip notes: no user-visible changes'],
+            ]) {
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({ ...context.repo, name, color, description });
+              }
+            }
+
       - uses: peter-evans/create-pull-request@v8
         with:
           sign-commits: true
           commit-message: "chore(release): bump version to ${{ steps.bumped.outputs.version }}"
           title: "chore(release): bump version to ${{ steps.bumped.outputs.version }}"
-          body: |
-            Automated version prep for `v${{ steps.bumped.outputs.version }}`, opened by the "Prepare Release" workflow.
-
-            - `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`/`Cargo.lock`: version bump.
-            - `CHANGELOG.md`: regenerated via `git-cliff`.
-            - `pnpm check`, `pnpm test`, `cargo check`, `cargo test` all passed in this run.
-
-            No tag is created by this PR. Merging to `main` triggers `tag-release.yaml`, which pushes tag `v${{ steps.bumped.outputs.version }}` and dispatches `release.yaml` on that tag.
+          body-path: ${{ runner.temp }}/release-pr-body.md
           branch: "chore/release-${{ steps.bumped.outputs.version }}"
           base: main
           delete-branch: true

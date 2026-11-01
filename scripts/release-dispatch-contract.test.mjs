@@ -71,7 +71,8 @@ describe('tag-release dispatches publish', () => {
   });
 
   it('describes the dispatch and the fallback that leaves the tag in place', () => {
-    assert.match(prepare, /dispatches `release\.yaml`/);
+    assert.match(prepare, /body-path:.*release-pr-body\.md/);
+    assert.match(readRepo('.github/release-pr-handoff.md'), /dispatches `release\.yaml`/);
     assert.match(operator, /gh workflow run release\.yaml --ref vX\.Y\.Z/);
     assert.match(operator, /Do not delete the tag and push it again/);
   });

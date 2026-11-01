@@ -1,0 +1,76 @@
+name: Release notes
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: whats-new-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  whats-new:
+    runs-on: ubuntu-24.04
+    steps:
+      # pull_request_target jobs run against the base SHA. Publish an explicit
+      # head status so branch protection checks the release commit itself.
+      - name: Mark release notes check pending
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: 'pending',
+              context: 'Release notes / whats-new',
+              description: 'Checking user-facing release notes',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: lts/*
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - name: Install trusted base dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate release notes
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-whats-new.mjs --pr
+
+      - name: Publish release notes result
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+        with:
+          script: |
+            const passed = process.env.VALIDATION_OUTCOME === 'success';
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: passed ? 'success' : 'failure',
+              context: 'Release notes / whats-new',
+              description: passed ? 'Release notes are ready or explicitly skipped' : 'Release notes need attention; see the workflow log',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });

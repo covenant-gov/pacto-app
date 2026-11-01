@@ -26,5 +26,13 @@
 	"updater.error.signature": "La firma de la actualización no coincide. No se pudo verificar el paquete.",
 	"updater.error.platform": "Todavía no hay una actualización disponible para esta plataforma.",
 	"updater.error.noRelease": "No se encontró ninguna versión publicada. Es lo esperado hasta que se publique la primera versión.",
-	"updater.error.timeout": "Se agotó el tiempo de la búsqueda de actualizaciones. Inténtalo de nuevo."
+	"updater.error.timeout": "Se agotó el tiempo de la búsqueda de actualizaciones. Inténtalo de nuevo.",
+	"updater.whatsNew.title": "Novedades de {version}",
+	"updater.whatsNew.intro": "Algunas mejoras para que disfrutes más de Pacto.",
+	"updater.whatsNew.release": "Versión {version}",
+	"updater.whatsNew.changelog": "Ver todos los cambios",
+	"updater.whatsNew.done": "Entendido",
+	"updater.whatsNew.kind.new": "Nuevo",
+	"updater.whatsNew.kind.improved": "Mejorado",
+	"updater.whatsNew.kind.fixed": "Corregido"
 }

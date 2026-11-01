@@ -26,5 +26,13 @@
 	"updater.error.signature": "Update signature mismatch. The update package could not be verified.",
 	"updater.error.platform": "No update is available for this platform yet.",
 	"updater.error.noRelease": "No published release was found. This is expected until the first release is shipped.",
-	"updater.error.timeout": "Update check timed out. Please try again."
+	"updater.error.timeout": "Update check timed out. Please try again.",
+	"updater.whatsNew.title": "What’s new in {version}",
+	"updater.whatsNew.intro": "A few things that make Pacto better for you.",
+	"updater.whatsNew.release": "Version {version}",
+	"updater.whatsNew.changelog": "See full changelog",
+	"updater.whatsNew.done": "Got it",
+	"updater.whatsNew.kind.new": "New",
+	"updater.whatsNew.kind.improved": "Improved",
+	"updater.whatsNew.kind.fixed": "Fixed"
 }
