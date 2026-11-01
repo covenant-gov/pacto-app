@@ -17,6 +17,8 @@
    - **`mls_keypackages`** — cached key packages for members/devices
    - **`mls_event_cursors`** — last seen Nostr event per group for backfill
 
+App metadata CRUD, device ID, and legacy-admin/discarded-wrapper reset-support persistence live in **`src-tauri/src/db/mls.rs`**, re-exported through the unchanged **`crate::db`** APIs. Reset execution and MDK access remain in **`mls_store_reset.rs`** and the MLS service, not the persistence module.
+
 Decrypted **application messages** are integrated into the same **chat/message model** as DMs (see module docs at top of `mls.rs`: unified chat storage, not a separate MLS-only messages table for UX persistence).
 
 ## Store encryption and upgrades

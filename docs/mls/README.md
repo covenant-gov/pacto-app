@@ -18,7 +18,7 @@ Group messaging uses **nostr-mls** / **MDK** with **SQLite-backed** engine state
 |---------|----------|
 | MLS service, welcomes, sends, engine wrapper | `src-tauri/src/mls.rs` |
 | Live Kind 444 handling, `spawn_blocking`, comments on subscription flow | `src-tauri/src/lib.rs` |
-| `mls_groups`, `mls_keypackages`, `mls_event_cursors` CRUD | `src-tauri/src/db.rs` (search `mls_`) |
+| `mls_groups`, `mls_keypackages`, `mls_event_cursors` CRUD | `src-tauri/src/db/mls.rs` (via the `db/mod.rs` façade) |
 | Chat type + MLS chat ids | `src-tauri/src/chat.rs` |
 | Message send branch into MLS | `src-tauri/src/message.rs` |
 

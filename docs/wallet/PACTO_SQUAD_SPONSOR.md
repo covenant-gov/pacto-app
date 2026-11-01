@@ -14,7 +14,7 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 | Sponsored gov writes | `sponsor_paymaster.rs`, `sponsor_userop.rs`, hooked from `gov_module_write.rs` |
 | `paymasterAndData` encoder + vectors | `src/lib/evm/sponsor/` (vendored from upstream client fixtures) |
 | Deployed factory / paymaster | [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md) |
-| Persistence | `squad_infra` SQLite rows (`infra_type: sponsor`) via `list_squad_infra` / `upsert_squad_infra`; **sponsored fee ledger** `squad_sponsored_fee_usage` (per successful UserOp) via `list_squad_sponsored_fee_usage` |
+| Persistence | `db/squad.rs`: `squad_infra` SQLite rows (`infra_type: sponsor`) via `list_squad_infra` / `upsert_squad_infra`; `db/sponsored_fees.rs`: **sponsored fee ledger** `squad_sponsored_fee_usage` (per successful UserOp) via `list_squad_sponsored_fee_usage`. Commands remain exported through `crate::db`. |
 
 **On-chain squad key:** `squadId = keccak256(utf8(parent_id))` where `parent_id` is the squad or network root id in the app.
 
