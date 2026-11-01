@@ -207,6 +207,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           VITE_COMMIT_HASH: ${{ github.sha }}
           VITE_APP_VERSION: ${{ github.ref_name }}
+          KLIPY_API_KEY: ${{ secrets.KLIPY_API_KEY }}
           COPYFILE_DISABLE: 1
         with:
           tagName: ${{ github.ref_name }}
