@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## v0.7.5
+
+### Bug Fixes
+- Translate hardcoded toasts, errors and status labels (i18n) (#426) by @logicminds
+- Credit PR authors and closed issues in release notes (release) (#424) by @logicminds, closes #420
+- Align gov client with gas-ops abi and live sepolia pins (#441) by @daopunk, closes #382, #407
+- Localize leftover theme labels, file sizes, and toast literals (i18n) (#442) by @logicminds
+- Restore own profile first after seed import (#423) by @logicminds, closes #214
+- Localize remaining live UI literals beyond showToast (i18n) (#444) by @logicminds
+- Score treasury proposals with the live vote mode and pause-captain path (#448) by @daopunk
+- Localize executor role chrome and close #284 audit (i18n) (#449) by @logicminds, closes #284
+- Pass KLIPY_API_KEY into release builds (#467) by @logicminds
+
+
+### Documentation
+- Host PR screenshots in pacto-pr-assets instead of the repo (agents) (#432) by @logicminds
+
+
+### Features
+- Let authors edit sent messages for one minute (messaging) (#427) by @logicminds, closes #130
+- Cut sepolia over to the live greenfield orchestrator stack (#447) by @daopunk, closes #443, #445, #446
+- Let users opt in to experimental features (settings) (#428) by @logicminds, closes #368
+
+
+### Other
+- Bound Rust target dir growth with clean and sweep commands (#422) by @logicminds, closes #376
+- Flag PRs that touch CI, deps, build scripts or agent config (#430) by @logicminds, closes #429
+
+
+### Refactor
+- Split invoke wrappers by domain (governance) (#440) by @logicminds
+- Reduce persistence maintenance context by domain (db) (#450) by @logicminds, closes #439
+
 ## v0.7.4
 
 ### Bug Fixes
