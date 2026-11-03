@@ -85,7 +85,7 @@ Pacto is a private, censorship-resistant community organizing platform with no K
 | `docs/` | Authoritative tracked docs for architecture, wallet, MLS, storage, build, governance. |
 | `docs/solutions/` | Documented solutions to past bugs and workflow/process learnings, organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in a documented area. |
 | `.cursor/rules/` | Editor-enforced project policies: brief comments, no legacy shims, no issue IDs, no Cursor attribution, no unrequested deletions. |
-| `.github/workflows/` | `release.yaml` — Tauri cross-platform release builds on `v*` tags. |
+| `.github/workflows/` | `prepare-release.yaml` / `tag-release.yaml` / `release.yaml` — version bump PR, tag, and Tauri publish on `v*` (including `vX.Y.Z-beta.N` prereleases). |
 
 ## Development Commands
 
@@ -213,7 +213,7 @@ make clean-cargo   # wipe the target dir; keeps sandboxes
 - **Platform-specific deps:** Linux needs WebKit2GTK 4.1, Vulkan, ALSA, appindicator; macOS needs Xcode CLT, cmake, llvm, openssl; Windows needs VS Build Tools, LLVM, WebView2, Vulkan. See `docs/build/{ubuntuGuide,macGuide,windowsGuide}.md`.
 - **Whisper feature:** Enabled by default. Metal on macOS, Vulkan on Windows/Linux, excluded on Android. Feature-gated in `Cargo.toml`.
 - **MCP bridge:** `tauri-plugin-mcp-bridge` is included in debug builds only; release builds exclude it.
-- **CI:** `.github/workflows/ci.yaml` gates every PR: typecheck (`pnpm check`), lint (`pnpm lint`, `pnpm check:tauri-commands`), frontend unit tests with coverage, Playwright e2e, a Tauri debug e2e harness (`continue-on-error`), Rust tests via `cargo nextest run --lib` (process-per-test parallelism; ~7x faster wall time than `cargo test` on this suite), and a release-binary symbol check. `.github/workflows/release.yaml` separately publishes macOS (arm64 + x86_64), Ubuntu (amd64 + arm64), and Windows bundles on every `v*` tag; requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater.
+- **CI:** `.github/workflows/ci.yaml` gates every PR: typecheck (`pnpm check`), lint (`pnpm lint`, `pnpm check:tauri-commands`), frontend unit tests with coverage, Playwright e2e, a Tauri debug e2e harness (`continue-on-error`), Rust tests via `cargo nextest run --lib` (process-per-test parallelism; ~7x faster wall time than `cargo test` on this suite), and a release-binary symbol check. `.github/workflows/release.yaml` separately publishes macOS (arm64 + x86_64), Ubuntu (amd64 + arm64), and Windows bundles on every `v*` tag; requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater. Beta cuts use Prepare Release with `prerelease=beta` (`vX.Y.Z-beta.N`); publish marks them GitHub prereleases and skips Homebrew/landing — see `docs/build/OPERATOR_UPDATES.md`.
 
 ## Testing & QA
 

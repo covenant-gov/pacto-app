@@ -95,4 +95,22 @@ describe('tag-release dispatches publish', () => {
     assert.match(operator, /gh workflow run release\.yaml --ref vX\.Y\.Z/);
     assert.match(operator, /Do not delete the tag and push it again/);
   });
+
+  it('offers a beta prerelease input and passes an explicit version to bump-version', () => {
+    assert.match(prepare, /prerelease:\n {8}description:.*\n {8}required: true\n {8}type: choice\n {8}default: none\n {8}options: \[none, beta\]/);
+    assert.match(prepare, /node scripts\/compute-next-version\.mjs "\$CURRENT" "\$BUMP" "\$PRERELEASE"/);
+    assert.match(
+      prepare,
+      /run: \.\/scripts\/bump-version\.sh "\$\{\{ steps\.next\.outputs\.version \}\}" --no-commit/,
+    );
+  });
+
+  it('marks hyphenated tags as GitHub prereleases and skips Homebrew plus landing', () => {
+    const publish = jobBlock(release, 'publish-tauri', 'update-homebrew-tap');
+    assert.match(publish, /prerelease: \$\{\{ contains\(github\.ref_name, '-'\) \}\}/);
+    const homebrew = jobBlock(release, 'update-homebrew-tap', 'stamp-updater-compatibility');
+    assert.match(homebrew, /if: \$\{\{ !contains\(github\.ref_name, '-'\) \}\}/);
+    const landing = jobBlock(release, 'deploy-landing');
+    assert.match(landing, /if: \$\{\{ !contains\(github\.ref_name, '-'\) \}\}/);
+  });
 });
