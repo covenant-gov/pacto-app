@@ -224,7 +224,8 @@ jobs:
           # Stay draft until every matrix leg and stamp-updater-compatibility
           # finish; publish-github-release undrafts once latest.json is complete.
           releaseDraft: true
-          prerelease: false
+          # Tags with a semver prerelease suffix (vX.Y.Z-beta.N) stay off GitHub "latest".
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
           uploadUpdaterJson: true
           retryAttempts: 3
@@ -290,6 +291,8 @@ jobs:
     # Requires HOMEBREW_TAP_TOKEN: a PAT (or fine-grained token) with
     # contents:write and pull-requests:write on homebrew-pacto, since
     # GITHUB_TOKEN here only covers this repo.
+    # Betas (vX.Y.Z-*) must not move the cask; brew users stay on latest stable.
+    if: ${{ !contains(github.ref_name, '-') }}
     needs: publish-github-release
     runs-on: ubuntu-24.04
     permissions:
@@ -412,6 +415,8 @@ jobs:
     # two releases (#213). `needs: publish-github-release` also guarantees the
     # draft stayed private until every platform and the stamped latest.json
     # were verified, so the download page never lists a partial asset set.
+    # Skip prerelease tags so the public download page stays on latest stable.
+    if: ${{ !contains(github.ref_name, '-') }}
     needs: publish-github-release
     permissions:
       contents: read

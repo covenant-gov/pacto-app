@@ -71,6 +71,24 @@ test('explicit skip passes without notes; unrelated PRs do not block', () => {
   assert.deepEqual(validateReleasePullRequest(unrelated, undefined, '1.2.2', '1.2.2'), []);
 });
 
+test('beta package versions require whats-new-skip and match the release branch suffix', () => {
+  const unlabeled = pull([]);
+  unlabeled.head.ref = 'chore/release-1.2.3-beta.1';
+  assert.notDeepEqual(validateReleasePullRequest(unlabeled, undefined, '1.2.3-beta.1', '1.2.2'), []);
+
+  const skipped = pull(['whats-new-skip']);
+  skipped.head.ref = 'chore/release-1.2.3-beta.1';
+  assert.deepEqual(validateReleasePullRequest(skipped, undefined, '1.2.3-beta.1', '1.2.2'), []);
+
+  const mismatch = pull(['whats-new-skip']);
+  mismatch.head.ref = 'chore/release-1.2.3-beta.2';
+  assert.notDeepEqual(validateReleasePullRequest(mismatch, undefined, '1.2.3-beta.1', '1.2.2'), []);
+});
+
+test('promoting a beta to final still accepts stable notes against a prerelease base', () => {
+  assert.deepEqual(validateReleasePullRequest(pull(), notes(), '1.2.3', '1.2.3-beta.3'), []);
+});
+
 test('release guard rejects malformed branch versions and fork release branches', () => {
   const malformed = pull(['whats-new-skip']);
   malformed.head.ref = 'chore/release-1.2.3;echo-command';
