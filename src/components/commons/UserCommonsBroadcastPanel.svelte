@@ -16,6 +16,7 @@
   } from '../../lib/commons/broadcast-duration';
   import type { CommonsBroadcastLocalState } from '../../lib/commons/types';
   import { commonsUserHasActiveBroadcast } from '../../stores/commons-ui';
+  import { confirmKeyedLinkWarning, needsKeyedLinkWarning } from '../../lib/docs/keyed-link-warning';
 
   interface Props {
     userNpub: string;
@@ -33,6 +34,7 @@
   let loadingActive = $state(true);
   let activeBroadcast: CommonsBroadcastLocalState | null = $state(null);
   let cooldownLabel = $state('');
+  let keyedLinkWarningOpen = $state(false);
   let cooldownTimer: ReturnType<typeof setInterval> | null = null;
 
   const tFn = get(t);
@@ -76,14 +78,25 @@
     if (cooldownTimer) clearInterval(cooldownTimer);
   });
 
-  async function handleSubmit() {
+  function confirmKeyedLink() {
+    confirmKeyedLinkWarning();
+    keyedLinkWarningOpen = false;
+    void handleSubmit(true);
+  }
+
+  async function handleSubmit(keyedLinkConfirmed = false) {
     submitError = '';
     if (!canSubmit || !userNpub) return;
+    const text = message.trim();
+    if (!keyedLinkConfirmed && needsKeyedLinkWarning(text)) {
+      keyedLinkWarningOpen = true;
+      return;
+    }
     publishing = true;
     try {
       const result = await publishUserCommonsBroadcast({
         npub: userNpub,
-        message: message.trim(),
+        message: text,
         durationHours,
         tags,
       });
@@ -128,7 +141,7 @@
     rows="4"
     placeholder={$t('commons.broadcast.personalPlaceholder')}
     bind:value={message}
-    disabled={onCooldown || publishing}
+    disabled={onCooldown || publishing || keyedLinkWarningOpen}
     required
   ></textarea>
 
@@ -156,16 +169,59 @@
     <p class="broadcast-error" role="alert">{submitError}</p>
   {/if}
 
-  <div class="broadcast-actions">
-    <button type="submit" class="broadcast-btn-submit" disabled={!canSubmit}>
-      {publishing ? $t('commons.broadcast.publishing') : onCooldown ? $t('commons.broadcast.onCooldown') : $t('commons.broadcast.broadcast')}
-    </button>
-  </div>
+  {#if keyedLinkWarningOpen}
+    <div class="broadcast-keyed-warning" role="alertdialog" aria-labelledby="user-commons-keyed-title" aria-describedby="user-commons-keyed-body">
+      <p id="user-commons-keyed-title" class="broadcast-keyed-title">{$t('commons.broadcast.keyedLinkTitle')}</p>
+      <p id="user-commons-keyed-body" class="broadcast-keyed-body">{$t('commons.broadcast.keyedLinkBody')}</p>
+      <div class="broadcast-actions">
+        <button type="button" class="broadcast-btn-cancel" onclick={() => (keyedLinkWarningOpen = false)}>{$t('commons.broadcast.cancel')}</button>
+        <button type="button" class="broadcast-btn-submit" onclick={confirmKeyedLink}>{$t('commons.broadcast.keyedLinkConfirm')}</button>
+      </div>
+    </div>
+  {:else}
+    <div class="broadcast-actions">
+      <button type="submit" class="broadcast-btn-submit" disabled={!canSubmit}>
+        {publishing ? $t('commons.broadcast.publishing') : onCooldown ? $t('commons.broadcast.onCooldown') : $t('commons.broadcast.broadcast')}
+      </button>
+    </div>
+  {/if}
 </form>
 
 <style>
   .user-broadcast-panel {
     margin: 0;
+  }
+
+  .broadcast-keyed-warning {
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    background: var(--bg-panel);
+    padding: 12px 14px;
+    margin-top: 8px;
+  }
+
+  .broadcast-keyed-title {
+    margin: 0 0 6px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .broadcast-keyed-body {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+
+  .broadcast-btn-cancel {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
   }
 
   .broadcast-label {
