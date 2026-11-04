@@ -6,6 +6,7 @@
  */
 
 import { SQUAD_MEMBER_EVM_SHARE_TYPE } from './squad/squad-member-evm-share';
+import type { SquadEventDto } from './api/squad-events';
 
 /** Roster sync: member shared preferred EVM signer for this parent ({@link SQUAD_MEMBER_EVM_SHARE_TYPE}). */
 export const ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE = SQUAD_MEMBER_EVM_SHARE_TYPE;
@@ -20,6 +21,11 @@ export const ANNOUNCE_TYPE_SAFE_PROPOSAL = 'safe_proposal';
 
 /** New dashboard poll posted to the announcements MLS group; vote in Dashboard → Polls. */
 export const ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED = 'dashboard_poll_created';
+
+/** One squad event created in #events. Opens that event's detail. */
+export const ANNOUNCE_TYPE_SQUAD_EVENT_CREATED = 'squad_event_created';
+/** Weekly series summary (one card for all occurrences). Opens #events filtered by series. */
+export const ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED = 'squad_event_series_created';
 
 /** Squad/network deployed infra sync (`squad_infra` SQLite rows). Wire: `governance_updated`. */
 export const ANNOUNCE_TYPE_GOVERNANCE_UPDATED = 'governance_updated';
@@ -164,6 +170,34 @@ export interface DashboardPollCreatedPayload {
   options: { id: string; label: string }[];
 }
 
+export const SQUAD_EVENT_KIND_ALL_DAY = 31922;
+export const SQUAD_EVENT_KIND_TIMED = 31923;
+
+/** Timed: `start`/`end` are unix seconds. All-day: `YYYY-MM-DD` (end exclusive). Never carries a place. */
+export interface SquadEventCreatedPayload {
+  id: string;
+  parent_id: string;
+  series_id: string | null;
+  kind: typeof SQUAD_EVENT_KIND_ALL_DAY | typeof SQUAD_EVENT_KIND_TIMED;
+  title: string;
+  start: number | string;
+  end: number | string | null;
+  start_tzid: string;
+  channel_id: string | null;
+}
+
+/** Weekly series summary; `first_start` follows the same timed/all-day rule as `start`. */
+export interface SquadEventSeriesCreatedPayload {
+  series_id: string;
+  parent_id: string;
+  kind: typeof SQUAD_EVENT_KIND_ALL_DAY | typeof SQUAD_EVENT_KIND_TIMED;
+  title: string;
+  first_start: number | string;
+  start_tzid: string;
+  count: number;
+  channel_id: string | null;
+}
+
 export type AnnouncePayload =
   | SquadSafeUpdatedPayload
   | SafeProposalPayload
@@ -172,7 +206,9 @@ export type AnnouncePayload =
   | GovernanceUpdatedPayload
   | WarGameUpdatedPayload
   | GovernanceProcessUpdatedPayload
-  | StickerPackUpdatedPayload;
+  | StickerPackUpdatedPayload
+  | SquadEventCreatedPayload
+  | SquadEventSeriesCreatedPayload;
 
 /** Discriminated union of all announcement message types. */
 export type AnnounceMessage =
@@ -183,7 +219,9 @@ export type AnnounceMessage =
   | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_UPDATED; payload: GovernanceUpdatedPayload }
   | { type: typeof ANNOUNCE_TYPE_WAR_GAME_UPDATED; payload: WarGameUpdatedPayload }
   | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED; payload: GovernanceProcessUpdatedPayload }
-  | { type: typeof ANNOUNCE_TYPE_STICKER_PACK_UPDATED; payload: StickerPackUpdatedPayload };
+  | { type: typeof ANNOUNCE_TYPE_STICKER_PACK_UPDATED; payload: StickerPackUpdatedPayload }
+  | { type: typeof ANNOUNCE_TYPE_SQUAD_EVENT_CREATED; payload: SquadEventCreatedPayload }
+  | { type: typeof ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED; payload: SquadEventSeriesCreatedPayload };
 
 export function isSponsorGovernanceProvider(provider: string): boolean {
   return provider.trim().toLowerCase() === 'sponsor';
@@ -376,6 +414,92 @@ function isStickerPackUpdatedPayload(p: unknown): p is StickerPackUpdatedPayload
   );
 }
 
+const CIVIL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function nonEmptyString(v: unknown): v is string {
+  return typeof v === 'string' && v.trim().length > 0;
+}
+
+function optionalId(v: unknown): string | null | undefined {
+  if (v === null || v === undefined) return null;
+  return nonEmptyString(v) ? v : undefined;
+}
+
+/** Timed starts are unix seconds; all-day starts are civil dates. */
+function eventStartMatchesKind(kind: number, v: unknown): v is number | string {
+  if (kind === SQUAD_EVENT_KIND_TIMED) return typeof v === 'number' && Number.isFinite(v);
+  return typeof v === 'string' && CIVIL_DATE_RE.test(v);
+}
+
+function isSquadEventKind(v: unknown): v is SquadEventCreatedPayload['kind'] {
+  return v === SQUAD_EVENT_KIND_ALL_DAY || v === SQUAD_EVENT_KIND_TIMED;
+}
+
+/** Rebuilds the payload from known fields only, so stray place fields never reach the card. */
+function sanitizeSquadEventCreatedPayload(p: unknown): SquadEventCreatedPayload | null {
+  if (!p || typeof p !== 'object') return null;
+  const q = p as Record<string, unknown>;
+  const kind = q.kind;
+  const seriesId = optionalId(q.series_id);
+  const channelId = optionalId(q.channel_id);
+  if (
+    !isSquadEventKind(kind) ||
+    !nonEmptyString(q.id) ||
+    !nonEmptyString(q.parent_id) ||
+    !nonEmptyString(q.title) ||
+    !nonEmptyString(q.start_tzid) ||
+    seriesId === undefined ||
+    channelId === undefined ||
+    !eventStartMatchesKind(kind, q.start)
+  ) {
+    return null;
+  }
+  const end = q.end === null || q.end === undefined ? null : q.end;
+  if (end !== null && !eventStartMatchesKind(kind, end)) return null;
+  return {
+    id: q.id,
+    parent_id: q.parent_id,
+    series_id: seriesId,
+    kind,
+    title: q.title,
+    start: q.start,
+    end,
+    start_tzid: q.start_tzid,
+    channel_id: channelId,
+  };
+}
+
+function sanitizeSquadEventSeriesCreatedPayload(p: unknown): SquadEventSeriesCreatedPayload | null {
+  if (!p || typeof p !== 'object') return null;
+  const q = p as Record<string, unknown>;
+  const kind = q.kind;
+  const channelId = optionalId(q.channel_id);
+  if (
+    !isSquadEventKind(kind) ||
+    !nonEmptyString(q.series_id) ||
+    !nonEmptyString(q.parent_id) ||
+    !nonEmptyString(q.title) ||
+    !nonEmptyString(q.start_tzid) ||
+    channelId === undefined ||
+    typeof q.count !== 'number' ||
+    !Number.isInteger(q.count) ||
+    q.count < 1 ||
+    !eventStartMatchesKind(kind, q.first_start)
+  ) {
+    return null;
+  }
+  return {
+    series_id: q.series_id,
+    parent_id: q.parent_id,
+    kind,
+    title: q.title,
+    first_start: q.first_start,
+    start_tzid: q.start_tzid,
+    count: q.count,
+    channel_id: channelId,
+  };
+}
+
 /**
  * Parse message content as an announcement. Returns null if not valid announcement JSON or unknown type.
  */
@@ -419,6 +543,14 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
   if (type === ANNOUNCE_TYPE_STICKER_PACK_UPDATED && isStickerPackUpdatedPayload(payload)) {
     return { type: ANNOUNCE_TYPE_STICKER_PACK_UPDATED, payload };
   }
+  if (type === ANNOUNCE_TYPE_SQUAD_EVENT_CREATED) {
+    const clean = sanitizeSquadEventCreatedPayload(payload);
+    return clean ? { type: ANNOUNCE_TYPE_SQUAD_EVENT_CREATED, payload: clean } : null;
+  }
+  if (type === ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED) {
+    const clean = sanitizeSquadEventSeriesCreatedPayload(payload);
+    return clean ? { type: ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED, payload: clean } : null;
+  }
   return null;
 }
 
@@ -436,7 +568,9 @@ export function buildAnnounceContent<T extends AnnounceMessage>(
     msg.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE ||
     msg.type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED ||
     msg.type === ANNOUNCE_TYPE_STICKER_PACK_UPDATED ||
-    msg.type === ANNOUNCE_TYPE_WAR_GAME_UPDATED
+    msg.type === ANNOUNCE_TYPE_WAR_GAME_UPDATED ||
+    msg.type === ANNOUNCE_TYPE_SQUAD_EVENT_CREATED ||
+    msg.type === ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED
       ? 'announcements'
       : isAnnouncementsGovernanceAnnounce(msg)
         ? 'announcements'
@@ -476,4 +610,60 @@ export function getProposalsFromMessages(
   }
   out.sort((a, b) => a.at - b.at);
   return out;
+}
+
+type SquadEventStart = Pick<SquadEventDto, 'startUnix' | 'startDate' | 'startTzid'>;
+
+/** Timed vs all-day start fields from a card's `start` / `first_start`. */
+export function squadEventCardStart(
+  kind: SquadEventCreatedPayload['kind'],
+  start: number | string,
+  startTzid: string
+): SquadEventStart {
+  return kind === SQUAD_EVENT_KIND_TIMED && typeof start === 'number'
+    ? { startUnix: start, startDate: null, startTzid }
+    : { startUnix: null, startDate: typeof start === 'string' ? start : null, startTzid };
+}
+
+export interface SquadEventCardView {
+  title: string;
+  start: SquadEventStart;
+  cancelled: boolean;
+  /** Replica loaded but has no row (e.g. removed by a create restriction). */
+  unavailable: boolean;
+}
+
+/**
+ * Single-event card as it should read now: the replica row (edits, cancel) wins over the stored create.
+ * `rows === null` means not loaded or the read failed, so the stored create is shown as-is.
+ */
+export function squadEventCardView(
+  payload: SquadEventCreatedPayload,
+  rows: readonly SquadEventDto[] | null
+): SquadEventCardView {
+  const row = rows?.find((r) => r.id === payload.id);
+  if (!row) {
+    return {
+      title: payload.title,
+      start: squadEventCardStart(payload.kind, payload.start, payload.start_tzid),
+      cancelled: false,
+      unavailable: rows !== null,
+    };
+  }
+  return {
+    title: row.title,
+    start: { startUnix: row.startUnix, startDate: row.startDate, startTzid: row.startTzid },
+    cancelled: row.status === 'cancelled',
+    unavailable: false,
+  };
+}
+
+/** Series occurrences in the replica; null when not loaded. `total === 0` after a load means the series is gone. */
+export function squadEventSeriesOverlay(
+  seriesId: string,
+  rows: readonly SquadEventDto[] | null
+): { total: number; active: number } | null {
+  if (rows === null) return null;
+  const occurrences = rows.filter((r) => r.seriesId === seriesId);
+  return { total: occurrences.length, active: occurrences.filter((r) => r.status === 'active').length };
 }

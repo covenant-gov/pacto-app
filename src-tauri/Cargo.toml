@@ -147,6 +147,8 @@ x509-parser = { version = "0.18", default-features = false }
 # own TlsConnector. Does not touch the `rustls = "0.23"` entry above or the
 # `local-relay-tls` / `tokio-tungstenite` block below.
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs"] }
+chrono = "0.4"
+chrono-tz = "0.10"
 
 # Android-only dependencies
 [target.'cfg(target_os = "android")'.dependencies]

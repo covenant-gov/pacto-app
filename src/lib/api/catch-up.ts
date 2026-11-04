@@ -7,7 +7,7 @@ import { invoke } from './index';
 export interface CatchUpEntry {
   id: string;
   sourceEventId: string;
-  kind: 'mention' | 'direct_message' | 'action_prompt' | 'welcome';
+  kind: 'mention' | 'direct_message' | 'action_prompt' | 'welcome' | 'event_reminder';
   chatId: string;
   createdAt: number;
   resolvedAt: number | null;

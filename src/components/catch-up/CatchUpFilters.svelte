@@ -51,6 +51,14 @@
     >
       {$t('notifications.catchup.filterMentions')}
     </button>
+    <button
+      type="button"
+      class="catch-up-filter-btn"
+      class:active={mode === 'event_reminder'}
+      onclick={() => selectKind('event_reminder')}
+    >
+      {$t('notifications.catchup.filterEvents')}
+    </button>
   </div>
   <select
     class="catch-up-filter-squad"

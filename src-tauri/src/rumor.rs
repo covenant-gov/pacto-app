@@ -94,6 +94,10 @@ pub enum RumorProcessingResult {
     DashboardPollCreate(Message),
     /// Dashboard poll vote ingested (silent; tallies only)
     DashboardPollVoteIngested,
+    /// Squad record announce card (MLS Kind 30078); stored and shown in #announcements
+    SquadRecordCard(Message),
+    /// Squad record replica change with no timeline row
+    SquadRecordSilent,
     /// A message edit event
     Edit {
         /// The ID of the message being edited
@@ -511,8 +515,15 @@ async fn process_edit_event(
 /// Currently handles typing indicators for real-time status updates.
 async fn process_app_specific(
     rumor: RumorEvent,
-    _context: RumorContext,
+    context: RumorContext,
 ) -> Result<RumorProcessingResult, String> {
+    let d_tag = nostr_tags::d_content(&rumor.tags);
+    if d_tag == Some(crate::squad_records::SQUAD_CONTENT_POLICY_D_TAG) {
+        return crate::squad_content_policy::process_rumor(rumor, context).await;
+    }
+    if d_tag == Some(crate::squad_records::SQUAD_EVENT_D_TAG) {
+        return crate::squad_event::process_rumor(rumor, context).await;
+    }
     // Check if this is a typing indicator
     if is_typing_indicator(&rumor) {
         // Validate expiration tag (must be within 30 seconds)
@@ -559,7 +570,7 @@ async fn process_app_specific(
 ///
 /// Combines the rumor's created_at (seconds) with a custom "ms" tag
 /// to provide millisecond precision for accurate message ordering.
-fn extract_millisecond_timestamp(rumor: &RumorEvent) -> u64 {
+pub(crate) fn extract_millisecond_timestamp(rumor: &RumorEvent) -> u64 {
     match nostr_tags::find_custom(&rumor.tags, "ms") {
         Some(ms_tag) => {
             // Get the ms value and append it to the timestamp

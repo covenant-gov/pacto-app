@@ -213,6 +213,11 @@ vi.mock('../commons/commons-prefetch', () => ({
     mocks.mockFunctions.applyLiveCommonsChange(...args),
 }));
 
+const catchUpMocks = vi.hoisted(() => ({ hydrateCatchUp: vi.fn(() => Promise.resolve()) }));
+vi.mock('../../stores/catch-up', () => ({
+  hydrateCatchUp: catchUpMocks.hydrateCatchUp,
+}));
+
 function emit(event: string, payload: unknown): void {
   const handlers = mocks.registered[event] ?? [];
   for (const h of handlers) {
@@ -376,6 +381,12 @@ describe('subscribeAppEvents', () => {
       cancelled: false,
     });
     expect(mocks.mockFunctions.applyLiveCommonsChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-hydrates Catch up on catch_up_changed', () => {
+    unsubscribe = subscribeAppEvents(handlers);
+    emit('catch_up_changed', null);
+    expect(catchUpMocks.hydrateCatchUp).toHaveBeenCalledTimes(1);
   });
 
   describe('message_new', () => {

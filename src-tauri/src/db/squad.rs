@@ -756,7 +756,7 @@ pub fn side_effect_parent_matches_chat(chat_id: &str, payload_parent_id: &str) -
     !chat.is_empty() && !parent.is_empty() && chat == parent
 }
 
-fn author_listed_in_participants<'a, I>(parts: I, author: &str) -> bool
+pub(crate) fn author_listed_in_participants<'a, I>(parts: I, author: &str) -> bool
 where
     I: IntoIterator<Item = &'a str>,
 {

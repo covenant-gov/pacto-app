@@ -10,5 +10,5 @@ pub mod coalesce;
 pub mod emit;
 pub mod severity;
 
-pub use emit::{emit, SingleEventNotification};
-pub use severity::{contributes_to_badge, earns_catch_up_entry, EventKind, Tier};
+pub use emit::{emit, emit_event_reminder, SingleEventNotification};
+pub use severity::{contributes_to_badge, earns_catch_up_entry, EventKind, ReminderDelivery, Tier};

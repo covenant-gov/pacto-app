@@ -16,5 +16,16 @@
 	"errors.mls.relayKeyPackageUnreachable": "No se pudo contactar a los relays para verificar si {members} puede unirse. No se creó nada; inténtalo de nuevo.",
 	"errors.backupVerificationRequired": "Se requiere verificar la copia de seguridad",
 	"errors.accountChangedDuringWelcome": "La cuenta cambió mientras se aceptaba la invitación",
-	"errors.notSignedIn": "No has iniciado sesión."
+	"errors.notSignedIn": "No has iniciado sesión.",
+	"errors.squadRecords.notMember": "No eres miembro de este escuadrón.",
+	"errors.squadRecords.notAdmin": "Solo los administradores del escuadrón pueden hacer esto.",
+	"errors.squadRecords.wrongGroup": "El canal del escuadrón no coincidió. Vuelve a abrir el escuadrón e inténtalo de nuevo.",
+	"errors.squadRecords.eventCreateRestricted": "Solo los administradores pueden añadir eventos en este escuadrón.",
+	"errors.squadRecords.eventNotFound": "Este evento ya no está disponible.",
+	"errors.squadRecords.eventNotEditable": "No puedes cambiar este evento.",
+	"errors.squadRecords.eventInvalidTitle": "Añade un título.",
+	"errors.squadRecords.eventInvalidZone": "Elige una zona horaria válida.",
+	"errors.squadRecords.eventInvalidTime": "Revisa el inicio y el final.",
+	"errors.squadRecords.eventInvalidPlace": "Añade un enlace de reunión o una dirección.",
+	"errors.squadRecords.eventInvalidSeries": "No se pudieron crear las reuniones semanales. Inténtalo de nuevo."
 }

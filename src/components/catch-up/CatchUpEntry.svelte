@@ -1,8 +1,13 @@
 <script lang="ts">
-  import { t } from 'svelte-i18n';
+  import { t, locale } from 'svelte-i18n';
   import type { CatchUpEntry } from '../../lib/api/catch-up';
   import { resolveOneCatchUpEntry } from '../../stores/catch-up';
-  import { resolveCatchUpTarget, navigateToTarget } from '../../lib/navigation/open-squad-dashboard';
+  import {
+    resolveCatchUpTarget,
+    navigateToTarget,
+    parseEventReminderSourceId,
+  } from '../../lib/navigation/open-squad-dashboard';
+  import { formatEventTimestampMs } from '../../lib/squad/squad-event-display';
   import { squads } from '../../stores/squads';
   import { profiles } from '../../stores/profiles';
   import { getProfileDisplayName } from '../../lib/utils/profile';
@@ -38,9 +43,13 @@
     entry.kind === 'welcome' ? (resolvedWelcome?.target ?? null) : resolveCatchUpTarget(entry, $squads)
   );
 
-  /** Where this entry opens: a squad/channel name, or a DM peer's display name. */
+  /** Where this entry opens: a squad/channel name, or a DM peer's display name. Event reminders show only the fire time. */
   let locationLabel = $derived.by(() => {
     if (entry.kind === 'welcome') return resolvedWelcome?.locationLabel ?? '';
+    if (entry.kind === 'event_reminder') {
+      const parsed = parseEventReminderSourceId(entry.sourceEventId);
+      return parsed ? formatEventTimestampMs(parsed.fireAtMs, { locale: $locale ?? undefined }) : '';
+    }
     if (!target || target.kind === 'dm-requests') return '';
     if (target.kind === 'dm') {
       return getProfileDisplayName($profiles[target.npub]);

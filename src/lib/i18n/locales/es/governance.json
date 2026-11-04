@@ -1073,5 +1073,19 @@
 	"governance.dashboard.proposalCards.tool.safe": "Safe",
 	"governance.dashboard.proposalCards.tool.poll": "Encuesta",
 	"governance.dashboard.proposalCards.title.pactoGovDeployment": "Despliegue de Gobierno Pacto",
-	"governance.dashboard.proposalCards.title.safeMultisig": "Multisig Safe"
+	"governance.dashboard.proposalCards.title.safeMultisig": "Multisig Safe",
+	"governance.contentPolicy.title": "Quién puede añadir eventos y documentos",
+	"governance.contentPolicy.hint": "Los administradores del equipo pueden reservarse la opción de añadir. Al activar un límite se elimina lo que añadan después los miembros que no son administradores. Al desactivarlo no se recupera.",
+	"governance.contentPolicy.unavailable": "Disponible cuando el equipo tenga un canal de anuncios.",
+	"governance.contentPolicy.loading": "Cargando…",
+	"governance.contentPolicy.events.switchLabel": "Solo los administradores añaden eventos",
+	"governance.contentPolicy.events.switchDescription": "Los miembros siguen viendo los eventos y pueden confirmar asistencia.",
+	"governance.contentPolicy.events.open": "Cualquier miembro puede añadir eventos.",
+	"governance.contentPolicy.events.adminOnly": "Solo los administradores del equipo pueden añadir eventos.",
+	"governance.contentPolicy.events.lockedOut": "Nadie puede añadir eventos. Solo los administradores del equipo pueden hacerlo y ninguno sigue siendo miembro.",
+	"governance.contentPolicy.docs.switchLabel": "Solo los administradores añaden documentos",
+	"governance.contentPolicy.docs.switchDescription": "Los miembros siguen pudiendo abrir los documentos compartidos.",
+	"governance.contentPolicy.docs.open": "Cualquier miembro puede añadir documentos.",
+	"governance.contentPolicy.docs.adminOnly": "Solo los administradores del equipo pueden añadir documentos.",
+	"governance.contentPolicy.docs.lockedOut": "Nadie puede añadir documentos. Solo los administradores del equipo pueden hacerlo y ninguno sigue siendo miembro."
 }

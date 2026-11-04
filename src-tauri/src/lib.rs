@@ -73,6 +73,11 @@ mod join_inbox;
 mod sticker_pack;
 
 mod squad_gov_replica;
+mod squad_content_policy;
+mod squad_event_time;
+mod squad_records;
+mod squad_event;
+mod squad_event_reminders;
 
 mod klipy;
 
@@ -1417,11 +1422,22 @@ pub fn run() {
             dashboard_poll::list_dashboard_polls,
             dashboard_poll::send_dashboard_poll_create,
             dashboard_poll::send_dashboard_poll_vote,
+            squad_event::list_squad_events,
+            squad_event::send_squad_event_create,
+            squad_event::send_squad_event_series,
+            squad_event::send_squad_event_update,
+            squad_event::send_squad_event_cancel,
+            squad_event::send_squad_event_rsvp,
+            squad_content_policy::get_squad_content_policy,
+            squad_content_policy::set_squad_content_policy,
             catch_up::list_catch_up_entries,
             catch_up::catch_up_count,
             catch_up::resolve_catch_up_entry,
             catch_up::resolve_all_catch_up_entries,
             catch_up::record_action_needed_entry,
+            squad_event_reminders::get_squad_event_reminder_prefs,
+            squad_event_reminders::set_squad_event_reminder_prefs,
+            squad_event_reminders::resolve_squad_event_reminder_catch_up,
             commons::commons_publish_broadcast,
             commons::commons_list_cached_broadcasts,
             commons::commons_fetch_broadcasts,

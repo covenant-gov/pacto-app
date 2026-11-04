@@ -4,7 +4,11 @@
   import ParentSettingUp from '../parent/ParentSettingUp.svelte';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
   import { partitionHubSidebarChannels } from '../../lib/parent-navbar';
-  import { POLLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import {
+    ANNOUNCEMENTS_CHANNEL_NAME,
+    EVENTS_CHANNEL_NAME,
+    POLLS_CHANNEL_NAME,
+  } from '../../lib/squad/hub-channel-names';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import { t } from 'svelte-i18n';
   import { unreadCountsByChat } from '../../stores/unread';
@@ -14,6 +18,12 @@
     refreshUnseenPollCreatesForParent,
     unseenPollCreateCountByParentId,
   } from '../../stores/polls-hub-alerts';
+  import { backendGroupMessages } from '../../stores/app';
+  import {
+    markEventsChannelSeen,
+    refreshUnseenEventCardsForParent,
+    unseenEventCardCountByParentId,
+  } from '../../stores/events-hub-alerts';
 
   /** Channel shape for list items (name, groupId, order). Re-exported via type. */
   interface ParentChannel {
@@ -123,14 +133,29 @@
     }
   });
 
+  $effect(() => {
+    const pid = parentId.trim();
+    const annGroupId = channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId.trim();
+    if (!pid || !annGroupId) return;
+    const messages = $backendGroupMessages[annGroupId] ?? [];
+    if (activeView === 'hub' && activeHubChannelName === EVENTS_CHANNEL_NAME) {
+      markEventsChannelSeen(pid, messages);
+    } else {
+      refreshUnseenEventCardsForParent(pid, messages);
+    }
+  });
+
   let hubAlertByChannelName = $derived.by(() => {
     const counts = $unreadCountsByChat;
     const pollAlerts = $unseenPollCreateCountByParentId;
+    const eventAlerts = $unseenEventCardCountByParentId;
     const pid = parentId.trim();
     const out: Record<string, number> = {};
     for (const channel of [...defaultHubChannels, ...customChannels]) {
       if (channel.name === POLLS_CHANNEL_NAME) {
         out[channel.name] = pid ? (pollAlerts[pid] ?? 0) : 0;
+      } else if (channel.name === EVENTS_CHANNEL_NAME) {
+        out[channel.name] = pid ? (eventAlerts[pid] ?? 0) : 0;
       } else {
         out[channel.name] = counts[channel.groupId] ?? 0;
       }

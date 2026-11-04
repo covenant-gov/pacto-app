@@ -18,6 +18,7 @@ import {
 } from './parent-navbar';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_NAME,
@@ -31,13 +32,15 @@ describe('partitionHubSidebarChannels', () => {
       { name: SQUAD_DASHBOARD_CHANNEL_NAME, groupId: '__squad_dashboard__', order: -2 },
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
       { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 1 },
-      { name: 'c1', groupId: 'c1g', order: 2 },
+      { name: EVENTS_CHANNEL_NAME, groupId: 'g', order: 2 },
+      { name: 'c1', groupId: 'c1g', order: 3 },
     ];
     const { defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels);
     expect(defaultHubChannels.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
+      EVENTS_CHANNEL_NAME,
     ]);
     expect(customChannels.map((c) => c.name)).toEqual(['c1']);
   });
@@ -53,7 +56,7 @@ describe('partitionHubSidebarChannels', () => {
 });
 
 describe('buildHubSidebarChannels', () => {
-  it('pins dashboards then announcements and polls; strips obsolete rows', () => {
+  it('pins dashboards then announcements, polls, and events; strips obsolete rows', () => {
     const raw = [
       ...defaultChannelRowsForGroupId('g'),
       { name: 'my-dashboard', groupId: '__my_dashboard__', order: 8 },
@@ -65,6 +68,7 @@ describe('buildHubSidebarChannels', () => {
       SQUAD_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
+      EVENTS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
       'c1',
     ]);
@@ -82,6 +86,7 @@ describe('buildHubSidebarChannels', () => {
       SQUAD_WARGAME_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
+      EVENTS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
     ]);
     expect(built[1]).toMatchObject({
@@ -92,19 +97,19 @@ describe('buildHubSidebarChannels', () => {
 });
 
 describe('defaultChannelRowsForGroupId', () => {
-  it('returns announcements and polls sharing one groupId', () => {
+  it('returns announcements, polls, and events sharing one groupId', () => {
     const rows = defaultChannelRowsForGroupId('g-shared');
-    expect(rows).toHaveLength(2);
-    expect(rows.map((c) => c.groupId)).toEqual(['g-shared', 'g-shared']);
-    expect(rows.map((c) => c.name)).toEqual([ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME]);
+    expect(rows).toHaveLength(3);
+    expect(rows.map((c) => c.groupId)).toEqual(['g-shared', 'g-shared', 'g-shared']);
+    expect(rows.map((c) => c.name)).toEqual([ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME, EVENTS_CHANNEL_NAME]);
   });
 });
 
 describe('ensureDefaultHubChannelRows', () => {
-  it('backfills polls when only announcements was persisted', () => {
+  it('backfills polls and events when only announcements was persisted', () => {
     const onlyAnn = [{ name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 }];
     const fixed = ensureDefaultHubChannelRows(onlyAnn);
-    expect(fixed.map((c) => c.name)).toEqual([ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME]);
+    expect(fixed.map((c) => c.name)).toEqual([ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME, EVENTS_CHANNEL_NAME]);
     expect(new Set(fixed.map((c) => c.groupId))).toEqual(new Set(['g']));
   });
 
@@ -115,7 +120,7 @@ describe('ensureDefaultHubChannelRows', () => {
       { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 2 },
     ];
     const fixed = ensureDefaultHubChannelRows(withObsolete);
-    expect(fixed.map((c) => c.name)).toEqual([ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME]);
+    expect(fixed.map((c) => c.name)).toEqual([ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME, EVENTS_CHANNEL_NAME]);
   });
 
   it('leaves parents unchanged when all default hub rows exist', () => {
@@ -133,13 +138,14 @@ describe('ensureDefaultHubChannelRows', () => {
 });
 
 describe('createDefaultParentChannels', () => {
-  it('creates one MLS group and returns announcements + polls rows', async () => {
+  it('creates one MLS group and returns announcements + polls + events rows', async () => {
     const out = await createDefaultParentChannels(['npub1']);
     expect(createGroupChat).toHaveBeenCalledWith(ANNOUNCEMENTS_CHANNEL_NAME, ['npub1']);
     expect(out.parentId).toBe('mls-single');
     expect(out.channels.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
+      EVENTS_CHANNEL_NAME,
     ]);
     expect(out.skippedMembers).toEqual([]);
     expect(out.pendingInvites).toEqual([]);

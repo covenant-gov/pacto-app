@@ -53,6 +53,15 @@ import {
 import { mergeUnreadCounts } from '../../stores/unread';
 import { applyStickerPacksUpdate } from '../../stores/stickers';
 import type { StickerPack } from '../api/stickers';
+import {
+  SQUAD_EVENT_REMINDER_DUE,
+  SQUAD_EVENT_REPLICA_UPDATED,
+  type SquadEventReminderDue,
+  type SquadEventReplicaUpdated,
+} from '../api/squad-events';
+import { bumpSquadEventReplicaNonce } from '../../stores/events-hub-alerts';
+import { hydrateCatchUp } from '../../stores/catch-up';
+import { showSquadEventReminderToast } from './squad-event-reminder-toast';
 
 import {
   applyMlsStoreResetState,
@@ -406,7 +415,20 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     dashboardPollReplicaNonceByParentId.update((m) => ({ ...m, [pid]: (m[pid] ?? 0) + 1 }));
   });
 
+  register(unsubs, SQUAD_EVENT_REPLICA_UPDATED, (event) => {
+    const pid = (event.payload as SquadEventReplicaUpdated | undefined)?.parentId;
+    if (typeof pid === 'string') bumpSquadEventReplicaNonce(pid);
+  });
+
   register(unsubs, 'commons_broadcasts_changed', () => applyLiveCommonsChange());
+
+  register(unsubs, SQUAD_EVENT_REMINDER_DUE, (event) => {
+    showSquadEventReminderToast(event.payload as SquadEventReminderDue);
+  });
+
+  register(unsubs, 'catch_up_changed', () => {
+    void hydrateCatchUp();
+  });
 
   register(unsubs, 'migration_complete', () => {
     dmLog('migration_complete: showing migration toast');

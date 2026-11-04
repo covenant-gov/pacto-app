@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type * as SquadEventsApi from '../api/squad-events';
 
 const mockFetchMsgMetadata = vi.fn();
+const mockListSquadEvents = vi.hoisted(() => vi.fn());
 
 vi.mock('../api/nostr', () => ({
   fetchMsgMetadata: (...args: unknown[]) => mockFetchMsgMetadata(...args),
+}));
+vi.mock('../api/squad-events', async (importOriginal) => ({
+  ...(await importOriginal<typeof SquadEventsApi>()),
+  listSquadEvents: mockListSquadEvents,
 }));
 import { get } from 'svelte/store';
 import { clearAccountState } from './clear-account-state';
@@ -55,6 +61,7 @@ import { recentEmojisStore, type EmojiEntry } from '../../stores/emojis';
 import { unreadCountsByChat } from '../../stores/unread';
 import { profiles } from '../../stores/profiles';
 import { requestLinkPreview } from '../messaging/link-preview';
+import { squadEventRowsForCards } from '../squad/squad-event-card-replica';
 
 describe('clearAccountState', () => {
   let storage: Map<string, string>;
@@ -274,5 +281,17 @@ describe('clearAccountState', () => {
     // and the same message id can be re-requested for the next account.
     requestLinkPreview('chat1', message);
     expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops cached event card rows so the next account reads its own replica', async () => {
+    mockListSquadEvents.mockReset().mockResolvedValue([]);
+    await squadEventRowsForCards('parent-1', 0);
+    await squadEventRowsForCards('parent-1', 0);
+    expect(mockListSquadEvents).toHaveBeenCalledTimes(1);
+
+    clearAccountState('npub1abcdef');
+
+    await squadEventRowsForCards('parent-1', 0);
+    expect(mockListSquadEvents).toHaveBeenCalledTimes(2);
   });
 });

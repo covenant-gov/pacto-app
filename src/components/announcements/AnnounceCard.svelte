@@ -9,11 +9,15 @@
     ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
     ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
     ANNOUNCE_TYPE_WAR_GAME_UPDATED,
+    ANNOUNCE_TYPE_SQUAD_EVENT_CREATED,
+    ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED,
     type AnnounceMessage,
   } from '../../lib/announcements';
   import SafeAnnounceBody from './Safe/SafeAnnounceBody.svelte';
   import SignerShareAnnounceBody from './SignerShareAnnounceBody.svelte';
   import DashboardPollCreatedAnnounceBody from './DashboardPollCreatedAnnounceBody.svelte';
+  import EventCreatedAnnounceBody from './EventCreatedAnnounceBody.svelte';
+  import EventSeriesAnnounceBody from './EventSeriesAnnounceBody.svelte';
   import GovernanceUpdatedAnnounceBody from './GovernanceUpdatedAnnounceBody.svelte';
   import PactoGovDeployedAnnounceBody from './PactoGovDeployedAnnounceBody.svelte';
   import WarGameUpdatedAnnounceBody from './WarGameUpdatedAnnounceBody.svelte';
@@ -55,6 +59,14 @@
     announce.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ? announce.payload : null
   );
 
+  const squadEventPayload = $derived(
+    announce.type === ANNOUNCE_TYPE_SQUAD_EVENT_CREATED ? announce.payload : null
+  );
+
+  const squadEventSeriesPayload = $derived(
+    announce.type === ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED ? announce.payload : null
+  );
+
   const governanceUpdatedPayload = $derived(
     announce.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED ? announce.payload : null
   );
@@ -71,6 +83,10 @@
       {authorName}
       {timestamp}
     />
+  {:else if squadEventPayload}
+    <EventCreatedAnnounceBody payload={squadEventPayload} {authorName} {timestamp} />
+  {:else if squadEventSeriesPayload}
+    <EventSeriesAnnounceBody payload={squadEventSeriesPayload} {authorName} {timestamp} />
   {:else if signerSharePayload}
     <SignerShareAnnounceBody
       payload={signerSharePayload}

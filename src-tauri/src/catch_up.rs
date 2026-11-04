@@ -17,10 +17,19 @@
 
 use rusqlite::OptionalExtension;
 use serde::Serialize;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::notification::EventKind;
 use crate::ChatState;
+
+/// Emitted (no payload) when the backend writes or resolves entries outside a frontend call.
+pub const CATCH_UP_CHANGED_EVENT: &str = "catch_up_changed";
+
+pub fn emit_catch_up_changed<R: Runtime>(handle: &AppHandle<R>) {
+    if let Err(e) = handle.emit(CATCH_UP_CHANGED_EVENT, ()) {
+        eprintln!("Failed to emit catch up change: {}", e);
+    }
+}
 
 /// The catch-up-specific kind label. Coarser reuse of `EventKind` alone
 /// isn't enough: `Welcome` needs its own label because it alone carries the
@@ -32,6 +41,8 @@ pub enum CatchUpKind {
     DirectMessage,
     ActionPrompt,
     Welcome,
+    /// Squad event reminder that came due while the process was down or locked.
+    EventReminder,
 }
 
 impl CatchUpKind {
@@ -41,6 +52,7 @@ impl CatchUpKind {
             CatchUpKind::DirectMessage => "direct_message",
             CatchUpKind::ActionPrompt => "action_prompt",
             CatchUpKind::Welcome => "welcome",
+            CatchUpKind::EventReminder => "event_reminder",
         }
     }
 
@@ -50,6 +62,7 @@ impl CatchUpKind {
             "direct_message" => Some(CatchUpKind::DirectMessage),
             "action_prompt" => Some(CatchUpKind::ActionPrompt),
             "welcome" => Some(CatchUpKind::Welcome),
+            "event_reminder" => Some(CatchUpKind::EventReminder),
             _ => None,
         }
     }
@@ -128,8 +141,49 @@ pub fn record_admitted_event(
         EventKind::GroupMessage => CatchUpKind::Mention,
         EventKind::DirectMessage => CatchUpKind::DirectMessage,
         EventKind::ActionPrompt => CatchUpKind::ActionPrompt,
+        EventKind::EventReminder => CatchUpKind::EventReminder,
     };
     insert_entry(conn, catch_up_kind, chat_id, source_event_id).map(|_| ())
+}
+
+/// `source_event_id` of a missed event reminder.
+pub fn event_reminder_source_id(event_id: &str, fire_at_ms: i64) -> String {
+    format!("{event_id}:{fire_at_ms}")
+}
+
+/// Record a missed event reminder; `chat_id` is the announcements group.
+/// Returns whether a new row was inserted.
+pub fn record_missed_event_reminder(
+    conn: &rusqlite::Connection,
+    chat_id: &str,
+    event_id: &str,
+    fire_at_ms: i64,
+) -> Result<bool, String> {
+    insert_entry(
+        conn,
+        CatchUpKind::EventReminder,
+        chat_id,
+        &event_reminder_source_id(event_id, fire_at_ms),
+    )
+}
+
+/// Resolve every open `event_reminder` entry for one event, whatever its fire time.
+pub fn resolve_event_reminder_entries(
+    conn: &rusqlite::Connection,
+    event_id: &str,
+) -> Result<usize, String> {
+    let prefix = format!("{event_id}:");
+    conn.execute(
+        "UPDATE catch_up_entries SET resolved_at = ?1
+         WHERE kind = ?2 AND resolved_at IS NULL
+           AND substr(source_event_id, 1, length(?3)) = ?3",
+        rusqlite::params![
+            now_epoch_seconds(),
+            CatchUpKind::EventReminder.as_db_str(),
+            prefix
+        ],
+    )
+    .map_err(|e| format!("Failed to resolve event reminder entries: {}", e))
 }
 
 /// `AppHandle`-based wrapper for the `notification::emit` call sites in
@@ -208,7 +262,7 @@ pub async fn record_welcome_for_handle<R: Runtime>(
 
 /// Resolve one entry by its source event id. Returns whether a row was
 /// actually resolved (`false` if it was already resolved or never existed).
-fn resolve_entry(conn: &rusqlite::Connection, source_event_id: &str) -> Result<bool, String> {
+pub(crate) fn resolve_entry(conn: &rusqlite::Connection, source_event_id: &str) -> Result<bool, String> {
     let resolved_at = now_epoch_seconds();
     let changed = conn
         .execute(
@@ -629,6 +683,7 @@ mod tests {
             CatchUpKind::DirectMessage,
             CatchUpKind::ActionPrompt,
             CatchUpKind::Welcome,
+            CatchUpKind::EventReminder,
         ] {
             let db_str = kind.as_db_str();
             assert_eq!(CatchUpKind::from_db_str(db_str), Some(kind));
@@ -1289,5 +1344,44 @@ mod tests {
         assert_eq!(dm_entry.kind, CatchUpKind::DirectMessage.as_db_str());
         let mention_entry = get_entry(&conn, "evt-mention").unwrap().unwrap();
         assert_eq!(mention_entry.kind, CatchUpKind::Mention.as_db_str());
+    }
+
+    #[test]
+    fn missed_event_reminder_dedups_on_source_id() {
+        let conn = migrated_conn();
+        assert!(record_missed_event_reminder(&conn, "ann-group", "ev1", 1_000).unwrap());
+        assert!(!record_missed_event_reminder(&conn, "ann-group", "ev1", 1_000).unwrap());
+        assert!(record_missed_event_reminder(&conn, "ann-group", "ev1", 2_000).unwrap());
+
+        let entry = get_entry(&conn, "ev1:1000").unwrap().unwrap();
+        assert_eq!(entry.kind, "event_reminder");
+        assert_eq!(entry.chat_id, "ann-group");
+        let listed =
+            list_unresolved_entries(&conn, Some(CatchUpKind::EventReminder), None).unwrap();
+        assert_eq!(listed.len(), 2);
+    }
+
+    #[test]
+    fn event_reminder_entries_resolve_by_event_id_prefix_only() {
+        let conn = migrated_conn();
+        record_missed_event_reminder(&conn, "g", "ev1", 1_000).unwrap();
+        record_missed_event_reminder(&conn, "g", "ev1", 2_000).unwrap();
+        record_missed_event_reminder(&conn, "g", "ev10", 1_000).unwrap();
+        record_admitted_event(&conn, EventKind::ActionPrompt, false, false, "g", "ev1:other")
+            .unwrap();
+
+        assert_eq!(resolve_event_reminder_entries(&conn, "ev1").unwrap(), 2);
+        assert!(get_entry(&conn, "ev1:1000").unwrap().unwrap().resolved_at.is_some());
+        assert!(get_entry(&conn, "ev1:2000").unwrap().unwrap().resolved_at.is_some());
+        assert!(get_entry(&conn, "ev10:1000").unwrap().unwrap().resolved_at.is_none());
+        assert!(get_entry(&conn, "ev1:other").unwrap().unwrap().resolved_at.is_none());
+    }
+
+    #[test]
+    fn event_reminder_never_admitted_on_arrival() {
+        let conn = migrated_conn();
+        record_admitted_event(&conn, EventKind::EventReminder, false, false, "g", "ev1:1")
+            .unwrap();
+        assert!(get_entry(&conn, "ev1:1").unwrap().is_none());
     }
 }

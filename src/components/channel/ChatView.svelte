@@ -18,6 +18,7 @@
   } from '../../lib/mls/virtual-channel-bucket';
   import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
   import DashboardPollsPanel from '../parent/DashboardPollsPanel.svelte';
+  import SquadEventsPanel from '../parent/SquadEventsPanel.svelte';
   import {
     ensureMlsGroupMembers,
     membersByGroupId,
@@ -47,6 +48,7 @@
     parentCreateErrorById,
     ANNOUNCEMENTS_CHANNEL_NAME,
     POLLS_CHANNEL_NAME,
+    EVENTS_CHANNEL_NAME,
     isVirtualHubChannelId,
     membershipVersionByGroupId,
     mlsHistoryWelcomeGroupIds,
@@ -127,7 +129,8 @@
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
   $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
-  $: hideChannelOverflowMenu = isAnnouncementsChannel || isPollsChannel;
+  $: isEventsChannel = (activeParent && activeChannel?.name === EVENTS_CHANNEL_NAME) ?? false;
+  $: hideChannelOverflowMenu = isAnnouncementsChannel || isPollsChannel || isEventsChannel;
   $: channelParsesStructuredAnnounces = isAnnouncementsChannel;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
   $: showMlsHistoryWelcome =
@@ -604,7 +607,7 @@
       clearMentionAlert(activeSquad.id, activeChannel.name);
       if (isPollsChannel && activeParent?.id) {
         void markPollsChannelSeen(activeParent.id);
-      } else if ($activeChannelId) {
+      } else if (!isEventsChannel && $activeChannelId) {
         markAsRead($activeChannelId, null).catch(() => {});
       }
     }
@@ -799,6 +802,10 @@
           variant="channel"
           fillParent
         />
+      </div>
+    {:else if isEventsChannel && activeParent}
+      <div class="polls-channel-body">
+        <SquadEventsPanel parentId={activeParent.id} mlsGroupId={resolvePollsMlsGroupId(activeParent)} />
       </div>
     {:else}
       <div class="messages-container" bind:this={messagesContainer} onscroll={handleMessagesScroll}>

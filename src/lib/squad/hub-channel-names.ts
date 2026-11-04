@@ -2,6 +2,7 @@
 
 export const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
 export const POLLS_CHANNEL_NAME = 'polls';
+export const EVENTS_CHANNEL_NAME = 'events';
 
 /** Virtual squad-wide dashboard (not an MLS group). */
 export const SQUAD_DASHBOARD_CHANNEL_ID = '__squad_dashboard__';

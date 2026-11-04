@@ -13,7 +13,7 @@ import { persistSquadPatch } from './squad-catalog';
 import type { Channel, Squad } from '../../stores/squads';
 import { get } from 'svelte/store';
 import { squads } from '../../stores/squads';
-import { ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME } from './hub-channel-names';
+import { ANNOUNCEMENTS_CHANNEL_NAME, EVENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME } from './hub-channel-names';
 import { dmError } from '../utils/dm-debug';
 import { markMlsHistoryWelcome } from '../../stores/mls-history-welcome';
 
@@ -52,7 +52,7 @@ export function parseSquadChannelsCatalog(
       const order = typeof c.order === 'number' ? c.order : channels.length;
       const access = c.access === 'closed' ? 'closed' : 'open';
       if (!name || !groupId) continue;
-      if (name === ANNOUNCEMENTS_CHANNEL_NAME || name === POLLS_CHANNEL_NAME) continue;
+      if (name === ANNOUNCEMENTS_CHANNEL_NAME || name === POLLS_CHANNEL_NAME || name === EVENTS_CHANNEL_NAME) continue;
       channels.push({ name, groupId, order, access });
     }
     return { parent_id, channels };
