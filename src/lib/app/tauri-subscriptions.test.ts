@@ -314,6 +314,8 @@ describe('subscribeAppEvents', () => {
       'mls_group_initial_sync',
       'mls_group_left',
       'dashboard_poll_replica_updated',
+      'squad_doc_replica_updated',
+      'squad_content_policy_updated',
       'commons_broadcasts_changed',
       'migration_complete',
       'session_locked',

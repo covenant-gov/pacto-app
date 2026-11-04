@@ -524,6 +524,9 @@ async fn process_app_specific(
     if d_tag == Some(crate::squad_records::SQUAD_EVENT_D_TAG) {
         return crate::squad_event::process_rumor(rumor, context).await;
     }
+    if d_tag == Some(crate::squad_records::SQUAD_DOC_D_TAG) {
+        return crate::squad_doc::process_rumor(rumor, context).await;
+    }
     // Check if this is a typing indicator
     if is_typing_indicator(&rumor) {
         // Validate expiration tag (must be within 30 seconds)

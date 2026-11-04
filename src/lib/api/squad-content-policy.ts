@@ -32,3 +32,8 @@ export async function setSquadContentPolicy(params: {
 export function canCreateSquadEvent(policy: SquadContentPolicyView): boolean {
   return !policy.restrictEventCreate || policy.callerIsAdmin;
 }
+
+/** Docs add gate shared by the shelf and Save to Docs. */
+export function canAddSquadDoc(policy: SquadContentPolicyView): boolean {
+  return !policy.restrictDocAdd || policy.callerIsAdmin;
+}

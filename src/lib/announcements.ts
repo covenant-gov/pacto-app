@@ -7,6 +7,8 @@
 
 import { SQUAD_MEMBER_EVM_SHARE_TYPE } from './squad/squad-member-evm-share';
 import type { SquadEventDto } from './api/squad-events';
+import type { SquadDocProvider } from './api/squad-docs';
+import { maskDocUrl } from './docs/mask-url';
 
 /** Roster sync: member shared preferred EVM signer for this parent ({@link SQUAD_MEMBER_EVM_SHARE_TYPE}). */
 export const ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE = SQUAD_MEMBER_EVM_SHARE_TYPE;
@@ -26,6 +28,8 @@ export const ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED = 'dashboard_poll_created';
 export const ANNOUNCE_TYPE_SQUAD_EVENT_CREATED = 'squad_event_created';
 /** Weekly series summary (one card for all occurrences). Opens #events filtered by series. */
 export const ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED = 'squad_event_series_created';
+/** Doc link added to the squad `#docs` shelf. Card shows the masked URL only. */
+export const ANNOUNCE_TYPE_SQUAD_DOC_ADDED = 'squad_doc_added';
 
 /** Squad/network deployed infra sync (`squad_infra` SQLite rows). Wire: `governance_updated`. */
 export const ANNOUNCE_TYPE_GOVERNANCE_UPDATED = 'governance_updated';
@@ -198,6 +202,17 @@ export interface SquadEventSeriesCreatedPayload {
   channel_id: string | null;
 }
 
+/** Never carries the raw URL, its fragment, a secret query value, or the note. */
+export interface SquadDocAddedPayload {
+  id: string;
+  parent_id: string;
+  title: string;
+  provider: SquadDocProvider;
+  channel_id: string | null;
+  /** Masked URL (`maskDocUrl`). */
+  display_url: string;
+}
+
 export type AnnouncePayload =
   | SquadSafeUpdatedPayload
   | SafeProposalPayload
@@ -208,7 +223,8 @@ export type AnnouncePayload =
   | GovernanceProcessUpdatedPayload
   | StickerPackUpdatedPayload
   | SquadEventCreatedPayload
-  | SquadEventSeriesCreatedPayload;
+  | SquadEventSeriesCreatedPayload
+  | SquadDocAddedPayload;
 
 /** Discriminated union of all announcement message types. */
 export type AnnounceMessage =
@@ -221,7 +237,8 @@ export type AnnounceMessage =
   | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED; payload: GovernanceProcessUpdatedPayload }
   | { type: typeof ANNOUNCE_TYPE_STICKER_PACK_UPDATED; payload: StickerPackUpdatedPayload }
   | { type: typeof ANNOUNCE_TYPE_SQUAD_EVENT_CREATED; payload: SquadEventCreatedPayload }
-  | { type: typeof ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED; payload: SquadEventSeriesCreatedPayload };
+  | { type: typeof ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED; payload: SquadEventSeriesCreatedPayload }
+  | { type: typeof ANNOUNCE_TYPE_SQUAD_DOC_ADDED; payload: SquadDocAddedPayload };
 
 export function isSponsorGovernanceProvider(provider: string): boolean {
   return provider.trim().toLowerCase() === 'sponsor';
@@ -500,6 +517,33 @@ function sanitizeSquadEventSeriesCreatedPayload(p: unknown): SquadEventSeriesCre
   };
 }
 
+const SQUAD_DOC_PROVIDERS: readonly SquadDocProvider[] = ['cryptpad', 'google', 'zoho', 'notion', 'etherpad', 'other'];
+
+/** Rebuilds from known fields and re-masks the URL, so a stray raw URL or note never reaches the card. */
+function sanitizeSquadDocAddedPayload(p: unknown): SquadDocAddedPayload | null {
+  if (!p || typeof p !== 'object') return null;
+  const q = p as Record<string, unknown>;
+  const channelId = optionalId(q.channel_id);
+  if (
+    !nonEmptyString(q.id) ||
+    !nonEmptyString(q.parent_id) ||
+    !nonEmptyString(q.title) ||
+    !nonEmptyString(q.display_url) ||
+    channelId === undefined
+  ) {
+    return null;
+  }
+  const provider = SQUAD_DOC_PROVIDERS.find((v) => v === q.provider) ?? 'other';
+  return {
+    id: q.id,
+    parent_id: q.parent_id,
+    title: q.title,
+    provider,
+    channel_id: channelId,
+    display_url: maskDocUrl(q.display_url),
+  };
+}
+
 /**
  * Parse message content as an announcement. Returns null if not valid announcement JSON or unknown type.
  */
@@ -551,6 +595,10 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
     const clean = sanitizeSquadEventSeriesCreatedPayload(payload);
     return clean ? { type: ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED, payload: clean } : null;
   }
+  if (type === ANNOUNCE_TYPE_SQUAD_DOC_ADDED) {
+    const clean = sanitizeSquadDocAddedPayload(payload);
+    return clean ? { type: ANNOUNCE_TYPE_SQUAD_DOC_ADDED, payload: clean } : null;
+  }
   return null;
 }
 
@@ -570,7 +618,8 @@ export function buildAnnounceContent<T extends AnnounceMessage>(
     msg.type === ANNOUNCE_TYPE_STICKER_PACK_UPDATED ||
     msg.type === ANNOUNCE_TYPE_WAR_GAME_UPDATED ||
     msg.type === ANNOUNCE_TYPE_SQUAD_EVENT_CREATED ||
-    msg.type === ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED
+    msg.type === ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED ||
+    msg.type === ANNOUNCE_TYPE_SQUAD_DOC_ADDED
       ? 'announcements'
       : isAnnouncementsGovernanceAnnounce(msg)
         ? 'announcements'

@@ -27,5 +27,10 @@
 	"errors.squadRecords.eventInvalidZone": "Choose a valid time zone.",
 	"errors.squadRecords.eventInvalidTime": "Check the start and end.",
 	"errors.squadRecords.eventInvalidPlace": "Add a meeting link or an address.",
-	"errors.squadRecords.eventInvalidSeries": "The weekly meetings could not be created. Try again."
+	"errors.squadRecords.eventInvalidSeries": "The weekly meetings could not be created. Try again.",
+	"errors.squadRecords.docAddRestricted": "Only squad admins can add docs in this squad.",
+	"errors.squadRecords.docNotFound": "This doc is no longer on the shelf.",
+	"errors.squadRecords.docNotEditable": "You cannot change this doc.",
+	"errors.squadRecords.docInvalidUrl": "Use a link that starts with http:// or https://.",
+	"errors.squadRecords.docInvalidTitle": "Add a title."
 }

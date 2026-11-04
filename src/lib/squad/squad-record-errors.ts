@@ -13,6 +13,11 @@ const KEY_BY_CODE: Record<string, string> = {
   squad_event_invalid_time: 'errors.squadRecords.eventInvalidTime',
   squad_event_invalid_place: 'errors.squadRecords.eventInvalidPlace',
   squad_event_invalid_series: 'errors.squadRecords.eventInvalidSeries',
+  squad_doc_add_restricted: 'errors.squadRecords.docAddRestricted',
+  squad_doc_not_found: 'errors.squadRecords.docNotFound',
+  squad_doc_not_editable: 'errors.squadRecords.docNotEditable',
+  squad_doc_invalid_url: 'errors.squadRecords.docInvalidUrl',
+  squad_doc_invalid_title: 'errors.squadRecords.docInvalidTitle',
 };
 
 /** Translated message for a known squad records error code; otherwise the raw invoke message, then `fallback`. */

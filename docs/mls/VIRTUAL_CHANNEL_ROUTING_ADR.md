@@ -144,14 +144,13 @@ Squad-wide records ride the announcements group as **Kind 30078** rumors selecte
 |---------|--------|----------------|
 | `pacto_squad_content_policy` | Active | `pacto.squad_content_policy.v1` — admin-only add restrictions (`restrict_event_create`, `restrict_doc_add`), each with its own `*_updated_at_ms`; per-flag last timestamp wins |
 | `pacto_squad_event` | Active | `pacto.squad_event.v1` — squad events and RSVPs (see below) |
-
-The name `pacto_squad_doc` is reserved for a future squad docs shelf; no code sends or reads it yet.
+| `pacto_squad_doc` | Active | `pacto.squad_doc.v1` — squad docs shelf links (see below) |
 
 **Group gate:** a record is accepted only when the payload `parent_id` equals the MLS group it arrived in (a parent's id is its announcements group id), the same check as the side-effect ingest gate above. Records naming another parent are dropped on ingest, and send commands reject a mismatched `mls_group_id` with `squad_records_wrong_group`.
 
-**Silent operations** (policy changes, event updates, RSVPs, cancels) return the silent ingest result (`SquadRecordSilent`, same handling as a poll vote): they update the SQLite replica and never create a timeline row. They need no `pacto_bucket` tag and **do not** extend the bucket enum — there is no `events` or `docs` bucket. Record ops that announce something (for example an event-created card) are stored as `announcements` messages like a poll create.
+**Silent operations** (policy changes, event updates, RSVPs, cancels, doc updates and removes) return the silent ingest result (`SquadRecordSilent`, same handling as a poll vote): they update the SQLite replica and never create a timeline row. They need no `pacto_bucket` tag and **do not** extend the bucket enum — there is no `events` or `docs` bucket. Record ops that announce something (for example an event-created or doc-added card) are stored as `announcements` messages like a poll create.
 
-Feature shelves such as `#events` (and a future docs shelf) are hub rows that read their SQLite replica through Tauri, the same way `#polls` reads the poll replica. They are not virtual buckets of the MLS stream.
+Feature shelves such as `#events` and `#docs` are hub rows that read their SQLite replica through Tauri, the same way `#polls` reads the poll replica. They are not virtual buckets of the MLS stream.
 
 **Admin gate:** policy writes are accepted only from members in the group's MLS `admin_pubkeys`; non-admin policy rumors are dropped on ingest. Turning `restrict_event_create` on deletes non-admin events created at or after the flag timestamp; turning it off restores nothing.
 
@@ -161,6 +160,15 @@ Feature shelves such as `#events` (and a future docs shelf) are hub rows that re
 - **Cards:** a `create` outside a series becomes an `announcements` message `{"type":"squad_event_created","payload":{…}}`; a weekly series sends its creates plus one `series_card` that becomes `{"type":"squad_event_series_created","payload":{…}}`. Card payloads never contain `location` or place details.
 - **Silent:** `update`, `rsvp`, `cancel`, and series member creates update the replica only. Writes are last-`updated_at_ms`-wins per event (equal keeps the stored row), and children that arrive before their create wait in a pending-ops table.
 - **Reminders:** local only. Lead time and mute are per-device prefs and never go on the wire. Reminders that come due while the app is not running are written to Catch up with kind `event_reminder` (`source_event_id` = `"{event_id}:{fire_at_ms}"`, `chat_id` = the announcements group).
+
+### Squad docs (`pacto_squad_doc`)
+
+- **Wire:** `{"schema":"pacto.squad_doc.v1","op":…,"id":…,"parent_id":…,"updated_at_ms":…}` with `op` one of `add`, `update`, `remove`. `add` and `update` also carry `url` (raw, fragment included), `title`, `provider` (`cryptpad`, `google`, `zoho`, `notion`, `etherpad`, `other`; the sender derives it from the hostname, unknown values ingest as `other`), `channel_id`, and `note`; `add` carries `added_by` (the sender's npub). `remove` carries only the five base fields.
+- **Authority:** the author is the MLS signer of the add. An op whose `added_by` differs from its signer is dropped. While `restrict_doc_add` is on, only admins add. Update and remove are accepted from the author or a current admin. A second `add` for a stored id is a no-op from anyone. Only `http` and `https` URLs are accepted. Stamps further than 24 hours ahead of the local clock are dropped.
+- **Replica:** stores the raw URL. Last `updated_at_ms` wins (equal keeps the stored row). `remove` sets a sticky hidden flag; the row stays so a late add or update cannot revive it. Updates and removes that arrive before their add wait in a pending-ops table.
+- **Card:** `add` becomes an `announcements` message `{"type":"squad_doc_added","payload":{"id","parent_id","title","provider","channel_id","display_url"}}`. `display_url` masks a non-empty fragment as `#••••` and secret or tracker query values as `••••`; the card never carries the raw URL or the note.
+- **Logs:** doc id and counts only.
+- **Link previews:** ordinary chat preview fetches drop the URL fragment and secret-named query pairs before the request (`url_secrets::strip_fetch_secrets`).
 
 ---
 

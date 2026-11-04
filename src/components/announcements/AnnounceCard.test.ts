@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import AnnounceCard from './AnnounceCard.svelte';
 import {
   ANNOUNCE_TYPE_SAFE_UPDATED,
@@ -12,6 +15,7 @@ import {
   ANNOUNCE_TYPE_STICKER_PACK_UPDATED,
   ANNOUNCE_TYPE_SQUAD_EVENT_CREATED,
   ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED,
+  ANNOUNCE_TYPE_SQUAD_DOC_ADDED,
   parseAnnouncement,
   type AnnounceMessage,
 } from '../../lib/announcements';
@@ -24,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   listSquadEvents: vi.fn(),
   focusSquadEvent: vi.fn(),
   focusSquadEventSeries: vi.fn(),
+  openSquadDocs: vi.fn(),
   requestLinkPreview: vi.fn(),
   /** Minimal readable store: no replica updates during a test. */
   replicaNonce: {
@@ -42,6 +47,9 @@ vi.mock('../../lib/api/squad-events', async (importOriginal) => ({
 vi.mock('../../stores/events-navigation', () => ({
   focusSquadEvent: mocks.focusSquadEvent,
   focusSquadEventSeries: mocks.focusSquadEventSeries,
+}));
+vi.mock('../../stores/docs-navigation', () => ({
+  openSquadDocs: mocks.openSquadDocs,
 }));
 vi.mock('../../stores/events-hub-alerts', () => ({
   squadEventReplicaNonceByParentId: mocks.replicaNonce,
@@ -260,6 +268,71 @@ describe('AnnounceCard squad event cards', () => {
     expect(
       (screen.getByRole('button', { name: 'Open weekly meetings Weekly sync' }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+});
+
+describe('AnnounceCard squad doc card', () => {
+  beforeEach(() => {
+    mocks.openSquadDocs.mockReset();
+    mocks.requestLinkPreview.mockReset();
+    squads.set([
+      {
+        id: 'squad-doc',
+        name: 'Crew',
+        channels: [
+          { name: 'announcements', groupId: 'grp-ann', order: 0 },
+          { name: 'ops', groupId: 'grp-ops', order: 4 },
+        ],
+        kind: 'squad',
+      } as unknown as Squad,
+    ]);
+  });
+
+  function docCard(payload: Record<string, unknown> = {}): AnnounceMessage {
+    const parsed = parseAnnouncement(
+      JSON.stringify({
+        type: ANNOUNCE_TYPE_SQUAD_DOC_ADDED,
+        payload: {
+          id: 'doc-1',
+          parent_id: 'squad-doc',
+          title: 'Agenda',
+          provider: 'cryptpad',
+          channel_id: 'grp-ops',
+          display_url: 'https://cryptpad.fr/pad/#/2/pad/edit/secret',
+          note: 'private note',
+          ...payload,
+        },
+      }),
+    );
+    if (!parsed) throw new Error('fixture did not parse');
+    return parsed;
+  }
+
+  it('renders title, provider, channel, author, and the masked URL without the fragment or note', () => {
+    const { container } = render(AnnounceCard, {
+      props: { announce: docCard(), authorName: 'Alice', timestamp: '' },
+    });
+    expect(screen.getByText('Agenda')).toBeTruthy();
+    expect(screen.getByText('CryptPad')).toBeTruthy();
+    expect(screen.getByText('#ops')).toBeTruthy();
+    expect(screen.getByText('Alice')).toBeTruthy();
+    expect(screen.getByText('https://cryptpad.fr/pad/#••••')).toBeTruthy();
+    expect(container.innerHTML).not.toContain('secret');
+    expect(container.innerHTML).not.toContain('private note');
+  });
+
+  it('has no reveal or copy control and never requests a link preview', async () => {
+    render(AnnounceCard, { props: { announce: docCard(), authorName: 'Alice', timestamp: '' } });
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Agenda in Docs' }));
+    expect(mocks.openSquadDocs).toHaveBeenCalledWith('squad-doc', { docId: 'doc-1' });
+    expect(mocks.requestLinkPreview).not.toHaveBeenCalled();
+  });
+
+  it('does not import the link preview module', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(here, 'DocAddedAnnounceBody.svelte'), 'utf8');
+    expect(source).not.toMatch(/link-preview/);
   });
 });
 

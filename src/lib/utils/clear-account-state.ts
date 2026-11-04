@@ -140,6 +140,7 @@ import {
   resetEventsHubAlertStores,
 } from '../../stores/events-hub-alerts';
 import { resetSquadEventDraftIds } from '../squad/squad-event-form';
+import { LAST_SEEN_DOC_CARD_AT_PREFIX, resetDocsHubAlertStores } from '../../stores/docs-hub-alerts';
 import { resetGovActionPromptStores } from '../../stores/gov-action-prompts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { resetMlsStoreResetState } from '../../stores/mls-reset';
@@ -205,6 +206,7 @@ const SCOPED_KEY_PREFIXES = [
   MUTINY_PROCESS_TX_PREFIX,
   LAST_SEEN_POLL_CREATED_AT_PREFIX,
   LAST_SEEN_EVENT_CARD_AT_PREFIX,
+  LAST_SEEN_DOC_CARD_AT_PREFIX,
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {
@@ -252,6 +254,7 @@ export function clearAccountState(npub?: string): void {
   resetPollsHubAlertStores();
   resetEventsHubAlertStores();
   resetSquadEventDraftIds();
+  resetDocsHubAlertStores();
   resetGovActionPromptStores();
   resetMlsGroupMembersStores();
   resetMlsStoreResetState();

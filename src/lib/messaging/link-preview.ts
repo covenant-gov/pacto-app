@@ -1,7 +1,8 @@
 import { get } from 'svelte/store';
 import { fetchMsgMetadata } from '../api/nostr';
 import { containsHttpsUrl } from '../utils/message-formatting';
-import { extractPreviewHttpsUrls, stripTrackingParamsFromUrl } from '../utils/url-tracking';
+import { extractPreviewHttpsUrls } from '../utils/url-tracking';
+import { previewCandidateUrl } from '../docs/mask-url';
 import { dmError } from '../utils/dm-debug';
 import { webPreviewsEnabled } from '../../stores/web-previews';
 import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
@@ -48,10 +49,9 @@ export function requestLinkPreview(chatId: string, message: DmMessage): boolean 
   if (!containsHttpsUrl(message.content ?? '')) return true;
   if (!get(webPreviewsEnabled)) return false;
   requested.add(message.id);
-  const strip = get(stripTrackingMarkersEnabled);
-  const urls = extractPreviewHttpsUrls(message.content ?? '').map((url) =>
-    strip ? stripTrackingParamsFromUrl(url) : url,
-  );
+  const stripTrackers = get(stripTrackingMarkersEnabled);
+  // Fragments and secret query pairs never reach the linked host.
+  const urls = extractPreviewHttpsUrls(message.content ?? '').map((url) => previewCandidateUrl(url, { stripTrackers }));
   runQueued(() => fetchMsgMetadata(chatId, message.id, urls).catch((e) => dmError('fetchMsgMetadata', e)));
   return true;
 }

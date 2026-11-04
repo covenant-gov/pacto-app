@@ -1,6 +1,8 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import Pencil from '@lucide/svelte/icons/pencil';
+  import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
+  import { extractMessageDocLinks } from '../../lib/docs/message-links';
 
   interface Props {
     messageId: string;
@@ -10,6 +12,8 @@
     onCopy?: (messageId: string, text: string) => void;
     onReply?: (messageId: string) => void;
     onEdit?: (messageId: string) => void;
+    /** Squad channels only, and only when the caller may add docs; shown when the text has an http(s) link. */
+    onSaveToDocs?: (messageId: string, text: string) => void;
   }
 
   let {
@@ -19,7 +23,10 @@
     onCopy = () => {},
     onReply = () => {},
     onEdit = () => {},
+    onSaveToDocs = undefined,
   }: Props = $props();
+
+  const canSaveToDocs = $derived(!!onSaveToDocs && extractMessageDocLinks(text).length > 0);
 </script>
 
 <div class="message-actions-menu" role="group" aria-label={$t('messaging.message.actionsAria')}>
@@ -39,6 +46,21 @@
     </span>
     <span class="menu-label">{$t('messaging.message.copy')}</span>
   </button>
+  {#if canSaveToDocs}
+    <button
+      type="button"
+      class="menu-item"
+      role="menuitem"
+      aria-label={$t('messaging.message.saveToDocs')}
+      title={$t('messaging.message.saveToDocs')}
+      onclick={() => onSaveToDocs?.(messageId, text)}
+    >
+      <span class="menu-icon" aria-hidden="true">
+        <BookmarkPlus size={18} />
+      </span>
+      <span class="menu-label">{$t('messaging.message.saveToDocs')}</span>
+    </button>
+  {/if}
   <button
     type="button"
     class="menu-item"

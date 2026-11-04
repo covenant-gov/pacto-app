@@ -165,4 +165,20 @@ describe('requestLinkPreview', () => {
     requestLinkPreview('chat1', msg({ content }));
     expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1', [content]);
   });
+
+  it('drops the fragment and secret query pairs from the preview candidate', () => {
+    const content = 'pad https://cryptpad.fr/pad/#/2/pad/edit/secret and https://example.com/a?token=abc&x=1';
+    requestLinkPreview('chat1', msg({ content }));
+    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1', [
+      'https://cryptpad.fr/pad/',
+      'https://example.com/a?x=1',
+    ]);
+  });
+
+  it('still drops secrets when tracker stripping is off', () => {
+    stripTrackingMarkersEnabled.set(false);
+    const content = 'https://example.com/a?utm_source=n&sig=zz#frag';
+    requestLinkPreview('chat1', msg({ content }));
+    expect(mockFetchMsgMetadata).toHaveBeenCalledWith('chat1', 'm1', ['https://example.com/a?utm_source=n']);
+  });
 });

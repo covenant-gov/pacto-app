@@ -3,6 +3,7 @@
 	"announcements.pollCreated.badge": "Nueva encuesta",
 	"announcements.eventCreated.badge": "Nuevo evento",
 	"announcements.eventSeriesCreated.badge": "Nuevas reuniones semanales",
+	"announcements.docAdded.badge": "Nuevo documento",
 	"announcements.governanceUpdated.aMember": "Un miembro",
 	"announcements.governanceUpdated.sponsor": "{who} desplegó el patrocinador del escuad",
 	"announcements.governanceUpdated.pactoGov": "{who} desplegó Gobierno Pacto",

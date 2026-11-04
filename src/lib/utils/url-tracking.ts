@@ -51,7 +51,8 @@ function hostMatches(hostname: string, rule: string): boolean {
   return host === needle || host.endsWith(`.${needle}`);
 }
 
-function isTrackingName(name: string, hostname: string, pathname: string): boolean {
+/** Catalog tracker check for one query name (prefix, exact, or host-scoped). */
+export function isTrackingName(name: string, hostname: string, pathname: string): boolean {
   const lower = name.toLowerCase();
   if (TRACKING_PARAM_PREFIXES.some((prefix) => lower.startsWith(prefix))) return true;
   if (EXACT_NAMES.has(lower)) {

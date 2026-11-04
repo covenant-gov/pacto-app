@@ -155,6 +155,10 @@ export const chatFixtures: Record<string, MockCommandHandler> = {
   get_squad_event_reminder_prefs: () => ({ leadMinutes: 15, muted: false }),
   set_squad_event_reminder_prefs: () => undefined,
   resolve_squad_event_reminder_catch_up: () => undefined,
+  list_squad_docs: () => [],
+  send_squad_doc_add: () => undefined,
+  send_squad_doc_update: () => undefined,
+  send_squad_doc_remove: () => undefined,
   start_typing: () => true,
   mark_as_read: () => true,
 };

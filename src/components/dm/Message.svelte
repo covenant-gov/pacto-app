@@ -59,6 +59,8 @@
     /** Send an edit of the displayed body; resolve `true` to close the editor. */
     onEdit?: (messageId: string, newBody: string) => Promise<boolean>;
     editRequest?: MessageEditRequest | null;
+    /** Squad chat only; DMs omit it so the menu has no Save to Docs. */
+    onSaveToDocs?: (messageId: string, text: string) => void;
   }
 
   let {
@@ -91,6 +93,7 @@
     editableUntil = null,
     onEdit = undefined,
     editRequest = null,
+    onSaveToDocs = undefined,
   }: Props = $props();
 
   let displayContent = $derived(body || content);
@@ -343,6 +346,11 @@
   function handleMenuReply(messageId: string) {
     closeMenu();
     onReply(messageId);
+  }
+
+  function handleMenuSaveToDocs(messageId: string, text: string) {
+    closeMenu();
+    onSaveToDocs?.(messageId, text);
   }
 
   function handleChipClick(emoji: string, includesMe: boolean) {
@@ -633,6 +641,7 @@
           onCopy={handleMenuCopy}
           onReply={handleMenuReply}
           onEdit={startEdit}
+          onSaveToDocs={onSaveToDocs && !structuredNotice ? handleMenuSaveToDocs : undefined}
         />
       {:else}
         <div class="reaction-picker-expanded" role="dialog" aria-label={$t('messaging.message.chooseReactionAria')}>

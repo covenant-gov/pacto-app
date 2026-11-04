@@ -9,6 +9,7 @@ import {
   ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED,
   ANNOUNCE_TYPE_SQUAD_EVENT_CREATED,
   ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED,
+  ANNOUNCE_TYPE_SQUAD_DOC_ADDED,
   buildAnnounceContent,
   parseAnnouncement,
   squadEventCardView,
@@ -160,6 +161,64 @@ describe('squad event announcements', () => {
     expect(squadEventSeriesOverlay('series-1', rows)).toEqual({ total: 8, active: 7 });
     expect(squadEventSeriesOverlay('series-2', rows)).toEqual({ total: 0, active: 0 });
     expect(squadEventSeriesOverlay('series-1', null)).toBeNull();
+  });
+});
+
+describe('squad doc announcements', () => {
+  function docAdded(payload: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      type: ANNOUNCE_TYPE_SQUAD_DOC_ADDED,
+      payload: {
+        id: 'doc-1',
+        parent_id: 'squad-1',
+        title: 'Agenda',
+        provider: 'cryptpad',
+        channel_id: 'grp-ops',
+        display_url: 'https://cryptpad.fr/pad/#••••',
+        ...payload,
+      },
+    });
+  }
+
+  it('parses a doc-added card with the masked URL', () => {
+    expect(parseAnnouncement(docAdded())).toEqual({
+      type: ANNOUNCE_TYPE_SQUAD_DOC_ADDED,
+      payload: {
+        id: 'doc-1',
+        parent_id: 'squad-1',
+        title: 'Agenda',
+        provider: 'cryptpad',
+        channel_id: 'grp-ops',
+        display_url: 'https://cryptpad.fr/pad/#••••',
+      },
+    });
+  });
+
+  it('drops a stray raw url and note and re-masks a leaked fragment or secret query value', () => {
+    const parsed = parseAnnouncement(
+      docAdded({
+        url: 'https://cryptpad.fr/pad/#/2/pad/edit/secret',
+        note: 'private note',
+        display_url: 'https://cryptpad.fr/pad/?token=abc#/2/pad/edit/secret',
+      })
+    );
+    const text = JSON.stringify(parsed);
+    expect(text).not.toContain('secret');
+    expect(text).not.toContain('abc');
+    expect(text).not.toContain('private note');
+    expect(parsed?.payload).toMatchObject({ display_url: 'https://cryptpad.fr/pad/?token=••••#••••' });
+  });
+
+  it('falls back to other for an unknown provider and accepts an untagged doc', () => {
+    expect(parseAnnouncement(docAdded({ provider: 'dropbox', channel_id: null }))?.payload).toMatchObject({
+      provider: 'other',
+      channel_id: null,
+    });
+  });
+
+  it('rejects a card without a title or display url', () => {
+    expect(parseAnnouncement(docAdded({ title: '' }))).toBeNull();
+    expect(parseAnnouncement(docAdded({ display_url: null }))).toBeNull();
   });
 });
 
