@@ -35,7 +35,7 @@ Local infra type is `pacto_gov_wargame`. Do not dual-read it as `pacto_gov`.
 
 `deploy_war_game_for_parent` is member-gated, not captain-gated. It always uses Sepolia, even when the Status tab network is something else. MLS `squad_network_updated` practice is applied only when it matches the operator default or on-chain `pacto_gov_wargame`.
 
-Sequence: `deployNavePirata` with `stackKind = WarGame` and `squadId = keccak256(parentId)`; then `createWarGameSponsor(parentSquadId, topHatId, WarGameRegistry, [])` with the wizard deposit. The factory does **not** register `parentSquadId`. Live `#dashboard` sponsor is a later Launchpad hats `createSquadSponsor` into that empty parent slot. Do not MLS-announce a parent Ext as live `sponsor`.
+Sequence: `deployNavePirata` with `stackKind = WarGame` and `squadId = keccak256(parentId)`; then `createWarGameSponsor(parentSquadId, topHatId, WarGameRegistry, [])` with the wizard deposit. The factory does **not** register `parentSquadId`. After live sponsor exists, war-game deploy is allowed when `createWarGameSponsor` leaves `squads(keccak256(parentId))` unchanged. Live `#dashboard` sponsor is a later Launchpad hats `createSquadSponsor` into that empty parent slot. Do not MLS-announce a parent Ext as live `sponsor`.
 
 War-game-first is intended. Round clones live at `warGameSquadId(parent, round)` and are eligible as **war-game hat wearers** on `WarGameRegistry`. Finish sponsor / Deploy Governance after a war-game must **not** `postInitialize` a parent Ext — the parent slot is empty, so hats `createSquadSponsor` is the live path.
 

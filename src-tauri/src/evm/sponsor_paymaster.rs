@@ -4,19 +4,41 @@
 use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::sol_types::SolValue;
 
+use super::userop::policy::policy;
+
 pub const PAYMASTER_DATA_VERSION: u8 = 1;
-/// Header length of `paymasterAndData` (paymaster + verificationGasLimit + postOpGasLimit); `paymasterData` starts here.
-pub const PAYMASTER_DATA_OFFSET: usize = 52;
-pub const BALANCE_HEADROOM_BPS: u64 = 11_500;
+
+/// Header length of `paymasterAndData`; `paymasterData` starts here.
+#[inline]
+pub fn paymaster_data_offset() -> usize {
+    policy().paymaster_data_offset
+}
+
+#[inline]
+pub fn balance_headroom_bps() -> u64 {
+    policy().pool_balance_headroom_bps
+}
+
 /// Account `verificationGasLimit` (PactoSimple7702Account validateUserOp).
-pub const DEFAULT_VERIFICATION_GAS_LIMIT: u128 = 100_000;
-/// Estimate-request ceiling for paymaster verification (OOG-safe placeholder before bundler estimate).
-pub const DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT: u128 = 500_000;
-pub const DEFAULT_POST_OP_GAS_LIMIT: u128 = 50_000;
+#[inline]
+pub fn default_verification_gas_limit() -> u128 {
+    policy().default_verification_gas_limit
+}
+
+/// Estimate-request ceiling for paymaster verification before the bundler estimate.
+#[inline]
+pub fn default_paymaster_verification_gas_limit() -> u128 {
+    policy().default_paymaster_verification_gas_limit
+}
+
+#[inline]
+pub fn default_post_op_gas_limit() -> u128 {
+    policy().default_post_op_gas_limit
+}
 
 /// Pool wei required for EntryPoint `maxCost` (115% headroom).
 pub fn required_pool_balance(max_cost_wei: U256) -> U256 {
-    max_cost_wei * U256::from(BALANCE_HEADROOM_BPS) / U256::from(10_000u64)
+    max_cost_wei * U256::from(balance_headroom_bps()) / U256::from(10_000u64)
 }
 
 /// Full ERC-4337 `paymasterAndData` (52-byte header + 128-byte ABI payload).
@@ -68,8 +90,8 @@ mod tests {
             squad_id,
             sponsor,
             member,
-            DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-            DEFAULT_POST_OP_GAS_LIMIT,
+            default_paymaster_verification_gas_limit(),
+            default_post_op_gas_limit(),
         );
         let expected = "0x11111111111111111111111111111111111111110000000000000000000000000007a1200000000000000000000000000000c3500000000000000000000000000000000000000000000000000000000000000001111111111111111111111111111111111111111111111111111111111111111100000000000000000000000022222222222222222222222222222222222222220000000000000000000000003333333333333333333333333333333333333333";
         assert_eq!(format!("{encoded:#x}"), expected);
@@ -90,20 +112,20 @@ mod tests {
             parent_squad_id,
             sponsor,
             member,
-            DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-            DEFAULT_POST_OP_GAS_LIMIT,
+            default_paymaster_verification_gas_limit(),
+            default_post_op_gas_limit(),
         );
         let game_encoded = encode_paymaster_and_data(
             paymaster,
             game_squad_id,
             sponsor,
             member,
-            DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-            DEFAULT_POST_OP_GAS_LIMIT,
+            default_paymaster_verification_gas_limit(),
+            default_post_op_gas_limit(),
         );
         assert_ne!(parent_encoded, game_encoded);
         assert_eq!(
-            &game_encoded[PAYMASTER_DATA_OFFSET + 32..PAYMASTER_DATA_OFFSET + 64],
+            &game_encoded[paymaster_data_offset() + 32..paymaster_data_offset() + 64],
             game_squad_id.as_slice()
         );
         assert_eq!(

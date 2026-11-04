@@ -12,9 +12,6 @@ use tauri::{AppHandle, Runtime};
 use super::global_paymaster::required_global_pool_balance;
 use super::global_sponsor_userop::send_sponsored_global_factory_userop;
 use super::global_sponsored_fee_ledger::{self, LANE_FACTORY};
-use super::global_userop_cost::{
-    global_userop_placeholder_max_cost_wei, GlobalUseropPlaceholderLane,
-};
 use super::gov_read::rpc_urls_or_default;
 use super::gov_sponsor_path::{select_gov_sponsor_path, GovSponsorPath};
 use super::pacto_chain_config;
@@ -28,12 +25,12 @@ use super::sponsor_preflight::{
     read_global_pool_spendable,
 };
 use super::sponsor_userop::{
-    bundler_rpc_url_with_stored, call_gas_ceiling_for_calldata, call_gas_with_margin,
-    estimate_call_gas, factory_userop_too_large_error, is_bundler_gas_limit_error,
-    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, load_stored_pimlico_key,
-    resolve_userop_eip1559_fees, roster_native_balance_wei, wait_for_user_operation_receipt,
-    FALLBACK_MAX_FEE,
+    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
+    factory_userop_too_large_error, fallback_max_fee, is_bundler_gas_limit_error,
+    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, roster_native_balance_wei,
+    wait_for_user_operation_receipt,
 };
+use super::userop::{userop_placeholder_max_cost_wei, UseropPlaceholderLane};
 use super::wallet_chain_config::WalletNetworkConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,32 +82,41 @@ pub async fn send_factory_call<R: Runtime>(
                             .await?
                             .is_some();
                     let global_ok = if eligible {
-                        let max_fee = factory_probe_max_fee(&app, &read_provider, &net.key).await;
-                        let placeholder_max_cost = global_userop_placeholder_max_cost_wei(
-                            &calldata,
-                            GlobalUseropPlaceholderLane::FactoryTarget,
-                            max_fee,
-                        );
-                        let ok = global_factory_path_ok(
-                            &read_provider,
-                            addrs,
-                            roster,
-                            factory,
-                            placeholder_max_cost,
-                        )
-                        .await?;
-                        if !ok {
-                            factory_block = Some(
-                                factory_probe_block_reason(
+                        match super::sponsor_userop::sponsored_userop_probe_max_fee(&app, &net.key)
+                            .await
+                        {
+                            Ok(max_fee) => {
+                                let placeholder_max_cost = userop_placeholder_max_cost_wei(
+                                    &calldata,
+                                    UseropPlaceholderLane::FactoryTarget,
+                                    max_fee,
+                                );
+                                let ok = global_factory_path_ok(
                                     &read_provider,
                                     addrs,
+                                    roster,
                                     factory,
                                     placeholder_max_cost,
                                 )
-                                .await,
-                            );
+                                .await?;
+                                if !ok {
+                                    factory_block = Some(
+                                        factory_probe_block_reason(
+                                            &read_provider,
+                                            addrs,
+                                            factory,
+                                            placeholder_max_cost,
+                                        )
+                                        .await,
+                                    );
+                                }
+                                ok
+                            }
+                            Err(e) => {
+                                factory_block = Some(e);
+                                false
+                            }
                         }
-                        ok
                     } else {
                         false
                     };
@@ -272,23 +278,6 @@ async fn finish_sponsored_factory_call<R: Runtime, P: Provider>(
     wait_for_transaction_receipt(provider, hash, confirm_timeout).await
 }
 
-/// Same fee the factory UserOp will submit. Do not raise a live Pimlico quote to the 30 gwei floor.
-async fn factory_probe_max_fee<R: Runtime, P: Provider>(
-    app: &AppHandle<R>,
-    provider: &P,
-    network_key: &str,
-) -> u128 {
-    let stored = load_stored_pimlico_key(app);
-    if let Ok(Some(url)) = bundler_rpc_url_with_stored(network_key, stored.as_deref()) {
-        return resolve_userop_eip1559_fees(&url, provider).await.1;
-    }
-    provider
-        .estimate_eip1559_fees()
-        .await
-        .map(|fees| fees.max_fee_per_gas.max(fees.max_priority_fee_per_gas))
-        .unwrap_or(FALLBACK_MAX_FEE)
-}
-
 async fn factory_probe_block_reason<P: Provider>(
     provider: &P,
     addrs: &pacto_chain_config::GlobalUsernameSponsorAddresses,
@@ -345,7 +334,7 @@ async fn estimate_eoa_gas_cost_wei<P: Provider>(
         .estimate_eip1559_fees()
         .await
         .map(|fees| fees.max_fee_per_gas)
-        .unwrap_or(FALLBACK_MAX_FEE);
+        .unwrap_or(fallback_max_fee());
     U256::from(gas) * U256::from(max_fee)
 }
 

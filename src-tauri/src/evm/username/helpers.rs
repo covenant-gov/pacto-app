@@ -27,8 +27,8 @@ use crate::evm::rpc::{
 };
 use crate::evm::sponsor_path::{select_username_sponsor_path, UsernameSponsorPath};
 use crate::evm::sponsor_userop::{
-    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
-    roster_native_balance_wei, wait_for_user_operation_receipt, FALLBACK_MAX_FEE,
+    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas, fallback_max_fee,
+    roster_native_balance_wei, wait_for_user_operation_receipt,
 };
 use crate::evm::wallet_chain_config::{self, WalletNetworkConfig};
 
@@ -196,7 +196,7 @@ pub async fn estimate_eoa_cost_wei<P: Provider>(
         .estimate_eip1559_fees()
         .await
         .map(|fees| fees.max_fee_per_gas)
-        .unwrap_or(FALLBACK_MAX_FEE);
+        .unwrap_or(fallback_max_fee());
     U256::from(gas) * U256::from(max_fee)
 }
 

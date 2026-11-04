@@ -1,0 +1,24 @@
+---
+description: 7702 UserOp gas and fees come from one JSON; the 4337 path is Pimlico
+alwaysApply: true
+---
+
+# UserOp bundler policy
+
+Bundler caps, pads, factory ceilings, fee last-resort, and pool headroom are defined only in `src/lib/evm/userop-bundler-policy.json`. Rust and TypeScript both read that file.
+
+Lanes and the mandatory pipeline: `docs/wallet/SPONSORED_USEROP_7702.md`.
+
+## Do
+
+- Change the JSON when a gas or fee knob must move.
+- Require Pimlico pricing for route and eligibility probes; mark the sponsored route unavailable when pricing fails.
+- Price UserOp estimate and send through Pimlico (`eth_estimateUserOperationGas`, `eth_sendUserOperation`).
+- Use the 1 gwei tip and 30 gwei max fee only for a final send when `pimlico_getUserOperationGasPrice` fails.
+- Run final deposit and pool safety checks with the finalized gas limits and actual selected send fee, including fallback.
+
+## Do not
+
+- Add a second literal for those knobs in Rust or TypeScript.
+- Source UserOp fees from Alchemy EIP-1559, or clamp an Alchemy quote to 30 gwei.
+- Use fallback pricing for route or eligibility probes.

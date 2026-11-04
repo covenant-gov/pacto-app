@@ -310,18 +310,16 @@ mod tests {
 
     #[test]
     fn factory_placeholder_at_pimlico_fee_fits_pool_the_30_gwei_floor_rejects() {
-        use super::super::global_userop_cost::{
-            global_userop_placeholder_max_cost_wei, GlobalUseropPlaceholderLane,
-        };
+        use super::super::userop::{userop_placeholder_max_cost_wei, UseropPlaceholderLane};
         let call = [0xab, 0xcd, 0xef, 0x01];
-        let floor = global_userop_placeholder_max_cost_wei(
+        let floor = userop_placeholder_max_cost_wei(
             &call,
-            GlobalUseropPlaceholderLane::FactoryTarget,
+            UseropPlaceholderLane::FactoryTarget,
             30_000_000_000,
         );
-        let pimlico = global_userop_placeholder_max_cost_wei(
+        let pimlico = userop_placeholder_max_cost_wei(
             &call,
-            GlobalUseropPlaceholderLane::FactoryTarget,
+            UseropPlaceholderLane::FactoryTarget,
             1_200_000_000,
         );
         // Spendable global pool when a 0-ETH factory deploy was rejected.

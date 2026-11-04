@@ -19,7 +19,11 @@ use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
 use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
     captainVoteCall, crewVoteCall, executeCall, proposeCall,
 };
+use super::global_sponsor_userop::send_sponsored_global_gov_userop;
+use super::global_sponsored_fee_ledger::{self, LANE_GOV_MODULE};
 use super::gov_read::rpc_urls_or_default;
+use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
+use super::pacto_chain_config;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
@@ -27,20 +31,16 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::global_sponsored_fee_ledger::{self, LANE_GOV_MODULE};
-use super::global_sponsor_userop::send_sponsored_global_gov_userop;
-use super::global_userop_cost::{global_userop_placeholder_max_cost, GlobalUseropPlaceholderLane};
-use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
-use super::pacto_chain_config;
 use super::sponsor_preflight::{
     global_gov_module_path_ok, read_eligible_member, squad_sponsor_path_ok,
 };
 use super::sponsor_userop::{
-    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas,
-    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
-    resolve_sponsored_squad_id, roster_native_balance_wei, send_sponsored_gov_userop,
-    wait_for_user_operation_receipt, SponsoredUserOpSend, FALLBACK_MAX_FEE,
+    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas, fallback_max_fee,
+    is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, resolve_sponsored_squad_id,
+    roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
+    SponsoredUserOpSend,
 };
+use super::userop::{userop_placeholder_max_cost_wei, UseropPlaceholderLane};
 use super::wallet_chain_config;
 use crate::db;
 
@@ -119,42 +119,58 @@ pub async fn send_gov_module_call<R: Runtime>(
         Err(_) => false,
     };
 
-    let squad_path_ok = match pacto_chain_config::squad_sponsor_deploy_addresses(&net.key) {
-        Ok(sp) => {
-            let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
-                .map_err(|e| wallet_err_json("WARGAME_READ", e, None))?;
-            let squad_id = resolve_sponsored_squad_id(pid, to, wargame_payload.as_deref());
-            squad_sponsor_path_ok(
-                &read_provider,
-                sp.squad_sponsor_factory,
-                sp.pacto_sponsor_paymaster,
-                squad_id,
-                signer.address(),
-                required,
-            )
-            .await?
+    let squad_addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key);
+    let squad_probe_candidate = has_sponsor_infra && squad_addrs.is_ok();
+    let global_probe_candidate = eligible_member && global_addrs.is_ok();
+    let sponsored_route_possible = squad_probe_candidate || global_probe_candidate;
+    let probe_max_costs = if sponsored_route_possible {
+        match super::sponsor_userop::sponsored_userop_probe_max_fee(&app, &net.key).await {
+            Ok(max_fee) => Some(gov_probe_max_costs(&calldata, max_fee)),
+            Err(error) => {
+                if let Some(error) =
+                    sponsored_probe_failure_error(&error, eoa_can_pay, sponsored_route_possible)
+                {
+                    return Err(error);
+                }
+                None
+            }
         }
-        Err(_) => false,
+    } else {
+        None
     };
 
-    let global_tophat_ok = match global_addrs.as_ref() {
-        Ok(addrs) => {
-            let placeholder_max_cost = global_userop_placeholder_max_cost(
-                &read_provider,
-                &calldata,
-                GlobalUseropPlaceholderLane::GovModule,
-            )
-            .await;
-            global_gov_module_path_ok(
-                &read_provider,
-                addrs,
-                signer.address(),
-                to,
-                placeholder_max_cost,
-            )
-            .await?
+    let squad_path_ok = if squad_probe_candidate {
+        match (squad_addrs.as_ref(), probe_max_costs) {
+            (Ok(sp), Some(costs)) => {
+                let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
+                    .map_err(|e| wallet_err_json("WARGAME_READ", e, None))?;
+                let squad_id = resolve_sponsored_squad_id(pid, to, wargame_payload.as_deref());
+                squad_sponsor_path_ok(
+                    &read_provider,
+                    sp.squad_sponsor_factory,
+                    sp.pacto_sponsor_paymaster,
+                    squad_id,
+                    signer.address(),
+                    costs.squad,
+                )
+                .await?
+            }
+            _ => false,
         }
-        Err(_) => false,
+    } else {
+        false
+    };
+
+    let global_tophat_ok = if global_probe_candidate {
+        match (global_addrs.as_ref(), probe_max_costs) {
+            (Ok(addrs), Some(costs)) => {
+                global_gov_module_path_ok(&read_provider, addrs, signer.address(), to, costs.global)
+                    .await?
+            }
+            _ => false,
+        }
+    } else {
+        false
     };
 
     let path_order = gov_path_attempt_order(
@@ -306,6 +322,41 @@ enum SponsoredGovFeeLedger {
     Global,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GovProbeMaxCosts {
+    squad: U256,
+    global: U256,
+}
+
+fn gov_probe_max_costs(calldata: &[u8], max_fee: u128) -> GovProbeMaxCosts {
+    GovProbeMaxCosts {
+        squad: userop_placeholder_max_cost_wei(calldata, UseropPlaceholderLane::Squad, max_fee),
+        global: userop_placeholder_max_cost_wei(
+            calldata,
+            UseropPlaceholderLane::GovModule,
+            max_fee,
+        ),
+    }
+}
+
+fn sponsored_probe_failure_error(
+    probe_error: &str,
+    eoa_can_pay: bool,
+    sponsored_route_possible: bool,
+) -> Option<String> {
+    if eoa_can_pay || !sponsored_route_possible {
+        return None;
+    }
+    let error = crate::evm::wallet_security::redact_urls_in_text(probe_error);
+    Some(wallet_err_json(
+        "SPONSOR_PATH_UNAVAILABLE",
+        format!(
+            "Roster key cannot cover this write and strict Pimlico pricing failed, so the configured sponsored route could not be evaluated: {error}"
+        ),
+        None,
+    ))
+}
+
 async fn finish_sponsored_gov_write<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
@@ -396,7 +447,7 @@ async fn estimate_eoa_cost_wei<P: Provider>(
         .estimate_eip1559_fees()
         .await
         .map(|fees| fees.max_fee_per_gas)
-        .unwrap_or(FALLBACK_MAX_FEE);
+        .unwrap_or(fallback_max_fee());
     U256::from(gas) * U256::from(max_fee)
 }
 
@@ -553,11 +604,15 @@ pub fn explicit_parent_id(parent_id: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        explicit_parent_id, gov_call_action_label, wallet_error_code,
+        explicit_parent_id, gov_call_action_label, gov_probe_max_costs,
+        sponsored_probe_failure_error, wallet_error_code,
     };
     use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::castVoteCall;
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::bootstrapCrewCall;
-    use crate::evm::sponsor_userop::{is_hard_sponsor_preflight_error, is_soft_sponsor_config_error};
+    use crate::evm::sponsor_userop::{
+        is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
+    };
+    use crate::evm::userop::{userop_placeholder_max_cost_wei, UseropPlaceholderLane};
     use alloy::primitives::U256;
     use alloy::sol_types::SolCall;
 
@@ -598,6 +653,38 @@ mod tests {
         assert!(!is_soft_sponsor_config_error(err));
         assert_eq!(wallet_error_code("not json"), None);
         assert_eq!(wallet_error_code(r#"{"code":7}"#), None);
+    }
+
+    #[test]
+    fn gov_probe_costs_match_each_sponsor_lane() {
+        let calldata = [0xde, 0xad, 0xbe, 0xef];
+        let max_fee = 1_000_000_000;
+        let costs = gov_probe_max_costs(&calldata, max_fee);
+
+        assert_eq!(
+            costs.squad,
+            userop_placeholder_max_cost_wei(&calldata, UseropPlaceholderLane::Squad, max_fee)
+        );
+        assert_eq!(
+            costs.global,
+            userop_placeholder_max_cost_wei(&calldata, UseropPlaceholderLane::GovModule, max_fee)
+        );
+        assert_ne!(costs.squad, costs.global);
+    }
+
+    #[test]
+    fn probe_failure_only_surfaces_without_eoa_for_a_sponsored_candidate() {
+        let error = "pricing failed at https://bundler.example/v2/key?apiKey=secret";
+        let selected = sponsored_probe_failure_error(error, false, true).expect("error");
+        assert_eq!(
+            wallet_error_code(&selected).as_deref(),
+            Some("SPONSOR_PATH_UNAVAILABLE")
+        );
+        assert!(selected.contains("strict Pimlico pricing failed"));
+        assert!(!selected.contains("secret"));
+
+        assert!(sponsored_probe_failure_error(error, true, true).is_none());
+        assert!(sponsored_probe_failure_error(error, false, false).is_none());
     }
 
     #[test]

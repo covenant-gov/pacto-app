@@ -29,7 +29,7 @@ Separate from the **username claim** path above. Applies when the roster EOA is 
 
 **Policy surface:** username actions use selector allowlists (`policy = 0` on the global paymaster). Gov-module writes use `moduleToTopHat` + `isTopHatSponsored`. Factory deploys use `isContractAllowed(factory)` (catalog: `PACTO_FACTORY_ACTIONS`).
 
-Zero-ETH onboarding smoke: [OPERATOR_SMOKE.md §11](./OPERATOR_SMOKE.md#11-zero-eth-username-onboarding-global-tophat). Squad pool precedence after deploy: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). UserOp debug: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
+Zero-ETH onboarding smoke: [OPERATOR_SMOKE.md §11](./OPERATOR_SMOKE.md#11-zero-eth-username-onboarding-global-tophat). Squad pool precedence after deploy: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). UserOp transport: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
 
 **Spend ledger:** successful global UserOps write to `global_sponsored_fee_usage` (`list_global_sponsored_fee_usage`, account-scoped). Squad pool spend stays in `squad_sponsored_fee_usage` — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md#sponsored-fee-ledger).
 
@@ -46,7 +46,7 @@ Shared binding tuple: `(pubkey, npubHash, evmAddress, name, nonce, issuedAt, sal
 
 Golden digests: `src/lib/evm/sponsor/claim-link.golden.json`.
 
-Sponsored UserOp / EIP-7702 debug order: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
+Sponsored UserOp transport: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
 
 ## Kind 31337 tags
 
@@ -89,6 +89,6 @@ Runnable checklist: **[OPERATOR_SMOKE.md §10](./OPERATOR_SMOKE.md#10-username-n
 
 - [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §10–§11
 - [PROTOCOL_ADDRESS_BOOK.md](./PROTOCOL_ADDRESS_BOOK.md)
-- [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) — L0–L4 method; fund matrix (GlobalSponsorPool empty is rotation-only)
+- [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) — transport spec; fund matrix (GlobalSponsorPool empty is rotation-only)
 - [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) — squad paymaster path (not used for username)
 - Upstream [DESKTOP_CLIENT_INTEGRATION.md](https://github.com/covenant-gov/pacto-username-nft/blob/main/docs/DESKTOP_CLIENT_INTEGRATION.md)
