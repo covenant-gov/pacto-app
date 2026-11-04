@@ -2,7 +2,12 @@
   import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import backIcon from '../../icons/chevron-double-left.svg';
-  import { setSettingsSectionCollapsed, settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
+  import {
+    setSettingsSectionCollapsed,
+    settingsSectionCollapsed,
+    type SettingsSectionId,
+  } from '../../lib/settings/settings-section-collapse';
+  import { usernameState } from '../../stores/username';
 
   let { onBack, children }: { onBack: () => void; children: Snippet } = $props();
 
@@ -10,20 +15,27 @@
     { id: 'settings-profile', labelKey: 'nav.settings.sections.profile' },
     { id: 'settings-nostr', labelKey: 'nav.settings.sections.nostr' },
     { id: 'settings-evm', labelKey: 'nav.settings.sections.evm' },
+    { id: 'settings-evm-dash-gas', labelKey: 'nav.settings.sections.evmDashGas' },
     { id: 'settings-app', labelKey: 'nav.settings.sections.app' },
     { id: 'settings-notifications', labelKey: 'nav.settings.sections.notifications' },
     { id: 'settings-commons', labelKey: 'nav.settings.sections.commons' },
     { id: 'settings-experimental', labelKey: 'nav.settings.sections.experimental' },
     { id: 'settings-dangerzone', labelKey: 'nav.settings.sections.dangerzone' },
-  ] as const;
+  ] as const satisfies ReadonlyArray<{ id: SettingsSectionId; labelKey: string }>;
 
   const SCROLL_MARKER_OFFSET_PX = 48;
   const SCROLL_BOTTOM_TOLERANCE_PX = 8;
 
-  let activeSectionId: (typeof SECTION_LINKS)[number]['id'] = $state(SECTION_LINKS[0].id);
+  let visibleSectionLinks = $derived(
+    SECTION_LINKS.filter(
+      (link) => link.id !== 'settings-evm-dash-gas' || !!$usernameState.cached,
+    ),
+  );
+
+  let activeSectionId: SettingsSectionId = $state(SECTION_LINKS[0].id);
   let settingsMainEl: HTMLElement | undefined;
 
-  function openSection(sectionId: (typeof SECTION_LINKS)[number]['id']) {
+  function openSection(sectionId: SettingsSectionId) {
     setSettingsSectionCollapsed(sectionId, false);
   }
 
@@ -35,14 +47,16 @@
       scrollRoot.scrollTop + scrollRoot.clientHeight >=
       scrollRoot.scrollHeight - SCROLL_BOTTOM_TOLERANCE_PX
     ) {
-      activeSectionId = SECTION_LINKS[SECTION_LINKS.length - 1].id;
+      const links = visibleSectionLinks;
+      activeSectionId = links[links.length - 1]?.id ?? SECTION_LINKS[0].id;
       return;
     }
 
     const markerY = scrollRoot.getBoundingClientRect().top + SCROLL_MARKER_OFFSET_PX;
-    let next: (typeof SECTION_LINKS)[number]['id'] = SECTION_LINKS[0].id;
+    let next: SettingsSectionId = SECTION_LINKS[0].id;
+    const links = visibleSectionLinks;
 
-    for (const link of SECTION_LINKS) {
+    for (const link of links) {
       const el = document.getElementById(link.id);
       if (!el) continue;
       if (el.getBoundingClientRect().top <= markerY) {
@@ -93,7 +107,7 @@
   <div class="settings-body">
     <nav class="settings-sidebar" aria-label={$t('nav.settings.sectionsAria')}>
       <ul class="settings-sidebar-list">
-        {#each SECTION_LINKS as link (link.id)}
+        {#each visibleSectionLinks as link (link.id)}
           <li>
             <a
               class="settings-sidebar-link"
