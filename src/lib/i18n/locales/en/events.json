@@ -80,7 +80,7 @@
 	"events.detail.rsvpYours": "Your answer",
 	"events.detail.responsesHeading": "Responses",
 	"events.detail.noResponses": "No responses yet.",
-	"events.detail.unknownMember": "A member",
+	"events.detail.you": "You",
 	"events.detail.editAria": "Edit event",
 	"events.detail.cancelEvent": "Cancel event",
 	"events.detail.cancelConfirm": "Cancel this event for everyone? It stays listed as cancelled and reminders stop.",

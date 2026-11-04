@@ -49,19 +49,21 @@ describe('rsvp counts', () => {
 });
 
 describe('memberDisplayLabel', () => {
-  it('renders a fixture npub as its member display name', () => {
-    const label = memberDisplayLabel(profile(ALICE, { name: 'Alice' }), 'A member');
-    expect(label).toBe('Alice');
-    expect(label).not.toContain('npub1');
+  it('renders a named member by display name, preferring the local nickname', () => {
+    expect(memberDisplayLabel(ALICE, profile(ALICE, { name: 'Alice' }), BOB, 'You')).toBe('Alice');
+    expect(memberDisplayLabel(ALICE, profile(ALICE, { name: 'Alice', nickname: 'Ali' }), BOB, 'You')).toBe('Ali');
   });
 
-  it('prefers the local nickname', () => {
-    expect(memberDisplayLabel(profile(ALICE, { name: 'Alice', nickname: 'Ali' }), 'A member')).toBe('Ali');
+  it('labels the viewer as You', () => {
+    expect(memberDisplayLabel(ALICE, profile(ALICE, { name: 'Alice' }), ALICE, 'You')).toBe('You');
   });
 
-  it('never falls back to the npub', () => {
-    expect(memberDisplayLabel(profile(BOB, {}), 'A member')).toBe('A member');
-    expect(memberDisplayLabel(undefined, 'A member')).toBe('A member');
+  it('keeps unnamed members distinguishable with the short npub', () => {
+    const bob = memberDisplayLabel(BOB, profile(BOB, {}), ALICE, 'You');
+    const cara = memberDisplayLabel(CARA, undefined, ALICE, 'You');
+    expect(bob).toBe(BOB.slice(0, 16));
+    expect(cara).toBe(CARA.slice(0, 16));
+    expect(bob).not.toBe(cara);
   });
 });
 

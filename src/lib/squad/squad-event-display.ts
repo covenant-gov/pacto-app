@@ -31,11 +31,15 @@ export function rsvpMembersByStatus(rsvps: readonly SquadEventRsvpDto[]): Record
   return out;
 }
 
-/** Member display name; `unknownLabel` instead of any npub-derived fallback. */
-export function memberDisplayLabel(profile: NostrProfile | null | undefined, unknownLabel: string): string {
-  if (!profile) return unknownLabel;
-  const name = getProfileDisplayName(profile).trim();
-  return name && !name.startsWith('npub1') ? name : unknownLabel;
+/** "You" for the viewer; otherwise the app-wide profile display (nickname, name, then short npub). */
+export function memberDisplayLabel(
+  npub: string,
+  profile: NostrProfile | null | undefined,
+  selfNpub: string | null | undefined,
+  youLabel: string,
+): string {
+  if (selfNpub && npub === selfNpub) return youLabel;
+  return profile ? getProfileDisplayName(profile) : npub.slice(0, 16);
 }
 
 export function viewerTimeZone(): string {

@@ -80,7 +80,7 @@
 	"events.detail.rsvpYours": "Tu respuesta",
 	"events.detail.responsesHeading": "Respuestas",
 	"events.detail.noResponses": "Aún no hay respuestas.",
-	"events.detail.unknownMember": "Un miembro",
+	"events.detail.you": "Tú",
 	"events.detail.editAria": "Editar evento",
 	"events.detail.cancelEvent": "Cancelar evento",
 	"events.detail.cancelConfirm": "¿Cancelar este evento para todos? Seguirá en la lista como cancelado y los recordatorios se detendrán.",

@@ -5,6 +5,7 @@
   import EditIconButton from '../ui/EditIconButton.svelte';
   import { hydrateCatchUp } from '../../stores/catch-up';
   import { profiles, loadProfile } from '../../stores/profiles';
+  import { currentUser } from '../../stores/auth-session';
   import { squads } from '../../stores/squads';
   import { eventChannelName } from '../../lib/squad/squad-event-form';
   import {
@@ -54,7 +55,8 @@
   const zoneStartText = $derived(formatEventZoneStart(event, timeOpts));
   const counts = $derived(rsvpCounts(event.rsvps));
   const membersByStatus = $derived(rsvpMembersByStatus(event.rsvps));
-  const unknownMemberLabel = $derived($t('events.detail.unknownMember'));
+  const youLabel = $derived($t('events.detail.you'));
+  const selfNpub = $derived($currentUser?.npub);
   const channelName = $derived(
     eventChannelName($squads.find((s) => s.id === parentId)?.channels ?? [], event.channelId),
   );
@@ -264,7 +266,7 @@
               <span class="event-detail-attendee-label">{$t(RSVP_LABEL_KEYS[status])} · {counts[status]}</span>
               <ul class="event-detail-attendees" role="list">
                 {#each membersByStatus[status] as npub (npub)}
-                  <li>{memberDisplayLabel($profiles[npub], unknownMemberLabel)}</li>
+                  <li>{memberDisplayLabel(npub, $profiles[npub], selfNpub, youLabel)}</li>
                 {/each}
               </ul>
             </div>
@@ -340,7 +342,7 @@
     <p class="muted event-detail-small event-detail-changed">
       {$t('events.detail.lastChanged', {
         values: {
-          name: memberDisplayLabel($profiles[event.updatedByNpub], unknownMemberLabel),
+          name: memberDisplayLabel(event.updatedByNpub, $profiles[event.updatedByNpub], selfNpub, youLabel),
           time: formatEventTimestampMs(event.updatedAtMs, timeOpts),
         },
       })}
