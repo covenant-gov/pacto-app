@@ -25,6 +25,13 @@ const FIXTURES: [string, string, string, boolean][] = [
   ],
   ['https://example.com/a?token=', 'https://example.com/a?token=', 'https://example.com/a', false],
   ['https://example.com/a', 'https://example.com/a', 'https://example.com/a', false],
+  [
+    'https://example.com/a?to%6Ben=abc&x=1',
+    'https://example.com/a?to%6Ben=••••&x=1',
+    'https://example.com/a?x=1',
+    true,
+  ],
+  ['https://example.com/a?token%zz=abc', 'https://example.com/a?token%zz=abc', 'https://example.com/a?token%zz=abc', false],
 ];
 
 describe('shared mask fixtures', () => {

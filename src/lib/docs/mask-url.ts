@@ -20,8 +20,10 @@ export const SECRET_QUERY_NAMES = [
 const SECRET_NAMES = new Set<string>(SECRET_QUERY_NAMES);
 const MASK = '••••';
 
+/** Matches on the percent-decoded name; invalid escapes stay literal, as in URL query parsing. */
 export function isSecretQueryName(name: string): boolean {
-  return SECRET_NAMES.has(name.toLowerCase());
+  const decoded = name.replace(/%([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+  return SECRET_NAMES.has(decoded.toLowerCase());
 }
 
 /** Absolute http or https URL. */

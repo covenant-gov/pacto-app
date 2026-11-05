@@ -95,10 +95,33 @@ fn pair(part: &str) -> (&str, &str) {
     part.split_once('=').unwrap_or((part, ""))
 }
 
+/// Percent-decoded bytes of a query name; invalid escapes stay literal, as in URL query parsing.
+fn decoded_name(name: &str) -> impl Iterator<Item = u8> + '_ {
+    let raw = name.as_bytes();
+    let mut i = 0;
+    std::iter::from_fn(move || {
+        let b = *raw.get(i)?;
+        if b == b'%' {
+            if let Some([hi, lo]) = raw.get(i + 1..i + 3) {
+                if let (Some(hi), Some(lo)) =
+                    ((*hi as char).to_digit(16), (*lo as char).to_digit(16))
+                {
+                    i += 3;
+                    return Some((hi * 16 + lo) as u8);
+                }
+            }
+        }
+        i += 1;
+        Some(b)
+    })
+}
+
 fn is_secret_name(name: &str) -> bool {
-    SECRET_QUERY_NAMES
-        .iter()
-        .any(|s| s.eq_ignore_ascii_case(name))
+    SECRET_QUERY_NAMES.iter().any(|s| {
+        decoded_name(name)
+            .map(|b| b.to_ascii_lowercase())
+            .eq(s.bytes())
+    })
 }
 
 fn host_matches(host: &str, rule: &str) -> bool {
@@ -258,6 +281,18 @@ mod tests {
             "https://example.com/a",
             false,
         ),
+        (
+            "https://example.com/a?to%6Ben=abc&x=1",
+            "https://example.com/a?to%6Ben=••••&x=1",
+            "https://example.com/a?x=1",
+            true,
+        ),
+        (
+            "https://example.com/a?token%zz=abc",
+            "https://example.com/a?token%zz=abc",
+            "https://example.com/a?token%zz=abc",
+            false,
+        ),
     ];
 
     #[test]
@@ -324,12 +359,5 @@ mod tests {
         assert_eq!(mask_doc_url(url), url);
         assert!(!has_keyed_secret(url));
         assert_eq!(preview_candidate_url(url), "https://example.com/a?x=1");
-    }
-
-    #[test]
-    fn encoded_names_are_not_decoded() {
-        let url = "https://example.com/a?to%6Ben=abc";
-        assert_eq!(mask_doc_url(url), url);
-        assert!(!has_keyed_secret(url));
     }
 }
