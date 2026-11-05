@@ -6,6 +6,7 @@
   import { partitionHubSidebarChannels } from '../../lib/parent-navbar';
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
+    DOCS_CHANNEL_NAME,
     EVENTS_CHANNEL_NAME,
     POLLS_CHANNEL_NAME,
   } from '../../lib/squad/hub-channel-names';
@@ -24,6 +25,11 @@
     refreshUnseenEventCardsForParent,
     unseenEventCardCountByParentId,
   } from '../../stores/events-hub-alerts';
+  import {
+    markDocsChannelSeen,
+    refreshUnseenDocCardsForParent,
+    unseenDocCardCountByParentId,
+  } from '../../stores/docs-hub-alerts';
 
   /** Channel shape for list items (name, groupId, order). Re-exported via type. */
   interface ParentChannel {
@@ -143,12 +149,18 @@
     } else {
       refreshUnseenEventCardsForParent(pid, messages);
     }
+    if (activeView === 'hub' && activeHubChannelName === DOCS_CHANNEL_NAME) {
+      markDocsChannelSeen(pid, messages);
+    } else {
+      refreshUnseenDocCardsForParent(pid, messages);
+    }
   });
 
   let hubAlertByChannelName = $derived.by(() => {
     const counts = $unreadCountsByChat;
     const pollAlerts = $unseenPollCreateCountByParentId;
     const eventAlerts = $unseenEventCardCountByParentId;
+    const docAlerts = $unseenDocCardCountByParentId;
     const pid = parentId.trim();
     const out: Record<string, number> = {};
     for (const channel of [...defaultHubChannels, ...customChannels]) {
@@ -156,6 +168,8 @@
         out[channel.name] = pid ? (pollAlerts[pid] ?? 0) : 0;
       } else if (channel.name === EVENTS_CHANNEL_NAME) {
         out[channel.name] = pid ? (eventAlerts[pid] ?? 0) : 0;
+      } else if (channel.name === DOCS_CHANNEL_NAME) {
+        out[channel.name] = pid ? (docAlerts[pid] ?? 0) : 0;
       } else {
         out[channel.name] = counts[channel.groupId] ?? 0;
       }

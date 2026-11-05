@@ -4367,6 +4367,10 @@ fn parse_http_url(raw: &str) -> Option<HttpUrlParts<'_>> {
 fn fragments_compatible(stored: Option<&str>, candidate: Option<&str>) -> bool {
     let stored = stored.unwrap_or("");
     let candidate = candidate.unwrap_or("");
+    // Dropping the whole fragment is always a strip.
+    if candidate.is_empty() {
+        return true;
+    }
     let stored_form = stored.contains('=');
     let candidate_form = candidate.contains('=');
     if !stored_form && !candidate_form {
@@ -4382,6 +4386,7 @@ fn fragments_compatible(stored: Option<&str>, candidate: Option<&str>) -> bool {
 }
 
 /// Keep a caller URL only when it is a stored https URL with query or fragment pairs removed.
+/// The fetch never carries the fragment or a secret-named query pair.
 pub(crate) fn select_preview_fetch_candidates(
     stored_text: &str,
     requested: Option<&[String]>,
@@ -4434,8 +4439,8 @@ pub(crate) fn select_preview_fetch_candidates(
         }
         if let Some((_, stored_url)) = best {
             out.push(PreviewFetchCandidate {
-                fetch_url: candidate_url.clone(),
-                stored_url: stored_url.to_string(),
+                fetch_url: crate::url_secrets::strip_fetch_secrets(candidate_url),
+                stored_url: crate::url_secrets::strip_fetch_secrets(stored_url),
             });
         }
     }
@@ -5181,5 +5186,43 @@ mod preview_fetch_candidate_tests {
             preview_og_url_fallback(Some(STORED.to_string()), STORED, STORED),
             Some(STORED.to_string())
         );
+    }
+
+    #[test]
+    fn fetch_drops_fragment_and_secret_query_values() {
+        let stored = "see https://cryptpad.fr/pad/#/2/pad/edit/secret and https://example.com/a?token=abc&x=1";
+        let raw = select_preview_fetch_candidates(
+            stored,
+            Some(&[
+                "https://cryptpad.fr/pad/#/2/pad/edit/secret".to_string(),
+                "https://example.com/a?token=abc&x=1".to_string(),
+            ]),
+        );
+        let fetched: Vec<&str> = raw.iter().map(|c| c.fetch_url.as_str()).collect();
+        assert_eq!(
+            fetched,
+            ["https://cryptpad.fr/pad/", "https://example.com/a?x=1"]
+        );
+        for c in &raw {
+            assert!(!c.stored_url.contains('#') && !c.stored_url.contains("token"));
+        }
+    }
+
+    #[test]
+    fn fetch_accepts_a_caller_that_already_dropped_the_fragment() {
+        let stored = "https://cryptpad.fr/pad/#/2/pad/edit/secret";
+        let got = select_preview_fetch_candidates(
+            stored,
+            Some(&["https://cryptpad.fr/pad/".to_string()]),
+        );
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].fetch_url, "https://cryptpad.fr/pad/");
+        assert_eq!(got[0].stored_url, "https://cryptpad.fr/pad/");
+    }
+
+    #[test]
+    fn fetch_keeps_trackers_the_caller_kept() {
+        let got = only(STORED);
+        assert_eq!(got[0].fetch_url, STORED);
     }
 }

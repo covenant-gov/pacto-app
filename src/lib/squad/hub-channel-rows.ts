@@ -1,5 +1,6 @@
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  DOCS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
 } from './hub-channel-names';
@@ -18,7 +19,7 @@ const OBSOLETE_DEFAULT_HUB_NAMES = new Set([
   'dashboard',
 ]);
 
-const DEFAULT_HUB_MLS_NAMES = [ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME, EVENTS_CHANNEL_NAME];
+const DEFAULT_HUB_MLS_NAMES = [ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME, EVENTS_CHANNEL_NAME, DOCS_CHANNEL_NAME];
 
 /** Default hub MLS rows for an announcements `groupId` (single-group default). */
 export function defaultChannelRowsForGroupId(groupId: string): HubChannelRow[] {
@@ -26,7 +27,7 @@ export function defaultChannelRowsForGroupId(groupId: string): HubChannelRow[] {
 }
 
 /**
- * Backfill missing `#polls` / `#events` and strip obsolete hub rows when the parent uses the
+ * Backfill missing `#polls` / `#events` / `#docs` and strip obsolete hub rows when the parent uses the
  * single-group default MLS scope. Custom channels keep their relative order after the defaults.
  */
 export function ensureDefaultHubChannelRows(channels: HubChannelRow[]): HubChannelRow[] {

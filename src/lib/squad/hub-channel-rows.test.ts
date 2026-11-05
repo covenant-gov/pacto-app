@@ -2,22 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { defaultChannelRowsForGroupId, ensureDefaultHubChannelRows } from './hub-channel-rows';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  DOCS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
 } from './hub-channel-names';
 
 describe('defaultChannelRowsForGroupId', () => {
-  it('returns announcements, polls, events on one group id', () => {
+  it('returns announcements, polls, events, docs on one group id', () => {
     expect(defaultChannelRowsForGroupId('g')).toEqual([
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
       { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 1 },
       { name: EVENTS_CHANNEL_NAME, groupId: 'g', order: 2 },
+      { name: DOCS_CHANNEL_NAME, groupId: 'g', order: 3 },
     ]);
   });
 });
 
 describe('ensureDefaultHubChannelRows', () => {
-  it('backfills #events beside #polls and keeps custom channels after the defaults', () => {
+  it('backfills #events and #docs beside #polls and keeps custom channels after the defaults', () => {
     const persisted = [
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
       { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 1 },
@@ -29,18 +31,35 @@ describe('ensureDefaultHubChannelRows', () => {
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
       { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 1 },
       { name: EVENTS_CHANNEL_NAME, groupId: 'g', order: 2 },
-      { name: 'ops', groupId: 'g-ops', order: 3 },
-      { name: 'secret', groupId: 'g-sec', order: 4 },
+      { name: DOCS_CHANNEL_NAME, groupId: 'g', order: 3 },
+      { name: 'ops', groupId: 'g-ops', order: 4 },
+      { name: 'secret', groupId: 'g-sec', order: 5 },
     ]);
   });
 
-  it('backfills polls and events when only announcements was persisted', () => {
+  it('backfills #docs when a parent persisted rows before docs existed', () => {
+    const persisted = [
+      { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
+      { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 1 },
+      { name: EVENTS_CHANNEL_NAME, groupId: 'g', order: 2 },
+      { name: 'ops', groupId: 'g-ops', order: 3 },
+    ];
+    expect(ensureDefaultHubChannelRows(persisted).map((c) => c.name)).toEqual([
+      ANNOUNCEMENTS_CHANNEL_NAME,
+      POLLS_CHANNEL_NAME,
+      EVENTS_CHANNEL_NAME,
+      DOCS_CHANNEL_NAME,
+      'ops',
+    ]);
+  });
+
+  it('backfills polls, events, and docs when only announcements was persisted', () => {
     const fixed = ensureDefaultHubChannelRows([{ name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 }]);
     expect(fixed).toEqual(defaultChannelRowsForGroupId('g'));
   });
 
   it('leaves rows unchanged when every default exists', () => {
-    const full = [...defaultChannelRowsForGroupId('g'), { name: 'ops', groupId: 'g-ops', order: 3 }];
+    const full = [...defaultChannelRowsForGroupId('g'), { name: 'ops', groupId: 'g-ops', order: 4 }];
     expect(ensureDefaultHubChannelRows(full)).toBe(full);
   });
 

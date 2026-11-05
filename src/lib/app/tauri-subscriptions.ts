@@ -60,6 +60,8 @@ import {
   type SquadEventReplicaUpdated,
 } from '../api/squad-events';
 import { bumpSquadEventReplicaNonce } from '../../stores/events-hub-alerts';
+import { SQUAD_DOC_REPLICA_UPDATED, type SquadDocReplicaUpdated } from '../api/squad-docs';
+import { bumpSquadDocReplicaNonce, reloadSquadDocAddPolicy } from '../../stores/docs-hub-alerts';
 import { hydrateCatchUp } from '../../stores/catch-up';
 import { showSquadEventReminderToast } from './squad-event-reminder-toast';
 
@@ -418,6 +420,17 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
   register(unsubs, SQUAD_EVENT_REPLICA_UPDATED, (event) => {
     const pid = (event.payload as SquadEventReplicaUpdated | undefined)?.parentId;
     if (typeof pid === 'string') bumpSquadEventReplicaNonce(pid);
+  });
+
+  register(unsubs, SQUAD_DOC_REPLICA_UPDATED, (event) => {
+    const pid = (event.payload as SquadDocReplicaUpdated | undefined)?.parentId;
+    if (typeof pid === 'string') bumpSquadDocReplicaNonce(pid);
+  });
+
+  register(unsubs, 'squad_content_policy_updated', (event) => {
+    const payload = event.payload;
+    const pid = payload && typeof payload === 'object' && 'parentId' in payload ? payload.parentId : null;
+    if (typeof pid === 'string') reloadSquadDocAddPolicy(pid);
   });
 
   register(unsubs, 'commons_broadcasts_changed', () => applyLiveCommonsChange());

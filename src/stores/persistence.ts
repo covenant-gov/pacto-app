@@ -68,6 +68,7 @@ import { loadBiometricUnlockPreference } from './biometric-unlock';
 import { loadMlsHistoryWelcome } from './mls-history-welcome';
 import { loadLastSeenPollCreatedAt } from './polls-hub-alerts';
 import { loadLastSeenEventCardAt } from './events-hub-alerts';
+import { loadLastSeenDocCardAt } from './docs-hub-alerts';
 
 export {
   currentNpubForPersistence,
@@ -182,6 +183,7 @@ export function loadAccountState(npub: string): void {
   loadBiometricUnlockPreference(npub);
   loadLastSeenPollCreatedAt(npub);
   loadLastSeenEventCardAt(npub);
+  loadLastSeenDocCardAt(npub);
   loadDeferredSquadRosterKeyParentIds();
   hydrateWalletSummaryCacheFromDisk(npub);
   hydrateTreasurySafesCacheFromDisk(npub);

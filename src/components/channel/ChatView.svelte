@@ -19,6 +19,15 @@
   import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
   import DashboardPollsPanel from '../parent/DashboardPollsPanel.svelte';
   import SquadEventsPanel from '../parent/SquadEventsPanel.svelte';
+  import SquadDocsPanel from '../parent/SquadDocsPanel.svelte';
+  import DocsChannelButton from '../parent/DocsChannelButton.svelte';
+  import SaveToDocsDialog from '../parent/SaveToDocsDialog.svelte';
+  import { DOCS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import {
+    canOfferSaveToDocs,
+    ensureSquadDocAddPolicy,
+    squadDocAddPolicyByParentId,
+  } from '../../stores/docs-hub-alerts';
   import {
     ensureMlsGroupMembers,
     membersByGroupId,
@@ -130,7 +139,30 @@
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
   $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
   $: isEventsChannel = (activeParent && activeChannel?.name === EVENTS_CHANNEL_NAME) ?? false;
-  $: hideChannelOverflowMenu = isAnnouncementsChannel || isPollsChannel || isEventsChannel;
+  $: isDocsChannel = (activeParent && activeChannel?.name === DOCS_CHANNEL_NAME) ?? false;
+  $: hideChannelOverflowMenu = isAnnouncementsChannel || isPollsChannel || isEventsChannel || isDocsChannel;
+  /** Squad chat timeline (announcements or a custom channel): offers Save to Docs and the channel docs shortcut. */
+  $: isSquadChatChannel =
+    !!activeParent &&
+    !isPollsChannel &&
+    !isEventsChannel &&
+    !isDocsChannel &&
+    !isVirtualHubChannelId($activeChannelId);
+  $: docsAnnouncementsGroupId = activeParent ? resolvePollsMlsGroupId(activeParent) : null;
+  $: if (isSquadChatChannel && activeParent && docsAnnouncementsGroupId) {
+    ensureSquadDocAddPolicy(
+      docsAnnouncementsGroupId,
+      activeParent.id,
+      $membershipVersionByGroupId[docsAnnouncementsGroupId] ?? 0
+    );
+  }
+  $: saveToDocsHandler =
+    isSquadChatChannel && activeParent && canOfferSaveToDocs($squadDocAddPolicyByParentId[activeParent.id])
+      ? (_id: string, text: string) => {
+          saveToDocsRequest = { text, channelGroupId: $activeChannelId ?? '' };
+        }
+      : undefined;
+  let saveToDocsRequest: { text: string; channelGroupId: string } | null = null;
   $: channelParsesStructuredAnnounces = isAnnouncementsChannel;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
   $: showMlsHistoryWelcome =
@@ -613,7 +645,7 @@
       clearMentionAlert(activeSquad.id, activeChannel.name);
       if (isPollsChannel && activeParent?.id) {
         void markPollsChannelSeen(activeParent.id);
-      } else if (!isEventsChannel && $activeChannelId) {
+      } else if (!isEventsChannel && !isDocsChannel && $activeChannelId) {
         markAsRead($activeChannelId, null).catch(() => {});
       }
     }
@@ -781,6 +813,9 @@
       </div>
       <div class="channel-header-actions">
         <div class="channel-header-actions-inner">
+          {#if isSquadChatChannel && activeParent && !isChannelCreating}
+            <DocsChannelButton parentId={activeParent.id} channelGroupId={$activeChannelId ?? ''} {channelName} />
+          {/if}
           {#if !hideChannelOverflowMenu}
             <button
               type="button"
@@ -842,6 +877,10 @@
       <div class="polls-channel-body">
         <SquadEventsPanel parentId={activeParent.id} mlsGroupId={resolvePollsMlsGroupId(activeParent)} />
       </div>
+    {:else if isDocsChannel && activeParent}
+      <div class="polls-channel-body">
+        <SquadDocsPanel parentId={activeParent.id} mlsGroupId={resolvePollsMlsGroupId(activeParent)} />
+      </div>
     {:else}
       <div class="messages-container" bind:this={messagesContainer} onscroll={handleMessagesScroll}>
       <div class="messages-list">
@@ -900,6 +939,7 @@
                 {onCopy}
                 {onReply}
                 onEdit={(_id, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
+                onSaveToDocs={saveToDocsHandler}
                 compact={shouldStackChannelWithPrevious(
                   virtualTimelineMessages[i - 1],
                   message,
@@ -940,6 +980,18 @@
         onCancelReply={cancelReply}
       />
     {/if}
+    {/if}
+
+    {#if saveToDocsRequest && activeParent && docsAnnouncementsGroupId}
+      {#key saveToDocsRequest}
+        <SaveToDocsDialog
+          parentId={activeParent.id}
+          announcementsGroupId={docsAnnouncementsGroupId}
+          text={saveToDocsRequest.text}
+          channelGroupId={saveToDocsRequest.channelGroupId}
+          onclose={() => (saveToDocsRequest = null)}
+        />
+      {/key}
     {/if}
 
     <!-- Leave channel confirm -->

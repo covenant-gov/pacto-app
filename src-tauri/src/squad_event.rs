@@ -11,12 +11,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Runtime};
 
-use crate::message::Message;
 use crate::nostr_tags;
 use crate::rumor::{ConversationType, RumorContext, RumorEvent, RumorProcessingResult};
 use crate::squad_event_time as civil;
-use crate::squad_records::{self, SquadGroupRole, SQUAD_EVENT_D_TAG};
-use crate::stored_event::event_kind;
+use crate::squad_records::{
+    self, card_message, signer_identity, store_local_card, with_conn, SquadGroupRole,
+    SQUAD_EVENT_D_TAG,
+};
 use crate::TAURI_APP;
 
 const SCHEMA: &str = "pacto.squad_event.v1";
@@ -1196,16 +1197,6 @@ fn my_rsvp_updated_at(
 // Async glue: DB access, roles, ingest, sends
 // ---------------------------------------------------------------------------
 
-fn with_conn<R: Runtime, T>(
-    handle: &AppHandle<R>,
-    f: impl FnOnce(&Connection) -> Result<T, String>,
-) -> Result<T, String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-    let res = f(&conn);
-    crate::account_manager::return_db_connection(conn);
-    res
-}
-
 fn emit_replica_updated(parent_id: &str, event_id: Option<&str>) {
     if let Some(handle) = TAURI_APP.get() {
         let _ = handle.emit(
@@ -1258,30 +1249,6 @@ async fn apply_and_emit<R: Runtime>(
     Ok(applied)
 }
 
-fn card_message(id: String, content: String, at_ms: u64, mine: bool, npub: String) -> Message {
-    Message {
-        id,
-        content,
-        replied_to: String::new(),
-        replied_to_content: None,
-        replied_to_npub: None,
-        replied_to_has_attachment: None,
-        preview_metadata: None,
-        attachments: Vec::new(),
-        reactions: Vec::new(),
-        at: at_ms,
-        mine,
-        pending: false,
-        failed: false,
-        npub: Some(npub),
-        wrapper_event_id: None,
-        edited: false,
-        edit_history: None,
-        rumor_kind: Some(event_kind::APPLICATION_SPECIFIC),
-        virtual_bucket: Some("announcements".to_string()),
-    }
-}
-
 /// MLS ingest for `d` = `pacto_squad_event`. Never yields a chat row except the announcements card.
 pub async fn process_rumor(
     rumor: RumorEvent,
@@ -1332,14 +1299,6 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-async fn signer_identity() -> Result<(PublicKey, String), String> {
-    let client = crate::get_nostr_client()?;
-    let signer = client.signer().await.map_err(|e| e.to_string())?;
-    let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
-    let npub = pk.to_bech32().map_err(|e| e.to_string())?;
-    Ok((pk, npub))
 }
 
 fn require_id(value: &str, what: &str) -> Result<(), String> {
@@ -1442,21 +1401,6 @@ async fn send_wire(
         .to_hex();
     crate::mls::send_mls_message(mls_group_id, built, None).await?;
     Ok(rumor_id)
-}
-
-/// Local copy of an announcements card we just sent (peers get it via ingest).
-async fn store_local_card<R: Runtime>(handle: &AppHandle<R>, mls_group_id: &str, msg: Message) {
-    let was_added = {
-        let mut state = crate::STATE.lock().await;
-        state.add_message_to_chat(mls_group_id, msg.clone())
-    };
-    if was_added {
-        let _ = crate::db::save_message(handle.clone(), mls_group_id, &msg).await;
-        let _ = handle.emit(
-            "mls_message_new",
-            serde_json::json!({ "group_id": mls_group_id, "message": msg }),
-        );
-    }
 }
 
 #[tauri::command]
