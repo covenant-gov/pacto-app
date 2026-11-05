@@ -67,6 +67,8 @@ visiting a public GIF site.
 gift-wrapped rumor (DM) or an MLS group message ([`OVERVIEW.md`](./OVERVIEW.md)),
 so the URL is not public — no relay or observer other than the intended
 recipient(s) ever sees which GIF was sent, or that a GIF was sent at all.
+A GIF rumor may also carry the optional `caption` tag from [`ATTACHMENTS.md`](./ATTACHMENTS.md)
+when the composer had text at send time.
 What is not hidden is the *fetch*: rendering that URL is an ordinary HTTPS
 request from the recipient's device straight to Klipy, and Klipy's server
 logs see that request's source IP regardless of how private the message

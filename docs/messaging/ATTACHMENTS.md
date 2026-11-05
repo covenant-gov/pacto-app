@@ -15,7 +15,7 @@ Sending an attachment (`send_file_bytes` → `message.rs`):
 2. **Hash** the plaintext (`calculate_file_hash`). Used for dedupe against previously sent attachments and published as the `ox` tag.
 3. **Encrypt** with a freshly generated random 32-byte AES-256-GCM key and 16-byte nonce (`crypto::generate_encryption_params`, `crypto::encrypt_data`). One key per file.
 4. **Upload the ciphertext** to a Blossom server (`blossom::upload_blob_with_progress_and_failover`).
-5. **Publish a kind-15 rumor** whose content is the blob URL, carrying `file-type`, `size`, `encryption-algorithm`, `decryption-key`, `decryption-nonce`, `ox`, and — when the sender supplied one — `filename` tags. The rumor is sealed in a NIP-59 gift wrap (DM) or an MLS group message.
+5. **Publish a kind-15 rumor** whose content is the blob URL, carrying `file-type`, `size`, `encryption-algorithm`, `decryption-key`, `decryption-nonce`, `ox`, and — when the sender supplied one — `filename` and `caption` tags. The rumor is sealed in a NIP-59 gift wrap (DM) or an MLS group message. The caption is the message body, shown above the file and edited with the same 60-second text edit.
 
 The receiver reads `file-type` from the rumor to pick a local extension (`rumor.rs`), fetches the blob, and decrypts with the tagged key and nonce.
 
@@ -30,6 +30,15 @@ from a remote peer, so `message::sanitize_incoming_file_name` strips path
 separators and `..` segments and caps the length before the value is ever stored
 or used as a save-dialog default. The local extension is still derived from the
 `file-type` tag, never from the name.
+
+### The `caption` tag
+
+Composer text sent with a file, GIF, or sticker is the message body. On the
+wire it is an optional `caption` tag because the kind-15 content slot is the
+blob URL (or the Klipy URL). An absent or whitespace-only tag is an empty body.
+The value is message text, including mention envelopes, and is not filename-sanitized.
+Locally it is stored as the event content and encrypted at rest the same way as
+a text message. Edits replace that body only, inside the existing 60-second window.
 
 ```mermaid
 graph LR

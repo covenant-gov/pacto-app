@@ -299,15 +299,20 @@
     if (el && document.contains(el)) el.scrollTop = el.scrollHeight;
   }
 
+  function squadOutgoingContent(body: string, mentions?: Mention[]): string {
+    if (!mentions?.length) return body;
+    const virtualBucket =
+      virtualBucketSingleGroup && selectedVirtualBucket ? selectedVirtualBucket : 'announcements';
+    return buildMentionEnvelope(body, mentions, virtualBucket);
+  }
+
   async function handleSendMessage(body: string, mentions?: Mention[], repliedTo?: string) {
     const groupId = $activeChannelId;
     if (!groupId) return;
     groupSendError.set(null);
     const virtualBucket =
       virtualBucketSingleGroup && selectedVirtualBucket ? selectedVirtualBucket : 'announcements';
-    const content = mentions?.length
-      ? buildMentionEnvelope(body, mentions, virtualBucket)
-      : body;
+    const content = squadOutgoingContent(body, mentions);
     try {
       const ok = await sendDmMessage(groupId, content, repliedTo ?? '', { virtualBucket });
       setTimeout(scrollMessagesToBottom, 0);
@@ -660,8 +665,11 @@
     if (!messageId) return undefined;
     const msg = messages.find((m) => m.id === messageId);
     if (!msg) return undefined;
+    if (msg.content?.trim()) {
+      const excerpt = replyQuoteExcerpt(msg.content, stripTracking);
+      if (excerpt) return excerpt;
+    }
     if (msg.attachments && msg.attachments.length > 0) return tFn('messaging.message.attachment');
-    if (msg.content && msg.content.length > 0) return replyQuoteExcerpt(msg.content, stripTracking);
     return tFn('messaging.message.messageFallback');
   }
 
@@ -687,13 +695,22 @@
     bytes: ArrayBuffer,
     fileName: string,
     repliedTo: string,
-    useCompression: boolean
+    useCompression: boolean,
+    content: string,
+    mentions?: Mention[],
   ): Promise<void> {
     const groupId = $activeChannelId;
     if (!groupId) return;
     groupSendError.set(null);
     try {
-      const ok = await sendFileBytes(groupId, repliedTo, new Uint8Array(bytes), fileName, useCompression);
+      const ok = await sendFileBytes(
+        groupId,
+        repliedTo,
+        new Uint8Array(bytes),
+        fileName,
+        useCompression,
+        squadOutgoingContent(content, mentions),
+      );
       if (ok) cancelReply();
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, tFn('errors.dm.attachmentFailed'));
@@ -701,12 +718,18 @@
     }
   }
 
-  async function handleSendGif(url: string, slug: string, repliedTo: string): Promise<void> {
+  async function handleSendGif(
+    url: string,
+    slug: string,
+    repliedTo: string,
+    content: string,
+    mentions?: Mention[],
+  ): Promise<void> {
     const groupId = $activeChannelId;
     if (!groupId) return;
     groupSendError.set(null);
     try {
-      const ok = await sendGifMessage(groupId, url, slug, repliedTo);
+      const ok = await sendGifMessage(groupId, url, slug, repliedTo, squadOutgoingContent(content, mentions));
       if (ok) cancelReply();
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, tFn('errors.dm.gifFailed'));

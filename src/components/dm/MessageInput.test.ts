@@ -312,6 +312,39 @@ describe('MessageInput', () => {
     expect(onSendFile).toHaveBeenCalled();
   });
 
+  it('sends the composer text as the file caption and clears the input', async () => {
+    const onSendFile = vi.fn().mockResolvedValue(undefined);
+    render(MessageInput, { props: { channelName: 'general', onSendFile } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'testing text' } });
+    pendingFilePreview.set({
+      id: 'pending',
+      key: '',
+      nonce: '',
+      extension: 'png',
+      url: '',
+      path: '',
+      size: 1024,
+      fileName: 'test.png',
+      previewUrl: '',
+      mimeType: 'image/png',
+      file: new File(['bytes'], 'test.png', { type: 'image/png' }),
+    } as PendingFileAttachment);
+    await fireEvent.click(screen.getByLabelText(/Send message/i));
+    await waitFor(() => {
+      expect(onSendFile).toHaveBeenCalledWith(
+        expect.any(ArrayBuffer),
+        'test.png',
+        '',
+        true,
+        'testing text',
+        [],
+      );
+      expect((screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement).value).toBe('');
+      expect(get(pendingFilePreview)).toBeNull();
+    });
+  });
+
   it('sets the pending attachment when an image is pasted', async () => {
     render(MessageInput, { props: { channelName: 'general' } });
     const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
@@ -410,6 +443,8 @@ describe('MessageInput', () => {
     });
 
     render(MessageInput, { props: { channelName: 'general', onSendGif, repliedTo: 'msg-1' } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'testing text' } });
     await fireEvent.click(screen.getByLabelText(/Insert emoji or GIF/i));
     await fireEvent.click(screen.getByRole('tab', { name: /GIFs/i }));
     await fireEvent.click(screen.getByRole('button', { name: /Enable GIF search/i }));
@@ -420,8 +455,9 @@ describe('MessageInput', () => {
     await fireEvent.click(screen.getByLabelText('Cat'));
 
     await waitFor(() => {
-      expect(onSendGif).toHaveBeenCalledWith(fullUrl, 'gif-1', 'msg-1');
+      expect(onSendGif).toHaveBeenCalledWith(fullUrl, 'gif-1', 'msg-1', 'testing text', []);
     });
+    expect(input.value).toBe('');
     expect(invoke).toHaveBeenCalledWith('klipy_report_share', { slug: 'gif-1', query: null });
   });
 

@@ -169,10 +169,11 @@ export async function sendGifMessage(
   receiver: string,
   url: string,
   slug: string,
-  repliedTo: string
+  repliedTo: string,
+  content: string
 ): Promise<boolean> {
   try {
-    return await invoke('klipy_gif_message', { receiver, url, slug, repliedTo });
+    return await invoke('klipy_gif_message', { receiver, url, slug, repliedTo, content });
   } catch (e) {
     throw new Error(getInvokeErrorMessage(e), { cause: e });
   }

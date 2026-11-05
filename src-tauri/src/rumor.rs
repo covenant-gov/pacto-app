@@ -247,6 +247,15 @@ async fn process_text_message(
 /// - Original file hashes (for deduplication)
 /// - Image metadata (blurhash, dimensions)
 /// - File extensions and mime types
+/// Kind-15 `caption` tag. Message text, not a filename: no path sanitizing.
+pub(crate) fn attachment_caption(tags: &Tags) -> String {
+    nostr_tags::find_custom(tags, "caption")
+        .and_then(|tag| tag.content())
+        .map(|s| s.to_string())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_default()
+}
+
 async fn process_file_attachment(
     rumor: RumorEvent,
     context: RumorContext,
@@ -316,6 +325,10 @@ async fn process_file_attachment(
     let mime_type = nostr_tags::find_custom(&rumor.tags, "file-type")
         .and_then(|tag| tag.content())
         .ok_or("Missing file-type tag")?;
+
+    // Caption is message text, including mention envelopes. Optional: an absent
+    // or whitespace-only tag stays an empty body. Do not sanitize it as a filename.
+    let caption = attachment_caption(&rumor.tags);
 
     // Extract the sender's original file name, when supplied. Optional: an
     // absent tag means None, never an error. The extension is derived from
@@ -404,7 +417,7 @@ async fn process_file_attachment(
     // Create the message with attachment
     let msg = Message {
         id: rumor.id.to_hex(),
-        content: String::new(),
+        content: caption,
         replied_to,
         replied_to_content: None, // Populated by get_message_views
         replied_to_npub: None,
@@ -696,4 +709,29 @@ async fn process_dashboard_poll_rumor(
     }
 
     Ok(RumorProcessingResult::Ignored)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tags_with(caption: Option<&str>) -> Tags {
+        let keys = Keys::generate();
+        let mut builder = EventBuilder::new(Kind::from_u16(15), "https://example.invalid/blob");
+        if let Some(caption) = caption {
+            builder = builder.tag(nostr_tags::custom_tag("caption", [caption]));
+        }
+        builder.build(keys.public_key()).tags
+    }
+
+    #[test]
+    fn attachment_caption_reads_the_tag_and_blank_is_empty() {
+        assert_eq!(attachment_caption(&tags_with(Some("testing text"))), "testing text");
+        assert_eq!(
+            attachment_caption(&tags_with(Some("hi @alice"))),
+            "hi @alice"
+        );
+        assert_eq!(attachment_caption(&tags_with(Some("   "))), "");
+        assert_eq!(attachment_caption(&tags_with(None)), "");
+    }
 }

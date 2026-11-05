@@ -235,8 +235,7 @@ impl Message {
     /// Receive paths also require the DB-backed first-receipt check before mutation.
     pub fn accepts_edit(&self, dm_peer: Option<&str>, edit: EditAuthor, edited_at: u64) -> bool {
         let original = EditAuthor::of_original(self.mine, self.npub.as_deref(), dm_peer);
-        self.attachments.is_empty()
-            && self.rumor_kind.is_none()
+        self.rumor_kind.is_none()
             && edit_is_authorized(original, self.at, edit, edited_at)
     }
 
@@ -604,8 +603,8 @@ fn validate_own_edit(msg: &Message, new_content: &str, now_ms: u64) -> Result<()
     if !msg.mine || msg.pending || msg.failed {
         return Err("Only your own sent messages can be edited".to_string());
     }
-    if !msg.attachments.is_empty() || msg.rumor_kind.is_some() {
-        return Err("Only text messages can be edited".to_string());
+    if msg.rumor_kind.is_some() {
+        return Err("Structured messages cannot be edited".to_string());
     }
     if new_content.trim().is_empty() {
         return Err("Edited message cannot be empty".to_string());
@@ -813,7 +812,8 @@ mod edit_authorization_tests {
             attachments: vec![Attachment::default()],
             ..own_text(AT)
         };
-        assert!(validate_own_edit(&with_file, "hello", AT + 1_000).is_err());
+        assert!(validate_own_edit(&with_file, "hello", AT + 1_000).is_ok());
+        assert!(with_file.accepts_edit(None, Me, AT + 1_000));
 
         let poll = Message {
             rumor_kind: Some(30078),
@@ -1247,6 +1247,15 @@ async fn mark_message_failed(pending_id: Arc<String>, receiver: &str) {
                 break;
             }
         }
+    }
+}
+
+/// Optional kind-15 `caption` tag. The rumor content stays the blob URL.
+fn with_caption_tag(rumor: EventBuilder, caption: &str) -> EventBuilder {
+    if caption.trim().is_empty() {
+        rumor
+    } else {
+        rumor.tag(nostr_tags::custom_tag("caption", [caption]))
     }
 }
 
@@ -1737,7 +1746,7 @@ pub async fn message(
                             ));
                     }
 
-                    attachment_rumor
+                    with_caption_tag(attachment_rumor, &msg.content)
                 } else {
                     // URL is dead, need to upload
                     should_upload = true;
@@ -1849,7 +1858,7 @@ pub async fn message(
                                 [format!("{}x{}", img_meta.width, img_meta.height)],
                             ));
                     }
-                    attachment_rumor
+                    with_caption_tag(attachment_rumor, &msg.content)
                 }
                 Err(e) => {
                     // The file upload failed: so we mark the message as failed and notify of an error
@@ -2033,6 +2042,7 @@ pub async fn klipy_gif_message(
     url: String,
     slug: String,
     replied_to: String,
+    content: String,
 ) -> Result<bool, String> {
     crate::session::heartbeat();
     let handle = TAURI_APP.get().ok_or("App handle not available")?;
@@ -2041,6 +2051,7 @@ pub async fn klipy_gif_message(
     if !crate::klipy::is_klipy_media_url(&url) {
         return Err("Refusing to send: not a Klipy media URL".to_string());
     }
+    let caption = content.trim().to_string();
 
     let current_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -2071,6 +2082,7 @@ pub async fn klipy_gif_message(
 
     let mut msg = Message {
         id: pending_id.as_ref().clone(),
+        content: caption.clone(),
         replied_to: replied_to.clone(),
         at: current_time.as_millis() as u64,
         attachments: vec![attachment],
@@ -2114,6 +2126,7 @@ pub async fn klipy_gif_message(
         .tag(nostr_tags::custom_tag("decryption-key", [""]))
         .tag(nostr_tags::custom_tag("decryption-nonce", [""]))
         .tag(nostr_tags::custom_tag("ox", [slug.as_str()]));
+    rumor = with_caption_tag(rumor, &caption);
 
     if !replied_to.is_empty() {
         rumor = rumor.tag(nostr_tags::e_tag([
@@ -2752,8 +2765,10 @@ pub async fn send_file_bytes(
     file_bytes: Vec<u8>,
     file_name: String,
     use_compression: bool,
+    content: String,
 ) -> Result<bool, String> {
     crate::session::heartbeat();
+    let caption = content.trim().to_string();
     const MIN_SAVINGS_PERCENT: u64 = 10;
     // Empty/whitespace names are treated as "no name supplied".
     let file_name_opt = if file_name.trim().is_empty() {
@@ -2806,7 +2821,7 @@ pub async fn send_file_bytes(
 
                     return message(
                         receiver,
-                        String::new(),
+                        caption,
                         replied_to,
                         Some(attachment_file),
                         None,
@@ -2848,7 +2863,7 @@ pub async fn send_file_bytes(
 
     message(
         receiver,
-        String::new(),
+        caption,
         replied_to,
         Some(attachment_file),
         None,

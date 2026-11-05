@@ -1,6 +1,7 @@
 <script lang="ts">
   import MessageShortcutComposer from './MessageShortcutComposer.svelte';
   import type { MessageEditRequest } from '../../lib/messaging/message-edit';
+  import type { Mention } from '../../lib/messaging/mentions';
   import { resolveDmMessagePresentation } from '../../lib/dm/resolve-dm-message-presentation';
   import DmMessageRouter from './DmMessageRouter.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
@@ -63,9 +64,17 @@
       bytes: ArrayBuffer,
       fileName: string,
       repliedTo: string,
-      useCompression: boolean
+      useCompression: boolean,
+      content: string,
+      mentions?: Mention[],
     ) => Promise<void>;
-    onSendGif?: (url: string, slug: string, repliedTo: string) => Promise<void>;
+    onSendGif?: (
+      url: string,
+      slug: string,
+      repliedTo: string,
+      content: string,
+      mentions?: Mention[],
+    ) => Promise<void>;
     onTyping?: () => void;
     onAcceptSquadInvite?: (msg: DmMessage, groupId: string) => void;
     onAcceptChannelInSquad?: (
@@ -129,8 +138,11 @@
     if (!replyToMessageId) return undefined;
     const msg = messages.find((m) => m.id === replyToMessageId);
     if (!msg) return undefined;
+    if (msg.content?.trim()) {
+      const excerpt = replyQuoteExcerpt(msg.content, $stripTrackingMarkersEnabled);
+      if (excerpt) return excerpt;
+    }
     if (msg.attachments && msg.attachments.length > 0) return $t('messaging.message.attachment');
-    if (msg.content && msg.content.length > 0) return replyQuoteExcerpt(msg.content, $stripTrackingMarkersEnabled);
     return $t('messaging.message.messageFallback');
   });
   let chatDeleting = $derived($deletingDmNpubs.has(npub));
@@ -157,16 +169,24 @@
     bytes: ArrayBuffer,
     fileName: string,
     repliedTo: string,
-    useCompression: boolean
+    useCompression: boolean,
+    content: string,
+    mentions?: Mention[],
   ): Promise<void> {
     if (!onSendFile) return;
-    await onSendFile(bytes, fileName, repliedTo, useCompression);
+    await onSendFile(bytes, fileName, repliedTo, useCompression, content, mentions);
     cancelReply();
   }
 
-  async function handleSendGif(url: string, slug: string, repliedTo: string): Promise<void> {
+  async function handleSendGif(
+    url: string,
+    slug: string,
+    repliedTo: string,
+    content: string,
+    mentions?: Mention[],
+  ): Promise<void> {
     if (!onSendGif) return;
-    await onSendGif(url, slug, repliedTo);
+    await onSendGif(url, slug, repliedTo, content, mentions);
     cancelReply();
   }
 
