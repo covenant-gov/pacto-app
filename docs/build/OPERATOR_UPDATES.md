@@ -195,6 +195,10 @@ tauri signer generate
 
 Save the public key for `tauri.conf.json` and store the private key in the repository secret.
 
+## Courtesy startup check
+
+**Settings > App > Updates** includes **Check for updates on startup**. It is **on by default** for every account that has not explicitly opted out. Unchecking persists per account (`pacto_startup_check_enabled_v2_<npub>`). The mandatory update gate is independent of this toggle (see [Marking a release as breaking](#marking-a-release-as-breaking)).
+
 ## Manual smoke test
 
 1. Build and install a signed release for the current platform, e.g. `v0.2.0`.
@@ -203,6 +207,7 @@ Save the public key for `tauri.conf.json` and store the private key in the repos
 4. Confirm the app reports `Update 0.2.1 available`.
 5. Click **Download and install**, wait for the progress bar to complete, and click **Relaunch now**.
 6. After restart, verify the app is running the new version (shown in the same Updates section).
+7. Confirm **Check for updates on startup** is checked by default on a fresh account; unchecking it and unlocking again should skip the courtesy notification while the mandatory gate still runs.
 
 Repeat on at least one additional desktop platform before promoting a release broadly.
 

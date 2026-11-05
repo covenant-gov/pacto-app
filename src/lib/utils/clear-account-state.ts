@@ -146,7 +146,11 @@ import { resetGovActionPromptStores } from '../../stores/gov-action-prompts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { resetMlsStoreResetState } from '../../stores/mls-reset';
 import { resetStickerPacksStore } from '../../stores/stickers';
-import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
+import {
+  STARTUP_CHECK_PREFIX,
+  STARTUP_CHECK_PREFIX_V1,
+  startupCheckEnabled,
+} from '../../stores/startup-check';
 import { TYPING_INDICATORS_PREFIX } from '../../stores/typing-indicators';
 import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import { WEB_PREVIEWS_PREFIX } from '../../stores/web-previews';
@@ -198,6 +202,7 @@ const SCOPED_KEY_PREFIXES = [
   SQUAD_REJOIN_HANDLED_PREFIX,
   PENDING_APPROVED_JOINS_PREFIX,
   STARTUP_CHECK_PREFIX,
+  STARTUP_CHECK_PREFIX_V1,
   TYPING_INDICATORS_PREFIX,
   WEB_PREVIEWS_PREFIX,
   FEATURE_FLAG_OVERRIDES_PREFIX,
@@ -230,6 +235,7 @@ function clearAccountLocalStorage(npub?: string): void {
 export function clearAccountState(npub?: string): void {
   setCurrentNpubForPersistence(null);
   stripTrackingMarkersEnabled.set(true);
+  startupCheckEnabled.set(true);
   featureFlagOverrides.set({});
   resetInviteAcceptState();
   stopJoinInboxHolderSync();
