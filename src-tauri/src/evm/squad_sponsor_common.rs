@@ -3,9 +3,12 @@
 use std::str::FromStr;
 
 use alloy::primitives::{keccak256, Address, B256, U256};
+use rusqlite::OptionalExtension;
 use tauri::{AppHandle, Runtime};
 
+use super::evm_accounts::{active_squad_signing_account_id, resolve_roster_signing_account_id};
 use super::rpc::{parse_address, wallet_err_json};
+use crate::account_manager;
 use alloy::providers::Provider;
 
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::squadsCall;
@@ -103,6 +106,75 @@ pub fn parse_signer_wallet(
             None,
         )),
     }
+}
+
+fn nonempty(raw: Option<&str>) -> Option<&str> {
+    raw.map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// One payer when Default and the roster signer are the same account or address.
+pub(crate) fn collapse_requested_signer_mode(
+    requested: &'static str,
+    default_account_id: Option<&str>,
+    roster_account_id: Option<&str>,
+    default_address: Option<&str>,
+    roster_address: Option<&str>,
+) -> &'static str {
+    let Some(default_id) = nonempty(default_account_id) else {
+        return requested;
+    };
+    let Some(roster_id) = nonempty(roster_account_id) else {
+        return requested;
+    };
+    if default_id == roster_id {
+        return "squad";
+    }
+    match (nonempty(default_address), nonempty(roster_address)) {
+        (Some(default_addr), Some(roster_addr))
+            if default_addr.eq_ignore_ascii_case(roster_addr) =>
+        {
+            "squad"
+        }
+        _ => requested,
+    }
+}
+
+fn evm_account_address<R: Runtime>(app: &AppHandle<R>, account_id: &str) -> Option<String> {
+    let conn = account_manager::get_db_connection(app).ok()?;
+    let addr = conn
+        .query_row(
+            "SELECT address FROM evm_accounts WHERE id = ?1",
+            rusqlite::params![account_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    account_manager::return_db_connection(conn);
+    addr
+}
+
+/// Squad path when Default and this parent's roster signer are the same key.
+pub fn collapse_pay_signer_mode<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    requested: &'static str,
+) -> &'static str {
+    let default_id = active_squad_signing_account_id(app).ok();
+    let roster_id = resolve_roster_signing_account_id(app, parent_id).ok();
+    let default_addr = default_id
+        .as_deref()
+        .and_then(|id| evm_account_address(app, id));
+    let roster_addr = roster_id
+        .as_deref()
+        .and_then(|id| evm_account_address(app, id));
+    collapse_requested_signer_mode(
+        requested,
+        default_id.as_deref(),
+        roster_id.as_deref(),
+        default_addr.as_deref(),
+        roster_addr.as_deref(),
+    )
 }
 
 pub fn parse_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
@@ -400,6 +472,54 @@ mod tests {
             "squad"
         );
         assert!(parse_signer_wallet(Some("hardware"), "squad").is_err());
+    }
+
+    #[test]
+    fn collapse_requested_signer_mode_uses_squad_only_when_same() {
+        assert_eq!(
+            collapse_requested_signer_mode("default", Some("acct"), Some("acct"), None, None),
+            "squad"
+        );
+        assert_eq!(
+            collapse_requested_signer_mode(
+                "default",
+                Some("default-id"),
+                Some("roster-id"),
+                Some("0xAbC"),
+                Some("0xabc"),
+            ),
+            "squad"
+        );
+        assert_eq!(
+            collapse_requested_signer_mode(
+                "default",
+                Some("default-id"),
+                Some("roster-id"),
+                Some("0x1111111111111111111111111111111111111111"),
+                Some("0x2222222222222222222222222222222222222222"),
+            ),
+            "default"
+        );
+        assert_eq!(
+            collapse_requested_signer_mode(
+                "squad",
+                Some("default-id"),
+                Some("roster-id"),
+                Some("0x1111111111111111111111111111111111111111"),
+                Some("0x2222222222222222222222222222222222222222"),
+            ),
+            "squad"
+        );
+        assert_eq!(
+            collapse_requested_signer_mode(
+                "default",
+                None,
+                Some("roster-id"),
+                Some("0xabc"),
+                Some("0xabc"),
+            ),
+            "default"
+        );
     }
 
     fn addr(n: u8) -> Address {

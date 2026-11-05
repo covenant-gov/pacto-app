@@ -93,6 +93,16 @@ export async function fetchEvmBalance(
   }
 }
 
+/** True when Default and the squad signer checksum to the same address. */
+export function signersAreSameAddress(
+  defaultSignerAddress: string | null | undefined,
+  squadSignerAddress: string | null | undefined,
+): boolean {
+  const defaultCanon = canonicalAddress(defaultSignerAddress);
+  const squadCanon = canonicalAddress(squadSignerAddress);
+  return defaultCanon != null && squadCanon != null && defaultCanon === squadCanon;
+}
+
 /** Payer choice after Default/squad signer addresses (re)load. */
 export function reconcileSignerWallet(
   current: 'default' | 'squad',

@@ -3,6 +3,8 @@
   import { get } from 'svelte/store';
   import Modal from '../../ui/Modal.svelte';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
+  import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
+  import { signersAreSameAddress } from '../../../lib/wallet/signer-balance';
   import {
     startWarGameDeploy,
     type WarGameDeployComplete,
@@ -54,6 +56,7 @@
   const tFn = get(t);
 
   let myRosterEvm = $state('');
+  let defaultSignerAddress = $state<string | null>(null);
   let resolvingDeployer = $state(true);
   let deploying = $state(false);
   let deployError = $state('');
@@ -90,18 +93,25 @@
       parentId.trim(),
   );
   const needsSquadEvmGate = $derived(!resolvingDeployer && !myRosterEvm);
+  const signersAreSame = $derived(signersAreSameAddress(defaultSignerAddress, myRosterEvm));
+  const payFromEffective = $derived<SquadSponsorDeploySignerWallet>(
+    signersAreSame ? 'squad' : signerWallet,
+  );
   const deployNetwork = $derived(practiceNetwork ?? DEFAULT_SQUAD_PRACTICE_NETWORK);
 
   async function refreshRosterEvm() {
     resolvingDeployer = true;
     myRosterEvm = '';
+    defaultSignerAddress = null;
     try {
-      const raw = await resolveSquadRosterEvmAddress(rosterLookupId);
+      const [raw, defaultAddr] = await Promise.all([
+        resolveSquadRosterEvmAddress(rosterLookupId).catch(() => ''),
+        getActiveSquadEvmSignerAddress().catch(() => null),
+      ]);
       if (raw?.trim() && isAddress(raw.trim() as `0x${string}`)) {
         myRosterEvm = getAddress(raw.trim() as `0x${string}`);
       }
-    } catch {
-      myRosterEvm = '';
+      defaultSignerAddress = defaultAddr?.trim() || null;
     } finally {
       resolvingDeployer = false;
     }
@@ -163,7 +173,7 @@
       network: deployNetwork,
       captain: myRosterEvm,
       initialDepositWei: depositWei ?? '0',
-      signerWallet,
+      signerWallet: payFromEffective,
       squadParams,
       memberOptions,
       onReject: (message) => {
@@ -217,18 +227,30 @@
     </p>
   </div>
 
-  <fieldset class="war-game-deploy-field" disabled={deploying}>
-    <legend class="war-game-deploy-label">{$t('governance.deployWarGame.payFrom')}</legend>
-    <label class="signer-option">
-      <input type="radio" name="war-game-signer" value="default" bind:group={signerWallet} />
-      <span>{$t('governance.deployGovAndSponsor.signer.default.title')}</span>
-    </label>
-    <label class="signer-option">
-      <input type="radio" name="war-game-signer" value="squad" bind:group={signerWallet} />
-      <span>{$t('governance.deployGovAndSponsor.signer.squad.title')}</span>
-    </label>
-    <UsernameNftSponsorNote payFrom={signerWallet} eligibility={nftEligibility} />
-  </fieldset>
+  {#if !resolvingDeployer}
+    {#if signersAreSame}
+      <div class="war-game-deploy-field" aria-live="polite">
+        <span class="war-game-deploy-label">{$t('governance.deployWarGame.payFrom')}</span>
+        <p class="war-game-deploy-pinned">
+          <code>{shortAddress(myRosterEvm)}</code>
+          <span class="war-game-deploy-pinned-note">{$t('governance.deployWarGame.signerSameAsDefault')}</span>
+        </p>
+      </div>
+    {:else}
+      <fieldset class="war-game-deploy-field" disabled={deploying}>
+        <legend class="war-game-deploy-label">{$t('governance.deployWarGame.payFrom')}</legend>
+        <label class="signer-option">
+          <input type="radio" name="war-game-signer" value="default" bind:group={signerWallet} />
+          <span>{$t('governance.deployGovAndSponsor.signer.default.title')}</span>
+        </label>
+        <label class="signer-option">
+          <input type="radio" name="war-game-signer" value="squad" bind:group={signerWallet} />
+          <span>{$t('governance.deployGovAndSponsor.signer.squad.title')}</span>
+        </label>
+      </fieldset>
+    {/if}
+    <UsernameNftSponsorNote payFrom={payFromEffective} eligibility={nftEligibility} />
+  {/if}
 
   <div class="war-game-deploy-field">
     <SponsorInitialDepositField

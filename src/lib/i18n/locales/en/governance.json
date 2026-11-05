@@ -434,6 +434,7 @@
 	"governance.deployWarGame.captainYou": "You (squad-assigned)",
 	"governance.deployWarGame.captainNoEvmHint": "Bind a squad-assigned EVM for this squad before deploying.",
 	"governance.deployWarGame.payFrom": "Pay gas from",
+	"governance.deployWarGame.signerSameAsDefault": "Squad signer (same as Default)",
 	"governance.deployWarGame.depositLabel": "Initial deposit (ETH)",
 	"governance.deployWarGame.depositPlaceholder": "0.01",
 	"governance.deployWarGame.depositHint": "Funds this round’s war-game pool on Sepolia.",
