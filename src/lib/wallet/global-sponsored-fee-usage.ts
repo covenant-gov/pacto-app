@@ -29,8 +29,8 @@ const LANE_I18N: Record<GlobalFeeUsageLane, string> = {
 
 /** i18n key for a known lane; unknown lanes fall back to raw string. */
 export function globalFeeUsageLaneLabelKey(lane: string): string {
-  const key = lane.trim() as GlobalFeeUsageLane;
-  return LANE_I18N[key] ?? '';
+  const key = lane.trim();
+  return Object.hasOwn(LANE_I18N, key) ? LANE_I18N[key as GlobalFeeUsageLane] : '';
 }
 
 export function isKnownGlobalFeeUsageLane(lane: string): lane is GlobalFeeUsageLane {

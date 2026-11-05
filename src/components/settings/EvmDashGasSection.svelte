@@ -11,7 +11,7 @@
     loadGlobalSponsoredFeeUsage,
     type GlobalSponsoredFeeUsageDto,
   } from '../../lib/wallet/global-sponsored-fee-usage';
-  import { getExplorerTxUrl } from '../../lib/wallet/assets';
+  import { getExplorerTxUrl, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
   import { parseSupportedChainId } from '../../lib/wallet/chains';
   import { shortAddress } from '../../lib/wallet/signer-balance';
   import { openExternalUrl } from '../../lib/utils/open-external';
@@ -27,14 +27,18 @@
   let loadSeq = 0;
 
   const expanded = $derived(!($settingsSectionCollapsed['settings-evm-dash-gas'] ?? true));
+  const poolNetworkName = $derived(
+    getWalletNetworkDisplayName(parseSupportedChainId(USERNAME_NETWORK)),
+  );
 
   async function loadRows() {
     const seq = ++loadSeq;
     loading = true;
     loadError = '';
+    poolError = '';
     try {
       const [next, pool] = await Promise.all([
-        loadGlobalSponsoredFeeUsage(),
+        loadGlobalSponsoredFeeUsage({ limit: 50 }),
         usernameGlobalSpendablePoolWei(USERNAME_NETWORK).catch((e) => {
           if (seq === loadSeq) {
             poolError = getInvokeErrorMessage(e, get(t)('settings.evmDashGas.poolError'));
@@ -87,7 +91,9 @@
 
   <div class="dash-toolbar">
     <div class="dash-pool">
-      <span class="dash-pool-label">{$t('settings.evmDashGas.poolLabel')}</span>
+      <span class="dash-pool-label">
+        {$t('settings.evmDashGas.poolLabel', { values: { network: poolNetworkName } })}
+      </span>
       {#if poolError}
         <span class="dash-pool-error" role="status">{poolError}</span>
       {:else if poolWei != null}

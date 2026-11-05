@@ -29,6 +29,8 @@ describe('global-sponsored-fee-usage', () => {
 
   it('returns empty key for unknown lanes', () => {
     expect(globalFeeUsageLaneLabelKey('other')).toBe('');
+    expect(globalFeeUsageLaneLabelKey('constructor')).toBe('');
+    expect(globalFeeUsageLaneLabelKey('toString')).toBe('');
     expect(isKnownGlobalFeeUsageLane('factory')).toBe(true);
     expect(isKnownGlobalFeeUsageLane('other')).toBe(false);
   });

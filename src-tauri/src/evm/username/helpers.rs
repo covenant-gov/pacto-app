@@ -357,6 +357,30 @@ pub async fn finalize_member_write<R: Runtime, P: Provider>(
     .await
 }
 
+/// Local claim row for an on-chain holder when this device has no cache yet.
+/// `None` when the record is not a minted username. Does not set a relay link.
+pub fn username_holder_claim_upsert(
+    name: &str,
+    token_id: U256,
+    npub_hash: B256,
+    policy_version: i64,
+    network: &str,
+) -> Option<UsernameClaimUpsert> {
+    let username = name.trim();
+    if username.is_empty() || token_id.is_zero() {
+        return None;
+    }
+    Some(UsernameClaimUpsert {
+        username: username.to_string(),
+        npub_hash: format!("{npub_hash:#x}"),
+        token_id: token_id.to_string(),
+        link_event_id: None,
+        invalidate_link_event_id: false,
+        policy_version,
+        network: network.to_string(),
+    })
+}
+
 /// Best-effort cache refresh after initiate (preserves existing link_event_id).
 pub async fn refresh_claim_cache_after_initiate<R: Runtime, P: Provider>(
     app: &AppHandle<R>,
@@ -419,6 +443,20 @@ mod tests {
         assert!(!member_npub_matches(a, b));
         assert!(!member_npub_matches(B256::ZERO, B256::ZERO));
         assert!(!member_npub_matches(B256::ZERO, a));
+    }
+
+    #[test]
+    fn holder_claim_upsert_requires_name_and_token() {
+        let hash = B256::repeat_byte(0xab);
+        assert!(username_holder_claim_upsert("  ", U256::from(1), hash, 3, "sepolia").is_none());
+        assert!(username_holder_claim_upsert("alice", U256::ZERO, hash, 3, "sepolia").is_none());
+        let row = username_holder_claim_upsert(" alice ", U256::from(7), hash, 3, "sepolia")
+            .expect("holder");
+        assert_eq!(row.username, "alice");
+        assert_eq!(row.token_id, "7");
+        assert!(row.link_event_id.is_none());
+        assert!(!row.invalidate_link_event_id);
+        assert_eq!(row.network, "sepolia");
     }
 
     #[test]

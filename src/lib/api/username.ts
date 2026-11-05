@@ -151,6 +151,17 @@ export async function usernameGetCachedClaim(): Promise<UsernameClaimRow | null>
   return invoke<UsernameClaimRow | null>('username_get_cached_claim');
 }
 
+/** Fill `username_claims` from the chain when this device has no row and the account holds the NFT. */
+export async function usernameHydrateCachedClaim(
+  network: string,
+  rpcUrls?: string[],
+): Promise<UsernameClaimRow | null> {
+  return invoke<UsernameClaimRow | null>('username_hydrate_cached_claim', {
+    network,
+    rpcUrls,
+  });
+}
+
 export async function usernameClaim(
   network: string,
   name: string,

@@ -35,6 +35,12 @@
   let activeSectionId: SettingsSectionId = $state(SECTION_LINKS[0].id);
   let settingsMainEl: HTMLElement | undefined;
 
+  $effect(() => {
+    const visible = visibleSectionLinks;
+    if (visible.some((link) => link.id === activeSectionId)) return;
+    activeSectionId = visible[0]?.id ?? SECTION_LINKS[0].id;
+  });
+
   function openSection(sectionId: SettingsSectionId) {
     setSettingsSectionCollapsed(sectionId, false);
   }

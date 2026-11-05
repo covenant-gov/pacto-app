@@ -8,6 +8,7 @@ import {
   usernameClaimAddressTransfer,
   usernameEligibleMember,
   usernameGetCachedClaim,
+  usernameHydrateCachedClaim,
   usernameGlobalSpendablePoolWei,
   usernameInitiateAddressTransfer,
   usernameIsPendingTransfer,
@@ -93,6 +94,13 @@ describe('username API shapes', () => {
     mockedInvoke.mockResolvedValueOnce(null);
     await usernameGetCachedClaim();
     expect(mockedInvoke).toHaveBeenCalledWith('username_get_cached_claim');
+
+    mockedInvoke.mockResolvedValueOnce(null);
+    await usernameHydrateCachedClaim('sepolia');
+    expect(mockedInvoke).toHaveBeenCalledWith('username_hydrate_cached_claim', {
+      network: 'sepolia',
+      rpcUrls: undefined,
+    });
 
     mockedInvoke.mockResolvedValueOnce({
       network: 'sepolia',

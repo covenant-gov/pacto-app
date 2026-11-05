@@ -5,6 +5,7 @@ import {
   usernameClaim,
   usernameClaimAddressTransfer,
   usernameGetCachedClaim,
+  usernameHydrateCachedClaim,
   usernameInitiateAddressTransfer,
   usernameIsPendingTransfer,
   usernameRecordOf,
@@ -178,9 +179,21 @@ export async function refreshUsernameState(): Promise<void> {
     }
     if (gen !== refreshGen) return;
 
+    let nextCached = cached;
+    if (!nextCached && record?.name?.trim() && isNonZeroTokenId(record.tokenId)) {
+      try {
+        const hydrated = await usernameHydrateCachedClaim(USERNAME_NETWORK);
+        if (gen !== refreshGen) return;
+        if (hydrated) nextCached = hydrated;
+      } catch {
+        // Record is already loaded; a cache write failure leaves the dash hidden.
+      }
+    }
+    if (gen !== refreshGen) return;
+
     usernameState.set({
       status: 'ready',
-      cached,
+      cached: nextCached,
       record,
       pendingTransfer,
       activeEvm,

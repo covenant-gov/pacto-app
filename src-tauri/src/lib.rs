@@ -1585,6 +1585,7 @@ pub fn run() {
             evm::username::username_global_spendable_pool_wei,
             evm::username::username_used_nonce,
             evm::username::username_get_cached_claim,
+            evm::username::username_hydrate_cached_claim,
             evm::username::username_claim,
             evm::username::username_initiate_address_transfer,
             evm::username::username_claim_address_transfer,

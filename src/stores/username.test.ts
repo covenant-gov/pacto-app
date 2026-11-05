@@ -18,6 +18,7 @@ import {
 import { currentUser } from './auth-session';
 import {
   usernameGetCachedClaim,
+  usernameHydrateCachedClaim,
   usernameRecordOf,
   usernameIsPendingTransfer,
   usernameClaim,
@@ -27,6 +28,7 @@ import { npubHashFromPubkey } from '../lib/evm/sponsor/nostr_claim_link';
 
 vi.mock('../lib/api/username', () => ({
   usernameGetCachedClaim: vi.fn(),
+  usernameHydrateCachedClaim: vi.fn(),
   usernameRecordOf: vi.fn(),
   usernameIsPendingTransfer: vi.fn(),
   usernameClaim: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock('../lib/evm/sponsor/nostr_claim_link', () => ({
 }));
 
 const mockGetCached = vi.mocked(usernameGetCachedClaim);
+const mockHydrate = vi.mocked(usernameHydrateCachedClaim);
 const mockRecordOf = vi.mocked(usernameRecordOf);
 const mockPending = vi.mocked(usernameIsPendingTransfer);
 const mockActiveEvm = vi.mocked(getActiveSquadEvmSignerAddress);
@@ -297,6 +300,8 @@ describe('refreshUsernameState', () => {
       npub: 'npub1test',
     } as never);
     mockGetCached.mockReset();
+    mockHydrate.mockReset();
+    mockHydrate.mockResolvedValue(null);
     mockRecordOf.mockReset();
     mockPending.mockReset();
     mockActiveEvm.mockReset();
@@ -410,6 +415,76 @@ describe('refreshUsernameState', () => {
     await refreshUsernameState();
     expect(get(usernameState).status).toBe('ready');
     expect(mockNpubHash).toHaveBeenCalledWith(`0x${hex}`);
+    expect(mockHydrate).not.toHaveBeenCalled();
+  });
+
+  it('hydrates an empty cache when the chain record is a username NFT', async () => {
+    mockGetCached.mockResolvedValue(null);
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockRecordOf.mockResolvedValue({
+      name: 'alice',
+      evmAddress: EVM,
+      pendingAddress: '0x0000000000000000000000000000000000000000',
+      tokenId: '7',
+    });
+    mockPending.mockResolvedValue(false);
+    mockHydrate.mockResolvedValue({
+      npub: 'npub1',
+      username: 'alice',
+      npubHash: NPUB_HASH,
+      tokenId: '7',
+      linkEventId: null,
+      policyVersion: 3,
+      network: 'sepolia',
+      updatedAtMs: 2,
+    });
+
+    await refreshUsernameState();
+    expect(mockHydrate).toHaveBeenCalledWith('sepolia');
+    expect(get(usernameState).cached?.username).toBe('alice');
+    expect(get(usernameState).cached?.linkEventId).toBeNull();
+    expect(get(usernameState).cached?.tokenId).toBe('7');
+  });
+
+  it('does not hydrate when the chain record is not a holder', async () => {
+    mockGetCached.mockResolvedValue(null);
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockRecordOf.mockResolvedValue({
+      name: '',
+      evmAddress: '0x0000000000000000000000000000000000000000',
+      pendingAddress: '0x0000000000000000000000000000000000000000',
+      tokenId: '0',
+    });
+    mockPending.mockResolvedValue(false);
+
+    await refreshUsernameState();
+    expect(mockHydrate).not.toHaveBeenCalled();
+    expect(get(usernameState).cached).toBeNull();
+  });
+
+  it('does not replace an existing cache row', async () => {
+    mockGetCached.mockResolvedValue({
+      npub: 'npub1',
+      username: 'alice',
+      npubHash: NPUB_HASH,
+      tokenId: '1',
+      linkEventId: 'evt1',
+      policyVersion: 3,
+      network: 'sepolia',
+      updatedAtMs: 1,
+    });
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockRecordOf.mockResolvedValue({
+      name: 'alice',
+      evmAddress: EVM,
+      pendingAddress: '0x0000000000000000000000000000000000000000',
+      tokenId: '1',
+    });
+    mockPending.mockResolvedValue(false);
+
+    await refreshUsernameState();
+    expect(mockHydrate).not.toHaveBeenCalled();
+    expect(get(usernameState).cached?.linkEventId).toBe('evt1');
   });
 });
 
@@ -421,6 +496,8 @@ describe('claimUsername', () => {
       npub: 'npub1test',
     } as never);
     mockGetCached.mockReset();
+    mockHydrate.mockReset();
+    mockHydrate.mockResolvedValue(null);
     mockRecordOf.mockReset();
     mockPending.mockReset();
     mockActiveEvm.mockReset();
