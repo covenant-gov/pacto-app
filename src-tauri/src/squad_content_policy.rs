@@ -59,8 +59,8 @@ impl PolicyFlag {
 pub struct PolicyApplyOutcome {
     /// At least one flag was stored.
     pub changed: bool,
-    /// Flag timestamp when `restrict_event_create` went from off to on.
-    pub event_create_turned_on_at_ms: Option<i64>,
+    /// `restrict_event_create` went from off to on.
+    pub event_create_turned_on: bool,
     /// Event rows removed by a restrict-on.
     pub deleted_events: usize,
 }
@@ -134,10 +134,8 @@ pub fn merge_policy(
         next.restrict_event_create_updated_at_ms = incoming.restrict_event_create_updated_at_ms;
         next.restrict_event_create_by_npub = Some(author_npub.to_string());
         outcome.changed = true;
-        if incoming.restrict_event_create && !stored.restrict_event_create {
-            outcome.event_create_turned_on_at_ms =
-                Some(incoming.restrict_event_create_updated_at_ms);
-        }
+        outcome.event_create_turned_on =
+            incoming.restrict_event_create && !stored.restrict_event_create;
     }
     if incoming.restrict_doc_add_updated_at_ms > stored.restrict_doc_add_updated_at_ms {
         next.restrict_doc_add = incoming.restrict_doc_add;
@@ -179,23 +177,20 @@ fn upsert_policy(
     .map_err(|e| format!("Failed to store squad content policy: {}", e))
 }
 
-/// Remove non-admin events created at or after `since_ms`, with their RSVPs and pending ops.
+/// Remove every non-admin event of the parent, with its RSVPs and pending ops. Not time-scoped:
+/// creation stamps are sender-set (see docs/communities/SQUAD_CONTENT_POLICY.md).
 fn delete_restricted_events(
     conn: &rusqlite::Connection,
     parent_id: &str,
     admin_npubs: &[String],
-    since_ms: i64,
 ) -> Result<usize, String> {
     let map_err = |e: rusqlite::Error| format!("Failed to apply event restriction: {}", e);
     let doomed: Vec<String> = {
         let mut stmt = conn
-            .prepare(
-                "SELECT event_id, author_npub FROM squad_events
-                 WHERE parent_id = ?1 AND created_at_ms >= ?2",
-            )
+            .prepare("SELECT event_id, author_npub FROM squad_events WHERE parent_id = ?1")
             .map_err(map_err)?;
         let rows = stmt
-            .query_map(rusqlite::params![parent_id, since_ms], |row| {
+            .query_map([parent_id], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
             .map_err(map_err)?;
@@ -243,11 +238,8 @@ pub fn apply_policy(
         return Ok(outcome);
     }
     upsert_policy(&tx, &incoming.parent_id, &next)?;
-    if let Some(since_ms) = outcome.event_create_turned_on_at_ms {
-        if !admin_npubs.is_empty() {
-            outcome.deleted_events =
-                delete_restricted_events(&tx, &incoming.parent_id, admin_npubs, since_ms)?;
-        }
+    if outcome.event_create_turned_on && !admin_npubs.is_empty() {
+        outcome.deleted_events = delete_restricted_events(&tx, &incoming.parent_id, admin_npubs)?;
     }
     tx.commit()
         .map_err(|e| format!("Failed to commit squad content policy: {}", e))?;
@@ -666,7 +658,7 @@ mod tests {
         let conn = migrated_conn();
         let outcome = apply_as_admin(&conn, &wire(false, 100, false, 100));
         assert!(outcome.changed);
-        assert_eq!(outcome.event_create_turned_on_at_ms, None);
+        assert!(!outcome.event_create_turned_on);
         let row_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM squad_content_policy WHERE parent_id = 'squad-1'",
@@ -695,7 +687,7 @@ mod tests {
         )
         .expect("apply");
         assert!(outcome.changed);
-        assert_eq!(outcome.event_create_turned_on_at_ms, None);
+        assert!(!outcome.event_create_turned_on);
         let p = load_policy(&conn, "squad-1").expect("load");
         assert!(p.restrict_event_create);
         assert_eq!(p.restrict_event_create_updated_at_ms, 100);
@@ -755,7 +747,7 @@ mod tests {
         insert_event(&conn, "ev-member", "squad-1", MEMBER, 2_000);
         let outcome =
             apply_policy(&conn, &wire(true, 1_000, false, 0), ADMIN, true, &[]).expect("apply");
-        assert_eq!(outcome.event_create_turned_on_at_ms, Some(1_000));
+        assert!(outcome.event_create_turned_on);
         assert_eq!(outcome.deleted_events, 0);
         assert!(
             load_policy(&conn, "squad-1")
@@ -780,35 +772,29 @@ mod tests {
     }
 
     #[test]
-    fn restrict_on_deletes_non_admin_rows_at_or_after_flag_time() {
+    fn restrict_on_deletes_every_non_admin_row_of_the_parent() {
         let conn = migrated_conn();
-        insert_event(&conn, "ev-member-before", "squad-1", MEMBER, 999);
-        insert_event(&conn, "ev-member-at", "squad-1", MEMBER, 1_000);
+        // A stamp long before the flag (honest or backdated) does not protect a member row.
+        insert_event(&conn, "ev-member-before", "squad-1", MEMBER, 0);
+        insert_event(&conn, "ev-member-after", "squad-1", MEMBER, 2_000);
         // Same shape a local send produces: authored by this (non-admin) client.
-        insert_event(&conn, "ev-local-after", "squad-1", "npub1me", 1_500);
-        insert_event(&conn, "ev-admin-after", "squad-1", ADMIN, 2_000);
+        insert_event(&conn, "ev-local", "squad-1", "npub1me", 1_500);
+        insert_event(&conn, "ev-admin-before", "squad-1", ADMIN, 0);
         insert_event(&conn, "ev-other-squad", "squad-2", MEMBER, 2_000);
 
         let outcome = apply_as_admin(&conn, &wire(true, 1_000, false, 0));
-        assert_eq!(outcome.event_create_turned_on_at_ms, Some(1_000));
-        assert_eq!(outcome.deleted_events, 2);
+        assert!(outcome.event_create_turned_on);
+        assert_eq!(outcome.deleted_events, 3);
         assert_eq!(
             event_ids(&conn),
-            vec![
-                "ev-admin-after".to_string(),
-                "ev-member-before".to_string(),
-                "ev-other-squad".to_string(),
-            ]
+            vec!["ev-admin-before".to_string(), "ev-other-squad".to_string()]
         );
-        for gone in ["ev-member-at", "ev-local-after"] {
+        for gone in ["ev-member-before", "ev-member-after", "ev-local"] {
             assert_eq!(count(&conn, "squad_event_rsvps", gone), 0);
             assert_eq!(count(&conn, "squad_event_pending_ops", gone), 0);
         }
-        assert_eq!(count(&conn, "squad_event_rsvps", "ev-admin-after"), 1);
-        assert_eq!(
-            count(&conn, "squad_event_pending_ops", "ev-member-before"),
-            1
-        );
+        assert_eq!(count(&conn, "squad_event_rsvps", "ev-admin-before"), 1);
+        assert_eq!(count(&conn, "squad_event_pending_ops", "ev-other-squad"), 1);
     }
 
     #[test]

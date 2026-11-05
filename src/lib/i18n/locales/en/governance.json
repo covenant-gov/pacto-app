@@ -1075,7 +1075,7 @@
 	"governance.dashboard.proposalCards.title.pactoGovDeployment": "Pacto Gov deployment",
 	"governance.dashboard.proposalCards.title.safeMultisig": "Safe multisig",
 	"governance.contentPolicy.title": "Who can add events and docs",
-	"governance.contentPolicy.hint": "Squad admins can limit adding to admins only. Turning a limit on removes anything that members who are not admins add after that. Turning it off does not bring those back.",
+	"governance.contentPolicy.hint": "Squad admins can limit adding to admins only. Turning a limit on removes everything that members who are not admins have added, including earlier additions. Turning it off does not bring those back.",
 	"governance.contentPolicy.unavailable": "Available once the squad has an announcements channel.",
 	"governance.contentPolicy.loading": "Loading…",
 	"governance.contentPolicy.events.switchLabel": "Only admins add events",

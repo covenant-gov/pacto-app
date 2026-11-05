@@ -2096,6 +2096,45 @@ mod tests {
     }
 
     #[test]
+    fn backdated_member_create_and_restrict_on_converge_in_either_order() {
+        use crate::squad_content_policy::{apply_policy, build_set_wire, PolicyFlag};
+        let restrict = build_set_wire(
+            &Default::default(),
+            PARENT,
+            PolicyFlag::RestrictEventCreate,
+            true,
+            5_000,
+        );
+        let f = fields("2026-01-15T09:00");
+        let backdated = create("ev-member", &f, 0);
+        let admin_event = create("ev-admin", &f, 6_000);
+        for policy_first in [true, false] {
+            let conn = conn();
+            let apply_restrict = |c: &Connection| {
+                apply_policy(c, &restrict, ADMIN, true, &[ADMIN.to_string()]).expect("policy");
+            };
+            if policy_first {
+                apply_restrict(&conn);
+            }
+            ingest(&conn, &backdated, "r-member", ALICE);
+            ingest(&conn, &admin_event, "r-admin", ADMIN);
+            if !policy_first {
+                apply_restrict(&conn);
+            }
+            let ids: Vec<String> = load_events(&conn, PARENT, ADMIN)
+                .unwrap()
+                .into_iter()
+                .map(|e| e.id)
+                .collect();
+            assert_eq!(
+                ids,
+                vec!["ev-admin".to_string()],
+                "policy_first={policy_first}"
+            );
+        }
+    }
+
+    #[test]
     fn non_member_create_is_ignored() {
         let conn = conn();
         let (a, card) = ingest(

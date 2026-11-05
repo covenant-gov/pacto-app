@@ -153,7 +153,7 @@ The name `pacto_squad_doc` is reserved for a future squad docs shelf; no code se
 
 Feature shelves such as `#events` (and a future docs shelf) are hub rows that read their SQLite replica through Tauri, the same way `#polls` reads the poll replica. They are not virtual buckets of the MLS stream.
 
-**Admin gate:** policy writes are accepted only from members in the group's MLS `admin_pubkeys`; non-admin policy rumors are dropped on ingest. Turning `restrict_event_create` on deletes non-admin events created at or after the flag timestamp; turning it off restores nothing.
+**Admin gate:** policy writes are accepted only from members in the group's MLS `admin_pubkeys`; non-admin policy rumors are dropped on ingest. Turning `restrict_event_create` on deletes every non-admin event of the parent, whatever its timestamp; turning it off restores nothing. Rationale and rejected alternatives: [`../communities/SQUAD_CONTENT_POLICY.md`](../communities/SQUAD_CONTENT_POLICY.md).
 
 ### Squad events (`pacto_squad_event`)
 
