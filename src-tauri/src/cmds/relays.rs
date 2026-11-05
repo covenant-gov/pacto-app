@@ -240,6 +240,8 @@ pub(crate) async fn notifs() -> Result<bool, String> {
 
                                                 match process_rumor(rumor_event, rumor_context).await {
                                                     Ok(result) => {
+                                                        // Only polls raise the action-prompt banner; other announce cards do not.
+                                                        let poll_prompt = matches!(result, RumorProcessingResult::DashboardPollCreate(_));
                                                         match result {
                                                             RumorProcessingResult::TextMessage(mut message) => {
                                                                 // Populate reply context for old messages not in frontend cache
@@ -499,7 +501,8 @@ pub(crate) async fn notifs() -> Result<bool, String> {
 
                                                                 None // Don't emit as message
                                                             }
-                                                            RumorProcessingResult::DashboardPollCreate(mut message) => {
+                                                            RumorProcessingResult::DashboardPollCreate(mut message)
+                                                            | RumorProcessingResult::SquadRecordCard(mut message) => {
                                                                 if !message.replied_to.is_empty() {
                                                                     if let Some(handle) = TAURI_APP.get() {
                                                                         let _ = db::populate_reply_context(&handle, &mut message).await;
@@ -521,7 +524,7 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                                                                     (added, _typers, level)
                                                                 };
                                                                 // A new poll needs every member's vote — routed as an action prompt (KTD4).
-                                                                if was_added {
+                                                                if was_added && poll_prompt {
                                                                     let (sender_name, group_name) = {
                                                                         let state = crate::STATE.lock().await;
                                                                         let sender = if let Some(profile) = state.get_profile(&sender_npub) {
@@ -597,7 +600,8 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                                                                     None
                                                                 }
                                                             }
-                                                            RumorProcessingResult::DashboardPollVoteIngested => None,
+                                                            RumorProcessingResult::DashboardPollVoteIngested
+                                                            | RumorProcessingResult::SquadRecordSilent => None,
                                                             RumorProcessingResult::TypingIndicator { profile_id, until } => {
                                                                 // Handle typing indicators in real-time
                                                                 let active_typers = {

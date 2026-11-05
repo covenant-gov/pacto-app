@@ -7,9 +7,161 @@ import {
   ANNOUNCE_TYPE_SAFE_PROPOSAL,
   ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
   ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED,
+  ANNOUNCE_TYPE_SQUAD_EVENT_CREATED,
+  ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED,
   buildAnnounceContent,
   parseAnnouncement,
+  squadEventCardView,
+  squadEventSeriesOverlay,
+  type SquadEventCreatedPayload,
 } from './announcements';
+import type { SquadEventDto } from './api/squad-events';
+
+function eventRow(overrides: Partial<SquadEventDto> = {}): SquadEventDto {
+  return {
+    id: 'evt-1',
+    parentId: 'squad-1',
+    mlsGroupId: 'grp-ann',
+    seriesId: null,
+    kind: 31923,
+    title: 'Standup',
+    summary: '',
+    startUnix: 1_767_225_600,
+    endUnix: null,
+    startDate: null,
+    endDate: null,
+    startTzid: 'America/New_York',
+    place: 'offline',
+    location: '123 Secret Street',
+    channelId: null,
+    status: 'active',
+    authorNpub: 'npub1author',
+    createdAtMs: 0,
+    updatedAtMs: 0,
+    updatedByNpub: 'npub1author',
+    rsvps: [],
+    myRsvp: null,
+    canEdit: false,
+    ...overrides,
+  };
+}
+
+describe('squad event announcements', () => {
+  const timedPayload: SquadEventCreatedPayload = {
+    id: 'evt-1',
+    parent_id: 'squad-1',
+    series_id: null,
+    kind: 31923,
+    title: 'Standup',
+    start: 1_767_225_600,
+    end: null,
+    start_tzid: 'America/New_York',
+    channel_id: 'grp-ann',
+  };
+
+  it('parses a single-event card and drops any place fields', () => {
+    const parsed = parseAnnouncement(
+      JSON.stringify({
+        type: ANNOUNCE_TYPE_SQUAD_EVENT_CREATED,
+        payload: { ...timedPayload, location: '123 Secret Street', place: 'offline' },
+      }),
+    );
+    expect(parsed).toEqual({ type: ANNOUNCE_TYPE_SQUAD_EVENT_CREATED, payload: timedPayload });
+    expect(JSON.stringify(parsed)).not.toContain('Secret');
+  });
+
+  it('parses an all-day card with civil dates', () => {
+    const parsed = parseAnnouncement(
+      JSON.stringify({
+        type: ANNOUNCE_TYPE_SQUAD_EVENT_CREATED,
+        payload: { ...timedPayload, kind: 31922, start: '2026-03-08', end: '2026-03-09' },
+      }),
+    );
+    expect(parsed?.payload).toMatchObject({ kind: 31922, start: '2026-03-08', end: '2026-03-09' });
+  });
+
+  it('rejects a start that does not match the kind', () => {
+    expect(
+      parseAnnouncement(
+        JSON.stringify({ type: ANNOUNCE_TYPE_SQUAD_EVENT_CREATED, payload: { ...timedPayload, start: '2026-03-08' } }),
+      ),
+    ).toBeNull();
+    expect(
+      parseAnnouncement(
+        JSON.stringify({
+          type: ANNOUNCE_TYPE_SQUAD_EVENT_CREATED,
+          payload: { ...timedPayload, kind: 31922, start: 1_767_225_600 },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('parses a series card', () => {
+    const payload = {
+      series_id: 'series-1',
+      parent_id: 'squad-1',
+      kind: 31923,
+      title: 'Weekly sync',
+      first_start: 1_767_225_600,
+      start_tzid: 'America/New_York',
+      count: 8,
+      channel_id: null,
+    };
+    expect(
+      parseAnnouncement(JSON.stringify({ type: ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED, payload })),
+    ).toEqual({ type: ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED, payload });
+    expect(
+      parseAnnouncement(
+        JSON.stringify({ type: ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED, payload: { ...payload, count: 0 } }),
+      ),
+    ).toBeNull();
+  });
+
+  it('routes event cards to the announcements bucket', () => {
+    const o = JSON.parse(buildAnnounceContent({ type: ANNOUNCE_TYPE_SQUAD_EVENT_CREATED, payload: timedPayload })) as {
+      pacto_virtual_bucket?: string;
+    };
+    expect(o.pacto_virtual_bucket).toBe('announcements');
+  });
+
+  it('card view uses the stored payload when the replica is not loaded', () => {
+    expect(squadEventCardView(timedPayload, null)).toEqual({
+      title: 'Standup',
+      start: { startUnix: 1_767_225_600, startDate: null, startTzid: 'America/New_York' },
+      cancelled: false,
+      unavailable: false,
+    });
+  });
+
+  it('card view is unavailable when the loaded replica has no row for the event', () => {
+    expect(squadEventCardView(timedPayload, [eventRow({ id: 'other' })])).toMatchObject({
+      title: 'Standup',
+      cancelled: false,
+      unavailable: true,
+    });
+  });
+
+  it('card view overlays the latest title, start, and cancelled status from the replica', () => {
+    const view = squadEventCardView(timedPayload, [
+      eventRow({ title: 'Standup (moved)', startUnix: 1_767_229_200, status: 'cancelled' }),
+    ]);
+    expect(view).toEqual({
+      title: 'Standup (moved)',
+      start: { startUnix: 1_767_229_200, startDate: null, startTzid: 'America/New_York' },
+      cancelled: true,
+      unavailable: false,
+    });
+  });
+
+  it('series overlay counts active occurrences, reports zero rows after a load, and null before', () => {
+    const rows = Array.from({ length: 8 }, (_, i) =>
+      eventRow({ id: `evt-${i}`, seriesId: 'series-1', status: i === 2 ? 'cancelled' : 'active' }),
+    );
+    expect(squadEventSeriesOverlay('series-1', rows)).toEqual({ total: 8, active: 7 });
+    expect(squadEventSeriesOverlay('series-2', rows)).toEqual({ total: 0, active: 0 });
+    expect(squadEventSeriesOverlay('series-1', null)).toBeNull();
+  });
+});
 
 describe('buildAnnounceContent', () => {
   it('sets pacto_virtual_bucket inbox for governance-safe automation', () => {

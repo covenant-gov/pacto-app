@@ -4,6 +4,7 @@
 import type { Channel } from '../stores/squads';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_ID,
   SETTINGS_CHANNEL_NAME,
@@ -41,13 +42,14 @@ export function isDefaultHubSidebarChannel(name: string): boolean {
     name === SQUAD_WARGAME_CHANNEL_NAME ||
     name === ANNOUNCEMENTS_CHANNEL_NAME ||
     name === POLLS_CHANNEL_NAME ||
+    name === EVENTS_CHANNEL_NAME ||
     name === SETTINGS_CHANNEL_NAME
   );
 }
 
 /**
  * Virtual + MLS rows for the squad hub sidebar.
- * Pinned order: squad-dashboard → squad-wargame (when present) → announcements → polls → settings → (custom below divider).
+ * Pinned order: squad-dashboard → squad-wargame (when present) → announcements → polls → events → settings → (custom below divider).
  */
 export function buildHubSidebarChannels<T extends { name: string; groupId: string; order: number }>(
   rawChannels: T[],
@@ -58,10 +60,12 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
     .sort((a, b) => a.order - b.order);
   const announcements = sorted.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
   const polls = sorted.find((c) => c.name === POLLS_CHANNEL_NAME);
+  const events = sorted.find((c) => c.name === EVENTS_CHANNEL_NAME);
   const rest = sorted.filter(
     (c) =>
       c.name !== ANNOUNCEMENTS_CHANNEL_NAME &&
       c.name !== POLLS_CHANNEL_NAME &&
+      c.name !== EVENTS_CHANNEL_NAME &&
       c.name !== SETTINGS_CHANNEL_NAME
   );
   const includeWarGame = options?.includeWarGame === true;
@@ -81,6 +85,7 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
   }
   if (announcements) out.push(announcements);
   if (polls) out.push(polls);
+  if (events) out.push(events);
   out.push({ name: SETTINGS_CHANNEL_NAME, groupId: SETTINGS_CHANNEL_ID, order: 2 });
   out.push(...rest);
   return out;
@@ -125,9 +130,9 @@ export function resolvePollsMlsGroupId(parent: ParentWithChannels): string | nul
   return ann || null;
 }
 
-/** Default squad/network MLS rooms to invite people into (announce → polls). May share one physical group id. */
+/** Default squad/network MLS rooms to invite people into (announce → polls → events). May share one physical group id. */
 export function orderedDefaultInviteChannels(parent: ParentWithChannels): Channel[] {
-  const order = [ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME];
+  const order = [ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME, EVENTS_CHANNEL_NAME];
   return order
     .map((name) => parent.channels.find((c) => c.name === name))
     .filter((c): c is Channel => !!c);

@@ -1,6 +1,7 @@
 <script lang="ts">
   import JoinInboxHoldersSection from './JoinInboxHoldersSection.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
+  import SquadContentPolicySection from './SquadContentPolicySection.svelte';
   import SquadEndpointsPanel from './SquadEndpointsPanel.svelte';
   import SquadIdentitySection from './SquadIdentitySection.svelte';
   import SquadNetworkSection from './SquadNetworkSection.svelte';
@@ -12,6 +13,7 @@
   import type { SquadRpcConfig } from '../../../lib/squad/squad-rpc';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth-session';
+  import { resolvePollsMlsGroupId } from '../../../lib/parent-navbar';
   import {
     needsSquadRosterKeyChoice,
     squadMemberEvmForDisplay,
@@ -87,6 +89,8 @@
     {pactoGovRevision}
     {memberEvmOptions}
   />
+
+  <SquadContentPolicySection parentId={squad.id} mlsGroupId={resolvePollsMlsGroupId(squad)} />
 
   <SquadStickersSection {squad} {announcementsGroupId} />
 

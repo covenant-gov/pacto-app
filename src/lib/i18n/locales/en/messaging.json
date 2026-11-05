@@ -352,6 +352,8 @@
 	"messaging.structuredNotice.contractAllowlistUpdated": "Contract allowlist updated",
 	"messaging.structuredNotice.dashboardPollCreated": "Dashboard poll created",
 	"messaging.structuredNotice.dashboardPollUpdate": "Dashboard poll update",
+	"messaging.structuredNotice.squadEventCreated": "Squad event created",
+	"messaging.structuredNotice.squadEventSeriesCreated": "Weekly squad meetings created",
 	"messaging.structuredNotice.governanceUpdated": "Governance updated",
 	"messaging.structuredNotice.warGameUpdated": "War-game updated",
 	"messaging.structuredNotice.governanceProcessUpdated": "Governance process updated",

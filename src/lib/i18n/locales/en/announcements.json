@@ -1,6 +1,8 @@
 {
 	"announcements.fallback.title": "Announcement",
 	"announcements.pollCreated.badge": "New poll",
+	"announcements.eventCreated.badge": "New event",
+	"announcements.eventSeriesCreated.badge": "New weekly meetings",
 	"announcements.governanceUpdated.aMember": "A member",
 	"announcements.governanceUpdated.sponsor": "{who} deployed the squad sponsor",
 	"announcements.governanceUpdated.pactoGov": "{who} deployed Pacto Gov",

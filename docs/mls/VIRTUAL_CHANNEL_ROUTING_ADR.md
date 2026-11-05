@@ -136,9 +136,38 @@ SQLite applicators for structured announces (`governance_updated`, `squad_safe_u
 
 ---
 
+## Squad group records (`d`-tagged Kind 30078)
+
+Squad-wide records ride the announcements group as **Kind 30078** rumors selected by their **`d` tag**, the same way dashboard polls use `pacto_dashboard_poll`. They also carry a `parent` tag with the squad/network `parent_id`.
+
+| `d` tag | Status | Content schema |
+|---------|--------|----------------|
+| `pacto_squad_content_policy` | Active | `pacto.squad_content_policy.v1` — admin-only add restrictions (`restrict_event_create`, `restrict_doc_add`), each with its own `*_updated_at_ms`; per-flag last timestamp wins |
+| `pacto_squad_event` | Active | `pacto.squad_event.v1` — squad events and RSVPs (see below) |
+
+The name `pacto_squad_doc` is reserved for a future squad docs shelf; no code sends or reads it yet.
+
+**Group gate:** a record is accepted only when the payload `parent_id` equals the MLS group it arrived in (a parent's id is its announcements group id), the same check as the side-effect ingest gate above. Records naming another parent are dropped on ingest, and send commands reject a mismatched `mls_group_id` with `squad_records_wrong_group`.
+
+**Silent operations** (policy changes, event updates, RSVPs, cancels) return the silent ingest result (`SquadRecordSilent`, same handling as a poll vote): they update the SQLite replica and never create a timeline row. They need no `pacto_bucket` tag and **do not** extend the bucket enum — there is no `events` or `docs` bucket. Record ops that announce something (for example an event-created card) are stored as `announcements` messages like a poll create.
+
+Feature shelves such as `#events` (and a future docs shelf) are hub rows that read their SQLite replica through Tauri, the same way `#polls` reads the poll replica. They are not virtual buckets of the MLS stream.
+
+**Admin gate:** policy writes are accepted only from members in the group's MLS `admin_pubkeys`; non-admin policy rumors are dropped on ingest. Turning `restrict_event_create` on deletes every non-admin event of the parent, whatever its timestamp; turning it off restores nothing. Rationale and rejected alternatives: [`../communities/SQUAD_CONTENT_POLICY.md`](../communities/SQUAD_CONTENT_POLICY.md).
+
+### Squad events (`pacto_squad_event`)
+
+- **Wire:** `{"schema":"pacto.squad_event.v1","op":…}` with `op` one of `create`, `update`, `rsvp`, `cancel`, `series_card`. Event fields use NIP-52 names (`kind` 31922 all-day / 31923 timed, `title`, `summary`, `start`, `end`, `start_tzid`, `location`) plus `id`, `parent_id`, `series_id`, `place`, `status`, `channel_id`, `updated_at_ms`. The rumor kind stays 30078; NIP-52 kinds only appear inside the encrypted payload.
+- **Cards:** a `create` outside a series becomes an `announcements` message `{"type":"squad_event_created","payload":{…}}`; a weekly series sends its creates plus one `series_card` that becomes `{"type":"squad_event_series_created","payload":{…}}`. Card payloads never contain `location` or place details.
+- **Silent:** `update`, `rsvp`, `cancel`, and series member creates update the replica only. Writes are last-`updated_at_ms`-wins per event (equal keeps the stored row), and children that arrive before their create wait in a pending-ops table. Cancel is sticky. RSVPs are newest-per-member at ingest regardless of status; only the send command refuses an RSVP to an event it already knows is cancelled.
+- **Reminders:** local only. Lead time and mute are per-device prefs and never go on the wire. Reminders that come due while the app is not running are written to Catch up with kind `event_reminder` (`source_event_id` = `"{event_id}:{fire_at_ms}"`, `chat_id` = the announcements group).
+
+---
+
 ## Related documents
 
 - This ADR — normative `pacto_bucket` / `pacto_virtual_bucket` contract.
+- [`../plans/2026-11-04-0208-feat-squad-group-records-plan.md`](../plans/2026-11-04-0208-feat-squad-group-records-plan.md) — squad group records and content policy.
 - [`../dashboard/POLLS.md`](../dashboard/POLLS.md) — polls virtual-channel transport.
 - [`../communities/JOIN_INBOX.md`](../communities/JOIN_INBOX.md) — `join_requests` bucket + Join inbox wire schemas.
 - [`../communities/DESIGN.md`](../communities/DESIGN.md) — hub channel semantics.

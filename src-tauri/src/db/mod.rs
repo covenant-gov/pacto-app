@@ -81,8 +81,9 @@ pub use squad::{
 
 #[allow(unused_imports)]
 pub(crate) use squad::{
-    apply_verified_roster_bind_cert, get_squad_member_evm_account_id,
-    is_author_mls_member_for_chat, is_certified_squad_member_evm_row,
+    apply_verified_roster_bind_cert, author_listed_in_participants,
+    get_squad_member_evm_account_id, is_author_mls_member_for_chat,
+    is_certified_squad_member_evm_row,
     parse_squad_evm_roster_snapshot_certs, parse_v2_squad_member_evm_share,
     roster_evm_address_for_member, upsert_certified_squad_member_evm, RosterBindCertIngest,
 };

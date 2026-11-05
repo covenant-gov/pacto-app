@@ -352,6 +352,8 @@
 	"messaging.structuredNotice.contractAllowlistUpdated": "Lista de permitidos de contratos actualizada",
 	"messaging.structuredNotice.dashboardPollCreated": "Encuesta del panel creada",
 	"messaging.structuredNotice.dashboardPollUpdate": "Actualización de encuesta del panel",
+	"messaging.structuredNotice.squadEventCreated": "Evento del escuadrón creado",
+	"messaging.structuredNotice.squadEventSeriesCreated": "Reuniones semanales del escuadrón creadas",
 	"messaging.structuredNotice.governanceUpdated": "Gobernanza actualizada",
 	"messaging.structuredNotice.warGameUpdated": "War-game actualizado",
 	"messaging.structuredNotice.governanceProcessUpdated": "Proceso de gobernanza actualizado",

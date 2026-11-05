@@ -30,11 +30,18 @@ struct TimerState {
     handle: JoinHandle<()>,
 }
 
+/// Squad event reminder scan for the current unlock.
+struct ReminderScanState {
+    handle: tauri::async_runtime::JoinHandle<()>,
+    unlocked_at_ms: i64,
+}
+
 struct InnerState {
     key: Option<SecretBox<[u8; 32]>>,
     last_activity: Instant,
     locked_at: Option<SystemTime>,
     timer: Option<TimerState>,
+    reminder_scan: Option<ReminderScanState>,
     timeout_ms: u64,
 }
 
@@ -54,6 +61,7 @@ impl SessionManager {
                 last_activity: Instant::now(),
                 locked_at: None,
                 timer: None,
+                reminder_scan: None,
                 timeout_ms: DEFAULT_IDLE_TIMEOUT_MS,
             })),
         }
@@ -70,10 +78,15 @@ impl SessionManager {
     }
 
     /// Store the encryption key, mark the session unlocked, and start the
-    /// idle timer. On Unix desktops, attempts to lock the key pages into
-    /// memory; failures are logged, reported to the UI via `session_warning`,
-    /// and ignored so the unlock still succeeds.
+    /// idle timer and the reminder scan. On Unix desktops, attempts to lock
+    /// the key pages into memory; failures are logged, reported to the UI via
+    /// `session_warning`, and ignored so the unlock still succeeds.
     pub fn set_key(&self, key: [u8; 32]) {
+        self.set_key_locked(key);
+        self.start_reminder_scan();
+    }
+
+    fn set_key_locked(&self, key: [u8; 32]) {
         let mut state = self.state.lock();
         let secret = SecretBox::new(Box::new(key));
 
@@ -99,11 +112,42 @@ impl SessionManager {
         state.locked_at = None;
         state.last_activity = Instant::now();
         self.spawn_timer_locked(&mut state);
+        if let Some(scan) = state.reminder_scan.take() {
+            scan.handle.abort();
+        }
     }
 
-    /// Zeroize the encryption key and cancel the idle timer. The SecretBox
-    /// zeroizes the bytes on drop. On Unix desktops, best-effort `munlock` is
-    /// attempted before the key is dropped.
+    /// Spawned outside the session mutex; dropped if the session locked meanwhile.
+    fn start_reminder_scan(&self) {
+        let unlocked_at_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let Some(handle) = crate::squad_event_reminders::spawn_scan_loop(unlocked_at_ms) else {
+            return;
+        };
+        let mut state = self.state.lock();
+        if state.key.is_none() {
+            handle.abort();
+            return;
+        }
+        if let Some(prev) = state.reminder_scan.replace(ReminderScanState {
+            handle,
+            unlocked_at_ms,
+        }) {
+            prev.handle.abort();
+        }
+    }
+
+    /// Start instant of the running reminder scan; `None` while locked.
+    pub fn reminder_unlocked_at_ms(&self) -> Option<i64> {
+        let state = self.state.lock();
+        state.reminder_scan.as_ref().map(|scan| scan.unlocked_at_ms)
+    }
+
+    /// Zeroize the encryption key and cancel the idle timer and reminder
+    /// scan. The SecretBox zeroizes the bytes on drop. On Unix desktops,
+    /// best-effort `munlock` is attempted before the key is dropped.
     pub fn clear(&self) {
         let mut state = self.state.lock();
         if let Some(secret) = state.key.take() {
@@ -121,6 +165,9 @@ impl SessionManager {
         }
         if let Some(timer) = state.timer.take() {
             timer.handle.abort();
+        }
+        if let Some(scan) = state.reminder_scan.take() {
+            scan.handle.abort();
         }
     }
 

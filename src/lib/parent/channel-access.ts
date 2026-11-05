@@ -1,12 +1,13 @@
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
 } from '../squad/hub-channel-names';
 import type { Channel } from '../../stores/squads';
 
 export type ChannelAccess = 'open' | 'closed';
 
-const HUB_CHANNEL_NAMES = new Set([ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME]);
+const HUB_CHANNEL_NAMES = new Set([ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME, EVENTS_CHANNEL_NAME]);
 
 export function isHubChannelRow(ch: Pick<Channel, 'name' | 'groupId'>): boolean {
   return HUB_CHANNEL_NAMES.has(ch.name) || ch.groupId.startsWith('__');

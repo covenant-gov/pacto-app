@@ -30,6 +30,19 @@ pub enum EventKind {
     DirectMessage,
     /// Welcome, invite, join outcome, or another needs-action prompt.
     ActionPrompt,
+    /// A squad event reminder coming due on this device.
+    EventReminder,
+}
+
+/// How an on-time event reminder reaches the member.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReminderDelivery {
+    /// Window focused: the webview shows an in-app notice.
+    InApp,
+    /// Window unfocused: OS banner.
+    Banner,
+    /// Chat at Nothing: neither.
+    Silent,
 }
 
 /// Resolve the tier for one event. This is KD6's static lookup, not a
@@ -62,10 +75,22 @@ pub fn resolve_tier(
             All => Interrupt,
             Mentions | Nothing => Record,
         },
-        DirectMessage | ActionPrompt => match level {
+        DirectMessage | ActionPrompt | EventReminder => match level {
             Nothing => Record,
             Mentions | All => Interrupt,
         },
+    }
+}
+
+/// On-time reminder routing: Interrupt tier only, in-app when focused (OS banners skip focused windows).
+pub fn reminder_delivery(level: NotificationLevel, focused: bool) -> ReminderDelivery {
+    if resolve_tier(EventKind::EventReminder, level, false, false) != Tier::Interrupt {
+        return ReminderDelivery::Silent;
+    }
+    if focused {
+        ReminderDelivery::InApp
+    } else {
+        ReminderDelivery::Banner
     }
 }
 
@@ -80,6 +105,9 @@ pub fn contributes_to_badge(tier: Tier, level: NotificationLevel) -> bool {
 /// member or needs their action, independent of the chat's level — a
 /// needs-action prompt in a chat at Nothing still earns an entry (R24), it
 /// just contributes no badge (see `contributes_to_badge`).
+///
+/// Event reminders never earn an entry on arrival: the reminder scan writes
+/// the missed ones itself.
 pub fn earns_catch_up_entry(kind: EventKind, is_own: bool, mention_hit: bool) -> bool {
     if is_own {
         return false;
@@ -87,6 +115,7 @@ pub fn earns_catch_up_entry(kind: EventKind, is_own: bool, mention_hit: bool) ->
     match kind {
         EventKind::GroupMessage => mention_hit,
         EventKind::DirectMessage | EventKind::ActionPrompt => true,
+        EventKind::EventReminder => false,
     }
 }
 
@@ -106,6 +135,7 @@ mod tests {
             EventKind::GroupMessage,
             EventKind::DirectMessage,
             EventKind::ActionPrompt,
+            EventKind::EventReminder,
         ];
 
         for &kind in &kinds {
@@ -154,10 +184,12 @@ mod tests {
                     }
                 }
             }
-            EventKind::DirectMessage | EventKind::ActionPrompt => match level {
-                Nothing => Record,
-                Mentions | All => Interrupt,
-            },
+            EventKind::DirectMessage | EventKind::ActionPrompt | EventKind::EventReminder => {
+                match level {
+                    Nothing => Record,
+                    Mentions | All => Interrupt,
+                }
+            }
         }
     }
 
@@ -168,6 +200,7 @@ mod tests {
                 EventKind::GroupMessage,
                 EventKind::DirectMessage,
                 EventKind::ActionPrompt,
+                EventKind::EventReminder,
             ] {
                 assert_eq!(resolve_tier(kind, level, true, false), Passive);
                 assert_eq!(resolve_tier(kind, level, true, true), Passive);
@@ -244,5 +277,21 @@ mod tests {
     #[test]
     fn catch_up_admission_is_false_for_own_events() {
         assert!(!earns_catch_up_entry(EventKind::ActionPrompt, true, false));
+    }
+
+    #[test]
+    fn event_reminder_never_earns_catch_up_on_arrival() {
+        assert!(!earns_catch_up_entry(EventKind::EventReminder, false, false));
+        assert!(!earns_catch_up_entry(EventKind::EventReminder, false, true));
+    }
+
+    #[test]
+    fn reminder_delivery_follows_focus_and_level() {
+        for level in [Mentions, All] {
+            assert_eq!(reminder_delivery(level, true), ReminderDelivery::InApp);
+            assert_eq!(reminder_delivery(level, false), ReminderDelivery::Banner);
+        }
+        assert_eq!(reminder_delivery(Nothing, true), ReminderDelivery::Silent);
+        assert_eq!(reminder_delivery(Nothing, false), ReminderDelivery::Silent);
     }
 }

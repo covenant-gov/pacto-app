@@ -135,6 +135,11 @@ import {
   LAST_SEEN_POLL_CREATED_AT_PREFIX,
   resetPollsHubAlertStores,
 } from '../../stores/polls-hub-alerts';
+import {
+  LAST_SEEN_EVENT_CARD_AT_PREFIX,
+  resetEventsHubAlertStores,
+} from '../../stores/events-hub-alerts';
+import { resetSquadEventDraftIds } from '../squad/squad-event-form';
 import { resetGovActionPromptStores } from '../../stores/gov-action-prompts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { resetMlsStoreResetState } from '../../stores/mls-reset';
@@ -154,6 +159,7 @@ import {
 import { clearPendingReactions } from '../messaging/reactions';
 import { clearPendingAttachment } from '../messaging/attachment-composer';
 import { clearLinkPreviewRequests } from '../messaging/link-preview';
+import { clearSquadEventCardRowsCache } from '../squad/squad-event-card-replica';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -198,6 +204,7 @@ const SCOPED_KEY_PREFIXES = [
   MLS_HISTORY_WELCOME_PREFIX,
   MUTINY_PROCESS_TX_PREFIX,
   LAST_SEEN_POLL_CREATED_AT_PREFIX,
+  LAST_SEEN_EVENT_CARD_AT_PREFIX,
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {
@@ -243,6 +250,8 @@ export function clearAccountState(npub?: string): void {
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
   resetPollsHubAlertStores();
+  resetEventsHubAlertStores();
+  resetSquadEventDraftIds();
   resetGovActionPromptStores();
   resetMlsGroupMembersStores();
   resetMlsStoreResetState();
@@ -250,6 +259,7 @@ export function clearAccountState(npub?: string): void {
   clearPendingReactions();
   clearPendingAttachment();
   clearLinkPreviewRequests();
+  clearSquadEventCardRowsCache();
   clearWalletSummaryCacheStore();
   clearDashboardFetchMetaStores();
   clearGovernanceSnapshotCacheStore();

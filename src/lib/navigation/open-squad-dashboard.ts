@@ -17,7 +17,12 @@ import {
   type Squad,
 } from '../../stores/app';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
-import { ANNOUNCEMENTS_CHANNEL_NAME, SETTINGS_CHANNEL_ID } from '../squad/hub-channel-names';
+import {
+  ANNOUNCEMENTS_CHANNEL_NAME,
+  EVENTS_CHANNEL_NAME,
+  SETTINGS_CHANNEL_ID,
+} from '../squad/hub-channel-names';
+import { focusSquadEvent } from '../../stores/events-navigation';
 import { get } from 'svelte/store';
 
 /**
@@ -30,7 +35,9 @@ import { get } from 'svelte/store';
 export type NavigationTarget =
   | { kind: 'squad-channel'; squadId: string; channelId: string; hubChannelName?: string | null }
   | { kind: 'squad-dashboard'; squadId: string }
-  | { kind: 'dm'; npub: string };
+  | { kind: 'dm'; npub: string }
+  /** `#events` (announcements group) with one event's detail open. */
+  | { kind: 'squad-event'; squadId: string; channelId: string; hubChannelName: string; eventId: string };
 
 /** Sets every store a squad-channel navigation touches (nav + memory), matching Toast's `goToSpace`. */
 function navigateToSquadChannel(squadId: string, channelId: string, preferredHubChannelName?: string | null): void {
@@ -89,10 +96,23 @@ export function navigateToTarget(target: NavigationTarget): void {
     navigateToSquadChannel(target.squadId, SQUAD_DASHBOARD_CHANNEL_ID);
     return;
   }
+  if (target.kind === 'squad-event') {
+    focusSquadEvent(target.squadId, target.eventId);
+    return;
+  }
   if (target.channelId === SETTINGS_CHANNEL_ID) {
     settingsChannelMode.set('squad');
   }
   navigateToSquadChannel(target.squadId, target.channelId, target.hubChannelName);
+}
+
+/** Missed-reminder Catch up id `"{eventId}:{fireAtMs}"`; split on the last colon. */
+export function parseEventReminderSourceId(sourceEventId: string): { eventId: string; fireAtMs: number } | null {
+  const sep = sourceEventId.lastIndexOf(':');
+  if (sep <= 0) return null;
+  const fire = sourceEventId.slice(sep + 1);
+  if (!/^\d+$/.test(fire)) return null;
+  return { eventId: sourceEventId.slice(0, sep), fireAtMs: Number(fire) };
 }
 
 /**
@@ -102,6 +122,7 @@ export function navigateToTarget(target: NavigationTarget): void {
  * roster-key prompt and pending join requests both use that fallback id,
  * since neither is tied to one specific channel) — `#settings` for
  * `join-request:*` items and the squad dashboard for other prompts.
+ * `event_reminder` entries open that event's detail in `#events`.
  * Returns `null` for a reference that resolves to nothing (a bug in the
  * Catch up backend's orphan cleanup, not an expected case here).
  */
@@ -112,6 +133,17 @@ export function resolveCatchUpTarget(
   for (const squad of allSquads) {
     const channel = squad.channels.find((c) => c.groupId === entry.chatId);
     if (!channel) continue;
+    if (entry.kind === 'event_reminder') {
+      const parsed = parseEventReminderSourceId(entry.sourceEventId ?? '');
+      if (!parsed) return null;
+      return {
+        kind: 'squad-event',
+        squadId: squad.id,
+        channelId: entry.chatId,
+        hubChannelName: EVENTS_CHANNEL_NAME,
+        eventId: parsed.eventId,
+      };
+    }
     if (entry.kind === 'action_prompt' && channel.name === ANNOUNCEMENTS_CHANNEL_NAME) {
       if (entry.sourceEventId?.startsWith('join-request:')) {
         return { kind: 'squad-channel', squadId: squad.id, channelId: SETTINGS_CHANNEL_ID };

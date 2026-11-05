@@ -1074,5 +1074,19 @@
 	"governance.dashboard.proposalCards.tool.safe": "Safe",
 	"governance.dashboard.proposalCards.tool.poll": "Poll",
 	"governance.dashboard.proposalCards.title.pactoGovDeployment": "Pacto Gov deployment",
-	"governance.dashboard.proposalCards.title.safeMultisig": "Safe multisig"
+	"governance.dashboard.proposalCards.title.safeMultisig": "Safe multisig",
+	"governance.contentPolicy.title": "Who can add events and docs",
+	"governance.contentPolicy.hint": "Squad admins can limit adding to admins only. Turning a limit on removes everything that members who are not admins have added, including earlier additions. Turning it off does not bring those back.",
+	"governance.contentPolicy.unavailable": "Available once the squad has an announcements channel.",
+	"governance.contentPolicy.loading": "Loading…",
+	"governance.contentPolicy.events.switchLabel": "Only admins add events",
+	"governance.contentPolicy.events.switchDescription": "Members can still see events and RSVP.",
+	"governance.contentPolicy.events.open": "Any member can add events.",
+	"governance.contentPolicy.events.adminOnly": "Only squad admins can add events.",
+	"governance.contentPolicy.events.lockedOut": "Nobody can add events. Only squad admins may add them, and no squad admin is still a member.",
+	"governance.contentPolicy.docs.switchLabel": "Only admins add docs",
+	"governance.contentPolicy.docs.switchDescription": "Members can still open shared docs.",
+	"governance.contentPolicy.docs.open": "Any member can add docs.",
+	"governance.contentPolicy.docs.adminOnly": "Only squad admins can add docs.",
+	"governance.contentPolicy.docs.lockedOut": "Nobody can add docs. Only squad admins may add them, and no squad admin is still a member."
 }

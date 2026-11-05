@@ -10,11 +10,12 @@
 //! which produces an `AppHandle<MockRuntime>` — the same shape session.rs's
 //! `emit_session_warning_to_handle` uses for the same reason.
 
-use tauri::{AppHandle, Manager, Runtime};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::chat::NotificationLevel;
-use crate::notification::severity::{resolve_tier, EventKind, Tier};
+use crate::notification::severity::{reminder_delivery, resolve_tier, EventKind, ReminderDelivery, Tier};
 
 use super::coalesce;
 
@@ -75,6 +76,28 @@ pub async fn emit<R: Runtime>(
         )
         .await;
     }
+}
+
+/// On-time event reminder: in-app event while focused, OS banner otherwise,
+/// nothing at level Nothing. Bypasses the coalescer and never writes Catch up.
+pub fn emit_event_reminder<R: Runtime, S: Serialize + Clone>(
+    handle: &AppHandle<R>,
+    level: NotificationLevel,
+    in_app_event: &str,
+    in_app_payload: &S,
+    banner: &SingleEventNotification,
+) -> ReminderDelivery {
+    let delivery = reminder_delivery(level, window_focused(handle));
+    match delivery {
+        ReminderDelivery::InApp => {
+            if let Err(e) = handle.emit(in_app_event, in_app_payload.clone()) {
+                eprintln!("Failed to emit event reminder: {}", e);
+            }
+        }
+        ReminderDelivery::Banner => send_banner(handle, &banner.title, &banner.body),
+        ReminderDelivery::Silent => {}
+    }
+    delivery
 }
 
 /// True when the app's main webview currently has focus. Shared by `emit`

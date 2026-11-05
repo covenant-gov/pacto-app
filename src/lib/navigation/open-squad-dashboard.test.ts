@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import {
   activeTopNavTab,
@@ -23,8 +23,15 @@ import {
   openSquadSettings,
   openSquadWargame,
   navigateToTarget,
+  parseEventReminderSourceId,
   resolveCatchUpTarget,
 } from './open-squad-dashboard';
+
+const mocks = vi.hoisted(() => ({ focusSquadEvent: vi.fn() }));
+vi.mock('../../stores/events-navigation', () => ({
+  focusSquadEvent: mocks.focusSquadEvent,
+  focusSquadEventSeries: vi.fn(),
+}));
 
 function squad(id: string, channels: { name: string; groupId: string }[]): Squad {
   return {
@@ -187,6 +194,18 @@ describe('navigateToTarget', () => {
     expect(get(activeChannelId)).toBe(SETTINGS_CHANNEL_ID);
     expect(get(settingsChannelMode)).toBe('squad');
   });
+
+  it('a squad-event target focuses that event', () => {
+    mocks.focusSquadEvent.mockReset();
+    navigateToTarget({
+      kind: 'squad-event',
+      squadId: 'squad-1',
+      channelId: 'grp-announce',
+      hubChannelName: 'events',
+      eventId: 'evt-1',
+    });
+    expect(mocks.focusSquadEvent).toHaveBeenCalledWith('squad-1', 'evt-1');
+  });
 });
 
 describe('resolveCatchUpTarget', () => {
@@ -228,5 +247,37 @@ describe('resolveCatchUpTarget', () => {
   it('returns null for a chat id that resolves to neither a squad channel nor an npub', () => {
     const target = resolveCatchUpTarget({ chatId: 'orphaned-id', kind: 'mention' }, testSquads);
     expect(target).toBeNull();
+  });
+
+  it('resolves an event_reminder entry to the events channel and that event, not the dashboard', () => {
+    const target = resolveCatchUpTarget(
+      { chatId: 'grp-announce', kind: 'event_reminder', sourceEventId: 'evt-1:1767224700000' },
+      testSquads,
+    );
+    expect(target).toEqual({
+      kind: 'squad-event',
+      squadId: 'squad-1',
+      channelId: 'grp-announce',
+      hubChannelName: 'events',
+      eventId: 'evt-1',
+    });
+  });
+
+  it('returns null for an event_reminder with a malformed source id', () => {
+    expect(
+      resolveCatchUpTarget({ chatId: 'grp-announce', kind: 'event_reminder', sourceEventId: 'evt-1' }, testSquads),
+    ).toBeNull();
+  });
+});
+
+describe('parseEventReminderSourceId', () => {
+  it('splits on the last colon so event ids may contain colons', () => {
+    expect(parseEventReminderSourceId('a:b:1767224700000')).toEqual({ eventId: 'a:b', fireAtMs: 1_767_224_700_000 });
+  });
+
+  it('rejects a missing event id or a non-numeric fire time', () => {
+    expect(parseEventReminderSourceId(':123')).toBeNull();
+    expect(parseEventReminderSourceId('evt-1:soon')).toBeNull();
+    expect(parseEventReminderSourceId('evt-1:')).toBeNull();
   });
 });

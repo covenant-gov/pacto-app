@@ -2141,7 +2141,9 @@ pub(crate) async fn handle_event(event: Event, is_new: bool) -> bool {
                             handle_reaction(reaction, &contact).await
                         }
                         RumorProcessingResult::DashboardPollCreate(_)
-                        | RumorProcessingResult::DashboardPollVoteIngested => false,
+                        | RumorProcessingResult::DashboardPollVoteIngested
+                        | RumorProcessingResult::SquadRecordCard(_)
+                        | RumorProcessingResult::SquadRecordSilent => false,
                         RumorProcessingResult::TypingIndicator { profile_id, until } => {
                             // Update the chat's typing participants
                             let active_typers = {

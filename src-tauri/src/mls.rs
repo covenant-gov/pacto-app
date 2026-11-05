@@ -2867,7 +2867,8 @@ impl MlsService {
                                     }
                                 }
                             }
-                            RumorProcessingResult::DashboardPollCreate(msg) => {
+                            RumorProcessingResult::DashboardPollCreate(msg)
+                            | RumorProcessingResult::SquadRecordCard(msg) => {
                                 if let Some(handle) = TAURI_APP.get() {
                                     if let Ok(exists) =
                                         crate::db::message_exists_in_db(&handle, &msg.id).await
@@ -2887,7 +2888,7 @@ impl MlsService {
                                             "group_id": gid_for_fetch,
                                             "message": msg,
                                         })).unwrap_or_else(|e| {
-                                            eprintln!("[MLS] Failed to emit mls_message_new (poll create): {}", e);
+                                            eprintln!("[MLS] Failed to emit mls_message_new (announce card): {}", e);
                                         });
                                     }
                                     if let Some(handle) = TAURI_APP.get() {
@@ -2897,7 +2898,8 @@ impl MlsService {
                                     }
                                 }
                             }
-                            RumorProcessingResult::DashboardPollVoteIngested => {}
+                            RumorProcessingResult::DashboardPollVoteIngested
+                            | RumorProcessingResult::SquadRecordSilent => {}
                             RumorProcessingResult::TypingIndicator { profile_id, until } => {
                                 // Update the chat's typing participants
                                 let active_typers = {

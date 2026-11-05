@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/svelte';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 import AnnounceCard from './AnnounceCard.svelte';
 import {
   ANNOUNCE_TYPE_SAFE_UPDATED,
@@ -10,11 +10,257 @@ import {
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
   ANNOUNCE_TYPE_WAR_GAME_UPDATED,
   ANNOUNCE_TYPE_STICKER_PACK_UPDATED,
+  ANNOUNCE_TYPE_SQUAD_EVENT_CREATED,
+  ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED,
+  parseAnnouncement,
   type AnnounceMessage,
 } from '../../lib/announcements';
+import type { SquadEventDto } from '../../lib/api/squad-events';
+import type * as SquadEventsApi from '../../lib/api/squad-events';
+import type * as SquadEventDisplay from '../../lib/squad/squad-event-display';
+import { squads, type Squad } from '../../stores/squads';
+
+const mocks = vi.hoisted(() => ({
+  listSquadEvents: vi.fn(),
+  focusSquadEvent: vi.fn(),
+  focusSquadEventSeries: vi.fn(),
+  requestLinkPreview: vi.fn(),
+  /** Minimal readable store: no replica updates during a test. */
+  replicaNonce: {
+    subscribe(run: (v: Record<string, number>) => void) {
+      run({});
+      return () => {};
+    },
+  },
+}));
+
+vi.mock('@tauri-apps/api/core');
+vi.mock('../../lib/api/squad-events', async (importOriginal) => ({
+  ...(await importOriginal<typeof SquadEventsApi>()),
+  listSquadEvents: mocks.listSquadEvents,
+}));
+vi.mock('../../stores/events-navigation', () => ({
+  focusSquadEvent: mocks.focusSquadEvent,
+  focusSquadEventSeries: mocks.focusSquadEventSeries,
+}));
+vi.mock('../../stores/events-hub-alerts', () => ({
+  squadEventReplicaNonceByParentId: mocks.replicaNonce,
+}));
+vi.mock('../../lib/messaging/link-preview', () => ({
+  requestLinkPreview: mocks.requestLinkPreview,
+  clearLinkPreviewRequests: vi.fn(),
+}));
+vi.mock('../../lib/squad/squad-event-display', async (importOriginal) => ({
+  ...(await importOriginal<typeof SquadEventDisplay>()),
+  viewerTimeZone: () => 'America/Los_Angeles',
+}));
 
 afterEach(() => {
   cleanup();
+  squads.set([]);
+});
+
+/** Replica reads are cached per parent, so each test uses its own parent id. */
+let parentSeq = 0;
+
+function eventRow(parentId: string, overrides: Partial<SquadEventDto> = {}): SquadEventDto {
+  return {
+    id: 'evt-1',
+    parentId,
+    mlsGroupId: 'grp-ann',
+    seriesId: null,
+    kind: 31923,
+    title: 'Standup',
+    summary: '',
+    startUnix: 1_767_225_600,
+    endUnix: null,
+    startDate: null,
+    endDate: null,
+    startTzid: 'America/New_York',
+    place: 'offline',
+    location: '123 Secret Street',
+    channelId: 'grp-ann',
+    status: 'active',
+    authorNpub: 'npub1author',
+    createdAtMs: 0,
+    updatedAtMs: 0,
+    updatedByNpub: 'npub1author',
+    rsvps: [],
+    myRsvp: null,
+    canEdit: false,
+    ...overrides,
+  };
+}
+
+describe('AnnounceCard squad event cards', () => {
+  let parentId: string;
+
+  beforeEach(() => {
+    parentId = `squad-ev-${++parentSeq}`;
+    mocks.listSquadEvents
+      .mockReset()
+      .mockImplementation(async () => [
+        eventRow(parentId),
+        eventRow(parentId, { id: 'evt-s', seriesId: 'series-1' }),
+      ]);
+    mocks.focusSquadEvent.mockReset();
+    mocks.focusSquadEventSeries.mockReset();
+    mocks.requestLinkPreview.mockReset();
+    squads.set([
+      {
+        id: parentId,
+        name: 'Crew',
+        channels: [{ name: 'announcements', groupId: 'grp-ann', order: 0 }],
+        kind: 'squad',
+      } as unknown as Squad,
+    ]);
+  });
+
+  function singleCard(payload: Record<string, unknown> = {}): AnnounceMessage {
+    const parsed = parseAnnouncement(
+      JSON.stringify({
+        type: ANNOUNCE_TYPE_SQUAD_EVENT_CREATED,
+        payload: {
+          id: 'evt-1',
+          parent_id: parentId,
+          series_id: null,
+          kind: 31923,
+          title: 'Standup',
+          start: 1_767_225_600,
+          end: null,
+          start_tzid: 'America/New_York',
+          channel_id: 'grp-ann',
+          location: '123 Secret Street',
+          ...payload,
+        },
+      }),
+    );
+    if (!parsed) throw new Error('fixture did not parse');
+    return parsed;
+  }
+
+  function seriesCard(): AnnounceMessage {
+    return {
+      type: ANNOUNCE_TYPE_SQUAD_EVENT_SERIES_CREATED,
+      payload: {
+        series_id: 'series-1',
+        parent_id: parentId,
+        kind: 31923,
+        title: 'Weekly sync',
+        first_start: 1_767_225_600,
+        start_tzid: 'America/Los_Angeles',
+        count: 8,
+        channel_id: null,
+      },
+    };
+  }
+
+  it('renders title, channel, author, and no location even when the JSON carries one', async () => {
+    mocks.listSquadEvents.mockResolvedValue([eventRow(parentId)]);
+    const { container } = render(AnnounceCard, {
+      props: { announce: singleCard(), authorName: 'Alice', timestamp: '' },
+    });
+    expect(screen.getByText('Standup')).toBeTruthy();
+    expect(screen.getByText('#announcements')).toBeTruthy();
+    expect(screen.getByText('Alice')).toBeTruthy();
+    await vi.waitFor(() => expect(mocks.listSquadEvents).toHaveBeenCalledWith(parentId));
+    expect(container.innerHTML).not.toContain('Secret');
+  });
+
+  it('adds the cancelled label from the replica without a second message', async () => {
+    mocks.listSquadEvents.mockResolvedValue([eventRow(parentId, { status: 'cancelled' })]);
+    render(AnnounceCard, { props: { announce: singleCard(), authorName: 'Alice', timestamp: '' } });
+    expect(await screen.findByText('Cancelled')).toBeTruthy();
+  });
+
+  it('shows the edited title from the replica', async () => {
+    mocks.listSquadEvents.mockResolvedValue([eventRow(parentId, { title: 'Standup moved' })]);
+    render(AnnounceCard, { props: { announce: singleCard(), authorName: 'Alice', timestamp: '' } });
+    expect(await screen.findByText('Standup moved')).toBeTruthy();
+  });
+
+  it('shows the event zone when it differs from the viewer zone', () => {
+    const { container } = render(AnnounceCard, {
+      props: { announce: singleCard(), authorName: 'Alice', timestamp: '' },
+    });
+    expect(container.textContent).toContain('(America/New_York)');
+  });
+
+  it('omits the event zone when it matches the viewer zone', () => {
+    const { container } = render(AnnounceCard, {
+      props: { announce: singleCard({ start_tzid: 'America/Los_Angeles' }), authorName: 'Alice', timestamp: '' },
+    });
+    expect(container.textContent).not.toContain('(America/Los_Angeles)');
+    expect(container.querySelector('.event-announce-zone')).toBeNull();
+  });
+
+  it('renders an all-day civil date unshifted for a Pacific viewer', () => {
+    const { container } = render(AnnounceCard, {
+      props: {
+        announce: singleCard({ kind: 31922, start: '2026-03-08', end: null }),
+        authorName: 'Alice',
+        timestamp: '',
+      },
+    });
+    expect(container.textContent).toContain('March 8, 2026');
+    expect(container.querySelector('.event-announce-zone')).toBeNull();
+  });
+
+  it('opens the event detail on activation and never requests a link preview', async () => {
+    render(AnnounceCard, { props: { announce: singleCard(), authorName: 'Alice', timestamp: '' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open event Standup' }));
+    expect(mocks.focusSquadEvent).toHaveBeenCalledWith(parentId, 'evt-1');
+    expect(mocks.focusSquadEventSeries).not.toHaveBeenCalled();
+    expect(mocks.requestLinkPreview).not.toHaveBeenCalled();
+  });
+
+  it('shows the active count of a series with one cancelled occurrence', async () => {
+    mocks.listSquadEvents.mockResolvedValue(
+      Array.from({ length: 8 }, (_, i) =>
+        eventRow(parentId, { id: `evt-${i}`, seriesId: 'series-1', status: i === 3 ? 'cancelled' : 'active' }),
+      ),
+    );
+    render(AnnounceCard, { props: { announce: seriesCard(), authorName: 'Alice', timestamp: '' } });
+    expect(screen.getByText('Weekly sync')).toBeTruthy();
+    expect(await screen.findByText(/7 of 8 active/)).toBeTruthy();
+    expect(screen.getByText(/8 weekly meetings/)).toBeTruthy();
+  });
+
+  it('opens #events filtered by series on series activation, not a single event', async () => {
+    render(AnnounceCard, { props: { announce: seriesCard(), authorName: 'Alice', timestamp: '' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open weekly meetings Weekly sync' }));
+    expect(mocks.focusSquadEventSeries).toHaveBeenCalledWith(parentId, 'series-1');
+    expect(mocks.focusSquadEvent).not.toHaveBeenCalled();
+    expect(mocks.requestLinkPreview).not.toHaveBeenCalled();
+  });
+
+  it('marks a single card unavailable and disables it when the loaded replica has no row', async () => {
+    mocks.listSquadEvents.mockResolvedValue([eventRow(parentId, { id: 'other' })]);
+    render(AnnounceCard, { props: { announce: singleCard(), authorName: 'Alice', timestamp: '' } });
+    expect(await screen.findByText('No longer available')).toBeTruthy();
+    const button = screen.getByRole('button', { name: 'Open event Standup' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    await fireEvent.click(button);
+    expect(mocks.focusSquadEvent).not.toHaveBeenCalled();
+  });
+
+  it('keeps the stored card active when the replica read fails', async () => {
+    mocks.listSquadEvents.mockRejectedValue(new Error('offline'));
+    render(AnnounceCard, { props: { announce: singleCard(), authorName: 'Alice', timestamp: '' } });
+    await vi.waitFor(() => expect(mocks.listSquadEvents).toHaveBeenCalledWith(parentId));
+    await Promise.resolve();
+    expect(screen.queryByText('No longer available')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Open event Standup' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('marks a series card unavailable when none of its occurrences are in the loaded replica', async () => {
+    mocks.listSquadEvents.mockResolvedValue([eventRow(parentId)]);
+    render(AnnounceCard, { props: { announce: seriesCard(), authorName: 'Alice', timestamp: '' } });
+    expect(await screen.findByText('No longer available')).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Open weekly meetings Weekly sync' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
 });
 
 describe('AnnounceCard routing', () => {
