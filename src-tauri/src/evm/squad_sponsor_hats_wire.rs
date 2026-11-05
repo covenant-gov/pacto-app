@@ -21,7 +21,9 @@ use super::rpc::{
     connect_signing_provider, contract_call_request, send_and_confirm, wallet_err_json,
     wallet_err_json_with_tx_hash,
 };
-use super::squad_sponsor_common::{parse_signer_wallet, squad_variant_label};
+use super::squad_sponsor_common::{
+    collapse_pay_signer_mode, parse_signer_wallet, squad_variant_label,
+};
 use super::squad_sponsor_deploy::{sponsor_provider_payload, SquadSponsorDeployResult};
 use super::squad_sponsor_read::read_sponsor_pool;
 use super::wallet_chain_config;
@@ -87,6 +89,7 @@ pub(crate) async fn wire_parent_ext_hats<R: Runtime>(
     let roster_addr = roster_signer.address();
 
     let signer_mode = parse_signer_wallet(signer_wallet, "squad")?;
+    let signer_mode = collapse_pay_signer_mode(&app, pid, signer_mode);
     let pay_addr;
     let pay_wallet;
     if signer_mode == "default" {

@@ -434,6 +434,7 @@
 	"governance.deployWarGame.captainYou": "Tú (asignado al escuad)",
 	"governance.deployWarGame.captainNoEvmHint": "Vincula un EVM asignado a este escuad antes de desplegar.",
 	"governance.deployWarGame.payFrom": "Pagar gas desde",
+	"governance.deployWarGame.signerSameAsDefault": "Firmante del escuad (igual a Predeterminado)",
 	"governance.deployWarGame.depositLabel": "Depósito inicial (ETH)",
 	"governance.deployWarGame.depositPlaceholder": "0.01",
 	"governance.deployWarGame.depositHint": "Financia el pool de war-game de esta ronda en Sepolia.",

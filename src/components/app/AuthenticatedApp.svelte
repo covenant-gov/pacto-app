@@ -736,7 +736,8 @@
     bytes: ArrayBuffer,
     fileName: string,
     repliedTo: string,
-    useCompression: boolean
+    useCompression: boolean,
+    content: string
   ): Promise<void> {
     const id = $activeDmId;
     if (!id) return;
@@ -744,11 +745,11 @@
       dmLog('handleDmSendFile: session locked, aborting');
       return;
     }
-    dmLog('handleDmSendFile', { receiver: id.slice(0, 20) + '…', fileName });
+    dmLog('handleDmSendFile', { receiver: id.slice(0, 20) + '…', fileName, contentLen: content.length });
     $dmSendError = null;
     try {
       const ok = await sendDmWithPendingCatchUp(id, () =>
-        sendFileBytes(id, repliedTo, new Uint8Array(bytes), fileName, useCompression)
+        sendFileBytes(id, repliedTo, new Uint8Array(bytes), fileName, useCompression, content)
       );
       dmLog('handleDmSendFile result', { ok });
     } catch (e: unknown) {
@@ -758,17 +759,17 @@
     }
   }
 
-  async function handleDmSendGif(url: string, slug: string, repliedTo: string): Promise<void> {
+  async function handleDmSendGif(url: string, slug: string, repliedTo: string, content: string): Promise<void> {
     const id = $activeDmId;
     if (!id) return;
     if (!(await maybeRequireSession())) {
       dmLog('handleDmSendGif: session locked, aborting');
       return;
     }
-    dmLog('handleDmSendGif', { receiver: id.slice(0, 20) + '…', slug });
+    dmLog('handleDmSendGif', { receiver: id.slice(0, 20) + '…', slug, contentLen: content.length });
     $dmSendError = null;
     try {
-      const ok = await sendDmWithPendingCatchUp(id, () => sendGifMessage(id, url, slug, repliedTo));
+      const ok = await sendDmWithPendingCatchUp(id, () => sendGifMessage(id, url, slug, repliedTo, content));
       dmLog('handleDmSendGif result', { ok });
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, get(t)('errors.dm.gifFailed'));

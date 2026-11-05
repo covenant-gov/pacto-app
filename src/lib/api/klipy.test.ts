@@ -179,19 +179,21 @@ describe('sendGifMessage', () => {
   it('sends the receiver, url, slug, and repliedTo through byte-identical, unmodified', async () => {
     mockedInvoke.mockResolvedValueOnce(true);
     const url = 'https://static.klipy.com/hd.gif?ext=gif&itemid=abc123';
-    const got = await sendGifMessage('npub1abc', url, 'slug-1', 'reply-1');
+    const got = await sendGifMessage('npub1abc', url, 'slug-1', 'reply-1', 'testing text');
     expect(got).toBe(true);
     expect(mockedInvoke).toHaveBeenCalledWith('klipy_gif_message', {
       receiver: 'npub1abc',
       url,
       slug: 'slug-1',
       repliedTo: 'reply-1',
+      content: 'testing text',
+      virtualBucket: null,
     });
   });
 
   it('an invoke rejection surfaces through getInvokeErrorMessage', async () => {
     mockedInvoke.mockRejectedValueOnce({ message: 'Missing GIF URL' });
-    await expect(sendGifMessage('npub1abc', '', 'slug-1', '')).rejects.toThrow('Missing GIF URL');
+    await expect(sendGifMessage('npub1abc', '', 'slug-1', '', '')).rejects.toThrow('Missing GIF URL');
   });
 });
 

@@ -15,6 +15,7 @@ import {
   reconcileSignerWallet,
   shortAddress,
   shouldPreferFundedDefault,
+  signersAreSameAddress,
 } from './signer-balance';
 
 const mockedGetEvmNativeBalance = vi.mocked(getEvmNativeBalance);
@@ -111,6 +112,16 @@ describe('fetchEvmBalance', () => {
       loading: false,
       error: '',
     });
+  });
+});
+
+describe('signersAreSameAddress', () => {
+  it('matches checksum-insensitive addresses and rejects missing or distinct ones', () => {
+    expect(signersAreSameAddress(addrA, addrA.toLowerCase())).toBe(true);
+    expect(signersAreSameAddress(addrA, addrB)).toBe(false);
+    expect(signersAreSameAddress(null, addrA)).toBe(false);
+    expect(signersAreSameAddress(addrA, '')).toBe(false);
+    expect(signersAreSameAddress(undefined, undefined)).toBe(false);
   });
 });
 

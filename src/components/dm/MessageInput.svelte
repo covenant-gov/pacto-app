@@ -60,11 +60,26 @@
     onEditLast?: () => boolean;
     /** Optional: called for squad channels with a body + mention list so the caller can build the envelope. */
     onSendMentions?: (body: string, mentions: Mention[], repliedTo?: string) => void;
-    /** Optional: called with the bytes of a pending file attachment when the user sends it. */
-    onSendFile?: (bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>;
+    /** Optional: called with the bytes of a pending file attachment when the user sends it.
+     * `content` is the composer caption (empty when the user sent the file alone). */
+    onSendFile?: (
+      bytes: ArrayBuffer,
+      fileName: string,
+      repliedTo: string,
+      useCompression: boolean,
+      content: string,
+      mentions?: Mention[],
+    ) => Promise<void>;
     /** Optional: called with a picked GIF's URL + slug when the user sends it.
-     * Never uploads bytes — Klipy's terms forbid re-hosting its media. */
-    onSendGif?: (url: string, slug: string, repliedTo: string) => Promise<void>;
+     * Never uploads bytes — Klipy's terms forbid re-hosting its media.
+     * `content` is the composer caption (empty when the user sent the GIF alone). */
+    onSendGif?: (
+      url: string,
+      slug: string,
+      repliedTo: string,
+      content: string,
+      mentions?: Mention[],
+    ) => Promise<void>;
     /** Optional squad context; when provided, typing `@` opens the member mention picker. */
     squadMlsGroupId?: string;
     squadRosterNpubs?: string[];
@@ -250,6 +265,26 @@
     return mentions.filter((m) => text.includes(`@${m.alias}`));
   }
 
+  /** Composer text ready to send: trimmed, tracking params stripped, stale mentions dropped. */
+  function composeOutgoing(): { body: string; mentions: Mention[] } | null {
+    const trimmed = messageText.trim();
+    if (!trimmed) return null;
+    const body = get(stripTrackingMarkersEnabled) ? stripTrackingParamsFromText(trimmed) : trimmed;
+    return { body, mentions: removeStaleMentions(body) };
+  }
+
+  function outgoingCaption(): { body: string; mentions: Mention[] } {
+    return composeOutgoing() ?? { body: '', mentions: [] };
+  }
+
+  async function clearComposerDraft() {
+    messageText = "";
+    mentions = [];
+    closeMentionPicker();
+    await tick();
+    resizeTextarea();
+  }
+
   function handleMentionKeydown(event: KeyboardEvent) {
     if (!mentionPickerOpen) return;
     if (event.key === 'ArrowDown') {
@@ -281,20 +316,14 @@
       await sendPendingAttachment(pending);
       return;
     }
-    const trimmed = messageText.trim();
-    if (!trimmed) return;
-    const body = get(stripTrackingMarkersEnabled) ? stripTrackingParamsFromText(trimmed) : trimmed;
-    const pruned = removeStaleMentions(body);
+    const outgoing = composeOutgoing();
+    if (!outgoing) return;
     if (onSendMentions && squadMlsGroupId) {
-      onSendMentions(body, pruned, repliedTo);
+      onSendMentions(outgoing.body, outgoing.mentions, repliedTo);
     } else {
-      onSend(body, repliedTo);
+      onSend(outgoing.body, repliedTo);
     }
-    messageText = "";
-    mentions = [];
-    closeMentionPicker();
-    await tick();
-    resizeTextarea();
+    await clearComposerDraft();
   }
 
   async function sendPendingAttachment(pending: PendingFileAttachment) {
@@ -312,13 +341,17 @@
         throw new Error($t('errors.dm.attachmentFailed'));
       }
       const repliedToId = repliedTo ?? '';
-      await onSendFile!(bytes, pending.fileName, repliedToId, shouldCompressImage(pending.fileName));
+      const caption = outgoingCaption();
+      await onSendFile!(
+        bytes,
+        pending.fileName,
+        repliedToId,
+        shouldCompressImage(pending.fileName),
+        caption.body,
+        caption.mentions,
+      );
       clearPendingAttachment();
-      messageText = "";
-      mentions = [];
-      closeMentionPicker();
-      await tick();
-      resizeTextarea();
+      await clearComposerDraft();
     } catch (err) {
       showToast(err instanceof Error ? err.message : $t('errors.dm.attachmentFailed'), undefined, undefined, {
         error: true,
@@ -795,7 +828,9 @@
       const data = await readFile(path);
       const bytes = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
       const fileName = `${entry.shortcode}.${STICKER_MIME_EXTENSIONS[entry.mime] ?? 'bin'}`;
-      await onSendFile!(bytes, fileName, repliedTo ?? '', false);
+      const caption = outgoingCaption();
+      await onSendFile!(bytes, fileName, repliedTo ?? '', false, caption.body, caption.mentions);
+      await clearComposerDraft();
       await closeEmojiPanel({ refocusComposer: true });
     } catch (err) {
       showToast(err instanceof Error ? err.message : get(t)('messaging.messageInput.readFailed'), undefined, undefined, {
@@ -929,7 +964,9 @@
     if (disabled || isSendingAttachment || !onSendGif) return;
     isSendingAttachment = true;
     try {
-      await onSendGif(gif.fullUrl, gif.slug, repliedTo ?? '');
+      const caption = outgoingCaption();
+      await onSendGif(gif.fullUrl, gif.slug, repliedTo ?? '', caption.body, caption.mentions);
+      await clearComposerDraft();
       await closeEmojiPanel({ refocusComposer: true });
     } catch (err) {
       showToast(err instanceof Error ? err.message : get(t)('messaging.messageInput.gifsSendFailed'), undefined, undefined, {

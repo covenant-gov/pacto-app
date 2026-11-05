@@ -18,8 +18,8 @@ use super::rpc::{
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::squad_sponsor_common::{
-    active_game_squad_id_for_parent, parse_deposit_wei, parse_signer_wallet, require_parent_member,
-    resolve_sponsor_for_parent,
+    active_game_squad_id_for_parent, collapse_pay_signer_mode, parse_deposit_wei,
+    parse_signer_wallet, require_parent_member, resolve_sponsor_for_parent,
 };
 use super::squad_sponsor_read::{read_clone_pool, read_sponsor_pool};
 use super::wallet_chain_config;
@@ -115,6 +115,7 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
     let pool = read_clone_pool(&read_provider, sponsor).await?;
 
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "default")?;
+    let signer_mode = collapse_pay_signer_mode(&app, pid, signer_mode);
     let (_signer, wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?

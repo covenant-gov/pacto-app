@@ -1183,6 +1183,15 @@ pub async fn check_and_vacuum_if_needed<R: Runtime>(handle: &AppHandle<R>) -> Re
 // Event Storage Functions (Flat Event-Based Architecture)
 // ============================================================================
 
+/// Kind-15 body. Empty stored content is a pre-caption row. A decrypt failure
+/// is also empty so a legacy hash or URL never renders as the caption.
+async fn decrypt_attachment_caption(stored: String) -> String {
+    if stored.is_empty() {
+        return String::new();
+    }
+    internal_decrypt(stored).await.unwrap_or_default()
+}
+
 /// Save a StoredEvent to the events table
 ///
 /// This is the primary storage function for the flat event architecture.
@@ -1196,8 +1205,9 @@ pub async fn save_event<R: Runtime>(
     // Serialize tags to JSON
     let tags_json = serde_json::to_string(&event.tags).unwrap_or_else(|_| "[]".to_string());
 
-    // For message and edit events, encrypt the content
+    // For message, file-caption, and edit events, encrypt the content
     let content = if event.kind == event_kind::PRIVATE_DIRECT_MESSAGE
+        || event.kind == event_kind::FILE_ATTACHMENT
         || event.kind == event_kind::MESSAGE_EDIT
     {
         internal_encrypt(event.content.clone()).await
@@ -1489,13 +1499,15 @@ pub async fn get_events<R: Runtime>(
         events
     };
 
-    // Decrypt message content for text messages (this is the async part)
+    // Decrypt message content for text messages and file captions (this is the async part)
     let mut decrypted_events = Vec::with_capacity(events.len());
     for mut event in events {
         if event.kind == event_kind::PRIVATE_DIRECT_MESSAGE {
             event.content = internal_decrypt(event.content)
                 .await
                 .unwrap_or_else(|_| "[Decryption failed]".to_string());
+        } else if event.kind == event_kind::FILE_ATTACHMENT {
+            event.content = decrypt_attachment_caption(event.content).await;
         }
         decrypted_events.push(event);
     }
@@ -1615,7 +1627,7 @@ fn authorized_edits_from_sql() -> String {
         JOIN events m ON m.id = e.reference_id
         JOIN chats c ON c.id = m.chat_id
         WHERE e.kind = {edit_kind}
-          AND m.kind = {text_kind}
+          AND m.kind IN ({text_kind}, {file_kind})
           AND NOT EXISTS (SELECT 1 FROM messages legacy WHERE legacy.id = m.id)
           AND e.chat_id = m.chat_id
           AND CASE
@@ -1631,6 +1643,7 @@ fn authorized_edits_from_sql() -> String {
         "#,
         edit_kind = event_kind::MESSAGE_EDIT,
         text_kind = event_kind::PRIVATE_DIRECT_MESSAGE,
+        file_kind = event_kind::FILE_ATTACHMENT,
         dm_type = crate::chat::ChatType::DirectMessage.to_i32(),
         window = crate::message::EDIT_WINDOW_SECS,
         receipt_window = crate::message::EDIT_WINDOW_SECS * 1000,
@@ -1909,6 +1922,57 @@ mod edit_authorization_sql_tests {
                 ("alice-msg".to_string(), "hello".to_string()),
                 ("my-msg".to_string(), "final".to_string()),
             ]
+        );
+
+        insert(
+            &conn,
+            "file-msg",
+            event_kind::FILE_ATTACHMENT,
+            1,
+            None,
+            "testing text",
+            T,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "e-file",
+            edit,
+            1,
+            Some("file-msg"),
+            "testing text edited",
+            T + 10,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "structured-msg",
+            event_kind::APPLICATION_SPECIFIC,
+            1,
+            None,
+            "{}",
+            T,
+            false,
+            Some("npub1alice"),
+        );
+        insert(
+            &conn,
+            "e-structured",
+            edit,
+            1,
+            Some("structured-msg"),
+            "nope",
+            T + 10,
+            false,
+            Some("npub1alice"),
+        );
+        let mut file_rows = latest_edits(&conn, &["file-msg", "structured-msg"]);
+        file_rows.sort();
+        assert_eq!(
+            file_rows,
+            vec![("file-msg".to_string(), "testing text edited".to_string())]
         );
     }
 
@@ -2333,13 +2397,14 @@ async fn get_reply_contexts<R: Runtime>(
         // Use latest edit content if available, otherwise use original
         let content_to_decrypt = latest_edits.get(&id).cloned().unwrap_or(original_content);
 
-        // Decrypt content for text messages
+        // Decrypt text bodies and file captions. Other kinds have no displayable body.
         let decrypted_content = if kind == event_kind::PRIVATE_DIRECT_MESSAGE as i32 {
             internal_decrypt(content_to_decrypt)
                 .await
                 .unwrap_or_else(|_| "[Decryption failed]".to_string())
+        } else if kind == event_kind::FILE_ATTACHMENT as i32 {
+            decrypt_attachment_caption(content_to_decrypt).await
         } else {
-            // File attachments don't have displayable content
             String::new()
         };
 
@@ -2750,13 +2815,76 @@ mod reply_context_fallback_tests {
 
         assert_eq!(reply.replied_to_has_attachment, Some(true));
         assert_eq!(reply.replied_to_npub.as_deref(), Some(chat_id));
+        assert_eq!(reply.replied_to_content.as_deref(), Some(""));
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
+
+    /// A kind-15 caption is encrypted at rest and comes back as the message body.
+    #[tokio::test]
+    async fn file_caption_roundtrips_through_save_and_message_views() {
+        let test_npub = "npub1filecaptionroundtrip";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+
+        let profile_dir =
+            crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        crate::set_encryption_key([7u8; 32]);
+
+        let chat_id = "npub1filecaptionpeer";
+        let original = Message {
+            id: "file-caption-original".to_string(),
+            content: "testing text".to_string(),
+            mine: false,
+            npub: Some(chat_id.to_string()),
+            at: 1_700_000_000_000,
+            attachments: vec![Attachment {
+                extension: "png".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        save_message(app.handle().clone(), chat_id, &original)
+            .await
+            .unwrap();
+
+        let mut reply = Message {
+            id: "file-caption-reply".to_string(),
+            content: "replying".to_string(),
+            replied_to: original.id.clone(),
+            mine: true,
+            ..Default::default()
+        };
+        populate_reply_context(app.handle(), &mut reply)
+            .await
+            .unwrap();
+        assert_eq!(reply.replied_to_content.as_deref(), Some("testing text"));
+        assert_eq!(reply.replied_to_has_attachment, Some(true));
+
+        let chat_int = crate::db::get_chat_id_by_identifier(app.handle(), chat_id).unwrap();
+        let views = get_message_views(app.handle(), chat_int, 10, 0, None)
+            .await
+            .unwrap();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].content, "testing text");
+        assert_eq!(views[0].attachments.len(), 1);
 
         crate::clear_encryption_key();
         crate::account_manager::close_db_connection();
     }
 }
 
-/// Whether a stored edit may replace `original`: a text message in the same chat,
+/// Whether a stored edit may replace `original`: a text or file message in the same chat,
 /// edited by its author inside the edit window. `dm_peer` is set when the chat is a DM.
 fn stored_edit_is_authorized(
     original: &StoredEvent,
@@ -2765,7 +2893,8 @@ fn stored_edit_is_authorized(
     edited_at_ms: u64,
 ) -> bool {
     use crate::message::{edit_is_authorized, EditAuthor};
-    original.kind == event_kind::PRIVATE_DIRECT_MESSAGE
+    (original.kind == event_kind::PRIVATE_DIRECT_MESSAGE
+        || original.kind == event_kind::FILE_ATTACHMENT)
         && original.chat_id == edit.chat_id
         && crate::message::edit_received_in_time(original.received_at, edit.received_at)
         && edit_is_authorized(
@@ -3242,13 +3371,8 @@ pub async fn get_message_views<R: Runtime>(
         // Get attachments from the lookup map (for kind=15 file messages)
         let attachments = attachments_by_msg.remove(&event.id).unwrap_or_default();
 
-        // Get original content (already decrypted by get_events() where applicable)
-        let original_content = if event.kind == event_kind::FILE_ATTACHMENT {
-            // File attachment content is just an encrypted hash - don't display
-            String::new()
-        } else {
-            event.content.clone()
-        };
+        // Already decrypted by get_events(), including a kind-15 caption.
+        let original_content = event.content.clone();
 
         let virtual_bucket = event.virtual_bucket.clone().or_else(|| {
             crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(

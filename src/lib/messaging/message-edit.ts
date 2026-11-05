@@ -1,9 +1,10 @@
 /**
  * Message editing rules shared by DMs and squad channels.
  *
- * Authors can fix a sent text message for a short window; after that the
- * message is locked. The backend (`EDIT_WINDOW_SECS` in `src-tauri/src/message.rs`)
- * enforces the same window on send and on receipt.
+ * Authors can fix a sent message body for a short window, including the caption
+ * on a file, GIF, or sticker. After that the message is locked. The backend
+ * (`EDIT_WINDOW_SECS` in `src-tauri/src/message.rs`) enforces the same window
+ * on send and on receipt. Structured messages stay locked.
  */
 import { get } from 'svelte/store';
 import { locale, t } from 'svelte-i18n';
@@ -23,12 +24,11 @@ function isOptimisticId(id: string): boolean {
 
 /**
  * Last ms timestamp at which `msg` may still be edited, or `null` when it can
- * never be edited (not ours, not yet sent, or not a plain text message).
+ * never be edited (not ours, or not yet sent). File captions use this same window.
  */
 export function editableUntil(msg: DmMessage): number | null {
   if (!msg.mine || msg.pending || msg.failed) return null;
   if (!msg.id || isOptimisticId(msg.id)) return null;
-  if (msg.attachments && msg.attachments.length > 0) return null;
   // Backend compares whole seconds, so the window closes at the end of the last second.
   return Math.floor(msg.at / 1000) * 1000 + EDIT_WINDOW_MS + 999;
 }

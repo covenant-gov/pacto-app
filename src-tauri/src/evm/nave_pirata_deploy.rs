@@ -32,7 +32,9 @@ use super::rpc::{
 use super::infra_owner::{
     require_roster_matches_owners_for_gov_deploy, resolve_ext_infra_owners_on_chain,
 };
-use super::squad_sponsor_common::{parse_signer_wallet, require_parent_member};
+use super::squad_sponsor_common::{
+    collapse_pay_signer_mode, parse_signer_wallet, require_parent_member,
+};
 use super::wallet_chain_config;
 use alloy::sol_types::SolEvent;
 
@@ -474,6 +476,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 
     let signing_parent = roster_signing_parent_id(&app, pid, alt)?;
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "squad")?;
+    let signer_mode = collapse_pay_signer_mode(&app, signing_parent.as_str(), signer_mode);
     let (pay_signer, pay_wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?

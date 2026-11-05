@@ -37,8 +37,8 @@ use super::rpc::{
     wallet_err_json_with_tx_hash,
 };
 use super::squad_sponsor_common::{
-    parse_optional_deposit_wei, parse_signer_wallet, read_squad_record_opt,
-    require_parent_member, squad_id_from_parent_id,
+    collapse_pay_signer_mode, parse_optional_deposit_wei, parse_signer_wallet,
+    read_squad_record_opt, require_parent_member, squad_id_from_parent_id,
 };
 use super::wallet_chain_config;
 use super::wallet_chain_config::WalletNetworkConfig;
@@ -469,6 +469,7 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
 
     let signing_parent = roster_signing_parent_id(&app, pid, alt)?;
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "default")?;
+    let signer_mode = collapse_pay_signer_mode(&app, signing_parent.as_str(), signer_mode);
     let (pay_signer, pay_wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?

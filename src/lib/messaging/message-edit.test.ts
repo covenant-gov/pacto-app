@@ -30,32 +30,40 @@ describe('editableUntil / canEditMessage', () => {
     expect(canEditMessage(own(), AT + EDIT_WINDOW_MS + 1_000)).toBe(false);
   });
 
-  it('never allows editing other people, unsent, failed, or attachment messages', () => {
+  it('never allows editing other people, unsent, or failed messages', () => {
     expect(editableUntil(own({ mine: false }))).toBeNull();
     expect(editableUntil(own({ pending: true }))).toBeNull();
     expect(editableUntil(own({ failed: true }))).toBeNull();
     expect(editableUntil(own({ id: 'opt-1-abc' }))).toBeNull();
     expect(editableUntil(own({ id: 'pending-1' }))).toBeNull();
-    expect(
-      editableUntil(own({ attachments: [{ id: 'f', key: '', nonce: '', extension: 'png', url: '', path: '', size: 1 }] }))
-    ).toBeNull();
+  });
+
+  it('opens the same window on a file message so its caption can be edited', () => {
+    const file = own({
+      content: 'testing text',
+      attachments: [{ id: 'f', key: '', nonce: '', extension: 'png', url: '', path: '', size: 1 }],
+    });
+    expect(canEditMessage(file, AT + 1_000)).toBe(true);
+    expect(canEditMessage(file, AT + EDIT_WINDOW_MS + 1_000)).toBe(false);
+    expect(canEditMessage(own({ content: '', attachments: [{ id: 'f', key: '', nonce: '', extension: 'png', url: '', path: '', size: 1 }] }), AT + 1_000)).toBe(true);
   });
 });
 
 describe('lastEditableMessage', () => {
-  it('selects by send time while skipping non-text, unsent and non-own entries', () => {
+  it('selects by send time while skipping structured, unsent and non-own entries', () => {
     const recent = own({ id: 'recent', at: AT + 2000 });
     const attachment = { id: 'f', key: '', nonce: '', extension: 'png', url: '', path: '', size: 1 };
+    const file = own({ id: 'file', at: AT + 6000, attachments: [attachment] });
     expect(lastEditableMessage([
       recent,
       own({ id: 'older', at: AT }),
       own({ id: 'theirs', at: AT + 3000, mine: false }),
       own({ id: 'failed', at: AT + 4000, failed: true }),
       own({ id: 'pending', at: AT + 5000, pending: true }),
-      own({ id: 'file', at: AT + 6000, attachments: [attachment] }),
+      file,
       own({ id: 'notice', at: AT + 7000, content: JSON.stringify({ type: 'governance_updated' }) }),
       own({ id: 'local', at: AT + 8000, is_local_announcement: true }),
-    ], AT + 10000)).toBe(recent);
+    ], AT + 10000)).toBe(file);
     expect(lastEditableMessage([own()], AT + EDIT_WINDOW_MS + 1000)).toBeUndefined();
     expect(lastEditableMessage([], AT)).toBeUndefined();
   });

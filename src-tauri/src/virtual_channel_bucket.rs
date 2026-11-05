@@ -31,6 +31,11 @@ pub fn normalize_virtual_bucket_for_message(
         }
     }
 
+    // A kind-15 body is a caption. Control JSON in that string does not pick a channel.
+    if kind == event_kind::FILE_ATTACHMENT {
+        return Some("announcements".to_string());
+    }
+
     let trimmed = content.trim();
     if trimmed.starts_with('{') {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
@@ -295,5 +300,21 @@ mod tests {
             &[],
         );
         assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn file_caption_json_does_not_select_a_bucket() {
+        let gov = r#"{"type":"governance_updated","payload":{"parent_id":"p","provider":"pacto_gov","canonical_ref":"1"}}"#;
+        let bucket = normalize_virtual_bucket_for_message(event_kind::FILE_ATTACHMENT, gov, &[]);
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+
+        let envelope = r#"{"kind":"pacto.mentions.envelope.v1","body":"hi","mentions":[],"pacto_virtual_bucket":"inbox"}"#;
+        let from_envelope =
+            normalize_virtual_bucket_for_message(event_kind::FILE_ATTACHMENT, envelope, &[]);
+        assert_eq!(from_envelope.as_deref(), Some("announcements"));
+
+        let tags = vec![vec!["pacto_bucket".to_string(), "inbox".to_string()]];
+        let tagged = normalize_virtual_bucket_for_message(event_kind::FILE_ATTACHMENT, gov, &tags);
+        assert_eq!(tagged.as_deref(), Some("inbox"));
     }
 }

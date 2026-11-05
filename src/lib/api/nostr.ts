@@ -350,13 +350,16 @@ export async function sendFileBytes(
   repliedTo: string,
   fileBytes: number[] | Uint8Array,
   fileName: string,
-  useCompression: boolean
+  useCompression: boolean,
+  content: string,
+  virtualBucket?: MlsVirtualBucket | null,
 ): Promise<boolean> {
   dmLog('send_file_bytes', {
     receiver: receiver.slice(0, 20) + '…',
     fileName,
     fileBytesLen: fileBytes.length,
     useCompression,
+    contentLen: content.length,
   });
   const ok = (await invoke('send_file_bytes', {
     receiver,
@@ -364,6 +367,8 @@ export async function sendFileBytes(
     fileBytes,
     fileName,
     useCompression,
+    content,
+    virtualBucket: virtualBucket ?? null,
   })) as boolean;
   dmLog('send_file_bytes result', { ok });
   return ok;
