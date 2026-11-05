@@ -58,7 +58,7 @@ export function govProcessPhase(card: GovProcessCard): GovProcessPhase {
   }
 }
 
-function mutinyCardFromRound(round: MutinyRoundDto, captain: string, phase: GovProcessPhase): GovProcessCard {
+function mutinyCardFromRound(round: MutinyRoundDto, phase: GovProcessPhase): GovProcessCard {
   return {
     kind: 'mutiny',
     phase,
@@ -73,7 +73,7 @@ function mutinyCardFromRound(round: MutinyRoundDto, captain: string, phase: GovP
       yeas: round.yeas,
       executed: round.executed,
       seatFormerCaptain: round.seatFormerCaptain,
-      captain: round.captain || captain,
+      captain: round.captain?.trim() ?? '',
     },
   };
 }
@@ -109,18 +109,16 @@ export function buildGovProcessCards(params: {
     });
   }
 
-  const captain = params.mutinyStatus?.captain ?? '';
-  const activeKnown = params.mutinyStatus != null;
   for (const round of params.mutinyRounds ?? []) {
     const id = round.id?.trim() ?? '';
     if (!id || id === '0' || !(round.startedAt > 0)) continue;
+    if (liveId && id === liveId) continue;
     if (round.executed) {
-      if (liveId && id === liveId) continue;
-      out.push(mutinyCardFromRound(round, captain, 'executed'));
+      out.push(mutinyCardFromRound(round, 'executed'));
       continue;
     }
-    if (!activeKnown || (liveId && id === liveId)) continue;
-    out.push(mutinyCardFromRound(round, captain, 'failed'));
+    const phase: GovProcessPhase = round.deadline > now ? 'open' : 'failed';
+    out.push(mutinyCardFromRound(round, phase));
   }
 
   if (params.crewOffboard && isCrewOffboardActive(params.crewOffboard)) {

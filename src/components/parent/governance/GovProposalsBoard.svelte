@@ -78,8 +78,8 @@
     mutinyHasVoted?: boolean;
     offboardHasVoted?: boolean;
     onRefreshProposals?: () => void;
-    onExecuteMutiny?: () => void | Promise<void>;
-    onExpireMutiny?: () => void | Promise<void>;
+    onExecuteMutiny?: (mutinyId: string) => void | Promise<void>;
+    onExpireMutiny?: (mutinyId: string) => void | Promise<void>;
     /** True while capability preflight is still loading; forces every gate closed. */
     capabilitiesPending?: boolean;
   }
@@ -117,7 +117,7 @@
   const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
   const PHASES: GovProcessPhase[] = ['open', 'executed', 'failed'];
 
-  let phaseFilter: GovProcessPhase = $state('open');
+  let phaseFilter = $state<GovProcessPhase>('open');
 
   let mutinyActive = $derived(isMutinyActive(mutinyStatus));
   let offboardActive = $derived(isCrewOffboardActive(qmStatus));
@@ -213,12 +213,12 @@
     );
   }
 
-  function runMutinyExecute() {
-    void onExecuteMutiny();
+  function runMutinyExecute(mutinyId: string) {
+    void onExecuteMutiny(mutinyId);
   }
 
-  function runMutinyExpire() {
-    void onExpireMutiny();
+  function runMutinyExpire(mutinyId: string) {
+    void onExpireMutiny(mutinyId);
   }
 
   function runOffboardExecute(offboardId: string) {
@@ -249,7 +249,7 @@
     if (card.kind === 'treasury') {
       void runTreasuryExecute(card.proposal);
     } else if (card.kind === 'mutiny') {
-      void runMutinyExecute();
+      void runMutinyExecute(card.status.activeMutinyId);
     } else if (card.kind === 'crew_offboard') {
       void runOffboardExecute(card.status.offboardId);
     } else {
@@ -259,7 +259,7 @@
 
   function expireForCard(card: GovProcessCard) {
     if (card.kind === 'mutiny') {
-      void runMutinyExpire();
+      void runMutinyExpire(card.status.activeMutinyId);
     } else if (card.kind === 'crew_offboard') {
       void runOffboardExpire(card.status.offboardId);
     }
@@ -293,16 +293,15 @@
     );
   }
 
-  function runMutinyVote() {
-    const status = mutinyStatus;
-    if (!mutinyModule.trim() || !status) return;
+  function runMutinyVote(mutinyId: string) {
+    if (!mutinyModule.trim() || !mutinyId.trim()) return;
     const label = tFn('governance.action.mutinyVote');
-    runBoardWrite(label, `mutiny-vote:${status.activeMutinyId}`, () =>
+    runBoardWrite(label, `mutiny-vote:${mutinyId}`, () =>
       mutinyCastVote({
         network,
         parentId,
         mutinyModule,
-        mutinyId: status.activeMutinyId,
+        mutinyId,
       }),
     );
   }
@@ -330,7 +329,9 @@
       hasPendingJob(parentId, `treasury-exec:${card.kind === 'treasury' ? card.proposal.proposalId : ''}`) ||
       hasPendingJob(parentId, `treasury-crew-vote:${card.kind === 'treasury' ? card.proposal.proposalId : ''}`) ||
       hasPendingJob(parentId, `treasury-captain-vote:${card.kind === 'treasury' ? card.proposal.proposalId : ''}`) ||
-      hasPendingJob(parentId, `mutiny-vote:${mutinyStatus?.activeMutinyId ?? ''}`) ||
+      (card.kind === 'mutiny' &&
+        card.status.activeMutinyId === (mutinyStatus?.activeMutinyId ?? '') &&
+        hasPendingJob(parentId, `mutiny-vote:${card.status.activeMutinyId}`)) ||
       (card.kind === 'crew_offboard' &&
         (hasPendingJob(parentId, `offboard-exec:${card.status.offboardId}`) ||
           hasPendingJob(parentId, `offboard-expire:${card.status.offboardId}`) ||
@@ -404,6 +405,8 @@
       <ul class="proposal-list" role="list">
         {#each visibleCards as card (govProcessCardKey(card))}
           {@const cardOpen = govProcessPhase(card) === 'open'}
+          {@const cardLiveMutiny =
+            card.kind === 'mutiny' && card.status.activeMutinyId === (mutinyStatus?.activeMutinyId ?? '')}
           <GovProcessCardView
             {card}
             {network}
@@ -414,10 +417,10 @@
             onExecute={() => executeForCard(card)}
             onExpire={() => expireForCard(card)}
             showVotes={cardOpen}
-            votePending={cardPending(card) || (card.kind === 'mutiny' && mutinyLoading)}
+            votePending={cardPending(card) || (cardLiveMutiny && mutinyLoading)}
             {crewVoteGate}
             {captainVoteGate}
-            {mutinyHasVoted}
+            mutinyHasVoted={cardLiveMutiny ? mutinyHasVoted : false}
             {offboardHasVoted}
             onCrewVote={
               card.kind === 'treasury' && cardOpen
@@ -429,7 +432,9 @@
                 ? (support) => void runCaptainVote(card.proposal.proposalId, support)
                 : undefined
             }
-            onMutinyVote={card.kind === 'mutiny' && cardOpen ? () => void runMutinyVote() : undefined}
+            onMutinyVote={
+              card.kind === 'mutiny' && cardOpen ? () => void runMutinyVote(card.status.activeMutinyId) : undefined
+            }
             onOffboardVote={card.kind === 'crew_offboard' && cardOpen ? (support) => void runOffboardVote(support) : undefined}
           />
         {/each}

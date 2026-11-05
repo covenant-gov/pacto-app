@@ -290,10 +290,12 @@
         })}
       </p>
     {/if}
-    <p class="proposal-card-meta muted">
-      {$t('governance.proposal.captainLine')}
-      <code class="proposal-card-ref">{card.status.captain || '—'}</code>
-    </p>
+    {#if card.phase === 'open'}
+      <p class="proposal-card-meta muted">
+        {$t('governance.proposal.captainLine')}
+        <code class="proposal-card-ref">{card.status.captain || '—'}</code>
+      </p>
+    {/if}
     {#if mutinyTxShort}
       <p class="proposal-card-meta muted">
         {$t('governance.proposal.txHash', { values: { hash: mutinyTxShort } })}

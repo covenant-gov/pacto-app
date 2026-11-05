@@ -206,15 +206,43 @@ describe('gov-process helpers', () => {
     );
   });
 
-  it('does not mark a closed mutiny failed before live status is known', () => {
+  it('classifies unexecuted mutiny rounds by deadline when live status is missing', () => {
     const cards = buildGovProcessCards({
       treasuryProposals: [],
       mutinyStatus: null,
-      mutinyRounds: [round({ id: '4', executed: false }), round({ id: '6', executed: true })],
+      mutinyRounds: [
+        round({ id: '4', executed: false, deadline: 50 }),
+        round({ id: '6', executed: true, deadline: 50 }),
+        round({ id: '9', executed: false, deadline: 900 }),
+      ],
       qmPending: [],
+      nowSec: 500,
     });
     expect(cards.map((c) => ({ sortKey: c.sortKey, phase: c.kind === 'mutiny' ? c.phase : '' }))).toEqual([
+      { sortKey: 9, phase: 'open' },
       { sortKey: 6, phase: 'executed' },
+      { sortKey: 4, phase: 'failed' },
+    ]);
+  });
+
+  it('keeps an in-window mutiny open when it is not the live id', () => {
+    const cards = buildGovProcessCards({
+      treasuryProposals: [],
+      mutinyStatus: mutiny({ activeMutinyId: '8', deadline: 900 }),
+      mutinyRounds: [
+        round({ id: '8', executed: false, deadline: 900 }),
+        round({ id: '9', executed: false, deadline: 900 }),
+      ],
+      qmPending: [],
+      nowSec: 100,
+    });
+    expect(
+      cards
+        .filter((c) => c.kind === 'mutiny')
+        .map((c) => ({ sortKey: c.sortKey, phase: c.kind === 'mutiny' ? c.phase : '' })),
+    ).toEqual([
+      { sortKey: 9, phase: 'open' },
+      { sortKey: 8, phase: 'open' },
     ]);
   });
 

@@ -24,6 +24,7 @@
     fetchGovModuleReadCached,
     isGovModuleReadStale,
     mutinyReadCacheKey,
+    mutinyRoundsReadCacheKey,
     peekGovModuleRead,
     quartermasterReadCacheKey,
   } from '../../../lib/governance/gov-module-read-cache';
@@ -277,11 +278,28 @@
     mutinyCaptain = snap.status.captain ?? '';
   }
 
-  async function loadMutinyRounds(mutinyModule: string) {
+  async function loadMutinyRounds(mutinyModule: string, force = false) {
+    const key = mutinyRoundsReadCacheKey(network, mutinyModule);
     const gen = ++mutinyRoundsGen;
+    if (!force) {
+      const peeked = peekGovModuleRead<MutinyRoundDto[]>(key);
+      if (peeked) {
+        mutinyRounds = peeked;
+        mutinyRoundsError = '';
+      }
+      if (peeked && !isGovModuleReadStale(key)) {
+        mutinyRoundsLoading = false;
+        return;
+      }
+    }
     mutinyRoundsLoading = true;
     try {
-      const rounds = await listMutinyRounds({ network, mutinyModule, parentId });
+      const rounds = await fetchGovModuleReadCached(
+        key,
+        parentId,
+        () => listMutinyRounds({ network, mutinyModule, parentId }),
+        { force },
+      );
       if (gen !== mutinyRoundsGen) return;
       mutinyRounds = rounds;
       mutinyRoundsError = '';
@@ -327,7 +345,7 @@
     const needFetch = force || !peeked || isGovModuleReadStale(key);
     if (!needFetch) {
       mutinyLoading = false;
-      void loadMutinyRounds(mutinyModule);
+      void loadMutinyRounds(mutinyModule, force);
       return;
     }
 
@@ -373,7 +391,7 @@
     } finally {
       if (hydrateKey === `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`) {
         mutinyLoading = false;
-        void loadMutinyRounds(mutinyModule);
+        void loadMutinyRounds(mutinyModule, force);
       }
     }
   }
@@ -486,20 +504,20 @@
     void reloadQmPending();
   }
 
-  function executeMutinyFromBoard() {
+  function executeMutinyFromBoard(mutinyId: string) {
     const mutinyModule = payload.mutinyModule?.trim();
-    const status = mutinyStatus;
-    if (!mutinyModule || !status) return;
+    const id = mutinyId.trim();
+    if (!mutinyModule || !id) return;
     runGovWriteInBackground({
       label: tFn('governance.action.executeMutiny'),
       parentId,
-      actionKey: `mutiny-exec:${status.activeMutinyId}`,
+      actionKey: `mutiny-exec:${id}`,
       job: () =>
         mutinyExecute({
           network,
           parentId,
           mutinyModule,
-          mutinyId: status.activeMutinyId,
+          mutinyId: id,
         }),
       onSettled: () => {
         clearGovModuleReadsForParent(parentId);
@@ -508,20 +526,20 @@
     });
   }
 
-  function expireMutinyFromBoard() {
+  function expireMutinyFromBoard(mutinyId: string) {
     const mutinyModule = payload.mutinyModule?.trim();
-    const status = mutinyStatus;
-    if (!mutinyModule || !status) return;
+    const id = mutinyId.trim();
+    if (!mutinyModule || !id) return;
     runGovWriteInBackground({
       label: tFn('governance.action.expireMutiny'),
       parentId,
-      actionKey: `mutiny-expire:${status.activeMutinyId}`,
+      actionKey: `mutiny-expire:${id}`,
       job: () =>
         mutinyExpire({
           network,
           parentId,
           mutinyModule,
-          mutinyId: status.activeMutinyId,
+          mutinyId: id,
         }),
       onSettled: () => {
         clearGovModuleReadsForParent(parentId);

@@ -3,6 +3,7 @@
 use alloy::primitives::U256;
 use alloy::providers::Provider;
 use alloy::sol_types::SolCall;
+use futures_util::stream::{self, StreamExt};
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
@@ -65,6 +66,7 @@ enum MutinyWriteKind {
 }
 
 const HARD_MAX_SCAN: u32 = 256;
+const SCAN_CONCURRENCY: usize = 8;
 
 /// Inclusive `[start, last]` covering the newest `hard_max` ids. `count` is `mutinyCount`.
 fn mutiny_scan_bounds(count: U256, hard_max: u32) -> Option<(u32, u32)> {
@@ -200,31 +202,48 @@ pub struct MutinyRoundDto {
     pub captain: String,
 }
 
-async fn list_mutiny_rounds_on_chain<P: Provider>(
+async fn list_mutiny_rounds_on_chain<P>(
     provider: &P,
     module: alloy::primitives::Address,
     hard_max: u32,
-) -> Result<Vec<MutinyRoundDto>, String> {
+) -> Result<Vec<MutinyRoundDto>, String>
+where
+    P: Provider + Clone,
+{
     let count: U256 = eth_call_decode(provider, module, &mutinyCountCall {})
         .await
         .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
     let Some((start, last)) = mutiny_scan_bounds(count, hard_max) else {
         return Ok(Vec::new());
     };
-    let captain = eth_call_decode(provider, module, &captainCall {})
-        .await
-        .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
-    let captain_hex = format!("{:#x}", captain);
 
-    let mut out = Vec::new();
-    for id in start..=last {
-        let decoded = eth_call_decode(provider, module, &mutinyCall { _id: U256::from(id) })
-            .await
-            .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
+    let fetched = stream::iter(start..=last)
+        .map(|id| {
+            let provider = provider.clone();
+            async move {
+                let decoded = eth_call_decode(&provider, module, &mutinyCall { _id: U256::from(id) })
+                    .await
+                    .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
+                Ok::<_, String>((id, decoded))
+            }
+        })
+        .buffer_unordered(SCAN_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+
+    let mut rows = Vec::with_capacity(fetched.len());
+    for item in fetched {
+        let (id, decoded) = item?;
         if decoded._startedAt == 0 {
             continue;
         }
-        out.push(MutinyRoundDto {
+        rows.push((id, decoded));
+    }
+    rows.sort_by_key(|(id, _)| *id);
+
+    let out = rows
+        .into_iter()
+        .map(|(id, decoded)| MutinyRoundDto {
             id: id.to_string(),
             proposed_new_captain: format!("{:#x}", decoded._proposedNewCaptain),
             from_captain: format!("{:#x}", decoded._fromCaptain),
@@ -234,9 +253,9 @@ async fn list_mutiny_rounds_on_chain<P: Provider>(
             yeas: decoded._yeas,
             executed: decoded._executed,
             seat_former_captain: decoded._seatFormerCaptain,
-            captain: captain_hex.clone(),
-        });
-    }
+            captain: String::new(),
+        })
+        .collect();
     Ok(out)
 }
 
