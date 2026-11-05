@@ -11,8 +11,9 @@ use crate::rumor::{ConversationType, RumorContext, RumorEvent, RumorProcessingRe
 use crate::squad_records::{self, SQUAD_CONTENT_POLICY_D_TAG};
 
 const POLICY_SCHEMA: &str = "pacto.squad_content_policy.v1";
-/// Incoming flag stamps further ahead of the local clock are dropped.
-const MAX_FUTURE_SKEW_MS: i64 = 24 * 60 * 60 * 1000;
+/// Incoming flag stamps further ahead of the local clock are dropped; matches MDK's default
+/// `max_future_skew_secs` on the MLS wrapper.
+const MAX_FUTURE_SKEW_MS: i64 = 5 * 60 * 1000;
 
 const ERR_NOT_MEMBER: &str = "squad_records_not_member";
 const ERR_NOT_ADMIN: &str = "squad_records_not_admin";

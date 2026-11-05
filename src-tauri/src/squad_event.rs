@@ -25,8 +25,9 @@ pub const KIND_TIMED: u16 = 31923;
 pub const WEEKLY_SERIES_COUNT: usize = 8;
 const DATE_FORMAT: &str = "%Y-%m-%d";
 const REPLICA_UPDATED_EVENT: &str = "squad_event_replica_updated";
-/// Ingest drops ops stamped further ahead of the local clock than this.
-const MAX_FUTURE_SKEW_MS: i64 = 24 * 60 * 60 * 1000;
+/// Ingest drops ops stamped further ahead of the local clock than this; matches MDK's default
+/// `max_future_skew_secs` on the MLS wrapper.
+const MAX_FUTURE_SKEW_MS: i64 = 5 * 60 * 1000;
 /// Queued children kept per parent and author; older ones are dropped first.
 const MAX_PENDING_PER_AUTHOR: i64 = 200;
 const PENDING_TTL_MS: i64 = 30 * 24 * 60 * 60 * 1000;
@@ -790,10 +791,6 @@ pub fn apply_op(
             match row {
                 Some(row) => {
                     if row.mls_group_id != meta.mls_group_id || row.parent_id != w.parent_id {
-                        return Ok(Applied::Ignored);
-                    }
-                    // Stamp check keeps RSVPs sent before the cancel, whatever the arrival order.
-                    if row.status == EventStatus::Cancelled && w.updated_at_ms > row.updated_at_ms {
                         return Ok(Applied::Ignored);
                     }
                     upsert_rsvp(
@@ -1692,7 +1689,10 @@ pub async fn send_squad_event_rsvp<R: Runtime>(
         return Err(err::NOT_MEMBER.into());
     }
     let previous = with_conn(&handle, |c| {
-        row_in_parent(c, &mls_group_id, &parent_id, &event_id)?;
+        let row = row_in_parent(c, &mls_group_id, &parent_id, &event_id)?;
+        if row.status == EventStatus::Cancelled {
+            return Err(err::NOT_EDITABLE.to_string());
+        }
         my_rsvp_updated_at(c, &event_id, &npub)
     })?;
     let stamp = previous.map_or_else(now_ms, |prev| now_ms().max(prev.saturating_add(1)));
@@ -2360,24 +2360,27 @@ mod tests {
     }
 
     #[test]
-    fn rsvp_after_cancel_is_dropped_in_either_arrival_order() {
+    fn rsvp_racing_a_cancel_converges_in_either_arrival_order() {
+        // The RSVP's sender applies it before the cancel reaches them; peers may see the reverse.
         let f = fields("2026-01-15T09:00");
         let cancel = event_wire(Op::Cancel, "ev-1", PARENT, None, &f, 2_000);
-        let before = rsvp_wire("ev-1", PARENT, RsvpStatus::Accepted, 1_500);
-        let after = rsvp_wire("ev-1", PARENT, RsvpStatus::Accepted, 2_500);
+        let racing = rsvp_wire("ev-1", PARENT, RsvpStatus::Declined, 2_100);
         for cancel_first in [true, false] {
             let conn = conn();
             ingest(&conn, &create("ev-1", &f, 1_000), "r1", ALICE);
-            let mut ops = vec![(&cancel, "r-cancel", ALICE), (&before, "r-bob", BOB)];
+            let mut ops = vec![(&cancel, "r-cancel", ALICE), (&racing, "r-bob", BOB)];
             if !cancel_first {
                 ops.reverse();
             }
             for (w, rumor, signer) in ops {
                 ingest(&conn, w, rumor, signer);
             }
-            assert_eq!(ingest(&conn, &after, "r-carol", CAROL).0, Applied::Ignored);
-            assert_eq!(rsvp_of(&conn, "ev-1", BOB), Some(RsvpStatus::Accepted));
-            assert_eq!(rsvp_of(&conn, "ev-1", CAROL), None);
+            assert_eq!(row(&conn, "ev-1").status, EventStatus::Cancelled);
+            assert_eq!(
+                rsvp_of(&conn, "ev-1", BOB),
+                Some(RsvpStatus::Declined),
+                "cancel_first={cancel_first}"
+            );
         }
     }
 

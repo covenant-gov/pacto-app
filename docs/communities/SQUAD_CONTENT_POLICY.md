@@ -14,7 +14,7 @@ This document records how restrict-on treats existing member events, why, and th
 
 ## The constraint behind it
 
-Every timestamp on a squad record is set by the sender. `updated_at_ms` is in the payload, and `send_wire` copies it into the rumor's `created_at`. A modified client can put any value there. Ingest only rejects stamps more than 24 h in the future.
+Every timestamp on a squad record is set by the sender. `updated_at_ms` is in the payload, and `send_wire` copies it into the rumor's `created_at`. A modified client can put any value there. Ingest only rejects stamps more than 5 minutes in the future.
 
 Receive time is not a usable substitute. A device that was offline backfills from its sync cursor, or the last 48 h on first sync (`sync_group_since_cursor` in `mls.rs`). Any rule tied to when a device receives a message gives that device a different answer than devices that were online.
 
@@ -47,7 +47,7 @@ The rule would be: a non-admin event is valid if restrict-on was off in the epoc
 - the epoch passed from the MDK message through `RumorContext` into `process_rumor`, and stored on event rows and queued ops;
 - the admin sending a commit (for example a key update) right before the policy message, so the switch starts a fresh epoch.
 
-Edits could use the same ordering, comparing `(epoch, updated_at_ms)`, which would make the 24 h future allowance irrelevant.
+Edits could use the same ordering, comparing `(epoch, updated_at_ms)`, which would make the future allowance irrelevant.
 
 Unverified: whether the app can send an admin key-update commit on demand, and how MDK settles concurrent commits.
 
@@ -62,8 +62,8 @@ A contract gives a single trusted value and a block-ordered history for the flag
 
 ## Related rules from the same review
 
-- **Clock allowance.** Ingest accepts stamps up to 24 h ahead and has no lower bound. A lower bound breaks offline catch-up (see D). Admin update and cancel sends stamp `max(now, stored + 1)`, so a future-stamped edit cannot lock admins out. A window of a few minutes would split devices on members whose clocks run fast.
-- **RSVP on a cancelled event.** Dropped only when stamped after the event's last write, so RSVPs sent before the cancel survive in either arrival order.
+- **Clock allowance.** Ingest accepts stamps up to 5 minutes ahead, the same as MDK's default `max_future_skew_secs` for the MLS wrapper, and has no lower bound. A lower bound breaks offline catch-up (see D). MDK already drops every message whose wrapper is more than 5 minutes ahead for peers online at the time, so an honest client with a fast clock never reaches the app check; only a modified client can forge an inner stamp, and the app bound caps it at the same window. Admin update and cancel sends stamp `max(now, stored + 1)`, so a future-stamped author edit cannot lock admins out. A live two-client run with the author's clock 4 minutes ahead confirmed the admin edit wins on both devices.
+- **RSVP on a cancelled event.** The send command refuses an RSVP when the local copy is already cancelled. Ingest still stores every RSVP, newest per member, whatever the event's status. Dropping RSVPs on cancelled events at ingest was tried and reverted: the RSVP's sender always applies it before the racing cancel arrives, while peers can see the cancel first, so devices disagreed. A live two-client run showed it.
 
 ## Revisit when
 
