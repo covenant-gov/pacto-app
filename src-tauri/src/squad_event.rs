@@ -726,6 +726,11 @@ fn may_create(conn: &Connection, parent_id: &str, role: SquadGroupRole) -> Resul
     Ok(!crate::squad_content_policy::load_policy(conn, parent_id)?.restrict_event_create)
 }
 
+/// Author or admin, and still a member.
+fn may_edit(role: SquadGroupRole, is_author: bool) -> bool {
+    role.is_member && (is_author || role.is_admin)
+}
+
 /// Applies one op from `meta.signer_npub` whose role in `meta.mls_group_id` is `role`.
 /// Only the parent's own announcements group may write its records.
 /// Does not drain queued children; see [`drain_pending`].
@@ -785,6 +790,10 @@ pub fn apply_op(
             match row {
                 Some(row) => {
                     if row.mls_group_id != meta.mls_group_id || row.parent_id != w.parent_id {
+                        return Ok(Applied::Ignored);
+                    }
+                    // Stamp check keeps RSVPs sent before the cancel, whatever the arrival order.
+                    if row.status == EventStatus::Cancelled && w.updated_at_ms > row.updated_at_ms {
                         return Ok(Applied::Ignored);
                     }
                     upsert_rsvp(
@@ -871,7 +880,7 @@ fn apply_write(
     if row.mls_group_id != meta.mls_group_id || row.parent_id != w.parent_id {
         return Ok(Applied::Ignored);
     }
-    if !(role.is_member && (meta.signer_npub == row.author_npub || role.is_admin)) {
+    if !may_edit(role, meta.signer_npub == row.author_npub) {
         return Ok(Applied::Ignored);
     }
     let hash = content_hash(w, meta.signer_npub);
@@ -1085,7 +1094,7 @@ fn card_content(w: &EventWire, applied: &Applied) -> Option<String> {
     }
 }
 
-/// Replica rows for one parent, with RSVPs. `can_edit` reflects authorship only; callers add admin.
+/// Replica rows for one parent, with RSVPs. `can_edit` reflects authorship only; callers apply role.
 fn load_events(
     conn: &Connection,
     parent_id: &str,
@@ -1460,19 +1469,17 @@ pub async fn list_squad_events<R: Runtime>(
 ) -> Result<Vec<SquadEventDto>, String> {
     let caller = crate::account_manager::get_current_account()?;
     let mut events = with_conn(&handle, |c| load_events(c, &parent_id, &caller))?;
-    let mut admin_of: HashMap<String, bool> = HashMap::new();
-    for ev in events.iter_mut().filter(|ev| !ev.can_edit) {
-        let is_admin = match admin_of.get(&ev.mls_group_id) {
-            Some(is_admin) => *is_admin,
+    let mut roles: HashMap<String, SquadGroupRole> = HashMap::new();
+    for ev in events.iter_mut() {
+        let role = match roles.get(&ev.mls_group_id) {
+            Some(role) => *role,
             None => {
-                let is_admin = squad_records::group_role(&handle, &ev.mls_group_id, &caller)
-                    .await
-                    .is_admin;
-                admin_of.insert(ev.mls_group_id.clone(), is_admin);
-                is_admin
+                let role = squad_records::group_role(&handle, &ev.mls_group_id, &caller).await;
+                roles.insert(ev.mls_group_id.clone(), role);
+                role
             }
         };
-        ev.can_edit = is_admin;
+        ev.can_edit = may_edit(role, ev.can_edit);
     }
     Ok(events)
 }
@@ -2311,6 +2318,28 @@ mod tests {
         );
         assert_eq!(a, Applied::Ignored);
         assert_eq!(row(&conn, "ev-1").status, EventStatus::Active);
+    }
+
+    #[test]
+    fn rsvp_after_cancel_is_dropped_in_either_arrival_order() {
+        let f = fields("2026-01-15T09:00");
+        let cancel = event_wire(Op::Cancel, "ev-1", PARENT, None, &f, 2_000);
+        let before = rsvp_wire("ev-1", PARENT, RsvpStatus::Accepted, 1_500);
+        let after = rsvp_wire("ev-1", PARENT, RsvpStatus::Accepted, 2_500);
+        for cancel_first in [true, false] {
+            let conn = conn();
+            ingest(&conn, &create("ev-1", &f, 1_000), "r1", ALICE);
+            let mut ops = vec![(&cancel, "r-cancel", ALICE), (&before, "r-bob", BOB)];
+            if !cancel_first {
+                ops.reverse();
+            }
+            for (w, rumor, signer) in ops {
+                ingest(&conn, w, rumor, signer);
+            }
+            assert_eq!(ingest(&conn, &after, "r-carol", CAROL).0, Applied::Ignored);
+            assert_eq!(rsvp_of(&conn, "ev-1", BOB), Some(RsvpStatus::Accepted));
+            assert_eq!(rsvp_of(&conn, "ev-1", CAROL), None);
+        }
     }
 
     #[test]
