@@ -151,6 +151,25 @@ export async function usernameGetCachedClaim(): Promise<UsernameClaimRow | null>
   return invoke<UsernameClaimRow | null>('username_get_cached_claim');
 }
 
+export type UsernameAccountState = {
+  cached: UsernameClaimRow | null;
+  /** Null when this pass could not read the chain. */
+  record: UsernameRecordDto | null;
+  pendingTransfer: boolean;
+  chainError: string | null;
+};
+
+/** Local claim row plus this account's username NFT record. Chain failures stay in `chainError`. */
+export async function usernameSyncAccountState(
+  network: string,
+  rpcUrls?: string[],
+): Promise<UsernameAccountState> {
+  return invoke<UsernameAccountState>('username_sync_account_state', {
+    network,
+    rpcUrls,
+  });
+}
+
 export async function usernameClaim(
   network: string,
   name: string,

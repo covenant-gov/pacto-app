@@ -762,6 +762,28 @@ mod username_claims_cache_tests {
             .expect("row");
         assert!(cleared.link_event_id.is_none());
     }
+
+    #[test]
+    fn hydrate_upsert_creates_row_and_second_call_keeps_link() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(None, false)).expect("create");
+        let created = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert_eq!(created.username, "alice");
+        assert!(created.link_event_id.is_none());
+
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(Some("evt-1"), false))
+            .expect("set link");
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(None, false))
+            .expect("hydrate again");
+        let kept = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert_eq!(kept.link_event_id.as_deref(), Some("evt-1"));
+    }
 }
 
 #[command]

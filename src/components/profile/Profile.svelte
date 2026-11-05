@@ -12,12 +12,15 @@
   import DangerZoneSection from '../settings/DangerZoneSection.svelte';
   import WalletView from '../wallet/WalletView.svelte';
   import SettingsCollapsibleSection from '../settings/SettingsCollapsibleSection.svelte';
+  import EvmDashGasSection from '../settings/EvmDashGasSection.svelte';
+  import { showEvmDashGas, usernameState } from '../../stores/username';
 
   function goBack() {
     $activeView = 'hub';
   }
 
   let userNpub = $derived($currentUser?.npub || '');
+  let dashVisible = $derived(showEvmDashGas($usernameState));
 </script>
 
 <div class="profile-view">
@@ -34,6 +37,10 @@
       >
         <WalletView embeddedInSettings />
       </SettingsCollapsibleSection>
+
+      {#if dashVisible}
+        <EvmDashGasSection />
+      {/if}
 
       <AppSettingsSection />
       <NotificationsSection />

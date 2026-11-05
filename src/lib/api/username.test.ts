@@ -8,6 +8,7 @@ import {
   usernameClaimAddressTransfer,
   usernameEligibleMember,
   usernameGetCachedClaim,
+  usernameSyncAccountState,
   usernameGlobalSpendablePoolWei,
   usernameInitiateAddressTransfer,
   usernameIsPendingTransfer,
@@ -93,6 +94,18 @@ describe('username API shapes', () => {
     mockedInvoke.mockResolvedValueOnce(null);
     await usernameGetCachedClaim();
     expect(mockedInvoke).toHaveBeenCalledWith('username_get_cached_claim');
+
+    mockedInvoke.mockResolvedValueOnce({
+      cached: null,
+      record: null,
+      pendingTransfer: false,
+      chainError: null,
+    });
+    await usernameSyncAccountState('sepolia');
+    expect(mockedInvoke).toHaveBeenCalledWith('username_sync_account_state', {
+      network: 'sepolia',
+      rpcUrls: undefined,
+    });
 
     mockedInvoke.mockResolvedValueOnce({
       network: 'sepolia',

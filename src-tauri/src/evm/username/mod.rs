@@ -11,5 +11,6 @@ pub use commands_read::*;
 pub use commands_transfer::*;
 #[allow(unused_imports)] // public API surface for DTOs
 pub use dto::{
-    UsernameClaimResult, UsernameEligibleMemberDto, UsernameRecordDto, UsernameTransferResult,
+    UsernameAccountStateDto, UsernameClaimResult, UsernameEligibleMemberDto, UsernameRecordDto,
+    UsernameTransferResult,
 };

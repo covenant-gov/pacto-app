@@ -3,17 +3,20 @@
 use alloy::primitives::{B256, U256};
 use tauri::{AppHandle, Runtime};
 
-use super::dto::{UsernameEligibleMemberDto, UsernameRecordDto};
+use super::dto::{UsernameAccountStateDto, UsernameEligibleMemberDto, UsernameRecordDto};
 use super::helpers::{
-    parse_b256, record_to_dto, require_network, require_rpc_urls, username_addrs,
+    load_nostr_keys, nostr_xonly_pubkey, parse_b256, read_registry_policy_version, record_to_dto,
+    require_network, require_rpc_urls, username_addrs, username_claim_cache_needs_upsert,
+    username_holder_claim_upsert,
 };
 use crate::db::{self, UsernameClaimRow};
 use crate::evm::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiCall as bootstrapSpendableCall;
 use crate::evm::contracts::pacto_username::IGlobalSponsorPool::spendablePoolWeiCall as globalSpendableCall;
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
-    canBootstrapClaimCall, eligibleMemberCall, isPendingTransferCall,
-    nameAvailableCall, npubOfCall, recordOfCall, usedNonceCall,
+    canBootstrapClaimCall, eligibleMemberCall, isPendingTransferCall, nameAvailableCall,
+    npubOfCall, recordOfCall, usedNonceCall,
 };
+use crate::evm::nostr_claim_link::npub_hash_from_pubkey;
 use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::rpc::signer::load_embedded_signer;
 use crate::evm::rpc::{connect_read_provider, parse_address, wallet_err_json};
@@ -225,4 +228,100 @@ pub async fn username_get_cached_claim<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<Option<UsernameClaimRow>, String> {
     db::get_username_claim(&app).map_err(|e| wallet_err_json("DB_ERROR", e, None))
+}
+
+fn chain_unread(cached: Option<UsernameClaimRow>, chain_error: String) -> UsernameAccountStateDto {
+    UsernameAccountStateDto {
+        cached,
+        record: None,
+        pending_transfer: false,
+        chain_error: Some(chain_error),
+    }
+}
+
+/// Local claim row plus this account's username NFT record on one provider session.
+/// A chain failure is `Ok` with `record: None` so the caller can keep the last record.
+#[tauri::command]
+pub async fn username_sync_account_state<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<UsernameAccountStateDto, String> {
+    let mut cached =
+        db::get_username_claim(&app).map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
+    let net = require_network(&network)?;
+    let urls = require_rpc_urls(net, rpc_urls)?;
+    let addrs = username_addrs(&net.key)?;
+    let keys = load_nostr_keys()?;
+    let pubkey = nostr_xonly_pubkey(&keys)?;
+    let npub_hash = npub_hash_from_pubkey(pubkey);
+    let provider = match connect_read_provider(&urls).await {
+        Ok(provider) => provider,
+        Err(e) => return Ok(chain_unread(cached, e)),
+    };
+    let record = match eth_call_decode(
+        &provider,
+        addrs.pacto_username_nft,
+        &recordOfCall {
+            npubHash: npub_hash,
+        },
+    )
+    .await
+    {
+        Ok(record) => record,
+        Err(e) => {
+            return Ok(chain_unread(
+                cached,
+                wallet_err_json("USERNAME_READ", e, None),
+            ))
+        }
+    };
+    let pending = match eth_call_decode(
+        &provider,
+        addrs.pacto_username_nft,
+        &isPendingTransferCall {
+            npubHash: npub_hash,
+        },
+    )
+    .await
+    {
+        Ok(pending) => pending,
+        Err(e) => {
+            return Ok(chain_unread(
+                cached,
+                wallet_err_json("USERNAME_READ", e, None),
+            ))
+        }
+    };
+    if let Some(preview) =
+        username_holder_claim_upsert(&record.name, record.tokenId, npub_hash, 0, &net.key)
+    {
+        if username_claim_cache_needs_upsert(
+            cached.as_ref(),
+            &preview.username,
+            &preview.token_id,
+            &net.key,
+        ) {
+            let policy_version =
+                read_registry_policy_version(&provider, addrs.sponsor_policy_registry).await;
+            if let Some(upsert) = username_holder_claim_upsert(
+                &record.name,
+                record.tokenId,
+                npub_hash,
+                policy_version as i64,
+                &net.key,
+            ) {
+                db::upsert_username_claim(&app, &upsert)
+                    .map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
+                cached = db::get_username_claim(&app)
+                    .map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
+            }
+        }
+    }
+    Ok(UsernameAccountStateDto {
+        cached,
+        record: Some(record_to_dto(record)),
+        pending_transfer: pending,
+        chain_error: None,
+    })
 }

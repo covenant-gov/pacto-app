@@ -195,6 +195,12 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
   username_global_spendable_pool_wei: () => '0',
   username_used_nonce: () => '0',
   username_get_cached_claim: () => null,
+  username_sync_account_state: () => ({
+    cached: null,
+    record: null,
+    pendingTransfer: false,
+    chainError: null,
+  }),
   username_claim: () => ({
     network: 'sepolia',
     chainId: 11155111,

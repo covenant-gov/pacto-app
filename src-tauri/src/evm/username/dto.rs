@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 
+use crate::db::UsernameClaimRow;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsernameRecordDto {
@@ -34,6 +36,17 @@ pub struct UsernameClaimResult {
     pub user_op_hash: Option<String>,
     pub evm_address: String,
     pub policy_version: u64,
+}
+
+/// One refresh of the local claim row plus the Sepolia username NFT record.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsernameAccountStateDto {
+    pub cached: Option<UsernameClaimRow>,
+    /// `None` when this pass could not read the chain. Callers keep the previous record.
+    pub record: Option<UsernameRecordDto>,
+    pub pending_transfer: bool,
+    pub chain_error: Option<String>,
 }
 
 #[derive(Serialize)]
