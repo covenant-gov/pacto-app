@@ -179,4 +179,21 @@ describe('SquadDocsPanel', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy());
     expect(screen.getByText(/before you joined/)).toBeTruthy();
   });
+
+  it('drops the previous squad rows when the next squad fails to load', async () => {
+    state.docs = [doc('d1', 'Old squad doc')];
+    const { rerender } = render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    await screen.findByText('Old squad doc');
+
+    state.invoke.mockImplementation((command: string) => {
+      if (command === 'list_squad_docs') return Promise.reject(new Error('boom'));
+      if (command === 'get_squad_content_policy') return Promise.resolve(state.policy);
+      return Promise.resolve(null);
+    });
+    await rerender({ parentId: 'q', mlsGroupId: 'h' });
+
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.queryByText('Old squad doc')).toBeNull();
+    expect(state.invoke).toHaveBeenCalledWith('list_squad_docs', expect.objectContaining({ parentId: 'q' }));
+  });
 });

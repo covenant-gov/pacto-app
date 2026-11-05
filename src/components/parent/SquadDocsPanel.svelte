@@ -66,6 +66,26 @@
     filter.kind === 'channel' ? `channel:${filter.channelId}` : filter.kind
   );
 
+  // A reused panel must not show or act on the previous squad's rows.
+  let shownPid = '';
+  $effect.pre(() => {
+    if (shownPid === pid) return;
+    shownPid = pid;
+    docs = [];
+    loaded = false;
+    loadError = '';
+    policy = null;
+    policySettled = false;
+    filter = { kind: 'all' };
+    revealedIds = {};
+    highlightId = null;
+    showAdd = false;
+    editingDoc = null;
+    confirmingRemoveId = null;
+    removingId = null;
+    actionError = '';
+  });
+
   function setFilter(value: string): void {
     if (value === 'untagged') filter = { kind: 'untagged' };
     else if (value.startsWith('channel:')) filter = { kind: 'channel', channelId: value.slice('channel:'.length) };
@@ -169,18 +189,21 @@
 
   async function removeDoc(doc: SquadDocDto): Promise<void> {
     if (removingId || !gid || !pid) return;
+    const removingFrom = pid;
     removingId = doc.id;
     actionError = '';
+    let error = '';
     try {
       await sendSquadDocRemove({ mlsGroupId: gid, parentId: pid, docId: doc.id });
-      confirmingRemoveId = null;
       showToast(get(t)('docs.card.removed'));
     } catch (e) {
       const tFn = get(t);
-      actionError = squadRecordErrorMessage(e, tFn, tFn('docs.card.errorRemove'));
-    } finally {
-      removingId = null;
+      error = squadRecordErrorMessage(e, tFn, tFn('docs.card.errorRemove'));
     }
+    if (removingFrom !== pid) return;
+    removingId = null;
+    if (error) actionError = error;
+    else confirmingRemoveId = null;
   }
 </script>
 
