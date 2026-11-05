@@ -2,8 +2,8 @@ use rusqlite::OptionalExtension;
 use serde::Serialize;
 use tauri::{command, AppHandle, Emitter, Runtime};
 
-use super::messaging::get_message_views;
 use super::ids::resolve_chat_id_for_message_load;
+use super::messaging::get_message_views;
 
 fn normalize_treasury_chain(raw: Option<&str>) -> String {
     match raw
@@ -3866,13 +3866,15 @@ pub async fn replay_automation_side_effects_for_chat<R: Runtime>(
     let chat_int_id = resolve_chat_id_for_message_load(handle, chat_id)?;
     let messages = get_message_views(handle, chat_int_id, 2000, 0, None).await?;
     for msg in &messages {
-        apply_mls_virtual_bucket_side_effects(
-            handle,
-            chat_id,
-            msg.virtual_bucket.as_deref(),
-            &msg.content,
-            msg.npub.as_deref(),
-        );
+        if msg.attachments.is_empty() {
+            apply_mls_virtual_bucket_side_effects(
+                handle,
+                chat_id,
+                msg.virtual_bucket.as_deref(),
+                &msg.content,
+                msg.npub.as_deref(),
+            );
+        }
     }
     Ok(messages.len() as u32)
 }

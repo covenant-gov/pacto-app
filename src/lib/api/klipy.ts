@@ -1,4 +1,5 @@
 import { invoke } from './index';
+import type { MlsVirtualBucket } from './nostr';
 import { persistenceKey } from '../../stores/persistence-context';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 
@@ -170,10 +171,18 @@ export async function sendGifMessage(
   url: string,
   slug: string,
   repliedTo: string,
-  content: string
+  content: string,
+  virtualBucket?: MlsVirtualBucket | null,
 ): Promise<boolean> {
   try {
-    return await invoke('klipy_gif_message', { receiver, url, slug, repliedTo, content });
+    return await invoke('klipy_gif_message', {
+      receiver,
+      url,
+      slug,
+      repliedTo,
+      content,
+      virtualBucket: virtualBucket ?? null,
+    });
   } catch (e) {
     throw new Error(getInvokeErrorMessage(e), { cause: e });
   }

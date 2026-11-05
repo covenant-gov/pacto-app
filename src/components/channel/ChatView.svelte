@@ -66,7 +66,7 @@
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { buildMentionEnvelope, parseMessageContent, filterMentionsByRoster } from '../../lib/messaging/mentions';
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
-  import { replyQuoteExcerpt } from '../../lib/utils/url-tracking';
+  import { replyTargetExcerpt } from '../../lib/messaging/reply-quote';
   import { clearPendingReactions } from '../../lib/messaging/reactions';
   import { editableUntil, type MessageEditRequest } from '../../lib/messaging/message-edit';
   import { submitMessageEdit } from '../../lib/messaging/submit-message-edit';
@@ -228,15 +228,15 @@
           : replyNpub
             ? getProfileDisplayName($profiles[replyNpub] ?? null)
             : tFn('messaging.message.replyUnknown');
-      base.replyPreview =
-        msg.replied_to_has_attachment === true
-          ? tFn('messaging.message.attachment')
-          : msg.replied_to_content != null && msg.replied_to_content.length > 0
-            ? replyQuoteExcerpt(
-                parseMessageContent(msg.replied_to_content as string).body,
-                $stripTrackingMarkersEnabled,
-              )
-            : tFn('messaging.message.messageFallback');
+      base.replyPreview = replyTargetExcerpt(
+        msg.replied_to_content,
+        msg.replied_to_has_attachment === true,
+        $stripTrackingMarkersEnabled,
+        {
+          attachment: tFn('messaging.message.attachment'),
+          fallback: tFn('messaging.message.messageFallback'),
+        },
+      );
     }
     return base;
   }
@@ -299,19 +299,20 @@
     if (el && document.contains(el)) el.scrollTop = el.scrollHeight;
   }
 
+  function squadVirtualBucket(): VirtualBucket {
+    return virtualBucketSingleGroup && selectedVirtualBucket ? selectedVirtualBucket : 'announcements';
+  }
+
   function squadOutgoingContent(body: string, mentions?: Mention[]): string {
     if (!mentions?.length) return body;
-    const virtualBucket =
-      virtualBucketSingleGroup && selectedVirtualBucket ? selectedVirtualBucket : 'announcements';
-    return buildMentionEnvelope(body, mentions, virtualBucket);
+    return buildMentionEnvelope(body, mentions, squadVirtualBucket());
   }
 
   async function handleSendMessage(body: string, mentions?: Mention[], repliedTo?: string) {
     const groupId = $activeChannelId;
     if (!groupId) return;
     groupSendError.set(null);
-    const virtualBucket =
-      virtualBucketSingleGroup && selectedVirtualBucket ? selectedVirtualBucket : 'announcements';
+    const virtualBucket = squadVirtualBucket();
     const content = squadOutgoingContent(body, mentions);
     try {
       const ok = await sendDmMessage(groupId, content, repliedTo ?? '', { virtualBucket });
@@ -665,12 +666,15 @@
     if (!messageId) return undefined;
     const msg = messages.find((m) => m.id === messageId);
     if (!msg) return undefined;
-    if (msg.content?.trim()) {
-      const excerpt = replyQuoteExcerpt(msg.content, stripTracking);
-      if (excerpt) return excerpt;
-    }
-    if (msg.attachments && msg.attachments.length > 0) return tFn('messaging.message.attachment');
-    return tFn('messaging.message.messageFallback');
+    return replyTargetExcerpt(
+      msg.content,
+      Boolean(msg.attachments && msg.attachments.length > 0),
+      stripTracking,
+      {
+        attachment: tFn('messaging.message.attachment'),
+        fallback: tFn('messaging.message.messageFallback'),
+      },
+    );
   }
 
   function onReply(messageId: string) {
@@ -710,6 +714,7 @@
         fileName,
         useCompression,
         squadOutgoingContent(content, mentions),
+        squadVirtualBucket(),
       );
       if (ok) cancelReply();
     } catch (e: unknown) {
@@ -729,7 +734,14 @@
     if (!groupId) return;
     groupSendError.set(null);
     try {
-      const ok = await sendGifMessage(groupId, url, slug, repliedTo, squadOutgoingContent(content, mentions));
+      const ok = await sendGifMessage(
+        groupId,
+        url,
+        slug,
+        repliedTo,
+        squadOutgoingContent(content, mentions),
+        squadVirtualBucket(),
+      );
       if (ok) cancelReply();
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, tFn('errors.dm.gifFailed'));

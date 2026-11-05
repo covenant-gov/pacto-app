@@ -11,6 +11,7 @@ import {
 } from './resolve-dm-message-presentation';
 import type { DmMessage } from '../../stores/dm';
 import type { NostrProfile } from '../api/nostr';
+import { buildMentionEnvelope } from '../messaging/mentions';
 
 const NPUB_A = 'npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const NPUB_B = 'npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -360,7 +361,7 @@ describe('buildPlainMessageProps', () => {
     expect(props.replyAuthorName).toBe('Unknown');
   });
 
-  it('uses Attachment preview when reply had an attachment', () => {
+  it('uses the caption when a reply has an attachment and text', () => {
     const message = msg({
       mine: false,
       replied_to: 'r1',
@@ -368,7 +369,29 @@ describe('buildPlainMessageProps', () => {
       replied_to_content: 'text',
     });
     const props = buildPlainMessageProps(message, NPUB_B, {}, NPUB_A);
+    expect(props.replyPreview).toBe('text');
+  });
+
+  it('uses Attachment when a reply file has an empty caption', () => {
+    const message = msg({
+      mine: false,
+      replied_to: 'r1',
+      replied_to_has_attachment: true,
+      replied_to_content: '   ',
+    });
+    const props = buildPlainMessageProps(message, NPUB_B, {}, NPUB_A);
     expect(props.replyPreview).toBe('Attachment');
+  });
+
+  it('uses the mention body when a reply quotes an envelope on a file', () => {
+    const message = msg({
+      mine: false,
+      replied_to: 'r1',
+      replied_to_has_attachment: true,
+      replied_to_content: buildMentionEnvelope('hi @alice', [{ npub: NPUB_A, alias: 'alice' }], 'inbox'),
+    });
+    const props = buildPlainMessageProps(message, NPUB_B, {}, NPUB_A);
+    expect(props.replyPreview).toBe('hi @alice');
   });
 
   it('truncates long reply content to 80 characters', () => {

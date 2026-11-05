@@ -23,7 +23,7 @@
   import { shouldStackWithPrevious } from '../../lib/dm/message-stack';
   import { dmThreadScrolledToBottom } from '../../stores/app';
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
-  import { replyQuoteExcerpt } from '../../lib/utils/url-tracking';
+  import { replyTargetExcerpt } from '../../lib/messaging/reply-quote';
   import { toggleDmBlock } from '../../lib/api/nostr';
   import { profiles } from '../../stores/profiles';
   import {
@@ -138,12 +138,15 @@
     if (!replyToMessageId) return undefined;
     const msg = messages.find((m) => m.id === replyToMessageId);
     if (!msg) return undefined;
-    if (msg.content?.trim()) {
-      const excerpt = replyQuoteExcerpt(msg.content, $stripTrackingMarkersEnabled);
-      if (excerpt) return excerpt;
-    }
-    if (msg.attachments && msg.attachments.length > 0) return $t('messaging.message.attachment');
-    return $t('messaging.message.messageFallback');
+    return replyTargetExcerpt(
+      msg.content,
+      Boolean(msg.attachments && msg.attachments.length > 0),
+      $stripTrackingMarkersEnabled,
+      {
+        attachment: $t('messaging.message.attachment'),
+        fallback: $t('messaging.message.messageFallback'),
+      },
+    );
   });
   let chatDeleting = $derived($deletingDmNpubs.has(npub));
 

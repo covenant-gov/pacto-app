@@ -2764,21 +2764,24 @@ impl MlsService {
                                     state.add_message_to_chat(&chat_id, msg.clone())
                                 };
 
-                                if let Some(handle) = TAURI_APP.get() {
-                                    crate::db::apply_mls_virtual_bucket_side_effects(
-                                        handle,
-                                        &chat_id,
-                                        msg.virtual_bucket.as_deref(),
-                                        &msg.content,
-                                        msg.npub.as_deref(),
-                                    );
+                                if msg.attachments.is_empty() {
+                                    if let Some(handle) = TAURI_APP.get() {
+                                        crate::db::apply_mls_virtual_bucket_side_effects(
+                                            handle,
+                                            &chat_id,
+                                            msg.virtual_bucket.as_deref(),
+                                            &msg.content,
+                                            msg.npub.as_deref(),
+                                        );
+                                    }
                                 }
 
                                 if already_in_db || !was_added {
                                     if let Some(handle) = TAURI_APP.get() {
                                         let _ = crate::message::reconcile_message_edits(
                                             handle, &chat_id, &msg.id,
-                                        ).await;
+                                        )
+                                        .await;
                                     }
                                     continue;
                                 }

@@ -187,6 +187,7 @@ describe('sendGifMessage', () => {
       slug: 'slug-1',
       repliedTo: 'reply-1',
       content: 'testing text',
+      virtualBucket: null,
     });
   });
 

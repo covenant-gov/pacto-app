@@ -809,13 +809,15 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                             let _ = crate::message::reconcile_message_edits(
                                 &handle, &group_id_for_emit, &record.id,
                             ).await;
-                            db::apply_mls_virtual_bucket_side_effects(
-                                &handle,
-                                &group_id_for_emit,
-                                record.virtual_bucket.as_deref(),
-                                &record.content,
-                                record.npub.as_deref(),
-                            );
+                            if record.attachments.is_empty() {
+                                db::apply_mls_virtual_bucket_side_effects(
+                                    &handle,
+                                    &group_id_for_emit,
+                                    record.virtual_bucket.as_deref(),
+                                    &record.content,
+                                    record.npub.as_deref(),
+                                );
+                            }
                             crate::cmds::chat::schedule_debounced_unread_recompute(handle.clone());
                         }
                     }

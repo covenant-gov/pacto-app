@@ -25,7 +25,7 @@ import { getProfileAvatarSrc, getProfileDisplayName } from '../utils/profile';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
-import { replyQuoteExcerpt } from '../utils/url-tracking';
+import { replyTargetExcerpt } from '../messaging/reply-quote';
 import { resolveInviteInviterNpub } from '../pacto-app-inbox';
 import type { DmMessage } from '../../stores/dm';
 
@@ -150,12 +150,15 @@ export function buildPlainMessageProps(
         : replyNpub
           ? getProfileDisplayName(profilesMap[replyNpub] ?? null)
           : tFn('messaging.message.replyUnknown');
-    base.replyPreview =
-      msg.replied_to_has_attachment === true
-        ? tFn('messaging.message.attachment')
-        : msg.replied_to_content != null && msg.replied_to_content.length > 0
-          ? replyQuoteExcerpt(msg.replied_to_content, stripTracking)
-          : tFn('messaging.message.messageFallback');
+    base.replyPreview = replyTargetExcerpt(
+      msg.replied_to_content,
+      msg.replied_to_has_attachment === true,
+      stripTracking,
+      {
+        attachment: tFn('messaging.message.attachment'),
+        fallback: tFn('messaging.message.messageFallback'),
+      },
+    );
   }
   return base;
 }

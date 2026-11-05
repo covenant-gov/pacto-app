@@ -39,6 +39,7 @@ blob URL (or the Klipy URL). An absent or whitespace-only tag is an empty body.
 The value is message text, including mention envelopes, and is not filename-sanitized.
 Locally it is stored as the event content and encrypted at rest the same way as
 a text message. Edits replace that body only, inside the existing 60-second window.
+The caption is display text, and the virtual bucket is the `pacto_bucket` tag.
 
 ```mermaid
 graph LR

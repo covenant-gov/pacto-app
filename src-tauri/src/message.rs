@@ -235,8 +235,7 @@ impl Message {
     /// Receive paths also require the DB-backed first-receipt check before mutation.
     pub fn accepts_edit(&self, dm_peer: Option<&str>, edit: EditAuthor, edited_at: u64) -> bool {
         let original = EditAuthor::of_original(self.mine, self.npub.as_deref(), dm_peer);
-        self.rumor_kind.is_none()
-            && edit_is_authorized(original, self.at, edit, edited_at)
+        self.rumor_kind.is_none() && edit_is_authorized(original, self.at, edit, edited_at)
     }
 
     /// Apply an edit to this message, updating content and tracking history
@@ -1087,13 +1086,17 @@ mod edit_intake_tests {
     async fn existing_original_hydration_reconciles_stored_edits() {
         let fixture = Fixture::new("hydration").await;
         db::save_message(fixture.handle().clone(), &fixture.peer, &fixture.original)
-            .await.unwrap();
+            .await
+            .unwrap();
         let edit = fixture.edit("hydrated-edit", "fixed");
-        receive_message_edit(fixture.handle(), &fixture.peer, edit).await.unwrap();
+        receive_message_edit(fixture.handle(), &fixture.peer, edit)
+            .await
+            .unwrap();
         assert_eq!(fixture.update_count(), 0);
         fixture.add_original_to_state().await;
         reconcile_message_edits(fixture.handle(), &fixture.peer, &fixture.original.id)
-            .await.unwrap();
+            .await
+            .unwrap();
         assert_eq!(fixture.current().await.content, "fixed");
         assert_eq!(fixture.current().await.edit_history.unwrap().len(), 2);
         assert_eq!(fixture.update_count(), 1);
@@ -1259,6 +1262,22 @@ fn with_caption_tag(rumor: EventBuilder, caption: &str) -> EventBuilder {
     }
 }
 
+fn group_virtual_bucket(is_group_chat: bool, raw: Option<&str>) -> Option<String> {
+    if !is_group_chat {
+        return None;
+    }
+    raw.map(str::trim)
+        .filter(|s| matches!(*s, "announcements" | "inbox" | "polls" | "join_requests"))
+        .map(str::to_string)
+}
+
+fn with_pacto_bucket_tag(rumor: EventBuilder, bucket: Option<&str>) -> EventBuilder {
+    match bucket {
+        Some(vb) => rumor.tag(nostr_tags::custom_tag("pacto_bucket", [vb])),
+        None => rumor,
+    }
+}
+
 #[tauri::command]
 pub async fn message(
     receiver: String,
@@ -1352,20 +1371,7 @@ pub async fn message(
         edited: false,
         edit_history: None,
         rumor_kind: None,
-        virtual_bucket: if is_group_chat {
-            virtual_bucket
-                .as_ref()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .filter(|s| {
-                    matches!(
-                        s.as_str(),
-                        "announcements" | "inbox" | "polls" | "join_requests"
-                    )
-                })
-        } else {
-            None
-        },
+        virtual_bucket: group_virtual_bucket(is_group_chat, virtual_bucket.as_deref()),
     };
 
     // The in-memory lookup above only sees messages already present in this
@@ -1894,21 +1900,7 @@ pub async fn message(
 
     // Add millisecond precision tag for accurate message ordering
     rumor = rumor.tag(nostr_tags::custom_tag("ms", [milliseconds.to_string()]));
-
-    if is_group_chat && !had_attachment {
-        if let Some(vb) = virtual_bucket
-            .as_ref()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-        {
-            if matches!(
-                vb.as_str(),
-                "announcements" | "inbox" | "polls" | "join_requests"
-            ) {
-                rumor = rumor.tag(nostr_tags::custom_tag("pacto_bucket", [vb.as_str()]));
-            }
-        }
-    }
+    rumor = with_pacto_bucket_tag(rumor, msg.virtual_bucket.as_deref());
 
     // Build the rumor with our key (unsigned)
     let built_rumor = rumor.build(my_public_key);
@@ -2043,6 +2035,7 @@ pub async fn klipy_gif_message(
     slug: String,
     replied_to: String,
     content: String,
+    virtual_bucket: Option<String>,
 ) -> Result<bool, String> {
     crate::session::heartbeat();
     let handle = TAURI_APP.get().ok_or("App handle not available")?;
@@ -2093,6 +2086,7 @@ pub async fn klipy_gif_message(
         } else {
             None
         },
+        virtual_bucket: group_virtual_bucket(is_group_chat, virtual_bucket.as_deref()),
         ..Message::default()
     };
 
@@ -2143,6 +2137,7 @@ pub async fn klipy_gif_message(
         "ms",
         [(ms_time.as_millis() % 1000).to_string()],
     ));
+    rumor = with_pacto_bucket_tag(rumor, msg.virtual_bucket.as_deref());
 
     let built_rumor = rumor.build(my_public_key);
     let rumor_id = built_rumor.id.unwrap();
@@ -2766,6 +2761,7 @@ pub async fn send_file_bytes(
     file_name: String,
     use_compression: bool,
     content: String,
+    virtual_bucket: Option<String>,
 ) -> Result<bool, String> {
     crate::session::heartbeat();
     let caption = content.trim().to_string();
@@ -2824,7 +2820,7 @@ pub async fn send_file_bytes(
                         caption,
                         replied_to,
                         Some(attachment_file),
-                        None,
+                        virtual_bucket,
                     )
                     .await;
                 }
@@ -2866,7 +2862,7 @@ pub async fn send_file_bytes(
         caption,
         replied_to,
         Some(attachment_file),
-        None,
+        virtual_bucket,
     )
     .await
 }
