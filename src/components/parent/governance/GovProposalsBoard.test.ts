@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import GovProposalsBoard from './GovProposalsBoard.svelte';
 import type { GovernancePrivilege } from '../../../lib/governance/governance-privilege';
 import type { TreasuryProposalDto } from '../../../lib/governance/api';
@@ -61,5 +61,29 @@ describe('GovProposalsBoard gate banners', () => {
     const voteNay = screen.getByRole('button', { name: 'Vote nay' }) as HTMLButtonElement;
     expect(voteYea.disabled).toBe(true);
     expect(voteNay.disabled).toBe(true);
+  });
+
+  it('defaults to open proposals and shows executed ones on that filter', async () => {
+    render(GovProposalsBoard, {
+      props: {
+        network: 'sepolia',
+        parentId: 'parent1',
+        treasuryAuthority: '0xta00000000000000000000000000000000001',
+        privilege: captainOnly,
+        proposals: [
+          treasuryProposal({ proposalId: '1', status: 'active' }),
+          treasuryProposal({ proposalId: '2', status: 'executed', executed: true }),
+        ],
+      },
+    });
+
+    expect(screen.getByText('Proposal #1')).toBeTruthy();
+    expect(screen.queryByText('Proposal #2')).toBeNull();
+
+    await fireEvent.click(screen.getByRole('radio', { name: 'Executed' }));
+
+    expect(screen.queryByText('Proposal #1')).toBeNull();
+    expect(screen.getByText('Proposal #2')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Execute' })).toBeNull();
   });
 });

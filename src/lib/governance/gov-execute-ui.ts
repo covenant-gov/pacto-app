@@ -99,6 +99,15 @@ export function govExecuteUiState(params: {
       };
     }
     case 'mutiny': {
+      if (card.phase !== 'open') {
+        return {
+          showExecute: false,
+          executeEnabled: false,
+          disabledReasonKey: '',
+          unlockAtSec: null,
+          ...NO_EXPIRE,
+        };
+      }
       const expired = isMutinyExpirable(card.status, now);
       const show = isMutinyExecutable(card.status, now);
       return {

@@ -14,6 +14,7 @@
     treasuryAuthorityCaptainVote,
     treasuryAuthorityCrewVote,
     treasuryAuthorityExecute,
+    type MutinyRoundDto,
     type MutinyStatusDto,
     type QuartermasterPendingActionDto,
     type QuartermasterStatusDto,
@@ -35,7 +36,9 @@
     buildGovProcessCards,
     countOpenGovProcesses,
     govProcessCardKey,
+    govProcessPhase,
     type GovProcessCard,
+    type GovProcessPhase,
   } from '../../../lib/governance/gov-process';
   import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
   import { isMutinyActive } from '../../../lib/governance/gov-proposal-lists';
@@ -62,6 +65,9 @@
     proposalsLoading?: boolean;
     proposalsError?: string;
     mutinyStatus?: MutinyStatusDto | null;
+    mutinyRounds?: MutinyRoundDto[];
+    mutinyRoundsLoading?: boolean;
+    mutinyRoundsError?: string;
     mutinyLoading?: boolean;
     qmStatus?: QuartermasterStatusDto | null;
     qmPending?: QuartermasterPendingActionDto[];
@@ -72,8 +78,8 @@
     mutinyHasVoted?: boolean;
     offboardHasVoted?: boolean;
     onRefreshProposals?: () => void;
-    onExecuteMutiny?: () => void | Promise<void>;
-    onExpireMutiny?: () => void | Promise<void>;
+    onExecuteMutiny?: (mutinyId: string) => void | Promise<void>;
+    onExpireMutiny?: (mutinyId: string) => void | Promise<void>;
     /** True while capability preflight is still loading; forces every gate closed. */
     capabilitiesPending?: boolean;
   }
@@ -89,6 +95,9 @@
     proposalsLoading = false,
     proposalsError = '',
     mutinyStatus = null,
+    mutinyRounds = [],
+    mutinyRoundsLoading = false,
+    mutinyRoundsError = '',
     mutinyLoading = false,
     qmStatus = null,
     qmPending = [],
@@ -106,6 +115,9 @@
 
   const tFn = get(t);
   const PENDING_GATE: CtaGate = { enabled: false, reason: 'governance.status.loading' };
+  const PHASES: GovProcessPhase[] = ['open', 'executed', 'failed'];
+
+  let phaseFilter = $state<GovProcessPhase>('open');
 
   let mutinyActive = $derived(isMutinyActive(mutinyStatus));
   let offboardActive = $derived(isCrewOffboardActive(qmStatus));
@@ -120,19 +132,28 @@
     buildGovProcessCards({
       treasuryProposals: proposals,
       mutinyStatus,
+      mutinyRounds,
       qmPending,
       crewOffboard: qmStatus?.offboard ?? null,
       crewOffboardQuorumBps: parseQuorumBps(qmStatus?.crewOffboardQuorumBps),
     }),
   );
+  let visibleCards = $derived(processCards.filter((card) => govProcessPhase(card) === phaseFilter));
   let openCount = $derived(countOpenGovProcesses(processCards));
+  let phaseEmptyKey = $derived(
+    phaseFilter === 'executed'
+      ? 'governance.empty.noExecutedProposals'
+      : phaseFilter === 'failed'
+        ? 'governance.empty.noFailedProposals'
+        : 'governance.empty.noOpenProposals',
+  );
   let mutinyTxHash = $derived(mutinyTxHashForCard($mutinyProcessTxByParentId, parentId));
   let boardLoading = $derived(
     (proposalsLoading && proposals.length === 0) ||
       (mutinyLoading && !mutinyStatus) ||
       (qmPendingLoading && qmPending.length === 0),
   );
-  let refreshSpinning = $derived(proposalsLoading || mutinyLoading || qmPendingLoading);
+  let refreshSpinning = $derived(proposalsLoading || mutinyLoading || mutinyRoundsLoading || qmPendingLoading);
   let proposalsRpcKind = $derived(rpcReadErrorKind(proposalsError));
   let qmPendingRpcKind = $derived(rpcReadErrorKind(qmPendingError));
   let boardRpcKinds = $derived(uniqueRpcReadErrorKinds(proposalsError, qmPendingError));
@@ -192,12 +213,12 @@
     );
   }
 
-  function runMutinyExecute() {
-    void onExecuteMutiny();
+  function runMutinyExecute(mutinyId: string) {
+    void onExecuteMutiny(mutinyId);
   }
 
-  function runMutinyExpire() {
-    void onExpireMutiny();
+  function runMutinyExpire(mutinyId: string) {
+    void onExpireMutiny(mutinyId);
   }
 
   function runOffboardExecute(offboardId: string) {
@@ -228,7 +249,7 @@
     if (card.kind === 'treasury') {
       void runTreasuryExecute(card.proposal);
     } else if (card.kind === 'mutiny') {
-      void runMutinyExecute();
+      void runMutinyExecute(card.status.activeMutinyId);
     } else if (card.kind === 'crew_offboard') {
       void runOffboardExecute(card.status.offboardId);
     } else {
@@ -238,7 +259,7 @@
 
   function expireForCard(card: GovProcessCard) {
     if (card.kind === 'mutiny') {
-      void runMutinyExpire();
+      void runMutinyExpire(card.status.activeMutinyId);
     } else if (card.kind === 'crew_offboard') {
       void runOffboardExpire(card.status.offboardId);
     }
@@ -272,16 +293,15 @@
     );
   }
 
-  function runMutinyVote() {
-    const status = mutinyStatus;
-    if (!mutinyModule.trim() || !status) return;
+  function runMutinyVote(mutinyId: string) {
+    if (!mutinyModule.trim() || !mutinyId.trim()) return;
     const label = tFn('governance.action.mutinyVote');
-    runBoardWrite(label, `mutiny-vote:${status.activeMutinyId}`, () =>
+    runBoardWrite(label, `mutiny-vote:${mutinyId}`, () =>
       mutinyCastVote({
         network,
         parentId,
         mutinyModule,
-        mutinyId: status.activeMutinyId,
+        mutinyId,
       }),
     );
   }
@@ -309,7 +329,9 @@
       hasPendingJob(parentId, `treasury-exec:${card.kind === 'treasury' ? card.proposal.proposalId : ''}`) ||
       hasPendingJob(parentId, `treasury-crew-vote:${card.kind === 'treasury' ? card.proposal.proposalId : ''}`) ||
       hasPendingJob(parentId, `treasury-captain-vote:${card.kind === 'treasury' ? card.proposal.proposalId : ''}`) ||
-      hasPendingJob(parentId, `mutiny-vote:${mutinyStatus?.activeMutinyId ?? ''}`) ||
+      (card.kind === 'mutiny' &&
+        card.status.activeMutinyId === (mutinyStatus?.activeMutinyId ?? '') &&
+        hasPendingJob(parentId, `mutiny-vote:${card.status.activeMutinyId}`)) ||
       (card.kind === 'crew_offboard' &&
         (hasPendingJob(parentId, `offboard-exec:${card.status.offboardId}`) ||
           hasPendingJob(parentId, `offboard-expire:${card.status.offboardId}`) ||
@@ -335,6 +357,15 @@
     />
   </div>
 
+  <div class="phase-filter" role="radiogroup" aria-label={$t('governance.proposal.phaseFilterAria')}>
+    {#each PHASES as phase (phase)}
+      <label class="phase-option">
+        <input type="radio" name="gov-proposal-phase" value={phase} bind:group={phaseFilter} />
+        <span>{$t(`governance.proposal.phase.${phase}`)}</span>
+      </label>
+    {/each}
+  </div>
+
   {#if needsLinkEvm}
     <GovGateBanner reason={LINK_EVM_BANNER_KEY} />
   {/if}
@@ -353,17 +384,6 @@
 
   {#if boardLoading}
     <p class="muted">{$t('governance.status.loadingProposals')}</p>
-  {:else if processCards.length === 0}
-    {#each boardRpcKinds as kind (kind)}
-      <RpcReadErrorCard {kind} />
-    {/each}
-    {#if proposalsError && !proposalsRpcKind}
-      <p class="muted">{proposalsError}</p>
-    {:else if qmPendingError && !qmPendingRpcKind}
-      <p class="muted">{qmPendingError}</p>
-    {:else if boardRpcKinds.length === 0}
-      <p class="muted">{$t('governance.empty.noTreasuryProposals')}</p>
-    {/if}
   {:else}
     {#each boardRpcKinds as kind (kind)}
       <RpcReadErrorCard {kind} />
@@ -374,34 +394,52 @@
     {#if qmPendingError && !qmPendingRpcKind}
       <p class="muted">{qmPendingError}</p>
     {/if}
-    <ul class="proposal-list" role="list">
-      {#each processCards as card (govProcessCardKey(card))}
-        <GovProcessCardView
-          {card}
-          {network}
-          txHash={card.kind === 'mutiny' ? mutinyTxHash : ''}
-          showExecute
-          executePending={cardPending(card)}
-          privilegeReasonKey={privilegeReasonKeyFor(card)}
-          onExecute={() => executeForCard(card)}
-          onExpire={() => expireForCard(card)}
-          showVotes
-          votePending={cardPending(card) || (card.kind === 'mutiny' && mutinyLoading)}
-          {crewVoteGate}
-          {captainVoteGate}
-          {mutinyHasVoted}
-          {offboardHasVoted}
-          onCrewVote={
-            card.kind === 'treasury' ? (support) => void runCrewVote(card.proposal.proposalId, support) : undefined
-          }
-          onCaptainVote={
-            card.kind === 'treasury' ? (support) => void runCaptainVote(card.proposal.proposalId, support) : undefined
-          }
-          onMutinyVote={card.kind === 'mutiny' ? () => void runMutinyVote() : undefined}
-          onOffboardVote={card.kind === 'crew_offboard' ? (support) => void runOffboardVote(support) : undefined}
-        />
-      {/each}
-    </ul>
+    {#if phaseFilter !== 'open' && mutinyRoundsError}
+      <p class="muted">{mutinyRoundsError}</p>
+    {/if}
+    {#if phaseFilter !== 'open' && mutinyRoundsLoading && visibleCards.length === 0}
+      <p class="muted">{$t('governance.status.loadingProposals')}</p>
+    {:else if visibleCards.length === 0 && boardRpcKinds.length === 0 && !proposalsError && !qmPendingError && !(phaseFilter !== 'open' && mutinyRoundsError)}
+      <p class="muted">{$t(phaseEmptyKey)}</p>
+    {:else if visibleCards.length > 0}
+      <ul class="proposal-list" role="list">
+        {#each visibleCards as card (govProcessCardKey(card))}
+          {@const cardOpen = govProcessPhase(card) === 'open'}
+          {@const cardLiveMutiny =
+            card.kind === 'mutiny' && card.status.activeMutinyId === (mutinyStatus?.activeMutinyId ?? '')}
+          <GovProcessCardView
+            {card}
+            {network}
+            txHash={card.kind === 'mutiny' && cardOpen ? mutinyTxHash : ''}
+            showExecute={cardOpen}
+            executePending={cardPending(card)}
+            privilegeReasonKey={privilegeReasonKeyFor(card)}
+            onExecute={() => executeForCard(card)}
+            onExpire={() => expireForCard(card)}
+            showVotes={cardOpen}
+            votePending={cardPending(card) || (cardLiveMutiny && mutinyLoading)}
+            {crewVoteGate}
+            {captainVoteGate}
+            mutinyHasVoted={cardLiveMutiny ? mutinyHasVoted : false}
+            {offboardHasVoted}
+            onCrewVote={
+              card.kind === 'treasury' && cardOpen
+                ? (support) => void runCrewVote(card.proposal.proposalId, support)
+                : undefined
+            }
+            onCaptainVote={
+              card.kind === 'treasury' && cardOpen
+                ? (support) => void runCaptainVote(card.proposal.proposalId, support)
+                : undefined
+            }
+            onMutinyVote={
+              card.kind === 'mutiny' && cardOpen ? () => void runMutinyVote(card.status.activeMutinyId) : undefined
+            }
+            onOffboardVote={card.kind === 'crew_offboard' && cardOpen ? (support) => void runOffboardVote(support) : undefined}
+          />
+        {/each}
+      </ul>
+    {/if}
   {/if}
 </div>
 
@@ -421,6 +459,41 @@
     font-size: 0.9375rem;
     font-weight: 600;
     flex: 1;
+  }
+  .phase-filter {
+    display: inline-flex;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    overflow: hidden;
+    align-self: flex-start;
+  }
+  .phase-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 7px 12px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-right: 1px solid var(--border-subtle);
+  }
+  .phase-option:last-child {
+    border-right: none;
+  }
+  .phase-option:has(input:checked) {
+    background: var(--brand);
+    color: var(--on-brand);
+  }
+  .phase-option:has(input:focus-visible) {
+    outline: 2px solid var(--brand);
+    outline-offset: -2px;
+  }
+  .phase-option input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
   }
   .proposal-list {
     list-style: none;

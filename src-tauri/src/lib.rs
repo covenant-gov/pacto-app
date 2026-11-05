@@ -1621,6 +1621,7 @@ pub fn run() {
             evm::treasury_proposals_read::get_treasury_vote_config,
             evm::treasury_proposals_read::treasury_proposal_has_voted,
             evm::mutiny_ops::get_mutiny_status,
+            evm::mutiny_ops::list_mutiny_rounds,
             evm::mutiny_ops::mutiny_has_voted,
             evm::mutiny_ops::mutiny_start_to_crew_member,
             evm::mutiny_ops::mutiny_start_to_committee,

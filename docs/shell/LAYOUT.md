@@ -66,7 +66,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | Path | Role |
 |------|------|
 | `components/dm/DmMessageRouter.svelte` | Invite cards, wallet cards, plain `Message` |
-| `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + live Proposals board; Squad Admin card when the squad has a standalone `squad_admin` row and no Pacto Gov |
+| `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + Proposals board (Open \| Executed \| Failed); Squad Admin card when the squad has a standalone `squad_admin` row and no Pacto Gov |
 | `components/parent/dashboard/SquadAdminStatusCard.svelte` | Admin-only deployed state: variant copy, proxy (copy), network, CTA to Settings → Privileges |
 | `components/parent/dashboard/DashboardSettingsTab.svelte` | Squad photo, Join requests, Broadcast, Privileges (ACL / Squad Admin), Stickers, Primary/Practice networks, Chain RPC / Pimlico, Join-inbox holders — mounted from `#settings` |
 | `components/parent/dashboard/DashboardGovernanceTab.svelte` | All / Crew / Captain commands + Hats tree |
@@ -86,7 +86,7 @@ Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| 
 
 **Keep-alive:** After a Squad Dashboard mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders). `#settings` uses the same keep-alive for username and Squad panes.
 
-Governance uses role sub-modes inside `PactoGovGovernanceShell` (All / Crew / Captain command panes; Status owns the live Proposals board). Propose and vote-mode writes live on **All**; process votes live on Status cards. CTAs use **ACL** (access control) snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
+Governance uses role sub-modes inside `PactoGovGovernanceShell` (All / Crew / Captain command panes; Status owns the Proposals board). The board filters **Open | Executed | Failed** for treasury proposals and mutiny rounds. Crew offboard and crew add/remove stay on Open only, and leave the board when they finish. Propose and vote-mode writes live on **All**; process votes live on Status cards. CTAs use **ACL** (access control) snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 
 ---
 

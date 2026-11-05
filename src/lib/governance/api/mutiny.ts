@@ -16,6 +16,20 @@ export interface MutinyStatusDto {
   captain: string;
 }
 
+/** One stored mutiny round. Closed rounds stay readable after `activeMutinyId` returns to 0. */
+export interface MutinyRoundDto {
+  id: string;
+  proposedNewCaptain: string;
+  fromCaptain?: string;
+  startedAt: number;
+  deadline: number;
+  snapshot: number;
+  yeas: number;
+  executed: boolean;
+  seatFormerCaptain?: boolean;
+  captain?: string;
+}
+
 export async function getMutinyStatus(params: {
   network: string;
   mutinyModule: string;
@@ -26,6 +40,20 @@ export async function getMutinyStatus(params: {
     mutinyModule: params.mutinyModule.trim(),
     rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as MutinyStatusDto;
+}
+
+export async function listMutinyRounds(params: {
+  network: string;
+  mutinyModule: string;
+  maxScan?: number | null;
+  parentId?: string | null;
+}): Promise<MutinyRoundDto[]> {
+  return (await invoke('list_mutiny_rounds', {
+    network: params.network,
+    mutinyModule: params.mutinyModule.trim(),
+    maxScan: params.maxScan ?? null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as MutinyRoundDto[];
 }
 
 export async function mutinyHasVoted(params: {

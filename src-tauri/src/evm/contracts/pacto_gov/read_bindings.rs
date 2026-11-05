@@ -139,6 +139,7 @@ sol! {
         function expireMutiny(uint256 _mutinyId) external;
         function captainResign(address _newCaptain, bool _seatFormerCaptain) external;
         function activeMutinyId() external view returns (uint256 _id);
+        function mutinyCount() external view returns (uint256 _count);
         function mutiny(uint256 _id)
             external
             view

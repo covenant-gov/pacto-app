@@ -1,5 +1,6 @@
 import type {
   CrewOffboardDto,
+  MutinyRoundDto,
   MutinyStatusDto,
   QuartermasterPendingActionDto,
   TreasuryProposalDto,
@@ -7,13 +8,15 @@ import type {
 import { isCrewOffboardActive } from './crew-offboard';
 import { isMutinyActive } from './gov-proposal-lists';
 import { PRODUCTION_QUORUM_BPS } from './squad-params';
-import { isTreasuryProposalActive } from './treasury-proposal-ui';
 
 export type CrewPendingKind = 'crew_add' | 'crew_remove';
 
+/** Status-board filter. Offboard and crew add/remove only exist while open. */
+export type GovProcessPhase = 'open' | 'executed' | 'failed';
+
 export type GovProcessCard =
   | { kind: 'treasury'; proposal: TreasuryProposalDto; sortKey: number }
-  | { kind: 'mutiny'; status: MutinyStatusDto; sortKey: number }
+  | { kind: 'mutiny'; status: MutinyStatusDto; phase: GovProcessPhase; sortKey: number }
   | { kind: 'crew_offboard'; status: CrewOffboardDto; quorumBps: number; sortKey: number }
   | {
       kind: CrewPendingKind;
@@ -35,9 +38,50 @@ export function parseExecutableAt(raw: string): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
+/** Treasury row bucket. Losing votes stay open until the deadline or a captain veto. */
+export function treasuryProcessPhase(status: string): GovProcessPhase {
+  if (status === 'executed') return 'executed';
+  if (status === 'active' || status === 'active_passed_crew') return 'open';
+  return 'failed';
+}
+
+export function govProcessPhase(card: GovProcessCard): GovProcessPhase {
+  switch (card.kind) {
+    case 'treasury':
+      return treasuryProcessPhase(card.proposal.status);
+    case 'mutiny':
+      return card.phase;
+    case 'crew_offboard':
+    case 'crew_add':
+    case 'crew_remove':
+      return 'open';
+  }
+}
+
+function mutinyCardFromRound(round: MutinyRoundDto, phase: GovProcessPhase): GovProcessCard {
+  return {
+    kind: 'mutiny',
+    phase,
+    sortKey: Number(round.id) || 0,
+    status: {
+      activeMutinyId: round.id,
+      proposedNewCaptain: round.proposedNewCaptain,
+      fromCaptain: round.fromCaptain,
+      startedAt: round.startedAt,
+      deadline: round.deadline,
+      snapshot: round.snapshot,
+      yeas: round.yeas,
+      executed: round.executed,
+      seatFormerCaptain: round.seatFormerCaptain,
+      captain: round.captain?.trim() ?? '',
+    },
+  };
+}
+
 export function buildGovProcessCards(params: {
   treasuryProposals: TreasuryProposalDto[];
   mutinyStatus: MutinyStatusDto | null | undefined;
+  mutinyRounds?: MutinyRoundDto[];
   qmPending: QuartermasterPendingActionDto[];
   crewOffboard?: CrewOffboardDto | null;
   crewOffboardQuorumBps?: number;
@@ -54,12 +98,27 @@ export function buildGovProcessCards(params: {
     });
   }
 
-  if (isMutinyActive(params.mutinyStatus) && params.mutinyStatus) {
+  const live = isMutinyActive(params.mutinyStatus) ? params.mutinyStatus : null;
+  const liveId = live?.activeMutinyId?.trim() ?? '';
+  if (live) {
     out.push({
       kind: 'mutiny',
-      status: params.mutinyStatus,
-      sortKey: Number(params.mutinyStatus.activeMutinyId) || 0,
+      status: live,
+      phase: 'open',
+      sortKey: Number(live.activeMutinyId) || 0,
     });
+  }
+
+  for (const round of params.mutinyRounds ?? []) {
+    const id = round.id?.trim() ?? '';
+    if (!id || id === '0' || !(round.startedAt > 0)) continue;
+    if (liveId && id === liveId) continue;
+    if (round.executed) {
+      out.push(mutinyCardFromRound(round, 'executed'));
+      continue;
+    }
+    const phase: GovProcessPhase = round.deadline > now ? 'open' : 'failed';
+    out.push(mutinyCardFromRound(round, phase));
   }
 
   if (params.crewOffboard && isCrewOffboardActive(params.crewOffboard)) {
@@ -99,17 +158,7 @@ export function sortGovProcessCards(cards: GovProcessCard[]): GovProcessCard[] {
 }
 
 export function isGovProcessActive(card: GovProcessCard): boolean {
-  switch (card.kind) {
-    case 'treasury':
-      return isTreasuryProposalActive(card.proposal.status);
-    case 'mutiny':
-      return isMutinyActive(card.status);
-    case 'crew_offboard':
-      return isCrewOffboardActive(card.status);
-    case 'crew_add':
-    case 'crew_remove':
-      return true;
-  }
+  return govProcessPhase(card) === 'open';
 }
 
 export function countOpenGovProcesses(cards: GovProcessCard[]): number {

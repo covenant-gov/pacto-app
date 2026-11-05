@@ -23,6 +23,10 @@ export function mutinyReadCacheKey(
   return `mutiny:v2:${network.trim().toLowerCase()}:${mutinyModule.trim().toLowerCase()}:${voterAddress.trim().toLowerCase()}`;
 }
 
+export function mutinyRoundsReadCacheKey(network: string, mutinyModule: string): string {
+  return `mutiny-rounds:v1:${network.trim().toLowerCase()}:${mutinyModule.trim().toLowerCase()}`;
+}
+
 export function quartermasterReadCacheKey(network: string, quartermaster: string): string {
   return `qm:v3:${network.trim().toLowerCase()}:${quartermaster.trim().toLowerCase()}`;
 }

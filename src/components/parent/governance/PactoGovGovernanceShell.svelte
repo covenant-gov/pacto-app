@@ -6,12 +6,14 @@
   import {
     getMutinyStatus,
     getQuartermasterStatus,
+    listMutinyRounds,
     mutinyExecute,
     mutinyExpire,
     mutinyHasVoted,
     crewOffboardHasVoted,
     getSquadCapabilities,
     type SquadCapabilitiesDto,
+    type MutinyRoundDto,
     type MutinyStatusDto,
     type QuartermasterPendingActionDto,
     type QuartermasterStatusDto,
@@ -22,6 +24,7 @@
     fetchGovModuleReadCached,
     isGovModuleReadStale,
     mutinyReadCacheKey,
+    mutinyRoundsReadCacheKey,
     peekGovModuleRead,
     quartermasterReadCacheKey,
   } from '../../../lib/governance/gov-module-read-cache';
@@ -52,6 +55,7 @@
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import type { HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
+  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
@@ -112,6 +116,10 @@
   let capabilitiesRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   let mutinyStatus: MutinyStatusDto | null = $state(null);
+  let mutinyRounds: MutinyRoundDto[] = $state([]);
+  let mutinyRoundsLoading = $state(false);
+  let mutinyRoundsError = $state('');
+  let mutinyRoundsGen = 0;
   let mutinyHasVotedFlag = $state(false);
   let mutinyLoading = $state(false);
   let mutinyHydrateKey = $state('');
@@ -270,9 +278,48 @@
     mutinyCaptain = snap.status.captain ?? '';
   }
 
+  async function loadMutinyRounds(mutinyModule: string, force = false) {
+    const key = mutinyRoundsReadCacheKey(network, mutinyModule);
+    const gen = ++mutinyRoundsGen;
+    if (!force) {
+      const peeked = peekGovModuleRead<MutinyRoundDto[]>(key);
+      if (peeked) {
+        mutinyRounds = peeked;
+        mutinyRoundsError = '';
+      }
+      if (peeked && !isGovModuleReadStale(key)) {
+        mutinyRoundsLoading = false;
+        return;
+      }
+    }
+    mutinyRoundsLoading = true;
+    try {
+      const rounds = await fetchGovModuleReadCached(
+        key,
+        parentId,
+        () => listMutinyRounds({ network, mutinyModule, parentId }),
+        { force },
+      );
+      if (gen !== mutinyRoundsGen) return;
+      mutinyRounds = rounds;
+      mutinyRoundsError = '';
+    } catch (e) {
+      if (gen !== mutinyRoundsGen) return;
+      mutinyRoundsError = getInvokeErrorMessage(e, tFn('governance.dashboard.error.loadMutinyRounds'));
+    } finally {
+      if (gen === mutinyRoundsGen) mutinyRoundsLoading = false;
+    }
+  }
+
   async function reloadMutiny(force = false) {
     const mutinyModule = payload.mutinyModule?.trim();
-    if (!mutinyModule) return;
+    if (!mutinyModule) {
+      mutinyRoundsGen += 1;
+      mutinyRounds = [];
+      mutinyRoundsError = '';
+      mutinyRoundsLoading = false;
+      return;
+    }
     const hydrateKey = `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`;
     const key = mutinyReadCacheKey(network, mutinyModule, privilege.myAddress);
     if (!force) {
@@ -298,6 +345,7 @@
     const needFetch = force || !peeked || isGovModuleReadStale(key);
     if (!needFetch) {
       mutinyLoading = false;
+      void loadMutinyRounds(mutinyModule, force);
       return;
     }
 
@@ -343,6 +391,7 @@
     } finally {
       if (hydrateKey === `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`) {
         mutinyLoading = false;
+        void loadMutinyRounds(mutinyModule, force);
       }
     }
   }
@@ -455,20 +504,20 @@
     void reloadQmPending();
   }
 
-  function executeMutinyFromBoard() {
+  function executeMutinyFromBoard(mutinyId: string) {
     const mutinyModule = payload.mutinyModule?.trim();
-    const status = mutinyStatus;
-    if (!mutinyModule || !status) return;
+    const id = mutinyId.trim();
+    if (!mutinyModule || !id) return;
     runGovWriteInBackground({
       label: tFn('governance.action.executeMutiny'),
       parentId,
-      actionKey: `mutiny-exec:${status.activeMutinyId}`,
+      actionKey: `mutiny-exec:${id}`,
       job: () =>
         mutinyExecute({
           network,
           parentId,
           mutinyModule,
-          mutinyId: status.activeMutinyId,
+          mutinyId: id,
         }),
       onSettled: () => {
         clearGovModuleReadsForParent(parentId);
@@ -477,20 +526,20 @@
     });
   }
 
-  function expireMutinyFromBoard() {
+  function expireMutinyFromBoard(mutinyId: string) {
     const mutinyModule = payload.mutinyModule?.trim();
-    const status = mutinyStatus;
-    if (!mutinyModule || !status) return;
+    const id = mutinyId.trim();
+    if (!mutinyModule || !id) return;
     runGovWriteInBackground({
       label: tFn('governance.action.expireMutiny'),
       parentId,
-      actionKey: `mutiny-expire:${status.activeMutinyId}`,
+      actionKey: `mutiny-expire:${id}`,
       job: () =>
         mutinyExpire({
           network,
           parentId,
           mutinyModule,
-          mutinyId: status.activeMutinyId,
+          mutinyId: id,
         }),
       onSettled: () => {
         clearGovModuleReadsForParent(parentId);
@@ -557,6 +606,9 @@
       proposalsLoading={treasuryProposalsLoading}
       proposalsError={treasuryProposalsError}
       {mutinyStatus}
+      {mutinyRounds}
+      {mutinyRoundsLoading}
+      {mutinyRoundsError}
       {mutinyLoading}
       {qmStatus}
       {qmPending}

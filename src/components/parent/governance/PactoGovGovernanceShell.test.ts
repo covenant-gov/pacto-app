@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/svelte';
 import PactoGovGovernanceShell from './PactoGovGovernanceShell.svelte';
-import { getSquadCapabilities, getMutinyStatus, getQuartermasterStatus, mutinyHasVoted } from '../../../lib/governance/api';
+import { getSquadCapabilities, getMutinyStatus, getQuartermasterStatus, listMutinyRounds, mutinyHasVoted } from '../../../lib/governance/api';
 import { listSquadGovReplica } from '../../../lib/governance/gov-replica';
 import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
 import type { SquadCapabilitiesDto } from '../../../lib/governance/api';
@@ -18,6 +18,7 @@ vi.mock('../../../lib/governance/api', async (importOriginal) => {
     getSquadCapabilities: vi.fn(),
     getMutinyStatus: vi.fn(),
     getQuartermasterStatus: vi.fn(),
+    listMutinyRounds: vi.fn(),
     mutinyHasVoted: vi.fn(),
   };
 });
@@ -38,6 +39,7 @@ vi.mock('../../../lib/wallet/signer-balance', async (importOriginal) => {
 
 const mockedGetSquadCapabilities = vi.mocked(getSquadCapabilities);
 const mockedGetMutinyStatus = vi.mocked(getMutinyStatus);
+const mockedListMutinyRounds = vi.mocked(listMutinyRounds);
 const mockedGetQuartermasterStatus = vi.mocked(getQuartermasterStatus);
 const mockedMutinyHasVoted = vi.mocked(mutinyHasVoted);
 const mockedListSquadGovReplica = vi.mocked(listSquadGovReplica);
@@ -75,6 +77,8 @@ describe('PactoGovGovernanceShell capability preflight gating', () => {
     clearAllGovModuleReads();
     mockedGetSquadCapabilities.mockReset();
     mockedGetMutinyStatus.mockReset();
+    mockedListMutinyRounds.mockReset();
+    mockedListMutinyRounds.mockResolvedValue([]);
     mockedGetQuartermasterStatus.mockReset();
     mockedMutinyHasVoted.mockReset();
     mockedListSquadGovReplica.mockReset();

@@ -28,6 +28,7 @@ import {
   listSquadInfra,
   listQuartermasterPending,
   listTreasuryProposals,
+  listMutinyRounds,
   getTreasuryVoteConfig,
   pactoGovInfraId,
   pactoGovInfraRow,
@@ -539,6 +540,17 @@ describe('api command wrappers', () => {
       'get_squad_capabilities',
       expect.objectContaining({ parentId: PARENT, wargame: true }),
     );
+  });
+
+  it('listMutinyRounds sends list_mutiny_rounds', async () => {
+    mockedInvoke.mockResolvedValueOnce([]);
+    await listMutinyRounds({ network: NETWORK, mutinyModule: ' 0xmutiny ' });
+    expect(mockedInvoke).toHaveBeenCalledWith('list_mutiny_rounds', {
+      network: NETWORK,
+      mutinyModule: '0xmutiny',
+      maxScan: null,
+      rpcUrls: null,
+    });
   });
 
   it('listTreasuryProposals sends list_treasury_proposals', async () => {
