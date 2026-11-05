@@ -1,0 +1,23 @@
+---
+description: On GitHub, #n autolinks to an issue or PR; use other wording for non-issue numbers in PR, issue, and comment copy
+alwaysApply: false
+---
+
+# GitHub `#n` is an issue or PR link
+
+In GitHub markdown (issue bodies, PR descriptions, review comments, commit messages rendered on GitHub), `#` immediately followed by digits is reserved. GitHub turns it into a link to that issue or pull request in the current repo. `#1` becomes PR 1 even when the author meant "item 1".
+
+Use `#n` only when you intend that link: `closes #489`, `PR #456`, "see #489".
+
+When the number is anything else (mutiny id, proposal id, step, count, channel-style label), do not write `#` before the digits. Say the number in words, or write **hashtag** when the hash mark itself is the point.
+
+```text
+# ❌ BAD — links to issue/PR 1
+Mutiny #1 is Active on Status.
+
+# ✅ GOOD
+Mutiny 1 is Active on Status.
+Mutiny hashtag 1 is Active on Status.
+```
+
+Same for stacked numbers: `closes #1 #2` both autolink, and only the first binds to the keyword (see [github-pr-closes-issues.mdc](github-pr-closes-issues.mdc)).
