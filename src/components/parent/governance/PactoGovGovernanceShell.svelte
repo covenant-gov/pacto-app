@@ -6,12 +6,14 @@
   import {
     getMutinyStatus,
     getQuartermasterStatus,
+    listMutinyRounds,
     mutinyExecute,
     mutinyExpire,
     mutinyHasVoted,
     crewOffboardHasVoted,
     getSquadCapabilities,
     type SquadCapabilitiesDto,
+    type MutinyRoundDto,
     type MutinyStatusDto,
     type QuartermasterPendingActionDto,
     type QuartermasterStatusDto,
@@ -52,6 +54,7 @@
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import type { HatsTreeCommandContext } from '../../../lib/governance/hats-tree-role-actions';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
+  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
@@ -112,6 +115,10 @@
   let capabilitiesRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   let mutinyStatus: MutinyStatusDto | null = $state(null);
+  let mutinyRounds: MutinyRoundDto[] = $state([]);
+  let mutinyRoundsLoading = $state(false);
+  let mutinyRoundsError = $state('');
+  let mutinyRoundsGen = 0;
   let mutinyHasVotedFlag = $state(false);
   let mutinyLoading = $state(false);
   let mutinyHydrateKey = $state('');
@@ -270,9 +277,31 @@
     mutinyCaptain = snap.status.captain ?? '';
   }
 
+  async function loadMutinyRounds(mutinyModule: string) {
+    const gen = ++mutinyRoundsGen;
+    mutinyRoundsLoading = true;
+    try {
+      const rounds = await listMutinyRounds({ network, mutinyModule, parentId });
+      if (gen !== mutinyRoundsGen) return;
+      mutinyRounds = rounds;
+      mutinyRoundsError = '';
+    } catch (e) {
+      if (gen !== mutinyRoundsGen) return;
+      mutinyRoundsError = getInvokeErrorMessage(e, tFn('governance.dashboard.error.loadMutinyRounds'));
+    } finally {
+      if (gen === mutinyRoundsGen) mutinyRoundsLoading = false;
+    }
+  }
+
   async function reloadMutiny(force = false) {
     const mutinyModule = payload.mutinyModule?.trim();
-    if (!mutinyModule) return;
+    if (!mutinyModule) {
+      mutinyRoundsGen += 1;
+      mutinyRounds = [];
+      mutinyRoundsError = '';
+      mutinyRoundsLoading = false;
+      return;
+    }
     const hydrateKey = `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`;
     const key = mutinyReadCacheKey(network, mutinyModule, privilege.myAddress);
     if (!force) {
@@ -298,6 +327,7 @@
     const needFetch = force || !peeked || isGovModuleReadStale(key);
     if (!needFetch) {
       mutinyLoading = false;
+      void loadMutinyRounds(mutinyModule);
       return;
     }
 
@@ -343,6 +373,7 @@
     } finally {
       if (hydrateKey === `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`) {
         mutinyLoading = false;
+        void loadMutinyRounds(mutinyModule);
       }
     }
   }
@@ -557,6 +588,9 @@
       proposalsLoading={treasuryProposalsLoading}
       proposalsError={treasuryProposalsError}
       {mutinyStatus}
+      {mutinyRounds}
+      {mutinyRoundsLoading}
+      {mutinyRoundsError}
       {mutinyLoading}
       {qmStatus}
       {qmPending}

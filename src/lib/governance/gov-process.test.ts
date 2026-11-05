@@ -4,12 +4,13 @@ import {
   countOpenGovProcesses,
   crewPendingStatus,
   govProcessCardKey,
+  govProcessPhase,
   govProcessToolLabel,
   parseExecutableAt,
   sortGovProcessCards,
   type GovProcessCard,
 } from './gov-process';
-import type { MutinyStatusDto, TreasuryProposalDto } from './api';
+import type { MutinyRoundDto, MutinyStatusDto, TreasuryProposalDto } from './api';
 
 function treasury(overrides: Partial<TreasuryProposalDto> = {}): TreasuryProposalDto {
   return {
@@ -27,6 +28,19 @@ function treasury(overrides: Partial<TreasuryProposalDto> = {}): TreasuryProposa
     captainDefeated: false,
     executed: false,
     status: 'active',
+    ...overrides,
+  };
+}
+
+function round(overrides: Partial<MutinyRoundDto> = {}): MutinyRoundDto {
+  return {
+    id: '3',
+    proposedNewCaptain: '0xabc',
+    startedAt: 1,
+    deadline: 50,
+    snapshot: 3,
+    yeas: 1,
+    executed: false,
     ...overrides,
   };
 }
@@ -135,6 +149,73 @@ describe('gov-process helpers', () => {
     });
     expect(cards).toHaveLength(1);
     expect(cards[0].kind).toBe('crew_add');
+  });
+
+  it('classifies treasury and mutiny history, and keeps offboard and crew open-only', () => {
+    const live = mutiny({ activeMutinyId: '8', deadline: 10, executed: false });
+    const cards = buildGovProcessCards({
+      treasuryProposals: [
+        treasury({ proposalId: '1', status: 'active' }),
+        treasury({ proposalId: '2', status: 'executed', executed: true }),
+        treasury({ proposalId: '3', status: 'expired' }),
+        treasury({ proposalId: '4', status: 'captain_vetoed', captainDefeated: true }),
+        treasury({ proposalId: '5', status: 'active', yeas: 0, nays: 9 }),
+      ],
+      mutinyStatus: live,
+      mutinyRounds: [
+        round({ id: '8', executed: false, deadline: 10 }),
+        round({ id: '6', executed: true }),
+        round({ id: '4', executed: false, startedAt: 1 }),
+        round({ id: '1', startedAt: 0 }),
+      ],
+      qmPending: [{ kind: 'add', address: '0xADD', executableAt: '200' }],
+      crewOffboard: {
+        offboardId: '4',
+        target: '0xabc',
+        proposer: '0xdef',
+        deadline: 1,
+        snapshot: 10,
+        yeas: 0,
+        nays: 1,
+        executed: false,
+      },
+      nowSec: 500,
+    });
+
+    const phaseOf = (kind: string, sortKey: number) =>
+      govProcessPhase(cards.find((c) => c.kind === kind && c.sortKey === sortKey)!);
+
+    expect(phaseOf('treasury', 1)).toBe('open');
+    expect(phaseOf('treasury', 5)).toBe('open');
+    expect(phaseOf('treasury', 2)).toBe('executed');
+    expect(phaseOf('treasury', 3)).toBe('failed');
+    expect(phaseOf('treasury', 4)).toBe('failed');
+    expect(phaseOf('mutiny', 8)).toBe('open');
+    expect(cards.filter((c) => c.kind === 'mutiny' && c.sortKey === 8)).toHaveLength(1);
+    expect(phaseOf('mutiny', 6)).toBe('executed');
+    expect(phaseOf('mutiny', 4)).toBe('failed');
+    expect(cards.some((c) => c.kind === 'mutiny' && c.sortKey === 1)).toBe(false);
+    expect(phaseOf('crew_offboard', 4)).toBe('open');
+    expect(phaseOf('crew_add', 200)).toBe('open');
+    expect(cards.filter((c) => govProcessPhase(c) === 'executed').map((c) => c.kind).sort()).toEqual([
+      'mutiny',
+      'treasury',
+    ]);
+    expect(cards.filter((c) => govProcessPhase(c) === 'failed').every((c) => c.kind !== 'crew_offboard')).toBe(
+      true,
+    );
+  });
+
+  it('does not mark a closed mutiny failed before live status is known', () => {
+    const cards = buildGovProcessCards({
+      treasuryProposals: [],
+      mutinyStatus: null,
+      mutinyRounds: [round({ id: '4', executed: false }), round({ id: '6', executed: true })],
+      qmPending: [],
+    });
+    expect(cards.map((c) => ({ sortKey: c.sortKey, phase: c.kind === 'mutiny' ? c.phase : '' }))).toEqual([
+      { sortKey: 6, phase: 'executed' },
+    ]);
   });
 
   it('sortGovProcessCards puts active before past', () => {

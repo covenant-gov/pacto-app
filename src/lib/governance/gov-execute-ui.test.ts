@@ -205,6 +205,7 @@ describe('govExecuteUiState', () => {
   it('mutiny: hidden below threshold; shown at 51%; expire after deadline', () => {
     const below: GovProcessCard = {
       kind: 'mutiny',
+      phase: 'open',
       status: mutiny({ yeas: 1, snapshot: 3, deadline: 500 }),
       sortKey: 2,
     };
@@ -216,6 +217,7 @@ describe('govExecuteUiState', () => {
 
     const ready: GovProcessCard = {
       kind: 'mutiny',
+      phase: 'open',
       status: mutiny({ yeas: 2, snapshot: 3, deadline: 500 }),
       sortKey: 2,
     };
@@ -228,6 +230,7 @@ describe('govExecuteUiState', () => {
 
     const expired: GovProcessCard = {
       kind: 'mutiny',
+      phase: 'open',
       status: mutiny({ yeas: 3, snapshot: 3, deadline: 500 }),
       sortKey: 2,
     };
@@ -236,6 +239,17 @@ describe('govExecuteUiState', () => {
       executeEnabled: false,
       showExpire: true,
       expireEnabled: true,
+    });
+
+    const closed: GovProcessCard = {
+      kind: 'mutiny',
+      phase: 'failed',
+      status: mutiny({ yeas: 3, snapshot: 3, deadline: 500, executed: false }),
+      sortKey: 2,
+    };
+    expect(govExecuteUiState({ card: closed, nowSec: 500 })).toMatchObject({
+      showExecute: false,
+      showExpire: false,
     });
   });
 

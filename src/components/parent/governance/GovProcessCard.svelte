@@ -1,14 +1,10 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import type { GovProcessCard } from '../../../lib/governance/gov-process';
-  import { govProcessToolLabel } from '../../../lib/governance/gov-process';
+  import { govProcessPhase, govProcessToolLabel } from '../../../lib/governance/gov-process';
   import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
   import { treasuryProposalStatusLabel } from '../../../lib/governance/pacto-gov-payload';
-  import {
-    isTreasuryProposalActive,
-    isTreasuryProposalPast,
-    treasuryProposalOutcomeLabel,
-  } from '../../../lib/governance/treasury-proposal-ui';
+  import { treasuryProposalOutcomeLabel } from '../../../lib/governance/treasury-proposal-ui';
   import { executableTreasuryProposals, isMutinyActive, isMutinyExecutable, isMutinyExpirable, treasuryCaptainSatisfied } from '../../../lib/governance/gov-proposal-lists';
   import { isCrewOffboardExecutable, isCrewOffboardExpirable } from '../../../lib/governance/crew-offboard';
   import { mutinyTxExplorerUrl, shortTxHash } from '../../../lib/governance/mutiny-process-tx';
@@ -77,7 +73,9 @@
       !card.proposal.captainDefeated &&
       !card.proposal.executed,
   );
-  let showMutinyVote = $derived(showVotes && card.kind === 'mutiny' && isMutinyActive(card.status));
+  let showMutinyVote = $derived(
+    showVotes && card.kind === 'mutiny' && card.phase === 'open' && isMutinyActive(card.status),
+  );
   let showOffboardVotes = $derived(showVotes && card.kind === 'crew_offboard');
   let mutinyVoteGate = $derived.by((): CtaGate => {
     if (card.kind !== 'mutiny') return ALLOW_GATE;
@@ -98,8 +96,9 @@
   });
 
   let tool = $derived($t(govProcessToolLabel(card)));
-  let isActive = $derived(card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true);
-  let isPast = $derived(card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false);
+  let phase = $derived(govProcessPhase(card));
+  let isActive = $derived(phase === 'open');
+  let isPast = $derived(phase !== 'open');
   let cardUnlockAtSec = $derived(
     card.kind === 'crew_add' || card.kind === 'crew_remove'
       ? card.executableAt > 0
@@ -116,7 +115,7 @@
     card.kind === 'treasury'
       ? executableTreasuryProposals([card.proposal]).length > 0
       : card.kind === 'mutiny'
-        ? isMutinyExecutable(card.status, nowSec)
+        ? card.phase === 'open' && isMutinyExecutable(card.status, nowSec)
         : card.kind === 'crew_offboard'
           ? isCrewOffboardExecutable(card.status, card.quorumBps, nowSec)
           : card.status === 'executable',
@@ -136,11 +135,15 @@
     card.kind === 'treasury'
       ? treasuryProposalStatusLabel(card.proposal.status)
       : card.kind === 'mutiny'
-        ? isMutinyExpirable(card.status, nowSec)
-          ? $t('governance.proposal.expired')
-          : isMutinyExecutable(card.status, nowSec)
-            ? $t('governance.proposal.readyToExecute')
-            : $t('governance.proposal.active')
+        ? card.phase === 'executed'
+          ? $t('governance.proposal.executed')
+          : card.phase === 'failed'
+            ? $t('governance.proposal.expired')
+            : isMutinyExpirable(card.status, nowSec)
+              ? $t('governance.proposal.expired')
+              : isMutinyExecutable(card.status, nowSec)
+                ? $t('governance.proposal.readyToExecute')
+                : $t('governance.proposal.active')
         : card.kind === 'crew_offboard'
           ? isCrewOffboardExpirable(card.status, nowSec)
             ? $t('governance.proposal.expired')

@@ -1,6 +1,7 @@
 //! Mutiny module reads and writes.
 
 use alloy::primitives::U256;
+use alloy::providers::Provider;
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
@@ -8,7 +9,7 @@ use tauri::{AppHandle, Runtime};
 use super::access_control::GovCapability;
 use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
     activeMutinyIdCall, captainCall, captainResignCall, castVoteCall, executeMutinyCall,
-    expireMutinyCall, hasVotedCall, mutinyCall, startMutinyToArbitraryContractCall,
+    expireMutinyCall, hasVotedCall, mutinyCall, mutinyCountCall, startMutinyToArbitraryContractCall,
     startMutinyToArbitraryEoaCall, startMutinyToCommitteeCall, startMutinyToCrewMemberCall,
     startMutinyToPauseCaptainCall,
 };
@@ -61,6 +62,32 @@ fn encode_expire_mutiny(mutiny_id: &str) -> Result<Vec<u8>, String> {
 enum MutinyWriteKind {
     Expire,
     Execute,
+}
+
+const HARD_MAX_SCAN: u32 = 256;
+
+/// Inclusive `[start, last]` covering the newest `hard_max` ids. `count` is `mutinyCount`.
+fn mutiny_scan_bounds(count: U256, hard_max: u32) -> Option<(u32, u32)> {
+    if count.is_zero() || hard_max == 0 {
+        return None;
+    }
+    let cap = U256::from(hard_max);
+    let last = if count > U256::from(u32::MAX) {
+        U256::from(u32::MAX)
+    } else {
+        count
+    };
+    let start = if last > cap {
+        last - cap + U256::from(1u64)
+    } else {
+        U256::from(1u64)
+    };
+    let start_u = u32::try_from(start).ok()?;
+    let last_u = u32::try_from(last).ok()?;
+    if start_u == 0 || start_u > last_u {
+        return None;
+    }
+    Some((start_u, last_u))
 }
 
 fn unix_now_secs() -> u64 {
@@ -160,6 +187,61 @@ pub struct MutinyStatusDto {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MutinyRoundDto {
+    pub id: String,
+    pub proposed_new_captain: String,
+    pub from_captain: String,
+    pub started_at: u64,
+    pub deadline: u64,
+    pub snapshot: u64,
+    pub yeas: u64,
+    pub executed: bool,
+    pub seat_former_captain: bool,
+    pub captain: String,
+}
+
+async fn list_mutiny_rounds_on_chain<P: Provider>(
+    provider: &P,
+    module: alloy::primitives::Address,
+    hard_max: u32,
+) -> Result<Vec<MutinyRoundDto>, String> {
+    let count: U256 = eth_call_decode(provider, module, &mutinyCountCall {})
+        .await
+        .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
+    let Some((start, last)) = mutiny_scan_bounds(count, hard_max) else {
+        return Ok(Vec::new());
+    };
+    let captain = eth_call_decode(provider, module, &captainCall {})
+        .await
+        .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
+    let captain_hex = format!("{:#x}", captain);
+
+    let mut out = Vec::new();
+    for id in start..=last {
+        let decoded = eth_call_decode(provider, module, &mutinyCall { _id: U256::from(id) })
+            .await
+            .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
+        if decoded._startedAt == 0 {
+            continue;
+        }
+        out.push(MutinyRoundDto {
+            id: id.to_string(),
+            proposed_new_captain: format!("{:#x}", decoded._proposedNewCaptain),
+            from_captain: format!("{:#x}", decoded._fromCaptain),
+            started_at: decoded._startedAt,
+            deadline: decoded._deadline,
+            snapshot: decoded._snapshot,
+            yeas: decoded._yeas,
+            executed: decoded._executed,
+            seat_former_captain: decoded._seatFormerCaptain,
+            captain: captain_hex.clone(),
+        });
+    }
+    Ok(out)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MutinyWriteResult {
     pub tx_hash: String,
     pub chain: String,
@@ -217,6 +299,21 @@ pub async fn get_mutiny_status<R: Runtime>(
         seat_former_captain: m._seatFormerCaptain,
         captain: format!("{:#x}", captain),
     })
+}
+
+#[tauri::command]
+pub async fn list_mutiny_rounds<R: Runtime>(
+    _app: AppHandle<R>,
+    network: String,
+    mutiny_module: String,
+    max_scan: Option<u32>,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<Vec<MutinyRoundDto>, String> {
+    let module = parse_address(mutiny_module.trim())
+        .map_err(|e| wallet_err_json("INVALID_MUTINY", e, None))?;
+    let cap = max_scan.unwrap_or(HARD_MAX_SCAN).clamp(1, HARD_MAX_SCAN);
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+    list_mutiny_rounds_on_chain(&provider, module, cap).await
 }
 
 #[tauri::command]
@@ -514,8 +611,8 @@ pub async fn mutiny_captain_resign<R: Runtime>(
 mod tests {
     use super::{
         classify_mutiny_round_preflight, encode_captain_resign, encode_cast_vote,
-        encode_execute_mutiny, encode_expire_mutiny, encode_start_to_crew_member, parse_mutiny_id,
-        MutinyWriteKind,
+        encode_execute_mutiny, encode_expire_mutiny, encode_start_to_crew_member,
+        mutiny_scan_bounds, parse_mutiny_id, MutinyWriteKind,
     };
     use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::{
         captainResignCall, castVoteCall, executeMutinyCall, expireMutinyCall,
@@ -526,6 +623,17 @@ mod tests {
     use alloy::sol_types::SolCall;
 
     const ADDR: &str = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn scan_bounds_take_the_newest_ids() {
+        assert_eq!(mutiny_scan_bounds(U256::ZERO, 256), None);
+        assert_eq!(mutiny_scan_bounds(U256::from(3u64), 256), Some((1, 3)));
+        assert_eq!(
+            mutiny_scan_bounds(U256::from(1_000u64), 256),
+            Some((745, 1000))
+        );
+        assert_eq!(mutiny_scan_bounds(U256::from(1_000u64), 0), None);
+    }
 
     #[test]
     fn parse_mutiny_id_decimal_only() {
