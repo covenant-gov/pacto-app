@@ -118,7 +118,7 @@
 	"settings.biometricUnlockEnrollReason": "Enable biometric unlock for Pacto",
 
 	"settings.evmSettingsTitle": "EVM settings",
-	"settings.evmDashGas.title": "EVM dash · gas",
+	"settings.evmDashGas.title": "EVM — gas",
 	"settings.evmDashGas.disclaimer": "Temporary testing surface for your Username NFT global sponsorship spend. Will move into the full wallet later.",
 	"settings.evmDashGas.poolLabel": "Global pool ({network})",
 	"settings.evmDashGas.poolBalance": "{balance} ETH spendable",
