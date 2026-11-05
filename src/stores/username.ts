@@ -4,11 +4,8 @@ import {
   usernameCancelAddressTransfer,
   usernameClaim,
   usernameClaimAddressTransfer,
-  usernameGetCachedClaim,
-  usernameHydrateCachedClaim,
   usernameInitiateAddressTransfer,
-  usernameIsPendingTransfer,
-  usernameRecordOf,
+  usernameSyncAccountState,
   type UsernameClaimResult,
   type UsernameClaimRow,
   type UsernameRecordDto,
@@ -89,6 +86,16 @@ export function computeUsernameVerified(input: {
   return chainEvm === active;
 }
 
+/** Gas dash: chain record wins. Cache applies only when this pass did not read the chain. */
+export function showEvmDashGas(state: UsernameState): boolean {
+  const rec = state.record;
+  if (rec) {
+    return !!rec.name?.trim() && isNonZeroTokenId(rec.tokenId);
+  }
+  const cached = state.cached;
+  return !!cached?.username?.trim() && isNonZeroTokenId(cached.tokenId);
+}
+
 export function claimedUsernameFromState(state: UsernameState): string | null {
   const fromRecord = state.record?.name?.trim();
   if (fromRecord && isNonZeroTokenId(state.record?.tokenId)) return fromRecord;
@@ -153,49 +160,24 @@ export async function refreshUsernameState(): Promise<void> {
   }));
 
   try {
-    const [cached, activeEvm] = await Promise.all([
-      usernameGetCachedClaim(),
+    const [synced, activeEvm] = await Promise.all([
+      usernameSyncAccountState(USERNAME_NETWORK),
       getActiveSquadEvmSignerAddress(),
     ]);
     if (gen !== refreshGen) return;
 
-    let npubHash = cached?.npubHash?.trim() || '';
-    if (!npubHash) {
-      npubHash = npubHashFromPubkey(ensurePubkeyHex(user.pubkey));
-    }
-
     const prev = get(usernameState);
-    let record: UsernameRecordDto | null = prev.record;
-    let pendingTransfer = prev.pendingTransfer;
-    try {
-      const [rec, pending] = await Promise.all([
-        usernameRecordOf(USERNAME_NETWORK, npubHash),
-        usernameIsPendingTransfer(USERNAME_NETWORK, npubHash),
-      ]);
-      record = rec;
-      pendingTransfer = pending;
-    } catch {
-      // Chain reads can fail offline; keep last-known record + cache.
-    }
-    if (gen !== refreshGen) return;
-
-    let nextCached = cached;
-    if (!nextCached && record?.name?.trim() && isNonZeroTokenId(record.tokenId)) {
-      try {
-        const hydrated = await usernameHydrateCachedClaim(USERNAME_NETWORK);
-        if (gen !== refreshGen) return;
-        if (hydrated) nextCached = hydrated;
-      } catch {
-        // Record is already loaded; a cache write failure leaves the dash hidden.
-      }
-    }
-    if (gen !== refreshGen) return;
-
+    const chainUnread = synced.record == null && !!synced.chainError;
     usernameState.set({
       status: 'ready',
-      cached: nextCached,
-      record,
-      pendingTransfer,
+      cached: synced.cached,
+      record: synced.record ?? (chainUnread ? prev.record : null),
+      pendingTransfer:
+        synced.record != null
+          ? synced.pendingTransfer
+          : chainUnread
+            ? prev.pendingTransfer
+            : false,
       activeEvm,
       busy: false,
       error: null,

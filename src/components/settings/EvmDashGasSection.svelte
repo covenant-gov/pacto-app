@@ -36,6 +36,7 @@
     loading = true;
     loadError = '';
     poolError = '';
+    poolWei = null;
     try {
       const [next, pool] = await Promise.all([
         loadGlobalSponsoredFeeUsage({ limit: 50 }),

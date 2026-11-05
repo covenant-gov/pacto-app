@@ -12,11 +12,11 @@ use once_cell::sync::Lazy;
 use tauri::{AppHandle, Runtime};
 
 use super::dto::UsernameRecordDto;
-use crate::db::{self, UsernameClaimUpsert};
+use crate::db::{self, UsernameClaimRow, UsernameClaimUpsert};
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{eligibleMemberCall, recordOfCall};
 use crate::evm::contracts::pacto_username::ISponsorPolicyRegistry::policyVersionCall;
-use crate::evm::global_sponsored_fee_ledger::{self, LANE_USERNAME_MEMBER};
 use crate::evm::global_sponsor_userop::{send_sponsored_username_userop, UsernameSponsorLane};
+use crate::evm::global_sponsored_fee_ledger::{self, LANE_USERNAME_MEMBER};
 use crate::evm::gov_read::rpc_urls_or_default;
 use crate::evm::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
 use crate::evm::rpc::call::eth_call_decode;
@@ -381,6 +381,21 @@ pub fn username_holder_claim_upsert(
     })
 }
 
+/// `true` when a holder record should be written: no row, or name / token / network drifted.
+pub fn username_claim_cache_needs_upsert(
+    existing: Option<&UsernameClaimRow>,
+    username: &str,
+    token_id: &str,
+    network: &str,
+) -> bool {
+    let Some(row) = existing else {
+        return true;
+    };
+    row.username.trim() != username.trim()
+        || row.token_id.trim() != token_id.trim()
+        || row.network.trim() != network.trim()
+}
+
 /// Best-effort cache refresh after initiate (preserves existing link_event_id).
 pub async fn refresh_claim_cache_after_initiate<R: Runtime, P: Provider>(
     app: &AppHandle<R>,
@@ -413,6 +428,7 @@ pub async fn refresh_claim_cache_after_initiate<R: Runtime, P: Provider>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::UsernameClaimRow;
 
     #[test]
     fn validate_username_accepts_any_string() {
@@ -457,6 +473,47 @@ mod tests {
         assert!(row.link_event_id.is_none());
         assert!(!row.invalidate_link_event_id);
         assert_eq!(row.network, "sepolia");
+    }
+
+    #[test]
+    fn claim_cache_upsert_skips_matching_row() {
+        let row = UsernameClaimRow {
+            npub: "npub1alice".into(),
+            username: "alice".into(),
+            npub_hash: "0xab".into(),
+            token_id: "7".into(),
+            link_event_id: Some("evt-1".into()),
+            policy_version: 3,
+            network: "sepolia".into(),
+            updated_at_ms: 1,
+        };
+        assert!(username_claim_cache_needs_upsert(
+            None, "alice", "7", "sepolia"
+        ));
+        assert!(!username_claim_cache_needs_upsert(
+            Some(&row),
+            "alice",
+            "7",
+            "sepolia"
+        ));
+        assert!(username_claim_cache_needs_upsert(
+            Some(&row),
+            "bob",
+            "7",
+            "sepolia"
+        ));
+        assert!(username_claim_cache_needs_upsert(
+            Some(&row),
+            "alice",
+            "8",
+            "sepolia"
+        ));
+        assert!(username_claim_cache_needs_upsert(
+            Some(&row),
+            "alice",
+            "7",
+            "arbitrum"
+        ));
     }
 
     #[test]

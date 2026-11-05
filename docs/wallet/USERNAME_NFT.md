@@ -31,7 +31,7 @@ Separate from the **username claim** path above. Applies when the roster EOA is 
 
 Zero-ETH onboarding smoke: [OPERATOR_SMOKE.md §11](./OPERATOR_SMOKE.md#11-zero-eth-username-onboarding-global-tophat). Squad pool precedence after deploy: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). UserOp debug: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
 
-**Spend ledger:** successful global UserOps write to `global_sponsored_fee_usage` (`list_global_sponsored_fee_usage`, account-scoped). Squad pool spend stays in `squad_sponsored_fee_usage` — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md#sponsored-fee-ledger). Member-facing list (temporary): Settings → **EVM dash · gas** (`#settings-evm-dash-gas`) when a cached Username claim exists — not an operator pool view; see [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md).
+**Spend ledger:** successful global UserOps write to `global_sponsored_fee_usage` (`list_global_sponsored_fee_usage`, account-scoped). Squad pool spend stays in `squad_sponsored_fee_usage` — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md#sponsored-fee-ledger). Member-facing list (temporary): Settings → **EVM dash · gas** (`#settings-evm-dash-gas`) when `recordOf` shows this account holds the NFT — not an operator pool view; see [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md).
 
 ## Dual attestation (claim)
 
@@ -66,7 +66,7 @@ Content = username. Tags (relay/UX only; chain does not parse them):
 
 Typed wrappers: `src/lib/api/username.ts`.
 
-Reads: `username_name_available`, `username_can_bootstrap_claim`, `username_npub_of`, `username_record_of`, `username_eligible_member`, `username_is_pending_transfer`, `username_*_spendable_pool_wei`, `username_used_nonce`, `username_get_cached_claim`.
+Reads: `username_name_available`, `username_can_bootstrap_claim`, `username_npub_of`, `username_record_of`, `username_eligible_member`, `username_is_pending_transfer`, `username_*_spendable_pool_wei`, `username_used_nonce`, `username_get_cached_claim`, `username_sync_account_state` (one provider: cache row, `recordOf`, `isPendingTransfer`, and `policyVersion` only when the claim row is missing or drifted).
 
 Writes: `username_claim`, `username_initiate_address_transfer`, `username_claim_address_transfer`, `username_cancel_address_transfer`.
 

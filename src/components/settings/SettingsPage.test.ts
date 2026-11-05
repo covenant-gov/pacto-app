@@ -69,6 +69,38 @@ describe('SettingsPage dash link', () => {
     expect(screen.getByRole('link', { name: 'EVM dash · gas' })).toBeTruthy();
   });
 
+  it('hides the dash when the chain record is empty even if a cache row exists', async () => {
+    usernameState.update((state) => ({
+      ...state,
+      cached: cachedClaim,
+      record: {
+        name: '',
+        evmAddress: '0x0000000000000000000000000000000000000000',
+        pendingAddress: '0x0000000000000000000000000000000000000000',
+        tokenId: '0',
+      },
+      status: 'ready',
+    }));
+    renderPage();
+    expect(screen.queryByRole('link', { name: 'EVM dash · gas' })).toBeNull();
+  });
+
+  it('shows the dash from an on-chain holder record without a cache row', async () => {
+    usernameState.update((state) => ({
+      ...state,
+      cached: null,
+      record: {
+        name: 'alice',
+        evmAddress: '0x1111111111111111111111111111111111111111',
+        pendingAddress: '0x0000000000000000000000000000000000000000',
+        tokenId: '7',
+      },
+      status: 'ready',
+    }));
+    renderPage();
+    expect(screen.getByRole('link', { name: 'EVM dash · gas' })).toBeTruthy();
+  });
+
   it('moves the current section off the dash link when the cached claim clears', async () => {
     usernameState.update((state) => ({ ...state, cached: cachedClaim, status: 'ready' }));
     renderPage();

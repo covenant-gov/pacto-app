@@ -12,7 +12,7 @@ Open **Settings** from the sidebar (`activeView === 'profile'`). One scrollable 
 | `#settings-evm-dash-gas` | EVM dash · gas | **Temporary / Username NFT holders only** — personal `global_sponsored_fee_usage` list + Sepolia global pool spendable read for live testing; will move into the full wallet |
 | `#settings-app` | App | Theme selector |
 
-A sticky sidebar lists the same anchors (EVM dash · gas only when a Username claim is cached) and highlights the section in view while scrolling.
+A sticky sidebar lists the same anchors. **EVM dash · gas** appears when this account's Username NFT record shows a holder. If that chain read fails, the last cached claim still lists the section. The sidebar highlights the section in view while scrolling.
 
 ## EVM highlights
 

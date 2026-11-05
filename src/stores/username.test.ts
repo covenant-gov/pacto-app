@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import {
   computeUsernameVerified,
   claimedUsernameFromState,
+  showEvmDashGas,
   resetUsernameState,
   refreshUsernameState,
   usernameState,
@@ -16,21 +17,11 @@ import {
   type UsernameState,
 } from './username';
 import { currentUser } from './auth-session';
-import {
-  usernameGetCachedClaim,
-  usernameHydrateCachedClaim,
-  usernameRecordOf,
-  usernameIsPendingTransfer,
-  usernameClaim,
-} from '../lib/api/username';
+import { usernameClaim, usernameSyncAccountState, type UsernameAccountState } from '../lib/api/username';
 import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
-import { npubHashFromPubkey } from '../lib/evm/sponsor/nostr_claim_link';
 
 vi.mock('../lib/api/username', () => ({
-  usernameGetCachedClaim: vi.fn(),
-  usernameHydrateCachedClaim: vi.fn(),
-  usernameRecordOf: vi.fn(),
-  usernameIsPendingTransfer: vi.fn(),
+  usernameSyncAccountState: vi.fn(),
   usernameClaim: vi.fn(),
   usernameInitiateAddressTransfer: vi.fn(),
   usernameClaimAddressTransfer: vi.fn(),
@@ -46,14 +37,11 @@ vi.mock('../lib/evm/sponsor/nostr_claim_link', () => ({
   npubHashFromPubkey: vi.fn(() => '0x' + 'ab'.repeat(32)),
 }));
 
-const mockGetCached = vi.mocked(usernameGetCachedClaim);
-const mockHydrate = vi.mocked(usernameHydrateCachedClaim);
-const mockRecordOf = vi.mocked(usernameRecordOf);
-const mockPending = vi.mocked(usernameIsPendingTransfer);
+const mockSync = vi.mocked(usernameSyncAccountState);
 const mockActiveEvm = vi.mocked(getActiveSquadEvmSignerAddress);
 const mockClaim = vi.mocked(usernameClaim);
-const mockNpubHash = vi.mocked(npubHashFromPubkey);
 
+const ZERO = '0x0000000000000000000000000000000000000000';
 const EVM = '0x1111111111111111111111111111111111111111';
 const OTHER = '0x2222222222222222222222222222222222222222';
 const NPUB_HASH = '0x' + 'ab'.repeat(32);
@@ -292,6 +280,51 @@ describe('username derived stores', () => {
   });
 });
 
+function syncState(overrides: Partial<UsernameAccountState> = {}): UsernameAccountState {
+  return {
+    cached: null,
+    record: {
+      name: '',
+      evmAddress: ZERO,
+      pendingAddress: ZERO,
+      tokenId: '0',
+    },
+    pendingTransfer: false,
+    chainError: null,
+    ...overrides,
+  };
+}
+
+describe('showEvmDashGas', () => {
+  it('uses the chain record when this pass read one', () => {
+    const cached = readyState().cached;
+    expect(
+      showEvmDashGas({
+        ...readyState(),
+        cached,
+        record: {
+          name: '',
+          evmAddress: ZERO,
+          pendingAddress: ZERO,
+          tokenId: '0',
+        },
+      }),
+    ).toBe(false);
+    expect(
+      showEvmDashGas({
+        ...readyState(),
+        cached: null,
+        record: readyState().record,
+      }),
+    ).toBe(true);
+  });
+
+  it('falls back to cache only when the chain record is absent', () => {
+    expect(showEvmDashGas({ ...readyState(), record: null })).toBe(true);
+    expect(showEvmDashGas({ ...readyState(), record: null, cached: null })).toBe(false);
+  });
+});
+
 describe('refreshUsernameState', () => {
   beforeEach(() => {
     resetUsernameState();
@@ -299,12 +332,10 @@ describe('refreshUsernameState', () => {
       pubkey: 'aa'.repeat(32),
       npub: 'npub1test',
     } as never);
-    mockGetCached.mockReset();
-    mockHydrate.mockReset();
-    mockHydrate.mockResolvedValue(null);
-    mockRecordOf.mockReset();
-    mockPending.mockReset();
+    mockSync.mockReset();
     mockActiveEvm.mockReset();
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockSync.mockResolvedValue(syncState());
   });
 
   afterEach(() => {
@@ -313,177 +344,119 @@ describe('refreshUsernameState', () => {
   });
 
   it('a stale refresh does not clobber a newer one', async () => {
-    const { promise, resolve: resolveFirst } = Promise.withResolvers<{
-      name: string;
-      evmAddress: string;
-      pendingAddress: string;
-      tokenId: string;
-    }>();
-
-    mockGetCached.mockResolvedValue({
-      npub: 'npub1',
-      username: 'alice',
-      npubHash: NPUB_HASH,
-      tokenId: '1',
-      linkEventId: 'evt1',
-      policyVersion: 3,
-      network: 'sepolia',
-      updatedAtMs: 1,
-    });
-    mockActiveEvm.mockResolvedValue(EVM);
-    mockPending.mockResolvedValue(false);
-
-    let recordCalls = 0;
-    mockRecordOf.mockImplementation(() => {
-      recordCalls += 1;
-      if (recordCalls === 1) return promise;
-      return Promise.resolve({
-        name: 'alice',
-        evmAddress: OTHER,
-        pendingAddress: '0x0000000000000000000000000000000000000000',
-        tokenId: '1',
-      });
+    const { promise, resolve: resolveFirst } = Promise.withResolvers<UsernameAccountState>();
+    let calls = 0;
+    mockSync.mockImplementation(() => {
+      calls += 1;
+      if (calls === 1) return promise;
+      return Promise.resolve(
+        syncState({
+          record: {
+            name: 'alice',
+            evmAddress: OTHER,
+            pendingAddress: ZERO,
+            tokenId: '1',
+          },
+        }),
+      );
     });
 
     const first = refreshUsernameState();
-    // Let the first refresh pass cache/EVM awaits and park on recordOf.
     await Promise.resolve();
     await Promise.resolve();
 
     await refreshUsernameState();
     expect(get(usernameState).record?.evmAddress).toBe(OTHER);
 
-    resolveFirst({
-      name: 'alice',
-      evmAddress: EVM,
-      pendingAddress: '0x0000000000000000000000000000000000000000',
-      tokenId: '1',
-    });
+    resolveFirst(
+      syncState({
+        record: {
+          name: 'alice',
+          evmAddress: EVM,
+          pendingAddress: ZERO,
+          tokenId: '1',
+        },
+      }),
+    );
     await first;
     expect(get(usernameState).record?.evmAddress).toBe(OTHER);
   });
 
-  it('preserves last-known record when chain reads fail', async () => {
+  it('preserves last-known record when the chain read fails', async () => {
     usernameState.set(readyState());
-    mockGetCached.mockResolvedValue({
-      npub: 'npub1',
-      username: 'alice',
-      npubHash: NPUB_HASH,
-      tokenId: '1',
-      linkEventId: 'evt1',
-      policyVersion: 3,
-      network: 'sepolia',
-      updatedAtMs: 1,
-    });
-    mockActiveEvm.mockResolvedValue(EVM);
-    mockRecordOf.mockRejectedValueOnce(new Error('rpc down'));
-    mockPending.mockRejectedValueOnce(new Error('rpc down'));
+    mockSync.mockResolvedValue(
+      syncState({
+        cached: readyState().cached,
+        record: null,
+        chainError: 'rpc down',
+      }),
+    );
 
     await refreshUsernameState();
     expect(get(usernameState).status).toBe('ready');
     expect(get(usernameState).record?.evmAddress).toBe(EVM);
     expect(get(usernameState).record?.name).toBe('alice');
+    expect(get(usernameState).pendingTransfer).toBe(false);
   });
 
-  it('errors when session pubkey is bech32 npub and cache has no hash', async () => {
-    currentUser.set({
-      pubkey: 'npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
-      npub: 'npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
-    } as never);
-    mockGetCached.mockResolvedValue(null);
-    mockActiveEvm.mockResolvedValue(EVM);
-
+  it('surfaces a sync rejection as an error', async () => {
+    mockSync.mockRejectedValueOnce(new Error('db down'));
     await refreshUsernameState();
     expect(get(usernameState).status).toBe('error');
-    expect(get(usernameState).error).toMatch(/pubkey must be 32 bytes hex/i);
-    expect(mockNpubHash).not.toHaveBeenCalled();
+    expect(get(usernameState).error).toMatch(/db down/i);
   });
 
-  it('hashes hex pubkey when cache has no npubHash', async () => {
-    const hex = 'cc'.repeat(32);
-    currentUser.set({ pubkey: hex, npub: 'npub1test' } as never);
-    mockGetCached.mockResolvedValue(null);
-    mockActiveEvm.mockResolvedValue(EVM);
-    mockRecordOf.mockResolvedValue({
-      name: '',
-      evmAddress: '0x0000000000000000000000000000000000000000',
-      pendingAddress: '0x0000000000000000000000000000000000000000',
-      tokenId: '0',
-    });
-    mockPending.mockResolvedValue(false);
+  it('applies the synced claim row for an on-chain holder', async () => {
+    mockSync.mockResolvedValue(
+      syncState({
+        cached: {
+          npub: 'npub1',
+          username: 'alice',
+          npubHash: NPUB_HASH,
+          tokenId: '7',
+          linkEventId: null,
+          policyVersion: 3,
+          network: 'sepolia',
+          updatedAtMs: 2,
+        },
+        record: {
+          name: 'alice',
+          evmAddress: EVM,
+          pendingAddress: ZERO,
+          tokenId: '7',
+        },
+      }),
+    );
 
     await refreshUsernameState();
-    expect(get(usernameState).status).toBe('ready');
-    expect(mockNpubHash).toHaveBeenCalledWith(`0x${hex}`);
-    expect(mockHydrate).not.toHaveBeenCalled();
-  });
-
-  it('hydrates an empty cache when the chain record is a username NFT', async () => {
-    mockGetCached.mockResolvedValue(null);
-    mockActiveEvm.mockResolvedValue(EVM);
-    mockRecordOf.mockResolvedValue({
-      name: 'alice',
-      evmAddress: EVM,
-      pendingAddress: '0x0000000000000000000000000000000000000000',
-      tokenId: '7',
-    });
-    mockPending.mockResolvedValue(false);
-    mockHydrate.mockResolvedValue({
-      npub: 'npub1',
-      username: 'alice',
-      npubHash: NPUB_HASH,
-      tokenId: '7',
-      linkEventId: null,
-      policyVersion: 3,
-      network: 'sepolia',
-      updatedAtMs: 2,
-    });
-
-    await refreshUsernameState();
-    expect(mockHydrate).toHaveBeenCalledWith('sepolia');
+    expect(mockSync).toHaveBeenCalledWith('sepolia');
     expect(get(usernameState).cached?.username).toBe('alice');
     expect(get(usernameState).cached?.linkEventId).toBeNull();
     expect(get(usernameState).cached?.tokenId).toBe('7');
+    expect(showEvmDashGas(get(usernameState))).toBe(true);
   });
 
-  it('does not hydrate when the chain record is not a holder', async () => {
-    mockGetCached.mockResolvedValue(null);
-    mockActiveEvm.mockResolvedValue(EVM);
-    mockRecordOf.mockResolvedValue({
-      name: '',
-      evmAddress: '0x0000000000000000000000000000000000000000',
-      pendingAddress: '0x0000000000000000000000000000000000000000',
-      tokenId: '0',
-    });
-    mockPending.mockResolvedValue(false);
+  it('keeps an empty chain record instead of a stale cache for the dash', async () => {
+    mockSync.mockResolvedValue(
+      syncState({
+        cached: readyState().cached,
+      }),
+    );
 
     await refreshUsernameState();
-    expect(mockHydrate).not.toHaveBeenCalled();
-    expect(get(usernameState).cached).toBeNull();
+    expect(get(usernameState).record?.name).toBe('');
+    expect(showEvmDashGas(get(usernameState))).toBe(false);
   });
 
-  it('does not replace an existing cache row', async () => {
-    mockGetCached.mockResolvedValue({
-      npub: 'npub1',
-      username: 'alice',
-      npubHash: NPUB_HASH,
-      tokenId: '1',
-      linkEventId: 'evt1',
-      policyVersion: 3,
-      network: 'sepolia',
-      updatedAtMs: 1,
-    });
-    mockActiveEvm.mockResolvedValue(EVM);
-    mockRecordOf.mockResolvedValue({
-      name: 'alice',
-      evmAddress: EVM,
-      pendingAddress: '0x0000000000000000000000000000000000000000',
-      tokenId: '1',
-    });
-    mockPending.mockResolvedValue(false);
+  it('applies an existing link id returned by sync', async () => {
+    mockSync.mockResolvedValue(
+      syncState({
+        cached: readyState().cached,
+        record: readyState().record,
+      }),
+    );
 
     await refreshUsernameState();
-    expect(mockHydrate).not.toHaveBeenCalled();
     expect(get(usernameState).cached?.linkEventId).toBe('evt1');
   });
 });
@@ -495,12 +468,10 @@ describe('claimUsername', () => {
       pubkey: 'aa'.repeat(32),
       npub: 'npub1test',
     } as never);
-    mockGetCached.mockReset();
-    mockHydrate.mockReset();
-    mockHydrate.mockResolvedValue(null);
-    mockRecordOf.mockReset();
-    mockPending.mockReset();
+    mockSync.mockReset();
+    mockSync.mockResolvedValue(syncState());
     mockActiveEvm.mockReset();
+    mockActiveEvm.mockResolvedValue(EVM);
     mockClaim.mockReset();
   });
 
@@ -522,16 +493,6 @@ describe('claimUsername', () => {
       evmAddress: EVM,
       policyVersion: 1,
     });
-    mockGetCached.mockResolvedValue(null);
-    mockActiveEvm.mockResolvedValue(EVM);
-    mockRecordOf.mockResolvedValue({
-      name: 'Dao',
-      evmAddress: EVM,
-      pendingAddress: '0x0000000000000000000000000000000000000000',
-      tokenId: '1',
-    });
-    mockPending.mockResolvedValue(false);
-
     await claimUsername('  Dao  ');
     expect(mockClaim).toHaveBeenCalledWith('sepolia', 'Dao');
   });

@@ -7,7 +7,7 @@
     settingsSectionCollapsed,
     type SettingsSectionId,
   } from '../../lib/settings/settings-section-collapse';
-  import { usernameState } from '../../stores/username';
+  import { showEvmDashGas, usernameState } from '../../stores/username';
 
   let { onBack, children }: { onBack: () => void; children: Snippet } = $props();
 
@@ -28,7 +28,7 @@
 
   let visibleSectionLinks = $derived(
     SECTION_LINKS.filter(
-      (link) => link.id !== 'settings-evm-dash-gas' || !!$usernameState.cached,
+      (link) => link.id !== 'settings-evm-dash-gas' || showEvmDashGas($usernameState),
     ),
   );
 
