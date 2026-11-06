@@ -21,10 +21,12 @@
     initiateUsernameAddressTransfer,
     isUsernameVerified,
     isValidUsernameFormat,
+    needsForcedUsernameLinkRestore,
     normalizeUsernameInput,
     refreshUsernameState,
     usernameState,
   } from '../../stores/username';
+  import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
   let draftName = $state('');
   let availability: 'idle' | 'checking' | 'available' | 'taken' | 'invalid' = $state('idle');
@@ -32,6 +34,8 @@
 
   const username = $derived($claimedUsername);
   const verified = $derived($isUsernameVerified);
+  const forceRestore = $derived(needsForcedUsernameLinkRestore($usernameState));
+  const restoring = $derived($usernameState.status === 'loading');
   const pending = $derived($hasPendingUsernameTransfer);
   const busy = $derived($usernameState.busy);
   const record = $derived($usernameState.record);
@@ -186,6 +190,14 @@
         <span class="profile-username-verified" title={$t('profile.username.verified')}>✓</span>
       {:else}
         <span class="profile-username-unverified">{$t('profile.username.unverified')}</span>
+        {#if forceRestore}
+          <RefreshIconButton
+            spinning={restoring}
+            ariaLabel={$t('profile.username.retryLinkRestore')}
+            title={$t('profile.username.retryLinkRestore')}
+            onclick={() => void refreshUsernameState({ forceLinkRestore: true })}
+          />
+        {/if}
       {/if}
     </p>
     {#if record?.evmAddress}

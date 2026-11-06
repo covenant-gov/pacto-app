@@ -163,10 +163,12 @@ export type UsernameAccountState = {
 export async function usernameSyncAccountState(
   network: string,
   rpcUrls?: string[],
+  options?: { forceLinkRestore?: boolean },
 ): Promise<UsernameAccountState> {
   return invoke<UsernameAccountState>('username_sync_account_state', {
     network,
     rpcUrls,
+    forceLinkRestore: options?.forceLinkRestore ?? null,
   });
 }
 
