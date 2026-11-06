@@ -1,8 +1,9 @@
 //! Shared squad-key contract call helper for Pacto Gov module writes.
 
 use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, Bytes, U256};
 use alloy::providers::Provider;
+use alloy::rpc::types::TransactionRequest;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
@@ -23,7 +24,7 @@ use super::sponsor_preflight::{
     global_gov_module_path_ok, read_eligible_member, squad_sponsor_path_ok,
 };
 use super::sponsor_userop::{
-    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas, fallback_max_fee,
+    call_gas_ceiling_for_calldata, call_gas_with_margin, fallback_max_fee,
     is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, resolve_sponsored_squad_id,
     roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
     SponsoredUserOpSend,
@@ -81,32 +82,38 @@ pub async fn send_gov_module_call<R: Runtime>(
     // Route the write: EOA when the roster key can afford the gas, sponsored when it can't.
     // Request-level failover: connect helpers pin the first URL; rotate on retryable eth_calls.
     let mut url_idx = 0usize;
-    let (balance, required, eoa_can_pay, eligible_member, squad_path_ok, global_tophat_ok, path_order) =
-        loop {
-            match run_gov_write_preflight(
-                &app,
-                &net.key,
-                pid,
-                to,
-                &calldata,
-                signer.address(),
-                has_sponsor_infra,
-                &urls[url_idx..],
-            )
-            .await
-            {
-                Ok(route) => break route,
-                Err(e) => {
-                    if let Some(next) =
-                        next_gov_rpc_url_idx(&urls, url_idx, &e, "gov_write_preflight")
-                    {
-                        url_idx = next;
-                        continue;
-                    }
-                    return Err(e);
+    let (
+        balance,
+        required,
+        eoa_can_pay,
+        eligible_member,
+        squad_path_ok,
+        global_tophat_ok,
+        path_order,
+    ) = loop {
+        match run_gov_write_preflight(
+            &app,
+            &net.key,
+            pid,
+            to,
+            &calldata,
+            signer.address(),
+            has_sponsor_infra,
+            &urls[url_idx..],
+        )
+        .await
+        {
+            Ok(route) => break route,
+            Err(e) => {
+                if let Some(next) = next_gov_rpc_url_idx(&urls, url_idx, &e, "gov_write_preflight")
+                {
+                    url_idx = next;
+                    continue;
                 }
+                return Err(e);
             }
-        };
+        }
+    };
 
     let mut last_sponsor_err: Option<String> = None;
     for path in path_order {
@@ -259,15 +266,7 @@ pub async fn send_gov_module_call<R: Runtime>(
     ))
 }
 
-type GovWritePreflightRoute = (
-    U256,
-    U256,
-    bool,
-    bool,
-    bool,
-    bool,
-    Vec<GovSponsorPath>,
-);
+type GovWritePreflightRoute = (U256, U256, bool, bool, bool, bool, Vec<GovSponsorPath>);
 
 /// Balance / sponsor probes for one RPC URL slice. Retryable transport errors bubble up for failover.
 async fn run_gov_write_preflight<R: Runtime>(
@@ -297,18 +296,14 @@ async fn run_gov_write_preflight<R: Runtime>(
             ));
         }
     };
-    let required = estimate_eoa_cost_wei(&read_provider, signer, to, calldata).await;
+    let required = estimate_eoa_cost_wei(&read_provider, signer, to, calldata).await?;
     let eoa_can_pay = balance >= required;
 
     let global_addrs = pacto_chain_config::global_username_sponsor_addresses(net_key);
     let eligible_member = match global_addrs.as_ref() {
-        Ok(addrs) => read_eligible_member(
-            &read_provider,
-            addrs.pacto_username_nft,
-            signer,
-        )
-        .await?
-        .is_some(),
+        Ok(addrs) => read_eligible_member(&read_provider, addrs.pacto_username_nft, signer)
+            .await?
+            .is_some(),
         Err(_) => false,
     };
 
@@ -498,23 +493,39 @@ async fn finish_sponsored_gov_write<R: Runtime>(
 }
 
 /// Conservative EOA cost bound: `eth_estimateGas` with 1.2x headroom times the current
-/// EIP-1559 max fee, reusing the sponsored path's fallbacks when RPC estimation is down.
+/// EIP-1559 max fee. Retryable transport errors propagate so the caller can rotate URLs.
+/// Other estimate failures keep the sponsored path's gas ceiling and fallback fee.
 async fn estimate_eoa_cost_wei<P: Provider>(
     provider: &P,
     from: Address,
     to: Address,
     calldata: &[u8],
-) -> U256 {
-    let gas = estimate_call_gas(provider, from, to, calldata)
-        .await
-        .map(call_gas_with_margin)
-        .unwrap_or_else(|| call_gas_ceiling_for_calldata(calldata));
-    let max_fee = provider
-        .estimate_eip1559_fees()
-        .await
-        .map(|fees| fees.max_fee_per_gas)
-        .unwrap_or(fallback_max_fee());
-    U256::from(gas) * U256::from(max_fee)
+) -> Result<U256, String> {
+    let tx = TransactionRequest::default()
+        .with_from(from)
+        .with_to(to)
+        .with_input(Bytes::copy_from_slice(calldata));
+    let gas = match provider.estimate_gas(tx).await {
+        Ok(gas) => call_gas_with_margin(gas as u128),
+        Err(e) => {
+            let msg = crate::evm::wallet_security::redact_urls_in_text(&e.to_string());
+            if is_retryable_gov_rpc_error(&msg) {
+                return Err(msg);
+            }
+            call_gas_ceiling_for_calldata(calldata)
+        }
+    };
+    let max_fee = match provider.estimate_eip1559_fees().await {
+        Ok(fees) => fees.max_fee_per_gas,
+        Err(e) => {
+            let msg = crate::evm::wallet_security::redact_urls_in_text(&e.to_string());
+            if is_retryable_gov_rpc_error(&msg) {
+                return Err(msg);
+            }
+            fallback_max_fee()
+        }
+    };
+    Ok(U256::from(gas) * U256::from(max_fee))
 }
 
 /// Stable `code` of a structured wallet error JSON; unparseable errors have no code and

@@ -10,20 +10,49 @@ use serde_json::Value;
 use super::errors::wallet_err_json;
 use crate::evm::wallet_security;
 
+const RETRYABLE_HTTP_STATUSES: &[&str] = &["429", "502", "503", "504", "522", "523", "524"];
+
 /// Transient HTTP / JSON-RPC transport failures — try the next URL.
+/// Status codes match Alloy's `HTTP error <status>` phrase, not digits inside a wei amount.
 pub fn is_retryable_gov_rpc_error(msg: &str) -> bool {
     let m = msg.to_lowercase();
-    m.contains("429")
+    RETRYABLE_HTTP_STATUSES
+        .iter()
+        .any(|status| contains_http_error_status(&m, status))
         || m.contains("rate limit")
         || m.contains("-32005")
-        || m.contains("502")
-        || m.contains("503")
-        || m.contains("504")
-        || m.contains("522")
-        || m.contains("523")
-        || m.contains("524")
         || m.contains("timeout")
         || m.contains("timed out")
+}
+
+fn contains_http_error_status(lower: &str, status: &str) -> bool {
+    let needle = format!("http error {status}");
+    let Some(at) = lower.find(&needle) else {
+        return false;
+    };
+    match lower[at + needle.len()..].chars().next() {
+        Some(c) if c.is_ascii_digit() => false,
+        _ => true,
+    }
+}
+
+fn structured_wallet_code(err: &str) -> Option<String> {
+    let parsed: Value = serde_json::from_str(err).ok()?;
+    parsed.get("code")?.as_str().map(str::to_string)
+}
+
+/// Chain-URL rotation. A bundler JSON-RPC failure or a known tx hash stays on the current URL.
+pub fn gov_chain_rpc_should_failover(err: &str) -> bool {
+    if gov_rpc_error_has_tx_hash(err) {
+        return false;
+    }
+    if matches!(
+        structured_wallet_code(err).as_deref(),
+        Some("BUNDLER_RPC" | "BUNDLER_FEE")
+    ) {
+        return false;
+    }
+    is_retryable_gov_rpc_error(err)
 }
 
 /// True when a structured wallet error already carries a submitted tx hash.
@@ -32,15 +61,16 @@ pub fn gov_rpc_error_has_tx_hash(err: &str) -> bool {
     err.contains("\"txHash\"")
 }
 
-/// After a retryable gov RPC error on `urls[url_idx]`, return the next index.
-/// Logs stage + redacted failing URL. `None` when failover is exhausted or the error is not retryable.
+/// After a retryable gov chain-RPC error on `urls[url_idx]`, return the next index.
+/// Logs stage + redacted failing URL. `None` when failover is exhausted, the error is not
+/// retryable, a bundler code is set, or a tx hash is already known.
 pub fn next_gov_rpc_url_idx(
     urls: &[String],
     url_idx: usize,
     err: &str,
     stage: &str,
 ) -> Option<usize> {
-    if !is_retryable_gov_rpc_error(err) {
+    if !gov_chain_rpc_should_failover(err) {
         return None;
     }
     let next = url_idx.saturating_add(1);
@@ -281,6 +311,32 @@ mod tests {
     }
 
     #[test]
+    fn retryable_gov_rpc_ignores_wei_digit_runs() {
+        assert!(!is_retryable_gov_rpc_error(
+            "max fee per gas less than block base fee: 15023456789"
+        ));
+        assert!(!is_retryable_gov_rpc_error(
+            "insufficient funds: have 1429000000000000000"
+        ));
+    }
+
+    #[test]
+    fn gov_chain_rpc_should_failover_skips_bundler_and_tx_hash() {
+        assert!(gov_chain_rpc_should_failover(
+            "HTTP error 429 with empty body"
+        ));
+        assert!(!gov_chain_rpc_should_failover(
+            r#"{"code":"BUNDLER_RPC","message":"rate limit exceeded"}"#
+        ));
+        assert!(!gov_chain_rpc_should_failover(
+            r#"{"code":"BUNDLER_FEE","message":"HTTP error 429 with empty body"}"#
+        ));
+        assert!(!gov_chain_rpc_should_failover(
+            r#"{"code":"RECEIPT_TIMEOUT","message":"timed out","txHash":"0xabc"}"#
+        ));
+    }
+
+    #[test]
     fn next_gov_rpc_url_idx_advances_on_retryable() {
         let urls = vec![
             "https://a.example/rpc".into(),
@@ -296,6 +352,24 @@ mod tests {
         );
         assert_eq!(
             next_gov_rpc_url_idx(&urls, 0, "execution reverted: Unauthorized", "preflight"),
+            None
+        );
+        assert_eq!(
+            next_gov_rpc_url_idx(
+                &urls,
+                0,
+                r#"{"code":"BUNDLER_RPC","message":"rate limit"}"#,
+                "estimate",
+            ),
+            None
+        );
+        assert_eq!(
+            next_gov_rpc_url_idx(
+                &urls,
+                0,
+                r#"{"code":"RECEIPT_TIMEOUT","message":"timed out","txHash":"0xabc"}"#,
+                "send",
+            ),
             None
         );
     }

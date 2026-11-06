@@ -2,14 +2,13 @@
 
 Tracker map for **EVM JSON-RPC**: errors, 429s, custom/public URLs, Alchemy vs chain RPC, and bundler JSON-RPC.
 
-Normative behavior: [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md). UserOp fees and bundler hops: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md). GitHub remains source of truth — this file is a snapshot of [covenant-gov/pacto-app issues](https://github.com/covenant-gov/pacto-app/issues) as of 2026-11-05 (209 issues scanned).
+Normative behavior: [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md). UserOp fees and bundler hops: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md). GitHub remains source of truth — this file is a snapshot of [covenant-gov/pacto-app issues](https://github.com/covenant-gov/pacto-app/issues) as of 2026-11-06 (209 issues scanned). Epic: [#503](https://github.com/covenant-gov/pacto-app/issues/503).
 
 ## Open — chain RPC errors, rate limits, setting RPCs
 
 | Issue | Topic |
 |-------|--------|
-| [#320](https://github.com/covenant-gov/pacto-app/issues/320) | Crew Hats / Privileges should use the squad custom RPC. Saving that RPC does not refetch, so a public-node 429 can stick. Partial: PR [#341](https://github.com/covenant-gov/pacto-app/pull/341). Remaining: refetch on `$squadRpcTick`, point rate-limit copy at Settings, surface Hats RPC errors on Crew. |
-| [#228](https://github.com/covenant-gov/pacto-app/issues/228) | Squads publish custom RPC URLs over MLS (`squad_rpc_updated`). Alchemy-style `/v2/<key>` URLs leak credentials to every member. Warn or block before share. |
+| [#228](https://github.com/covenant-gov/pacto-app/issues/228) | Squads publish custom RPC URLs over MLS (`squad_rpc_updated`). Alchemy-style `/v2/<key>` URLs leak credentials to every member. **Fail-closed** product rule locked (reject credentialed custom URLs; plan on the issue). Deferred to a **separate PR** — not PR [#504](https://github.com/covenant-gov/pacto-app/pull/504). |
 
 ## Open — adjacent
 
@@ -21,7 +20,8 @@ Normative behavior: [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.m
 
 | Issue | Topic |
 |-------|--------|
-| [#489](https://github.com/covenant-gov/pacto-app/issues/489) | Cast mutiny vote Alloy empty-body 429: start/vote share FE `squadRpcUrlsForInvoke`; request-level failover in `send_gov_module_call` + ACL write connects (`next_gov_rpc_url_idx`). Connect helpers stay connect-only. |
+| [#320](https://github.com/covenant-gov/pacto-app/issues/320) | Crew Hats refetch on `$squadRpcTick` (loader keys include the tick) and rate-limit copy points at Settings. PR [#504](https://github.com/covenant-gov/pacto-app/pull/504) also fails over sponsored gov chain reads before the bundler send. Partial earlier work: PR [#341](https://github.com/covenant-gov/pacto-app/pull/341). |
+| [#489](https://github.com/covenant-gov/pacto-app/issues/489) | Cast mutiny vote Alloy empty-body 429: start/vote share FE `squadRpcUrlsForInvoke`; request-level failover in `send_gov_module_call`, ACL write connects, and sponsored gov chain reads before `eth_sendUserOperation` (`next_gov_rpc_url_idx`). Connect helpers stay connect-only. Pimlico estimate and send do not rotate the chain URL. |
 | [#340](https://github.com/covenant-gov/pacto-app/issues/340) | Superseded by [pacto-onchain-orchestrator](https://github.com/covenant-gov/pacto-onchain-orchestrator): Foundry unit/fork CI and `MAINNET_RPC` live there, not in pacto-app. |
 | [#495](https://github.com/covenant-gov/pacto-app/issues/495) | Username holder refresh: one read provider. RPC failure keeps the last SQLite record (`chain_error`) instead of flipping username state to `error`. |
 | [#276](https://github.com/covenant-gov/pacto-app/issues/276) | Settings tab hosts Chain RPC, Pimlico key, `focusSquadSettingsRpcEditor`, `RpcReadErrorCard`, `SquadEndpointsPanel`. |

@@ -9,9 +9,7 @@ pub mod provider;
 pub mod signer;
 
 pub use address::parse_address;
-pub use call::{
-    gov_rpc_error_has_tx_hash, is_retryable_gov_rpc_error, next_gov_rpc_url_idx,
-};
+pub use call::{gov_rpc_error_has_tx_hash, is_retryable_gov_rpc_error, next_gov_rpc_url_idx};
 pub use config::parse_salt_nonce;
 pub use errors::{classify_gov_call_revert, wallet_err_json, wallet_err_json_with_tx_hash};
 pub use provider::{

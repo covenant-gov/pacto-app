@@ -101,12 +101,9 @@ impl GovStack {
             {
                 Ok(v) => break v,
                 Err(e) => {
-                    if let Some(next) = next_gov_rpc_url_idx(
-                        &rpc_ctx.rpc_urls,
-                        url_idx,
-                        &e,
-                        "wargame_corroborate",
-                    ) {
+                    if let Some(next) =
+                        next_gov_rpc_url_idx(&rpc_ctx.rpc_urls, url_idx, &e, "wargame_corroborate")
+                    {
                         url_idx = next;
                         continue;
                     }
@@ -349,22 +346,21 @@ pub async fn evaluate_squad_capabilities<R: Runtime>(
     let chain = load_chain_context(app, pid, rpc_urls.clone(), stack).await?;
     let rpc_ctx = resolve_gov_read_network(chain.network.as_str(), rpc_urls)?;
     let mut url_idx = 0usize;
-    let (wears_captain, wears_crew, safe_wears_captain, squad_admin_full, squad_admin_paused) =
-        loop {
-            let provider = connect_read_provider(&rpc_ctx.rpc_urls[url_idx..]).await?;
-            match read_acl_hat_snapshot(&provider, &chain, roster).await {
-                Ok(v) => break v,
-                Err(e) => {
-                    if let Some(next) =
-                        next_gov_rpc_url_idx(&rpc_ctx.rpc_urls, url_idx, &e, "acl_hat_snapshot")
-                    {
-                        url_idx = next;
-                        continue;
-                    }
-                    return Err(e);
+    let (wears_captain, wears_crew, safe_wears_captain, squad_admin_full, squad_admin_paused) = loop {
+        let provider = connect_read_provider(&rpc_ctx.rpc_urls[url_idx..]).await?;
+        match read_acl_hat_snapshot(&provider, &chain, roster).await {
+            Ok(v) => break v,
+            Err(e) => {
+                if let Some(next) =
+                    next_gov_rpc_url_idx(&rpc_ctx.rpc_urls, url_idx, &e, "acl_hat_snapshot")
+                {
+                    url_idx = next;
+                    continue;
                 }
+                return Err(e);
             }
-        };
+        }
+    };
 
     let ctx = HatContext {
         roster_address: format!("{:#x}", roster),
@@ -401,13 +397,10 @@ async fn read_acl_hat_snapshot<P: Provider>(
         )
         .await
         .unwrap_or(false);
-        squad_admin_paused = eth_call_decode(
-            provider,
-            admin,
-            &isExecutorPausedCall { _executor: roster },
-        )
-        .await
-        .unwrap_or(false);
+        squad_admin_paused =
+            eth_call_decode(provider, admin, &isExecutorPausedCall { _executor: roster })
+                .await
+                .unwrap_or(false);
     }
 
     Ok((

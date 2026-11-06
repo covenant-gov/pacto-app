@@ -409,7 +409,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 
   async function loadHatsTree() {
     const topHat = viewedTopHatId?.trim();
-    const key = `${pactoNetwork}:${topHat ?? ''}`;
+    const key = `${pactoNetwork}:${topHat ?? ''}:${$squadRpcTick}`;
     if (!topHat || hatsTreeKey === key) return;
     hatsTreeKey = key;
     const npub = $currentUser?.npub;
@@ -456,7 +456,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       .sort()
       .join(',');
     const stack = warGameStack ? 'wargame' : 'nave';
-    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}:${protocolKey}:${stack}`;
+    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}:${protocolKey}:${stack}:${$squadRpcTick}`;
     if (!topHat || rolesTreeAnnotationsKey === key) return;
     rolesTreeAnnotationsKey = key;
     if (Object.keys(roleLabelByHatId).length > 0) {
@@ -520,13 +520,13 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   async function loadSettingsChainContext() {
     const topHat = viewedTopHatId?.trim() ?? null;
     const squadAdmin = squadAdminCtx?.proxy?.trim() ?? null;
-    const cacheKey = settingsChainCacheKey({
+    const cacheKey = `${settingsChainCacheKey({
       network: pactoNetwork,
       topHatId: topHat,
       squadAdminProxy: squadAdmin,
       squadMemberEvmByNpub,
       stack: warGameStack ? 'wargame' : 'nave',
-    });
+    })}:${$squadRpcTick}`;
     if ((!topHat && !squadAdmin) || settingsChainKey === cacheKey) return;
     settingsChainKey = cacheKey;
     if (topHat) {

@@ -65,9 +65,10 @@ Rust uses the override list in order when non-empty (`gov_read::rpc_urls_or_defa
 
 - Hats wearer reads (`member_governance_read`)
 - Gov module writes (`send_gov_module_call` preflight + EOA send before a tx hash exists)
+- Sponsored gov chain reads (`send_sponsored_gov_userop`, `send_sponsored_global_gov_userop`) through `getUserOpHash`
 - ACL write-path connects (`require_capability` / war-game corroboration)
 
-Never rotate after a submitted tx hash is known. Pimlico bundler hops are separate from this chain-RPC list.
+Never rotate after a submitted tx hash is known. Pimlico `eth_estimateUserOperationGas` and `eth_sendUserOperation` are not chain-URL hops: a bundler error returns immediately, and the UserOp is sent once after chain finalize succeeds. Username and factory UserOps stay on the first chain URL.
 
 Operator `ALCHEMY_RPC_KEY` does not override an explicit custom squad URL. Squad RPC URLs (including API keys) are visible to all members who receive the announce.
 
