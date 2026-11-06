@@ -1,0 +1,71 @@
+{
+  "version": "0.8.0",
+  "items": [
+    {
+      "kind": "new",
+      "title": {
+        "en": "Plan events with your squad",
+        "es": "Organiza eventos con tu escuadrón"
+      },
+      "detail": {
+        "en": "Create squad events, say whether you’re coming, and choose reminders while Pacto is unlocked.",
+        "es": "Crea eventos para tu escuadrón, confirma si asistirás y elige recordatorios mientras Pacto esté desbloqueado."
+      }
+    },
+    {
+      "kind": "new",
+      "title": {
+        "en": "Keep shared documents easy to find",
+        "es": "Ten los documentos compartidos a mano"
+      },
+      "detail": {
+        "en": "Save document links from squad chats in one place and filter them by channel.",
+        "es": "Guarda los enlaces a documentos del chat de tu escuadrón en un solo lugar y fíltralos por canal."
+      }
+    },
+    {
+      "kind": "improved",
+      "title": {
+        "en": "Look back at proposal outcomes",
+        "es": "Consulta los resultados de las propuestas"
+      },
+      "detail": {
+        "en": "Filter the Status board to see open, executed, or failed treasury proposals and leadership challenges.",
+        "es": "Filtra el panel de estado para ver propuestas de tesorería y cambios de liderazgo pendientes, ejecutados o fallidos."
+      }
+    },
+    {
+      "kind": "fixed",
+      "title": {
+        "en": "Keep captions with your attachments",
+        "es": "Conserva el texto de tus archivos adjuntos"
+      },
+      "detail": {
+        "en": "Text sent with a file, GIF, or sticker now appears in the chat and can be edited for one minute.",
+        "es": "El texto que envías con un archivo, GIF o sticker ya aparece en el chat y puedes editarlo durante un minuto."
+      }
+    },
+    {
+      "kind": "improved",
+      "title": {
+        "en": "Stay up to date and see what’s new",
+        "es": "Entérate de las novedades al actualizar"
+      },
+      "detail": {
+        "en": "Pacto now checks for updates at startup by default and shows you what changed after an in-app update.",
+        "es": "Pacto ahora busca actualizaciones al iniciarse de forma predeterminada y te muestra las novedades tras actualizar desde la app."
+      }
+    },
+    {
+      "kind": "fixed",
+      "title": {
+        "en": "Recover your username’s verified badge",
+        "es": "Recupera la insignia de tu nombre de usuario"
+      },
+      "detail": {
+        "en": "After restoring your account, Pacto can recover your username’s verified badge when its saved link is still available.",
+        "es": "Al restaurar tu cuenta, Pacto puede recuperar la insignia de verificación de tu nombre de usuario si su enlace guardado sigue disponible."
+      }
+    }
+  ]
+}
