@@ -5,9 +5,10 @@ use tauri::{AppHandle, Runtime};
 
 use super::dto::{UsernameAccountStateDto, UsernameEligibleMemberDto, UsernameRecordDto};
 use super::helpers::{
-    load_nostr_keys, nostr_xonly_pubkey, parse_b256, read_registry_policy_version, record_to_dto,
-    require_network, require_rpc_urls, username_addrs, username_claim_cache_needs_upsert,
-    username_holder_claim_upsert, username_link_restore_upsert,
+    clear_link_restore_failure, link_restore_last_failure, load_nostr_keys, nostr_xonly_pubkey,
+    parse_b256, read_registry_policy_version, record_link_restore_failure, record_to_dto,
+    require_network, require_rpc_urls, should_attempt_username_link_restore, unix_now_secs,
+    username_addrs, username_claim_cache_needs_upsert, username_holder_claim_upsert,
 };
 use crate::db::{self, UsernameClaimRow};
 use crate::evm::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiCall as bootstrapSpendableCall;
@@ -247,7 +248,10 @@ pub async fn username_sync_account_state<R: Runtime>(
     app: AppHandle<R>,
     network: String,
     rpc_urls: Option<Vec<String>>,
+    force_link_restore: Option<bool>,
 ) -> Result<UsernameAccountStateDto, String> {
+    let start_npub = crate::account_manager::get_current_account()
+        .map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
     let mut cached =
         db::get_username_claim(&app).map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
     let net = require_network(&network)?;
@@ -319,16 +323,30 @@ pub async fn username_sync_account_state<R: Runtime>(
             }
         }
     }
-    let restore = match cached.as_ref() {
-        Some(row)
-            if row
-                .link_event_id
-                .as_deref()
-                .map(|id| id.trim().is_empty())
-                .unwrap_or(true)
-                && !record.name.trim().is_empty()
-                && !record.tokenId.is_zero() =>
-        {
+    let restore_meta = cached.as_ref().and_then(|row| {
+        let missing = row
+            .link_event_id
+            .as_deref()
+            .map(|id| id.trim().is_empty())
+            .unwrap_or(true);
+        if missing && !record.name.trim().is_empty() && !record.tokenId.is_zero() {
+            Some((row.updated_at_ms, row.npub_hash.clone()))
+        } else {
+            None
+        }
+    });
+    if let Some((expected_updated_at, expected_hash)) = restore_meta {
+        let force = force_link_restore.unwrap_or(false);
+        if !should_attempt_username_link_restore(
+            unix_now_secs(),
+            link_restore_last_failure(npub_hash),
+            force,
+        ) {
+            log::debug!(
+                target: "pacto_wallet",
+                "username claim link restore skipped: failure backoff"
+            );
+        } else {
             let id = fetch_username_claim_link_id(
                 &keys,
                 npub_hash,
@@ -336,14 +354,43 @@ pub async fn username_sync_account_state<R: Runtime>(
                 record.evmAddress,
             )
             .await;
-            username_link_restore_upsert(row, id.as_deref())
+            let id = id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+            match id {
+                None => record_link_restore_failure(npub_hash, unix_now_secs()),
+                Some(id) => {
+                    let live = db::try_restore_username_claim_link(
+                        &app,
+                        &start_npub,
+                        &expected_hash,
+                        expected_updated_at,
+                        id,
+                    )
+                    .map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
+                    let still_here = crate::account_manager::get_current_account()
+                        .ok()
+                        .is_some_and(|npub| npub == start_npub);
+                    match (still_here, live) {
+                        (true, Some(row)) => {
+                            let has_link = row
+                                .link_event_id
+                                .as_deref()
+                                .map(|s| !s.trim().is_empty())
+                                .unwrap_or(false);
+                            cached = Some(row);
+                            if has_link {
+                                clear_link_restore_failure(npub_hash);
+                            }
+                        }
+                        _ => {
+                            log::debug!(
+                                target: "pacto_wallet",
+                                "username claim link restore skipped: row changed or session moved"
+                            );
+                        }
+                    }
+                }
+            }
         }
-        _ => None,
-    };
-    if let Some(upsert) = restore {
-        db::upsert_username_claim(&app, &upsert)
-            .map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
-        cached = db::get_username_claim(&app).map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
     }
     Ok(UsernameAccountStateDto {
         cached,

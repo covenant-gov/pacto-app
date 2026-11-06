@@ -7,6 +7,7 @@
 //! error rather than a silent send to production relays.
 
 use nostr_sdk::RelayUrl;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 /// Today's production relay list. Private: reachable only through the
@@ -41,6 +42,23 @@ pub(crate) fn trusted_relays() -> &'static [RelayUrl] {
         .get_or_init(compiled_default)
         .relays
         .as_slice()
+}
+
+/// Trusted URLs that are currently registered in the live relay pool.
+pub(crate) fn filter_trusted_relays_in_pool(
+    trusted: &[RelayUrl],
+    pool: &HashMap<RelayUrl, impl Sized>,
+) -> Vec<RelayUrl> {
+    trusted
+        .iter()
+        .filter(|url| pool.contains_key(url))
+        .cloned()
+        .collect()
+}
+
+/// `trusted_relays()` intersected with the live pool.
+pub(crate) fn trusted_relays_in_pool(pool: &HashMap<RelayUrl, impl Sized>) -> Vec<RelayUrl> {
+    filter_trusted_relays_in_pool(trusted_relays(), pool)
 }
 
 /// True only when `PACTO_TRUSTED_RELAYS` redirected the set. Release builds
@@ -326,6 +344,28 @@ mod tests {
         let first = trusted_relays().to_vec();
         let second = trusted_relays().to_vec();
         assert_eq!(first, second);
+    }
+
+    fn url(s: &str) -> RelayUrl {
+        RelayUrl::parse(s).unwrap()
+    }
+
+    #[test]
+    fn intersection_keeps_only_pool_members() {
+        let trusted = vec![url(RELAY_A), url(RELAY_B), url(RELAY_C)];
+        let mut pool: HashMap<RelayUrl, ()> = HashMap::new();
+        pool.insert(url(RELAY_B), ());
+        pool.insert(url("wss://relay.damus.io"), ());
+        let targets = filter_trusted_relays_in_pool(&trusted, &pool);
+        assert_eq!(targets, vec![url(RELAY_B)]);
+    }
+
+    #[test]
+    fn intersection_empty_when_no_trusted_in_pool() {
+        let trusted = vec![url(RELAY_A)];
+        let mut pool: HashMap<RelayUrl, ()> = HashMap::new();
+        pool.insert(url("wss://relay.damus.io"), ());
+        assert!(filter_trusted_relays_in_pool(&trusted, &pool).is_empty());
     }
 
     #[test]

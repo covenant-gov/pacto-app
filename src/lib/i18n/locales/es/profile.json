@@ -45,6 +45,7 @@
 	"profile.username.claimed": "@{username}",
 	"profile.username.verified": "Verificado",
 	"profile.username.unverified": "Reclamado en cadena; falta el enlace de relay en este dispositivo",
+	"profile.username.retryLinkRestore": "Reintentar restauración del enlace de nombre de usuario",
 	"profile.username.boundEvm": "EVM vinculado",
 	"profile.username.pendingTransfer": "Transferencia de dirección pendiente",
 	"profile.username.pendingTo": "Pendiente hacia {address}",

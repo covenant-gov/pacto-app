@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+  import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import { focusProfileUsername } from '../../stores/navigation';
   import {
     claimedUsername,
     isUsernameVerified,
+    needsForcedUsernameLinkRestore,
     refreshUsernameState,
     usernameState,
   } from '../../stores/username';
@@ -19,6 +21,8 @@
   const errored = $derived($usernameState.status === 'error');
   const username = $derived($claimedUsername);
   const verified = $derived($isUsernameVerified);
+  const forceRestore = $derived(needsForcedUsernameLinkRestore($usernameState));
+  const restoring = $derived($usernameState.status === 'loading');
 </script>
 
 <section class="commons-early-adopter" aria-label={$t('commons.earlyAdopter.ariaLabel')}>
@@ -37,27 +41,37 @@
         type="button"
         class="commons-early-adopter-cta commons-early-adopter-cta--muted"
         aria-label={$t('commons.earlyAdopter.retry')}
-        onclick={() => void refreshUsernameState()}
+        onclick={() => void refreshUsernameState({ forceLinkRestore: true })}
       >
         {$t('commons.earlyAdopter.retry')}
       </button>
     {:else if username}
-      <button
-        type="button"
-        class="commons-early-adopter-claimed-btn"
-        aria-label={$t('commons.earlyAdopter.ctaAria')}
-        onclick={focusProfileUsername}
-      >
-        <span class="commons-early-adopter-title">{$t('commons.earlyAdopter.title')}</span>
-        <span class="commons-early-adopter-claimed">
-          {$t('commons.earlyAdopter.claimed', { values: { username } })}
-          {#if verified}
-            <span class="commons-early-adopter-verified" title={$t('commons.earlyAdopter.verified')}
-              >✓</span
-            >
-          {/if}
-        </span>
-      </button>
+      <div class="commons-early-adopter-claimed-row">
+        <button
+          type="button"
+          class="commons-early-adopter-claimed-btn"
+          aria-label={$t('commons.earlyAdopter.ctaAria')}
+          onclick={focusProfileUsername}
+        >
+          <span class="commons-early-adopter-title">{$t('commons.earlyAdopter.title')}</span>
+          <span class="commons-early-adopter-claimed">
+            {$t('commons.earlyAdopter.claimed', { values: { username } })}
+            {#if verified}
+              <span class="commons-early-adopter-verified" title={$t('commons.earlyAdopter.verified')}
+                >✓</span
+              >
+            {/if}
+          </span>
+        </button>
+        {#if forceRestore}
+          <RefreshIconButton
+            spinning={restoring}
+            ariaLabel={$t('commons.earlyAdopter.retryLinkRestore')}
+            title={$t('commons.earlyAdopter.retryLinkRestore')}
+            onclick={() => void refreshUsernameState({ forceLinkRestore: true })}
+          />
+        {/if}
+      </div>
     {:else}
       <div class="commons-early-adopter-copy">
         <h2 class="commons-early-adopter-title">{$t('commons.earlyAdopter.title')}</h2>
@@ -113,6 +127,13 @@
     line-height: 1.4;
   }
 
+  .commons-early-adopter-claimed-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
   .commons-early-adopter-claimed {
     margin: 0;
     display: flex;
@@ -129,7 +150,8 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
-    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
     border: none;
     background: transparent;
     padding: 0;

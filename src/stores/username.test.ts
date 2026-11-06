@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import {
   computeUsernameVerified,
   claimedUsernameFromState,
+  needsForcedUsernameLinkRestore,
   showEvmDashGas,
   resetUsernameState,
   refreshUsernameState,
@@ -325,6 +326,40 @@ describe('showEvmDashGas', () => {
   });
 });
 
+describe('needsForcedUsernameLinkRestore', () => {
+  it('is true for a holder with a missing linkEventId', () => {
+    expect(
+      needsForcedUsernameLinkRestore(
+        readyState({
+          cached: { ...readyState().cached!, linkEventId: null },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('is false when a linkEventId is stored (evm mismatch)', () => {
+    expect(
+      needsForcedUsernameLinkRestore(
+        readyState({
+          activeEvm: OTHER,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('is false on a hard error with no username', () => {
+    expect(
+      needsForcedUsernameLinkRestore({
+        ...readyState(),
+        status: 'error',
+        cached: null,
+        record: null,
+        error: 'db down',
+      }),
+    ).toBe(false);
+  });
+});
+
 describe('refreshUsernameState', () => {
   beforeEach(() => {
     resetUsernameState();
@@ -399,6 +434,11 @@ describe('refreshUsernameState', () => {
     expect(get(usernameState).pendingTransfer).toBe(false);
   });
 
+  it('forwards forceLinkRestore to sync', async () => {
+    await refreshUsernameState({ forceLinkRestore: true });
+    expect(mockSync).toHaveBeenCalledWith('sepolia', undefined, { forceLinkRestore: true });
+  });
+
   it('surfaces a sync rejection as an error', async () => {
     mockSync.mockRejectedValueOnce(new Error('db down'));
     await refreshUsernameState();
@@ -429,7 +469,7 @@ describe('refreshUsernameState', () => {
     );
 
     await refreshUsernameState();
-    expect(mockSync).toHaveBeenCalledWith('sepolia');
+    expect(mockSync).toHaveBeenCalledWith('sepolia', undefined, undefined);
     expect(get(usernameState).cached?.username).toBe('alice');
     expect(get(usernameState).cached?.linkEventId).toBeNull();
     expect(get(usernameState).cached?.tokenId).toBe('7');
