@@ -62,7 +62,6 @@ pub async fn fetch_username_claim_link_id(
     name: &str,
     evm_address: Address,
 ) -> Option<String> {
-    let npub_hash_hex = format!("{npub_hash:#x}");
     let client = match get_nostr_client() {
         Ok(client) => client,
         Err(e) => {
@@ -73,10 +72,7 @@ pub async fn fetch_username_claim_link_id(
             return None;
         }
     };
-    let filter = Filter::new()
-        .kind(Kind::from_u16(PACTO_USERNAME_CLAIM_KIND))
-        .author(keys.public_key())
-        .identifier(npub_hash_hex.clone());
+    let filter = username_claim_link_filter(keys.public_key(), npub_hash);
     let events = match client
         .fetch_events_from(
             crate::trusted_relays::trusted_relays().to_vec(),
@@ -95,11 +91,30 @@ pub async fn fetch_username_claim_link_id(
         }
     };
     let events: Vec<Event> = events.into_iter().collect();
+    resolve_username_claim_link_from_events(&events, keys, npub_hash, name, evm_address)
+}
+
+/// Addressable kind 31337 query: author + `#d` = npub hash.
+pub fn username_claim_link_filter(author: PublicKey, npub_hash: B256) -> Filter {
+    Filter::new()
+        .kind(Kind::from_u16(PACTO_USERNAME_CLAIM_KIND))
+        .author(author)
+        .identifier(format!("{npub_hash:#x}"))
+}
+
+/// Selector over already-fetched events. Same match rules as restore.
+pub fn resolve_username_claim_link_from_events(
+    events: &[Event],
+    keys: &Keys,
+    npub_hash: B256,
+    name: &str,
+    evm_address: Address,
+) -> Option<String> {
     select_username_claim_link(
-        &events,
+        events,
         &keys.public_key(),
         name,
-        &npub_hash_hex,
+        &format!("{npub_hash:#x}"),
         evm_address,
     )
 }
@@ -166,6 +181,7 @@ fn hex_body_eq(left: &str, right: &str) -> bool {
 mod tests {
     use super::*;
     use alloy::primitives::address;
+    use std::str::FromStr;
 
     const HASH: &str = "0x540d126644e922328318f1870ba0c9de3b2d5c0c271e27af7efea3e44025fdc1";
 
@@ -282,5 +298,44 @@ mod tests {
             evm,
         );
         assert_eq!(id.as_deref(), Some(newer.id.to_hex().as_str()));
+    }
+
+    fn hash_b256() -> B256 {
+        B256::from_str(HASH).expect("hash")
+    }
+
+    #[test]
+    fn filter_matches_published_link_event() {
+        let keys = Keys::generate();
+        let other = Keys::generate();
+        let evm = address!("0xe05fcC23807536bEe418f142D19fa0d21BB0cfF7");
+        let filter = username_claim_link_filter(keys.public_key(), hash_b256());
+        let matching = link_event(&keys, "daopunk", evm, HASH, 100);
+        let wrong_author = link_event(&other, "daopunk", evm, HASH, 100);
+        let wrong_d = link_event(
+            &keys,
+            "daopunk",
+            evm,
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            100,
+        );
+        assert!(filter.match_event(&matching, MatchEventOptions::default()));
+        assert!(!filter.match_event(&wrong_author, MatchEventOptions::default()));
+        assert!(!filter.match_event(&wrong_d, MatchEventOptions::default()));
+    }
+
+    #[test]
+    fn fetch_pipeline_resolves_id_from_matched_events() {
+        let keys = Keys::generate();
+        let evm = address!("0xe05fcC23807536bEe418f142D19fa0d21BB0cfF7");
+        let event = link_event(&keys, "daopunk", evm, HASH, 100);
+        let id = resolve_username_claim_link_from_events(
+            &[event.clone()],
+            &keys,
+            hash_b256(),
+            "daopunk",
+            evm,
+        );
+        assert_eq!(id.as_deref(), Some(event.id.to_hex().as_str()));
     }
 }

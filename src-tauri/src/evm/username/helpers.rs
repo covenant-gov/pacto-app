@@ -1,6 +1,6 @@
 //! Shared validate / send / eligibility helpers for username commands.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use alloy::network::TransactionBuilder;
@@ -33,6 +33,12 @@ use crate::evm::sponsor_userop::{
 use crate::evm::wallet_chain_config::{self, WalletNetworkConfig};
 
 static IN_FLIGHT: Lazy<Mutex<HashSet<B256>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+/// Last failed kind 31337 restore fetch, keyed by npub hash (process-local).
+static LINK_RESTORE_LAST_FAILURE: Lazy<Mutex<HashMap<B256, u64>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Skip automatic restore fetches this long after a miss (kind0 repair uses the same window).
+pub(crate) const USERNAME_LINK_RESTORE_FAILURE_BACKOFF_SECS: u64 = 5 * 60;
 
 /// Process-local guard: one in-flight write per `npub_hash` at a time.
 pub struct InFlightGuard {
@@ -60,6 +66,50 @@ impl Drop for InFlightGuard {
         if let Ok(mut set) = IN_FLIGHT.lock() {
             set.remove(&self.hash);
         }
+    }
+}
+
+/// `force` always retries; otherwise skip until `backoff` after `last_failure_at`.
+pub fn should_attempt_username_link_restore(
+    now_secs: u64,
+    last_failure_at: Option<u64>,
+    force: bool,
+) -> bool {
+    if force {
+        return true;
+    }
+    match last_failure_at {
+        Some(at) if now_secs.saturating_sub(at) < USERNAME_LINK_RESTORE_FAILURE_BACKOFF_SECS => {
+            false
+        }
+        _ => true,
+    }
+}
+
+pub(crate) fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+pub(crate) fn link_restore_last_failure(npub_hash: B256) -> Option<u64> {
+    LINK_RESTORE_LAST_FAILURE
+        .lock()
+        .ok()?
+        .get(&npub_hash)
+        .copied()
+}
+
+pub(crate) fn record_link_restore_failure(npub_hash: B256, now_secs: u64) {
+    if let Ok(mut map) = LINK_RESTORE_LAST_FAILURE.lock() {
+        map.insert(npub_hash, now_secs);
+    }
+}
+
+pub(crate) fn clear_link_restore_failure(npub_hash: B256) {
+    if let Ok(mut map) = LINK_RESTORE_LAST_FAILURE.lock() {
+        map.remove(&npub_hash);
     }
 }
 
@@ -587,5 +637,50 @@ mod tests {
         assert!(username_link_restore_upsert(&row, None).is_none());
         assert!(username_link_restore_upsert(&row, Some("  ")).is_none());
         assert!(username_link_restore_upsert(&claim_row(Some("evt-1")), Some("evt-2")).is_none());
+    }
+
+    #[test]
+    fn should_attempt_allows_first_try() {
+        assert!(should_attempt_username_link_restore(100, None, false));
+    }
+
+    #[test]
+    fn should_attempt_blocks_within_backoff() {
+        assert!(!should_attempt_username_link_restore(100, Some(100), false));
+        assert!(!should_attempt_username_link_restore(
+            100 + USERNAME_LINK_RESTORE_FAILURE_BACKOFF_SECS - 1,
+            Some(100),
+            false
+        ));
+    }
+
+    #[test]
+    fn should_attempt_allows_after_backoff() {
+        assert!(should_attempt_username_link_restore(
+            100 + USERNAME_LINK_RESTORE_FAILURE_BACKOFF_SECS,
+            Some(100),
+            false
+        ));
+    }
+
+    #[test]
+    fn should_attempt_force_bypasses_backoff() {
+        assert!(should_attempt_username_link_restore(100, Some(100), true));
+    }
+
+    #[test]
+    fn link_restore_failure_map_round_trip() {
+        let hash = B256::repeat_byte(0xcd);
+        clear_link_restore_failure(hash);
+        assert_eq!(link_restore_last_failure(hash), None);
+        record_link_restore_failure(hash, 42);
+        assert_eq!(link_restore_last_failure(hash), Some(42));
+        assert!(!should_attempt_username_link_restore(
+            42,
+            link_restore_last_failure(hash),
+            false
+        ));
+        clear_link_restore_failure(hash);
+        assert_eq!(link_restore_last_failure(hash), None);
     }
 }

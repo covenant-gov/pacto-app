@@ -144,7 +144,9 @@ export function normalizeUsernameInput(name: string): string {
   return name.trim();
 }
 
-export async function refreshUsernameState(): Promise<void> {
+export async function refreshUsernameState(options?: {
+  forceLinkRestore?: boolean;
+}): Promise<void> {
   const user = get(currentUser);
   if (!user?.pubkey) {
     resetUsernameState();
@@ -161,7 +163,7 @@ export async function refreshUsernameState(): Promise<void> {
 
   try {
     const [synced, activeEvm] = await Promise.all([
-      usernameSyncAccountState(USERNAME_NETWORK),
+      usernameSyncAccountState(USERNAME_NETWORK, undefined, options),
       getActiveSquadEvmSignerAddress(),
     ]);
     if (gen !== refreshGen) return;

@@ -399,6 +399,11 @@ describe('refreshUsernameState', () => {
     expect(get(usernameState).pendingTransfer).toBe(false);
   });
 
+  it('forwards forceLinkRestore to sync', async () => {
+    await refreshUsernameState({ forceLinkRestore: true });
+    expect(mockSync).toHaveBeenCalledWith('sepolia', undefined, { forceLinkRestore: true });
+  });
+
   it('surfaces a sync rejection as an error', async () => {
     mockSync.mockRejectedValueOnce(new Error('db down'));
     await refreshUsernameState();
@@ -429,7 +434,7 @@ describe('refreshUsernameState', () => {
     );
 
     await refreshUsernameState();
-    expect(mockSync).toHaveBeenCalledWith('sepolia');
+    expect(mockSync).toHaveBeenCalledWith('sepolia', undefined, undefined);
     expect(get(usernameState).cached?.username).toBe('alice');
     expect(get(usernameState).cached?.linkEventId).toBeNull();
     expect(get(usernameState).cached?.tokenId).toBe('7');
