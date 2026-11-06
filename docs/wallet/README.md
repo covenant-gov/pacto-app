@@ -8,6 +8,7 @@ These files are **tracked in git** and are intended for references from **source
 |----------|---------|
 | [DM_WALLET_MESSAGE_SCHEMA.md](./DM_WALLET_MESSAGE_SCHEMA.md) | JSON schema for DM peer-info exchange + `wallet_tx_*` cards. |
 | [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md) | RPC env vars; viem read-only vs Rust send. |
+| [RPC_ISSUE_INDEX.md](./RPC_ISSUE_INDEX.md) | Tracker map: RPC errors, 429s, custom/public URLs, Alchemy vs Pimlico. |
 | [USD_PRICING.md](./USD_PRICING.md) | Chainlink feeds; backend pricing / env. |
 | [TRANSACTION_LIFECYCLE.md](./TRANSACTION_LIFECYCLE.md) | Non-blocking on-chain UX; optimistic DM wallet announcements. |
 | [CHAIN_CONFIG.md](./CHAIN_CONFIG.md) | Single source: `wallet-assets.json` + Rust `wallet_chain_config`; RPC env vars. |

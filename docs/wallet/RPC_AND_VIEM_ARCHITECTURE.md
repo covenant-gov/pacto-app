@@ -118,3 +118,4 @@ Spot USD rates for ETH, USDC, and USDT (wallet UI only) come from **Chainlink on
 ## See also
 
 - [README.md](./README.md) — index of wallet docs.
+- [RPC_ISSUE_INDEX.md](./RPC_ISSUE_INDEX.md) — GitHub issues for RPC errors, rate limits, and endpoint selection.
