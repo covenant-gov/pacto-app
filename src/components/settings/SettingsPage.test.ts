@@ -62,11 +62,11 @@ afterEach(() => {
 describe('SettingsPage dash link', () => {
   it('hides the dash link without a cached claim and shows it with one', async () => {
     renderPage();
-    expect(screen.queryByRole('link', { name: 'EVM dash · gas' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'EVM — gas' })).toBeNull();
 
     usernameState.update((state) => ({ ...state, cached: cachedClaim, status: 'ready' }));
     await tick();
-    expect(screen.getByRole('link', { name: 'EVM dash · gas' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'EVM — gas' })).toBeTruthy();
   });
 
   it('hides the dash when the chain record is empty even if a cache row exists', async () => {
@@ -82,7 +82,7 @@ describe('SettingsPage dash link', () => {
       status: 'ready',
     }));
     renderPage();
-    expect(screen.queryByRole('link', { name: 'EVM dash · gas' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'EVM — gas' })).toBeNull();
   });
 
   it('shows the dash from an on-chain holder record without a cache row', async () => {
@@ -98,7 +98,7 @@ describe('SettingsPage dash link', () => {
       status: 'ready',
     }));
     renderPage();
-    expect(screen.getByRole('link', { name: 'EVM dash · gas' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'EVM — gas' })).toBeTruthy();
   });
 
   it('moves the current section off the dash link when the cached claim clears', async () => {
@@ -114,13 +114,13 @@ describe('SettingsPage dash link', () => {
     document.getElementById('settings-evm-dash-gas')!.getBoundingClientRect = () => rect(10);
 
     await fireEvent.scroll(main);
-    expect(screen.getByRole('link', { name: 'EVM dash · gas' }).getAttribute('aria-current')).toBe(
+    expect(screen.getByRole('link', { name: 'EVM — gas' }).getAttribute('aria-current')).toBe(
       'location',
     );
 
     usernameState.update((state) => ({ ...state, cached: null }));
     await tick();
-    expect(screen.queryByRole('link', { name: 'EVM dash · gas' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'EVM — gas' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Profile' }).getAttribute('aria-current')).toBe(
       'location',
     );

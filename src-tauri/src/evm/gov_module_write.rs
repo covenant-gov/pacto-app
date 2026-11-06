@@ -3,22 +3,9 @@
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
-use alloy::sol_types::SolCall;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
-use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
-    captainResignCall, castVoteCall, executeMutinyCall, startMutinyToArbitraryContractCall,
-    startMutinyToArbitraryEoaCall, startMutinyToCommitteeCall, startMutinyToCrewMemberCall,
-    startMutinyToPauseCaptainCall,
-};
-use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
-    bootstrapCrewCall, cancelAddCrewCall, cancelRemoveCrewCall, executeAddCrewCall,
-    executeRemoveCrewCall, requestAddCrewCall, requestRemoveCrewCall,
-};
-use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
-    captainVoteCall, crewVoteCall, executeCall, proposeCall,
-};
 use super::global_sponsor_userop::send_sponsored_global_gov_userop;
 use super::global_sponsored_fee_ledger::{self, LANE_GOV_MODULE};
 use super::gov_read::rpc_urls_or_default;
@@ -40,6 +27,7 @@ use super::sponsor_userop::{
     roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
     SponsoredUserOpSend,
 };
+use super::sponsored_action_label::sponsored_action_label;
 use super::userop::{userop_placeholder_max_cost_wei, UseropPlaceholderLane};
 use super::wallet_chain_config;
 use crate::db;
@@ -457,65 +445,6 @@ fn wallet_error_code(err: &str) -> Option<String> {
     super::sponsor_userop::wallet_error_code(err)
 }
 
-fn calldata_selector_hex(calldata: &[u8]) -> String {
-    if calldata.len() >= 4 {
-        format!("0x{}", hex::encode(&calldata[..4]))
-    } else {
-        "0x".to_string()
-    }
-}
-
-/// Best-effort human label for known pacto-gov module selectors.
-pub(crate) fn gov_call_action_label(calldata: &[u8]) -> (String, String) {
-    let selector = calldata_selector_hex(calldata);
-    if calldata.len() < 4 {
-        return (selector.clone(), selector);
-    }
-    let sel: [u8; 4] = calldata[..4].try_into().unwrap();
-    let name = if sel == proposeCall::SELECTOR {
-        "propose"
-    } else if sel == crewVoteCall::SELECTOR {
-        "crewVote"
-    } else if sel == captainVoteCall::SELECTOR {
-        "captainVote"
-    } else if sel == executeCall::SELECTOR {
-        "execute"
-    } else if sel == castVoteCall::SELECTOR {
-        "castVote"
-    } else if sel == executeMutinyCall::SELECTOR {
-        "executeMutiny"
-    } else if sel == captainResignCall::SELECTOR {
-        "captainResign"
-    } else if sel == startMutinyToCrewMemberCall::SELECTOR {
-        "startMutinyToCrewMember"
-    } else if sel == startMutinyToCommitteeCall::SELECTOR {
-        "startMutinyToCommittee"
-    } else if sel == startMutinyToArbitraryEoaCall::SELECTOR {
-        "startMutinyToArbitraryEoa"
-    } else if sel == startMutinyToArbitraryContractCall::SELECTOR {
-        "startMutinyToArbitraryContract"
-    } else if sel == startMutinyToPauseCaptainCall::SELECTOR {
-        "startMutinyToPauseCaptain"
-    } else if sel == bootstrapCrewCall::SELECTOR {
-        "bootstrapCrew"
-    } else if sel == requestAddCrewCall::SELECTOR {
-        "requestAddCrew"
-    } else if sel == cancelAddCrewCall::SELECTOR {
-        "cancelAddCrew"
-    } else if sel == executeAddCrewCall::SELECTOR {
-        "executeAddCrew"
-    } else if sel == requestRemoveCrewCall::SELECTOR {
-        "requestRemoveCrew"
-    } else if sel == cancelRemoveCrewCall::SELECTOR {
-        "cancelRemoveCrew"
-    } else if sel == executeRemoveCrewCall::SELECTOR {
-        "executeRemoveCrew"
-    } else {
-        return (selector.clone(), selector);
-    };
-    (selector, name.to_string())
-}
-
 fn persist_squad_sponsored_fee_usage<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
@@ -538,7 +467,7 @@ fn persist_squad_sponsored_fee_usage<R: Runtime>(
             return;
         }
     };
-    let (selector, action) = gov_call_action_label(calldata);
+    let (selector, action) = sponsored_action_label(calldata);
     let row = db::SquadSponsoredFeeUsageInsert {
         parent_id: parent_id.to_string(),
         chain: chain.to_string(),
@@ -604,17 +533,12 @@ pub fn explicit_parent_id(parent_id: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        explicit_parent_id, gov_call_action_label, gov_probe_max_costs,
-        sponsored_probe_failure_error, wallet_error_code,
+        explicit_parent_id, gov_probe_max_costs, sponsored_probe_failure_error, wallet_error_code,
     };
-    use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::castVoteCall;
-    use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::bootstrapCrewCall;
     use crate::evm::sponsor_userop::{
         is_hard_sponsor_preflight_error, is_soft_sponsor_config_error,
     };
     use crate::evm::userop::{userop_placeholder_max_cost_wei, UseropPlaceholderLane};
-    use alloy::primitives::U256;
-    use alloy::sol_types::SolCall;
 
     #[test]
     fn explicit_parent_id_trims_and_rejects_empty() {
@@ -685,27 +609,5 @@ mod tests {
 
         assert!(sponsored_probe_failure_error(error, true, true).is_none());
         assert!(sponsored_probe_failure_error(error, false, false).is_none());
-    }
-
-    #[test]
-    fn gov_call_action_label_maps_known_selectors() {
-        let vote = castVoteCall {
-            _mutinyId: U256::from(1u64),
-        }
-        .abi_encode();
-        let (sel, name) = gov_call_action_label(&vote);
-        assert_eq!(name, "castVote");
-        assert_eq!(sel, format!("0x{}", hex::encode(castVoteCall::SELECTOR)));
-
-        let boot = bootstrapCrewCall {
-            _candidates: vec![],
-        }
-        .abi_encode();
-        assert_eq!(gov_call_action_label(&boot).1, "bootstrapCrew");
-
-        let unknown = [0xaa, 0xbb, 0xcc, 0xdd];
-        let (sel, name) = gov_call_action_label(&unknown);
-        assert_eq!(sel, "0xaabbccdd");
-        assert_eq!(name, "0xaabbccdd");
     }
 }

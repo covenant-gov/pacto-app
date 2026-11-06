@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import TokenAmountRow from '../../ui/TokenAmountRow.svelte';
   import DashboardAssetCard from '../dashboard/DashboardAssetCard.svelte';
   import SquadSponsorWithdrawModal from './SquadSponsorWithdrawModal.svelte';
   import SquadSponsoredFeeUsagePanel from './SquadSponsoredFeeUsagePanel.svelte';
@@ -34,7 +35,8 @@
   } from '../../../lib/wallet/signer-balance';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
-  import { formatEther, parseEther } from 'viem';
+  import { parseEther } from 'viem';
+  import { formatAssetAmount } from '../../../lib/evm/format-token-amount';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import { get } from 'svelte/store';
@@ -281,7 +283,7 @@
       depositError = tFn('governance.error.depositExceedsBalance', {
         values: {
           symbol: selectedSymbol,
-          balance: selectedBalance.balanceDecimal,
+          balance: formatAssetAmount(selectedBalance.balanceRaw, { symbol: selectedBalance.symbol }) ?? '—',
           network,
         },
       });
@@ -356,13 +358,13 @@
     <button type="button" class="btn-secondary" onclick={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
     <dl class="asset-dl">
-      <dt>{$t('governance.info.sponsorEth')}</dt>
-      <dd>
-        <strong>{formatEther(BigInt(summary.poolBalanceWei))}</strong>
-        {#if lowBalance}
-          <span class="sponsor-low-badge" role="status">{$t('governance.info.sponsorLowBalance')}</span>
-        {/if}
-      </dd>
+      <TokenAmountRow raw={summary.poolBalanceWei} symbol="ETH">
+        {#snippet extra()}
+          {#if lowBalance}
+            <span class="sponsor-low-badge" role="status">{$t('governance.info.sponsorLowBalance')}</span>
+          {/if}
+        {/snippet}
+      </TokenAmountRow>
       {#if hatsLinked}
         <dt>{$t('governance.info.sponsorEligible')}</dt>
         <dd class="asset-dd-inline">
@@ -408,7 +410,7 @@
               {:else if squadBalance.error}
                 {tFn('governance.info.balanceUnavailable')}
               {:else}
-                {tFn('governance.info.balance')} {squadBalance.balanceDecimal} {squadBalance.symbol}
+                {tFn('governance.info.balance')} {formatAssetAmount(squadBalance.balanceRaw, { symbol: squadBalance.symbol }) ?? '—'} {squadBalance.symbol}
               {/if}
             </p>
           </div>
@@ -434,7 +436,7 @@
                     {:else if defaultBalance.error}
                       {tFn('governance.info.balanceUnavailable')}
                     {:else if defaultSignerAddress}
-                      {tFn('governance.info.balance')} {defaultBalance.balanceDecimal} {defaultBalance.symbol}
+                      {tFn('governance.info.balance')} {formatAssetAmount(defaultBalance.balanceRaw, { symbol: defaultBalance.symbol }) ?? '—'} {defaultBalance.symbol}
                     {:else}
                       {tFn('governance.info.notConfigured')}
                     {/if}
@@ -460,7 +462,7 @@
                     {:else if squadBalance.error}
                       {tFn('governance.info.balanceUnavailable')}
                     {:else if squadSignerAddress}
-                      {tFn('governance.info.balance')} {squadBalance.balanceDecimal} {squadBalance.symbol}
+                      {tFn('governance.info.balance')} {formatAssetAmount(squadBalance.balanceRaw, { symbol: squadBalance.symbol }) ?? '—'} {squadBalance.symbol}
                     {:else}
                       {tFn('governance.info.notAssigned')}
                     {/if}
@@ -484,7 +486,7 @@
           <p class="input-error" role="alert">{depositError}</p>
         {:else if depositExceedsBalance}
           <p class="input-error" role="alert">
-            {$t('governance.info.depositBelowMax', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedSymbol, network } })}
+            {$t('governance.info.depositBelowMax', { values: { balance: formatAssetAmount(selectedBalance.balanceRaw, { symbol: selectedBalance.symbol }) ?? '—', symbol: selectedSymbol, network } })}
           </p>
         {/if}
         <div class="sponsor-deposit-actions">

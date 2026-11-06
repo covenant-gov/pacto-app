@@ -28,7 +28,7 @@ describe('summarizeTreasuryProposalAction', () => {
       valueWei: parseEther('1.5').toString(),
       isDelegateCall: false,
     });
-    expect(formatNativeEthAmount(summary.valueWei)).toBe('1.5');
+    expect(formatNativeEthAmount(summary.valueWei)).toBe('1.500000000000000000');
   });
 
   it('decodes erc20 transfer', () => {
@@ -91,7 +91,7 @@ describe('summarizeTreasuryProposalAction', () => {
     expect(summary.kind).toBe('erc20_transfer');
     if (summary.kind !== 'erc20_transfer') return;
     expect(summary.valueWei).toBe(valueWei);
-    expect(formatNativeEthAmount(summary.valueWei)).toBe('0.25');
+    expect(formatNativeEthAmount(summary.valueWei)).toBe('0.250000000000000000');
   });
 
   it('fails closed on unknown calldata with short selector', () => {

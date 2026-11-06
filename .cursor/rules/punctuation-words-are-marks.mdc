@@ -1,0 +1,34 @@
+---
+description: Render punctuation words as marks in names and labels, never as the spelled word
+alwaysApply: true
+---
+
+# Punctuation words are marks
+
+When a name, label, title, or other user-facing string is specified with the **name of a mark**, write the mark. Do not spell the word.
+
+A grammatical dash is `—` (em dash) or `–` (en dash). It is never the word `dash`.
+
+| Said as | Write |
+|---|---|
+| dash | `—` or `–` |
+| hyphen | `-` |
+| slash | `/` |
+| dot, point | `.` or `·` |
+| colon | `:` |
+| comma | `,` |
+| ellipsis | `…` |
+| quote, quotes | `"` or `'` |
+| ampersand | `&` |
+
+```text
+❌ BAD — "EVM dash gas", "EVM dash · gas"
+✅ GOOD — "EVM — gas"
+```
+
+```text
+❌ BAD — "read slash write"
+✅ GOOD — "read/write"
+```
+
+Code identifiers may use a hyphen or camelCase (`evm-gas`, `evmGas`). They must not put the spelled punctuation word into text a person reads.

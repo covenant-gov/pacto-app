@@ -6,7 +6,7 @@
  */
 
 import type { Address } from 'viem';
-import { formatEther } from 'viem';
+import { formatAssetAmount } from '$lib/evm/format-token-amount';
 import { getPublicClient } from '$lib/wallet/client';
 import { DEFAULT_CHAIN_ID, type SupportedChainId } from '$lib/wallet/chains';
 
@@ -79,6 +79,6 @@ export async function getSafeState(
     threshold: Number(threshold),
     nonce,
     balanceWei,
-    balanceFormatted: formatEther(balanceWei),
+    balanceFormatted: formatAssetAmount(balanceWei, { symbol: 'ETH' }) ?? '0.000000000000000000',
   };
 }

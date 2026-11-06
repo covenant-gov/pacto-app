@@ -14,6 +14,7 @@ function net(
       symbol: a.symbol,
       balanceRaw: '0',
       balanceDecimal: '0',
+      decimals: 18,
       usdValue: a.usdValue,
     })),
   };

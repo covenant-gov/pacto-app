@@ -2,13 +2,10 @@ import {
   listGlobalSponsoredFeeUsage,
   type GlobalSponsoredFeeUsageDto,
 } from '../api/global-sponsor';
-import {
-  feeUsageActionLabel,
-  feeUsageAmountEth,
-} from '../governance/sponsored-fee-usage-display';
+import { feeUsageActionLabel } from '../governance/sponsored-fee-usage-display';
 
 export type { GlobalSponsoredFeeUsageDto };
-export { feeUsageActionLabel, feeUsageAmountEth };
+export { feeUsageActionLabel };
 
 /** Rust lane constants from `global_sponsored_fee_ledger`. */
 export const GLOBAL_FEE_USAGE_LANES = [

@@ -5,6 +5,7 @@
  */
 
 import book from '../pacto-protocol-addresses.json';
+import { sponsoredActionSelector } from './sponsored-actions';
 
 export type UsernameSponsorLane = 'bootstrap' | 'member';
 
@@ -52,26 +53,25 @@ export const PACTO_USERNAME_ACTIONS: readonly PactoAction[] = [
   {
     id: 'claimUsername',
     targetKey: 'pactoUsernameNft',
-    // claim(string,bytes32,bytes32,uint256,uint256,bytes32,bytes,bytes)
-    selector: '0x9824550d',
+    selector: sponsoredActionSelector('claimUsername'),
     lane: 'bootstrap',
   },
   {
     id: 'initiateAddressTransfer',
     targetKey: 'pactoUsernameNft',
-    selector: '0xa4df29b5',
+    selector: sponsoredActionSelector('initiateAddressTransfer'),
     lane: 'member',
   },
   {
     id: 'claimAddressTransfer',
     targetKey: 'pactoUsernameNft',
-    selector: '0xbf010955',
+    selector: sponsoredActionSelector('claimAddressTransfer'),
     lane: 'member',
   },
   {
     id: 'cancelAddressTransfer',
     targetKey: 'pactoUsernameNft',
-    selector: '0xd88208dc',
+    selector: sponsoredActionSelector('cancelAddressTransfer'),
     lane: 'member',
   },
 ] as const;
@@ -80,43 +80,43 @@ export const PACTO_FACTORY_ACTIONS: readonly PactoFactoryAction[] = [
   {
     id: 'deployNavePirata',
     targetKey: 'navePirataFactory',
-    selector: '0xe5caf266',
+    selector: sponsoredActionSelector('deployNavePirata'),
     lane: 'factory',
   },
   {
     id: 'createSquadSponsorExt',
     targetKey: 'squadSponsorFactory',
-    selector: '0x732ce718',
+    selector: sponsoredActionSelector('createSquadSponsorExt'),
     lane: 'factory',
   },
   {
     id: 'createSquadSponsor',
     targetKey: 'squadSponsorFactory',
-    selector: '0xd50506da',
+    selector: sponsoredActionSelector('createSquadSponsor'),
     lane: 'factory',
   },
   {
     id: 'createWarGameSponsor',
     targetKey: 'squadSponsorFactory',
-    selector: '0x4088bd34',
+    selector: sponsoredActionSelector('createWarGameSponsor'),
     lane: 'factory',
   },
   {
     id: 'deploySquadAdminExtStandalone',
     targetKey: 'navePirataFactory',
-    selector: '0xfdcd0507',
+    selector: sponsoredActionSelector('deploySquadAdminExtStandalone'),
     lane: 'factory',
   },
   {
     id: 'deploySquadAdminStandaloneCaptainHat',
     targetKey: 'navePirataFactory',
-    selector: '0xf789af1f',
+    selector: sponsoredActionSelector('deploySquadAdminStandaloneCaptainHat'),
     lane: 'factory',
   },
   {
     id: 'createSafeProxy',
     targetKey: 'safeProxyFactory',
-    selector: '0x1688f0b9',
+    selector: sponsoredActionSelector('createSafeProxy'),
     lane: 'factory',
   },
 ] as const;

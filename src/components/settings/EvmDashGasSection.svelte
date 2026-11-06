@@ -1,12 +1,20 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
+  import TokenAmountRow from '../ui/TokenAmountRow.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import { usernameGlobalSpendablePoolWei } from '../../lib/api/username';
+  import { formatAssetAmount } from '../../lib/evm/format-token-amount';
+  import {
+    fetchEvmDashGasCached,
+    getCachedEvmDashGas,
+    evmDashGasCacheKey,
+    type EvmDashGasSnapshot,
+  } from '../../lib/wallet/evm-dash-gas-cache';
   import {
     feeUsageActionLabel,
-    feeUsageAmountEth,
     globalFeeUsageLaneLabelKey,
     loadGlobalSponsoredFeeUsage,
     type GlobalSponsoredFeeUsageDto,
@@ -27,44 +35,68 @@
   let loadSeq = 0;
 
   const expanded = $derived(!($settingsSectionCollapsed['settings-evm-dash-gas'] ?? true));
+  const cacheKey = $derived(evmDashGasCacheKey(USERNAME_NETWORK));
   const poolNetworkName = $derived(
     getWalletNetworkDisplayName(parseSupportedChainId(USERNAME_NETWORK)),
   );
+  const showInitialLoading = $derived(loading && poolWei == null && rows.length === 0);
 
-  async function loadRows() {
-    const seq = ++loadSeq;
-    loading = true;
+  function applySnapshot(snap: EvmDashGasSnapshot) {
+    rows = snap.rows;
+    poolWei = snap.poolWei;
+    poolError = snap.poolError;
     loadError = '';
-    poolError = '';
-    poolWei = null;
+  }
+
+  async function loadSnapshot(): Promise<EvmDashGasSnapshot> {
+    let nextPoolError = '';
+    const [next, pool] = await Promise.all([
+      loadGlobalSponsoredFeeUsage({ limit: 50 }),
+      usernameGlobalSpendablePoolWei(USERNAME_NETWORK).catch((e) => {
+        nextPoolError = getInvokeErrorMessage(e, get(t)('settings.evmDashGas.poolError'));
+        return null;
+      }),
+    ]);
+    return { rows: next, poolWei: pool, poolError: nextPoolError };
+  }
+
+  async function fetchAndApply(force: boolean) {
+    const seq = ++loadSeq;
     try {
-      const [next, pool] = await Promise.all([
-        loadGlobalSponsoredFeeUsage({ limit: 50 }),
-        usernameGlobalSpendablePoolWei(USERNAME_NETWORK).catch((e) => {
-          if (seq === loadSeq) {
-            poolError = getInvokeErrorMessage(e, get(t)('settings.evmDashGas.poolError'));
-          }
-          return null;
-        }),
-      ]);
+      const snap = await fetchEvmDashGasCached(cacheKey, loadSnapshot, { force });
       if (seq !== loadSeq) return;
-      rows = next;
-      if (pool != null) {
-        poolWei = pool;
-        poolError = '';
-      }
+      applySnapshot(snap);
     } catch (e) {
       if (seq !== loadSeq) return;
       loadError = getInvokeErrorMessage(e, get(t)('settings.evmDashGas.error'));
-      rows = [];
     } finally {
       if (seq === loadSeq) loading = false;
     }
   }
 
+  function loadRows(force = false) {
+    if (!force) {
+      const cached = getCachedEvmDashGas(cacheKey);
+      if (cached) {
+        applySnapshot(cached);
+        return;
+      }
+    }
+    loading = true;
+    void fetchAndApply(force);
+  }
+
   $effect(() => {
     if (!expanded) return;
-    void loadRows();
+    untrack(() => {
+      const cached = getCachedEvmDashGas(cacheKey);
+      if (cached) {
+        applySnapshot(cached);
+        return;
+      }
+      loading = true;
+      void fetchAndApply(false);
+    });
   });
 
   function laneLabel(lane: string): string {
@@ -98,15 +130,10 @@
       {#if poolError}
         <span class="dash-pool-error" role="status">{poolError}</span>
       {:else if poolWei != null}
-        {@const eth = feeUsageAmountEth(poolWei)}
-        <span class="dash-pool-value">
-          {#if eth != null}
-            {$t('settings.evmDashGas.poolBalance', { values: { balance: eth } })}
-          {:else}
-            <span class="muted">—</span>
-          {/if}
-        </span>
-      {:else if loading}
+        <dl class="token-amount-list">
+          <TokenAmountRow raw={poolWei} symbol="ETH" />
+        </dl>
+      {:else if showInitialLoading}
         <span class="muted">{$t('settings.evmDashGas.loading')}</span>
       {:else}
         <span class="muted">—</span>
@@ -116,11 +143,11 @@
       spinning={loading}
       ariaLabel={loading ? $t('settings.evmDashGas.refreshing') : $t('settings.evmDashGas.refresh')}
       title={loading ? $t('settings.evmDashGas.refreshing') : $t('settings.evmDashGas.refresh')}
-      onclick={() => void loadRows()}
+      onclick={() => void loadRows(true)}
     />
   </div>
 
-  {#if loading && rows.length === 0}
+  {#if showInitialLoading}
     <p class="muted">{$t('settings.evmDashGas.loading')}</p>
   {:else if loadError}
     <p class="dash-error" role="alert">{loadError}</p>
@@ -141,7 +168,7 @@
         </thead>
         <tbody>
           {#each rows as row (row.id)}
-            {@const amountEth = feeUsageAmountEth(row.amountWei)}
+            {@const amountEth = formatAssetAmount(row.amountWei, { symbol: 'ETH' })}
             {@const explorer = rowExplorerUrl(row)}
             <tr>
               <td>
@@ -209,10 +236,6 @@
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-muted);
-  }
-  .dash-pool-value {
-    font-size: 0.875rem;
-    color: var(--text-primary);
   }
   .dash-pool-error {
     font-size: 0.8125rem;

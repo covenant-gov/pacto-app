@@ -36,7 +36,7 @@ export function safeBalancesCacheKey(
   network: string,
   safeAddress: string,
 ): string {
-  return `safe:${parentId.trim()}:${network.trim().toLowerCase()}:${safeAddress.trim().toLowerCase()}`;
+  return `safe:v2:${parentId.trim()}:${network.trim().toLowerCase()}:${safeAddress.trim().toLowerCase()}`;
 }
 
 /** Last value for key even if TTL expired (for stale-while-revalidate hydrate). */

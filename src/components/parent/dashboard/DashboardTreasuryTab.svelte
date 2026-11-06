@@ -22,6 +22,7 @@
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
   import { governanceProcessNonceByParentId } from '../../../stores/navigation';
   import { shortEvmAddress as shortAddress } from '../../../lib/governance/hats-tree-annotations';
+  import TokenAmountRow from '../../ui/TokenAmountRow.svelte';
 
   interface Props {
     parentId?: string;
@@ -183,8 +184,7 @@
           >
             <dl class="asset-dl">
               {#if st?.state}
-                <dt>{$t('governance.info.sponsorEth')}</dt>
-                <dd><strong>{st.state.balanceFormatted}</strong></dd>
+                <TokenAmountRow raw={st.state.balanceWei} symbol="ETH" />
               {/if}
               <dt>{$t('governance.field.chain')}</dt>
               <dd>{entry.chain}</dd>

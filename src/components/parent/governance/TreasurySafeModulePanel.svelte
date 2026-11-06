@@ -1,6 +1,7 @@
 <script lang="ts">
   import { isAddress } from 'viem';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import TokenAmountRow from '../../ui/TokenAmountRow.svelte';
   import DashboardAssetCard from '../dashboard/DashboardAssetCard.svelte';
   import {
     buildTrackedTokenAnnouncePayload,
@@ -45,19 +46,19 @@
   let { network, parentId, safeAddress, announcementsGroupId = '', privilege }: Props = $props();
 
   type SafeBalancesSnapshot = {
-    nativeDecimal: string;
+    nativeRaw: string;
     nativeSymbol: string;
     rows: SquadTrackedTokenRow[];
-    tokenBalances: Record<string, string>;
+    tokenRaws: Record<string, string | null>;
     loadError: string;
   };
 
   const tFn = get(t);
 
   let rows = $state<SquadTrackedTokenRow[]>([]);
-  let nativeDecimal = $state('');
+  let nativeRaw = $state('');
   let nativeSymbol = $state('');
-  let tokenBalances = $state<Record<string, string>>({});
+  let tokenRaws = $state<Record<string, string | null>>({});
   let loading = $state(false);
   let refreshing = $state(false);
   let loadError = $state('');
@@ -77,10 +78,10 @@
   );
 
   function applySnapshot(snap: SafeBalancesSnapshot) {
-    nativeDecimal = snap.nativeDecimal;
+    nativeRaw = snap.nativeRaw;
     nativeSymbol = snap.nativeSymbol;
     rows = snap.rows;
-    tokenBalances = snap.tokenBalances;
+    tokenRaws = snap.tokenRaws;
     loadError = snap.loadError;
   }
 
@@ -112,12 +113,12 @@
         key,
         pid,
         async () => {
-          let nextNativeDecimal = '';
+          let nextNativeRaw = '';
           let nextNativeSymbol = '';
           let nextError = '';
           const native = await getEvmNativeBalance(chainKey, safe);
           if (native.ok) {
-            nextNativeDecimal = native.balance.balanceDecimal;
+            nextNativeRaw = native.balance.balanceRaw;
             nextNativeSymbol = native.balance.symbol;
           } else {
             nextError = native.message;
@@ -127,20 +128,20 @@
           const onChain = nextRows.filter(
             (r) => r.chain.trim().toLowerCase() === String(chainKey).toLowerCase(),
           );
-          const nextBalances: Record<string, string> = {};
+          const nextRaws: Record<string, string | null> = {};
           await Promise.all(
             onChain.map((r) =>
               withReadPlaneLimit(async () => {
                 const res = await getEvmErc20Balance(String(chainKey), r.tokenAddress, safe);
-                nextBalances[r.id] = res.ok ? res.balance.balanceDecimal : '—';
+                nextRaws[r.id] = res.ok ? res.balance.balanceRaw : null;
               }),
             ),
           );
           return {
-            nativeDecimal: nextNativeDecimal,
+            nativeRaw: nextNativeRaw,
             nativeSymbol: nextNativeSymbol,
             rows: nextRows,
-            tokenBalances: nextBalances,
+            tokenRaws: nextRaws,
             loadError: nextError,
           };
         },
@@ -153,10 +154,10 @@
       const msg = getInvokeErrorMessage(e, tFn('governance.error.couldNotLoadSafeBalances'));
       if (!peeked) {
         loadError = msg;
-        nativeDecimal = '';
+        nativeRaw = '';
         nativeSymbol = '';
         rows = [];
-        tokenBalances = {};
+        tokenRaws = {};
       }
     } finally {
       if (hydrateKey === `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}`) {
@@ -264,23 +265,28 @@
     />
   {/snippet}
 
-  {#if loading && !nativeDecimal && rows.length === 0}
+  {#if loading && !nativeRaw && rows.length === 0}
     <p class="muted" role="status">{$t('governance.status.loadingBalances')}</p>
-  {:else if loadError && !nativeDecimal}
+  {:else if loadError && !nativeRaw}
     <p class="error" role="alert">{loadError}</p>
   {:else}
     <dl class="asset-dl">
-      <dt>{nativeSymbol || tFn('governance.fallback.native')}</dt>
-      <dd><strong>{nativeDecimal || '—'}</strong></dd>
+      <TokenAmountRow raw={nativeRaw} symbol={nativeSymbol || 'ETH'} />
       {#each trackedOnChain as row (row.id)}
-        <dt title={row.tokenAddress}>{row.symbol}</dt>
-        <dd class="asset-dd-inline">
-          <strong>{tokenBalances[row.id] ?? '…'}</strong>
-          <code class="bal-addr">{shortEvmAddress(row.tokenAddress) || '—'}</code>
-          {#if manageGate.enabled}
-            <button type="button" class="btn-link" onclick={() => void removeToken(row)}>{tFn('governance.action.remove')}</button>
-          {/if}
-        </dd>
+        <TokenAmountRow
+          raw={tokenRaws[row.id]}
+          symbol={row.symbol}
+          decimals={row.decimals}
+          pending={tokenRaws[row.id] === undefined}
+          symbolTitle={row.tokenAddress}
+        >
+          {#snippet extra()}
+            <code class="bal-addr">{shortEvmAddress(row.tokenAddress) || '—'}</code>
+            {#if manageGate.enabled}
+              <button type="button" class="btn-link" onclick={() => void removeToken(row)}>{tFn('governance.action.remove')}</button>
+            {/if}
+          {/snippet}
+        </TokenAmountRow>
       {/each}
       <dt>{$t('governance.treasury.safe')}</dt>
       <dd class="asset-dd-inline">

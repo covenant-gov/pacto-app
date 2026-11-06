@@ -83,7 +83,7 @@
 	"nav.settings.sections.profile": "Profile",
 	"nav.settings.sections.nostr": "Nostr",
 	"nav.settings.sections.evm": "EVM",
-	"nav.settings.sections.evmDashGas": "EVM dash · gas",
+	"nav.settings.sections.evmDashGas": "EVM — gas",
 	"nav.settings.sections.app": "App",
 	"nav.settings.sections.notifications": "Notifications",
 	"nav.settings.sections.commons": "Commons",

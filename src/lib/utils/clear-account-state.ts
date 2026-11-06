@@ -178,6 +178,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
   'pacto_wallet_summary_cache_v1',
+  'pacto_wallet_summary_cache_v2',
   TREASURY_SAFES_CACHE_PREFIX,
   SQUAD_INFRA_CACHE_PREFIX,
   SQUAD_MEMBER_EVM_CACHE_PREFIX,

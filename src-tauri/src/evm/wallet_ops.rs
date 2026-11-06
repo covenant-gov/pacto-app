@@ -24,6 +24,7 @@ pub struct WalletSummaryAsset {
     pub symbol: String,
     pub balance_raw: String,
     pub balance_decimal: String,
+    pub decimals: u8,
     pub usd_value: Option<f64>,
 }
 
@@ -341,6 +342,7 @@ pub async fn get_wallet_summary<R: Runtime>(
             symbol: net.native_symbol.clone(),
             balance_raw: eth_raw.to_string(),
             balance_decimal: eth_dec,
+            decimals: net.native_decimals,
             usd_value: eth_usd,
         }];
 
@@ -363,6 +365,7 @@ pub async fn get_wallet_summary<R: Runtime>(
                 symbol: sym,
                 balance_raw: raw.to_string(),
                 balance_decimal: dec_str,
+                decimals: dec,
                 usd_value: usd_val,
             });
         }

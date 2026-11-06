@@ -1,19 +1,17 @@
-import { formatEther } from 'viem';
+import { sponsoredActionName } from '../evm/sponsor/sponsored-actions';
 
-/** Prefer human action name; fall back to 4-byte selector. */
+const FOUR_BYTE_SELECTOR = /^0x[0-9a-fA-F]{8}$/;
+
+/** Prefer a stored function name. Resolve a stored 4-byte selector from the catalog. */
 export function feeUsageActionLabel(row: { action: string; selector: string }): string {
-  const action = row.action?.trim();
-  if (action) return action;
-  return row.selector?.trim() || '';
-}
-
-/** Wei decimal string → ETH decimal, or null if invalid. */
-export function feeUsageAmountEth(amountWei: string): string | null {
-  try {
-    return formatEther(BigInt(amountWei.trim() || '0'));
-  } catch {
-    return null;
-  }
+  const action = row.action?.trim() ?? '';
+  const selector = row.selector?.trim() ?? '';
+  if (action && !FOUR_BYTE_SELECTOR.test(action)) return action;
+  return (
+    (action ? sponsoredActionName(action) : null) ??
+    (selector ? sponsoredActionName(selector) : null) ??
+    (action || selector)
+  );
 }
 
 export function truncateNpub(npub: string, head = 10, tail = 4): string {
