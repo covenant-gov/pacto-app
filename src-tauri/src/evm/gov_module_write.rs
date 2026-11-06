@@ -12,13 +12,14 @@ use super::global_sponsored_fee_ledger::{self, LANE_GOV_MODULE};
 use super::gov_read::rpc_urls_or_default;
 use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
 use super::pacto_chain_config;
+use super::rpc::config::RECEIPT_WAIT_TIMEOUT;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
 use super::rpc::{
-    connect_read_provider, connect_signing_provider, contract_call_request,
-    gov_rpc_error_has_tx_hash, is_retryable_gov_rpc_error, next_gov_rpc_url_idx, send_and_confirm,
-    wallet_err_json, wallet_err_json_with_tx_hash,
+    broadcast_signed_gov_eoa_tx, connect_read_provider, fill_sign_gov_eoa_tx,
+    is_retryable_gov_rpc_error, next_gov_rpc_url_idx, wallet_err_json,
+    wallet_err_json_with_tx_hash,
 };
 use super::sponsor_preflight::{
     global_gov_module_path_ok, read_eligible_member, squad_sponsor_path_ok,
@@ -72,7 +73,7 @@ pub async fn send_gov_module_call<R: Runtime>(
     require_capability(&app, pid, capability, rpc_urls_override.clone(), stack).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
-    let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
+    let (signer, _wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
     // Key by signer EOA: multiple parents can resolve to the same roster key.
     let _write_guard = with_gov_write_lock(signer.address()).await;
 
@@ -234,29 +235,10 @@ pub async fn send_gov_module_call<R: Runtime>(
         }));
     }
 
-    let mut send_url_idx = url_idx;
-    let receipt = loop {
-        let provider = connect_signing_provider(&urls[send_url_idx..], wallet.clone()).await?;
-        let tx = contract_call_request(to, calldata.clone()).with_chain_id(net.chain_id);
-        match send_and_confirm(
-            &provider,
-            tx,
-            "Timed out waiting for governance confirmation. The transaction may still confirm — do not resubmit the same calldata; check the explorer with the returned tx hash.",
-        )
-        .await
-        {
-            Ok(receipt) => break receipt,
-            Err(e) if gov_rpc_error_has_tx_hash(&e) => return Err(e),
-            Err(e) => {
-                if let Some(next) = next_gov_rpc_url_idx(&urls, send_url_idx, &e, "gov_write_eoa_send")
-                {
-                    send_url_idx = next;
-                    continue;
-                }
-                return Err(e);
-            }
-        }
-    };
+    let (signed, send_url_idx) =
+        fill_sign_gov_eoa_tx(&urls, url_idx, &signer, to, calldata, net.chain_id).await?;
+    let receipt =
+        broadcast_signed_gov_eoa_tx(&urls, send_url_idx, &signed, RECEIPT_WAIT_TIMEOUT).await?;
 
     Ok((
         format!("0x{:x}", receipt.transaction_hash),

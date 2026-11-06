@@ -17,7 +17,7 @@ use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::{load_embedded_signer, load_squad_roster_embedded_signer};
-use super::rpc::{connect_read_provider, next_gov_rpc_url_idx, wallet_err_json};
+use super::rpc::{connect_read_provider, fold_gov_rpc_urls, wallet_err_json};
 use super::sponsor_preflight::{
     assert_global_factory_preflight, assert_global_gov_module_preflight,
 };
@@ -294,10 +294,9 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
     let paymaster = addrs.pacto_global_paymaster;
 
     // Chain reads and getUserOpHash rotate. Pimlico estimate errors and the bundler send do not.
-    let mut url_idx = 0usize;
-    let user_op = loop {
+    let user_op = fold_gov_rpc_urls!(&urls, 0, "global_gov", url_idx, {
         let read_provider = connect_read_provider(&urls[url_idx..]).await?;
-        let chain = match read_global_gov_chain(
+        let chain = read_global_gov_chain(
             &read_provider,
             &signer,
             &addrs,
@@ -307,17 +306,7 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
             net.chain_id,
             account_impl,
         )
-        .await
-        {
-            Ok(chain) => chain,
-            Err(e) => {
-                if let Some(next) = next_gov_rpc_url_idx(&urls, url_idx, &e, "global_gov_chain") {
-                    url_idx = next;
-                    continue;
-                }
-                return Err(e);
-            }
-        };
+        .await?;
         let ctx = GlobalSponsoredSendParts {
             entry_point,
             paymaster,
@@ -368,7 +357,7 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
         .await?;
         let addrs_ref = &addrs;
         let provider_ref = &read_provider;
-        match finalize_sponsored_userop_chain(
+        finalize_sponsored_userop_chain(
             &read_provider,
             &signer,
             &build,
@@ -385,17 +374,7 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
             },
         )
         .await
-        {
-            Ok(op) => break op,
-            Err(e) => {
-                if let Some(next) = next_gov_rpc_url_idx(&urls, url_idx, &e, "global_gov_hash") {
-                    url_idx = next;
-                    continue;
-                }
-                return Err(e);
-            }
-        }
-    };
+    })?;
     let user_op_hash = bundler_send_user_operation(&bundler, &user_op, entry_point).await?;
     Ok(SponsoredUserOpSend {
         user_op_hash,

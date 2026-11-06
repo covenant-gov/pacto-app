@@ -89,6 +89,31 @@ pub fn next_gov_rpc_url_idx(
     Some(next)
 }
 
+/// Run `body` at `urls[start]`, then the next URL while the error is a retryable chain-RPC failure.
+/// Bundler errors and a known tx hash stop the loop (`next_gov_rpc_url_idx` returns `None`).
+/// `?` inside `body` returns from the attempt, not the caller.
+macro_rules! fold_gov_rpc_urls {
+    ($urls:expr, $start:expr, $stage:expr, $idx:ident, $body:block) => {{
+        let mut $idx = $start;
+        loop {
+            let attempt: Result<_, String> = async { $body }.await;
+            match attempt {
+                Ok(value) => break Ok(value),
+                Err(e) => {
+                    if let Some(next) =
+                        $crate::evm::rpc::next_gov_rpc_url_idx($urls, $idx, &e, $stage)
+                    {
+                        $idx = next;
+                        continue;
+                    }
+                    break Err(e);
+                }
+            }
+        }
+    }};
+}
+pub(crate) use fold_gov_rpc_urls;
+
 /// ABI `uint256` return. Empty or short RPC payloads → zero (EOA target, no code, stripped leading zeros).
 pub fn decode_abi_u256_return(data: &[u8]) -> U256 {
     if data.is_empty() {
@@ -402,6 +427,30 @@ mod tests {
             formatted.to_ascii_lowercase().contains("0xb2613b41"),
             "formatted={formatted}"
         );
+    }
+
+    #[tokio::test]
+    async fn fold_gov_rpc_urls_advances_on_retryable_and_stops_on_bundler() {
+        let urls = vec!["http://a".to_string(), "http://b".to_string()];
+        let mut seen = Vec::new();
+        let err = fold_gov_rpc_urls!(&urls, 0, "test", idx, {
+            seen.push(idx);
+            Err::<(), String>("HTTP error 429 with empty body".to_string())
+        })
+        .expect_err("exhausted");
+        assert_eq!(seen, vec![0, 1]);
+        assert!(err.contains("429"));
+
+        for code in ["BUNDLER_RPC", "BUNDLER_FEE"] {
+            let mut seen = Vec::new();
+            let err = fold_gov_rpc_urls!(&urls, 0, "test", idx, {
+                seen.push(idx);
+                Err::<(), String>(wallet_err_json(code, "bundler down", None))
+            })
+            .expect_err("bundler");
+            assert_eq!(seen, vec![0], "{code}");
+            assert!(err.contains(code), "{err}");
+        }
     }
 
     #[test]

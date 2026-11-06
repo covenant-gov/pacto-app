@@ -9,9 +9,11 @@ pub mod provider;
 pub mod signer;
 
 pub use address::parse_address;
-pub use call::{gov_rpc_error_has_tx_hash, is_retryable_gov_rpc_error, next_gov_rpc_url_idx};
+pub(crate) use call::fold_gov_rpc_urls;
+pub use call::{is_retryable_gov_rpc_error, next_gov_rpc_url_idx};
 pub use config::parse_salt_nonce;
 pub use errors::{classify_gov_call_revert, wallet_err_json, wallet_err_json_with_tx_hash};
+pub(crate) use provider::{broadcast_signed_gov_eoa_tx, fill_sign_gov_eoa_tx};
 pub use provider::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     send_transaction_only, wait_for_transaction_receipt,
