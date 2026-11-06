@@ -8,6 +8,8 @@
   import { attachmentKind, attachmentDisplayName, type AttachmentKind } from '../../lib/messaging/attachment-display';
   import { formatFileSize } from '../../lib/messaging/attachment-composer';
   import ImageViewer from './ImageViewer.svelte';
+  import VoiceMessagePlayer from './VoiceMessagePlayer.svelte';
+  import { isVoiceMessageAttachment } from '../../lib/messaging/voice-message';
   import fileIcon from '../../icons/file.svg';
   import playIcon from '../../icons/play.svg';
   import cloudDownloadIcon from '../../icons/cloud-download.svg';
@@ -49,6 +51,7 @@
   let isImage = $derived(kind === 'image');
   let isVideo = $derived(kind === 'video');
   let isAudio = $derived(kind === 'audio');
+  let isVoice = $derived(isAudio && isVoiceMessageAttachment(attachment));
   /** Image and video share the poster-tile surface; audio and documents are rows. */
   let isTile = $derived(isImage || isVideo);
   let displayName = $derived(attachmentDisplayName(attachment, (key) => $t(key)));
@@ -316,6 +319,15 @@
       {/if}
       {/if}
     </div>
+  {:else if isVoice}
+    <VoiceMessagePlayer
+      {attachment}
+      src={localSrc}
+      downloading={busy}
+      onRequestDownload={() => handleDownload()}
+      onSaveAs={() => handleSaveAs()}
+      saving={savingAs}
+    />
   {:else if isAudio && onDisk}
     <div class="media-row">
       <div class="row-header">

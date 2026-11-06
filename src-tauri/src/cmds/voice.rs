@@ -36,6 +36,7 @@ pub(crate) async fn transcribe<R: Runtime>(
     file_path: String,
     model_name: String,
     translate: bool,
+    use_gpu: bool,
 ) -> Result<whisper::TranscriptionResult, String> {
     // Convert the file path to a Path
     let path = std::path::Path::new(&file_path);
@@ -49,7 +50,7 @@ pub(crate) async fn transcribe<R: Runtime>(
     match audio::decode_and_resample(path, 16000) {
         Ok(audio_data) => {
             // Pass the resampled audio to the whisper transcribe function
-            match whisper::transcribe(&handle, &model_name, translate, audio_data).await {
+            match whisper::transcribe(&handle, &model_name, translate, use_gpu, audio_data).await {
                 Ok(result) => Ok(result),
                 Err(e) => Err(format!("Transcription error: {}", e.to_string())),
             }
@@ -65,6 +66,7 @@ pub(crate) async fn transcribe<R: Runtime>(
     _file_path: String,
     _model_name: String,
     _translate: bool,
+    _use_gpu: bool,
 ) -> Result<String, String> {
     Err("Whisper transcription is not supported on this platform".to_string())
 }

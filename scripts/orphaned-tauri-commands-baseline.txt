@@ -28,6 +28,7 @@ clear_storage
 debug_hot_reload_sync
 delete_whisper_model
 download_whisper_model
+edit_message
 evict_chat_messages
 file_message
 file_message_compressed
@@ -48,12 +49,10 @@ get_messages_around_id
 get_notification_settings
 get_or_create_invite_code
 get_pending_deep_link
-get_platform_features
 get_storage_info
 get_theme
 is_scanning
 list_group_cursors
-list_models
 load_mls_device_id
 load_mls_keypackages
 paste_message
@@ -71,13 +70,9 @@ set_notification_settings
 set_seed
 start_cached_bytes_compression
 start_image_precompression
-start_recording
-stop_recording
 switch_account
 toggle_muted
-transcribe
 update_relay_mode
 update_status
 update_unread_counter
 validate_relay_url_cmd
-voice_message

@@ -314,6 +314,19 @@ describe('MessageAttachment', () => {
     });
   });
 
+  it('offers Save as… beside the voice player only once the clip is on disk', async () => {
+    const voice: Attachment = { ...baseAttachment, extension: 'wav', img_meta: null };
+    const { rerender } = render(MessageAttachment, { props: { attachment: voice, chatId: 'npub1abc', messageId: 'm1' } });
+    expect(screen.queryByLabelText('Save as…')).toBeNull();
+
+    await rerender({ attachment: { ...voice, path: '/cache/abc123.wav', downloaded: true }, chatId: 'npub1abc', messageId: 'm1' });
+    await fireEvent.click(screen.getByLabelText('Save as…'));
+
+    await waitFor(() => {
+      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'abc123');
+    });
+  });
+
   it('shows a decorative cloud-download icon on the tile corner until the file is on disk, replacing it with a Save as… button once local', async () => {
     const { rerender } = render(MessageAttachment, {
       props: { attachment: baseAttachment, chatId: 'npub1abc', messageId: 'm1' },

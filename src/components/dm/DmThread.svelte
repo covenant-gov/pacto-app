@@ -75,6 +75,8 @@
       content: string,
       mentions?: Mention[],
     ) => Promise<void>;
+    /** Sends a recorded voice clip to `npub`; resolves `false` when the send failed. */
+    onSendVoice?: (bytes: Uint8Array, repliedTo: string, npub: string) => Promise<boolean>;
     onTyping?: () => void;
     onAcceptSquadInvite?: (msg: DmMessage, groupId: string) => void;
     onAcceptChannelInSquad?: (
@@ -113,6 +115,7 @@
     onSend = () => {},
     onSendFile,
     onSendGif,
+    onSendVoice,
     onTyping = () => {},
     onAcceptSquadInvite = () => {},
     onAcceptChannelInSquad = () => {},
@@ -191,6 +194,13 @@
     if (!onSendGif) return;
     await onSendGif(url, slug, repliedTo, content, mentions);
     cancelReply();
+  }
+
+  async function handleSendVoice(bytes: Uint8Array, repliedTo: string, target: string): Promise<boolean> {
+    if (!onSendVoice) return false;
+    const ok = await onSendVoice(bytes, repliedTo, target);
+    if (ok && target === npub) cancelReply();
+    return ok;
   }
 
   // Reply state resets whenever the open conversation changes.
@@ -746,6 +756,8 @@
     onSend={handleSend}
     onSendFile={handleSendFile}
     onSendGif={handleSendGif}
+    onSendVoice={onSendVoice ? handleSendVoice : undefined}
+    conversationId={npub}
     onTyping={onTyping}
     repliedTo={replyToMessageId ?? undefined}
     repliedToPreview={replyPreview}

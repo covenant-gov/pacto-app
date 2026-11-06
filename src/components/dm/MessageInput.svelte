@@ -39,6 +39,8 @@
   import { stickerPacks } from '../../stores/stickers';
   import { fetchStickerImage, type StickerPack, type StickerEntry } from '../../lib/api/stickers';
   import GifDisclosure from './GifDisclosure.svelte';
+  import VoiceRecorder from './VoiceRecorder.svelte';
+  import { ensurePlatformFeatures, platformFeatures } from '../../stores/platform-features';
   import {
     searchGifs,
     trendingGifs,
@@ -80,6 +82,10 @@
       content: string,
       mentions?: Mention[],
     ) => Promise<void>;
+    /** Optional: sends a recorded voice clip (WAV bytes) to `conversationId`; resolve `false` to keep it for a retry. */
+    onSendVoice?: (bytes: Uint8Array, repliedTo: string, conversationId: string) => Promise<boolean>;
+    /** Conversation this composer posts to (npub or MLS group id); voice clips are bound to it. */
+    conversationId?: string;
     /** Optional squad context; when provided, typing `@` opens the member mention picker. */
     squadMlsGroupId?: string;
     squadRosterNpubs?: string[];
@@ -106,6 +112,8 @@
     onSendMentions,
     onSendFile,
     onSendGif,
+    onSendVoice,
+    conversationId,
     squadMlsGroupId,
     squadRosterNpubs,
     squadProfiles,
@@ -148,6 +156,14 @@
   let pendingInputAccept = $state('');
   let pendingInputCapture: 'environment' | undefined = $state(undefined);
   let isSendingAttachment = $state(false);
+  let voiceActive = $state(false);
+  // The mic takes the send button's slot while the draft is empty.
+  let showVoice = $derived(
+    Boolean(onSendVoice) &&
+      Boolean(conversationId) &&
+      $platformFeatures != null &&
+      (voiceActive || (!messageText.trim() && !$pendingFilePreview)),
+  );
   let dropUnregister: (() => void) | undefined;
   let composerDestroyed = false;
   const desktopPickerAvailable = isDesktopFilePickerAvailable();
@@ -179,6 +195,7 @@
 
   onMount(() => {
     resizeTextarea();
+    if (onSendVoice) void ensurePlatformFeatures();
     void (async () => {
       const unregister = await registerAttachmentDrop((paths) => {
         const first = paths[0];
@@ -324,6 +341,10 @@
       onSend(outgoing.body, repliedTo);
     }
     await clearComposerDraft();
+  }
+
+  function handleSendVoice(bytes: Uint8Array, target: string): Promise<boolean> {
+    return onSendVoice ? onSendVoice(bytes, repliedTo ?? '', target) : Promise.resolve(false);
   }
 
   async function sendPendingAttachment(pending: PendingFileAttachment) {
@@ -1087,7 +1108,7 @@
         </button>
       </div>
     {/if}
-    <div class="input-wrapper" bind:this={inputWrapperEl}>
+    <div class="input-wrapper" class:voice-active={voiceActive} bind:this={inputWrapperEl}>
       <button
         type="button"
 
@@ -1417,17 +1438,26 @@
           {/if}
         </div>
       {/if}
-      <button
-        type="button"
-        class="send-button"
-        disabled={disabled || isSendingAttachment || (!messageText.trim() && !$pendingFilePreview)}
-        aria-label={$t('messaging.messageInput.sendMessage')}
-        onclick={handleSubmit}
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-        </svg>
-      </button>
+      {#if showVoice}
+        <VoiceRecorder
+          target={conversationId ?? ''}
+          disabled={disabled || isSendingAttachment}
+          onSend={handleSendVoice}
+          bind:active={voiceActive}
+        />
+      {:else}
+        <button
+          type="button"
+          class="send-button"
+          disabled={disabled || isSendingAttachment || (!messageText.trim() && !$pendingFilePreview)}
+          aria-label={$t('messaging.messageInput.sendMessage')}
+          onclick={handleSubmit}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
+        </button>
+      {/if}
     </div>
     <input
       type="file"
@@ -1483,6 +1513,13 @@
     padding: 0 16px;
     transition: background 0.15s, box-shadow 0.15s;
     position: relative;
+  }
+
+  /* The recorder owns the row while a voice clip is in progress. */
+  .input-wrapper.voice-active > .attachment-trigger-btn,
+  .input-wrapper.voice-active > .emoji-trigger-btn,
+  .input-wrapper.voice-active > .message-input {
+    display: none;
   }
 
   .input-wrapper:focus-within {
