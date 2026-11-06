@@ -30,7 +30,10 @@ jobs:
 
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version: lts/*
+          # Same pin as ci.yaml. `lts/*` now resolves to Node 26, whose
+          # experimental localStorage getter is undefined without
+          # --localstorage-file and breaks jsdom Vitest.
+          node-version: 24.18.0
 
       - uses: pnpm/action-setup@v6
         with:

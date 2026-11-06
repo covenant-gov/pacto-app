@@ -75,9 +75,13 @@ afterEach(() => {
   // Unmount while the URL stub is still active: a GIF thumbnail fetch in flight can
   // resolve during teardown and call revokeObjectURL, which jsdom's real URL lacks.
   cleanup();
+  try {
+    localStorage?.clear();
+  } catch {
+    // Node 25+ webstorage getter is undefined without --localstorage-file.
+  }
   vi.unstubAllGlobals();
   setCurrentNpubForPersistence(null);
-  localStorage.clear();
   stickerPacks.set([]);
 });
 
