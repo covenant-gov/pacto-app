@@ -7,7 +7,7 @@ use super::dto::{UsernameAccountStateDto, UsernameEligibleMemberDto, UsernameRec
 use super::helpers::{
     load_nostr_keys, nostr_xonly_pubkey, parse_b256, read_registry_policy_version, record_to_dto,
     require_network, require_rpc_urls, username_addrs, username_claim_cache_needs_upsert,
-    username_holder_claim_upsert,
+    username_holder_claim_upsert, username_link_restore_upsert,
 };
 use crate::db::{self, UsernameClaimRow};
 use crate::evm::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiCall as bootstrapSpendableCall;
@@ -20,6 +20,7 @@ use crate::evm::nostr_claim_link::npub_hash_from_pubkey;
 use crate::evm::rpc::call::eth_call_decode;
 use crate::evm::rpc::signer::load_embedded_signer;
 use crate::evm::rpc::{connect_read_provider, parse_address, wallet_err_json};
+use crate::evm::username_nostr_link::fetch_username_claim_link_id;
 
 #[tauri::command]
 pub async fn username_name_available(
@@ -317,6 +318,32 @@ pub async fn username_sync_account_state<R: Runtime>(
                     .map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
             }
         }
+    }
+    let restore = match cached.as_ref() {
+        Some(row)
+            if row
+                .link_event_id
+                .as_deref()
+                .map(|id| id.trim().is_empty())
+                .unwrap_or(true)
+                && !record.name.trim().is_empty()
+                && !record.tokenId.is_zero() =>
+        {
+            let id = fetch_username_claim_link_id(
+                &keys,
+                npub_hash,
+                record.name.trim(),
+                record.evmAddress,
+            )
+            .await;
+            username_link_restore_upsert(row, id.as_deref())
+        }
+        _ => None,
+    };
+    if let Some(upsert) = restore {
+        db::upsert_username_claim(&app, &upsert)
+            .map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
+        cached = db::get_username_claim(&app).map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
     }
     Ok(UsernameAccountStateDto {
         cached,

@@ -79,7 +79,7 @@ SQLite cache: `username_claims` (username, npubHash, tokenId, link event id, pol
 
 ## Verified badge
 
-Requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` with `evmAddress` equal to the active roster EVM.
+Requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` with `evmAddress` equal to the active roster EVM. Holder sync fills a missing `linkEventId` from trusted relays (kind 31337, `#d` = npub hash) when the author and `evm` / `name` / `npub-hash` tags match `recordOf`. A relay that dropped the event cannot be rebuilt from the chain.
 
 ## Operator smoke (Sepolia)
 
