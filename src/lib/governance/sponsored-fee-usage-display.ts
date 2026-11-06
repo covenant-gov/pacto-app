@@ -1,10 +1,19 @@
 import { formatEther } from 'viem';
 
-/** Prefer human action name; fall back to 4-byte selector. */
+import { sponsoredActionName } from '../evm/sponsor/sponsored-actions';
+
+const FOUR_BYTE_SELECTOR = /^0x[0-9a-fA-F]{8}$/;
+
+/** Prefer a stored function name. Resolve a stored 4-byte selector from the catalog. */
 export function feeUsageActionLabel(row: { action: string; selector: string }): string {
-  const action = row.action?.trim();
-  if (action) return action;
-  return row.selector?.trim() || '';
+  const action = row.action?.trim() ?? '';
+  const selector = row.selector?.trim() ?? '';
+  if (action && !FOUR_BYTE_SELECTOR.test(action)) return action;
+  return (
+    (action ? sponsoredActionName(action) : null) ??
+    (selector ? sponsoredActionName(selector) : null) ??
+    (action || selector)
+  );
 }
 
 /** Wei decimal string → ETH decimal, or null if invalid. */
