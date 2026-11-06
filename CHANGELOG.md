@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## v0.8.0
+
+### Bug Fixes
+- Show attachment captions and hide a duplicate gas payer (#492) by @daopunk
+- Enable check-for-updates-on-startup by default (updater) (#497) by @logicminds
+- Name every sponsored call on the sponsor dashboards (#499) by @daopunk, closes #498
+- Throttle failed username link restore fetches (#502) by @daopunk
+- Keep prepare-release tests passing after node lts moved to 26 (#505) by @logicminds
+
+
+### Chores
+- Ignore bd dolt gate lock files (beads) (#487) by @logicminds
+
+
+### Documentation
+- Plan squad events and the docs shelf (#480) by @logicminds
+
+
+### Features
+- Explain what changed after an in-app update (updater) (#471) by @openbotgit[bot], closes #469
+- Add encrypted squad events with rsvp and local reminders (squads) (#488) by @logicminds
+- Filter status-board proposals into open, executed, and failed (#493) by @daopunk
+- Add an encrypted docs shelf with save to docs (squads) (#490) by @logicminds
+- Temporary settings dash for global sponsor gas (#479) by @daopunk, closes #381
+- Restore kind 31337 username link after seed restore (#500) by @daopunk, closes #496
+
+
+### Refactor
+- Stop 7702 userop gas and fees from drifting (#456) by @daopunk, closes #452, #453, #454
+
 ## v0.7.5
 
 ### Bug Fixes
@@ -16,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Score treasury proposals with the live vote mode and pause-captain path (#448) by @daopunk
 - Localize executor role chrome and close #284 audit (i18n) (#449) by @logicminds, closes #284
 - Pass KLIPY_API_KEY into release builds (#467) by @logicminds
+- Fail fast on empty trusted relays and close dm reconcile gaps (#425) by @logicminds, closes #405
 
 
 ### Documentation
