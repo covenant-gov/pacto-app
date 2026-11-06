@@ -1,7 +1,7 @@
 <script lang="ts">
   import { isAddress } from 'viem';
-  import { formatAssetAmount } from '../../../lib/evm/format-token-amount';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import TokenAmountRow from '../../ui/TokenAmountRow.svelte';
   import DashboardAssetCard from '../dashboard/DashboardAssetCard.svelte';
   import {
     buildTrackedTokenAnnouncePayload,
@@ -83,13 +83,6 @@
     rows = snap.rows;
     tokenRaws = snap.tokenRaws;
     loadError = snap.loadError;
-  }
-
-  function tokenAmountText(row: SquadTrackedTokenRow): string {
-    const raw = tokenRaws[row.id];
-    if (raw === undefined) return '…';
-    if (raw == null) return '—';
-    return formatAssetAmount(raw, { symbol: row.symbol, decimals: row.decimals }) ?? '—';
   }
 
   async function refreshAll(force = false) {
@@ -278,17 +271,22 @@
     <p class="error" role="alert">{loadError}</p>
   {:else}
     <dl class="asset-dl">
-      <dt>{nativeSymbol || tFn('governance.fallback.native')}</dt>
-      <dd><strong>{formatAssetAmount(nativeRaw, { symbol: 'ETH' }) ?? '—'}</strong></dd>
+      <TokenAmountRow raw={nativeRaw} symbol={nativeSymbol || 'ETH'} />
       {#each trackedOnChain as row (row.id)}
-        <dt title={row.tokenAddress}>{row.symbol}</dt>
-        <dd class="asset-dd-inline">
-          <strong>{tokenAmountText(row)}</strong>
-          <code class="bal-addr">{shortEvmAddress(row.tokenAddress) || '—'}</code>
-          {#if manageGate.enabled}
-            <button type="button" class="btn-link" onclick={() => void removeToken(row)}>{tFn('governance.action.remove')}</button>
-          {/if}
-        </dd>
+        <TokenAmountRow
+          raw={tokenRaws[row.id]}
+          symbol={row.symbol}
+          decimals={row.decimals}
+          pending={tokenRaws[row.id] === undefined}
+          symbolTitle={row.tokenAddress}
+        >
+          {#snippet extra()}
+            <code class="bal-addr">{shortEvmAddress(row.tokenAddress) || '—'}</code>
+            {#if manageGate.enabled}
+              <button type="button" class="btn-link" onclick={() => void removeToken(row)}>{tFn('governance.action.remove')}</button>
+            {/if}
+          {/snippet}
+        </TokenAmountRow>
       {/each}
       <dt>{$t('governance.treasury.safe')}</dt>
       <dd class="asset-dd-inline">

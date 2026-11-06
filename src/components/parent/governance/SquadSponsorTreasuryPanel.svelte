@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import TokenAmountRow from '../../ui/TokenAmountRow.svelte';
   import DashboardAssetCard from '../dashboard/DashboardAssetCard.svelte';
   import SquadSponsorWithdrawModal from './SquadSponsorWithdrawModal.svelte';
   import SquadSponsoredFeeUsagePanel from './SquadSponsoredFeeUsagePanel.svelte';
@@ -357,13 +358,13 @@
     <button type="button" class="btn-secondary" onclick={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
     <dl class="asset-dl">
-      <dt>{$t('governance.info.sponsorEth')}</dt>
-      <dd>
-        <strong>{formatAssetAmount(summary.poolBalanceWei, { symbol: 'ETH' }) ?? '—'}</strong>
-        {#if lowBalance}
-          <span class="sponsor-low-badge" role="status">{$t('governance.info.sponsorLowBalance')}</span>
-        {/if}
-      </dd>
+      <TokenAmountRow raw={summary.poolBalanceWei} symbol="ETH">
+        {#snippet extra()}
+          {#if lowBalance}
+            <span class="sponsor-low-badge" role="status">{$t('governance.info.sponsorLowBalance')}</span>
+          {/if}
+        {/snippet}
+      </TokenAmountRow>
       {#if hatsLinked}
         <dt>{$t('governance.info.sponsorEligible')}</dt>
         <dd class="asset-dd-inline">

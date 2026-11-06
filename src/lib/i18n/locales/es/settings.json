@@ -118,7 +118,6 @@
 	"settings.evmDashGas.title": "EVM — gas",
 	"settings.evmDashGas.disclaimer": "Superficie temporal de prueba para el gasto de patrocinio global de tu NFT de usuario. Más adelante se moverá a la billetera completa.",
 	"settings.evmDashGas.poolLabel": "Pool global ({network})",
-	"settings.evmDashGas.poolBalance": "{balance} ETH disponible",
 	"settings.evmDashGas.poolError": "No se pudo cargar el saldo del pool global",
 	"settings.evmDashGas.loading": "Cargando uso de comisiones patrocinadas…",
 	"settings.evmDashGas.empty": "Aún no hay comisiones globales patrocinadas",
