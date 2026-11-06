@@ -87,6 +87,8 @@
 	"settings.updateStatusError": "Falló la búsqueda de actualizaciones.",
 	"settings.updateStatusDevDisabled": "Las actualizaciones solo están disponibles en builds de release.",
 	"settings.checkForUpdatesOnStartup": "Buscar actualizaciones al iniciar",
+	"settings.whatsNewInThisVersion": "Novedades de esta versión",
+	"settings.whatsNewNone": "No hay cambios destacados en esta versión.",
 	"settings.devBuildNote": "El actualizador integrado está deshabilitado en builds de desarrollo. Usa una build de release para buscar e instalar actualizaciones publicadas.",
 	"settings.securityTitle": "Seguridad",
 	"settings.autoLockAfterInactivity": "Bloqueo automático por inactividad",
