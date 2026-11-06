@@ -213,7 +213,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Pacto ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: false
+          # Stay draft until every matrix leg and stamp-updater-compatibility
+          # finish; publish-github-release undrafts once latest.json is complete.
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
           uploadUpdaterJson: true
@@ -226,6 +228,45 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" CHANGELOG.md --clobber
 
+  stamp-updater-compatibility:
+    # Stamps the tracked minimum_compatible_version onto the draft release's
+    # latest.json so the in-app update gate can enforce it. See
+    # scripts/release-compatibility.json and release-compatibility.yaml for
+    # the correction path when the tracked value needs to change.
+    needs: publish-tauri
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: lts/*
+
+      - name: Stamp updater compatibility manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/stamp-updater-compatibility.mjs
+
+  publish-github-release:
+    # Atomic publish: undraft only after latest.json has every matrix platform
+    # and minimum_compatible_version. Until then releases/latest still serves
+    # the previous complete release.
+    needs: stamp-updater-compatibility
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: lts/*
+
+      - name: Verify latest.json and publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/publish-github-release.mjs
+
   update-homebrew-tap:
     # Points covenant-gov/homebrew-pacto's Cask at the DMGs just published above,
     # then waits for the tap's own release-bump workflow to verify and merge that
@@ -233,7 +274,7 @@ jobs:
     # Requires HOMEBREW_TAP_TOKEN: a PAT (or fine-grained token) with
     # contents:write and pull-requests:write on homebrew-pacto, since
     # GITHUB_TOKEN here only covers this repo.
-    needs: publish-tauri
+    needs: publish-github-release
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -343,37 +384,17 @@ jobs:
             --label ci/cd \
             --body-file issue-body.md
 
-  stamp-updater-compatibility:
-    # Stamps the tracked minimum_compatible_version onto the release's
-    # latest.json so the in-app update gate can enforce it. See
-    # scripts/release-compatibility.json and release-compatibility.yaml for
-    # the correction path when the tracked value needs to change.
-    needs: publish-tauri
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6.4.0
-        with:
-          node-version: lts/*
-
-      - name: Stamp updater compatibility manifest
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: node scripts/stamp-updater-compatibility.mjs
-
   deploy-landing:
     # Refreshes the public download page for the tag just published.
     #
     # Chained here rather than left to deploy-landing.yaml's own
-    # `release: published` listener: tauri-action publishes the release with
+    # `release: published` listener: the release is undrafted with
     # GITHUB_TOKEN, and GITHUB_TOKEN-authenticated runs do not reliably trigger
     # other workflows' release events. That gap left the site on v0.5.1 through
-    # two releases (#213). `needs: publish-tauri` also guarantees every platform
-    # in the matrix has uploaded its installers before the manifest is
-    # generated, so the download page never lists a partial asset set.
-    needs: publish-tauri
+    # two releases (#213). `needs: publish-github-release` also guarantees the
+    # draft stayed private until every platform and the stamped latest.json
+    # were verified, so the download page never lists a partial asset set.
+    needs: publish-github-release
     permissions:
       contents: read
       pages: write

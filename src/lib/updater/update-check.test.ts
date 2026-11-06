@@ -5,6 +5,7 @@ import { check } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
 import {
   checkForUpdates,
+  dismissUpdatePanel,
   downloadAndInstallUpdate,
   relaunchApp,
   updateStatus,
@@ -178,6 +179,56 @@ describe('checkForUpdates', () => {
     expect(state.status).toBe('error');
     expect(state.error).toContain('No published release');
     expect(mockedShowToast).not.toHaveBeenCalled();
+  });
+
+  it('stays idle on background check failures instead of opening the error modal', async () => {
+    setIsDevBuildForTest(false);
+    mockedGetVersion.mockResolvedValue('0.2.0');
+    mockedCheck.mockRejectedValue(new Error('no asset found for platform'));
+    await checkForUpdates({ background: true });
+    expectStatus('idle', { currentVersion: '0.2.0', availableVersion: null, error: null });
+    expect(mockedShowToast).not.toHaveBeenCalled();
+  });
+
+  it('still surfaces available updates for background checks', async () => {
+    setIsDevBuildForTest(false);
+    mockedGetVersion.mockResolvedValue('0.2.0');
+    mockedCheck.mockResolvedValue({ version: '0.3.0' } as UpdaterUpdate);
+    await checkForUpdates({ background: true });
+    expectStatus('available', { currentVersion: '0.2.0', availableVersion: '0.3.0' });
+  });
+
+  it('still surfaces errors for manual checks (default options)', async () => {
+    setIsDevBuildForTest(false);
+    mockedGetVersion.mockResolvedValue('0.2.0');
+    mockedCheck.mockRejectedValue(new Error('Network request failed'));
+    await checkForUpdates();
+    expectStatus('error');
+    expect(get(updateStatus).error).toContain('internet connection');
+  });
+});
+
+describe('dismissUpdatePanel', () => {
+  it('clears an error state so the panel / modal can close', () => {
+    updateStatus.setStatus('error', { error: 'Update check failed.', currentVersion: '0.2.0' });
+    dismissUpdatePanel();
+    expectStatus('idle', { error: null, availableVersion: null });
+  });
+
+  it('clears an available state', () => {
+    updateStatus.setStatus('available', { availableVersion: '0.3.0', currentVersion: '0.2.0' });
+    dismissUpdatePanel();
+    expectStatus('idle');
+  });
+
+  it('does not interrupt an in-flight download or install', () => {
+    updateStatus.setStatus('downloading', { availableVersion: '0.3.0', downloadProgress: 0.4 });
+    dismissUpdatePanel();
+    expectStatus('downloading', { downloadProgress: 0.4 });
+
+    updateStatus.setStatus('installing', { availableVersion: '0.3.0', downloadProgress: 1 });
+    dismissUpdatePanel();
+    expectStatus('installing', { downloadProgress: 1 });
   });
 });
 

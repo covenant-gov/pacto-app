@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     checkForUpdates,
+    dismissUpdatePanel,
     updateStatus,
     downloadAndInstallUpdate,
     relaunchApp,
@@ -8,6 +9,9 @@
   } from '../../lib/updater/update-check';
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
+
+  /** When false (mandatory update gate), hide Close so the block screen stays non-dismissible. */
+  let { showDismiss = true }: { showDismiss?: boolean } = $props();
 
   const tFn = get(t);
 
@@ -116,13 +120,16 @@
       {primaryLabel(state.status)}
     </button>
   {:else if state.status === 'error'}
-    <button
-      type="button"
-      class="btn-primary"
-      onclick={handlePrimary}
-    >
-      {primaryLabel(state.status)}
-    </button>
+    <div class="update-error-actions">
+      {#if showDismiss}
+        <button type="button" class="btn-secondary" onclick={dismissUpdatePanel}>
+          {$t('updater.primary.close')}
+        </button>
+      {/if}
+      <button type="button" class="btn-primary" onclick={handlePrimary}>
+        {primaryLabel(state.status)}
+      </button>
+    </div>
   {:else if state.status === 'downloading' || state.status === 'installing'}
     <button
       type="button"
@@ -178,5 +185,12 @@
     margin: 0;
     color: var(--text-secondary);
     font-size: 0.9375rem;
+  }
+
+  .update-error-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
   }
 </style>

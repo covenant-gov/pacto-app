@@ -11,6 +11,7 @@
 	"updater.primary.downloading": "Descargando…",
 	"updater.primary.installing": "Instalando…",
 	"updater.primary.retry": "Reintentar",
+	"updater.primary.close": "Cerrar",
 	"updater.primary.downloadAndInstall": "Descargar e instalar",
 	"updater.gate.minimumVersionTitle": "Actualización requerida",
 	"updater.gate.minimumVersionDescription": "Esta versión ({installed}) ya no es compatible. Actualiza al menos a {required} para continuar.",
