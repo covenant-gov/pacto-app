@@ -105,6 +105,20 @@ describe('username API shapes', () => {
     expect(mockedInvoke).toHaveBeenCalledWith('username_sync_account_state', {
       network: 'sepolia',
       rpcUrls: undefined,
+      forceLinkRestore: null,
+    });
+
+    mockedInvoke.mockResolvedValueOnce({
+      cached: null,
+      record: null,
+      pendingTransfer: false,
+      chainError: null,
+    });
+    await usernameSyncAccountState('sepolia', undefined, { forceLinkRestore: true });
+    expect(mockedInvoke).toHaveBeenCalledWith('username_sync_account_state', {
+      network: 'sepolia',
+      rpcUrls: undefined,
+      forceLinkRestore: true,
     });
 
     mockedInvoke.mockResolvedValueOnce({

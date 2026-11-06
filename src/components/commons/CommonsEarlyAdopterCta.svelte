@@ -37,7 +37,7 @@
         type="button"
         class="commons-early-adopter-cta commons-early-adopter-cta--muted"
         aria-label={$t('commons.earlyAdopter.retry')}
-        onclick={() => void refreshUsernameState()}
+        onclick={() => void refreshUsernameState({ forceLinkRestore: true })}
       >
         {$t('commons.earlyAdopter.retry')}
       </button>
