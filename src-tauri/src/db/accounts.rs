@@ -705,9 +705,64 @@ pub fn get_username_claim<R: Runtime>(
     result
 }
 
+/// Set `link_event_id` only when the live row still matches the restore candidate.
+/// Returns `true` when one row was updated.
+fn try_restore_username_claim_link_conn(
+    conn: &rusqlite::Connection,
+    npub: &str,
+    npub_hash: &str,
+    expected_updated_at_ms: i64,
+    link_event_id: &str,
+) -> Result<bool, String> {
+    let npub = npub.trim();
+    let npub_hash = npub_hash.trim();
+    let id = link_event_id.trim();
+    if npub.is_empty() || npub_hash.is_empty() || id.is_empty() {
+        return Ok(false);
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let n = conn
+        .execute(
+            "UPDATE username_claims
+             SET link_event_id = ?1, updated_at_ms = ?2
+             WHERE npub = ?3
+               AND npub_hash = ?4
+               AND updated_at_ms = ?5
+               AND (link_event_id IS NULL OR trim(link_event_id) = '')",
+            rusqlite::params![id, now, npub, npub_hash, expected_updated_at_ms],
+        )
+        .map_err(|e| format!("Failed to restore username_claims link: {e}"))?;
+    Ok(n == 1)
+}
+
+pub fn try_restore_username_claim_link<R: Runtime>(
+    handle: &AppHandle<R>,
+    npub: &str,
+    npub_hash: &str,
+    expected_updated_at_ms: i64,
+    link_event_id: &str,
+) -> Result<bool, String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = try_restore_username_claim_link_conn(
+        &conn,
+        npub,
+        npub_hash,
+        expected_updated_at_ms,
+        link_event_id,
+    );
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
 #[cfg(test)]
 mod username_claims_cache_tests {
-    use super::{get_username_claim_conn, upsert_username_claim_conn, UsernameClaimUpsert};
+    use super::{
+        get_username_claim_conn, try_restore_username_claim_link_conn, upsert_username_claim_conn,
+        UsernameClaimUpsert,
+    };
 
     fn sample(link: Option<&str>, invalidate: bool) -> UsernameClaimUpsert {
         UsernameClaimUpsert {
@@ -780,6 +835,124 @@ mod username_claims_cache_tests {
             .expect("get")
             .expect("row");
         assert_eq!(kept.link_event_id.as_deref(), Some("evt-1"));
+    }
+
+    #[test]
+    fn link_restore_writes_when_row_still_matches() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(None, false)).expect("insert");
+        let row = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert!(try_restore_username_claim_link_conn(
+            &conn,
+            "npub1alice",
+            &row.npub_hash,
+            row.updated_at_ms,
+            "evt-restored",
+        )
+        .expect("restore"));
+        let restored = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert_eq!(restored.link_event_id.as_deref(), Some("evt-restored"));
+        assert_eq!(restored.username, "alice");
+        assert_eq!(restored.token_id, "1");
+    }
+
+    #[test]
+    fn link_restore_skips_nonempty_link() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(Some("evt-1"), false))
+            .expect("insert");
+        let row = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert!(!try_restore_username_claim_link_conn(
+            &conn,
+            "npub1alice",
+            &row.npub_hash,
+            row.updated_at_ms,
+            "evt-old",
+        )
+        .expect("restore"));
+        let kept = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert_eq!(kept.link_event_id.as_deref(), Some("evt-1"));
+    }
+
+    #[test]
+    fn link_restore_skips_when_updated_at_changed() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(None, false)).expect("insert");
+        let row = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        conn.execute(
+            "UPDATE username_claims SET updated_at_ms = ?1 WHERE npub = ?2",
+            rusqlite::params![row.updated_at_ms + 1, "npub1alice"],
+        )
+        .expect("bump generation");
+        assert!(!try_restore_username_claim_link_conn(
+            &conn,
+            "npub1alice",
+            &row.npub_hash,
+            row.updated_at_ms,
+            "evt-old",
+        )
+        .expect("restore"));
+        let kept = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert!(kept.link_event_id.is_none());
+    }
+
+    #[test]
+    fn link_restore_skips_npub_mismatch() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(None, false)).expect("insert");
+        let row = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert!(!try_restore_username_claim_link_conn(
+            &conn,
+            "npub1bob",
+            &row.npub_hash,
+            row.updated_at_ms,
+            "evt-restored",
+        )
+        .expect("restore"));
+        let kept = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert!(kept.link_event_id.is_none());
+    }
+
+    #[test]
+    fn link_restore_skips_hash_mismatch() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        upsert_username_claim_conn(&conn, "npub1alice", &sample(None, false)).expect("insert");
+        let row = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert!(!try_restore_username_claim_link_conn(
+            &conn,
+            "npub1alice",
+            "0xcd",
+            row.updated_at_ms,
+            "evt-restored",
+        )
+        .expect("restore"));
+        let kept = get_username_claim_conn(&conn, "npub1alice")
+            .expect("get")
+            .expect("row");
+        assert!(kept.link_event_id.is_none());
     }
 }
 

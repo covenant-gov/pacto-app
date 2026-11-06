@@ -43,11 +43,13 @@ pub async fn publish_username_claim_link(
     let event_id = event.id.to_hex();
 
     let client = get_nostr_client()?;
+    let pool = client.relays().await;
+    let targets = crate::trusted_relays::trusted_relays_in_pool(&pool);
+    if targets.is_empty() {
+        return Err("no trusted relays available in the relay pool".to_string());
+    }
     let send_output = client
-        .send_event_to(
-            crate::trusted_relays::trusted_relays().iter().cloned(),
-            &event,
-        )
+        .send_event_to(targets, &event)
         .await
         .map_err(|e| format!("failed to publish username claim link: {e}"))?;
     crate::cmds::relays::record_send_outcome(&event, &send_output);
@@ -72,13 +74,18 @@ pub async fn fetch_username_claim_link_id(
             return None;
         }
     };
+    let pool = client.relays().await;
+    let targets = crate::trusted_relays::trusted_relays_in_pool(&pool);
+    if targets.is_empty() {
+        log::warn!(
+            target: "pacto_wallet",
+            "username claim link fetch skipped: no trusted relays in pool"
+        );
+        return None;
+    }
     let filter = username_claim_link_filter(keys.public_key(), npub_hash);
     let events = match client
-        .fetch_events_from(
-            crate::trusted_relays::trusted_relays().to_vec(),
-            filter,
-            CLAIM_LINK_FETCH_TIMEOUT,
-        )
+        .fetch_events_from(targets, filter, CLAIM_LINK_FETCH_TIMEOUT)
         .await
     {
         Ok(events) => events,

@@ -45,6 +45,7 @@
 	"profile.username.claimed": "@{username}",
 	"profile.username.verified": "Verified",
 	"profile.username.unverified": "Claimed on-chain; relay link missing on this device",
+	"profile.username.retryLinkRestore": "Retry username link restore",
 	"profile.username.boundEvm": "Bound EVM",
 	"profile.username.pendingTransfer": "Address transfer pending",
 	"profile.username.pendingTo": "Pending to {address}",

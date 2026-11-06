@@ -10,8 +10,8 @@ pub use accounts::{
     get_evm_pkey, get_pkey, get_seed, get_sql_setting, get_theme, get_username_claim,
     persist_kind0_publish, remove_setting, repair_evm_address_if_needed, set_dm_peer_evm_address,
     set_evm_address, set_evm_pkey, set_pkey, set_profile, set_seed, set_sql_setting,
-    set_wallet_signing_evm_address, upsert_username_claim, SlimProfile, UsernameClaimRow,
-    UsernameClaimUpsert,
+    set_wallet_signing_evm_address, try_restore_username_claim_link, upsert_username_claim,
+    SlimProfile, UsernameClaimRow, UsernameClaimUpsert,
 };
 
 pub(crate) use accounts::read_stored_evm_address;

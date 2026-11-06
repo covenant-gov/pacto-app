@@ -147,6 +147,7 @@
 	"commons.earlyAdopter.loading": "Checking username…",
 	"commons.earlyAdopter.error": "Could not load username status.",
 	"commons.earlyAdopter.retry": "Retry",
+	"commons.earlyAdopter.retryLinkRestore": "Retry username link restore",
 	"commons.errors.joinInboxAuthorMissing": "Squad broadcast is missing a Join inbox author.",
 	"commons.errors.missingSquadId": "Missing squad id.",
 	"commons.errors.sendJoinRequestFailed": "Could not send join request.",

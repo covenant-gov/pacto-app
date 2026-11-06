@@ -104,6 +104,23 @@ export function claimedUsernameFromState(state: UsernameState): string | null {
   return null;
 }
 
+/** Claimed holder, missing link id, this pass read a minted chain record. */
+export function needsForcedUsernameLinkRestore(state: UsernameState): boolean {
+  if (!claimedUsernameFromState(state)) return false;
+  if (
+    computeUsernameVerified({
+      linkEventId: state.cached?.linkEventId,
+      record: state.record,
+      activeEvm: state.activeEvm,
+    })
+  ) {
+    return false;
+  }
+  if (state.cached?.linkEventId?.trim()) return false;
+  const rec = state.record;
+  return !!rec?.name?.trim() && isNonZeroTokenId(rec.tokenId);
+}
+
 export const claimedUsername = derived(usernameState, ($s) => claimedUsernameFromState($s));
 
 export const isUsernameVerified = derived(usernameState, ($s) =>

@@ -46,21 +46,11 @@ pub(crate) fn dm_gift_wrap_output_ok(output: &Output<EventId>) -> bool {
     !output.success.is_empty()
 }
 
-/// Trusted URLs that are currently registered in the live relay pool.
-pub(crate) fn filter_trusted_relays_in_pool(
-    trusted: &[RelayUrl],
-    pool: &HashMap<RelayUrl, impl Sized>,
-) -> Vec<RelayUrl> {
-    trusted
-        .iter()
-        .filter(|url| pool.contains_key(url))
-        .cloned()
-        .collect()
-}
+pub(crate) use crate::trusted_relays::filter_trusted_relays_in_pool;
 
 async fn trusted_relays_in_pool(client: &Client) -> Vec<RelayUrl> {
     let pool = client.relays().await;
-    filter_trusted_relays_in_pool(crate::trusted_relays::trusted_relays(), &pool)
+    crate::trusted_relays::trusted_relays_in_pool(&pool)
 }
 
 const DM_NO_ACK_ERROR: &str = "no trusted relay acknowledged the gift wrap";

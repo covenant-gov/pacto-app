@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import {
   computeUsernameVerified,
   claimedUsernameFromState,
+  needsForcedUsernameLinkRestore,
   showEvmDashGas,
   resetUsernameState,
   refreshUsernameState,
@@ -322,6 +323,40 @@ describe('showEvmDashGas', () => {
   it('falls back to cache only when the chain record is absent', () => {
     expect(showEvmDashGas({ ...readyState(), record: null })).toBe(true);
     expect(showEvmDashGas({ ...readyState(), record: null, cached: null })).toBe(false);
+  });
+});
+
+describe('needsForcedUsernameLinkRestore', () => {
+  it('is true for a holder with a missing linkEventId', () => {
+    expect(
+      needsForcedUsernameLinkRestore(
+        readyState({
+          cached: { ...readyState().cached!, linkEventId: null },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('is false when a linkEventId is stored (evm mismatch)', () => {
+    expect(
+      needsForcedUsernameLinkRestore(
+        readyState({
+          activeEvm: OTHER,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('is false on a hard error with no username', () => {
+    expect(
+      needsForcedUsernameLinkRestore({
+        ...readyState(),
+        status: 'error',
+        cached: null,
+        record: null,
+        error: 'db down',
+      }),
+    ).toBe(false);
   });
 });
 

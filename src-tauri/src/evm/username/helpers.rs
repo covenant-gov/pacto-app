@@ -431,34 +431,6 @@ pub fn username_holder_claim_upsert(
     })
 }
 
-/// Copy the cached claim and set `link_event_id`. `None` means do not write.
-pub fn username_link_restore_upsert(
-    cached: &UsernameClaimRow,
-    link_event_id: Option<&str>,
-) -> Option<UsernameClaimUpsert> {
-    let id = link_event_id?.trim();
-    if id.is_empty() {
-        return None;
-    }
-    let already = cached
-        .link_event_id
-        .as_deref()
-        .map(|existing| !existing.trim().is_empty())
-        .unwrap_or(false);
-    if already {
-        return None;
-    }
-    Some(UsernameClaimUpsert {
-        username: cached.username.clone(),
-        npub_hash: cached.npub_hash.clone(),
-        token_id: cached.token_id.clone(),
-        link_event_id: Some(id.to_string()),
-        invalidate_link_event_id: false,
-        policy_version: cached.policy_version,
-        network: cached.network.clone(),
-    })
-}
-
 /// `true` when a holder record should be written: no row, or name / token / network drifted.
 pub fn username_claim_cache_needs_upsert(
     existing: Option<&UsernameClaimRow>,
@@ -603,40 +575,6 @@ mod tests {
         drop(first);
         let third = InFlightGuard::acquire(hash).expect("acquire after drop");
         drop(third);
-    }
-
-    fn claim_row(link: Option<&str>) -> UsernameClaimRow {
-        UsernameClaimRow {
-            npub: "npub1alice".into(),
-            username: "alice".into(),
-            npub_hash: "0xab".into(),
-            token_id: "7".into(),
-            link_event_id: link.map(|s| s.to_string()),
-            policy_version: 4,
-            network: "sepolia".into(),
-            updated_at_ms: 1,
-        }
-    }
-
-    #[test]
-    fn link_restore_upsert_copies_claim_fields() {
-        let upsert =
-            username_link_restore_upsert(&claim_row(None), Some("evt-restored")).expect("write");
-        assert_eq!(upsert.username, "alice");
-        assert_eq!(upsert.token_id, "7");
-        assert_eq!(upsert.policy_version, 4);
-        assert_eq!(upsert.npub_hash, "0xab");
-        assert_eq!(upsert.network, "sepolia");
-        assert_eq!(upsert.link_event_id.as_deref(), Some("evt-restored"));
-        assert!(!upsert.invalidate_link_event_id);
-    }
-
-    #[test]
-    fn link_restore_skips_write_when_fetch_misses_or_link_exists() {
-        let row = claim_row(None);
-        assert!(username_link_restore_upsert(&row, None).is_none());
-        assert!(username_link_restore_upsert(&row, Some("  ")).is_none());
-        assert!(username_link_restore_upsert(&claim_row(Some("evt-1")), Some("evt-2")).is_none());
     }
 
     #[test]
