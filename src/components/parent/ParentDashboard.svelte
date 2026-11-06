@@ -54,6 +54,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     resolvePrimarySquadNetwork,
     squadNetworkTick,
   } from '../../lib/squad/squad-network';
+  import { squadRpcTick } from '../../lib/squad/squad-rpc';
   import { currentUser } from '../../stores/auth-session';
   import friendsIcon from '../../icons/friends.svg';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
@@ -388,6 +389,18 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   $: if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
     lastSeenProcessNonce = processNonce;
     scheduleOnChainGovRefresh();
+  }
+
+  let lastSeenSquadRpcTick = 0;
+  $: if ($squadRpcTick > 0 && $squadRpcTick !== lastSeenSquadRpcTick) {
+    lastSeenSquadRpcTick = $squadRpcTick;
+    hatsTreeKey = '';
+    rolesTreeAnnotationsKey = '';
+    settingsChainKey = '';
+    settingsChainError = '';
+    void loadHatsTree();
+    void loadRolesTreeAnnotations();
+    void loadSettingsChainContext();
   }
 
   onDestroy(() => {
@@ -919,6 +932,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {channelMembers}
               {loadingMembers}
               {settingsChainError}
+              {rolesTreeAnnotationsError}
               {settingsChainLoading}
               settingsChainRefreshing={settingsChainRefreshing}
               {squadMemberEvmByNpub}
