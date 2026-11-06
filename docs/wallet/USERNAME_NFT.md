@@ -79,7 +79,7 @@ SQLite cache: `username_claims` (username, npubHash, tokenId, link event id, pol
 
 ## Verified badge
 
-Requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` with `evmAddress` equal to the active roster EVM. Holder sync fills a missing `linkEventId` from trusted relays that are currently in the pool (kind 31337, `#d` = npub hash) when the author and `evm` / `name` / `npub-hash` tags match `recordOf`. Publish uses the same in-pool set. Failed restore fetches are skipped for 5 minutes (process-local); an explicit refresh on claimed-unverified (missing link) forces a new fetch. A relay that dropped the event cannot be rebuilt from the chain.
+Requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` with `evmAddress` equal to the active roster EVM. Holder sync fills a missing `linkEventId` from trusted relays that are currently in the pool (kind 31337, `#d` = npub hash) when the author and `evm` / `name` / `npub-hash` tags match `recordOf`. Publish uses the same in-pool set. Failed restore fetches are skipped for 5 minutes (process-local); an explicit refresh on claimed-unverified (missing link) forces a new fetch. Overlapping restores return the live cache row so a skipped UPDATE cannot clobber a restored `linkEventId`. A relay that dropped the event cannot be rebuilt from the chain.
 
 ## Operator smoke (Sepolia)
 

@@ -358,7 +358,7 @@ pub async fn username_sync_account_state<R: Runtime>(
             match id {
                 None => record_link_restore_failure(npub_hash, unix_now_secs()),
                 Some(id) => {
-                    let wrote = db::try_restore_username_claim_link(
+                    let live = db::try_restore_username_claim_link(
                         &app,
                         &start_npub,
                         &expected_hash,
@@ -366,15 +366,27 @@ pub async fn username_sync_account_state<R: Runtime>(
                         id,
                     )
                     .map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
-                    if wrote {
-                        cached = db::get_username_claim(&app)
-                            .map_err(|e| wallet_err_json("DB_ERROR", e, None))?;
-                        clear_link_restore_failure(npub_hash);
-                    } else {
-                        log::debug!(
-                            target: "pacto_wallet",
-                            "username claim link restore skipped: row changed or session moved"
-                        );
+                    let still_here = crate::account_manager::get_current_account()
+                        .ok()
+                        .is_some_and(|npub| npub == start_npub);
+                    match (still_here, live) {
+                        (true, Some(row)) => {
+                            let has_link = row
+                                .link_event_id
+                                .as_deref()
+                                .map(|s| !s.trim().is_empty())
+                                .unwrap_or(false);
+                            cached = Some(row);
+                            if has_link {
+                                clear_link_restore_failure(npub_hash);
+                            }
+                        }
+                        _ => {
+                            log::debug!(
+                                target: "pacto_wallet",
+                                "username claim link restore skipped: row changed or session moved"
+                            );
+                        }
                     }
                 }
             }
