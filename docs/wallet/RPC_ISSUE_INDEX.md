@@ -8,7 +8,6 @@ Normative behavior: [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.m
 
 | Issue | Topic |
 |-------|--------|
-| [#489](https://github.com/covenant-gov/pacto-app/issues/489) | Live mutiny vote: Alloy `HTTP error 429 with empty body` on a chain JSON-RPC hop (not Pimlico). Status often shows the public-RPC rate-limit card; check whether vote `rpc_urls` / failover still hits Alchemy CUPS, a shared key, or a public fallback. |
 | [#320](https://github.com/covenant-gov/pacto-app/issues/320) | Crew Hats / Privileges should use the squad custom RPC. Saving that RPC does not refetch, so a public-node 429 can stick. Partial: PR [#341](https://github.com/covenant-gov/pacto-app/pull/341). Remaining: refetch on `$squadRpcTick`, point rate-limit copy at Settings, surface Hats RPC errors on Crew. |
 | [#228](https://github.com/covenant-gov/pacto-app/issues/228) | Squads publish custom RPC URLs over MLS (`squad_rpc_updated`). Alchemy-style `/v2/<key>` URLs leak credentials to every member. Warn or block before share. |
 
@@ -22,6 +21,7 @@ Normative behavior: [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.m
 
 | Issue | Topic |
 |-------|--------|
+| [#489](https://github.com/covenant-gov/pacto-app/issues/489) | Cast mutiny vote Alloy empty-body 429: start/vote share FE `squadRpcUrlsForInvoke`; request-level failover in `send_gov_module_call` + ACL write connects (`next_gov_rpc_url_idx`). Connect helpers stay connect-only. |
 | [#340](https://github.com/covenant-gov/pacto-app/issues/340) | Superseded by [pacto-onchain-orchestrator](https://github.com/covenant-gov/pacto-onchain-orchestrator): Foundry unit/fork CI and `MAINNET_RPC` live there, not in pacto-app. |
 | [#495](https://github.com/covenant-gov/pacto-app/issues/495) | Username holder refresh: one read provider. RPC failure keeps the last SQLite record (`chain_error`) instead of flipping username state to `error`. |
 | [#276](https://github.com/covenant-gov/pacto-app/issues/276) | Settings tab hosts Chain RPC, Pimlico key, `focusSquadSettingsRpcEditor`, `RpcReadErrorCard`, `SquadEndpointsPanel`. |

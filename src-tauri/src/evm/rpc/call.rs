@@ -26,6 +26,39 @@ pub fn is_retryable_gov_rpc_error(msg: &str) -> bool {
         || m.contains("timed out")
 }
 
+/// True when a structured wallet error already carries a submitted tx hash.
+/// Do not rotate RPC URLs after broadcast (risk of double-submit).
+pub fn gov_rpc_error_has_tx_hash(err: &str) -> bool {
+    err.contains("\"txHash\"")
+}
+
+/// After a retryable gov RPC error on `urls[url_idx]`, return the next index.
+/// Logs stage + redacted failing URL. `None` when failover is exhausted or the error is not retryable.
+pub fn next_gov_rpc_url_idx(
+    urls: &[String],
+    url_idx: usize,
+    err: &str,
+    stage: &str,
+) -> Option<usize> {
+    if !is_retryable_gov_rpc_error(err) {
+        return None;
+    }
+    let next = url_idx.saturating_add(1);
+    if next >= urls.len() {
+        return None;
+    }
+    let failed = urls
+        .get(url_idx)
+        .map(|u| wallet_security::redact_rpc_url_for_log(u))
+        .unwrap_or_else(|| "(unknown)".to_string());
+    let detail = wallet_security::redact_urls_in_text(err);
+    log::warn!(
+        target: "pacto_wallet",
+        "gov rpc failover stage={stage} url={failed}: {detail}; trying next"
+    );
+    Some(next)
+}
+
 /// ABI `uint256` return. Empty or short RPC payloads → zero (EOA target, no code, stripped leading zeros).
 pub fn decode_abi_u256_return(data: &[u8]) -> U256 {
     if data.is_empty() {
@@ -239,6 +272,41 @@ mod tests {
         assert!(is_retryable_gov_rpc_error("jsonrpc error code -32005"));
         assert!(!is_retryable_gov_rpc_error(
             "execution reverted: Unauthorized"
+        ));
+    }
+
+    #[test]
+    fn retryable_gov_rpc_matches_alloy_empty_body_429() {
+        assert!(is_retryable_gov_rpc_error("HTTP error 429 with empty body"));
+    }
+
+    #[test]
+    fn next_gov_rpc_url_idx_advances_on_retryable() {
+        let urls = vec![
+            "https://a.example/rpc".into(),
+            "https://b.example/rpc".into(),
+        ];
+        assert_eq!(
+            next_gov_rpc_url_idx(&urls, 0, "HTTP error 429 with empty body", "preflight"),
+            Some(1)
+        );
+        assert_eq!(
+            next_gov_rpc_url_idx(&urls, 1, "HTTP error 429 with empty body", "preflight"),
+            None
+        );
+        assert_eq!(
+            next_gov_rpc_url_idx(&urls, 0, "execution reverted: Unauthorized", "preflight"),
+            None
+        );
+    }
+
+    #[test]
+    fn gov_rpc_error_has_tx_hash_detects_structured_field() {
+        assert!(gov_rpc_error_has_tx_hash(
+            r#"{"code":"RECEIPT_TIMEOUT","message":"timed out","txHash":"0xabc"}"#
+        ));
+        assert!(!gov_rpc_error_has_tx_hash(
+            r#"{"code":"RPC_CONNECT","message":"HTTP error 429 with empty body"}"#
         ));
     }
 
