@@ -262,7 +262,10 @@ pub async fn record_welcome_for_handle<R: Runtime>(
 
 /// Resolve one entry by its source event id. Returns whether a row was
 /// actually resolved (`false` if it was already resolved or never existed).
-pub(crate) fn resolve_entry(conn: &rusqlite::Connection, source_event_id: &str) -> Result<bool, String> {
+pub(crate) fn resolve_entry(
+    conn: &rusqlite::Connection,
+    source_event_id: &str,
+) -> Result<bool, String> {
     let resolved_at = now_epoch_seconds();
     let changed = conn
         .execute(
@@ -1367,21 +1370,43 @@ mod tests {
         record_missed_event_reminder(&conn, "g", "ev1", 1_000).unwrap();
         record_missed_event_reminder(&conn, "g", "ev1", 2_000).unwrap();
         record_missed_event_reminder(&conn, "g", "ev10", 1_000).unwrap();
-        record_admitted_event(&conn, EventKind::ActionPrompt, false, false, "g", "ev1:other")
-            .unwrap();
+        record_admitted_event(
+            &conn,
+            EventKind::ActionPrompt,
+            false,
+            false,
+            "g",
+            "ev1:other",
+        )
+        .unwrap();
 
         assert_eq!(resolve_event_reminder_entries(&conn, "ev1").unwrap(), 2);
-        assert!(get_entry(&conn, "ev1:1000").unwrap().unwrap().resolved_at.is_some());
-        assert!(get_entry(&conn, "ev1:2000").unwrap().unwrap().resolved_at.is_some());
-        assert!(get_entry(&conn, "ev10:1000").unwrap().unwrap().resolved_at.is_none());
-        assert!(get_entry(&conn, "ev1:other").unwrap().unwrap().resolved_at.is_none());
+        assert!(get_entry(&conn, "ev1:1000")
+            .unwrap()
+            .unwrap()
+            .resolved_at
+            .is_some());
+        assert!(get_entry(&conn, "ev1:2000")
+            .unwrap()
+            .unwrap()
+            .resolved_at
+            .is_some());
+        assert!(get_entry(&conn, "ev10:1000")
+            .unwrap()
+            .unwrap()
+            .resolved_at
+            .is_none());
+        assert!(get_entry(&conn, "ev1:other")
+            .unwrap()
+            .unwrap()
+            .resolved_at
+            .is_none());
     }
 
     #[test]
     fn event_reminder_never_admitted_on_arrival() {
         let conn = migrated_conn();
-        record_admitted_event(&conn, EventKind::EventReminder, false, false, "g", "ev1:1")
-            .unwrap();
+        record_admitted_event(&conn, EventKind::EventReminder, false, false, "g", "ev1:1").unwrap();
         assert!(get_entry(&conn, "ev1:1").unwrap().is_none());
     }
 }

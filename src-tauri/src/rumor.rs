@@ -740,7 +740,10 @@ mod tests {
 
     #[test]
     fn attachment_caption_reads_the_tag_and_blank_is_empty() {
-        assert_eq!(attachment_caption(&tags_with(Some("testing text"))), "testing text");
+        assert_eq!(
+            attachment_caption(&tags_with(Some("testing text"))),
+            "testing text"
+        );
         assert_eq!(
             attachment_caption(&tags_with(Some("hi @alice"))),
             "hi @alice"

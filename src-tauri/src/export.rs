@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
 use crate::account_manager;
-use crate::crypto::{derive_key_from_salt, decrypt_with_key};
+use crate::crypto::{decrypt_with_key, derive_key_from_salt};
 use crate::db::ExportLogRow;
 
 /// Delay before the clipboard is automatically cleared after a sensitive export.
@@ -125,14 +125,8 @@ pub async fn export_sensitive_to_clipboard<R: Runtime>(
     let writer = TauriClipboardWriter {
         handle: handle.clone(),
     };
-    let result = export_sensitive_to_clipboard_core(
-        &handle,
-        &export_type,
-        account_id,
-        pin,
-        &writer,
-    )
-    .await;
+    let result =
+        export_sensitive_to_clipboard_core(&handle, &export_type, account_id, pin, &writer).await;
 
     if result.is_ok() {
         start_clear_timer(handle);
@@ -227,8 +221,8 @@ async fn export_sensitive_to_clipboard_core<R: Runtime>(
 
     validate_export_request(export_type, &account_id)?;
 
-    let npub = account_manager::get_current_account()
-        .map_err(|_| "No account selected".to_string())?;
+    let npub =
+        account_manager::get_current_account().map_err(|_| "No account selected".to_string())?;
 
     let log_key = export_type.log_key(account_id.as_deref());
 
@@ -335,21 +329,19 @@ async fn fetch_secret<R: Runtime>(
                 .ok_or_else(|| "EVM account ID is required".to_string())?
                 .to_string();
             let (key_hex, _, _) =
-                crate::evm::evm_accounts::resolve_private_key_hex_for_account_id(handle, &id).await?;
+                crate::evm::evm_accounts::resolve_private_key_hex_for_account_id(handle, &id)
+                    .await?;
             Ok(key_hex)
         }
         SensitiveExportType::NostrNsec => {
             let conn = account_manager::get_db_connection(handle)?;
             let encrypted: Option<String> = conn
-                .query_row(
-                    "SELECT value FROM settings WHERE key = 'pkey'",
-                    [],
-                    |row| row.get(0),
-                )
+                .query_row("SELECT value FROM settings WHERE key = 'pkey'", [], |row| {
+                    row.get(0)
+                })
                 .ok();
             account_manager::return_db_connection(conn);
-            let encrypted =
-                encrypted.ok_or_else(|| "No Nostr private key stored".to_string())?;
+            let encrypted = encrypted.ok_or_else(|| "No Nostr private key stored".to_string())?;
             crate::crypto::internal_decrypt(encrypted)
                 .await
                 .map_err(|_| "Could not decrypt Nostr private key".to_string())
@@ -594,9 +586,7 @@ mod tests {
     fn backoff_grows_exponentially() {
         let _guard = EXPORT_TEST_MUTEX.lock();
         let now = epoch_seconds();
-        let attempts: Vec<ExportLogRow> = (0..5)
-            .map(|i| test_row_at(now - i, true))
-            .collect();
+        let attempts: Vec<ExportLogRow> = (0..5).map(|i| test_row_at(now - i, true)).collect();
 
         assert_eq!(compute_backoff_seconds("evm_account", &attempts[0..1]), 1);
         assert_eq!(compute_backoff_seconds("evm_account", &attempts[0..2]), 2);
@@ -609,9 +599,7 @@ mod tests {
     fn backoff_caps_at_max() {
         let _guard = EXPORT_TEST_MUTEX.lock();
         let now = epoch_seconds();
-        let attempts: Vec<ExportLogRow> = (0..12)
-            .map(|i| test_row_at(now - i, true))
-            .collect();
+        let attempts: Vec<ExportLogRow> = (0..12).map(|i| test_row_at(now - i, true)).collect();
         assert_eq!(
             compute_backoff_seconds("evm_account", &attempts),
             EXPORT_BACKOFF_MAX_SECONDS
@@ -703,7 +691,9 @@ mod tests {
         crate::db::prune_export_log_on_conn(&conn).unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM sensitive_export_log", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM sensitive_export_log", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(count, 1, "only the recent success should remain");
     }
@@ -757,7 +747,10 @@ mod tests {
         )
         .await;
 
-        assert!(result.is_err(), "export should be rejected when version is not 2");
+        assert!(
+            result.is_err(),
+            "export should be rejected when version is not 2"
+        );
         let err = result.unwrap_err();
         assert!(
             err.contains("Account security must be updated"),
@@ -1005,7 +998,10 @@ mod tests {
 
         assert!(result.is_err(), "no account should reject export");
         let err = result.unwrap_err();
-        assert!(err.contains("No account selected"), "unexpected error: {err}");
+        assert!(
+            err.contains("No account selected"),
+            "unexpected error: {err}"
+        );
         assert!(
             !writer.was_written(),
             "clipboard should not be written without account"
@@ -1075,9 +1071,7 @@ mod tests {
     fn backoff_no_overflow_with_many_attempts() {
         let _guard = EXPORT_TEST_MUTEX.lock();
         let now = epoch_seconds();
-        let attempts: Vec<ExportLogRow> = (0..40)
-            .map(|i| test_row_at(now - i, true))
-            .collect();
+        let attempts: Vec<ExportLogRow> = (0..40).map(|i| test_row_at(now - i, true)).collect();
         assert_eq!(
             compute_backoff_seconds("evm_account", &attempts),
             EXPORT_BACKOFF_MAX_SECONDS,
@@ -1141,7 +1135,10 @@ mod tests {
         )
         .await;
 
-        assert!(result.is_err(), "clipboard write failure should reject export");
+        assert!(
+            result.is_err(),
+            "clipboard write failure should reject export"
+        );
         let err = result.unwrap_err();
         assert!(
             err.contains("Failed to write to clipboard"),
@@ -1204,7 +1201,10 @@ mod tests {
             )
             .await;
 
-            assert!(result.is_err(), "{export_type:?} should reject malformed account_id");
+            assert!(
+                result.is_err(),
+                "{export_type:?} should reject malformed account_id"
+            );
             let err = result.unwrap_err();
             assert!(
                 err.contains(expected),
@@ -1260,7 +1260,11 @@ mod tests {
         let writer = MockClipboardWriter::with_clear_failures(2);
         let result = clear_clipboard_with_writer(&writer, app.handle());
 
-        assert!(result.is_ok(), "clear should succeed after retries: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "clear should succeed after retries: {:?}",
+            result.err()
+        );
         assert_eq!(
             writer.clear_attempt_count(),
             3,
@@ -1281,7 +1285,10 @@ mod tests {
         let writer = MockClipboardWriter::with_clear_failures(3);
         let result = clear_clipboard_with_writer(&writer, app.handle());
 
-        assert!(result.is_err(), "clear should fail after exhausting retries");
+        assert!(
+            result.is_err(),
+            "clear should fail after exhausting retries"
+        );
         assert_eq!(
             writer.clear_attempt_count(),
             3,
@@ -1319,10 +1326,7 @@ mod tests {
 
         assert!(result.is_err(), "cancelled export should be rejected");
         let err = result.unwrap_err();
-        assert!(
-            err.contains("Session is locked"),
-            "unexpected error: {err}"
-        );
+        assert!(err.contains("Session is locked"), "unexpected error: {err}");
         assert!(
             !writer.was_written(),
             "clipboard should not be written for cancelled export"
@@ -1391,8 +1395,14 @@ mod tests {
         crate::account_manager::return_db_connection(conn);
 
         assert_eq!(rows.len(), 2, "expected success and failure audit entries");
-        let success_row = rows.iter().find(|r| r.success).expect("success row missing");
-        let failure_row = rows.iter().find(|r| !r.success).expect("failure row missing");
+        let success_row = rows
+            .iter()
+            .find(|r| r.success)
+            .expect("success row missing");
+        let failure_row = rows
+            .iter()
+            .find(|r| !r.success)
+            .expect("failure row missing");
         assert_eq!(success_row.export_type, "nostr_nsec");
         assert_eq!(success_row.account_npub, npub);
         assert!(success_row.error_code.is_none());

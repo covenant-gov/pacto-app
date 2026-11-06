@@ -30,13 +30,9 @@ pub async fn module_to_top_hat<P: Provider>(
     registry: Address,
     module: Address,
 ) -> Result<U256, String> {
-    eth_call_decode(
-        provider,
-        registry,
-        &moduleToTopHatCall { module },
-    )
-    .await
-    .map_err(|e| wallet_err_json("SPONSOR_POLICY_READ", e, None))
+    eth_call_decode(provider, registry, &moduleToTopHatCall { module })
+        .await
+        .map_err(|e| wallet_err_json("SPONSOR_POLICY_READ", e, None))
 }
 
 #[cfg(test)]

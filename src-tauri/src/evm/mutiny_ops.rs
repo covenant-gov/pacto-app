@@ -10,9 +10,9 @@ use tauri::{AppHandle, Runtime};
 use super::access_control::GovCapability;
 use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
     activeMutinyIdCall, captainCall, captainResignCall, castVoteCall, executeMutinyCall,
-    expireMutinyCall, hasVotedCall, mutinyCall, mutinyCountCall, startMutinyToArbitraryContractCall,
-    startMutinyToArbitraryEoaCall, startMutinyToCommitteeCall, startMutinyToCrewMemberCall,
-    startMutinyToPauseCaptainCall,
+    expireMutinyCall, hasVotedCall, mutinyCall, mutinyCountCall,
+    startMutinyToArbitraryContractCall, startMutinyToArbitraryEoaCall, startMutinyToCommitteeCall,
+    startMutinyToCrewMemberCall, startMutinyToPauseCaptainCall,
 };
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
 use super::gov_read::connect_gov_read_provider;
@@ -159,10 +159,7 @@ async fn preflight_mutiny_write(
     Ok(())
 }
 
-fn encode_captain_resign(
-    new_captain: &str,
-    seat_former_captain: bool,
-) -> Result<Vec<u8>, String> {
+fn encode_captain_resign(new_captain: &str, seat_former_captain: bool) -> Result<Vec<u8>, String> {
     let addr = parse_address(new_captain.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     Ok(captainResignCall {
@@ -221,9 +218,15 @@ where
         .map(|id| {
             let provider = provider.clone();
             async move {
-                let decoded = eth_call_decode(&provider, module, &mutinyCall { _id: U256::from(id) })
-                    .await
-                    .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
+                let decoded = eth_call_decode(
+                    &provider,
+                    module,
+                    &mutinyCall {
+                        _id: U256::from(id),
+                    },
+                )
+                .await
+                .map_err(|e| wallet_err_json("MUTINY_READ", e, None))?;
                 Ok::<_, String>((id, decoded))
             }
         })

@@ -114,8 +114,9 @@ pub async fn run_l15_execute_eth_call<P: Provider>(
 
 fn wallet_err_from_l15_failure(sel: &str, detail: &str) -> String {
     if sel != "none" {
-        let mapped =
-            wallet_err_from_claim_eth_call_failure(&format!("execution reverted, data: \"0x{sel}\""));
+        let mapped = wallet_err_from_claim_eth_call_failure(&format!(
+            "execution reverted, data: \"0x{sel}\""
+        ));
         if mapped.contains("USERNAME_INVALID_")
             || mapped.contains("USERNAME_TAKEN")
             || mapped.contains("USERNAME_NPUB")
@@ -175,15 +176,24 @@ pub fn wallet_err_from_claim_eth_call_failure(raw_err: &str) -> String {
 /// NFT custom-error selectors → structured wallet codes (Layer 1).
 fn classify_username_claim_revert(sel: &str) -> Option<(&'static str, &'static str)> {
     match sel {
-        "356848bf" => Some(("USERNAME_INVALID_NAME", "claim rejected: invalid name / empty pubkey")),
+        "356848bf" => Some((
+            "USERNAME_INVALID_NAME",
+            "claim rejected: invalid name / empty pubkey",
+        )),
         "a08dc9f6" => Some(("USERNAME_TAKEN", "claim rejected: name unavailable")),
-        "87e0b147" => Some(("USERNAME_NPUB_CLAIMED", "claim rejected: npub already claimed")),
+        "87e0b147" => Some((
+            "USERNAME_NPUB_CLAIMED",
+            "claim rejected: npub already claimed",
+        )),
         "057e4afc" => Some(("ALREADY_CLAIMED", "claim rejected: address already claimed")),
         "b2613b41" => Some((
             "USERNAME_INVALID_EVM_SIG",
             "claim rejected: invalid EIP-712 ClaimBinding signature",
         )),
-        "8bb09e51" => Some(("USERNAME_INVALID_NPUB_HASH", "claim rejected: npubHash ≠ sha256(0x02||pubkey)")),
+        "8bb09e51" => Some((
+            "USERNAME_INVALID_NPUB_HASH",
+            "claim rejected: npubHash ≠ sha256(0x02||pubkey)",
+        )),
         "bb8d46ae" => Some((
             "USERNAME_INVALID_NOSTR_SIG",
             "claim rejected: invalid BIP-340 Nostr claim signature",

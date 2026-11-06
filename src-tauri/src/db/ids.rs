@@ -254,4 +254,3 @@ pub fn clear_id_caches() {
     CHAT_ID_CACHE.write().unwrap().clear();
     USER_ID_CACHE.write().unwrap().clear();
 }
-

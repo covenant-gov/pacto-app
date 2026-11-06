@@ -9,8 +9,8 @@ use super::contracts::pacto_sponsor::ISquadSponsorExt::addressOwnerCall;
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::squadsCall;
 use super::contracts::pacto_sponsor::SquadVariant;
 use super::rpc::call::eth_call_decode;
-use super::squad_sponsor_common::squad_id_from_parent_id;
 use super::rpc::{parse_address, wallet_err_json};
+use super::squad_sponsor_common::squad_id_from_parent_id;
 
 /// Resolved Ext owners for a parent (on-chain reads).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -108,10 +108,8 @@ pub async fn resolve_ext_infra_owners_on_chain<R: Runtime, P: Provider>(
     let rows = crate::db::list_squad_infra(app.clone(), pid.to_string())?;
     if let Some(row) = rows.iter().find(|r| r.infra_type == "squad_admin") {
         if let Ok(addr) = parse_address(row.canonical_ref.trim()) {
-            owners.admin_ext_owner = read_admin_ext_owner(provider, addr)
-                .await
-                .ok()
-                .or_else(|| {
+            owners.admin_ext_owner =
+                read_admin_ext_owner(provider, addr).await.ok().or_else(|| {
                     row.provider_payload.as_deref().and_then(|p| {
                         let v: serde_json::Value = serde_json::from_str(p).ok()?;
                         let owner_str = v

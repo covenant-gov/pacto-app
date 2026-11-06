@@ -262,6 +262,7 @@ Also: Pimlico / bundler (shared prerequisites above); backup verified in-app bef
 - [ ] **Commons** → **Pacto Early Adopter** CTA → deep-links to Profile `#settings-profile-username` (no mint UI on Commons).
 - [ ] **Claim** any non-empty name (≤64 UTF-8 bytes, case-sensitive) with 0 ETH → path **`bootstrap`**; UserOp on explorer; bootstrap pool spendable decreases.
 - [ ] **Badge:** Profile / Commons show `@username` with verified check when kind **31337** link is cached **and** on-chain `recordOf` EVM matches the active roster address.
+- [ ] **Seed restore:** new database (chain `recordOf` present, `link_event_id` null) with the kind **31337** event still on trusted relays → refresh shows the verified badge when the roster EVM matches `recordOf`.
 - [ ] **Rotation:** initiate address transfer → claim transfer with 0 ETH → path **`global_member`** (not bootstrap); global pool spendable decreases.
 - [ ] Optional: claim or rotate with funded EOA → path **`eoa`** (no UserOp).
 
@@ -285,6 +286,7 @@ Also: Pimlico / bundler (shared prerequisites above); backup verified in-app bef
 | `USERNAME_CLAIM_REVERTED` / `USERNAME_INVALID_*` / `USERNAME_BINDING_EXPIRED` | Direct `claim()` eth_call failed — fix claim fields/signatures / use chain `issuedAt` before blaming UserOp/7702. See [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) L1 |
 | `USERNAME_7702_MISMATCH` / `USERNAME_7702_SENDER` | Paymaster allowlist ≠ client impl, or roster EOA has unexpected code (wrong 7702 stub / non-delegation bytecode) |
 | Verified badge missing after mint | Kind 31337 missing or `record.evmAddress` ≠ active roster EVM — refresh claim cache / check relays |
+| Verified badge missing after seed restore | Trusted relays no longer have kind 31337. The chain record cannot rebuild it; the badge stays off until the link is republished. A failed fetch leaves any stored `link_event_id` in place. |
 | Squad pool drained on username claim | Bug — username must not call squad sponsor; file with UserOp paymaster address |
 
 See [USERNAME_NFT.md](./USERNAME_NFT.md) and upstream [DESKTOP_CLIENT_INTEGRATION.md](https://github.com/covenant-gov/pacto-username-nft/blob/main/docs/DESKTOP_CLIENT_INTEGRATION.md).

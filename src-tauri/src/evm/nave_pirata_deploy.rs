@@ -14,12 +14,15 @@ use tauri::{AppHandle, Runtime};
 use crate::db;
 
 use super::contracts::pacto_gov::read_bindings::INavePirataRegistry::NavePirataRegistered;
-use super::nave_pirata_read::{clones_from_registry_deployment, NaveCloneAddresses};
 use super::contracts::pacto_gov::INavePirataFactory::{
     deployNavePirataCall, CrewVoteMode, DeployParams, SquadParams, StackKind,
 };
 use super::deploy_gas_router::{send_factory_call, FactoryRouteContext};
 use super::gov_read::rpc_urls_or_default;
+use super::infra_owner::{
+    require_roster_matches_owners_for_gov_deploy, resolve_ext_infra_owners_on_chain,
+};
+use super::nave_pirata_read::{clones_from_registry_deployment, NaveCloneAddresses};
 use super::pacto_chain_config;
 use super::rpc::signer::{
     load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
@@ -28,9 +31,6 @@ use super::rpc::signer::{
 use super::rpc::{
     connect_read_provider, parse_address, parse_salt_nonce, wallet_err_json,
     wallet_err_json_with_tx_hash,
-};
-use super::infra_owner::{
-    require_roster_matches_owners_for_gov_deploy, resolve_ext_infra_owners_on_chain,
 };
 use super::squad_sponsor_common::{
     collapse_pay_signer_mode, parse_signer_wallet, require_parent_member,

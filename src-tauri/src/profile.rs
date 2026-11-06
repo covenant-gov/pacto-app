@@ -427,8 +427,11 @@ pub(crate) struct Kind0ScanHit {
 
 /// NIP-01 replacement: newest created_at, then highest event id.
 pub(crate) fn nip01_kind0_winner(hits: &[Kind0ScanHit]) -> Option<&Kind0ScanHit> {
-    hits.iter()
-        .max_by(|a, b| a.created_at.cmp(&b.created_at).then_with(|| a.event_id.cmp(&b.event_id)))
+    hits.iter().max_by(|a, b| {
+        a.created_at
+            .cmp(&b.created_at)
+            .then_with(|| a.event_id.cmp(&b.event_id))
+    })
 }
 
 pub(crate) fn kind0_verified_quorum_met(verified_count: usize, required: usize) -> bool {
@@ -469,11 +472,13 @@ pub(crate) fn decide_kind0_repair(
     if receipt_event_id.is_none() {
         return Kind0RepairDecision::Skip;
     }
-    if last_success_at.is_some_and(|at| now_secs.saturating_sub(at) < KIND0_REPAIR_SUCCESS_INTERVAL_SECS)
+    if last_success_at
+        .is_some_and(|at| now_secs.saturating_sub(at) < KIND0_REPAIR_SUCCESS_INTERVAL_SECS)
     {
         return Kind0RepairDecision::Skip;
     }
-    if last_failure_at.is_some_and(|at| now_secs.saturating_sub(at) < KIND0_REPAIR_FAILURE_BACKOFF_SECS)
+    if last_failure_at
+        .is_some_and(|at| now_secs.saturating_sub(at) < KIND0_REPAIR_FAILURE_BACKOFF_SECS)
     {
         return Kind0RepairDecision::Skip;
     }
@@ -504,10 +509,7 @@ pub(crate) async fn fetch_kind0_per_relay(client: &Client, pubkey: PublicKey) ->
         let client = client.clone();
         tasks.push(tokio::spawn(async move {
             let url_str = url.to_string();
-            let filter = Filter::new()
-                .author(pubkey)
-                .kind(Kind::Metadata)
-                .limit(1);
+            let filter = Filter::new().author(pubkey).kind(Kind::Metadata).limit(1);
             match client
                 .fetch_events_from([url], filter, std::time::Duration::from_secs(8))
                 .await
@@ -961,8 +963,8 @@ async fn publish_vector_profile_kind0_inner(
             .unwrap()
             .as_secs(),
     };
-    let receipt_json =
-        serde_json::to_string(&stored).map_err(|e| format!("Failed to serialize kind0 receipt: {e}"))?;
+    let receipt_json = serde_json::to_string(&stored)
+        .map_err(|e| format!("Failed to serialize kind0 receipt: {e}"))?;
 
     let meta_published = serde_json::from_str::<Metadata>(&metadata_json).unwrap_or(meta);
     let receipt = Kind0PublishReceipt {
@@ -1065,7 +1067,11 @@ pub(crate) async fn maybe_republish_own_kind0(
 
     let (name, avatar, banner, about) = {
         let state = STATE.lock().await;
-        match state.profiles.iter().find(|p| p.mine && p.id == expected_npub) {
+        match state
+            .profiles
+            .iter()
+            .find(|p| p.mine && p.id == expected_npub)
+        {
             Some(p) if p.has_public_metadata() => (
                 p.name.clone(),
                 p.avatar.clone(),

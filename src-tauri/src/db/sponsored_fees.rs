@@ -426,8 +426,7 @@ mod global_sponsored_fee_usage_tests {
         insert_global_sponsored_fee_usage_conn(&conn, &sample_row("0xop2", "factory"))
             .expect("second");
 
-        let listed =
-            list_global_sponsored_fee_usage_conn(&conn, "npub1alice", 50).expect("list");
+        let listed = list_global_sponsored_fee_usage_conn(&conn, "npub1alice", 50).expect("list");
         assert_eq!(listed.len(), 2);
         let lanes: std::collections::HashSet<_> = listed.iter().map(|r| r.lane.as_str()).collect();
         assert!(lanes.contains("gov_module"));
@@ -459,4 +458,3 @@ mod global_sponsored_fee_usage_tests {
         assert!(listed[0].parent_id.is_none());
     }
 }
-
