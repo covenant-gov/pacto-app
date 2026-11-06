@@ -41,6 +41,7 @@
   import WalletRequestModal from './WalletRequestModal.svelte';
   import WalletImportTokensModal from './WalletImportTokensModal.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
+  import { formatAssetAmount } from '../../lib/evm/format-token-amount';
 
   const tFn = get(t);
 
@@ -406,7 +407,7 @@
                     {@const asset = a as WalletSummaryAsset}
                     <li>
                       <span class="wallet-bar-asset-sym">{asset.symbol}</span>
-                      <span class="wallet-bar-asset-amt" title={asset.balanceRaw}>{asset.balanceDecimal}</span>
+                      <span class="wallet-bar-asset-amt" title={asset.balanceRaw}>{formatAssetAmount(asset.balanceRaw, { symbol: asset.symbol, decimals: asset.decimals }) ?? '—'}</span>
                     </li>
                   {/each}
                 </ul>

@@ -34,7 +34,8 @@
   } from '../../../lib/wallet/signer-balance';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
-  import { formatEther, parseEther } from 'viem';
+  import { parseEther } from 'viem';
+  import { formatAssetAmount } from '../../../lib/evm/format-token-amount';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import { get } from 'svelte/store';
@@ -281,7 +282,7 @@
       depositError = tFn('governance.error.depositExceedsBalance', {
         values: {
           symbol: selectedSymbol,
-          balance: selectedBalance.balanceDecimal,
+          balance: formatAssetAmount(selectedBalance.balanceRaw, { symbol: selectedBalance.symbol }) ?? '—',
           network,
         },
       });
@@ -358,7 +359,7 @@
     <dl class="asset-dl">
       <dt>{$t('governance.info.sponsorEth')}</dt>
       <dd>
-        <strong>{formatEther(BigInt(summary.poolBalanceWei))}</strong>
+        <strong>{formatAssetAmount(summary.poolBalanceWei, { symbol: 'ETH' }) ?? '—'}</strong>
         {#if lowBalance}
           <span class="sponsor-low-badge" role="status">{$t('governance.info.sponsorLowBalance')}</span>
         {/if}
@@ -408,7 +409,7 @@
               {:else if squadBalance.error}
                 {tFn('governance.info.balanceUnavailable')}
               {:else}
-                {tFn('governance.info.balance')} {squadBalance.balanceDecimal} {squadBalance.symbol}
+                {tFn('governance.info.balance')} {formatAssetAmount(squadBalance.balanceRaw, { symbol: squadBalance.symbol }) ?? '—'} {squadBalance.symbol}
               {/if}
             </p>
           </div>
@@ -434,7 +435,7 @@
                     {:else if defaultBalance.error}
                       {tFn('governance.info.balanceUnavailable')}
                     {:else if defaultSignerAddress}
-                      {tFn('governance.info.balance')} {defaultBalance.balanceDecimal} {defaultBalance.symbol}
+                      {tFn('governance.info.balance')} {formatAssetAmount(defaultBalance.balanceRaw, { symbol: defaultBalance.symbol }) ?? '—'} {defaultBalance.symbol}
                     {:else}
                       {tFn('governance.info.notConfigured')}
                     {/if}
@@ -460,7 +461,7 @@
                     {:else if squadBalance.error}
                       {tFn('governance.info.balanceUnavailable')}
                     {:else if squadSignerAddress}
-                      {tFn('governance.info.balance')} {squadBalance.balanceDecimal} {squadBalance.symbol}
+                      {tFn('governance.info.balance')} {formatAssetAmount(squadBalance.balanceRaw, { symbol: squadBalance.symbol }) ?? '—'} {squadBalance.symbol}
                     {:else}
                       {tFn('governance.info.notAssigned')}
                     {/if}
@@ -484,7 +485,7 @@
           <p class="input-error" role="alert">{depositError}</p>
         {:else if depositExceedsBalance}
           <p class="input-error" role="alert">
-            {$t('governance.info.depositBelowMax', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedSymbol, network } })}
+            {$t('governance.info.depositBelowMax', { values: { balance: formatAssetAmount(selectedBalance.balanceRaw, { symbol: selectedBalance.symbol }) ?? '—', symbol: selectedSymbol, network } })}
           </p>
         {/if}
         <div class="sponsor-deposit-actions">

@@ -18,6 +18,7 @@ export interface WalletSummaryAsset {
   symbol: string;
   balanceRaw: string;
   balanceDecimal: string;
+  decimals: number;
   usdValue: number | null;
 }
 

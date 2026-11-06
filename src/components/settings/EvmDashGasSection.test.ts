@@ -44,7 +44,7 @@ describe('EvmDashGasSection', () => {
     });
     expect(mockLoad).toHaveBeenCalledWith({ limit: 50 });
     expect(screen.getByText('Global pool (Sepolia)')).toBeTruthy();
-    expect(screen.getByText('1 ETH spendable')).toBeTruthy();
+    expect(screen.getByText('1.000000000000000000 ETH spendable')).toBeTruthy();
   });
 
   it('shows the load error copy when the fee list fails', async () => {

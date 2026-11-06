@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   feeUsageActionLabel,
-  feeUsageAmountEth,
   truncateNpub,
 } from './sponsored-fee-usage-display';
 
@@ -23,12 +22,6 @@ describe('sponsored-fee-usage-display', () => {
       'deployNavePirata',
     );
     expect(feeUsageActionLabel({ action: '', selector: '0x7373315f' })).toBe('expireMutiny');
-  });
-
-  it('feeUsageAmountEth formats wei and rejects junk', () => {
-    expect(feeUsageAmountEth('1000000000000000')).toBe('0.001');
-    expect(feeUsageAmountEth('0')).toBe('0');
-    expect(feeUsageAmountEth('not-a-number')).toBeNull();
   });
 
   it('truncateNpub shortens long npubs', () => {

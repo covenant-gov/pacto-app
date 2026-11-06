@@ -30,6 +30,7 @@
     type WalletSummary,
   } from '../../lib/wallet';
   import { parseUnits } from 'viem';
+  import { formatAssetAmount } from '../../lib/evm/format-token-amount';
   import { showToast } from '../../stores/toast';
   import { requireBackupVerified } from '../../stores/backup-verification';
   import type { WalletSendPrefillPayload } from '../../stores/app';
@@ -184,13 +185,13 @@
     summary: WalletSummary | null,
     netKey: SupportedChainId,
     symbol: string
-  ): { balanceRaw: string; balanceDecimal: string } | null {
+  ): { balanceRaw: string; decimals: number } | null {
     if (!summary) return null;
     const net = summary.networks.find((n) => n.network === netKey);
     if (!net) return null;
     const asset = net.assets.find((a) => a.symbol === symbol);
     if (!asset) return null;
-    return { balanceRaw: asset.balanceRaw, balanceDecimal: asset.balanceDecimal };
+    return { balanceRaw: asset.balanceRaw, decimals: asset.decimals };
   }
 
   const selectedBalanceRow = $derived(
@@ -443,7 +444,7 @@
     {/if}
     {#if mode === 'send' && insufficientFunds && selectedBalanceRow}
       <p class="wallet-stub-insufficient" role="alert">
-        {$t('wallet.insufficientFunds', { values: { assetCode, balanceDecimal: selectedBalanceRow.balanceDecimal } })}
+        {$t('wallet.insufficientFunds', { values: { assetCode, balanceDecimal: formatAssetAmount(selectedBalanceRow.balanceRaw, { symbol: assetCode, decimals: selectedBalanceRow.decimals }) ?? '—' } })}
       </p>
     {:else if mode === 'send' && sendBalanceError && !sendBalanceLoading}
       <p class="wallet-stub-balance-warn" role="status">

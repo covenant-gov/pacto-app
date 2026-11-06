@@ -102,5 +102,18 @@ export default [
 			'@typescript-eslint/no-explicit-any': 'off',
 			'@typescript-eslint/no-unused-vars': 'off'
 		}
+	},
+	{
+		files: ['src/**/*.{ts,svelte}'],
+		ignores: ['src/lib/evm/format-token-amount.ts'],
+		rules: {
+			'no-restricted-imports': ['error', {
+				paths: [{
+					name: 'viem',
+					importNames: ['formatEther', 'formatUnits'],
+					message: 'Use formatAssetAmount from src/lib/evm/format-token-amount.ts.'
+				}]
+			}]
+		}
 	}
 ];

@@ -37,7 +37,7 @@ describe('getSafeState', () => {
       threshold: 2,
       nonce: 5n,
       balanceWei: 10_000_000_000_000_000n,
-      balanceFormatted: '0.01',
+      balanceFormatted: '0.010000000000000000',
     });
     expect(mockClient.readContract).toHaveBeenCalledWith(
       expect.objectContaining({

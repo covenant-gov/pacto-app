@@ -45,8 +45,8 @@ describe('calldata-builder', () => {
   });
 
   it('converts wei to eth display', () => {
-    expect(weiStringToEthDisplay('0')).toBe('0');
-    expect(weiStringToEthDisplay('1000000000000000000')).toBe('1');
+    expect(weiStringToEthDisplay('0')).toBe('0.000000000000000000');
+    expect(weiStringToEthDisplay('1000000000000000000')).toBe('1.000000000000000000');
   });
 
   it('returns the raw input when wei cannot be parsed', () => {

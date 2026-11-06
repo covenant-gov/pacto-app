@@ -118,6 +118,7 @@ Which tool (CSS vs `svelte/motion` vs `svelte/transition`): [MOTION.md](./MOTION
 - MUST: Hierarchical headings; `scroll-margin-top` on in-page targets when used.
 - MUST: Resilient to user-generated content (short / average / very long).
 - MUST: Locale-aware dates, times, numbers (`Intl.*`); user-facing strings go through i18n (`svelte-i18n`).
+- MUST: Token amounts on screen go through `formatAssetAmount` (`src/lib/evm/format-token-amount.ts`). ETH is 18 decimals; other tokens use their own decimals. Pad the fraction; do not trim trailing zeros.
 - MUST: Accurate `aria-label`; decorative elements `aria-hidden`.
 - MUST: Icon-only buttons have a descriptive `aria-label` (use shared Refresh/Edit icon buttons for those actions).
 - MUST: Prefer native semantics (`button`, `a`, `label`, `table`) before ARIA.

@@ -4,9 +4,9 @@
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import { usernameGlobalSpendablePoolWei } from '../../lib/api/username';
+  import { formatAssetAmount } from '../../lib/evm/format-token-amount';
   import {
     feeUsageActionLabel,
-    feeUsageAmountEth,
     globalFeeUsageLaneLabelKey,
     loadGlobalSponsoredFeeUsage,
     type GlobalSponsoredFeeUsageDto,
@@ -98,7 +98,7 @@
       {#if poolError}
         <span class="dash-pool-error" role="status">{poolError}</span>
       {:else if poolWei != null}
-        {@const eth = feeUsageAmountEth(poolWei)}
+        {@const eth = formatAssetAmount(poolWei, { symbol: 'ETH' })}
         <span class="dash-pool-value">
           {#if eth != null}
             {$t('settings.evmDashGas.poolBalance', { values: { balance: eth } })}
@@ -141,7 +141,7 @@
         </thead>
         <tbody>
           {#each rows as row (row.id)}
-            {@const amountEth = feeUsageAmountEth(row.amountWei)}
+            {@const amountEth = formatAssetAmount(row.amountWei, { symbol: 'ETH' })}
             {@const explorer = rowExplorerUrl(row)}
             <tr>
               <td>

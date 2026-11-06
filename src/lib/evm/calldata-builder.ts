@@ -6,11 +6,11 @@ import {
   type Abi,
   type Address,
   encodeFunctionData,
-  formatEther,
   isAddress,
   parseEther,
   type Hex,
 } from 'viem';
+import { formatAssetAmount } from './format-token-amount';
 import { parseAbiJson } from './abi-loader';
 import { simulateContractCall } from './read-plane';
 import type { SupportedChainId } from '../wallet/chains';
@@ -41,12 +41,7 @@ export function ethAmountToWeiString(amountEth: string): string {
 
 export function weiStringToEthDisplay(wei: string): string {
   const trimmed = wei.trim();
-  if (!trimmed || trimmed === '0') return '0';
-  try {
-    return formatEther(BigInt(trimmed));
-  } catch {
-    return trimmed;
-  }
+  return formatAssetAmount(trimmed, { symbol: 'ETH' }) ?? trimmed;
 }
 
 export function encodeFunctionCalldata(params: {

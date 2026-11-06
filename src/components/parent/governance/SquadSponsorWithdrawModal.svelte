@@ -16,7 +16,7 @@
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { hasPendingJob } from '../../../stores/pending-on-chain';
   import { showToast } from '../../../stores/toast';
-  import { formatEther } from 'viem';
+  import { formatAssetAmount } from '../../../lib/evm/format-token-amount';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
 
   interface Props {
@@ -183,7 +183,7 @@
           {$t('governance.withdraw.withdrawableLoading')}
         {:else if withdrawableWei != null}
           <strong>
-            {$t('governance.withdraw.withdrawableAmount', { values: { amount: formatEther(BigInt(withdrawableWei)) } })}
+            {$t('governance.withdraw.withdrawableAmount', { values: { amount: formatAssetAmount(withdrawableWei, { symbol: 'ETH' }) ?? '—' } })}
           </strong>
         {:else}
           {$t('governance.withdraw.withdrawableUnavailable')}

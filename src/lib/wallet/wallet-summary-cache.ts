@@ -7,9 +7,9 @@ import { get, writable } from 'svelte/store';
 import type { WalletSummary } from './backend-wallet';
 import type { WatchedErc20Wire } from './watched-tokens';
 
-export const WALLET_SUMMARY_CACHE_VERSION = 1 as const;
+export const WALLET_SUMMARY_CACHE_VERSION = 2 as const;
 
-const STORAGE_PREFIX = 'pacto_wallet_summary_cache_v1';
+const STORAGE_PREFIX = 'pacto_wallet_summary_cache_v2';
 
 /** Stable fingerprint for the watched ERC-20 list passed to `get_wallet_summary`. */
 export function watchedWireFingerprint(wires: WatchedErc20Wire[]): string {

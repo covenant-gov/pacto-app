@@ -40,7 +40,8 @@
   import { waitForOnChainConfirmationInBackground } from '../../../lib/evm/on-chain-background';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
-  import { formatEther, parseEther } from 'viem';
+  import { parseEther } from 'viem';
+  import { formatAssetAmount } from '../../../lib/evm/format-token-amount';
   import {
     fetchUsernameNftDeployEligibility,
     type UsernameNftEligibility,
@@ -454,7 +455,7 @@
         '',
         squadNetwork,
         'ETH',
-        formatEther(transferWei),
+        formatAssetAmount(transferWei, { symbol: 'ETH' }) ?? '0',
         null,
         squadCanonical,
         false,
@@ -551,7 +552,7 @@
         {:else if squadBalance.error}
           {$t('governance.common.balanceUnavailable')}
         {:else}
-          {$t('governance.common.balance', { values: { balance: squadBalance.balanceDecimal, symbol: squadBalance.symbol } })}
+          {$t('governance.common.balance', { values: { balance: formatAssetAmount(squadBalance.balanceRaw, { symbol: squadBalance.symbol }) ?? '—', symbol: squadBalance.symbol } })}
         {/if}
       </p>
     </div>
@@ -577,7 +578,7 @@
               {:else if defaultBalance.error}
                 {$t('governance.common.balanceUnavailable')}
               {:else if defaultSignerAddress}
-                {$t('governance.common.balance', { values: { balance: defaultBalance.balanceDecimal, symbol: defaultBalance.symbol } })}
+                {$t('governance.common.balance', { values: { balance: formatAssetAmount(defaultBalance.balanceRaw, { symbol: defaultBalance.symbol }) ?? '—', symbol: defaultBalance.symbol } })}
               {:else}
                 {$t('governance.common.notConfigured')}
               {/if}
@@ -603,7 +604,7 @@
               {:else if squadBalance.error}
                 {$t('governance.common.balanceUnavailable')}
               {:else if squadSignerAddress}
-                {$t('governance.common.balance', { values: { balance: squadBalance.balanceDecimal, symbol: squadBalance.symbol } })}
+                {$t('governance.common.balance', { values: { balance: formatAssetAmount(squadBalance.balanceRaw, { symbol: squadBalance.symbol }) ?? '—', symbol: squadBalance.symbol } })}
               {:else}
                 {$t('governance.common.notAssigned')}
               {/if}
@@ -633,7 +634,7 @@
           </p>
           {#if transferExceedsDefault}
             <p class="input-error" role="alert">
-              {$t('governance.deployGovAndSponsor.transfer.error.exceedsBalance', { values: { balance: defaultBalance.balanceDecimal, symbol: defaultBalance.symbol } })}
+              {$t('governance.deployGovAndSponsor.transfer.error.exceedsBalance', { values: { balance: formatAssetAmount(defaultBalance.balanceRaw, { symbol: defaultBalance.symbol }) ?? '—', symbol: defaultBalance.symbol } })}
             </p>
           {/if}
         </div>
@@ -681,7 +682,7 @@
       exceedsBalanceValues={
         needsFundTransfer
           ? {}
-          : { balance: selectedBalance.balanceDecimal, symbol: selectedBalance.symbol }
+          : { balance: formatAssetAmount(selectedBalance.balanceRaw, { symbol: selectedBalance.symbol }) ?? '—', symbol: selectedBalance.symbol }
       }
     />
   </div>

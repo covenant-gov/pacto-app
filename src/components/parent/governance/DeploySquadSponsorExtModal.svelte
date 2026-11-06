@@ -7,6 +7,7 @@
   import { deploySquadSponsorForParent, type SquadSponsorDeploySignerWallet } from '../../../lib/governance/api';
   import { getEvmAddress } from '../../../lib/api/auth';
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
+  import { formatAssetAmount } from '../../../lib/evm/format-token-amount';
   import {
     amountExceedsBalance,
     canonicalAddress,
@@ -230,7 +231,7 @@
       return;
     }
     if (depositExceedsBalance) {
-      deployError = tFn('governance.deploySquadSponsorExt.deposit.error.exceedsBalance', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedBalance.symbol, network: deployNetwork } });
+      deployError = tFn('governance.deploySquadSponsorExt.deposit.error.exceedsBalance', { values: { balance: formatAssetAmount(selectedBalance.balanceRaw, { symbol: selectedBalance.symbol }) ?? '—', symbol: selectedBalance.symbol, network: deployNetwork } });
       return;
     }
     deploying = true;
@@ -303,7 +304,7 @@
         {:else if squadBalance.error}
           {$t('governance.common.balanceUnavailable')}
         {:else if squadCanonical}
-          {$t('governance.common.balance', { values: { balance: squadBalance.balanceDecimal, symbol: squadBalance.symbol } })}
+          {$t('governance.common.balance', { values: { balance: formatAssetAmount(squadBalance.balanceRaw, { symbol: squadBalance.symbol }) ?? '—', symbol: squadBalance.symbol } })}
         {:else}
           {$t('governance.deploySquadSponsorExt.notAssignedBindFirst')}
         {/if}
@@ -323,7 +324,7 @@
             {:else if defaultBalance.error}
               {$t('governance.common.balanceUnavailable')}
             {:else if defaultCanonical}
-              {$t('governance.common.balance', { values: { balance: defaultBalance.balanceDecimal, symbol: defaultBalance.symbol } })}
+              {$t('governance.common.balance', { values: { balance: formatAssetAmount(defaultBalance.balanceRaw, { symbol: defaultBalance.symbol }) ?? '—', symbol: defaultBalance.symbol } })}
             {:else}
               {$t('governance.common.notSet')}
             {/if}
@@ -341,7 +342,7 @@
             {:else if squadBalance.error}
               {$t('governance.common.balanceUnavailable')}
             {:else if squadCanonical}
-              {$t('governance.common.balance', { values: { balance: squadBalance.balanceDecimal, symbol: squadBalance.symbol } })}
+              {$t('governance.common.balance', { values: { balance: formatAssetAmount(squadBalance.balanceRaw, { symbol: squadBalance.symbol }) ?? '—', symbol: squadBalance.symbol } })}
             {:else}
               {$t('governance.common.notAssigned')}
             {/if}
@@ -367,7 +368,7 @@
       errorInvalidKey="governance.deploySquadSponsorExt.deposit.error.invalid"
       errorExceedsKey="governance.deploySquadSponsorExt.deposit.error.exceedsBalance"
       exceedsBalanceValues={{
-        balance: selectedBalance.balanceDecimal,
+        balance: formatAssetAmount(selectedBalance.balanceRaw, { symbol: selectedBalance.symbol }) ?? '—',
         symbol: selectedBalance.symbol,
         network: deployNetwork,
       }}

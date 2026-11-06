@@ -5,9 +5,9 @@
     listSquadSponsoredFeeUsage,
     type SquadSponsoredFeeUsageDto,
   } from '../../../lib/governance/api';
+  import { formatAssetAmount } from '../../../lib/evm/format-token-amount';
   import {
     feeUsageActionLabel,
-    feeUsageAmountEth,
     truncateNpub,
   } from '../../../lib/governance/sponsored-fee-usage-display';
   import { getExplorerTxUrl } from '../../../lib/wallet/assets';
@@ -101,7 +101,7 @@
         </thead>
         <tbody>
           {#each rows as row (row.id)}
-            {@const amountEth = feeUsageAmountEth(row.amountWei)}
+            {@const amountEth = formatAssetAmount(row.amountWei, { symbol: 'ETH' })}
             <tr>
               <td title={actorTitle(row)}>
                 <code class="fee-mono">{shortAddress(row.actorEvm)}</code>
