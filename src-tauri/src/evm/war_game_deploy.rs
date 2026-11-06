@@ -78,7 +78,6 @@ fn require_sepolia_network(network: &str) -> Result<&'static WalletNetworkConfig
         .ok_or_else(|| wallet_err_json("UNSUPPORTED_NETWORK", "Unknown network: sepolia", None))
 }
 
-
 fn retired_sponsor_from_prior_payload(payload: Option<&str>, new_sponsor: &str) -> Option<String> {
     let raw = payload.map(str::trim).filter(|s| !s.is_empty())?;
     let v: serde_json::Value = serde_json::from_str(raw).ok()?;

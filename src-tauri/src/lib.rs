@@ -72,13 +72,13 @@ mod join_inbox;
 
 mod sticker_pack;
 
-mod squad_gov_replica;
 mod squad_content_policy;
-mod squad_event_time;
-mod squad_records;
+mod squad_doc;
 mod squad_event;
 mod squad_event_reminders;
-mod squad_doc;
+mod squad_event_time;
+mod squad_gov_replica;
+mod squad_records;
 mod url_secrets;
 
 mod klipy;
@@ -1370,7 +1370,7 @@ pub fn run() {
 
             // Startup cleanup: clear the clipboard if a previous run left a secret pending.
             crate::export::startup_clipboard_cleanup(&handle);
-            
+
             // Start the profile sync background processor
             tauri::async_runtime::spawn(async {
                 profile_sync::start_profile_sync_processor().await;

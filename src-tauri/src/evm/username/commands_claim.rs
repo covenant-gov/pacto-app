@@ -17,11 +17,11 @@ use crate::db::{self, UsernameClaimUpsert};
 use crate::evm::claim_binding::{claim_binding_signing_hash, sign_claim_binding};
 use crate::evm::contracts::pacto_username::IBootstrapMintPool::spendablePoolWeiCall as bootstrapSpendableCall;
 use crate::evm::contracts::pacto_username::IPactoUsernameNFT::{
-    canBootstrapClaimCall, claimCall, hashClaimBindingCall, nameAvailableCall,
-    npubOfCall, recordOfCall, usedNonceCall,
+    canBootstrapClaimCall, claimCall, hashClaimBindingCall, nameAvailableCall, npubOfCall,
+    recordOfCall, usedNonceCall,
 };
-use crate::evm::global_sponsored_fee_ledger::{self, LANE_USERNAME_BOOTSTRAP};
 use crate::evm::global_sponsor_userop::{send_sponsored_username_userop, UsernameSponsorLane};
+use crate::evm::global_sponsored_fee_ledger::{self, LANE_USERNAME_BOOTSTRAP};
 use crate::evm::nostr_claim_link::{
     hash_nostr_claim, npub_hash_from_pubkey, sign_nostr_claim, verify_nostr_claim,
 };
@@ -212,7 +212,6 @@ pub async fn username_claim<R: Runtime>(
     )
     .map_err(|e| wallet_err_json("EVM_SIGN", e, None))?;
 
-
     let calldata = claimCall {
         name: username.clone(),
         npubHash: npub_hash,
@@ -350,7 +349,11 @@ async fn claim_issued_at<P: Provider>(provider: &P) -> Result<U256, String> {
             )
         })?
         .ok_or_else(|| {
-            wallet_err_json("USERNAME_READ", "latest block missing for claim issuedAt", None)
+            wallet_err_json(
+                "USERNAME_READ",
+                "latest block missing for claim issuedAt",
+                None,
+            )
         })?;
     Ok(U256::from(block.header.timestamp))
 }

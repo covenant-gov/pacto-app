@@ -217,8 +217,7 @@ pub fn persist_kind0_publish<R: Runtime>(
     profile: &Profile,
     receipt_json: String,
 ) -> Result<(), String> {
-    crate::account_manager::get_current_account()
-        .map_err(|_| "No current account".to_string())?;
+    crate::account_manager::get_current_account().map_err(|_| "No current account".to_string())?;
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let write_result = (|| -> Result<(), String> {
         let tx = conn
@@ -708,9 +707,7 @@ pub fn get_username_claim<R: Runtime>(
 
 #[cfg(test)]
 mod username_claims_cache_tests {
-    use super::{
-        get_username_claim_conn, upsert_username_claim_conn, UsernameClaimUpsert,
-    };
+    use super::{get_username_claim_conn, upsert_username_claim_conn, UsernameClaimUpsert};
 
     fn sample(link: Option<&str>, invalidate: bool) -> UsernameClaimUpsert {
         UsernameClaimUpsert {
@@ -1011,4 +1008,3 @@ fn export_epoch_seconds() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
-

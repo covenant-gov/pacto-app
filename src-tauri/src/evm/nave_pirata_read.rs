@@ -36,15 +36,7 @@ pub struct NavePirataDeploymentDto {
 }
 
 /// `(topHatId, captainOrDeployer, safe, quartermaster, mutiny, treasury, squadAdmin)`.
-pub(crate) type NaveCloneAddresses = (
-    U256,
-    Address,
-    Address,
-    Address,
-    Address,
-    Address,
-    Address,
-);
+pub(crate) type NaveCloneAddresses = (U256, Address, Address, Address, Address, Address, Address);
 
 /// Clone tuple from a registry `deployment()` row. `topHatId` is the registry key, not a struct field.
 pub(crate) fn clones_from_registry_row(
@@ -188,9 +180,13 @@ pub async fn read_war_game_active_deployment<P: Provider>(
     chain: &str,
     chain_id: u64,
 ) -> Result<Option<NavePirataDeploymentDto>, String> {
-    let top_hat = eth_call_decode(provider, registry, &activeTopHatIdCall { _squadId: squad_id })
-        .await
-        .map_err(|e| wallet_err_json("REGISTRY_READ", e, None))?;
+    let top_hat = eth_call_decode(
+        provider,
+        registry,
+        &activeTopHatIdCall { _squadId: squad_id },
+    )
+    .await
+    .map_err(|e| wallet_err_json("REGISTRY_READ", e, None))?;
     if top_hat.is_zero() {
         return Ok(None);
     }

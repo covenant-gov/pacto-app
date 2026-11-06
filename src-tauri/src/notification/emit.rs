@@ -15,7 +15,9 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::chat::NotificationLevel;
-use crate::notification::severity::{reminder_delivery, resolve_tier, EventKind, ReminderDelivery, Tier};
+use crate::notification::severity::{
+    reminder_delivery, resolve_tier, EventKind, ReminderDelivery, Tier,
+};
 
 use super::coalesce;
 

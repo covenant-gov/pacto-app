@@ -281,7 +281,11 @@ mod tests {
 
     #[test]
     fn event_reminder_never_earns_catch_up_on_arrival() {
-        assert!(!earns_catch_up_entry(EventKind::EventReminder, false, false));
+        assert!(!earns_catch_up_entry(
+            EventKind::EventReminder,
+            false,
+            false
+        ));
         assert!(!earns_catch_up_entry(EventKind::EventReminder, false, true));
     }
 

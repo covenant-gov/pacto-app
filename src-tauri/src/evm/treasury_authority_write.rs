@@ -231,9 +231,9 @@ mod tests {
 
     #[test]
     fn execute_encodes_proposal_id_and_data() {
+        use super::executeCall;
         use alloy::primitives::{Bytes, U256};
         use alloy::sol_types::SolCall;
-        use super::executeCall;
 
         let encoded = executeCall {
             _proposalId: U256::from(3u64),

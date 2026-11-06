@@ -23,9 +23,7 @@ use super::rpc::signer::{
     load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
-use super::rpc::{
-    connect_read_provider, wallet_err_json, wallet_err_json_with_tx_hash,
-};
+use super::rpc::{connect_read_provider, wallet_err_json, wallet_err_json_with_tx_hash};
 use super::squad_sponsor_common::{
     collapse_pay_signer_mode, parse_optional_deposit_wei, parse_signer_wallet, read_squad_record,
     require_parent_member, squad_id_from_parent_id, squad_variant_label,
@@ -346,11 +344,9 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
                 require_roster_treasury_signing_allowed(app.clone(), pid).await?;
                 let (roster_signer, _) =
                     load_squad_roster_embedded_signer(app.clone(), pid).await?;
-                let owner = super::infra_owner::read_sponsor_address_owner(
-                    &read_provider,
-                    record.sponsor,
-                )
-                .await?;
+                let owner =
+                    super::infra_owner::read_sponsor_address_owner(&read_provider, record.sponsor)
+                        .await?;
                 super::infra_owner::require_roster_is_sponsor_owner(
                     roster_signer.address(),
                     owner,
@@ -934,22 +930,10 @@ mod tests {
 
     #[test]
     fn parse_optional_deposit_wei_accepts_empty_and_zero() {
-        assert_eq!(
-            parse_optional_deposit_wei(None).unwrap(),
-            U256::ZERO
-        );
-        assert_eq!(
-            parse_optional_deposit_wei(Some("")).unwrap(),
-            U256::ZERO
-        );
-        assert_eq!(
-            parse_optional_deposit_wei(Some("0")).unwrap(),
-            U256::ZERO
-        );
-        assert_eq!(
-            parse_optional_deposit_wei(Some("0x0")).unwrap(),
-            U256::ZERO
-        );
+        assert_eq!(parse_optional_deposit_wei(None).unwrap(), U256::ZERO);
+        assert_eq!(parse_optional_deposit_wei(Some("")).unwrap(), U256::ZERO);
+        assert_eq!(parse_optional_deposit_wei(Some("0")).unwrap(), U256::ZERO);
+        assert_eq!(parse_optional_deposit_wei(Some("0x0")).unwrap(), U256::ZERO);
         assert_eq!(
             parse_optional_deposit_wei(Some("1000")).unwrap(),
             U256::from(1000u64)

@@ -884,4 +884,3 @@ pub async fn load_mls_device_id<R: Runtime>(
     crate::account_manager::return_db_connection(conn);
     Ok(device_id)
 }
-

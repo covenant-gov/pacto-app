@@ -12,12 +12,7 @@ fn mls_groups_schema(conn: &rusqlite::Connection) {
     .expect("schema");
 }
 
-fn insert_group(
-    conn: &rusqlite::Connection,
-    group_id: &str,
-    engine_group_id: &str,
-    evicted: bool,
-) {
+fn insert_group(conn: &rusqlite::Connection, group_id: &str, engine_group_id: &str, evicted: bool) {
     conn.execute(
         "INSERT INTO mls_groups (group_id, engine_group_id, evicted) VALUES (?1, ?2, ?3)",
         rusqlite::params![group_id, engine_group_id, evicted as i32],

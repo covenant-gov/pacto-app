@@ -11,8 +11,8 @@ use super::contracts::pacto_sponsor::ISquadSponsorFactory::squadsCall;
 use super::contracts::pacto_sponsor::SquadVariant;
 use super::gov_read::rpc_urls_or_default;
 use super::infra_owner::{
-    owner_from_payload_field, read_admin_ext_owner, read_sponsor_address_owner, roster_evm_for_parent,
-    ExtInfraOwners,
+    owner_from_payload_field, read_admin_ext_owner, read_sponsor_address_owner,
+    roster_evm_for_parent, ExtInfraOwners,
 };
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
@@ -125,8 +125,7 @@ pub async fn get_squad_deploy_launchpad_state<R: Runtime>(
 
     let has_pacto_gov = gov_row.is_some();
     let gov_payload = gov_row.and_then(|r| r.provider_payload.as_deref());
-    let gov_admin_proxy = gov_payload
-        .and_then(|p| parse_payload_field(p, "squadAdminProxy"));
+    let gov_admin_proxy = gov_payload.and_then(|p| parse_payload_field(p, "squadAdminProxy"));
     let pacto_gov_address = gov_row.map(|r| r.canonical_ref.clone());
 
     let mut sponsor_status = LaunchpadComponentStatus {
@@ -151,7 +150,9 @@ pub async fn get_squad_deploy_launchpad_state<R: Runtime>(
 
     let net_key = network.to_lowercase();
     let net = wallet_chain_config::network_by_key(&net_key);
-    let urls = net.as_ref().map(|n| rpc_urls_or_default(n, rpc_urls.clone()));
+    let urls = net
+        .as_ref()
+        .map(|n| rpc_urls_or_default(n, rpc_urls.clone()));
     let provider = if let (Some(n), Some(urls)) = (net.as_ref(), urls.as_ref()) {
         if !urls.is_empty() {
             connect_read_provider(urls).await.ok()
@@ -168,8 +169,8 @@ pub async fn get_squad_deploy_launchpad_state<R: Runtime>(
         sponsor_status.deployed_address = Some(row.canonical_ref.clone());
         if let Some(p) = row.provider_payload.as_deref() {
             sponsor_status.variant = parse_payload_field(p, "variant");
-            sponsor_status.hats_wired = parse_payload_field(p, "hatsWired")
-                .map(|s| s == "true" || s == "1");
+            sponsor_status.hats_wired =
+                parse_payload_field(p, "hatsWired").map(|s| s == "true" || s == "1");
             sponsor_status.address_owner = parse_payload_field(p, "addressOwner");
         }
     }
@@ -177,17 +178,17 @@ pub async fn get_squad_deploy_launchpad_state<R: Runtime>(
     if let (Some(p), Some(n)) = (provider.as_ref(), net.as_ref()) {
         if let Ok(addrs) = pacto_chain_config::squad_sponsor_deploy_addresses(&n.key) {
             let squad_id = squad_id_from_parent_id(pid);
-            if let Ok(record) = eth_call_decode(p, addrs.squad_sponsor_factory, &squadsCall {
-                squadId: squad_id,
-            })
+            if let Ok(record) = eth_call_decode(
+                p,
+                addrs.squad_sponsor_factory,
+                &squadsCall { squadId: squad_id },
+            )
             .await
             {
                 if !record.sponsor.is_zero() {
                     sponsor_status.deployed = true;
-                    sponsor_status.deployed_address =
-                        Some(format!("{:#x}", record.sponsor));
-                    sponsor_status.variant =
-                        Some(squad_variant_label(record.variant).to_string());
+                    sponsor_status.deployed_address = Some(format!("{:#x}", record.sponsor));
+                    sponsor_status.variant = Some(squad_variant_label(record.variant).to_string());
                     if matches!(record.variant, SquadVariant::EXT) {
                         if let Ok(owner) = read_sponsor_address_owner(p, record.sponsor).await {
                             ext_owners.sponsor_address_owner = Some(owner);
@@ -247,7 +248,11 @@ pub async fn get_squad_deploy_launchpad_state<R: Runtime>(
     let pacto_gov_status = LaunchpadComponentStatus {
         deployed: has_pacto_gov,
         deployed_address: pacto_gov_address,
-        variant: if has_pacto_gov { Some("pacto_gov".to_string()) } else { None },
+        variant: if has_pacto_gov {
+            Some("pacto_gov".to_string())
+        } else {
+            None
+        },
         address_owner: None,
         owner: None,
         hats_wired: None,
@@ -259,9 +264,8 @@ pub async fn get_squad_deploy_launchpad_state<R: Runtime>(
     let sponsor_is_ext = sponsor_status.variant.as_deref() == Some("ext");
     let unwired_ext = has_sponsor && sponsor_is_ext && !hats_wired;
 
-    let gov_owner_ok = ext_owners.sponsor_address_owner.is_none()
-        && ext_owners.admin_ext_owner.is_none()
-        || {
+    let gov_owner_ok =
+        ext_owners.sponsor_address_owner.is_none() && ext_owners.admin_ext_owner.is_none() || {
             let mut ok = true;
             if let Some(o) = ext_owners.sponsor_address_owner {
                 ok &= addresses_match(my_roster, Some(o));
