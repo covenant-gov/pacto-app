@@ -133,5 +133,5 @@ function runStartupUpdateCheckIfEnabled(): void {
   if (!get(startupCheckEnabled)) return;
 
   markStartupCheckRun();
-  void checkForUpdates();
+  void checkForUpdates({ background: true });
 }

@@ -79,7 +79,7 @@
       </p>
 
       {#if hasLiveInstallAction}
-        <UpdateAvailablePanel />
+        <UpdateAvailablePanel showDismiss={false} />
       {:else if state.reason === 'minimum-version'}
         <div class="gate-block-fallback">
           <button type="button" class="btn-primary" onclick={handleRetry}>

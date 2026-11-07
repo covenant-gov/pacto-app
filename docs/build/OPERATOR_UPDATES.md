@@ -25,13 +25,21 @@ The usual path needs no manual tag:
    - macOS (`aarch64-apple-darwin`, `x86_64-apple-darwin`)
    - Linux (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`)
    - Windows (`x86_64-pc-windows-msvc`)
-5. The workflow uploads installers and `latest.json` to the GitHub release.
+5. The workflow uploads installers and `latest.json` to a **draft** GitHub release
+   (`releaseDraft: true`).
    - `uploadUpdaterJson: true` tells the Tauri action to generate and attach `latest.json`.
-6. Once the **entire** platform matrix finishes, `release.yaml` fans out three
-   follow-up jobs, all gated on `needs: publish-tauri`:
-   - `update-homebrew-tap` — bumps the Cask in `covenant-gov/homebrew-pacto` and waits for the tap to merge it (see below).
-   - `stamp-updater-compatibility` — stamps `minimum_compatible_version` onto `latest.json`.
-   - `deploy-landing` — refreshes the public download page (see below).
+   - While the release stays draft, `releases/latest/download/latest.json` continues
+     to serve the previous complete release — clients never see a half-built
+     multi-platform matrix mid-upload.
+6. After the **entire** platform matrix finishes, `release.yaml` runs:
+   - `stamp-updater-compatibility` — stamps `minimum_compatible_version` onto the
+     draft's `latest.json`.
+   - `publish-github-release` — verifies every expected updater platform entry and
+     `minimum_compatible_version` are present, then undrafts the release so it
+     becomes `latest` atomically.
+   - Then, gated on the published release:
+     - `update-homebrew-tap` — bumps the Cask in `covenant-gov/homebrew-pacto` and waits for the tap to merge it (see below).
+     - `deploy-landing` — refreshes the public download page (see below).
 
 Pushing a `v*` tag yourself still starts publish through the `push` trigger. The automatic push cannot: Tag Release authenticates with `GITHUB_TOKEN`, and GitHub does not start `push` workflows from that token. Re-running Tag Release after the tag exists does not dispatch a second publish.
 
@@ -111,14 +119,15 @@ assets.
 `release.yaml`'s `deploy-landing` job calls `.github/workflows/deploy-landing.yaml`
 as a reusable workflow with `release_tag: ${{ github.ref_name }}`, so a tagged
 release refreshes the download page with **no manual step**. Because the job
-needs `publish-tauri`, the manifest is only generated after every platform has
-uploaded its installers — the page never advertises a partial asset set. After
-deploying, a `verify` job polls the live `pacto-release.json` and fails the run
-if the served `tag` does not match the tag that was built.
+needs `publish-github-release`, the manifest is only generated after every
+platform has uploaded, the compatibility floor is stamped, and the release is
+undrafted — the page never advertises a partial asset set. After deploying, a
+`verify` job polls the live `pacto-release.json` and fails the run if the served
+`tag` does not match the tag that was built.
 
 `deploy-landing.yaml` intentionally has **no** `release: published` trigger.
-tauri-action publishes the release using `GITHUB_TOKEN`, and runs authenticated
-with `GITHUB_TOKEN` do not reliably fire other workflows' `release` listeners.
+The release is undrafted using `GITHUB_TOKEN`, and runs authenticated with
+`GITHUB_TOKEN` do not reliably fire other workflows' `release` listeners.
 Depending on that event is what left the site serving v0.5.1 across the v0.5.2
 and v0.5.4 releases (#213).
 
@@ -201,6 +210,12 @@ Save the public key for `tauri.conf.json` and store the private key in the repos
 
 **Settings > App > Updates** includes **Check for updates on startup**. It is **on by default** for every account that has not explicitly opted out. Unchecking persists per account (`pacto_startup_check_enabled_v2_<npub>`). The mandatory update gate is independent of this toggle (see [Marking a release as breaking](#marking-a-release-as-breaking)).
 
+Startup checks are background/courtesy: they open the update modal only when an
+installable update exists for this platform. Network, missing-platform, or other
+transient failures are logged quietly and do not show an error dialog. Manual
+**Check for Updates** in Settings still surfaces errors, with a visible **Close**
+beside **Retry**.
+
 ## Manual smoke test
 
 1. Build and install a signed release for the current platform, e.g. `v0.2.0`.
@@ -235,7 +250,7 @@ A release that ships an incompatible on-disk change (a new database migration ol
    { "minimumCompatibleVersion": "0.6.0" }
    ```
 2. Commit it on the branch that will be tagged.
-3. Tag and push as usual (see **Release workflow** above). After the whole platform matrix in `publish-tauri` finishes, the `stamp-updater-compatibility` job in `.github/workflows/release.yaml` runs `node scripts/stamp-updater-compatibility.mjs`, downloads the just-published `latest.json`, merges in the tracked value as `minimum_compatible_version`, and re-uploads it to the same release. No separate step is required.
+3. Tag and push as usual (see **Release workflow** above). After the whole platform matrix in `publish-tauri` finishes, the `stamp-updater-compatibility` job in `.github/workflows/release.yaml` runs `node scripts/stamp-updater-compatibility.mjs`, downloads the draft release's `latest.json`, merges in the tracked value as `minimum_compatible_version`, and re-uploads it. `publish-github-release` then verifies the stamped manifest and undrafts the release. No separate step is required.
 
 **The tracked value must not exceed the version being released.** The stamping job validates the candidate against the release's own `version` field before it uploads anything; if `minimumCompatibleVersion` is higher than the tag, the job throws and refuses to publish the stamped manifest — the release keeps its installers but its `latest.json` is left unstamped (or stamped with whatever it already had), rather than being written with an impossible floor.
 

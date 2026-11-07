@@ -1,7 +1,7 @@
 <script lang="ts">
   import Modal from '../ui/Modal.svelte';
   import UpdateAvailablePanel from './UpdateAvailablePanel.svelte';
-  import { updateStatus } from '../../lib/updater/update-check';
+  import { dismissUpdatePanel, updateStatus } from '../../lib/updater/update-check';
   import { t } from 'svelte-i18n';
 
   let open = $derived(
@@ -21,9 +21,7 @@
   );
 
   function closeModal(): void {
-    const status = $updateStatus.status;
-    if (status === 'downloading' || status === 'installing') return;
-    updateStatus.reset();
+    dismissUpdatePanel();
   }
 </script>
 

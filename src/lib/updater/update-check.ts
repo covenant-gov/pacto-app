@@ -151,7 +151,12 @@ function friendlyErrorMessage(err: unknown): string {
   return rawMessage || get(t)('updater.updateCheckFailed');
 }
 
-export async function checkForUpdates(): Promise<void> {
+export type CheckForUpdatesOptions = {
+  /** Background/startup checks: failures stay quiet; only a real update opens the modal. */
+  background?: boolean;
+};
+
+export async function checkForUpdates(options: CheckForUpdatesOptions = {}): Promise<void> {
   const currentVersion = await resolveInstalledVersion();
 
   if (isDevBuild()) {
@@ -175,9 +180,21 @@ export async function checkForUpdates(): Promise<void> {
     });
   } catch (err) {
     console.error('[updater] Update check failed:', err);
+    if (options.background) {
+      // Courtesy checks must not open UpdateAvailableModal on transient failures.
+      updateStatus.setStatus('idle', { currentVersion, availableVersion: null, error: null });
+      return;
+    }
     const message = friendlyErrorMessage(err);
     updateStatus.setStatus('error', { error: message });
   }
+}
+
+/** Clear a dismissible updater panel (error / available / installed). No-op while downloading. */
+export function dismissUpdatePanel(): void {
+  const status = get(updateStatus).status;
+  if (status === 'downloading' || status === 'installing') return;
+  updateStatus.reset();
 }
 
 let downloadTotalBytes = 0;

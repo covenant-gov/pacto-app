@@ -412,6 +412,7 @@ describe('runPostLoginNetworkSync', () => {
       runPostLoginNetworkSync('npub1');
       await flushAsync();
       expect(updateCheck.checkForUpdates).toHaveBeenCalledTimes(1);
+      expect(updateCheck.checkForUpdates).toHaveBeenCalledWith({ background: true });
       expect(getHasRunStartupCheckThisSession()).toBe(true);
 
       runPostLoginNetworkSync('npub1');

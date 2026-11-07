@@ -44,8 +44,27 @@ describe('tag-release dispatches publish', () => {
     assert.match(notes, /if: \$\{\{ !startsWith\(github\.ref, 'refs\/tags\/v'\) \}\}/);
     assert.match(notes, /echo "publish must run on a v\* tag ref, got \$GITHUB_REF"\n {10}exit 1/);
     assert.ok(notes.indexOf('- name: Require a v* tag ref') < notes.indexOf('actions/checkout'));
-    const publish = jobBlock(release, 'publish-tauri', 'update-homebrew-tap');
+    const publish = jobBlock(release, 'publish-tauri', 'stamp-updater-compatibility');
     assert.match(publish, /\n {4}needs: release-notes\n/);
+  });
+
+  it('keeps the GitHub Release draft until latest.json is complete, then publishes', () => {
+    const publish = jobBlock(release, 'publish-tauri', 'stamp-updater-compatibility');
+    assert.match(publish, /releaseDraft: true/);
+    assert.doesNotMatch(publish, /releaseDraft: false/);
+
+    const stamp = jobBlock(release, 'stamp-updater-compatibility', 'publish-github-release');
+    assert.match(stamp, /\n {4}needs: publish-tauri\n/);
+
+    const undraft = jobBlock(release, 'publish-github-release', 'update-homebrew-tap');
+    assert.match(undraft, /\n {4}needs: stamp-updater-compatibility\n/);
+    assert.match(undraft, /node scripts\/publish-github-release\.mjs/);
+
+    const tap = jobBlock(release, 'update-homebrew-tap', 'deploy-landing');
+    assert.match(tap, /\n {4}needs: publish-github-release\n/);
+
+    const landing = jobBlock(release, 'deploy-landing');
+    assert.match(landing, /\n {4}needs: publish-github-release\n/);
   });
 
   it('dispatches publish only when this run created the tag', () => {

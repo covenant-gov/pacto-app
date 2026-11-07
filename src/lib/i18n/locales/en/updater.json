@@ -11,6 +11,7 @@
 	"updater.primary.downloading": "Downloading…",
 	"updater.primary.installing": "Installing…",
 	"updater.primary.retry": "Retry",
+	"updater.primary.close": "Close",
 	"updater.primary.downloadAndInstall": "Download and install",
 	"updater.gate.minimumVersionTitle": "Update required",
 	"updater.gate.minimumVersionDescription": "This release ({installed}) is no longer supported. Update to at least {required} to continue.",
