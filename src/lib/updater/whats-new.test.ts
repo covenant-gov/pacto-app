@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
-import { acknowledgeWhatsNew, loadWhatsNew, rememberVersionBeforeUpdate, type NotesLoaders } from './whats-new';
+import {
+  acknowledgeWhatsNew,
+  loadInstalledWhatsNew,
+  loadWhatsNew,
+  rememberVersionBeforeUpdate,
+  type NotesLoaders,
+} from './whats-new';
 
 let values: Map<string, string>;
 const key = 'pacto_whats_new_seen_alice';
@@ -82,5 +88,40 @@ describe('post-update notes', () => {
     vi.stubGlobal('localStorage', { getItem: () => { throw Error('denied'); }, setItem: () => { throw Error('denied'); } });
     expect(() => rememberVersionBeforeUpdate('0.8.0')).not.toThrow();
     expect(await loadWhatsNew('0.9.0', loaders('0.9.0'))).toBeNull();
+  });
+});
+
+describe('installed version notes for Settings', () => {
+  it('reopens the installed release even after the post-update marker is caught up', async () => {
+    values.set(key, '0.10.0');
+    const result = await loadInstalledWhatsNew('v0.10.0', loaders('0.10.0', '0.9.0'));
+    expect(result).toEqual({
+      status: 'ready',
+      version: '0.10.0',
+      releases: [release('0.10.0')],
+    });
+  });
+
+  it('does not need a signed-in account or storage marker', async () => {
+    setCurrentNpubForPersistence(null);
+    expect(await loadInstalledWhatsNew('0.9.0', loaders('0.9.0'))).toMatchObject({
+      status: 'ready',
+      version: '0.9.0',
+    });
+  });
+
+  it('returns none for empty notes, missing files, betas, and malformed data', async () => {
+    expect(await loadInstalledWhatsNew('0.9.0', {
+      '/whats-new/0.9.0.json': async () => ({ version: '0.9.0', items: [] }),
+    })).toEqual({ status: 'none' });
+    expect(await loadInstalledWhatsNew('0.9.0', {})).toEqual({ status: 'none' });
+    expect(await loadInstalledWhatsNew('0.9.0-beta.1', loaders('0.9.0'))).toEqual({ status: 'none' });
+    expect(await loadInstalledWhatsNew('0.9.0', {
+      '/whats-new/0.9.0.json': async () => ({ version: '0.9.0', items: [{ title: {} }] }),
+    })).toEqual({ status: 'none' });
+    expect(await loadInstalledWhatsNew('0.9.0', {
+      '/whats-new/0.9.0.json': async () => { throw Error('unavailable'); },
+    })).toEqual({ status: 'none' });
+    expect(await loadInstalledWhatsNew('bad', loaders('0.9.0'))).toEqual({ status: 'none' });
   });
 });

@@ -90,6 +90,8 @@ installer can quit the app without calling the relaunch action. A failed install
 rolls the marker back. The relaunch action also records a baseline as a fallback.
 After login on the new version, the modal collects bundled notes since that
 baseline; dismissal marks the installed version as seen for that account.
+App Settings → Updates can reopen the installed version's notes afterward;
+empty or missing notes show a short "no notable changes" state instead.
 
 If publish did not start, dispatch it against the tag that is already on the repo:
 

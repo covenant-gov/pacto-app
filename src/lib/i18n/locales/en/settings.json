@@ -89,6 +89,8 @@
 	"settings.updateStatusError": "Update check failed.",
 	"settings.updateStatusDevDisabled": "Updates are only available in release builds.",
 	"settings.checkForUpdatesOnStartup": "Check for updates on startup",
+	"settings.whatsNewInThisVersion": "What’s new in this version",
+	"settings.whatsNewNone": "No notable changes in this version.",
 	"settings.devBuildNote": "The in-app updater is disabled in dev builds. Use a release build to check for and install published updates.",
 	"settings.securityTitle": "Security",
 	"settings.autoLockAfterInactivity": "Auto-lock after inactivity",

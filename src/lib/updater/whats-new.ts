@@ -8,6 +8,10 @@ export interface WhatsNewItem {
 }
 export interface WhatsNewRelease { version: string; items: WhatsNewItem[] }
 export interface WhatsNewAnnouncement { version: string; releases: WhatsNewRelease[]; storageKey: string }
+/** Settings reopen lookup: notes for the installed version, or nothing notable. */
+export type InstalledWhatsNew =
+  | { status: 'ready'; version: string; releases: WhatsNewRelease[] }
+  | { status: 'none' };
 export type NotesLoaders = Record<string, () => Promise<unknown>>;
 const bundledNotes: NotesLoaders = import.meta.glob('/whats-new/*.json', { import: 'default' });
 const SEEN_PREFIX = 'pacto_whats_new_seen';
@@ -56,6 +60,10 @@ function isRelease(value: unknown, expectedVersion: string): value is WhatsNewRe
       bilingual(item.title, 80) && bilingual(item.detail, 240));
 }
 
+function versionFromNotesPath(path: string): string {
+  return path.split('/').at(-1)?.replace(/\.json$/, '') ?? '';
+}
+
 export async function loadWhatsNew(currentVersion: string, loaders: NotesLoaders = bundledNotes): Promise<WhatsNewAnnouncement | null> {
   const key = whatsNewStorageKey();
   const current = parseVersion(currentVersion);
@@ -64,7 +72,7 @@ export async function loadWhatsNew(currentVersion: string, loaders: NotesLoaders
     const origin = parseVersion(localStorage.getItem(key) ?? '');
     if (!origin || compareVersions(origin, current) >= 0) return null;
     const entries = Object.entries(loaders).flatMap(([path, load]) => {
-      const version = path.split('/').at(-1)?.replace(/\.json$/, '') ?? '';
+      const version = versionFromNotesPath(path);
       const parsed = parseVersion(version);
       return parsed && compareVersions(parsed, origin) > 0 && compareVersions(parsed, current) <= 0
         ? [{ version, parsed, load }] : [];
@@ -83,6 +91,31 @@ export async function loadWhatsNew(currentVersion: string, loaders: NotesLoaders
     }
     return { version: currentVersion, releases, storageKey: key };
   } catch { return null; }
+}
+
+/**
+ * Loads notes for the installed version so Settings can reopen them after dismissal.
+ * Empty items, missing files (e.g. betas), and malformed notes all return `none`.
+ */
+export async function loadInstalledWhatsNew(
+  installedVersion: string,
+  loaders: NotesLoaders = bundledNotes
+): Promise<InstalledWhatsNew> {
+  const current = parseVersion(installedVersion);
+  if (!current) return { status: 'none' };
+  try {
+    const entry = Object.entries(loaders).find(([path]) => {
+      const parsed = parseVersion(versionFromNotesPath(path));
+      return parsed !== null && compareVersions(parsed, current) === 0;
+    });
+    if (!entry) return { status: 'none' };
+    const version = versionFromNotesPath(entry[0]);
+    const release = await entry[1]();
+    if (!isRelease(release, version) || release.items.length === 0) return { status: 'none' };
+    return { status: 'ready', version: release.version, releases: [release] };
+  } catch {
+    return { status: 'none' };
+  }
 }
 
 export function acknowledgeWhatsNew(announcement: WhatsNewAnnouncement): void {

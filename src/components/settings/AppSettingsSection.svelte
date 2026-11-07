@@ -6,11 +6,17 @@
   import { startupCheckEnabled } from '../../stores/startup-check';
   import {
     checkForUpdates,
+    resolveInstalledVersion,
     updateStatus,
     buildCommitHash,
     buildVersion,
   } from '../../lib/updater/update-check';
+  import {
+    loadInstalledWhatsNew,
+    type InstalledWhatsNew,
+  } from '../../lib/updater/whats-new';
   import UpdateAvailablePanel from '../updater/UpdateAvailablePanel.svelte';
+  import WhatsNewModal from '../updater/WhatsNewModal.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import PrivacySettingsSection from './PrivacySettingsSection.svelte';
   import { getSessionTimeout, setSessionTimeout } from '../../lib/api/auth';
@@ -23,6 +29,8 @@
 
   let isDev = $derived($updateStatus.status === 'dev-disabled');
   let isChecking = $derived($updateStatus.status === 'checking');
+  let installedWhatsNew = $state<InstalledWhatsNew | null>(null);
+  let whatsNewOpen = $state(false);
 
   function versionLabel(): string {
     const version = $updateStatus.currentVersion || buildVersion;
@@ -81,6 +89,12 @@
       selectedTimeout = await getSessionTimeout();
     } catch (error) {
       console.error('Failed to load session timeout:', error);
+    }
+
+    try {
+      installedWhatsNew = await loadInstalledWhatsNew(await resolveInstalledVersion());
+    } catch {
+      installedWhatsNew = { status: 'none' };
     }
 
     const npub = get(currentUser)?.npub;
@@ -227,6 +241,18 @@
         <span>{$t('settings.checkForUpdatesOnStartup')}</span>
       </label>
 
+      {#if installedWhatsNew?.status === 'ready'}
+        <button
+          type="button"
+          class="btn-secondary whats-new-btn"
+          onclick={() => (whatsNewOpen = true)}
+        >
+          {$t('settings.whatsNewInThisVersion')}
+        </button>
+      {:else if installedWhatsNew?.status === 'none'}
+        <p class="whats-new-none">{$t('settings.whatsNewNone')}</p>
+      {/if}
+
       {#if isDev}
         <p class="dev-build-note">
           {$t('settings.devBuildNote')}
@@ -301,6 +327,14 @@
   </div>
 </SettingsCollapsibleSection>
 
+{#if whatsNewOpen && installedWhatsNew?.status === 'ready'}
+  <WhatsNewModal
+    version={installedWhatsNew.version}
+    releases={installedWhatsNew.releases}
+    onClose={() => (whatsNewOpen = false)}
+  />
+{/if}
+
 <style>
   .app-settings {
     display: flex;
@@ -368,8 +402,30 @@
     font-size: 0.875rem;
   }
 
-  .check-for-updates-btn {
+  .check-for-updates-btn,
+  .whats-new-btn {
     align-self: flex-start;
+  }
+
+  .btn-secondary {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+    cursor: pointer;
+  }
+
+  .btn-secondary:hover {
+    background: var(--bg-hover);
+  }
+
+  .whats-new-none {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
   }
 
   .update-status-line {
