@@ -214,4 +214,54 @@ describe('bump-version.sh', () => {
     assert.match(result.stdout + result.stderr, /tag v0\.8\.1 already exists/);
     assert.equal(readJson(root, 'package.json').version, '0.8.0');
   });
+
+  it('does not call a missing git repo uncommitted changes', () => {
+    const { root } = makeFixture();
+    rmSync(join(root, '.git'), { recursive: true, force: true });
+    const result = runBump(root, ['patch', '--skip-checks', '--no-commit']);
+    const output = result.stdout + result.stderr;
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(output, /uncommitted changes/);
+    assert.match(output, /cannot use this directory as a git work tree/);
+    assert.equal(readJson(root, 'package.json').version, '0.8.0');
+  });
+
+  it('does not call git diff usage-error a dirty tree', () => {
+    const { root } = makeFixture();
+    const realGit = spawnSync('bash', ['-lc', 'command -v git'], {
+      encoding: 'utf8',
+    }).stdout.trim();
+    assert.ok(realGit, 'need a real git to proxy');
+    writeFileSync(
+      join(root, 'bin/git'),
+      `#!/usr/bin/env bash
+if [[ "$1" == "diff" ]]; then
+  echo "warning: Not a git repository. Use --no-index to compare two paths outside a working tree" >&2
+  echo "usage: git diff --no-index [<options>] <path> <path>" >&2
+  exit 129
+fi
+exec "${realGit}" "$@"
+`,
+    );
+    chmodSync(join(root, 'bin/git'), 0o755);
+    const result = runBump(root, ['patch', '--skip-checks', '--no-commit']);
+    const output = result.stdout + result.stderr;
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(output, /uncommitted changes/);
+    assert.match(output, /git diff failed/);
+    assert.equal(readJson(root, 'package.json').version, '0.8.0');
+  });
+
+  it('still refuses a real dirty tracked tree', () => {
+    const { root } = makeFixture();
+    writeFileSync(
+      join(root, 'package.json'),
+      `${JSON.stringify({ name: 'pacto', version: '0.8.0', extra: true }, null, 2)}\n`,
+    );
+    const result = runBump(root, ['patch', '--skip-checks', '--no-commit']);
+    const output = result.stdout + result.stderr;
+    assert.equal(result.status, 1);
+    assert.match(output, /uncommitted changes to tracked files/);
+    assert.equal(readJson(root, 'package.json').version, '0.8.0');
+  });
 });
