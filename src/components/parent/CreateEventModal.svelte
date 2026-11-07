@@ -7,6 +7,7 @@
 
 <script lang="ts">
   import { t, locale } from 'svelte-i18n';
+  import { Trash2 } from '@lucide/svelte';
   import { parseDateTime, toZoned } from '@internationalized/date';
   import EventCivilDateTimeInput from './EventCivilDateTimeInput.svelte';
   import EventTimeFormatSelect from './EventTimeFormatSelect.svelte';
@@ -437,6 +438,7 @@
           <p class="field-hint" aria-live="polite">{$t('events.create.retainedCount', { values: { count: occurrences.length } })}</p>
           <ol>
             {#each occurrences as occurrence (occurrence.weekOffset)}
+              {@const removeLabel = $t('events.create.removeOccurrence', { values: { count: occurrence.weekOffset + 1, date: occurrence.start } })}
               <li>
                 <div class="occurrence-times">
                   <div class="occurrence-field"><span class="occurrence-label">{$t('events.create.previewStart')}</span><time datetime={occurrence.start}>{formatEventCivil(occurrence.start, timeOpts)}</time></div>
@@ -444,7 +446,7 @@
                   <div class="occurrence-meta"><span>{$t('events.create.previewDuration')}: {occurrenceDuration(occurrence.start, occurrence.end)}</span><small>{values.startTzid}</small></div>
                 </div>
                 {#if values.weekly && !isEdit}
-                  <button type="button" class="remove-occurrence" disabled={saving} aria-label={$t('events.create.removeOccurrence', { values: { count: occurrence.weekOffset + 1, date: occurrence.start } })} onclick={() => removeOccurrence(occurrence.weekOffset)}>{$t('events.create.remove')}</button>
+                  <button type="button" class="remove-occurrence" disabled={saving} aria-label={removeLabel} title={removeLabel} onclick={() => removeOccurrence(occurrence.weekOffset)}><Trash2 size={18} strokeWidth={1.75} aria-hidden="true" /></button>
                 {/if}
               </li>
             {/each}
@@ -592,7 +594,7 @@
     color: var(--on-brand);
   }
 
-  .duration-button:disabled {
+  .duration-button:disabled, .remove-occurrence:disabled {
     opacity: 0.5;
     cursor: default;
   }
@@ -619,7 +621,18 @@
   .occurrence-field { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   .occurrence-label { display: block; color: var(--text-muted); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
   .occurrence-meta { grid-column: 1 / -1; color: var(--text-secondary); overflow-wrap: anywhere; }
-  .remove-occurrence { flex-shrink: 0; }
+  .remove-occurrence {
+    flex-shrink: 0;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+  }
+  .remove-occurrence:hover:not(:disabled) { background: var(--bg-hover); }
+  .remove-occurrence:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
   @media (max-width: 520px) {
     .occurrence-times { grid-template-columns: minmax(0, 1fr); }
     .field-row { flex-direction: column; }

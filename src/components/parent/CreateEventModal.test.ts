@@ -91,7 +91,11 @@ it('sends exactly the retained weeks and reuses IDs on retry', async () => {
   await fillDraft();
   await fireEvent.click(screen.getByLabelText('Repeat weekly'));
   await fireEvent.input(screen.getByLabelText('Total occurrences (including the first)'), { target: { value: '4' } });
-  await fireEvent.click(screen.getByRole('button', { name: /Remove occurrence 2/ }));
+  const removeSecond = screen.getByRole('button', { name: 'Remove occurrence 2: 2026-12-08T23:30' });
+  expect(removeSecond.textContent?.trim()).toBe('');
+  expect(removeSecond.getAttribute('title')).toBe('Remove occurrence 2: 2026-12-08T23:30');
+  expect(removeSecond.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  await fireEvent.click(removeSecond);
   await fireEvent.click(screen.getByRole('button', { name: 'Post event' }));
   await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
   await screen.findByRole('alert');
