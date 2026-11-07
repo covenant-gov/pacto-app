@@ -3,13 +3,13 @@
 Protective controls for dependency installs and GitHub Actions in this repo.
 This document does **not** claim the repository is free of compromise or fully
 safe — it records what was hardened in-tree, what still depends on org/repo
-admin settings, and known isolation limits.
+admin settings, and known isolation limits for this project.
 
 ## Goals (in-tree)
 
 | Control | Where |
 |--------|--------|
-| Untrusted PR / dependency builds on disposable GitHub-hosted runners | All CI jobs use `ubuntu-latest` / `ubuntu-24.04` (or the Linux CI container). No self-hosted runners are configured in workflows. |
+| Untrusted PR / dependency builds on disposable hosted workers | CI jobs use GitHub-hosted `ubuntu-latest` / `ubuntu-24.04` (or the Linux CI container image). |
 | Minimal default `GITHUB_TOKEN` permissions | Workflow `permissions:` default to read; write only on jobs that publish, tag, label, or deploy. |
 | No checkout credential persistence where safe | `actions/checkout` uses `persist-credentials: false` except `tag-release.yaml` (must push tags). |
 | Third-party Actions pinned to full commit SHAs | All `uses:` refs are 40-char SHAs with version comments; `pnpm check:actions-pinned` / CI enforces this. |
@@ -17,6 +17,22 @@ admin settings, and known isolation limits.
 | Explicit dependency build-script approval + frozen lockfiles | `pnpm-workspace.yaml` `allowBuilds` + `strictDepBuilds`; CI uses `pnpm install --frozen-lockfile` (script tests also pass `--ignore-scripts`). |
 | Bounded release-age with security-patch escape hatch | `minimumReleaseAge: 1440` with `minimumReleaseAgeExclude` for a small set of frequently patched toolchain packages. |
 | Prod secrets off install steps | CI does not inject Alchemy / signing / tap secrets. Release signing keys and `HOMEBREW_TAP_TOKEN` are step-scoped on publish jobs after install. |
+
+## Workflow review ownership
+
+CODEOWNERS for `.github/workflows/` lists people with verified write-or-higher
+access on this repository (via the GitHub collaborators permission API) plus
+public contribution history:
+
+| Handle | Access check | Public contribution evidence |
+|--------|--------------|------------------------------|
+| `@logicminds` | collaborator list: admin | existing maintainer |
+| `@thebeyondr` | collaborator list: write | existing maintainer |
+| `@daopunk` | permission API: admin | open [PR 504](https://github.com/covenant-gov/pacto-app/pull/504); author filter [open PRs by daopunk](https://github.com/covenant-gov/pacto-app/pulls?q=is%3Apr+state%3Aopen+author%3Adaopunk) |
+
+YAML and CODEOWNERS alone do not enforce reviews. Enable branch protection /
+rulesets that require CODEOWNERS review for these paths if that policy is
+desired. This document does not grant or change repository access.
 
 ## Editor / agent execution surfaces (review only)
 
@@ -63,12 +79,10 @@ setting is org-level). An admin should confirm and enable as appropriate:
 1. **Branch protection / rulesets on `main`**
    - Require PR before merge.
    - Require the existing CI status checks (typecheck, lint, frontend-tests,
-     backend-tests, scripts-test, etc.).
-   - Require review from CODEOWNERS for `.github/workflows/**` (CODEOWNERS file
-     lists verified collaborators `@logicminds` and `@thebeyondr` only — no
-     invented org teams).
-2. **Actions settings**
-   - Prefer disallowing self-hosted runners for this repo if not required.
+     backend-tests, scripts-test, `workflow-policy`, etc.).
+   - Require review from CODEOWNERS for `.github/workflows/**` when that
+     enforcement is wanted.
+2. **Actions / fork PR token defaults**
    - Keep fork PR workflows on read-only tokens (GitHub default for
      `pull_request` from forks).
 3. **Environment protection** for `github-pages` (landing deploy) — required
@@ -81,7 +95,7 @@ setting is org-level). An admin should confirm and enable as appropriate:
 
 ## What this hardening is not
 
-- Not evidence of an active infection or worm in this repository.
+- Not evidence of an active infection or compromise in this repository.
 - Not a substitute for dependency review, `pnpm audit`, or Rust crate review.
 - Not a change to account, org, or Actions admin settings (those stay
   owner-operated).

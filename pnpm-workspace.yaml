@@ -5,7 +5,7 @@ packages:
 # Build-script approval (pnpm 11+). Packages not listed here are denied by
 # default (strictDepBuilds). Approve only packages whose install/build scripts
 # are required for this repo; keep fsevents false (optional macOS watcher).
-# Do not copy allow-lists from other repos — native deps here differ.
+# Approve only packages whose install/build scripts this workspace needs.
 allowBuilds:
   es5-ext: true
   esbuild: true

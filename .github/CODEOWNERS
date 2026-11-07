@@ -1,7 +1,8 @@
 # Workflow and release automation review.
-# Owners are repository collaborators verified via the GitHub API at the time
-# this file was added (admin: @logicminds, write: @thebeyondr). YAML and
-# CODEOWNERS alone do not enforce reviews — enable branch protection / rulesets
-# that require CODEOWNERS review for these paths (see docs/security/CI_SUPPLY_CHAIN.md).
-.github/workflows/ @logicminds @thebeyondr
-.github/CODEOWNERS @logicminds @thebeyondr
+# Owners have write-or-higher on this repository (collaborators list and/or
+# collaborators permission API) and are listed for CODEOWNERS review paths.
+# YAML and CODEOWNERS alone do not enforce reviews — enable branch protection /
+# rulesets that require CODEOWNERS review for these paths
+# (see docs/security/CI_SUPPLY_CHAIN.md).
+.github/workflows/ @logicminds @thebeyondr @daopunk
+.github/CODEOWNERS @logicminds @thebeyondr @daopunk
