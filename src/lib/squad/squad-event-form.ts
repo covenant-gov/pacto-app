@@ -1,3 +1,4 @@
+import { parseDateTime, toZoned } from '@internationalized/date';
 import {
   WEEKLY_SERIES_COUNT,
   type SquadEventDto,
@@ -21,6 +22,8 @@ export interface SquadEventFormValues {
   address: string;
   channelId: string | null;
   weekly: boolean;
+  occurrenceCount: number;
+  excludedWeeks: number[];
 }
 
 export type SquadEventFormError =
@@ -31,7 +34,10 @@ export type SquadEventFormError =
   | 'zoneInvalid'
   | 'placeRequired'
   | 'placeBoth'
-  | 'linkInvalid';
+  | 'linkInvalid'
+  | 'startPast'
+  | 'countInvalid'
+  | 'noOccurrences';
 
 type ChannelRow = { name: string; groupId: string; order?: number };
 
@@ -94,17 +100,129 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-export function validateSquadEventForm(values: SquadEventFormValues): SquadEventFormError | null {
-  if (!values.title.trim()) return 'titleRequired';
+/** Resolve overlap times to the earlier instant; reject gaps instead of silently changing the displayed time. */
+function civilInstant(value: string, tzid: string): number | null {
+  if (!isValidCivilDateTime(value) || !isValidTimeZone(tzid)) return null;
+  try {
+    const zoned = toZoned(parseDateTime(value), tzid, 'earlier');
+    const instant = zoned.toDate().getTime();
+    return unixToCivilDateTime(instant / 1000, tzid) === value ? instant : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isValidSquadEventStart(values: SquadEventFormValues): boolean {
+  return isValidTimeZone(values.startTzid) && (values.allDay
+    ? isValidCivilDate(values.start)
+    : civilInstant(civilMinutes(values.start), values.startTzid) !== null);
+}
+
+export interface SquadEventOccurrence {
+  weekOffset: number;
+  start: string;
+  end: string;
+}
+
+function elapsedDuration(values: SquadEventFormValues): number | null {
+  const start = civilInstant(civilMinutes(values.start), values.startTzid);
+  const end = civilInstant(civilMinutes(values.end), values.startTzid);
+  return start !== null && end !== null && end > start ? end - start : null;
+}
+
+/** Weekly rows keep their original week offset after a removal; timed ends retain elapsed duration across DST. */
+export function squadEventOccurrences(values: SquadEventFormValues): SquadEventOccurrence[] {
+  if (!isValidSquadEventStart(values)) return [];
+  const count = values.weekly ? values.occurrenceCount : 1;
+  if (!Number.isInteger(count) || count < 1 || count > WEEKLY_SERIES_COUNT) return [];
+  const duration = values.end && !values.allDay ? elapsedDuration(values) : null;
+  return Array.from({ length: count }, (_, weekOffset) => {
+    const start = addCivilDays(values.start.slice(0, 10), weekOffset * 7) + (values.allDay ? '' : civilMinutes(values.start).slice(10));
+    let end = values.end
+      ? addCivilDays(values.end.slice(0, 10), weekOffset * 7) + (values.allDay ? '' : civilMinutes(values.end).slice(10))
+      : '';
+    const startInstant = !values.allDay ? civilInstant(start, values.startTzid) : null;
+    if (duration !== null && startInstant !== null) end = unixToCivilDateTime((startInstant + duration) / 1000, values.startTzid);
+    return { weekOffset, start, end };
+  }).filter(({ weekOffset }) => !values.weekly || !values.excludedWeeks.includes(weekOffset));
+}
+
+export interface SquadEventValidationOptions {
+  now?: number;
+  original?: SquadEventFormValues;
+}
+
+/** Validate the actual retained schedule, including a submission-time clock check. */
+export function validateSquadEventSchedule(
+  values: SquadEventFormValues,
+  { now = Date.now(), original }: SquadEventValidationOptions = {},
+): SquadEventFormError | null {
+  // Imported overlap intervals may reverse wall-clock order while their stored instants remain valid.
+  const unchanged = original && (['allDay', 'start', 'end', 'startTzid'] as const).every((key) => values[key] === original[key]) && !values.weekly;
+  if (unchanged) return null;
+  if (!isValidTimeZone(values.startTzid.trim())) return 'zoneInvalid';
   const start = values.allDay ? values.start.trim() : civilMinutes(values.start);
   const end = values.allDay ? values.end.trim() : civilMinutes(values.end);
   const validCivil = values.allDay ? isValidCivilDate : isValidCivilDateTime;
-  if (!validCivil(start)) return 'startInvalid';
+  if (!validCivil(start) || (!values.allDay && civilInstant(start, values.startTzid) === null)) return 'startInvalid';
   if (end) {
-    if (!validCivil(end)) return 'endInvalid';
+    if (!validCivil(end) || (!values.allDay && civilInstant(end, values.startTzid) === null)) return 'endInvalid';
     if (values.allDay ? end < start : end <= start) return 'endBeforeStart';
   }
-  if (!isValidTimeZone(values.startTzid.trim())) return 'zoneInvalid';
+  if (values.weekly && (!Number.isInteger(values.occurrenceCount) || values.occurrenceCount < 1 || values.occurrenceCount > WEEKLY_SERIES_COUNT)) return 'countInvalid';
+  const occurrences = squadEventOccurrences(values);
+  if (occurrences.length === 0) return 'noOccurrences';
+  const today = unixToCivilDateTime(now / 1000, values.startTzid).slice(0, 10);
+  const duration = !values.allDay && end ? elapsedDuration(values) : null;
+  for (const occurrence of occurrences) {
+    const instant = values.allDay ? null : civilInstant(occurrence.start, values.startTzid);
+    if (!values.allDay && instant === null) return 'startInvalid';
+    if (occurrence.end && !values.allDay) {
+      const endInstant = civilInstant(occurrence.end, values.startTzid);
+      if (endInstant === null || instant === null || (duration !== null && endInstant - instant !== duration)) return 'endInvalid';
+      if (endInstant <= instant) return 'endBeforeStart';
+    }
+    if (values.allDay ? occurrence.start < today : instant! <= now) return 'startPast';
+  }
+  return null;
+}
+
+/** An unrepresentable preset (for example the second 01:30 during fall-back) leaves the custom end intact. */
+export function applySquadEventDuration(values: SquadEventFormValues, minutes: number): SquadEventFormValues {
+  if (values.allDay || ![30, 60, 90, 120].includes(minutes)) return values;
+  const start = civilInstant(civilMinutes(values.start), values.startTzid);
+  if (start === null) return values;
+  const expectedEnd = start + minutes * 60_000;
+  const end = unixToCivilDateTime(expectedEnd / 1000, values.startTzid);
+  if (civilInstant(end, values.startTzid) !== expectedEnd) return values;
+  return { ...values, end };
+}
+
+export function synchronizeSquadEventStart(values: SquadEventFormValues, nextStart: string, presetMinutes: number | null): SquadEventFormValues {
+  const next = { ...values, start: nextStart };
+  if (!isValidSquadEventStart(next)) return next;
+  if (presetMinutes !== null && !values.allDay) return applySquadEventDuration(next, presetMinutes);
+  if (!values.end) return next;
+  if (values.allDay) {
+    if (isValidCivilDate(values.end) && values.end < nextStart && isValidCivilDate(values.start) && values.end >= values.start) {
+      const days = (Date.parse(values.end) - Date.parse(values.start)) / 86400000;
+      return { ...next, end: addCivilDays(nextStart, days) };
+    }
+    return next;
+  }
+  const nextInstant = civilInstant(civilMinutes(nextStart), values.startTzid)!;
+  const endInstant = civilInstant(civilMinutes(values.end), values.startTzid);
+  const duration = elapsedDuration(values);
+  if (endInstant !== null && endInstant > nextInstant) return next;
+  if (duration === null) return next;
+  const end = unixToCivilDateTime((nextInstant + duration) / 1000, values.startTzid);
+  return civilInstant(end, values.startTzid) === nextInstant + duration ? { ...next, end } : next;
+}
+
+export function validateSquadEventForm(values: SquadEventFormValues, options: SquadEventValidationOptions = {}): SquadEventFormError | null {
+  if (!values.title.trim()) return 'titleRequired';
+  const scheduleError = validateSquadEventSchedule(values, options);
+  if (scheduleError) return scheduleError;
   const link = values.link.trim();
   const address = values.address.trim();
   if (link && address) return 'placeBoth';
@@ -133,7 +251,7 @@ export function buildSquadEventInput(values: SquadEventFormValues): SquadEventIn
   };
 }
 
-/** Ids for one squad's unsent draft; kept until that kind of send succeeds so a retry cannot create a second event or series. */
+/** Ids for one account-scoped unsent draft; kept until that kind of send succeeds so a retry cannot create a second event or series. */
 export interface SquadEventDraftIds {
   eventId: string;
   seriesId: string;
@@ -148,40 +266,41 @@ export function mintSquadEventDraftIds(newId: () => string = () => crypto.random
   };
 }
 
-const draftIdsByParent = new Map<string, SquadEventDraftIds>();
+const draftIdsByKey = new Map<string, SquadEventDraftIds>();
 
-/** Current draft ids for `parentId`, minted on first use and kept across modal close/reopen. */
-export function squadEventDraftIds(parentId: string, newId?: () => string): SquadEventDraftIds {
-  let ids = draftIdsByParent.get(parentId);
+/** Current draft ids for an account/parent/edit `draftKey`, minted on first use and kept across modal close/reopen. */
+export function squadEventDraftIds(draftKey: string, newId?: () => string): SquadEventDraftIds {
+  let ids = draftIdsByKey.get(draftKey);
   if (!ids) {
     ids = mintSquadEventDraftIds(newId);
-    draftIdsByParent.set(parentId, ids);
+    draftIdsByKey.set(draftKey, ids);
   }
   return ids;
 }
 
-/** After a successful send, re-mint only the ids that send consumed. */
-export function settleSquadEventDraftIds(parentId: string, op: 'create' | 'series', newId?: () => string): void {
-  const current = draftIdsByParent.get(parentId);
-  if (!current) return;
+/** Re-mint consumed ids only when the captured draft generation still owns this key. */
+export function settleSquadEventDraftIds(draftKey: string, op: 'create' | 'series', expected: SquadEventDraftIds, newId?: () => string): boolean {
+  const current = draftIdsByKey.get(draftKey);
+  if (current !== expected) return false;
   const fresh = mintSquadEventDraftIds(newId);
-  draftIdsByParent.set(
-    parentId,
+  draftIdsByKey.set(
+    draftKey,
     op === 'create'
       ? { ...current, eventId: fresh.eventId }
       : { ...current, seriesId: fresh.seriesId, seriesEventIds: fresh.seriesEventIds },
   );
+  return true;
 }
 
 export function resetSquadEventDraftIds(): void {
-  draftIdsByParent.clear();
+  draftIdsByKey.clear();
 }
 
 export type SquadEventSubmission =
   | { op: 'create'; params: { mlsGroupId: string; parentId: string; eventId: string; event: SquadEventInput } }
   | {
       op: 'series';
-      params: { mlsGroupId: string; parentId: string; seriesId: string; eventIds: string[]; event: SquadEventInput };
+      params: { mlsGroupId: string; parentId: string; seriesId: string; eventIds: string[]; weekOffsets: number[]; event: SquadEventInput };
     }
   | { op: 'update'; params: { mlsGroupId: string; parentId: string; eventId: string; event: SquadEventInput } };
 
@@ -197,9 +316,10 @@ export function buildSquadEventSubmission(args: {
   const event = buildSquadEventInput(values);
   if (editingId) return { op: 'update', params: { mlsGroupId, parentId, eventId: editingId, event } };
   if (values.weekly) {
+    const weekOffsets = squadEventOccurrences(values).map(({ weekOffset }) => weekOffset);
     return {
       op: 'series',
-      params: { mlsGroupId, parentId, seriesId: ids.seriesId, eventIds: [...ids.seriesEventIds], event },
+      params: { mlsGroupId, parentId, seriesId: ids.seriesId, eventIds: weekOffsets.map((offset) => ids.seriesEventIds[offset]), weekOffsets, event },
     };
   }
   return { op: 'create', params: { mlsGroupId, parentId, eventId: ids.eventId, event } };
@@ -233,6 +353,8 @@ export function emptySquadEventFormValues(viewerZone: string, channelId: string 
     address: '',
     channelId,
     weekly: false,
+    occurrenceCount: WEEKLY_SERIES_COUNT,
+    excludedWeeks: [],
   };
 }
 
@@ -261,6 +383,8 @@ export function formValuesFromEvent(event: SquadEventDto): SquadEventFormValues 
     address: event.place === 'offline' ? event.location : '',
     channelId: event.channelId,
     weekly: false,
+    occurrenceCount: WEEKLY_SERIES_COUNT,
+    excludedWeeks: [],
   };
 }
 

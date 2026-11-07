@@ -2,9 +2,11 @@
 
 <script lang="ts">
   import { t, locale } from 'svelte-i18n';
+  import { eventTimeFormat } from '../../stores/event-time-format';
   import { squadEventCardView, type SquadEventCreatedPayload } from '../../lib/announcements';
   import type { SquadEventDto } from '../../lib/api/squad-events';
   import {
+    formatEventDuration,
     formatEventStart,
     formatEventZoneStart,
     viewerTimeZone,
@@ -41,7 +43,7 @@
   });
 
   const view = $derived(squadEventCardView(payload, rows));
-  const timeOpts = $derived({ locale: $locale ?? undefined, viewerZone: viewerTimeZone() });
+  const timeOpts = $derived({ locale: $locale ?? undefined, clockFormat: $eventTimeFormat, viewerZone: viewerTimeZone() });
   const startLabel = $derived(formatEventStart(view.start, timeOpts));
   const zoneStart = $derived(formatEventZoneStart(view.start, timeOpts));
   const channelName = $derived(
@@ -71,6 +73,7 @@
     class="event-announce-start"
     class:event-announce-start-inactive={view.cancelled || view.unavailable}
   >{startLabel}</span>
+  <span class="event-announce-duration">{formatEventDuration(view.start, timeOpts)}</span>
   {#if zoneStart}
     <span class="event-announce-zone">
       {$t('events.card.eventZone', { values: { zone: view.start.startTzid, time: zoneStart } })}
@@ -138,6 +141,7 @@
     border: 1px solid currentColor;
   }
 
+  .event-announce-duration,
   .event-announce-start {
     font-size: 0.8125rem;
     color: var(--text-primary);

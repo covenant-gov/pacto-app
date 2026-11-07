@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t, locale } from 'svelte-i18n';
+  import { eventTimeFormat } from '../../stores/event-time-format';
   import type { CatchUpEntry } from '../../lib/api/catch-up';
   import { resolveOneCatchUpEntry } from '../../stores/catch-up';
   import {
@@ -48,7 +49,7 @@
     if (entry.kind === 'welcome') return resolvedWelcome?.locationLabel ?? '';
     if (entry.kind === 'event_reminder') {
       const parsed = parseEventReminderSourceId(entry.sourceEventId);
-      return parsed ? formatEventTimestampMs(parsed.fireAtMs, { locale: $locale ?? undefined }) : '';
+      return parsed ? formatEventTimestampMs(parsed.fireAtMs, { locale: $locale ?? undefined, clockFormat: $eventTimeFormat }) : '';
     }
     if (!target || target.kind === 'dm-requests') return '';
     if (target.kind === 'dm') {

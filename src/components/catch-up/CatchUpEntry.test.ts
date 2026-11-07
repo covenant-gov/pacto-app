@@ -8,6 +8,7 @@ import { squads, type Squad } from '../../stores/squads';
 import { backendDmMessages } from '../../stores/dm';
 import type { CatchUpEntry as CatchUpEntryType } from '../../lib/api/catch-up';
 import { formatEventTimestampMs } from '../../lib/squad/squad-event-display';
+import { eventTimeFormat } from '../../stores/event-time-format';
 
 vi.mock('../../stores/events-navigation', () => ({
   focusSquadEvent: vi.fn(),
@@ -32,6 +33,7 @@ describe('CatchUpEntry', () => {
 
   afterEach(() => {
     cleanup();
+    eventTimeFormat.set('system');
     pendingMlsWelcomes.set([]);
     squads.set([]);
     backendDmMessages.set({});
@@ -43,7 +45,8 @@ describe('CatchUpEntry', () => {
     expect(accept.disabled).toBe(true);
   });
 
-  it('labels an event reminder by kind and fire time only', () => {
+  it.each(['system', '12h', '24h'] as const)('labels an event reminder by kind and fire time only in %s format', (clockFormat) => {
+    eventTimeFormat.set(clockFormat);
     squads.set([
       {
         id: 'squad-1',
@@ -66,7 +69,7 @@ describe('CatchUpEntry', () => {
       },
     });
     expect(screen.getByText('Event reminder')).toBeTruthy();
-    expect(screen.getByText(formatEventTimestampMs(fireAtMs, { locale: 'en' }))).toBeTruthy();
+    expect(screen.getByText(formatEventTimestampMs(fireAtMs, { locale: 'en', clockFormat }))).toBeTruthy();
     expect((screen.getByText('Event reminder').closest('button') as HTMLButtonElement).disabled).toBe(false);
   });
 });

@@ -2,6 +2,7 @@
 
 <script lang="ts">
   import { t, locale } from 'svelte-i18n';
+  import { eventTimeFormat } from '../../stores/event-time-format';
   import {
     squadEventCardStart,
     squadEventSeriesOverlay,
@@ -47,7 +48,7 @@
   const start = $derived(squadEventCardStart(payload.kind, payload.first_start, payload.start_tzid));
   const overlay = $derived(squadEventSeriesOverlay(payload.series_id, rows));
   const unavailable = $derived(overlay?.total === 0);
-  const timeOpts = $derived({ locale: $locale ?? undefined, viewerZone: viewerTimeZone() });
+  const timeOpts = $derived({ locale: $locale ?? undefined, clockFormat: $eventTimeFormat, viewerZone: viewerTimeZone() });
   const startLabel = $derived(formatEventStart(start, timeOpts));
   const zoneStart = $derived(formatEventZoneStart(start, timeOpts));
   const channelName = $derived(

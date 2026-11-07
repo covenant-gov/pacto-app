@@ -21,6 +21,8 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() =
 
 import SquadEventsPanel from './SquadEventsPanel.svelte';
 import { eventsFocus } from '../../stores/events-navigation';
+import { eventTimeFormat } from '../../stores/event-time-format';
+import { formatEventStart } from '../../lib/squad/squad-event-display';
 
 function ev(id: string, title: string): SquadEventDto {
   return {
@@ -64,10 +66,36 @@ function policy(overrides: Partial<SquadContentPolicyView> = {}): SquadContentPo
 
 afterEach(() => {
   cleanup();
+  eventTimeFormat.set('system');
   eventsFocus.set(null);
 });
 
 describe('SquadEventsPanel', () => {
+  it('shares the selected clock with event cards and details and shows duration', async () => {
+    const meeting = { ...ev('timed', 'Planning'), startUnix: Date.UTC(2027, 0, 2, 12) / 1000,
+      endUnix: Date.UTC(2027, 0, 2, 13, 30) / 1000 };
+    state.events = [meeting];
+    state.policy = policy();
+    render(SquadEventsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    const card = await screen.findByRole('button', { name: 'Open event Planning' });
+    await fireEvent.change(screen.getByRole('combobox', { name: 'Time format' }), { target: { value: '12h' } });
+    expect(card.textContent).toContain(formatEventStart(meeting, { locale: 'en', clockFormat: '12h' }));
+    expect(card.textContent).toContain('1 hr 30 min');
+    await fireEvent.change(screen.getByRole('combobox', { name: 'Time format' }), { target: { value: '24h' } });
+    expect(card.textContent).toContain(formatEventStart(meeting, { locale: 'en', clockFormat: '24h' }));
+    await fireEvent.click(card);
+    const detail = await screen.findByRole('region', { name: 'Event details' });
+    expect(detail.textContent).toContain('1 hr 30 min');
+    expect(detail.textContent).toContain(formatEventStart(meeting, { locale: 'en', clockFormat: '24h' }));
+  });
+
+  it('shows duration unspecified when the event has no end', async () => {
+    state.events = [ev('e1', 'No end')];
+    state.policy = policy();
+    render(SquadEventsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    expect((await screen.findByRole('button', { name: 'Open event No end' })).textContent).toContain('Duration unspecified');
+  });
+
   it("opens the clicked card's event detail", async () => {
     state.events = [ev('e1', 'Standup'), ev('e2', 'Retro')];
     state.policy = policy();

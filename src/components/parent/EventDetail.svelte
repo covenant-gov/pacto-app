@@ -1,7 +1,9 @@
 <script lang="ts">
   import { t, locale } from 'svelte-i18n';
+  import { eventTimeFormat } from '../../stores/event-time-format';
   import { get } from 'svelte/store';
   import CreateEventModal from './CreateEventModal.svelte';
+  import EventTimeFormatSelect from './EventTimeFormatSelect.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
   import { hydrateCatchUp } from '../../stores/catch-up';
   import { profiles, loadProfile } from '../../stores/profiles';
@@ -11,6 +13,7 @@
   import {
     RSVP_STATUSES,
     formatEventEnd,
+    formatEventDuration,
     formatEventStart,
     formatEventTimestampMs,
     formatEventZoneStart,
@@ -48,7 +51,7 @@
     declined: 'events.detail.rsvp.declined',
   };
 
-  const timeOpts = $derived({ locale: $locale ?? undefined });
+  const timeOpts = $derived({ locale: $locale ?? undefined, clockFormat: $eventTimeFormat });
   const cancelled = $derived(event.status === 'cancelled');
   const startText = $derived(formatEventStart(event, timeOpts));
   const endText = $derived(formatEventEnd(event, timeOpts));
@@ -192,6 +195,8 @@
       <p class="event-detail-summary">{event.summary}</p>
     {/if}
 
+    <EventTimeFormatSelect />
+
     <dl class="event-detail-facts">
       <dt>{$t('events.detail.whenHeading')}</dt>
       <dd>
@@ -208,6 +213,9 @@
           </span>
         {/if}
       </dd>
+
+      <dt>{$t('events.duration.label')}</dt>
+      <dd>{formatEventDuration(event, timeOpts)}</dd>
 
       <dt>{$t('events.detail.placeHeading')}</dt>
       <dd>
