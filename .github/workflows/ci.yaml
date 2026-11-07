@@ -450,5 +450,5 @@ jobs:
       - name: Run release script tests
         run: |
           pnpm whats-new:check --all
-          node --test scripts/generate-release-manifest.test.mjs scripts/stamp-updater-compatibility.test.mjs scripts/publish-github-release.test.mjs scripts/nextest-slow-summary.test.mjs scripts/release-dispatch-contract.test.mjs scripts/homebrew-tap-merge.test.mjs scripts/changelog.test.mjs scripts/check-whats-new.test.mjs scripts/check-actions-pinned.test.mjs
+          node --test scripts/generate-release-manifest.test.mjs scripts/stamp-updater-compatibility.test.mjs scripts/publish-github-release.test.mjs scripts/nextest-slow-summary.test.mjs scripts/release-dispatch-contract.test.mjs scripts/homebrew-tap-merge.test.mjs scripts/changelog.test.mjs scripts/check-whats-new.test.mjs scripts/check-actions-pinned.test.mjs scripts/compute-next-version.test.mjs
 

@@ -5,15 +5,24 @@ name: Prepare Release
 # CHANGELOG.md, runs the same checks scripts/bump-version.sh runs locally, and
 # opens a PR with the result. Merging that PR to main runs tag-release.yaml,
 # which pushes v<version> and dispatches release.yaml on that tag.
+#
+# Set prerelease=beta to cut X.Y.Z-beta.N. Publishing marks that tag a GitHub
+# prerelease so stable updater / Homebrew / landing stay on the latest stable.
 
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: 'Version bump type'
+        description: 'Version bump type (on a beta train, patch continues N; minor/major start a new train)'
         required: true
         type: choice
         options: [patch, minor, major]
+      prerelease:
+        description: 'none = stable (or promote beta→final); beta = cut/continue -beta.N'
+        required: true
+        type: choice
+        default: none
+        options: [none, beta]
 
 permissions:
   contents: write
@@ -61,10 +70,20 @@ jobs:
         id: previous
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      - name: Compute next version
+        id: next
+        env:
+          CURRENT: ${{ steps.previous.outputs.version }}
+          BUMP: ${{ inputs.bump }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          VERSION="$(node scripts/compute-next-version.mjs "$CURRENT" "$BUMP" "$PRERELEASE")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: bump version, changelog, checks
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./scripts/bump-version.sh "${{ inputs.bump }}" --no-commit
+        run: ./scripts/bump-version.sh "${{ steps.next.outputs.version }}" --no-commit
 
       - name: read bumped version
         id: bumped
@@ -80,6 +99,14 @@ jobs:
             -e "s/{{PREV_VERSION}}/$PREV_VERSION/g" \
             -e "s|{{REPO}}|$GITHUB_REPOSITORY|g" \
             .github/release-pr-handoff.md > "$RUNNER_TEMP/release-pr-body.md"
+          if [[ "$VERSION" == *-* ]]; then
+            {
+              echo
+              echo "## Beta prerelease"
+              echo
+              echo "This is a \`-beta.N\` cut. Label the PR \`whats-new-skip\` (prereleases do not ship in-app What's New). Merging tags \`v$VERSION\` and publish creates a GitHub **prerelease**; Homebrew and the download page stay on the latest stable."
+            } >> "$RUNNER_TEMP/release-pr-body.md"
+          fi
 
       - name: Ensure release notes labels exist
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8

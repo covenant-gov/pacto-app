@@ -6,18 +6,24 @@ import Ajv from 'ajv';
 const directory = fileURLToPath(new URL('../whats-new/', import.meta.url));
 const schema = JSON.parse(readFileSync(path.join(directory, 'schema.json'), 'utf8'));
 const validate = new Ajv({ allErrors: true }).compile(schema);
-const versionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+/** Stable notes files are X.Y.Z only; package.json may carry a semver prerelease. */
+const stableVersionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+const packageVersionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-zA-Z0-9.-]+)?$/;
 
 export function validateWhatsNew(notes, version) {
-  if (!versionPattern.test(version)) return ['Expected a release version in X.Y.Z form.'];
+  if (!stableVersionPattern.test(version)) return ['Expected a release version in X.Y.Z form.'];
   const errors = validate(notes) ? [] : validate.errors.map(error => `${error.instancePath || '/'} ${error.message}`);
   if (notes?.version !== version) errors.push(`Notes must name version ${version}.`);
   return errors;
 }
 
 export function validateReleasePullRequest(pull, { notes, headVersion, baseVersion }) {
-  if (typeof headVersion !== 'string' || !versionPattern.test(headVersion)) return ['Head package.json must contain an X.Y.Z version.'];
-  if (typeof baseVersion !== 'string' || !versionPattern.test(baseVersion)) return ['Base package.json must contain an X.Y.Z version.'];
+  if (typeof headVersion !== 'string' || !packageVersionPattern.test(headVersion)) {
+    return ['Head package.json must contain a semver version (X.Y.Z or X.Y.Z-prerelease).'];
+  }
+  if (typeof baseVersion !== 'string' || !packageVersionPattern.test(baseVersion)) {
+    return ['Base package.json must contain a semver version (X.Y.Z or X.Y.Z-prerelease).'];
+  }
   const releaseBranch = pull.head.ref.startsWith('chore/release-');
   if (releaseBranch && pull.head.ref !== `chore/release-${headVersion}`) return ['Release branch suffix must match the head package.json version.'];
   // Commit statuses are SHA-scoped: a differently named PR for the same bump
@@ -26,6 +32,10 @@ export function validateReleasePullRequest(pull, { notes, headVersion, baseVersi
   if (pull.head.repo?.full_name !== pull.base.repo.full_name) return ['Version-changing branches must belong to this repository.'];
   const labels = pull.labels.map(label => label.name);
   if (labels.includes('whats-new-skip')) return [];
+  // In-app What's New is stable-only; beta cuts must skip notes.
+  if (!stableVersionPattern.test(headVersion)) {
+    return ['Prerelease versions must use whats-new-skip (user-facing notes are for stable releases).'];
+  }
   const errors = validateWhatsNew(notes, headVersion);
   if (!labels.includes('whats-new-ready')) errors.push('Add whats-new-ready after reviewing the notes, or explicitly choose whats-new-skip.');
   return errors;
@@ -60,7 +70,7 @@ async function checkPullRequest() {
   const baseVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
   const labels = pull.labels.map(label => label.name);
   let notes;
-  if ((pull.head.ref.startsWith('chore/release-') || headVersion !== baseVersion) && typeof headVersion === 'string' && versionPattern.test(headVersion) && !labels.includes('whats-new-skip')) {
+  if ((pull.head.ref.startsWith('chore/release-') || headVersion !== baseVersion) && typeof headVersion === 'string' && stableVersionPattern.test(headVersion) && !labels.includes('whats-new-skip')) {
     notes = await readHeadJson(`whats-new/${headVersion}.json`);
   }
   return validateReleasePullRequest(pull, { notes, headVersion, baseVersion });
@@ -74,7 +84,7 @@ async function main() {
     : [argument];
   const errors = [];
   for (const version of versions) {
-    if (!versionPattern.test(version ?? '')) throw new Error('Usage: pnpm whats-new:check <X.Y.Z | --all>');
+    if (!stableVersionPattern.test(version ?? '')) throw new Error('Usage: pnpm whats-new:check <X.Y.Z | --all>');
     const notes = JSON.parse(readFileSync(path.join(directory, `${version}.json`), 'utf8'));
     errors.push(...validateWhatsNew(notes, version).map(error => `${version}: ${error}`));
   }
