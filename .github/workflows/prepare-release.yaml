@@ -21,10 +21,13 @@ permissions:
 
 jobs:
   prepare-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
-      image: ghcr.io/covenant-gov/pacto-app/pacto-ci:latest
+      # GHCR index digest of pacto-ci built from Dockerfile.ci at 431a95ff
+      # (Ubuntu 24.04). :latest is mutable; replace this digest after a
+      # verified ci-image.yaml rebuild.
+      image: ghcr.io/covenant-gov/pacto-app/pacto-ci@sha256:31a21182f1cbb8146a1bd66ed855034bb106e10b7e7e926a127ae19a68b70e0f
       options: --user root
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6

@@ -9,7 +9,7 @@ admin settings, and known isolation limits for this project.
 
 | Control | Where |
 |--------|--------|
-| Untrusted PR / dependency builds on disposable hosted workers | CI jobs use GitHub-hosted `ubuntu-latest` / `ubuntu-24.04` (or the Linux CI container image). |
+| Untrusted PR / dependency builds on disposable hosted workers | Most CI jobs use GitHub-hosted `ubuntu-latest` or the Linux CI container image. **Prepare Release** pins `ubuntu-24.04` and `pacto-ci` by GHCR index digest (not `:latest`). |
 | Minimal default `GITHUB_TOKEN` permissions | Workflow `permissions:` default to read; write only on jobs that publish, tag, label, or deploy. |
 | No checkout credential persistence where safe | `actions/checkout` uses `persist-credentials: false` except `tag-release.yaml` (must push tags). |
 | Third-party Actions pinned to full commit SHAs | All `uses:` refs are 40-char SHAs with version comments; `pnpm check:actions-pinned` / CI enforces this. |

@@ -16,7 +16,7 @@ That URL is configured in `src-tauri/tauri.conf.json` under `plugins.updater.end
 
 The usual path needs no manual tag:
 
-1. Run **Prepare Release** (Actions → Prepare Release) and choose `patch`, `minor`, or `major`. That job bumps versions, regenerates `CHANGELOG.md`, and opens the release PR on the CI image. It does not rerun typecheck, lint, or the frontend/Rust suites; those stay the `pull_request` CI gate on the PR.
+1. Run **Prepare Release** (Actions → Prepare Release) and choose `patch`, `minor`, or `major`. That job runs on `ubuntu-24.04` with a digest-pinned `pacto-ci` image, bumps versions, regenerates `CHANGELOG.md`, and opens the release PR. It does not rerun typecheck, lint, or the frontend/Rust suites; those stay the `pull_request` CI gate on the PR. After a `ci-image.yaml` rebuild, update the digest in `.github/workflows/prepare-release.yaml` on purpose — do not retarget `:latest`.
 2. Use the rendered **What's New handoff prompt** in its description to prepare
    `whats-new/<version>.json`; review both locales in the release PR and add
    `whats-new-ready`. Then merge the pull request (see below).

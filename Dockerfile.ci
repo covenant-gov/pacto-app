@@ -6,12 +6,16 @@
 #   docker build -f Dockerfile.ci -t ghcr.io/covenant-gov/pacto-ci:latest .
 #   docker push ghcr.io/covenant-gov/pacto-ci:latest
 #
-# Use in GitHub Actions by adding to a job:
+# ci-image.yaml still tags :<git-sha> and :latest. Workflows that must not
+# follow a moving tag pin the published GHCR index digest (see
+# prepare-release.yaml).
+#
+# Use in GitHub Actions:
 #   container:
-#     image: ghcr.io/covenant-gov/pacto-ci:latest
+#     image: ghcr.io/covenant-gov/pacto-app/pacto-ci@sha256:<index-digest>
 #     options: --user root
 
-FROM ubuntu:24.04
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CARGO_HOME=/usr/local/cargo

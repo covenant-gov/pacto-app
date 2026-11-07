@@ -25,11 +25,25 @@ describe('prepare-release stays a bump PR opener', () => {
   const operator = readRepo('docs/build/OPERATOR_UPDATES.md');
   const job = jobBlock(prepare, 'prepare-release');
 
-  it('runs in the existing Linux CI image with a finite timeout', () => {
+  it('pins Ubuntu 24.04 and an immutable pacto-ci digest', () => {
+    const pactoCiDigest =
+      '31a21182f1cbb8146a1bd66ed855034bb106e10b7e7e926a127ae19a68b70e0f';
+    const ubuntuDigest =
+      'fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852';
     assert.match(
       job,
-      /\n {4}runs-on: ubuntu-latest\n {4}timeout-minutes: 20\n {4}container:\n {6}image: ghcr\.io\/covenant-gov\/pacto-app\/pacto-ci:latest\n {6}options: --user root\n/,
+      new RegExp(
+        String.raw`\n {4}runs-on: ubuntu-24\.04\n {4}timeout-minutes: 20\n {4}container:\n(?: {6}#[^\n]+\n){0,6} {6}image: ghcr\.io/covenant-gov/pacto-app/pacto-ci@sha256:${pactoCiDigest}\n {6}options: --user root\n`,
+      ),
     );
+    assert.doesNotMatch(prepare, /ubuntu-latest/);
+    assert.doesNotMatch(prepare, /pacto-ci:latest/);
+    assert.doesNotMatch(prepare, /pacto-ci:[0-9a-f]{40}/);
+    assert.match(
+      readRepo('Dockerfile.ci'),
+      new RegExp(String.raw`^FROM ubuntu:24\.04@sha256:${ubuntuDigest}$`, 'm'),
+    );
+    assert.match(readRepo('.github/workflows/ci-image.yaml'), /\n {4}runs-on: ubuntu-24\.04\n/);
     assert.doesNotMatch(prepare, /apt-get/);
     assert.doesNotMatch(prepare, /dtolnay\/rust-toolchain/);
     assert.doesNotMatch(prepare, /Swatinem\/rust-cache/);
