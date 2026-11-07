@@ -1362,10 +1362,21 @@ fn editable_row(
     Ok(row)
 }
 
-/// Series ids must be exactly the weekly count, non-empty, and distinct.
-fn validate_series_ids(series_id: &str, event_ids: &[String]) -> Result<(), String> {
+/// Retained weeks keep their original offsets, never compact after a removal.
+fn validate_series_ids(
+    series_id: &str,
+    event_ids: &[String],
+    week_offsets: &[u32],
+) -> Result<(), String> {
     let invalid = || err::INVALID_SERIES.to_string();
-    if series_id.trim().is_empty() || event_ids.len() != WEEKLY_SERIES_COUNT {
+    if series_id.trim().is_empty()
+        || !(1..=WEEKLY_SERIES_COUNT).contains(&event_ids.len())
+        || event_ids.len() != week_offsets.len()
+        || week_offsets
+            .iter()
+            .any(|offset| *offset >= WEEKLY_SERIES_COUNT as u32)
+        || week_offsets.windows(2).any(|pair| pair[0] >= pair[1])
+    {
         return Err(invalid());
     }
     let mut seen = std::collections::HashSet::with_capacity(event_ids.len());
@@ -1375,6 +1386,180 @@ fn validate_series_ids(series_id: &str, event_ids: &[String]) -> Result<(), Stri
         }
     }
     Ok(())
+}
+
+fn fields_for_schedule(input: &SquadEventInput) -> Result<EventFields, String> {
+    if !input.all_day {
+        civil::civil_to_unix_strict(&input.start, &input.start_tzid).map_err(invalid_time)?;
+        if let Some(end) = trimmed_opt(input.end.as_deref()) {
+            civil::civil_to_unix_strict(&end, &input.start_tzid).map_err(invalid_time)?;
+        }
+    }
+    fields_from_input(input)
+}
+
+fn fields_for_update(
+    input: &SquadEventInput,
+    previous: &EventFields,
+) -> Result<EventFields, String> {
+    let zone: chrono_tz::Tz = previous.start_tzid.parse().map_err(|_| err::INVALID_ZONE)?;
+    let local = |unix: i64| -> Result<String, String> {
+        Ok(chrono::DateTime::from_timestamp(unix, 0)
+            .ok_or(err::INVALID_TIME)?
+            .with_timezone(&zone)
+            .format("%Y-%m-%dT%H:%M")
+            .to_string())
+    };
+    let (start, end) = if previous.kind == KIND_TIMED {
+        (
+            local(previous.start_unix.ok_or(err::INVALID_TIME)?)?,
+            previous.end_unix.map(local).transpose()?,
+        )
+    } else {
+        (
+            previous.start_date.clone().ok_or(err::INVALID_TIME)?,
+            previous.end_date.clone(),
+        )
+    };
+    let unchanged = input.all_day == (previous.kind == KIND_ALL_DAY)
+        && input.start_tzid.trim() == previous.start_tzid
+        && input.start.trim() == start
+        && trimmed_opt(input.end.as_deref()) == end;
+    if !unchanged {
+        return fields_for_schedule(input);
+    }
+    // A civil form cannot distinguish the later side of an imported overlap.
+    // Keep stored instants when the user only changed metadata.
+    let fields = EventFields {
+        title: input.title.trim().into(),
+        summary: input.summary.trim().into(),
+        place: input.place,
+        location: input.location.trim().into(),
+        channel_id: trimmed_opt(input.channel_id.as_deref()),
+        ..previous.clone()
+    };
+    validate_fields(&fields)?;
+    Ok(fields)
+}
+
+fn selected_occurrences(
+    input: &SquadEventInput,
+    offsets: &[u32],
+) -> Result<Vec<EventFields>, String> {
+    let base = fields_for_schedule(input)?;
+    let duration = base
+        .end_unix
+        .zip(base.start_unix)
+        .map(|(end, start)| end - start);
+    offsets
+        .iter()
+        .map(|offset| {
+            let shift = |value: &str| -> Result<String, String> {
+                let date = value.get(..10).ok_or(err::INVALID_TIME)?;
+                let suffix = value.get(10..).ok_or(err::INVALID_TIME)?;
+                let shifted = civil::weekly_all_day_dates(date, *offset as usize + 1)
+                    .map_err(invalid_time)?
+                    .pop()
+                    .ok_or(err::INVALID_TIME)?;
+                Ok(format!("{shifted}{suffix}"))
+            };
+            let mut occurrence = input.clone();
+            occurrence.start = shift(input.start.trim())?;
+            occurrence.end = if input.all_day {
+                trimmed_opt(input.end.as_deref())
+                    .map(|end| shift(&end))
+                    .transpose()?
+            } else {
+                None
+            };
+            let mut fields = fields_for_schedule(&occurrence)?;
+            if let Some(duration) = duration {
+                fields.end_unix = Some(
+                    fields
+                        .start_unix
+                        .ok_or(err::INVALID_TIME)?
+                        .checked_add(duration)
+                        .ok_or(err::INVALID_TIME)?,
+                );
+                let end = fields.end_unix.ok_or(err::INVALID_TIME)?;
+                let zone: chrono_tz::Tz =
+                    fields.start_tzid.parse().map_err(|_| err::INVALID_ZONE)?;
+                let local_end = chrono::DateTime::from_timestamp(end, 0)
+                    .ok_or(err::INVALID_TIME)?
+                    .with_timezone(&zone)
+                    .format("%Y-%m-%dT%H:%M")
+                    .to_string();
+                if civil::civil_to_unix_strict(&local_end, &fields.start_tzid)
+                    .map_err(invalid_time)?
+                    != end
+                {
+                    return Err(err::INVALID_TIME.into());
+                }
+            }
+            validate_fields(&fields)?;
+            Ok(fields)
+        })
+        .collect()
+}
+
+fn validate_future(fields: &EventFields, now: i64) -> Result<(), String> {
+    let valid = if fields.kind == KIND_TIMED {
+        fields.start_unix.is_some_and(|start| start > now)
+    } else {
+        let zone: chrono_tz::Tz = fields.start_tzid.parse().map_err(|_| err::INVALID_ZONE)?;
+        let today = chrono::DateTime::from_timestamp(now, 0)
+            .ok_or(err::INVALID_TIME)?
+            .with_timezone(&zone)
+            .date_naive();
+        parse_date(fields.start_date.as_deref().ok_or(err::INVALID_TIME)?)? >= today
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(err::INVALID_TIME.into())
+    }
+}
+
+/// Validate the complete plan before sending; landed rows permit idempotent late retries.
+fn preflight_series(
+    occurrences: &[EventFields],
+    existing: &[Option<EventRow>],
+    series_id: &str,
+    parent_id: &str,
+    mls_group_id: &str,
+    npub: &str,
+    now: i64,
+) -> Result<i64, String> {
+    for (fields, row) in occurrences.iter().zip(existing) {
+        if let Some(row) = row {
+            if row.series_id.as_deref() != Some(series_id)
+                || row.author_npub != npub
+                || row.parent_id != parent_id
+                || row.mls_group_id != mls_group_id
+                || row.fields != *fields
+                || row.status != EventStatus::Active
+            {
+                return Err("Event id already in use".into());
+            }
+        } else {
+            validate_future(fields, now / 1000)?;
+        }
+    }
+    Ok(existing
+        .iter()
+        .flatten()
+        .map(|row| row.created_at_ms)
+        .min()
+        .unwrap_or(now))
+}
+
+fn schedule_changed(previous: &EventFields, next: &EventFields) -> bool {
+    previous.kind != next.kind
+        || previous.start_unix != next.start_unix
+        || previous.end_unix != next.end_unix
+        || previous.start_date != next.start_date
+        || previous.end_date != next.end_date
+        || previous.start_tzid != next.start_tzid
 }
 
 async fn send_wire(
@@ -1436,7 +1621,7 @@ pub async fn send_squad_event_create<R: Runtime>(
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     ensure_announcements_group(&mls_group_id, &parent_id)?;
     require_id(&event_id, "Event id")?;
-    let fields = fields_from_input(&event)?;
+    let fields = fields_for_schedule(&event)?;
     let (pk, npub) = signer_identity().await?;
     let role = squad_records::group_role(&handle, &mls_group_id, &npub).await;
     let existing = with_conn(&handle, |c| {
@@ -1451,6 +1636,7 @@ pub async fn send_squad_event_create<R: Runtime>(
         return Err("Event id already in use".into());
     }
 
+    validate_future(&fields, now_ms() / 1000)?;
     let w = event_wire(Op::Create, &event_id, &parent_id, None, &fields, now_ms());
     let rumor_id = send_wire(&mls_group_id, &parent_id, pk, &w, true).await?;
     let meta = OpMeta {
@@ -1477,12 +1663,13 @@ pub async fn send_squad_event_series<R: Runtime>(
     parent_id: String,
     series_id: String,
     event_ids: Vec<String>,
+    week_offsets: Vec<u32>,
     event: SquadEventInput,
 ) -> Result<(), String> {
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     ensure_announcements_group(&mls_group_id, &parent_id)?;
-    validate_series_ids(&series_id, &event_ids)?;
-    let occurrences = occurrences(&event, WEEKLY_SERIES_COUNT)?;
+    validate_series_ids(&series_id, &event_ids, &week_offsets)?;
+    let occurrences = selected_occurrences(&event, &week_offsets)?;
     let (pk, npub) = signer_identity().await?;
     let role = squad_records::group_role(&handle, &mls_group_id, &npub).await;
     let existing = with_conn(&handle, |c| {
@@ -1493,17 +1680,19 @@ pub async fn send_squad_event_series<R: Runtime>(
             .collect::<Result<Vec<_>, _>>()
     })?;
 
+    let stamp = preflight_series(
+        &occurrences,
+        &existing,
+        &series_id,
+        &parent_id,
+        &mls_group_id,
+        &npub,
+        now_ms(),
+    )?;
     let mut sent = 0usize;
     for ((event_id, fields), row) in event_ids.iter().zip(&occurrences).zip(existing) {
-        if let Some(row) = row {
-            // Retry: occurrence already sent with this series.
-            if row.series_id.as_deref() == Some(series_id.as_str())
-                && row.author_npub == npub
-                && row.parent_id == parent_id
-            {
-                continue;
-            }
-            return Err("Event id already in use".into());
+        if row.is_some() {
+            continue;
         }
         let w = event_wire(
             Op::Create,
@@ -1511,7 +1700,7 @@ pub async fn send_squad_event_series<R: Runtime>(
             &parent_id,
             Some(&series_id),
             fields,
-            now_ms(),
+            stamp,
         );
         let rumor_id = send_wire(&mls_group_id, &parent_id, pk, &w, false).await?;
         let meta = OpMeta {
@@ -1527,8 +1716,8 @@ pub async fn send_squad_event_series<R: Runtime>(
         &series_id,
         &parent_id,
         &occurrences[0],
-        WEEKLY_SERIES_COUNT,
-        now_ms(),
+        occurrences.len(),
+        stamp,
     );
     let content = series_card_content(&card).ok_or("Invalid series card")?;
     let rumor_id = send_wire(&mls_group_id, &parent_id, pk, &card, true).await?;
@@ -1553,14 +1742,17 @@ pub async fn send_squad_event_update<R: Runtime>(
 ) -> Result<(), String> {
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     ensure_announcements_group(&mls_group_id, &parent_id)?;
-    let fields = fields_from_input(&event)?;
     let (pk, npub) = signer_identity().await?;
     let role = squad_records::group_role(&handle, &mls_group_id, &npub).await;
     let row = with_conn(&handle, |c| {
         editable_row(c, &mls_group_id, &parent_id, &event_id, &npub, role)
     })?;
+    let fields = fields_for_update(&event, &row.fields)?;
     if row.status == EventStatus::Cancelled {
         return Err(err::NOT_EDITABLE.into());
+    }
+    if schedule_changed(&row.fields, &fields) {
+        validate_future(&fields, now_ms() / 1000)?;
     }
     let stamp = now_ms().max(row.updated_at_ms.saturating_add(1));
     let w = event_wire(
@@ -2160,14 +2352,187 @@ mod tests {
     }
 
     #[test]
-    fn series_ids_must_be_eight_distinct() {
-        assert!(validate_series_ids("s-1", &series_ids()).is_ok());
-        let invalid = Err(err::INVALID_SERIES.to_string());
-        assert_eq!(validate_series_ids("s-1", &series_ids()[..7]), invalid);
-        let mut dup = series_ids();
-        dup[7] = dup[0].clone();
-        assert_eq!(validate_series_ids("s-1", &dup), invalid);
-        assert_eq!(validate_series_ids(" ", &series_ids()), invalid);
+    fn series_ids_and_offsets_must_be_bounded_distinct_and_chronological() {
+        let ids = series_ids();
+        assert!(validate_series_ids("s-1", &ids, &[0, 1, 2, 3, 4, 5, 6, 7]).is_ok());
+        assert!(validate_series_ids("s-1", &ids[..1], &[7]).is_ok());
+        for offsets in [vec![], vec![8], vec![0, 0], vec![2, 1]] {
+            assert!(validate_series_ids("s-1", &ids[..offsets.len()], &offsets).is_err());
+        }
+        assert!(
+            validate_series_ids("s-1", &vec!["id".into(); 9], &[0, 1, 2, 3, 4, 5, 6, 7, 8])
+                .is_err()
+        );
+        assert!(validate_series_ids("s-1", &ids[..2], &[0]).is_err());
+        assert!(validate_series_ids("s-1", &["same".into(), "same".into()], &[0, 2]).is_err());
+        assert!(validate_series_ids(" ", &ids[..1], &[0]).is_err());
+    }
+
+    #[test]
+    fn retained_series_preserves_original_weeks_and_card() {
+        let conn = conn();
+        let offsets = [1, 3, 7];
+        let ids = vec!["ev-2".into(), "ev-4".into(), "ev-8".into()];
+        validate_series_ids("s-1", &ids, &offsets).unwrap();
+        let occ = selected_occurrences(
+            &input("2026-03-01T09:00", Some("2026-03-01T10:30")),
+            &offsets,
+        )
+        .unwrap();
+        for (id, f) in ids.iter().zip(&occ) {
+            let w = event_wire(Op::Create, id, PARENT, Some("s-1"), f, 100);
+            ingest(&conn, &w, id, ALICE);
+            ingest(&conn, &w, id, ALICE);
+        }
+        assert_eq!(count_rows(&conn, "squad_events"), 3);
+        assert!(load_row(&conn, "ev-1").unwrap().is_none());
+        assert!(load_row(&conn, "ev-3").unwrap().is_none());
+        assert_eq!(occ[0].start_unix, fields("2026-03-08T09:00").start_unix);
+        assert_eq!(occ[1].start_unix, fields("2026-03-22T09:00").start_unix);
+        assert_eq!(occ[2].start_unix, fields("2026-04-19T09:00").start_unix);
+        let card = series_card_wire("s-1", PARENT, &occ[0], occ.len(), 100);
+        let json: serde_json::Value =
+            serde_json::from_str(&series_card_content(&card).unwrap()).unwrap();
+        assert_eq!(json["payload"]["count"], 3);
+        assert_eq!(json["payload"]["first_start"], occ[0].start_unix.unwrap());
+    }
+
+    #[test]
+    fn retained_series_keeps_elapsed_minutes_across_midnight_and_dst() {
+        for duration in [30, 60, 90, 120] {
+            let end = format!("2026-03-01T{:02}:{:02}", 1 + duration / 60, duration % 60);
+            let occ =
+                selected_occurrences(&input("2026-03-01T01:00", Some(&end)), &[0, 1]).unwrap();
+            for fields in occ {
+                assert_eq!(
+                    fields.end_unix.unwrap() - fields.start_unix.unwrap(),
+                    duration as i64 * 60
+                );
+            }
+        }
+        let occ = selected_occurrences(
+            &input("2026-03-01T23:30", Some("2026-03-02T01:00")),
+            &[0, 1],
+        )
+        .unwrap();
+        assert_eq!(occ[1].end_unix, fields("2026-03-09T01:00").start_unix);
+        assert!(selected_occurrences(&input("2026-03-01T02:30", None), &[0, 1]).is_err());
+        let mut all_day = input("2026-12-24", Some("2026-12-27"));
+        all_day.all_day = true;
+        let occ = selected_occurrences(&all_day, &[1, 3]).unwrap();
+        assert_eq!(occ[0].start_date.as_deref(), Some("2026-12-31"));
+        assert_eq!(occ[1].end_date.as_deref(), Some("2027-01-17"));
+        let mut malformed = all_day.clone();
+        malformed.start = "éééééééé".into();
+        assert!(selected_occurrences(&malformed, &[0]).is_err());
+    }
+
+    #[test]
+    fn preflight_rejects_entire_invalid_plan_and_keeps_retry_card_identity() {
+        let conn = conn();
+        let occ = selected_occurrences(&input("2026-03-01T09:00", None), &[0, 2]).unwrap();
+        let now = occ[0].start_unix.unwrap() * 1000 - 1_000;
+        assert_eq!(
+            preflight_series(&occ, &[None, None], "s-1", PARENT, GROUP, ALICE, now),
+            Ok(now)
+        );
+        let wire = event_wire(Op::Create, "ev-1", PARENT, Some("s-1"), &occ[0], now);
+        ingest(&conn, &wire, "r1", ALICE);
+        let existing = vec![Some(row(&conn, "ev-1")), None];
+        let retry_now = now + 86_400_000;
+        assert_eq!(
+            preflight_series(&occ, &existing, "s-1", PARENT, GROUP, ALICE, retry_now),
+            Ok(now)
+        );
+        let first = series_card_wire("s-1", PARENT, &occ[0], occ.len(), now);
+        let retry = series_card_wire(
+            "s-1",
+            PARENT,
+            &occ[0],
+            occ.len(),
+            preflight_series(&occ, &existing, "s-1", PARENT, GROUP, ALICE, retry_now).unwrap(),
+        );
+        assert_eq!(
+            serde_json::to_string(&first).unwrap(),
+            serde_json::to_string(&retry).unwrap()
+        );
+        assert!(preflight_series(
+            &occ,
+            &existing,
+            "other-series",
+            PARENT,
+            GROUP,
+            ALICE,
+            retry_now
+        )
+        .is_err());
+        assert!(preflight_series(&occ, &existing, "s-1", PARENT, GROUP, BOB, retry_now).is_err());
+        assert!(preflight_series(
+            &occ,
+            &existing,
+            "s-1",
+            PARENT,
+            GROUP,
+            ALICE,
+            now + 30 * 86_400_000
+        )
+        .is_err());
+        assert_eq!(count_rows(&conn, "squad_events"), 1);
+    }
+
+    #[test]
+    fn new_scheduling_checks_zone_clock_but_metadata_edits_keep_history() {
+        let f = fields("2026-01-15T09:00");
+        let start = f.start_unix.unwrap();
+        assert!(validate_future(&f, start - 1).is_ok());
+        assert!(validate_future(&f, start).is_err());
+        assert!(validate_future(&f, start + 1).is_err());
+        let mut all_day = input("2026-01-15", Some("2026-01-17"));
+        all_day.all_day = true;
+        let day = fields_from_input(&all_day).unwrap();
+        assert!(
+            validate_future(&day, civil::civil_to_unix("2026-01-15T23:59", NY).unwrap()).is_ok()
+        );
+        assert!(
+            validate_future(&day, civil::civil_to_unix("2026-01-16T00:00", NY).unwrap()).is_err()
+        );
+        let conn = conn();
+        ingest(&conn, &create("ev-1", &f, 1_000), "r1", ALICE);
+        let original = row(&conn, "ev-1");
+        let mut updated = f.clone();
+        updated.title = "Renamed historic meeting".into();
+        assert!(!schedule_changed(&original.fields, &updated));
+        updated.start_unix = Some(start - 60);
+        assert!(schedule_changed(&original.fields, &updated));
+    }
+
+    #[test]
+    fn historical_later_overlap_metadata_edit_preserves_stored_instants() {
+        let mut previous = fields("2026-11-01T01:30");
+        previous.start_unix = Some(previous.start_unix.unwrap() + 3_600);
+        previous.end_unix = Some(previous.start_unix.unwrap() + 30 * 60);
+        let mut edit = input("2026-11-01T01:30", Some("2026-11-01T02:00"));
+        edit.title = "New title".into();
+        let updated = fields_for_update(&edit, &previous).unwrap();
+        assert_eq!(updated.title, "New title");
+        assert!(!schedule_changed(&previous, &updated));
+        assert_eq!(updated.start_unix, previous.start_unix);
+        assert_eq!(updated.end_unix, previous.end_unix);
+    }
+
+    #[test]
+    fn new_scheduling_rejects_gaps_but_overlap_uses_earlier_instant() {
+        assert!(fields_for_schedule(&input("2026-03-08T02:30", None)).is_err());
+        assert!(fields_for_schedule(&input("2026-03-08T01:30", Some("2026-03-08T02:30"))).is_err());
+        let overlap = fields_for_schedule(&input("2026-11-01T01:30", None)).unwrap();
+        assert_eq!(
+            overlap.start_unix,
+            Some(
+                chrono::DateTime::parse_from_rfc3339("2026-11-01T05:30:00Z")
+                    .unwrap()
+                    .timestamp()
+            )
+        );
     }
 
     #[test]
