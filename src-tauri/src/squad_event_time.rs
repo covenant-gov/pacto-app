@@ -18,6 +18,17 @@ pub fn civil_to_unix(local: &str, tzid: &str) -> Result<i64, String> {
     resolve(&tz, parse_local(local)?)
 }
 
+/// Scheduling rejects gaps rather than silently moving a previewed wall clock.
+/// Overlaps retain the earlier-instant rule used by existing event conversion.
+pub fn civil_to_unix_strict(local: &str, tzid: &str) -> Result<i64, String> {
+    let tz = parse_tz(tzid.trim())?;
+    match tz.from_local_datetime(&parse_local(local.trim())?) {
+        LocalResult::Single(dt) => Ok(dt.timestamp()),
+        LocalResult::Ambiguous(a, b) => Ok(a.timestamp().min(b.timestamp())),
+        LocalResult::None => Err("local time does not exist in this time zone".into()),
+    }
+}
+
 /// `count` starts, each 7 civil days after the previous at the same wall clock in tzid (gap/ambiguity rules above).
 pub fn weekly_timed_starts(local: &str, tzid: &str, count: usize) -> Result<Vec<i64>, String> {
     let tz = parse_tz(tzid)?;

@@ -94,12 +94,13 @@ export async function sendSquadEventCreate(params: {
   await invoke('send_squad_event_create', params);
 }
 
-/** Weekly: eight silent creates (one per `eventIds` entry, seven civil days apart) plus one series card. */
+/** Selected weekly occurrences: stable ids paired with original week offsets plus one series card. */
 export async function sendSquadEventSeries(params: {
   mlsGroupId: string;
   parentId: string;
   seriesId: string;
   eventIds: string[];
+  weekOffsets: number[];
   event: SquadEventInput;
 }): Promise<void> {
   await invoke('send_squad_event_series', params);
