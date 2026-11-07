@@ -26,7 +26,8 @@ jobs:
     if: "contains(join(github.event.commits.*.message, '\n'), 'chore(release): bump version to ')"
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      # Credentials stay enabled: this job pushes the annotated release tag.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
 
       - name: read version
         id: version

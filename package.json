@@ -3,6 +3,7 @@
   "version": "0.8.0",
   "description": "",
   "type": "module",
+  "packageManager": "pnpm@11.7.0",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && node scripts/check-design-playground-omitted.mjs",
@@ -26,6 +27,7 @@
     "lint": "eslint .",
     "check:tauri-commands": "node scripts/check-orphaned-tauri-commands.mjs",
     "check:i18n-toasts": "node scripts/check-hardcoded-toasts.mjs",
+    "check:actions-pinned": "node scripts/check-actions-pinned.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

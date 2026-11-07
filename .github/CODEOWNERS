@@ -1,0 +1,8 @@
+# Workflow and release automation review.
+# Owners have write-or-higher on this repository (collaborators list and/or
+# collaborators permission API) and are listed for CODEOWNERS review paths.
+# YAML and CODEOWNERS alone do not enforce reviews — enable branch protection /
+# rulesets that require CODEOWNERS review for these paths
+# (see docs/security/CI_SUPPLY_CHAIN.md).
+.github/workflows/ @logicminds @thebeyondr @daopunk
+.github/CODEOWNERS @logicminds @thebeyondr @daopunk

@@ -1,10 +1,30 @@
 packages:
   - .
   - landing
+
+# Build-script approval (pnpm 11+). Packages not listed here are denied by
+# default (strictDepBuilds). Approve only packages whose install/build scripts
+# are required for this repo; keep fsevents false (optional macOS watcher).
+# Approve only packages whose install/build scripts this workspace needs.
 allowBuilds:
   es5-ext: true
   esbuild: true
   fsevents: false
+
+# Delay brand-new registry publishes during resolution/updates. Frozen CI
+# installs already pin via the lockfile; this mainly hardens local/add paths.
+# Exclude packages that may need same-day security patches (escape hatch).
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - esbuild
+  - vite
+  - vitest
+  - svelte
+  - '@sveltejs/kit'
+  - '@tauri-apps/cli'
+
+strictDepBuilds: true
+
 overrides:
   cookie: ">=0.7.0 <2.0.0"
   esbuild: ">=0.25.0"
