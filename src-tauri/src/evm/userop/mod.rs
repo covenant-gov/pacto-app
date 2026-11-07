@@ -13,8 +13,8 @@ pub(crate) use fees::{
     resolve_userop_send_fees,
 };
 pub(crate) use pipeline::{
-    estimate_sponsored_userop, sign_and_send_sponsored_userop, SponsoredUserOpBuild,
-    SponsoredUserOpLane,
+    estimate_sponsored_userop, finalize_sponsored_userop_chain, sign_and_send_sponsored_userop,
+    SponsoredUserOpBuild, SponsoredUserOpLane,
 };
 pub use placeholder::CLAIM_USERNAME_SELECTOR;
 pub(crate) use placeholder::{

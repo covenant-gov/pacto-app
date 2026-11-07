@@ -17,7 +17,7 @@ use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config::{self, GlobalUsernameSponsorAddresses};
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::{load_embedded_signer, load_squad_roster_embedded_signer};
-use super::rpc::{connect_read_provider, wallet_err_json};
+use super::rpc::{connect_read_provider, fold_gov_rpc_urls, wallet_err_json};
 use super::sponsor_preflight::{
     assert_global_factory_preflight, assert_global_gov_module_preflight,
 };
@@ -28,10 +28,11 @@ use super::sponsor_userop::{
 };
 use super::username_claim_preflight::preflight_bootstrap_claim_userop_path;
 use super::userop::{
-    estimate_sponsored_userop, paymaster_entry_point_deposit_preflight,
-    resolve_eip7702_auth_for_sender, resolve_userop_send_fees, sign_and_send_sponsored_userop,
-    userop_gas_ceilings, userop_gas_limit_sum, userop_placeholder_max_cost_wei, FinalGasLimits,
-    IAccountExecute, IEntryPointV07, SponsoredUserOpBuild, SponsoredUserOpLane, UseropGasCeilings,
+    bundler_send_user_operation, estimate_sponsored_userop, finalize_sponsored_userop_chain,
+    paymaster_entry_point_deposit_preflight, resolve_eip7702_auth_for_sender,
+    resolve_userop_send_fees, sign_and_send_sponsored_userop, userop_gas_ceilings,
+    userop_gas_limit_sum, userop_placeholder_max_cost_wei, FinalGasLimits, IAccountExecute,
+    IEntryPointV07, SponsoredUserOpBuild, SponsoredUserOpLane, UseropGasCeilings,
     UseropPlaceholderLane,
 };
 use super::wallet_chain_config;
@@ -277,47 +278,150 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
 
     let (signer, _wallet) = load_squad_roster_embedded_signer(app.clone(), parent_id).await?;
     let member = signer.address();
-    let read_provider = connect_read_provider(&urls).await?;
 
     let (max_priority, max_fee) = resolve_userop_send_fees(&bundler).await;
 
     let placeholders = userop_gas_ceilings(&calldata, UseropPlaceholderLane::GovModule);
     let placeholder_max_cost =
         userop_placeholder_max_cost_wei(&calldata, UseropPlaceholderLane::GovModule, max_fee);
-
-    paymaster_entry_point_deposit_preflight(
-        &read_provider,
-        addrs.entry_point,
-        addrs.pacto_global_paymaster,
-        placeholder_max_cost,
-    )
-    .await?;
-    let eligible = assert_global_gov_module_preflight(
-        &read_provider,
-        &addrs,
-        member,
-        to,
-        placeholder_max_cost,
-    )
-    .await?;
-
     let execute_calldata = IAccountExecute::executeCall {
         dest: to,
         value: U256::ZERO,
         data: Bytes::from(calldata.clone()),
     }
     .abi_encode();
+    let entry_point = addrs.entry_point;
+    let paymaster = addrs.pacto_global_paymaster;
 
-    let code = read_provider.get_code_at(member).await.map_err(|e| {
+    // Chain reads and getUserOpHash rotate. Pimlico estimate errors and the bundler send do not.
+    let user_op = fold_gov_rpc_urls!(&urls, 0, "global_gov", url_idx, {
+        let read_provider = connect_read_provider(&urls[url_idx..]).await?;
+        let chain = read_global_gov_chain(
+            &read_provider,
+            &signer,
+            &addrs,
+            member,
+            to,
+            placeholder_max_cost,
+            net.chain_id,
+            account_impl,
+        )
+        .await?;
+        let ctx = GlobalSponsoredSendParts {
+            entry_point,
+            paymaster,
+            addrs: addrs.clone(),
+            preflight_lane: GlobalPreflightLane::GovModule,
+            npub_hash: chain.npub_hash,
+            member,
+            inner_to: to,
+            inner_selector: selector,
+            inner_value: U256::ZERO,
+            nonce: chain.nonce,
+            execute_calldata: execute_calldata.clone(),
+            max_fee,
+            max_priority,
+            eip7702_auth: chain.eip7702_auth,
+        };
+        eprintln_global_userop_context(&ctx, chain.code_len, account_impl);
+        let build = SponsoredUserOpBuild {
+            sender: member,
+            nonce: ctx.nonce,
+            call_data: &ctx.execute_calldata,
+            entry_point,
+            paymaster,
+            max_fee,
+            max_priority,
+            eip7702_auth: ctx.eip7702_auth.clone(),
+        };
+        let npub_hash = ctx.npub_hash;
+        let encode = move |pm_v: u128, pm_post: u128| {
+            encode_global_paymaster_and_data(
+                paymaster,
+                npub_hash,
+                member,
+                Address::ZERO,
+                pm_v,
+                pm_post,
+            )
+            .to_vec()
+        };
+        let limits = estimate_sponsored_userop(
+            &bundler,
+            &build,
+            placeholders,
+            SponsoredUserOpLane::Small,
+            "global",
+            &encode,
+        )
+        .await?;
+        let addrs_ref = &addrs;
+        let provider_ref = &read_provider;
+        finalize_sponsored_userop_chain(
+            &read_provider,
+            &signer,
+            &build,
+            limits,
+            &encode,
+            move |max_cost| {
+                let provider = provider_ref;
+                let addrs = addrs_ref;
+                async move {
+                    assert_global_gov_module_preflight(provider, addrs, member, to, max_cost)
+                        .await
+                        .map(|_| ())
+                }
+            },
+        )
+        .await
+    })?;
+    let user_op_hash = bundler_send_user_operation(&bundler, &user_op, entry_point).await?;
+    Ok(SponsoredUserOpSend {
+        user_op_hash,
+        bundler_url: bundler,
+    })
+}
+
+struct GlobalGovChain {
+    npub_hash: B256,
+    nonce: U256,
+    code_len: usize,
+    eip7702_auth: Option<Value>,
+}
+
+async fn read_global_gov_chain<P, S>(
+    provider: &P,
+    signer: &S,
+    addrs: &GlobalUsernameSponsorAddresses,
+    member: Address,
+    to: Address,
+    placeholder_max_cost: U256,
+    chain_id: u64,
+    account_impl: Address,
+) -> Result<GlobalGovChain, String>
+where
+    P: Provider,
+    S: Signer + Sync,
+{
+    paymaster_entry_point_deposit_preflight(
+        provider,
+        addrs.entry_point,
+        addrs.pacto_global_paymaster,
+        placeholder_max_cost,
+    )
+    .await?;
+    let eligible =
+        assert_global_gov_module_preflight(provider, addrs, member, to, placeholder_max_cost)
+            .await?;
+    let code = provider.get_code_at(member).await.map_err(|e| {
         wallet_err_json(
             "RPC_CODE",
             crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
             None,
         )
     })?;
-
     let nonce: U256 = eth_call_decode(
-        &read_provider,
+        provider,
         addrs.entry_point,
         &IEntryPointV07::getNonceCall {
             sender: member,
@@ -326,59 +430,21 @@ pub async fn send_sponsored_global_gov_userop<R: Runtime>(
     )
     .await
     .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
-
-    ensure_paymaster_7702_impl(&read_provider, addrs.pacto_global_paymaster, account_impl).await?;
+    ensure_paymaster_7702_impl(provider, addrs.pacto_global_paymaster, account_impl).await?;
     let eip7702_auth = resolve_eip7702_auth_for_sender(
-        &read_provider,
-        &signer,
+        provider,
+        signer,
         member,
         code.as_ref(),
-        net.chain_id,
+        chain_id,
         account_impl,
     )
     .await?;
-
-    let ctx = GlobalSponsoredSendParts {
-        entry_point: addrs.entry_point,
-        paymaster: addrs.pacto_global_paymaster,
-        addrs,
-        preflight_lane: GlobalPreflightLane::GovModule,
+    Ok(GlobalGovChain {
         npub_hash: eligible.npub_hash,
-        member,
-        inner_to: to,
-        inner_selector: selector,
-        inner_value: U256::ZERO,
         nonce,
-        execute_calldata,
-        max_fee,
-        max_priority,
+        code_len: code.len(),
         eip7702_auth,
-    };
-
-    eprintln_global_userop_context(&ctx, code.len(), account_impl);
-
-    let provider = &read_provider;
-    let gov_addrs = &ctx.addrs;
-    let gov_member = ctx.member;
-    let gov_to = ctx.inner_to;
-    let user_op_hash = run_global_userop(
-        provider,
-        &signer,
-        &bundler,
-        &ctx,
-        placeholders,
-        SponsoredUserOpLane::Small,
-        "global",
-        move |max_cost| async move {
-            assert_global_gov_module_preflight(provider, gov_addrs, gov_member, gov_to, max_cost)
-                .await
-                .map(|_| ())
-        },
-    )
-    .await?;
-    Ok(SponsoredUserOpSend {
-        user_op_hash,
-        bundler_url: bundler,
     })
 }
 

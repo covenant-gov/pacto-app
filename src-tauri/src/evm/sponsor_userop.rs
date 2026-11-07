@@ -3,6 +3,7 @@
 
 use alloy::primitives::{Address, Bytes, Uint, B256, U256};
 use alloy::providers::Provider;
+use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use std::str::FromStr;
@@ -15,14 +16,15 @@ use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::load_squad_roster_embedded_signer;
-use super::rpc::{connect_read_provider, parse_address, wallet_err_json};
+use super::rpc::{connect_read_provider, fold_gov_rpc_urls, parse_address, wallet_err_json};
 use super::sponsor_paymaster::{encode_paymaster_and_data, required_pool_balance};
 use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id};
 use super::userop::{
-    estimate_sponsored_userop, paymaster_entry_point_deposit_preflight,
-    resolve_eip7702_auth_for_sender, resolve_userop_probe_fees, resolve_userop_send_fees,
-    sign_and_send_sponsored_userop, userop_gas_ceilings, userop_max_cost_wei, IAccountExecute,
-    IEntryPointV07, SponsoredUserOpBuild, SponsoredUserOpLane, UseropPlaceholderLane,
+    estimate_sponsored_userop, finalize_sponsored_userop_chain,
+    paymaster_entry_point_deposit_preflight, resolve_eip7702_auth_for_sender,
+    resolve_userop_probe_fees, resolve_userop_send_fees, userop_gas_ceilings, userop_max_cost_wei,
+    IAccountExecute, IEntryPointV07, SponsoredUserOpBuild, SponsoredUserOpLane,
+    UseropPlaceholderLane,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -436,7 +438,6 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
 
     let (signer, _wallet) = load_squad_roster_embedded_signer(app.clone(), parent_id).await?;
     let member = signer.address();
-    let read_provider = connect_read_provider(&urls).await?;
 
     let (max_priority, max_fee) = resolve_userop_send_fees(&bundler).await;
 
@@ -449,33 +450,125 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         ceilings.pm_verification,
         ceilings.pm_post,
     );
-    paymaster_entry_point_deposit_preflight(
-        &read_provider,
-        addrs.entry_point,
-        addrs.pacto_sponsor_paymaster,
-        placeholder_max_cost,
-    )
-    .await?;
-    let (sponsor, squad_id) = sponsor_eligibility_preflight(
-        &read_provider,
-        addrs.squad_sponsor_factory,
-        addrs.pacto_sponsor_paymaster,
-        squad_id,
-        member,
-        placeholder_max_cost,
-    )
-    .await?;
-
     let execute_calldata = IAccountExecute::executeCall {
         dest: to,
         value: U256::ZERO,
         data: Bytes::from(calldata),
     }
     .abi_encode();
+    let paymaster = addrs.pacto_sponsor_paymaster;
+    let entry_point = addrs.entry_point;
+    let factory = addrs.squad_sponsor_factory;
 
+    // Chain reads and getUserOpHash rotate. Pimlico estimate errors and the bundler send do not.
+    let user_op = fold_gov_rpc_urls!(&urls, 0, "gov_sponsored", url_idx, {
+        let read_provider = connect_read_provider(&urls[url_idx..]).await?;
+        let chain = read_squad_sponsored_chain(
+            &read_provider,
+            &signer,
+            factory,
+            paymaster,
+            entry_point,
+            squad_id,
+            member,
+            placeholder_max_cost,
+            net.chain_id,
+            account_impl,
+        )
+        .await?;
+        let build = SponsoredUserOpBuild {
+            sender: member,
+            nonce: chain.nonce,
+            call_data: &execute_calldata,
+            entry_point,
+            paymaster,
+            max_fee,
+            max_priority,
+            eip7702_auth: chain.eip7702_auth,
+        };
+        let sponsor = chain.sponsor;
+        let resolved_squad_id = chain.squad_id;
+        let encode = move |pm_v: u128, pm_post: u128| {
+            encode_paymaster_and_data(paymaster, resolved_squad_id, sponsor, member, pm_v, pm_post)
+                .to_vec()
+        };
+        let limits = estimate_sponsored_userop(
+            &bundler,
+            &build,
+            ceilings,
+            SponsoredUserOpLane::Small,
+            "sponsored",
+            &encode,
+        )
+        .await?;
+        finalize_sponsored_userop_chain(
+            &read_provider,
+            &signer,
+            &build,
+            limits,
+            &encode,
+            |max_cost| {
+                let provider = &read_provider;
+                async move {
+                    sponsor_eligibility_preflight(
+                        provider,
+                        factory,
+                        paymaster,
+                        resolved_squad_id,
+                        member,
+                        max_cost,
+                    )
+                    .await
+                    .map(|_| ())
+                }
+            },
+        )
+        .await
+    })?;
+    let user_op_hash = bundler_send_user_operation(&bundler, &user_op, entry_point).await?;
+    Ok(SponsoredUserOpSend {
+        user_op_hash,
+        bundler_url: bundler,
+    })
+}
+
+struct SquadSponsoredChain {
+    sponsor: Address,
+    squad_id: B256,
+    nonce: U256,
+    eip7702_auth: Option<serde_json::Value>,
+}
+
+async fn read_squad_sponsored_chain<P, S>(
+    provider: &P,
+    signer: &S,
+    factory: Address,
+    paymaster: Address,
+    entry_point: Address,
+    squad_id: B256,
+    member: Address,
+    placeholder_max_cost: U256,
+    chain_id: u64,
+    account_impl: Address,
+) -> Result<SquadSponsoredChain, String>
+where
+    P: Provider,
+    S: Signer + Sync,
+{
+    paymaster_entry_point_deposit_preflight(provider, entry_point, paymaster, placeholder_max_cost)
+        .await?;
+    let (sponsor, squad_id) = sponsor_eligibility_preflight(
+        provider,
+        factory,
+        paymaster,
+        squad_id,
+        member,
+        placeholder_max_cost,
+    )
+    .await?;
     let nonce: U256 = eth_call_decode(
-        &read_provider,
-        addrs.entry_point,
+        provider,
+        entry_point,
         &IEntryPointV07::getNonceCall {
             sender: member,
             key: Uint::<192, 3>::from(0u64),
@@ -483,8 +576,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     )
     .await
     .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
-
-    let code = read_provider.get_code_at(member).await.map_err(|e| {
+    let code = provider.get_code_at(member).await.map_err(|e| {
         wallet_err_json(
             "RPC_CODE",
             crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
@@ -492,62 +584,19 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         )
     })?;
     let eip7702_auth = resolve_eip7702_auth_for_sender(
-        &read_provider,
-        &signer,
+        provider,
+        signer,
         member,
         code.as_ref(),
-        net.chain_id,
+        chain_id,
         account_impl,
     )
     .await?;
-
-    let paymaster = addrs.pacto_sponsor_paymaster;
-    let entry_point = addrs.entry_point;
-    let factory = addrs.squad_sponsor_factory;
-    let build = SponsoredUserOpBuild {
-        sender: member,
+    Ok(SquadSponsoredChain {
+        sponsor,
+        squad_id,
         nonce,
-        call_data: &execute_calldata,
-        entry_point,
-        paymaster,
-        max_fee,
-        max_priority,
         eip7702_auth,
-    };
-    let encode = |pm_v: u128, pm_post: u128| {
-        encode_paymaster_and_data(paymaster, squad_id, sponsor, member, pm_v, pm_post).to_vec()
-    };
-    let limits = estimate_sponsored_userop(
-        &bundler,
-        &build,
-        ceilings,
-        SponsoredUserOpLane::Small,
-        "sponsored",
-        &encode,
-    )
-    .await?;
-    let user_op_hash = sign_and_send_sponsored_userop(
-        &read_provider,
-        &signer,
-        &bundler,
-        &build,
-        limits,
-        &encode,
-        |max_cost| {
-            let provider = &read_provider;
-            async move {
-                sponsor_eligibility_preflight(
-                    provider, factory, paymaster, squad_id, member, max_cost,
-                )
-                .await
-                .map(|_| ())
-            }
-        },
-    )
-    .await?;
-    Ok(SponsoredUserOpSend {
-        user_op_hash,
-        bundler_url: bundler,
     })
 }
 

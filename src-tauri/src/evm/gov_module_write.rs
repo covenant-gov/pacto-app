@@ -1,8 +1,9 @@
 //! Shared squad-key contract call helper for Pacto Gov module writes.
 
 use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, Bytes, U256};
 use alloy::providers::Provider;
+use alloy::rpc::types::TransactionRequest;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
@@ -11,18 +12,20 @@ use super::global_sponsored_fee_ledger::{self, LANE_GOV_MODULE};
 use super::gov_read::rpc_urls_or_default;
 use super::gov_sponsor_path::{gov_path_attempt_order, GovSponsorPath};
 use super::pacto_chain_config;
+use super::rpc::config::RECEIPT_WAIT_TIMEOUT;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
 use super::rpc::{
-    connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
-    wallet_err_json, wallet_err_json_with_tx_hash,
+    broadcast_signed_gov_eoa_tx, connect_read_provider, fill_sign_gov_eoa_tx,
+    is_retryable_gov_rpc_error, next_gov_rpc_url_idx, wallet_err_json,
+    wallet_err_json_with_tx_hash,
 };
 use super::sponsor_preflight::{
     global_gov_module_path_ok, read_eligible_member, squad_sponsor_path_ok,
 };
 use super::sponsor_userop::{
-    call_gas_ceiling_for_calldata, call_gas_with_margin, estimate_call_gas, fallback_max_fee,
+    call_gas_ceiling_for_calldata, call_gas_with_margin, fallback_max_fee,
     is_hard_sponsor_preflight_error, is_soft_sponsor_config_error, resolve_sponsored_squad_id,
     roster_native_balance_wei, send_sponsored_gov_userop, wait_for_user_operation_receipt,
     SponsoredUserOpSend,
@@ -70,103 +73,48 @@ pub async fn send_gov_module_call<R: Runtime>(
     require_capability(&app, pid, capability, rpc_urls_override.clone(), stack).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
-    let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
+    let (signer, _wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
     // Key by signer EOA: multiple parents can resolve to the same roster key.
     let _write_guard = with_gov_write_lock(signer.address()).await;
 
-    // Route the write: EOA when the roster key can afford the gas, sponsored when it can't.
-    let read_provider = connect_read_provider(&urls).await?;
     let has_sponsor_infra =
         db::parent_has_sponsor_infra(&app, pid).unwrap_or(false) || wargame_write;
-    // A failed balance lookup must not block writes: the sponsored path needs no roster
-    // balance, but without sponsor infra there is no route for the write at all.
-    let balance = match roster_native_balance_wei(&read_provider, signer.address()).await {
-        Ok(balance) => balance,
-        Err(e) if has_sponsor_infra => {
-            log::warn!(target: "pacto_wallet", "roster balance lookup failed; trying sponsored path: {e}");
-            U256::ZERO
-        }
-        Err(e) => {
-            return Err(wallet_err_json(
-                "BALANCE_LOOKUP",
-                format!("roster balance check failed and no sponsor infra is configured, so the write can't be routed: {e}"),
-                None,
-            ));
-        }
-    };
-    let required = estimate_eoa_cost_wei(&read_provider, signer.address(), to, &calldata).await;
-    let eoa_can_pay = balance >= required;
 
-    let global_addrs = pacto_chain_config::global_username_sponsor_addresses(&net.key);
-    let eligible_member = match global_addrs.as_ref() {
-        Ok(addrs) => {
-            read_eligible_member(&read_provider, addrs.pacto_username_nft, signer.address())
-                .await?
-                .is_some()
-        }
-        Err(_) => false,
-    };
-
-    let squad_addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key);
-    let squad_probe_candidate = has_sponsor_infra && squad_addrs.is_ok();
-    let global_probe_candidate = eligible_member && global_addrs.is_ok();
-    let sponsored_route_possible = squad_probe_candidate || global_probe_candidate;
-    let probe_max_costs = if sponsored_route_possible {
-        match super::sponsor_userop::sponsored_userop_probe_max_fee(&app, &net.key).await {
-            Ok(max_fee) => Some(gov_probe_max_costs(&calldata, max_fee)),
-            Err(error) => {
-                if let Some(error) =
-                    sponsored_probe_failure_error(&error, eoa_can_pay, sponsored_route_possible)
-                {
-                    return Err(error);
-                }
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    let squad_path_ok = if squad_probe_candidate {
-        match (squad_addrs.as_ref(), probe_max_costs) {
-            (Ok(sp), Some(costs)) => {
-                let wargame_payload = db::pacto_gov_wargame_payload_for_parent(&app, pid)
-                    .map_err(|e| wallet_err_json("WARGAME_READ", e, None))?;
-                let squad_id = resolve_sponsored_squad_id(pid, to, wargame_payload.as_deref());
-                squad_sponsor_path_ok(
-                    &read_provider,
-                    sp.squad_sponsor_factory,
-                    sp.pacto_sponsor_paymaster,
-                    squad_id,
-                    signer.address(),
-                    costs.squad,
-                )
-                .await?
-            }
-            _ => false,
-        }
-    } else {
-        false
-    };
-
-    let global_tophat_ok = if global_probe_candidate {
-        match (global_addrs.as_ref(), probe_max_costs) {
-            (Ok(addrs), Some(costs)) => {
-                global_gov_module_path_ok(&read_provider, addrs, signer.address(), to, costs.global)
-                    .await?
-            }
-            _ => false,
-        }
-    } else {
-        false
-    };
-
-    let path_order = gov_path_attempt_order(
+    // Route the write: EOA when the roster key can afford the gas, sponsored when it can't.
+    // Request-level failover: connect helpers pin the first URL; rotate on retryable eth_calls.
+    let mut url_idx = 0usize;
+    let (
+        balance,
+        required,
+        eoa_can_pay,
         eligible_member,
         squad_path_ok,
         global_tophat_ok,
-        eoa_can_pay,
-    );
+        path_order,
+    ) = loop {
+        match run_gov_write_preflight(
+            &app,
+            &net.key,
+            pid,
+            to,
+            &calldata,
+            signer.address(),
+            has_sponsor_infra,
+            &urls[url_idx..],
+        )
+        .await
+        {
+            Ok(route) => break route,
+            Err(e) => {
+                if let Some(next) = next_gov_rpc_url_idx(&urls, url_idx, &e, "gov_write_preflight")
+                {
+                    url_idx = next;
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    };
 
     let mut last_sponsor_err: Option<String> = None;
     for path in path_order {
@@ -287,20 +235,127 @@ pub async fn send_gov_module_call<R: Runtime>(
         }));
     }
 
-    let provider = connect_signing_provider(&urls, wallet).await?;
-    let tx = contract_call_request(to, calldata).with_chain_id(net.chain_id);
-    let receipt = send_and_confirm(
-        &provider,
-        tx,
-        "Timed out waiting for governance confirmation. The transaction may still confirm — do not resubmit the same calldata; check the explorer with the returned tx hash.",
-    )
-    .await?;
+    let (signed, send_url_idx) =
+        fill_sign_gov_eoa_tx(&urls, url_idx, &signer, to, calldata, net.chain_id).await?;
+    let receipt =
+        broadcast_signed_gov_eoa_tx(&urls, send_url_idx, &signed, RECEIPT_WAIT_TIMEOUT).await?;
 
     Ok((
         format!("0x{:x}", receipt.transaction_hash),
         net.key.clone(),
         net.chain_id,
         "self_funded".to_string(),
+    ))
+}
+
+type GovWritePreflightRoute = (U256, U256, bool, bool, bool, bool, Vec<GovSponsorPath>);
+
+/// Balance / sponsor probes for one RPC URL slice. Retryable transport errors bubble up for failover.
+async fn run_gov_write_preflight<R: Runtime>(
+    app: &AppHandle<R>,
+    net_key: &str,
+    pid: &str,
+    to: Address,
+    calldata: &[u8],
+    signer: Address,
+    has_sponsor_infra: bool,
+    urls: &[String],
+) -> Result<GovWritePreflightRoute, String> {
+    let read_provider = connect_read_provider(urls).await?;
+    // Soft-fail non-retryable balance errors when sponsor infra exists; retryable errors rotate.
+    let balance = match roster_native_balance_wei(&read_provider, signer).await {
+        Ok(balance) => balance,
+        Err(e) if is_retryable_gov_rpc_error(&e) => return Err(e),
+        Err(e) if has_sponsor_infra => {
+            log::warn!(target: "pacto_wallet", "roster balance lookup failed; trying sponsored path: {e}");
+            U256::ZERO
+        }
+        Err(e) => {
+            return Err(wallet_err_json(
+                "BALANCE_LOOKUP",
+                format!("roster balance check failed and no sponsor infra is configured, so the write can't be routed: {e}"),
+                None,
+            ));
+        }
+    };
+    let required = estimate_eoa_cost_wei(&read_provider, signer, to, calldata).await?;
+    let eoa_can_pay = balance >= required;
+
+    let global_addrs = pacto_chain_config::global_username_sponsor_addresses(net_key);
+    let eligible_member = match global_addrs.as_ref() {
+        Ok(addrs) => read_eligible_member(&read_provider, addrs.pacto_username_nft, signer)
+            .await?
+            .is_some(),
+        Err(_) => false,
+    };
+
+    let squad_addrs = pacto_chain_config::squad_sponsor_deploy_addresses(net_key);
+    let squad_probe_candidate = has_sponsor_infra && squad_addrs.is_ok();
+    let global_probe_candidate = eligible_member && global_addrs.is_ok();
+    let sponsored_route_possible = squad_probe_candidate || global_probe_candidate;
+    let probe_max_costs = if sponsored_route_possible {
+        match super::sponsor_userop::sponsored_userop_probe_max_fee(app, net_key).await {
+            Ok(max_fee) => Some(gov_probe_max_costs(calldata, max_fee)),
+            Err(error) => {
+                if let Some(error) =
+                    sponsored_probe_failure_error(&error, eoa_can_pay, sponsored_route_possible)
+                {
+                    return Err(error);
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let squad_path_ok = if squad_probe_candidate {
+        match (squad_addrs.as_ref(), probe_max_costs) {
+            (Ok(sp), Some(costs)) => {
+                let wargame_payload = db::pacto_gov_wargame_payload_for_parent(app, pid)
+                    .map_err(|e| wallet_err_json("WARGAME_READ", e, None))?;
+                let squad_id = resolve_sponsored_squad_id(pid, to, wargame_payload.as_deref());
+                squad_sponsor_path_ok(
+                    &read_provider,
+                    sp.squad_sponsor_factory,
+                    sp.pacto_sponsor_paymaster,
+                    squad_id,
+                    signer,
+                    costs.squad,
+                )
+                .await?
+            }
+            _ => false,
+        }
+    } else {
+        false
+    };
+
+    let global_tophat_ok = if global_probe_candidate {
+        match (global_addrs.as_ref(), probe_max_costs) {
+            (Ok(addrs), Some(costs)) => {
+                global_gov_module_path_ok(&read_provider, addrs, signer, to, costs.global).await?
+            }
+            _ => false,
+        }
+    } else {
+        false
+    };
+
+    let path_order = gov_path_attempt_order(
+        eligible_member,
+        squad_path_ok,
+        global_tophat_ok,
+        eoa_can_pay,
+    );
+    Ok((
+        balance,
+        required,
+        eoa_can_pay,
+        eligible_member,
+        squad_path_ok,
+        global_tophat_ok,
+        path_order,
     ))
 }
 
@@ -420,23 +475,39 @@ async fn finish_sponsored_gov_write<R: Runtime>(
 }
 
 /// Conservative EOA cost bound: `eth_estimateGas` with 1.2x headroom times the current
-/// EIP-1559 max fee, reusing the sponsored path's fallbacks when RPC estimation is down.
+/// EIP-1559 max fee. Retryable transport errors propagate so the caller can rotate URLs.
+/// Other estimate failures keep the sponsored path's gas ceiling and fallback fee.
 async fn estimate_eoa_cost_wei<P: Provider>(
     provider: &P,
     from: Address,
     to: Address,
     calldata: &[u8],
-) -> U256 {
-    let gas = estimate_call_gas(provider, from, to, calldata)
-        .await
-        .map(call_gas_with_margin)
-        .unwrap_or_else(|| call_gas_ceiling_for_calldata(calldata));
-    let max_fee = provider
-        .estimate_eip1559_fees()
-        .await
-        .map(|fees| fees.max_fee_per_gas)
-        .unwrap_or(fallback_max_fee());
-    U256::from(gas) * U256::from(max_fee)
+) -> Result<U256, String> {
+    let tx = TransactionRequest::default()
+        .with_from(from)
+        .with_to(to)
+        .with_input(Bytes::copy_from_slice(calldata));
+    let gas = match provider.estimate_gas(tx).await {
+        Ok(gas) => call_gas_with_margin(gas as u128),
+        Err(e) => {
+            let msg = crate::evm::wallet_security::redact_urls_in_text(&e.to_string());
+            if is_retryable_gov_rpc_error(&msg) {
+                return Err(msg);
+            }
+            call_gas_ceiling_for_calldata(calldata)
+        }
+    };
+    let max_fee = match provider.estimate_eip1559_fees().await {
+        Ok(fees) => fees.max_fee_per_gas,
+        Err(e) => {
+            let msg = crate::evm::wallet_security::redact_urls_in_text(&e.to_string());
+            if is_retryable_gov_rpc_error(&msg) {
+                return Err(msg);
+            }
+            fallback_max_fee()
+        }
+    };
+    Ok(U256::from(gas) * U256::from(max_fee))
 }
 
 /// Stable `code` of a structured wallet error JSON; unparseable errors have no code and
