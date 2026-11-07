@@ -2,7 +2,7 @@ Automated version prep for `v{{VERSION}}`, opened by the "Prepare Release" workf
 
 - `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`/`Cargo.lock`: version bump.
 - `CHANGELOG.md`: regenerated via `git-cliff`.
-- `pnpm check`, `pnpm test`, `cargo check`, `cargo test` all passed in this run.
+- Full CI on this PR (`.github/workflows/ci.yaml`, `pull_request`) is the merge gate. Prepare Release does not rerun typecheck, lint, frontend tests, or Rust tests.
 
 No tag is created by this PR. Merging to `main` triggers `tag-release.yaml`, which pushes tag `v{{VERSION}}` and dispatches `release.yaml` on that tag.
 

@@ -1,14 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ARG="${1:-}"
-NO_COMMIT="${2:-}"
+ARG=""
+NO_COMMIT=""
+SKIP_CHECKS=""
 
-if [[ -z "$ARG" ]]; then
-  echo "Usage: $0 <version|patch|minor|major>"
+usage() {
+  echo "Usage: $0 <version|patch|minor|major> [--no-commit] [--skip-checks]"
   echo "Examples:"
   echo "  $0 0.2.1"
   echo "  $0 patch"
+  echo "  $0 patch --no-commit --skip-checks"
+}
+
+for raw in "$@"; do
+  case "$raw" in
+    --no-commit) NO_COMMIT="--no-commit" ;;
+    --skip-checks) SKIP_CHECKS=1 ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    --*)
+      echo "Error: unknown option $raw"
+      usage
+      exit 1
+      ;;
+    *)
+      if [[ -n "$ARG" ]]; then
+        echo "Error: unexpected argument $raw"
+        usage
+        exit 1
+      fi
+      ARG="$raw"
+      ;;
+  esac
+done
+
+if [[ -z "$ARG" ]]; then
+  usage
   exit 1
 fi
 
@@ -78,16 +108,39 @@ fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(p, null, 2) + '\n')
 sed -i.bak -E '/^\[package\]$/,/^\[/ s/^version = "[^"]+"/version = "'"$VERSION"'"/' src-tauri/Cargo.toml
 rm -f src-tauri/Cargo.toml.bak
 
+# Keep Cargo.lock's workspace package version in sync without resolving crates.
+node -e '
+const fs = require("fs");
+const version = process.argv[1];
+const path = "src-tauri/Cargo.lock";
+const lock = fs.readFileSync(path, "utf8");
+const next = lock.replace(
+  /(\[\[package\]\]\nname = "pacto"\n)version = "[^"]+"/,
+  `$1version = "${version}"`
+);
+if (!new RegExp(`\\[\\[package\\]\\]\\nname = "pacto"\\nversion = "${version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(next)) {
+  console.error("Error: could not update pacto version in Cargo.lock");
+  process.exit(1);
+}
+if (next !== lock) fs.writeFileSync(path, next);
+' "$VERSION"
+
 # Verify sync
 NEW_PKG="$(node -p "require('./package.json').version")"
 NEW_CARGO="$(sed -n '/^\[package\]$/,/^\[/p' src-tauri/Cargo.toml | sed -n 's/^version = "\([^"]*\)"/\1/p')"
 NEW_TAURI="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json')).version")"
+NEW_LOCK="$(node -e '
+const lock = require("fs").readFileSync("src-tauri/Cargo.lock", "utf8");
+const match = lock.match(/\[\[package\]\]\nname = "pacto"\nversion = "([^"]+)"/);
+process.stdout.write(match ? match[1] : "");
+')"
 
-if [[ "$NEW_PKG" != "$VERSION" || "$NEW_CARGO" != "$VERSION" || "$NEW_TAURI" != "$VERSION" ]]; then
+if [[ "$NEW_PKG" != "$VERSION" || "$NEW_CARGO" != "$VERSION" || "$NEW_TAURI" != "$VERSION" || "$NEW_LOCK" != "$VERSION" ]]; then
   echo "Error: version files are not in sync after bump"
   echo "  package.json:             $NEW_PKG"
   echo "  src-tauri/Cargo.toml:       $NEW_CARGO"
   echo "  src-tauri/tauri.conf.json:  $NEW_TAURI"
+  echo "  src-tauri/Cargo.lock:       $NEW_LOCK"
   exit 1
 fi
 
@@ -95,18 +148,19 @@ fi
 node scripts/changelog.mjs --tag "$TAG" --output CHANGELOG.md
 ./scripts/post-process-changelog.sh
 
-# Install dependencies with the new version
-pnpm install
-
-# Frontend checks and tests
-pnpm check
-pnpm test
-
-# Rust checks and tests
-cd src-tauri
-cargo check
-cargo test
-cd "$ROOT_DIR"
+if [[ -n "$SKIP_CHECKS" ]]; then
+  # Refresh the lockfile if package.json identity changed; do not install or
+  # compile. Full frontend/Rust checks run on the release PR via ci.yaml.
+  pnpm install --lockfile-only --ignore-scripts
+else
+  pnpm install
+  pnpm check
+  pnpm test
+  cd src-tauri
+  cargo check
+  cargo test
+  cd "$ROOT_DIR"
+fi
 
 # Validate release workflow exists and contains expected commands
 if [[ ! -f ".github/workflows/release.yaml" ]]; then
