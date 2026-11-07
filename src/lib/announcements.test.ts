@@ -128,7 +128,7 @@ describe('squad event announcements', () => {
   it('card view uses the stored payload when the replica is not loaded', () => {
     expect(squadEventCardView(timedPayload, null)).toEqual({
       title: 'Standup',
-      start: { startUnix: 1_767_225_600, startDate: null, startTzid: 'America/New_York' },
+      start: { startUnix: 1_767_225_600, startDate: null, startTzid: 'America/New_York', endUnix: null, endDate: null },
       cancelled: false,
       unavailable: false,
     });
@@ -148,10 +148,17 @@ describe('squad event announcements', () => {
     ]);
     expect(view).toEqual({
       title: 'Standup (moved)',
-      start: { startUnix: 1_767_229_200, startDate: null, startTzid: 'America/New_York' },
+      start: { startUnix: 1_767_229_200, startDate: null, startTzid: 'America/New_York', endUnix: null, endDate: null },
       cancelled: true,
       unavailable: false,
     });
+  });
+
+  it('retains current ends for card durations and uses payload ends before a replica loads', () => {
+    expect(squadEventCardView({ ...timedPayload, end: 1_767_231_000 }, null).start.endUnix).toBe(1_767_231_000);
+    expect(squadEventCardView({ ...timedPayload, kind: 31922, start: '2026-03-08', end: '2026-03-11' }, null).start)
+      .toMatchObject({ startDate: '2026-03-08', endDate: '2026-03-11', endUnix: null });
+    expect(squadEventCardView(timedPayload, [eventRow({ endUnix: 1_767_236_400 })]).start.endUnix).toBe(1_767_236_400);
   });
 
   it('series overlay counts active occurrences, reports zero rows after a load, and null before', () => {

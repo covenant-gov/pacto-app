@@ -7,12 +7,13 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 
 import CreateEventModal from './CreateEventModal.svelte';
+import { eventTimeFormat } from '../../stores/event-time-format';
 import { currentUser } from '../../stores/auth-session';
 import { squads, type Squad } from '../../stores/squads';
 import type { SquadEventDto } from '../../lib/api/squad-events';
 import { resetSquadEventDraftIds } from '../../lib/squad/squad-event-form';
 
-beforeEach(() => vi.setSystemTime(new Date('2026-11-06T12:00:00Z')));
+beforeEach(() => { vi.setSystemTime(new Date('2026-11-06T12:00:00Z')); eventTimeFormat.set('system'); });
 
 afterEach(() => {
   vi.useRealTimers();
@@ -341,4 +342,48 @@ it('unlocks a remounted pending draft when its original request completes', asyn
   await pending;
   await waitFor(() => expect(screen.getByLabelText('Title').closest('fieldset')?.disabled).toBe(false));
   expect(props.onclose).not.toHaveBeenCalled();
+});
+
+it('switches explicit clock formats without changing the schedule, presets, or retained weeks', async () => {
+  const { eventTimeFormat } = await import('../../stores/event-time-format');
+  render(CreateEventModal, { open: true, mlsGroupId: 'clock-format', parentId: 'clock-format', onclose: vi.fn() });
+  await fillDraft();
+  await fireEvent.click(screen.getByRole('button', { name: '90 minutes' }));
+  await fireEvent.click(screen.getByLabelText('Repeat weekly'));
+  await fireEvent.input(screen.getByLabelText('Total occurrences (including the first)'), { target: { value: '3' } });
+  await fireEvent.click(screen.getByRole('button', { name: /Remove occurrence 2/ }));
+  eventTimeFormat.set('12h');
+  await waitFor(() => expect((screen.getByLabelText('Starts: Hour') as HTMLInputElement).value).toBe('11'));
+  expect((screen.getByLabelText('Starts: AM/PM') as HTMLSelectElement).value).toBe('PM');
+  expect((screen.getByLabelText('Ends (optional): Hour') as HTMLInputElement).value).toBe('1');
+  expect((screen.getByLabelText('Ends (optional): AM/PM') as HTMLSelectElement).value).toBe('AM');
+  expect(screen.getByRole('button', { name: '90 minutes' }).getAttribute('aria-pressed')).toBe('true');
+  eventTimeFormat.set('24h');
+  await waitFor(() => expect((screen.getByLabelText('Starts: Hour') as HTMLInputElement).value).toBe('23'));
+  expect(screen.queryByLabelText('Starts: AM/PM')).toBeNull();
+  invoke.mockResolvedValue(undefined);
+  await fireEvent.click(screen.getByRole('button', { name: 'Post event' }));
+  await waitFor(() => expect(invoke).toHaveBeenCalledOnce());
+  expect(invoke.mock.calls[0][1].event.start).toBe('2026-12-01T23:30');
+  expect(invoke.mock.calls[0][1].event.end).toBe('2026-12-02T01:00');
+  expect(invoke.mock.calls[0][1].weekOffsets).toEqual([0, 2]);
+  eventTimeFormat.set('system');
+});
+
+it('shows separately labeled preview start, end, duration, and clear optional end', async () => {
+  const { eventTimeFormat } = await import('../../stores/event-time-format');
+  eventTimeFormat.set('system');
+  render(CreateEventModal, { open: true, mlsGroupId: 'clock-preview', parentId: 'clock-preview', onclose: vi.fn() });
+  await fillDraft();
+  await fireEvent.click(screen.getByRole('button', { name: '90 minutes' }));
+  const preview = screen.getByRole('region', { name: 'Dates to schedule' });
+  expect(preview.querySelectorAll('.occurrence-field')).toHaveLength(2);
+  expect(preview.textContent).toContain('Duration:');
+  expect(preview.textContent).toMatch(/1 hr.? 30 min/);
+  eventTimeFormat.set('12h');
+  await waitFor(() => expect(screen.getByLabelText('Ends (optional): Date')).toBeTruthy());
+  await fireEvent.input(screen.getByLabelText('Ends (optional): Date'), { target: { value: '' } });
+  expect(preview.textContent).toContain('No end');
+  expect(preview.textContent).toContain('Duration unspecified');
+  eventTimeFormat.set('system');
 });

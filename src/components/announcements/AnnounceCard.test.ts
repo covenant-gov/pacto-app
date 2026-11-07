@@ -23,6 +23,7 @@ import type { SquadEventDto } from '../../lib/api/squad-events';
 import type * as SquadEventsApi from '../../lib/api/squad-events';
 import type * as SquadEventDisplay from '../../lib/squad/squad-event-display';
 import { squads, type Squad } from '../../stores/squads';
+import { eventTimeFormat } from '../../stores/event-time-format';
 
 const mocks = vi.hoisted(() => ({
   listSquadEvents: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock('../../lib/squad/squad-event-display', async (importOriginal) => ({
 afterEach(() => {
   cleanup();
   squads.set([]);
+  eventTimeFormat.set('system');
 });
 
 /** Replica reads are cached per parent, so each test uses its own parent id. */
@@ -173,6 +175,29 @@ describe('AnnounceCard squad event cards', () => {
     expect(screen.getByText('Alice')).toBeTruthy();
     await vi.waitFor(() => expect(mocks.listSquadEvents).toHaveBeenCalledWith(parentId));
     expect(container.innerHTML).not.toContain('Secret');
+  });
+
+  it('reacts to clock preference and shows the latest duration in a single-event announcement', async () => {
+    mocks.listSquadEvents.mockResolvedValue([eventRow(parentId, {
+      startUnix: Date.UTC(2027, 0, 2, 20) / 1000,
+      endUnix: Date.UTC(2027, 0, 2, 21, 30) / 1000,
+    })]);
+    eventTimeFormat.set('12h');
+    const { container } = render(AnnounceCard, { props: { announce: singleCard(), authorName: 'Alice', timestamp: '' } });
+    expect(await screen.findByText('1 hr 30 min')).toBeTruthy();
+    expect(container.querySelector('.event-announce-start')?.textContent).toContain('12:00 PM');
+    eventTimeFormat.set('24h');
+    await vi.waitFor(() => expect(container.querySelector('.event-announce-start')?.textContent).toContain('12:00'));
+    expect(container.querySelector('.event-announce-start')?.textContent).not.toContain('PM');
+  });
+
+  it('uses the selected clock in series announcements', async () => {
+    eventTimeFormat.set('24h');
+    const { container } = render(AnnounceCard, { props: { announce: seriesCard(), authorName: 'Alice', timestamp: '' } });
+    expect(container.querySelector('.event-announce-start')?.textContent).toContain('16:00');
+    expect(container.querySelector('.event-announce-start')?.textContent).not.toContain('PM');
+    eventTimeFormat.set('12h');
+    await vi.waitFor(() => expect(container.querySelector('.event-announce-start')?.textContent).toContain('4:00 PM'));
   });
 
   it('adds the cancelled label from the replica without a second message', async () => {

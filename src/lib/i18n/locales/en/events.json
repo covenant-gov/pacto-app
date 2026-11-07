@@ -124,5 +124,22 @@
 	"events.create.error.durationUnavailable": "This duration crosses an ambiguous clock change. Choose another duration or a custom end.",
 	"events.create.discardRetryHint": "Meetings already posted will remain. Check Events before posting another draft to avoid duplicates.",
 	"events.create.discardRetry": "Discard retry",
-	"events.create.newDraft": "Start a new draft"
+	"events.create.newDraft": "Start a new draft",
+	"events.timeFormat.label": "Time format",
+	"events.timeFormat.system": "System",
+	"events.timeFormat.12h": "12-hour",
+	"events.timeFormat.24h": "24-hour",
+	"events.duration.label": "Duration",
+	"events.duration.unspecified": "Duration unspecified",
+	"events.create.dateLabel": "Date",
+	"events.create.timeLabel": "Time",
+	"events.create.hourLabel": "Hour",
+	"events.create.minuteLabel": "Minute",
+	"events.create.periodLabel": "AM/PM",
+	"events.create.previewStart": "Starts",
+	"events.create.previewEnd": "Ends",
+	"events.create.previewDuration": "Duration",
+	"events.create.noEnd": "No end time",
+	"events.create.periodAM": "AM",
+	"events.create.periodPM": "PM"
 }

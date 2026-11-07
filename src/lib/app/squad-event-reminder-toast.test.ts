@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
+import { eventTimeFormat } from '../../stores/event-time-format';
 import { clearToast, runToastRetryAction, toastMessage } from '../../stores/toast';
 import { formatEventStart } from '../squad/squad-event-display';
 import { showSquadEventReminderToast } from './squad-event-reminder-toast';
@@ -24,6 +25,7 @@ const due = {
 
 afterEach(() => {
   clearToast();
+  eventTimeFormat.set('system');
   mocks.focusSquadEvent.mockReset();
 });
 
@@ -33,6 +35,12 @@ describe('showSquadEventReminderToast', () => {
     const toast = get(toastMessage);
     expect(toast?.text).toBe(`Starting soon: Standup, ${formatEventStart(due, { locale: 'en' })}`);
     expect(toast?.retryLabel).toBe('Open event');
+  });
+
+  it.each(['12h', '24h'] as const)('uses the selected %s format for reminder time', (clockFormat) => {
+    eventTimeFormat.set(clockFormat);
+    showSquadEventReminderToast(due);
+    expect(get(toastMessage)?.text).toContain(formatEventStart(due, { locale: 'en', clockFormat }));
   });
 
   it('opens the event detail from the toast action and dismisses the toast', () => {

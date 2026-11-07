@@ -1,13 +1,16 @@
 <script lang="ts">
   import { t, locale } from 'svelte-i18n';
+  import { eventTimeFormat } from '../../stores/event-time-format';
   import { get } from 'svelte/store';
   import CreateEventModal from './CreateEventModal.svelte';
+  import EventTimeFormatSelect from './EventTimeFormatSelect.svelte';
   import EventDetail from './EventDetail.svelte';
   import { listen } from '../../lib/api';
   import { listSquadEvents, type SquadEventDto } from '../../lib/api/squad-events';
   import { getSquadContentPolicy, type SquadContentPolicyView } from '../../lib/api/squad-content-policy';
   import {
     eventZoneDiffers,
+    formatEventDuration,
     formatEventStart,
     formatEventZoneStart,
     rsvpCounts,
@@ -46,7 +49,7 @@
   const gid = $derived(mlsGroupId?.trim() ?? '');
   const replicaNonce = $derived(pid ? ($squadEventReplicaNonceByParentId[pid] ?? 0) : 0);
   const channels = $derived($squads.find((s) => s.id === pid)?.channels ?? []);
-  const timeOpts = $derived({ locale: $locale ?? undefined, viewerZone });
+  const timeOpts = $derived({ locale: $locale ?? undefined, clockFormat: $eventTimeFormat, viewerZone });
   const ordered = $derived(orderShelfEvents(events, { nowMs, viewerZone, seriesId: seriesFilter }));
   const openEvent = $derived(shelfOpenEvent(events, openEventId));
   const createControl = $derived(shelfCreateControl(policy));
@@ -135,6 +138,7 @@
       <EventDetail event={openEvent} mlsGroupId={gid} parentId={pid} onclose={() => (openEventId = null)} />
     </div>
   {:else}
+    <EventTimeFormatSelect />
     <div class="events-scroll" role="feed" aria-label={$t('events.panel.ariaLabel')} aria-busy={!loaded}>
       {#if seriesFilter}
         <div class="events-filter">
@@ -190,6 +194,7 @@
                         {$t('events.panel.eventZone', { values: { time: zoneStart, zone: ev.startTzid } })}
                       </span>
                     {/if}
+                    <span class="event-card-when">{formatEventDuration(ev, timeOpts)}</span>
                     <span class="event-card-meta">
                       {#if channelName}
                         <span>{$t('events.panel.channel', { values: { name: channelName } })}</span>

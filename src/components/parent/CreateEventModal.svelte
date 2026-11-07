@@ -6,7 +6,11 @@
 </script>
 
 <script lang="ts">
-  import { t } from 'svelte-i18n';
+  import { t, locale } from 'svelte-i18n';
+  import { parseDateTime, toZoned } from '@internationalized/date';
+  import EventCivilDateTimeInput from './EventCivilDateTimeInput.svelte';
+  import EventTimeFormatSelect from './EventTimeFormatSelect.svelte';
+  import { eventTimeFormat } from '../../stores/event-time-format';
   import { get } from 'svelte/store';
   import { onDestroy, untrack } from 'svelte';
   import Modal from '../ui/Modal.svelte';
@@ -21,6 +25,7 @@
     type SquadEventPlace,
   } from '../../lib/api/squad-events';
   import {
+    addCivilDays,
     isValidSquadEventStart,
     applySquadEventDuration,
     synchronizeSquadEventStart,
@@ -36,7 +41,7 @@
     validateSquadEventForm,
     type SquadEventFormValues,
   } from '../../lib/squad/squad-event-form';
-  import { viewerTimeZone } from '../../lib/squad/squad-event-display';
+  import { formatEventCivil, formatEventDuration, viewerTimeZone } from '../../lib/squad/squad-event-display';
   import { squadRecordErrorMessage } from '../../lib/squad/squad-record-errors';
 
   interface Props {
@@ -67,6 +72,20 @@
   let presetMinutes = $state<number | null>(null);
   let original = $state<SquadEventFormValues | undefined>();
   const occurrences = $derived(squadEventOccurrences(values));
+  const timeOpts = $derived({ locale: $locale ?? undefined, clockFormat: $eventTimeFormat });
+
+  function occurrenceDuration(start: string, end: string): string {
+    if (values.allDay) return formatEventDuration({ startUnix: null, endUnix: null, startDate: start, endDate: end ? addCivilDays(end, 1) : null, startTzid: values.startTzid }, timeOpts);
+    // Preserve the original instant difference for historical overlap intervals.
+    if (editing && !values.weekly && start === original?.start && end === original?.end && values.startTzid === original?.startTzid) return formatEventDuration(editing, timeOpts);
+    try {
+      const startUnix = toZoned(parseDateTime(start), values.startTzid, 'earlier').toDate().getTime() / 1000;
+      const endUnix = end ? toZoned(parseDateTime(end), values.startTzid, 'earlier').toDate().getTime() / 1000 : null;
+      return formatEventDuration({ startUnix, endUnix, startDate: null, endDate: null, startTzid: values.startTzid }, timeOpts);
+    } catch {
+      return formatEventDuration({ startUnix: null, endUnix: null, startDate: null, endDate: null, startTzid: values.startTzid }, timeOpts);
+    }
+  }
   const scheduleError = $derived(validateSquadEventSchedule(values, { original }));
   const formError = $derived(validationError());
 
@@ -271,6 +290,7 @@
         void submit();
       }}
     >
+      <EventTimeFormatSelect />
       <fieldset class="draft-fields" disabled={saving || retryDraft}>
       <label class="field-label" for="event-title">{$t('events.create.titleLabel')}</label>
       <input
@@ -309,7 +329,7 @@
           {#if values.allDay}
             <input id="event-start" type="date" class="field-input" value={values.start} oninput={(e) => setStart(e.currentTarget.value)} aria-invalid={startError ? true : undefined} aria-describedby={startError ? "event-start-error" : undefined} disabled={saving} />
           {:else}
-            <input id="event-start" type="datetime-local" class="field-input" value={values.start} oninput={(e) => setStart(e.currentTarget.value)} aria-invalid={startError ? true : undefined} aria-describedby={startError ? "event-start-error" : undefined} disabled={saving} />
+            <EventCivilDateTimeInput id="event-start" label={$t('events.create.startLabel')} value={values.start} clockFormat={$eventTimeFormat} oninput={setStart} invalid={startError != null} describedby={startError ? 'event-start-error' : undefined} disabled={saving} />
           {/if}
           {#if startError}<p id="event-start-error" class="create-event-error">{$t(`events.create.error.${startError}`)}</p>{/if}
         </div>
@@ -318,7 +338,7 @@
           {#if values.allDay}
             <input id="event-end" type="date" class="field-input" value={values.end} oninput={(e) => setEnd(e.currentTarget.value)} aria-invalid={endError ? true : undefined} aria-describedby={endError ? "event-end-error" : undefined} disabled={saving} />
           {:else}
-            <input id="event-end" type="datetime-local" class="field-input" value={values.end} oninput={(e) => setEnd(e.currentTarget.value)} aria-invalid={endError ? true : undefined} aria-describedby={endError ? "event-end-error" : undefined} disabled={saving} />
+            <EventCivilDateTimeInput id="event-end" label={$t('events.create.endLabel')} value={values.end} clockFormat={$eventTimeFormat} oninput={setEnd} invalid={endError != null} describedby={endError ? 'event-end-error' : undefined} disabled={saving} />
           {/if}
           {#if endError}<p id="event-end-error" class="create-event-error">{$t(`events.create.error.${endError}`)}</p>{/if}
         </div>
@@ -418,7 +438,11 @@
           <ol>
             {#each occurrences as occurrence (occurrence.weekOffset)}
               <li>
-                <span><time datetime={occurrence.start}>{occurrence.start.replace('T', ' ')}</time>{#if occurrence.end} – <time datetime={occurrence.end}>{occurrence.end.replace('T', ' ')}</time>{/if}<small>{values.startTzid}</small></span>
+                <div class="occurrence-times">
+                  <div class="occurrence-field"><span class="occurrence-label">{$t('events.create.previewStart')}</span><time datetime={occurrence.start}>{formatEventCivil(occurrence.start, timeOpts)}</time></div>
+                  <div class="occurrence-field"><span class="occurrence-label">{$t('events.create.previewEnd')}</span>{#if occurrence.end}<time datetime={occurrence.end}>{formatEventCivil(occurrence.end, timeOpts)}</time>{:else}<span>{$t('events.create.noEnd')}</span>{/if}</div>
+                  <div class="occurrence-meta"><span>{$t('events.create.previewDuration')}: {occurrenceDuration(occurrence.start, occurrence.end)}</span><small>{values.startTzid}</small></div>
+                </div>
                 {#if values.weekly && !isEdit}
                   <button type="button" class="remove-occurrence" disabled={saving} aria-label={$t('events.create.removeOccurrence', { values: { count: occurrence.weekOffset + 1, date: occurrence.start } })} onclick={() => removeOccurrence(occurrence.weekOffset)}>{$t('events.create.remove')}</button>
                 {/if}
@@ -583,18 +607,22 @@
 
   .occurrence-preview li {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 10px 0;
+    align-items: start;
+    gap: 12px;
+    padding: 12px 0;
     border-bottom: 1px solid var(--border);
     font-size: 0.8125rem;
     color: var(--text-primary);
   }
 
-  .occurrence-preview span {
-    min-width: 0;
-    overflow-wrap: anywhere;
+  .occurrence-times { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+  .occurrence-field { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .occurrence-label { display: block; color: var(--text-muted); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
+  .occurrence-meta { grid-column: 1 / -1; color: var(--text-secondary); overflow-wrap: anywhere; }
+  .remove-occurrence { flex-shrink: 0; }
+  @media (max-width: 520px) {
+    .occurrence-times { grid-template-columns: minmax(0, 1fr); }
+    .field-row { flex-direction: column; }
   }
 
   .occurrence-preview small {

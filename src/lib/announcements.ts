@@ -676,7 +676,7 @@ export function squadEventCardStart(
 
 export interface SquadEventCardView {
   title: string;
-  start: SquadEventStart;
+  start: SquadEventStart & Pick<SquadEventDto, 'endUnix' | 'endDate'>;
   cancelled: boolean;
   /** Replica loaded but has no row (e.g. removed by a create restriction). */
   unavailable: boolean;
@@ -694,14 +694,18 @@ export function squadEventCardView(
   if (!row) {
     return {
       title: payload.title,
-      start: squadEventCardStart(payload.kind, payload.start, payload.start_tzid),
+      start: {
+        ...squadEventCardStart(payload.kind, payload.start, payload.start_tzid),
+        endUnix: payload.kind === SQUAD_EVENT_KIND_TIMED && typeof payload.end === 'number' ? payload.end : null,
+        endDate: payload.kind === SQUAD_EVENT_KIND_ALL_DAY && typeof payload.end === 'string' ? payload.end : null,
+      },
       cancelled: false,
       unavailable: rows !== null,
     };
   }
   return {
     title: row.title,
-    start: { startUnix: row.startUnix, startDate: row.startDate, startTzid: row.startTzid },
+    start: { startUnix: row.startUnix, startDate: row.startDate, startTzid: row.startTzid, endUnix: row.endUnix, endDate: row.endDate },
     cancelled: row.status === 'cancelled',
     unavailable: false,
   };

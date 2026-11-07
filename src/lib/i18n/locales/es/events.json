@@ -124,5 +124,22 @@
 	"events.create.error.durationUnavailable": "Esta duración cruza un cambio de horario ambiguo. Elige otra duración o un fin personalizado.",
 	"events.create.discardRetryHint": "Las reuniones ya publicadas se conservarán. Revisa Eventos antes de publicar otro borrador para evitar duplicados.",
 	"events.create.discardRetry": "Descartar reintento",
-	"events.create.newDraft": "Crear un borrador nuevo"
+	"events.create.newDraft": "Crear un borrador nuevo",
+	"events.timeFormat.label": "Formato de hora",
+	"events.timeFormat.system": "Sistema",
+	"events.timeFormat.12h": "12 horas",
+	"events.timeFormat.24h": "24 horas",
+	"events.duration.label": "Duración",
+	"events.duration.unspecified": "Duración sin especificar",
+	"events.create.dateLabel": "Fecha",
+	"events.create.timeLabel": "Hora",
+	"events.create.hourLabel": "Hora",
+	"events.create.minuteLabel": "Minuto",
+	"events.create.periodLabel": "a. m./p. m.",
+	"events.create.previewStart": "Inicio",
+	"events.create.previewEnd": "Fin",
+	"events.create.previewDuration": "Duración",
+	"events.create.noEnd": "Sin hora de fin",
+	"events.create.periodAM": "a. m.",
+	"events.create.periodPM": "p. m."
 }
