@@ -35,6 +35,16 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      # Checkout records safe.directory in a temporary HOME. Later steps use
+      # HOME=/github/home while this container runs as root against a
+      # runner-owned mount. Trust only this checkout, persisted in that HOME.
+      - name: Trust the workspace for git
+        env:
+          HOME: /github/home
+        run: |
+          mkdir -p "$HOME"
+          ./scripts/trust-git-workspace.sh "$GITHUB_WORKSPACE"
+
       - name: install git-cliff
         uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2  # v2
         with:

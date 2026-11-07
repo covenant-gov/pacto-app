@@ -67,14 +67,29 @@ fi
 
 TAG="v$VERSION"
 
+if ! git_inside="$(git rev-parse --is-inside-work-tree 2>&1)"; then
+  echo "Error: cannot use this directory as a git work tree."
+  echo "$git_inside"
+  exit 1
+fi
+if [[ "$git_inside" != "true" ]]; then
+  echo "Error: cannot use this directory as a git work tree."
+  exit 1
+fi
+
 if git rev-parse "$TAG" >/dev/null 2>&1; then
   echo "Error: tag $TAG already exists"
   exit 1
 fi
 
-if ! git diff --quiet HEAD; then
+diff_status=0
+git diff --quiet HEAD || diff_status=$?
+if [[ "$diff_status" -eq 1 ]]; then
   echo "Error: working tree has uncommitted changes to tracked files. Commit or stash them first."
-  git diff --stat
+  git diff --stat HEAD
+  exit 1
+elif [[ "$diff_status" -ne 0 ]]; then
+  echo "Error: git diff failed (exit $diff_status)."
   exit 1
 fi
 

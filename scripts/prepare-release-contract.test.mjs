@@ -51,6 +51,26 @@ describe('prepare-release stays a bump PR opener', () => {
     assert.doesNotMatch(prepare, /pnpm\/action-setup/);
   });
 
+  it('marks the container workspace as a git safe directory before bumping', () => {
+    const trustIdx = job.indexOf('./scripts/trust-git-workspace.sh "$GITHUB_WORKSPACE"');
+    const bumpIdx = job.indexOf(
+      'run: ./scripts/bump-version.sh "${{ inputs.bump }}" --no-commit --skip-checks',
+    );
+    assert.ok(trustIdx !== -1, 'missing trust-git-workspace.sh for GITHUB_WORKSPACE');
+    assert.match(job, /\n {10}HOME: \/github\/home\n/);
+    assert.doesNotMatch(prepare, /safe\.directory "\*"/);
+    assert.doesNotMatch(prepare, /safe\.directory '\*'/);
+    assert.doesNotMatch(prepare, /safe\.directory \*/);
+    assert.doesNotMatch(readRepo('scripts/trust-git-workspace.sh'), /safe\.directory '\*'/);
+    assert.doesNotMatch(
+      readRepo('scripts/trust-git-workspace.sh'),
+      /git config --global --add safe\.directory ['"]?\*/,
+    );
+    assert.ok(bumpIdx !== -1 && trustIdx < bumpIdx, 'workspace trust must run before bump-version.sh');
+    assert.match(bump, /cannot use this directory as a git work tree/);
+    assert.match(bump, /git diff failed/);
+  });
+
   it('installs git-cliff in the job instead of baking it into the image', () => {
     assert.match(job, /tool: git-cliff@2\.14\.2/);
     assert.doesNotMatch(readRepo('Dockerfile.ci'), /git-cliff/);
