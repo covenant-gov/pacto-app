@@ -12,7 +12,7 @@ src/components/app/AuthenticatedApp.svelte layout, tab routing, DM send/typing; 
 src/components/layout/ParentNavbar.svelte   sidebar + modals → lib/parent/* flows
 src/components/parent/ParentDashboard.svelte   #governance / #gov-practice tab shell (Status→Governance→Treasury→Crew)
 src/components/parent/SquadSettingsView.svelte #settings virtual channel (You | Us | Access | Network)
-src/components/parent/SquadBoardView.svelte    #board virtual shelf (Polls | Events | Docs)
+src/components/parent/SquadBoardView.svelte    #board shelf (Polls | Events | Docs); mounted from SquadHubMain, not ChatView
 src/components/parent/HubChannelHeader.svelte  shared `#name` hub header
 src/components/parent/HubModeSwitcher.svelte   shared segmented mode switcher
 src/components/dm/DmThread.svelte             header/input/options + DmMessageRouter

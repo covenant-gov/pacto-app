@@ -60,12 +60,6 @@ describe('ChatView Up Arrow editing', () => {
     await fireEvent.keyDown(composer, { key: 'ArrowUp' });
     expect(screen.getByRole('textbox', { name: 'Edit message' })).toBeTruthy();
 
-    activeHubChannelName.set('board');
-    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull());
-    activeHubChannelName.set('announcements');
-    await waitFor(() => expect(screen.getByPlaceholderText('Message #announcements')).toBeTruthy());
-    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull();
-
     activeChannelId.set('other-group');
     activeHubChannelName.set('general');
     await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull());

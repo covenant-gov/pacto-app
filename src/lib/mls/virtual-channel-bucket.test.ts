@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  defaultTrioSharesSingleMlsGroup,
+  defaultHubSharesSingleMlsGroup,
   deriveVirtualBucketFromMessageContent,
   resolveVirtualBucketForTimelineMessage,
   resolveHubChannelNameForGroupSelection,
@@ -154,10 +154,10 @@ describe('resolveVirtualBucketForTimelineMessage', () => {
   });
 });
 
-describe('defaultTrioSharesSingleMlsGroup', () => {
+describe('defaultHubSharesSingleMlsGroup', () => {
   it('is false when groups differ', () => {
     expect(
-      defaultTrioSharesSingleMlsGroup([
+      defaultHubSharesSingleMlsGroup([
         { name: 'announcements', groupId: 'a', order: 0 },
         { name: 'board', groupId: 'c', order: 1 },
       ]),
@@ -166,7 +166,7 @@ describe('defaultTrioSharesSingleMlsGroup', () => {
 
   it('is true when announcements and board share one group id', () => {
     expect(
-      defaultTrioSharesSingleMlsGroup([
+      defaultHubSharesSingleMlsGroup([
         { name: 'announcements', groupId: 'g', order: 0 },
         { name: 'board', groupId: 'g', order: 1 },
       ]),

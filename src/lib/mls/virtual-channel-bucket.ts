@@ -56,7 +56,7 @@ export interface ChannelLike {
 const DEFAULT_HUB_MLS_CHANNEL_NAMES = [ANNOUNCEMENTS_CHANNEL_NAME, BOARD_CHANNEL_NAME] as const;
 
 /** True when #announcements and #board exist and share one MLS group id. */
-export function defaultTrioSharesSingleMlsGroup(channels: ChannelLike[]): boolean {
+export function defaultHubSharesSingleMlsGroup(channels: ChannelLike[]): boolean {
   const byName = new Map(channels.map((c) => [c.name, c]));
   const ann = byName.get(DEFAULT_HUB_MLS_CHANNEL_NAMES[0]);
   const board = byName.get(DEFAULT_HUB_MLS_CHANNEL_NAMES[1]);

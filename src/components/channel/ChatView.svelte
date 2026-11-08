@@ -11,13 +11,12 @@
   import { resolvePollsMlsGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
   import {
     groupTimelineKey,
-    defaultTrioSharesSingleMlsGroup,
+    defaultHubSharesSingleMlsGroup,
     announceCardAllowedForTimelineBucket,
     resolveVirtualBucketForTimelineMessage,
     type VirtualBucket,
   } from '../../lib/mls/virtual-channel-bucket';
   import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
-  import SquadBoardView from '../parent/SquadBoardView.svelte';
   import DocsChannelButton from '../parent/DocsChannelButton.svelte';
   import SaveToDocsDialog from '../parent/SaveToDocsDialog.svelte';
   import { BOARD_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
@@ -86,7 +85,6 @@
     incrementMentionAlert,
     clearMentionAlert,
   } from '../../stores/squad-hub-alerts';
-  import { markPollsChannelSeen } from '../../stores/polls-hub-alerts';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import friendsIcon from '../../icons/friends.svg';
   import { get } from 'svelte/store';
@@ -134,12 +132,10 @@
   $: currentUserNpub = $currentUser?.npub;
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
-  $: isBoardChannel = (activeParent && activeChannel?.name === BOARD_CHANNEL_NAME) ?? false;
-  $: hideChannelOverflowMenu = isAnnouncementsChannel || isBoardChannel;
+  $: hideChannelOverflowMenu = isAnnouncementsChannel;
   /** Squad chat timeline (announcements or a custom channel): offers Save to Docs and the channel docs shortcut. */
   $: isSquadChatChannel =
     !!activeParent &&
-    !isBoardChannel &&
     !isVirtualHubChannelId($activeChannelId);
   $: docsAnnouncementsGroupId = activeParent ? resolvePollsMlsGroupId(activeParent) : null;
   $: if (isSquadChatChannel && activeParent && docsAnnouncementsGroupId) {
@@ -196,7 +192,7 @@
     !!activeParent &&
     !!$activeChannelId &&
     !isVirtualHubChannelId($activeChannelId) &&
-    defaultTrioSharesSingleMlsGroup(activeParent.channels);
+    defaultHubSharesSingleMlsGroup(activeParent.channels);
 
   $: selectedVirtualBucket = activeChannel ? channelNameToVirtualBucket(activeChannel.name) : null;
 
@@ -631,16 +627,13 @@
   }
 
   // Clear the mention badge when the user opens or scrolls-to-bottom of a squad channel.
-  // `#polls` shares the announcements MLS id — mark poll creates seen only; do not clear group unread.
   let lastClearedMentionKey: string | null = null;
   $: if (activeSquad && activeChannel) {
     const key = `${activeSquad.id}:${activeChannel.name}`;
     if (lastClearedMentionKey !== key) {
       lastClearedMentionKey = key;
       clearMentionAlert(activeSquad.id, activeChannel.name);
-      if (isBoardChannel && activeParent?.id) {
-        void markPollsChannelSeen(activeParent.id);
-      } else if (!isBoardChannel && $activeChannelId) {
+      if ($activeChannelId) {
         markAsRead($activeChannelId, null).catch(() => {});
       }
     }
@@ -651,7 +644,7 @@
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     if (isNearBottom && activeSquad && activeChannel) {
       clearMentionAlert(activeSquad.id, activeChannel.name);
-      if (!isBoardChannel && $activeChannelId) {
+      if ($activeChannelId) {
         markAsRead($activeChannelId, null).catch(() => {});
       }
     }
@@ -794,10 +787,6 @@
       {#if parentSettingUpError}
         <p class="squad-setting-up-error" role="alert">{parentSettingUpError}</p>
       {/if}
-    </div>
-  {:else if isBoardChannel && activeParent}
-    <div class="chat-view-main chat-view-main--board">
-      <SquadBoardView parent={activeParent} />
     </div>
   {:else if activeChannel}
     <div class="chat-view-main">
@@ -1062,10 +1051,6 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-  }
-
-  .chat-view-main--board {
-    min-height: 0;
   }
 
   .channel-header {
