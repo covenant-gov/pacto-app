@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import * as nostrApi from '../lib/api/nostr';
 import {
+  SETTINGS_CHANNEL_ID,
+  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_WARGAME_CHANNEL_ID,
+} from '../lib/squad/hub-channel-names';
+import {
   ensureMlsGroupMembers,
   membersByGroupId,
   adminsByGroupId,
@@ -78,8 +83,9 @@ describe('mls group members store', () => {
 
   it('skips virtual hub ids', async () => {
     const spy = vi.spyOn(nostrApi, 'getMlsGroupMembers');
-    await ensureMlsGroupMembers('__squad_settings__');
-    await ensureMlsGroupMembers('__squad_dashboard__');
+    await ensureMlsGroupMembers(SETTINGS_CHANNEL_ID);
+    await ensureMlsGroupMembers(SQUAD_DASHBOARD_CHANNEL_ID);
+    await ensureMlsGroupMembers(SQUAD_WARGAME_CHANNEL_ID);
     expect(spy).not.toHaveBeenCalled();
   });
 });

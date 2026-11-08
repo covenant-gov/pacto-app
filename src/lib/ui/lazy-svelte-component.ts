@@ -1,10 +1,10 @@
 import type { Component } from 'svelte';
 
 /** Cache a resolved import; drop it if the load rejects so a retry can run. */
-export function createLazyComponent<P extends Record<string, unknown>>(
-  loader: () => Promise<{ default: Component<P> }>,
-): () => Promise<Component<P>> {
-  let cached: Promise<{ default: Component<P> }> | null = null;
+export function createLazyComponent<C extends Component<any, any, any>>(
+  loader: () => Promise<{ default: C }>,
+): () => Promise<C> {
+  let cached: Promise<{ default: C }> | null = null;
   return () => {
     if (!cached) {
       const pending = loader().then(

@@ -245,11 +245,15 @@
   {/if}
   {#if showSquadBoard && openHubParent}
     {#key `${openHubParent.id}:${BOARD_CHANNEL_NAME}`}
-      <SquadBoardView parent={openHubParent} />
+      <div class="hub-surface">
+        <SquadBoardView parent={openHubParent} />
+      </div>
     {/key}
   {:else if showSquadSettings && openHubParent}
     {#key `${openHubParent.id}:${SETTINGS_CHANNEL_ID}`}
-      <SquadSettingsView parent={openHubParent} />
+      <div class="hub-surface">
+        <SquadSettingsView parent={openHubParent} />
+      </div>
     {/key}
   {:else if showMlsChatView}
     {#if ChatViewComponent}
@@ -275,7 +279,8 @@
     flex-direction: column;
   }
 
-  .hub-dashboard-keep-alive {
+  .hub-dashboard-keep-alive,
+  .hub-surface {
     flex: 1;
     min-width: 0;
     min-height: 0;
