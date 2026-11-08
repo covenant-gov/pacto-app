@@ -34,6 +34,9 @@ import {
   SETTINGS_CHANNEL_MODE_PREFIX,
   parseSettingsChannelMode,
   settingsChannelMode,
+  BOARD_CHANNEL_MODE_PREFIX,
+  parseSquadBoardChannelMode,
+  squadBoardChannelMode,
   lastOpenedSquadId,
   lastOpenedChannelId,
   lastChannelBySquadId,
@@ -170,6 +173,8 @@ export function loadAccountState(npub: string): void {
     squadDashboardChannelMode.set(parseSquadDashboardChannelMode(rawSquadDashboardMode));
     const rawSettingsChannelMode = localStorage.getItem(`${SETTINGS_CHANNEL_MODE_PREFIX}_${npub}`);
     settingsChannelMode.set(parseSettingsChannelMode(rawSettingsChannelMode));
+    const rawBoardChannelMode = localStorage.getItem(`${BOARD_CHANNEL_MODE_PREFIX}_${npub}`);
+    squadBoardChannelMode.set(parseSquadBoardChannelMode(rawBoardChannelMode));
   } catch {
     // ignore parse errors
   }

@@ -12,6 +12,7 @@ import {
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
   settingsChannelMode,
+  squadBoardChannelMode,
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
@@ -27,9 +28,12 @@ import {
   resolveCatchUpTarget,
 } from './open-squad-dashboard';
 
-const mocks = vi.hoisted(() => ({ focusSquadEvent: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  eventsFocusSet: vi.fn(),
+}));
 vi.mock('../../stores/events-navigation', () => ({
-  focusSquadEvent: mocks.focusSquadEvent,
+  eventsFocus: { set: mocks.eventsFocusSet },
+  focusSquadEvent: vi.fn(),
   focusSquadEventSeries: vi.fn(),
 }));
 
@@ -160,20 +164,26 @@ describe('navigateToTarget', () => {
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
     settingsChannelMode.set('you');
-    squads.set([squad('squad-1', [{ name: 'announcements', groupId: 'grp-announce' }, { name: 'polls', groupId: 'grp-polls' }])]);
+    squads.set([
+      squad('squad-1', [
+        { name: 'announcements', groupId: 'grp-announce' },
+        { name: 'board', groupId: 'grp-announce' },
+        { name: 'ops', groupId: 'grp-ops' },
+      ]),
+    ]);
   });
 
   it('a squad-channel target sets navigation and memory state, matching the toast handler shape', () => {
-    navigateToTarget({ kind: 'squad-channel', squadId: 'squad-1', channelId: 'grp-polls' });
+    navigateToTarget({ kind: 'squad-channel', squadId: 'squad-1', channelId: 'grp-ops' });
     expect(get(activeTopNavTab)).toBe('squads');
     expect(get(activeSquadId)).toBe('squad-1');
-    expect(get(activeChannelId)).toBe('grp-polls');
+    expect(get(activeChannelId)).toBe('grp-ops');
     expect(get(activeView)).toBe('hub');
     expect(get(lastOpenedSquadId)).toBe('squad-1');
-    expect(get(lastOpenedChannelId)).toBe('grp-polls');
-    expect(get(lastChannelBySquadId)).toEqual({ 'squad-1': 'grp-polls' });
-    expect(get(activeHubChannelName)).toBe('polls');
-    expect(get(lastHubChannelNameBySquadId)).toEqual({ 'squad-1': 'polls' });
+    expect(get(lastOpenedChannelId)).toBe('grp-ops');
+    expect(get(lastChannelBySquadId)).toEqual({ 'squad-1': 'grp-ops' });
+    expect(get(activeHubChannelName)).toBe('ops');
+    expect(get(lastHubChannelNameBySquadId)).toEqual({ 'squad-1': 'ops' });
   });
 
   it('a squad-dashboard target opens the virtual dashboard channel with no hub channel name', () => {
@@ -206,8 +216,8 @@ describe('navigateToTarget', () => {
     expect(get(settingsChannelMode)).toBe('network');
   });
 
-  it('a squad-event target focuses that event', () => {
-    mocks.focusSquadEvent.mockReset();
+  it('a squad-event target opens #board events mode for that event', () => {
+    mocks.eventsFocusSet.mockReset();
     navigateToTarget({
       kind: 'squad-event',
       squadId: 'squad-1',
@@ -215,7 +225,14 @@ describe('navigateToTarget', () => {
       hubChannelName: 'events',
       eventId: 'evt-1',
     });
-    expect(mocks.focusSquadEvent).toHaveBeenCalledWith('squad-1', 'evt-1');
+    expect(mocks.eventsFocusSet).toHaveBeenCalledWith({
+      parentId: 'squad-1',
+      eventId: 'evt-1',
+      seriesId: null,
+    });
+    expect(get(activeChannelId)).toBe('grp-announce');
+    expect(get(activeHubChannelName)).toBe('board');
+    expect(get(squadBoardChannelMode)).toBe('events');
   });
 });
 
@@ -223,13 +240,14 @@ describe('resolveCatchUpTarget', () => {
   const testSquads = [
     squad('squad-1', [
       { name: 'announcements', groupId: 'grp-announce' },
-      { name: 'polls', groupId: 'grp-polls' },
+      { name: 'board', groupId: 'grp-announce' },
+      { name: 'ops', groupId: 'grp-ops' },
     ]),
   ];
 
   it('resolves a mention entry to its squad channel', () => {
-    const target = resolveCatchUpTarget({ chatId: 'grp-polls', kind: 'mention' }, testSquads);
-    expect(target).toEqual({ kind: 'squad-channel', squadId: 'squad-1', channelId: 'grp-polls' });
+    const target = resolveCatchUpTarget({ chatId: 'grp-ops', kind: 'mention' }, testSquads);
+    expect(target).toEqual({ kind: 'squad-channel', squadId: 'squad-1', channelId: 'grp-ops' });
   });
 
   it('resolves an action_prompt entry on the announcements channel to the squad dashboard', () => {
@@ -251,8 +269,8 @@ describe('resolveCatchUpTarget', () => {
   });
 
   it('resolves an action_prompt entry on a non-announcements channel to that channel directly', () => {
-    const target = resolveCatchUpTarget({ chatId: 'grp-polls', kind: 'action_prompt' }, testSquads);
-    expect(target).toEqual({ kind: 'squad-channel', squadId: 'squad-1', channelId: 'grp-polls' });
+    const target = resolveCatchUpTarget({ chatId: 'grp-ops', kind: 'action_prompt' }, testSquads);
+    expect(target).toEqual({ kind: 'squad-channel', squadId: 'squad-1', channelId: 'grp-ops' });
   });
 
   it('resolves an npub chat id with no matching squad channel to a dm target', () => {

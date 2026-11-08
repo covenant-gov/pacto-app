@@ -13,6 +13,9 @@ import {
   settingsChannelMode,
   SETTINGS_CHANNEL_MODE_PREFIX,
   parseSettingsChannelMode,
+  parseSquadBoardChannelMode,
+  squadBoardChannelMode,
+  BOARD_CHANNEL_MODE_PREFIX,
   squadSettingsRpcFocusNonce,
   focusSquadSettingsRpcEditor,
   squadSettingsNetworkFocusNonce,
@@ -73,6 +76,7 @@ describe('navigation', () => {
     activeView.set('hub');
     squadDashboardChannelMode.set('status');
     settingsChannelMode.set('you');
+    squadBoardChannelMode.set('polls');
     squadSettingsRpcFocusNonce.set(0);
     squadSettingsNetworkFocusNonce.set(0);
     squadSettingsNetworkFocusSlot.set('primary');
@@ -101,6 +105,7 @@ describe('navigation', () => {
     expect(get(activeView)).toBe('hub');
     expect(get(squadDashboardChannelMode)).toBe('status');
     expect(get(settingsChannelMode)).toBe('you');
+    expect(get(squadBoardChannelMode)).toBe('polls');
     expect(get(showMembersPanel)).toBe(false);
   });
 
@@ -144,6 +149,21 @@ describe('navigation', () => {
     setCurrentNpubForPersistence('npub1abc');
     settingsChannelMode.set('access');
     expect(storage.get(`${SETTINGS_CHANNEL_MODE_PREFIX}_npub1abc`)).toBe('access');
+  });
+
+  it('parses known board channel modes and resets unknown values to polls', () => {
+    expect(parseSquadBoardChannelMode('polls')).toBe('polls');
+    expect(parseSquadBoardChannelMode('events')).toBe('events');
+    expect(parseSquadBoardChannelMode('docs')).toBe('docs');
+    expect(parseSquadBoardChannelMode(null)).toBe('polls');
+    expect(parseSquadBoardChannelMode('')).toBe('polls');
+    expect(parseSquadBoardChannelMode('board')).toBe('polls');
+  });
+
+  it('persists board channel mode under an npub-scoped key', () => {
+    setCurrentNpubForPersistence('npub1abc');
+    squadBoardChannelMode.set('docs');
+    expect(storage.get(`${BOARD_CHANNEL_MODE_PREFIX}_npub1abc`)).toBe('docs');
   });
 
   it('persists last opened squad and channel ids', () => {

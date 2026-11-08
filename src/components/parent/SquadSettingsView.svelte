@@ -16,6 +16,8 @@
     type SettingsChannelMode,
   } from '../../stores/navigation';
   import { getProfileDisplayName } from '../../lib/utils/profile';
+  import HubChannelHeader from './HubChannelHeader.svelte';
+  import HubModeSwitcher from './HubModeSwitcher.svelte';
   import {
     loadDashboardSettingsAccessTab,
     loadDashboardSettingsNetworkTab,
@@ -165,28 +167,14 @@
 </script>
 
 <div class="squad-settings">
-  <div class="dashboard-channel-header">
-    <div class="dashboard-channel-info">
-      <span class="dashboard-channel-icon">#</span>
-      <h3 class="dashboard-channel-name">{SETTINGS_CHANNEL_NAME}</h3>
-    </div>
-  </div>
-  <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.settingsChannelMode.section')}>
-    <div class="dashboard-mode-switcher" role="group">
-      {#each SETTINGS_CHANNEL_MODES as mode (mode)}
-        <button
-          type="button"
-          role="tab"
-          class="dashboard-mode-segment"
-          class:active={settingsMode === mode}
-          aria-selected={settingsMode === mode}
-          onclick={() => selectSettingsMode(mode)}
-        >
-          {$t(`governance.settingsChannelMode.${mode}`)}
-        </button>
-      {/each}
-    </div>
-  </div>
+  <HubChannelHeader channelName={SETTINGS_CHANNEL_NAME} />
+  <HubModeSwitcher
+    modes={SETTINGS_CHANNEL_MODES}
+    active={settingsMode}
+    ariaLabel={$t('governance.settingsChannelMode.section')}
+    labelFor={(mode) => $t(`governance.settingsChannelMode.${mode}`)}
+    onSelect={(mode) => selectSettingsMode(mode as SettingsChannelMode)}
+  />
   <div class="squad-settings-body">
     {#if visitedSettingsModes.has('you')}
       <div
@@ -280,75 +268,6 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-  }
-  .dashboard-channel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-subtle);
-    flex-shrink: 0;
-  }
-  .dashboard-channel-info {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .dashboard-channel-icon {
-    color: var(--text-muted);
-    font-weight: 600;
-  }
-  .dashboard-channel-name {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-  }
-  .dashboard-view-nav {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    height: 48px;
-    min-height: 48px;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-    flex-shrink: 0;
-  }
-  .dashboard-mode-switcher {
-    display: inline-flex;
-    align-items: stretch;
-    max-width: 100%;
-    overflow-x: auto;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 3px;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
-  }
-  .dashboard-mode-segment {
-    padding: 0 10px;
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: color 0.15s, background-color 0.15s;
-  }
-  .dashboard-mode-segment:hover:not(.active) {
-    color: var(--text-secondary);
-    background: var(--bg-hover);
-  }
-  .dashboard-mode-segment:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-  }
-  .dashboard-mode-segment.active {
-    color: var(--text-primary);
-    background: var(--bg-elevated);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   }
   .squad-settings-body {
     flex: 1;

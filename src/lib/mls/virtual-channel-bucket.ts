@@ -16,7 +16,7 @@ import {
 } from '../announcements';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  POLLS_CHANNEL_NAME,
+  BOARD_CHANNEL_NAME,
   normalizeHubChannelName,
 } from '../squad/hub-channel-names';
 
@@ -53,16 +53,16 @@ export interface ChannelLike {
   order: number;
 }
 
-const DEFAULT_HUB_MLS_CHANNEL_NAMES = [ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME] as const;
+const DEFAULT_HUB_MLS_CHANNEL_NAMES = [ANNOUNCEMENTS_CHANNEL_NAME, BOARD_CHANNEL_NAME] as const;
 
-/** True when #announcements and #polls exist and share one MLS group id. */
+/** True when #announcements and #board exist and share one MLS group id. */
 export function defaultTrioSharesSingleMlsGroup(channels: ChannelLike[]): boolean {
   const byName = new Map(channels.map((c) => [c.name, c]));
   const ann = byName.get(DEFAULT_HUB_MLS_CHANNEL_NAMES[0]);
-  const pol = byName.get(DEFAULT_HUB_MLS_CHANNEL_NAMES[1]);
-  if (!ann || !pol) return false;
+  const board = byName.get(DEFAULT_HUB_MLS_CHANNEL_NAMES[1]);
+  if (!ann || !board) return false;
   const gid = ann.groupId.trim();
-  return gid.length > 0 && gid === pol.groupId.trim();
+  return gid.length > 0 && gid === board.groupId.trim();
 }
 
 /**
@@ -79,6 +79,8 @@ export function resolveHubChannelNameForGroupSelection(
   const matches = sorted.filter((c) => c.groupId === gid);
   if (matches.length === 0) return null;
   if (matches.length === 1) return matches[0].name;
+  const rawPref = preferredName?.trim() || null;
+  if (rawPref && matches.some((c) => c.name === rawPref)) return rawPref;
   const pref = normalizeHubChannelName(preferredName);
   if (pref && matches.some((c) => c.name === pref)) return pref;
   return [...matches].sort((a, b) => a.order - b.order)[0]?.name ?? null;

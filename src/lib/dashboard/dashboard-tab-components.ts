@@ -27,3 +27,12 @@ export const loadMyDashboardStatusTab = createLazyComponent(
 export const loadMyDashboardAlertsTab = createLazyComponent(
   () => import('../../components/parent/dashboard/MyDashboardAlertsTab.svelte'),
 );
+export const loadDashboardPollsPanel = createLazyComponent(
+  () => import('../../components/parent/DashboardPollsPanel.svelte'),
+);
+export const loadSquadEventsPanel = createLazyComponent(
+  () => import('../../components/parent/SquadEventsPanel.svelte'),
+);
+export const loadSquadDocsPanel = createLazyComponent(
+  () => import('../../components/parent/SquadDocsPanel.svelte'),
+);

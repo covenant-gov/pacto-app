@@ -16,41 +16,37 @@ import {
   partitionHubSidebarChannels,
   buildHubSidebarChannels,
 } from './parent-navbar';
-import { DOCS_CHANNEL_NAME } from './squad/hub-channel-names';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  EVENTS_CHANNEL_NAME,
+  BOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_NAME,
+  SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_NAME,
   SQUAD_WARGAME_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_NAME,
-} from '../stores/app';
+} from './squad/hub-channel-names';
 
-const DEFAULTS = [ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME, EVENTS_CHANNEL_NAME, DOCS_CHANNEL_NAME];
+const DEFAULTS = [ANNOUNCEMENTS_CHANNEL_NAME, BOARD_CHANNEL_NAME];
 
 describe('partitionHubSidebarChannels', () => {
   it('splits built-in hub rows from user-created channels', () => {
     const channels = [
-      { name: SQUAD_DASHBOARD_CHANNEL_NAME, groupId: '__squad_dashboard__', order: -2 },
+      { name: SQUAD_DASHBOARD_CHANNEL_NAME, groupId: SQUAD_DASHBOARD_CHANNEL_ID, order: -2 },
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
-      { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 1 },
-      { name: EVENTS_CHANNEL_NAME, groupId: 'g', order: 2 },
-      { name: DOCS_CHANNEL_NAME, groupId: 'g', order: 3 },
-      { name: 'c1', groupId: 'c1g', order: 4 },
+      { name: BOARD_CHANNEL_NAME, groupId: 'g', order: 1 },
+      { name: 'c1', groupId: 'c1g', order: 2 },
     ];
     const { defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels);
     expect(defaultHubChannels.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
-      POLLS_CHANNEL_NAME,
-      EVENTS_CHANNEL_NAME,
-      DOCS_CHANNEL_NAME,
+      BOARD_CHANNEL_NAME,
     ]);
     expect(customChannels.map((c) => c.name)).toEqual(['c1']);
   });
 
-  it('treats squad-wargame as a built-in hub row', () => {
+  it('treats gov-practice as a built-in hub row', () => {
     const { defaultHubChannels, customChannels } = partitionHubSidebarChannels([
       { name: SQUAD_WARGAME_CHANNEL_NAME, groupId: SQUAD_WARGAME_CHANNEL_ID, order: -2 },
       { name: 'ops', groupId: 'g-ops', order: 2 },
@@ -61,39 +57,49 @@ describe('partitionHubSidebarChannels', () => {
 });
 
 describe('buildHubSidebarChannels', () => {
-  it('pins dashboards then announcements, polls, events, and docs; strips obsolete rows', () => {
+  it('pins governance then announcements and board; strips obsolete rows', () => {
     const raw = [
       ...defaultChannelRowsForGroupId('g'),
       { name: 'my-dashboard', groupId: '__my_dashboard__', order: 8 },
       { name: 'personal-alerts', groupId: 'g', order: 9 },
-      { name: 'c1', groupId: 'c1g', order: 10 },
+      { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 10 },
+      { name: 'c1', groupId: 'c1g', order: 11 },
     ];
     const built = buildHubSidebarChannels(raw);
     expect(built.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
-      POLLS_CHANNEL_NAME,
-      EVENTS_CHANNEL_NAME,
-      DOCS_CHANNEL_NAME,
+      BOARD_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
       'c1',
     ]);
   });
 
-  it('omits squad-wargame unless includeWarGame', () => {
+  it('synthesizes board from announcements when board row is missing', () => {
+    const built = buildHubSidebarChannels([
+      { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
+    ]);
+    expect(built.map((c) => c.name)).toEqual([
+      SQUAD_DASHBOARD_CHANNEL_NAME,
+      ANNOUNCEMENTS_CHANNEL_NAME,
+      BOARD_CHANNEL_NAME,
+      SETTINGS_CHANNEL_NAME,
+    ]);
+    expect(built.find((c) => c.name === BOARD_CHANNEL_NAME)?.groupId).toBe('g');
+  });
+
+  it('omits gov-practice unless includeWarGame', () => {
     const built = buildHubSidebarChannels(defaultChannelRowsForGroupId('g'));
     expect(built.map((c) => c.name)).not.toContain(SQUAD_WARGAME_CHANNEL_NAME);
   });
 
-  it('pins squad-wargame immediately after squad-dashboard when includeWarGame', () => {
+  it('pins gov-practice immediately after governance when includeWarGame', () => {
     const built = buildHubSidebarChannels(defaultChannelRowsForGroupId('g'), { includeWarGame: true });
     expect(built.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
       SQUAD_WARGAME_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
-      POLLS_CHANNEL_NAME,
-      EVENTS_CHANNEL_NAME,
-      DOCS_CHANNEL_NAME,
+      BOARD_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
     ]);
     expect(built[1]).toMatchObject({
@@ -104,23 +110,23 @@ describe('buildHubSidebarChannels', () => {
 });
 
 describe('defaultChannelRowsForGroupId', () => {
-  it('returns announcements, polls, events, and docs sharing one groupId', () => {
+  it('returns announcements and board sharing one groupId', () => {
     const rows = defaultChannelRowsForGroupId('g-shared');
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(2);
     expect(new Set(rows.map((c) => c.groupId))).toEqual(new Set(['g-shared']));
     expect(rows.map((c) => c.name)).toEqual(DEFAULTS);
   });
 });
 
 describe('ensureDefaultHubChannelRows', () => {
-  it('backfills polls, events, and docs when only announcements was persisted', () => {
+  it('backfills board when only announcements was persisted', () => {
     const onlyAnn = [{ name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 }];
     const fixed = ensureDefaultHubChannelRows(onlyAnn);
     expect(fixed.map((c) => c.name)).toEqual(DEFAULTS);
     expect(new Set(fixed.map((c) => c.groupId))).toEqual(new Set(['g']));
   });
 
-  it('strips obsolete personal-alerts rows', () => {
+  it('strips obsolete personal-alerts and legacy shelf rows', () => {
     const withObsolete = [
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
       { name: 'personal-alerts', groupId: 'g', order: 1 },
@@ -135,25 +141,23 @@ describe('ensureDefaultHubChannelRows', () => {
     expect(ensureDefaultHubChannelRows(full)).toEqual(full);
   });
 
-  it('does not rewrite when announcements and polls use distinct MLS group ids', () => {
+  it('does not rewrite when announcements and board use distinct MLS group ids', () => {
     const split = [
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'a', order: 0 },
-      { name: POLLS_CHANNEL_NAME, groupId: 'b', order: 1 },
+      { name: BOARD_CHANNEL_NAME, groupId: 'b', order: 1 },
     ];
     expect(ensureDefaultHubChannelRows(split)).toEqual(split);
   });
 });
 
 describe('createDefaultParentChannels', () => {
-  it('creates one MLS group and returns announcements + polls + events + docs rows', async () => {
+  it('creates one MLS group and returns announcements + board rows', async () => {
     const out = await createDefaultParentChannels(['npub1']);
     expect(createGroupChat).toHaveBeenCalledWith(ANNOUNCEMENTS_CHANNEL_NAME, ['npub1']);
     expect(out.parentId).toBe('mls-single');
     expect(out.channels.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      POLLS_CHANNEL_NAME,
-      EVENTS_CHANNEL_NAME,
-      DOCS_CHANNEL_NAME,
+      BOARD_CHANNEL_NAME,
     ]);
     expect(out.skippedMembers).toEqual([]);
     expect(out.pendingInvites).toEqual([]);
@@ -184,7 +188,7 @@ describe('uniqueChannelsByGroupIdPreservingOrder', () => {
   it('keeps first channel per group id', () => {
     const channels = [
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
-      { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 1 },
+      { name: BOARD_CHANNEL_NAME, groupId: 'g', order: 1 },
       { name: 'c1', groupId: 'c1', order: 2 },
     ];
     expect(uniqueChannelsByGroupIdPreservingOrder(channels).map((c) => c.name)).toEqual([
@@ -199,7 +203,7 @@ describe('resolvePollsMlsGroupId', () => {
     expect(
       resolvePollsMlsGroupId({
         channels: defaultChannelRowsForGroupId('ann-g'),
-      })
+      }),
     ).toBe('ann-g');
   });
 });

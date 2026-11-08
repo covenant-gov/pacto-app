@@ -16,7 +16,7 @@ export const activeHubChannelName = writable<string | null>(null);
 export type ViewType = 'hub' | 'profile';
 export const activeView = writable<ViewType>('hub');
 
-/** #squad-dashboard segmented mode; unknown persisted values reset to `status`. */
+/** #governance segmented mode; unknown persisted values reset to `status`. */
 export type SquadDashboardChannelMode =
   | 'status'
   | 'governance'
@@ -49,6 +49,20 @@ export function parseSettingsChannelMode(raw: string | null): SettingsChannelMod
 }
 
 export const settingsChannelMode = writable<SettingsChannelMode>('you');
+
+/** #board segmented mode; unknown persisted values reset to `polls`. */
+export const BOARD_CHANNEL_MODES = ['polls', 'events', 'docs'] as const;
+export type SquadBoardChannelMode = (typeof BOARD_CHANNEL_MODES)[number];
+
+export const BOARD_CHANNEL_MODE_PREFIX = 'pacto_squad_board_mode';
+
+export function parseSquadBoardChannelMode(raw: string | null): SquadBoardChannelMode {
+  const v = raw?.trim();
+  if (v === 'polls' || v === 'events' || v === 'docs') return v;
+  return 'polls';
+}
+
+export const squadBoardChannelMode = writable<SquadBoardChannelMode>('polls');
 
 function openSquadSettingsChannel(mode?: SettingsChannelMode) {
   const squadId = get(activeSquadId);
@@ -146,6 +160,17 @@ squadDashboardChannelMode.subscribe((mode) => {
 settingsChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
   const key = persistenceKey(SETTINGS_CHANNEL_MODE_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, mode);
+  } catch {
+    // ignore quota
+  }
+});
+
+squadBoardChannelMode.subscribe((mode) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(BOARD_CHANNEL_MODE_PREFIX);
   if (!key) return;
   try {
     localStorage.setItem(key, mode);

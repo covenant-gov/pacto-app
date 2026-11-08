@@ -6,14 +6,12 @@
   import { partitionHubSidebarChannels } from '../../lib/parent-navbar';
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
-    DOCS_CHANNEL_NAME,
-    EVENTS_CHANNEL_NAME,
-    POLLS_CHANNEL_NAME,
+    BOARD_CHANNEL_NAME,
   } from '../../lib/squad/hub-channel-names';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import { t } from 'svelte-i18n';
   import { unreadCountsByChat } from '../../stores/unread';
-  import { dashboardPollReplicaNonceByParentId } from '../../stores/navigation';
+  import { dashboardPollReplicaNonceByParentId, squadBoardChannelMode } from '../../stores/navigation';
   import {
     markPollsChannelSeen,
     refreshUnseenPollCreatesForParent,
@@ -128,11 +126,14 @@
   let showPartnerSquads = $derived(partnerSquads.length > 0 || showPairWithSquadAction);
   let { defaultHubChannels, customChannels } = $derived(partitionHubSidebarChannels(channels));
 
+  const boardActive = $derived(activeView === 'hub' && activeHubChannelName === BOARD_CHANNEL_NAME);
+  const boardMode = $derived($squadBoardChannelMode);
+
   $effect(() => {
     const pid = parentId.trim();
     if (!pid) return;
     void $dashboardPollReplicaNonceByParentId[pid];
-    if (activeView === 'hub' && activeHubChannelName === POLLS_CHANNEL_NAME) {
+    if (boardActive && boardMode === 'polls') {
       void markPollsChannelSeen(pid);
     } else {
       void refreshUnseenPollCreatesForParent(pid);
@@ -144,12 +145,12 @@
     const annGroupId = channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId.trim();
     if (!pid || !annGroupId) return;
     const messages = $backendGroupMessages[annGroupId] ?? [];
-    if (activeView === 'hub' && activeHubChannelName === EVENTS_CHANNEL_NAME) {
+    if (boardActive && boardMode === 'events') {
       markEventsChannelSeen(pid, messages);
     } else {
       refreshUnseenEventCardsForParent(pid, messages);
     }
-    if (activeView === 'hub' && activeHubChannelName === DOCS_CHANNEL_NAME) {
+    if (boardActive && boardMode === 'docs') {
       markDocsChannelSeen(pid, messages);
     } else {
       refreshUnseenDocCardsForParent(pid, messages);
@@ -164,12 +165,10 @@
     const pid = parentId.trim();
     const out: Record<string, number> = {};
     for (const channel of [...defaultHubChannels, ...customChannels]) {
-      if (channel.name === POLLS_CHANNEL_NAME) {
-        out[channel.name] = pid ? (pollAlerts[pid] ?? 0) : 0;
-      } else if (channel.name === EVENTS_CHANNEL_NAME) {
-        out[channel.name] = pid ? (eventAlerts[pid] ?? 0) : 0;
-      } else if (channel.name === DOCS_CHANNEL_NAME) {
-        out[channel.name] = pid ? (docAlerts[pid] ?? 0) : 0;
+      if (channel.name === BOARD_CHANNEL_NAME) {
+        out[channel.name] = pid
+          ? (pollAlerts[pid] ?? 0) + (eventAlerts[pid] ?? 0) + (docAlerts[pid] ?? 0)
+          : 0;
       } else {
         out[channel.name] = counts[channel.groupId] ?? 0;
       }

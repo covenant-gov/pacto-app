@@ -1,27 +1,16 @@
-import { get, writable, type Writable } from 'svelte/store';
-import { navigateToTarget } from '../lib/navigation/open-squad-dashboard';
-import { getAnnouncementsChannel } from '../lib/parent-navbar';
-import { EVENTS_CHANNEL_NAME } from '../lib/squad/hub-channel-names';
-import { squads } from './squads';
+import { writable, type Writable } from 'svelte/store';
+import { openSquadBoard } from '../lib/navigation/open-squad-dashboard';
 
 export type EventsFocus = { parentId: string; eventId: string | null; seriesId: string | null };
 
-/** Deep-link request consumed by the `#events` panel of `parentId`. */
+/** Deep-link request consumed by the `#board` events mode of `parentId`. */
 export const eventsFocus: Writable<EventsFocus | null> = writable(null);
 
 function openEventsChannel(parentId: string): void {
-  const squad = get(squads).find((s) => s.id === parentId);
-  const announcementsGroupId = squad?.channels.length ? getAnnouncementsChannel(squad)?.groupId?.trim() : '';
-  if (!announcementsGroupId) return;
-  navigateToTarget({
-    kind: 'squad-channel',
-    squadId: parentId,
-    channelId: announcementsGroupId,
-    hubChannelName: EVENTS_CHANNEL_NAME,
-  });
+  openSquadBoard(parentId, 'events');
 }
 
-/** Opens `#events` with that event's detail. */
+/** Opens `#board` → Events with that event's detail. */
 export function focusSquadEvent(parentId: string, eventId: string): void {
   const pid = parentId.trim();
   if (!pid || !eventId) return;
@@ -29,7 +18,7 @@ export function focusSquadEvent(parentId: string, eventId: string): void {
   openEventsChannel(pid);
 }
 
-/** Opens `#events` filtered to one weekly series. */
+/** Opens `#board` → Events filtered to one weekly series. */
 export function focusSquadEventSeries(parentId: string, seriesId: string): void {
   const pid = parentId.trim();
   if (!pid || !seriesId) return;

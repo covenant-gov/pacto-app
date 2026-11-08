@@ -38,7 +38,7 @@ describe('ChatView Up Arrow editing', () => {
     squads.set([{
       id: 'squad', name: 'Test squad', channels: [
         { name: 'announcements', groupId: 'shared-group', order: 0 },
-        { name: 'polls', groupId: 'shared-group', order: 1 },
+        { name: 'board', groupId: 'shared-group', order: 1 },
         { name: 'general', groupId: 'other-group', order: 2 },
       ],
     } as Squad]);
@@ -60,7 +60,7 @@ describe('ChatView Up Arrow editing', () => {
     await fireEvent.keyDown(composer, { key: 'ArrowUp' });
     expect(screen.getByRole('textbox', { name: 'Edit message' })).toBeTruthy();
 
-    activeHubChannelName.set('polls');
+    activeHubChannelName.set('board');
     await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull());
     activeHubChannelName.set('announcements');
     await waitFor(() => expect(screen.getByPlaceholderText('Message #announcements')).toBeTruthy());
