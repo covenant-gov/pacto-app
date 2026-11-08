@@ -1,0 +1,17 @@
+{
+  "version": "0.8.1",
+  "items": [
+    { "kind": "new",
+      "title": { "en": "Read What’s New again", "es": "Vuelve a leer las novedades" },
+      "detail": { "en": "Open What’s New from App Settings to revisit the changes in your installed version.", "es": "Abre las novedades desde los ajustes de la app para volver a ver los cambios de tu versión." } },
+    { "kind": "fixed",
+      "title": { "en": "Update checks without interruptions", "es": "Busca actualizaciones sin interrupciones" },
+      "detail": { "en": "Failed startup update checks no longer interrupt you, and update errors now have a Close button.", "es": "Los fallos al buscar actualizaciones al iniciar ya no te interrumpen y los avisos de error ahora tienen un botón para cerrarlos." } },
+    { "kind": "improved",
+      "title": { "en": "Plan weekly events with confidence", "es": "Organiza tus eventos semanales con más claridad" },
+      "detail": { "en": "Preview up to eight weekly dates, remove the ones you don’t need, and see how long each event lasts.", "es": "Revisa hasta ocho fechas semanales, elimina las que no necesites y consulta cuánto dura cada evento." } },
+    { "kind": "new",
+      "title": { "en": "Choose how event times appear", "es": "Elige cómo ver las horas de los eventos" },
+      "detail": { "en": "Use your system clock format or choose 12-hour or 24-hour times for events and reminders.", "es": "Usa el formato horario de tu sistema o elige entre 12 y 24 horas para los eventos y recordatorios." } }
+  ]
+}
