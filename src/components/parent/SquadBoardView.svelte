@@ -93,6 +93,9 @@
 
 <style>
   .squad-board {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -100,6 +103,7 @@
   }
   .squad-board-body {
     flex: 1;
+    min-width: 0;
     min-height: 0;
     overflow: auto;
     display: flex;
@@ -107,9 +111,13 @@
   }
   .dashboard-tab-pane {
     flex: 1;
+    min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  .dashboard-tab-pane:not([hidden]) {
+    width: 100%;
   }
   .dashboard-tab-pane[hidden] {
     display: none !important;

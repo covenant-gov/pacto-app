@@ -796,7 +796,9 @@
       {/if}
     </div>
   {:else if isBoardChannel && activeParent}
-    <SquadBoardView parent={activeParent} />
+    <div class="chat-view-main chat-view-main--board">
+      <SquadBoardView parent={activeParent} />
+    </div>
   {:else if activeChannel}
     <div class="chat-view-main">
     <div class="channel-header">
@@ -1060,6 +1062,10 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+
+  .chat-view-main--board {
+    min-height: 0;
   }
 
   .channel-header {
