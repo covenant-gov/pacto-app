@@ -199,6 +199,11 @@
   class:dashboard-polls-shell--channel={variant === 'channel'}
   class:dashboard-polls-shell--channel-fill={variant === 'channel' && fillParent}
 >
+  <div class="dashboard-polls-toolbar">
+    <button type="button" class="btn-primary dashboard-polls-create-btn" onclick={openCreatePollModal}>
+      {$t('governance.polls.create')}
+    </button>
+  </div>
   <div class="dashboard-polls-scroll" bind:this={pollsScrollEl} role="feed" aria-label={$t('governance.polls.ariaLabel')}>
     <div class="dashboard-polls-scroll-inner">
       {#if !parentId?.trim()}
@@ -278,11 +283,6 @@
         {/if}
       {/if}
     </div>
-  </div>
-  <div class="dashboard-polls-composer">
-    <button type="button" class="btn-primary dashboard-polls-create-btn" onclick={openCreatePollModal}>
-      {$t('governance.polls.create')}
-    </button>
   </div>
 </div>
 
@@ -448,19 +448,19 @@
     color: var(--brand);
   }
 
-  .dashboard-polls-composer {
+  .dashboard-polls-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-bottom: 8px;
     flex-shrink: 0;
-    padding: 12px;
-    margin-top: 12px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    background: var(--bg-elevated);
   }
 
   .dashboard-polls-create-btn {
-    width: 100%;
-    padding: 10px 16px;
-    font-size: 0.9375rem;
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    flex-shrink: 0;
   }
 
   .dashboard-placeholder-text {

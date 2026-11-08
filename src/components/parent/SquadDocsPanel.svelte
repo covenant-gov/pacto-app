@@ -209,19 +209,30 @@
 
 <div class="docs-shell">
   <div class="docs-toolbar">
-    <label class="docs-filter-label" for="docs-filter">{$t('docs.panel.filterLabel')}</label>
-    <select
-      id="docs-filter"
-      class="docs-filter"
-      value={filterValue}
-      onchange={(e) => setFilter(e.currentTarget.value)}
-    >
-      <option value="all">{$t('docs.panel.filterAll')}</option>
-      {#each channelOptions as option (option.groupId)}
-        <option value={`channel:${option.groupId}`}>#{option.name}</option>
-      {/each}
-      <option value="untagged">{$t('docs.panel.filterUntagged')}</option>
-    </select>
+    <div class="docs-toolbar-filters">
+      <label class="docs-filter-label" for="docs-filter">{$t('docs.panel.filterLabel')}</label>
+      <select
+        id="docs-filter"
+        class="docs-filter"
+        value={filterValue}
+        onchange={(e) => setFilter(e.currentTarget.value)}
+      >
+        <option value="all">{$t('docs.panel.filterAll')}</option>
+        {#each channelOptions as option (option.groupId)}
+          <option value={`channel:${option.groupId}`}>#{option.name}</option>
+        {/each}
+        <option value="untagged">{$t('docs.panel.filterUntagged')}</option>
+      </select>
+    </div>
+    {#if policySettled || !gid}
+      {#if addControl === 'add'}
+        <button type="button" class="btn-primary docs-add-btn" onclick={() => (showAdd = true)}>
+          {$t('docs.panel.add')}
+        </button>
+      {:else}
+        <p class="docs-msg muted docs-toolbar-policy">{$t(`governance.contentPolicy.docs.${addControl}`)}</p>
+      {/if}
+    {/if}
   </div>
 
   <div class="docs-scroll" role="feed" aria-label={$t('docs.panel.ariaLabel')} aria-busy={!loaded}>
@@ -350,18 +361,6 @@
       </ul>
     {/if}
   </div>
-
-  {#if policySettled || !gid}
-    <div class="docs-composer">
-      {#if addControl === 'add'}
-        <button type="button" class="btn-primary docs-add-btn" onclick={() => (showAdd = true)}>
-          {$t('docs.panel.add')}
-        </button>
-      {:else}
-        <p class="docs-msg muted">{$t(`governance.contentPolicy.docs.${addControl}`)}</p>
-      {/if}
-    </div>
-  {/if}
 </div>
 
 {#if showAdd}
@@ -390,8 +389,24 @@
   .docs-toolbar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
+    gap: 12px;
     padding-bottom: 8px;
+    flex-shrink: 0;
+  }
+
+  .docs-toolbar-filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .docs-toolbar-policy {
+    margin: 0;
+    padding: 0;
+    text-align: right;
+    max-width: 50%;
   }
 
   .docs-filter-label {
@@ -406,6 +421,12 @@
     background: var(--bg-elevated);
     color: var(--text-primary);
     font-size: 13px;
+  }
+
+  .docs-add-btn {
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    flex-shrink: 0;
   }
 
   .docs-scroll {
@@ -558,18 +579,4 @@
     cursor: pointer;
   }
 
-  .docs-composer {
-    flex-shrink: 0;
-    padding: 12px;
-    margin-top: 12px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    background: var(--bg-elevated);
-  }
-
-  .docs-add-btn {
-    width: 100%;
-    padding: 10px 16px;
-    font-size: 0.9375rem;
-  }
 </style>

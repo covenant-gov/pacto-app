@@ -138,7 +138,18 @@
       <EventDetail event={openEvent} mlsGroupId={gid} parentId={pid} onclose={() => (openEventId = null)} />
     </div>
   {:else}
-    <EventTimeFormatSelect />
+    <div class="events-toolbar">
+      <EventTimeFormatSelect />
+      {#if policySettled || !gid}
+        {#if createControl === 'create'}
+          <button type="button" class="btn-primary events-create-btn" onclick={() => (showCreate = true)}>
+            {$t('events.panel.create')}
+          </button>
+        {:else}
+          <p class="events-msg muted events-toolbar-policy">{$t(`events.panel.${createControl}`)}</p>
+        {/if}
+      {/if}
+    </div>
     <div class="events-scroll" role="feed" aria-label={$t('events.panel.ariaLabel')} aria-busy={!loaded}>
       {#if seriesFilter}
         <div class="events-filter">
@@ -216,17 +227,6 @@
         {/each}
       {/if}
     </div>
-    {#if policySettled || !gid}
-      <div class="events-composer">
-        {#if createControl === 'create'}
-          <button type="button" class="btn-primary events-create-btn" onclick={() => (showCreate = true)}>
-            {$t('events.panel.create')}
-          </button>
-        {:else}
-          <p class="events-msg muted">{$t(`events.panel.${createControl}`)}</p>
-        {/if}
-      </div>
-    {/if}
   {/if}
 </div>
 
@@ -365,18 +365,25 @@
     color: var(--brand);
   }
 
-  .events-composer {
+  .events-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 8px;
     flex-shrink: 0;
-    padding: 12px;
-    margin-top: 12px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    background: var(--bg-elevated);
+  }
+
+  .events-toolbar-policy {
+    margin: 0;
+    padding: 0;
+    text-align: right;
+    max-width: 50%;
   }
 
   .events-create-btn {
-    width: 100%;
-    padding: 10px 16px;
-    font-size: 0.9375rem;
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    flex-shrink: 0;
   }
 </style>
