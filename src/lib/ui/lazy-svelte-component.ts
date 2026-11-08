@@ -1,7 +1,5 @@
-import type { Component } from 'svelte';
-
 /** Cache a resolved import; drop it if the load rejects so a retry can run. */
-export function createLazyComponent<C extends Component<any, any, any>>(
+export function createLazyComponent<C>(
   loader: () => Promise<{ default: C }>,
 ): () => Promise<C> {
   let cached: Promise<{ default: C }> | null = null;
