@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## v0.8.1
+
+### Bug Fixes
+- Quiet startup errors and publish releases atomically (updater) (#510) by @logicminds, closes #507
+- Make weekly scheduling predictable (events) (#512) by @openbotgit[bot], closes #508
+- Make Prepare Release git work in the CI container (#514) by @logicminds
+
+
+### Features
+- Reopen What's New notes from App Settings (updater) (#509) by @logicminds
+
+
+### Other
+- Harden CI and dependency install against supply-chain abuse (#511) by @logicminds
+- Open release PRs without a serial full-suite rerun (#513) by @logicminds
+
 ## v0.8.0
 
 ### Bug Fixes
