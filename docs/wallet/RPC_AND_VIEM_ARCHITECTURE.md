@@ -59,7 +59,16 @@ Squad Status can set **two MLS-shared slots** (`src/lib/squad/squad-rpc.ts`, ann
 2. Squad RPC-2 if set
 3. This member’s Settings **default** RPC for the chain only — **local, never MLS** — appended only when set and not already in the list
 
-Rust uses the override list in order when non-empty (`gov_read::rpc_urls_or_default` / `connect_gov_read_provider`); otherwise curated/operator defaults. Applies to parent-scoped reads and writes (treasury, mutiny, quartermaster, hats, ACL, sponsor/deploy, allowlist, Safe deploy with `parentId`).
+Rust uses the override list in order when non-empty (`gov_read::rpc_urls_or_default`); otherwise curated/operator defaults. Applies to parent-scoped reads and writes (treasury, mutiny, quartermaster, hats, ACL, sponsor/deploy, allowlist, Safe deploy with `parentId`).
+
+`connect_read_provider` / `connect_signing_provider` are **connect-only**: they return after the first parseable URL builds an HTTP client and do not probe or rotate on a later 429. **Request-level** failover (retryable transport errors via `is_retryable_gov_rpc_error`, including Alloy `HTTP error 429 with empty body`) advances to the next URL in:
+
+- Hats wearer reads (`member_governance_read`)
+- Gov module writes (`send_gov_module_call` preflight and EOA fill). The EOA payload is signed once; a lost `eth_sendRawTransaction` response rebroadcasts those same bytes and does not take a new nonce.
+- Sponsored gov chain reads (`send_sponsored_gov_userop`, `send_sponsored_global_gov_userop`) through `getUserOpHash`
+- ACL write-path connects (`require_capability` / war-game corroboration)
+
+Never rotate after a submitted tx hash is known, including the locally computed hash of a signed EOA payload once broadcast has been attempted. Pimlico `eth_estimateUserOperationGas` and `eth_sendUserOperation` are not chain-URL hops: a bundler error returns immediately, and the UserOp is sent once after chain finalize succeeds. Username and factory UserOps stay on the first chain URL.
 
 Operator `ALCHEMY_RPC_KEY` does not override an explicit custom squad URL. Squad RPC URLs (including API keys) are visible to all members who receive the announce.
 
@@ -118,3 +127,4 @@ Spot USD rates for ETH, USDC, and USDT (wallet UI only) come from **Chainlink on
 ## See also
 
 - [README.md](./README.md) — index of wallet docs.
+- [RPC_ISSUE_INDEX.md](./RPC_ISSUE_INDEX.md) — GitHub issues for RPC errors, rate limits, and endpoint selection.

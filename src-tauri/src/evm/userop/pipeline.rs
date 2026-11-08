@@ -252,15 +252,15 @@ fn user_op_for(
     })
 }
 
-pub(crate) async fn sign_and_send_sponsored_userop<P, S, E, F, Fut>(
+/// Chain reads, `getUserOpHash`, and the local signature. Does not submit to the bundler.
+pub(crate) async fn finalize_sponsored_userop_chain<P, S, E, F, Fut>(
     provider: &P,
     signer: &S,
-    bundler_url: &str,
     op: &SponsoredUserOpBuild<'_>,
     limits: FinalGasLimits,
     encode_paymaster: &E,
     preflight: F,
-) -> Result<String, String>
+) -> Result<serde_json::Value, String>
 where
     P: Provider,
     S: Signer + Sync,
@@ -307,7 +307,28 @@ where
         .await
         .map_err(|e| wallet_err_json("USEROP_SIGN", e.to_string(), None))?;
     let signature = sig.as_bytes().to_vec();
-    let user_op = user_op_for(op, &limits, &paymaster_and_data, &signature)?;
+    user_op_for(op, &limits, &paymaster_and_data, &signature)
+}
+
+pub(crate) async fn sign_and_send_sponsored_userop<P, S, E, F, Fut>(
+    provider: &P,
+    signer: &S,
+    bundler_url: &str,
+    op: &SponsoredUserOpBuild<'_>,
+    limits: FinalGasLimits,
+    encode_paymaster: &E,
+    preflight: F,
+) -> Result<String, String>
+where
+    P: Provider,
+    S: Signer + Sync,
+    E: Fn(u128, u128) -> Vec<u8>,
+    F: FnOnce(U256) -> Fut,
+    Fut: Future<Output = Result<(), String>>,
+{
+    let user_op =
+        finalize_sponsored_userop_chain(provider, signer, op, limits, encode_paymaster, preflight)
+            .await?;
     bundler_send_user_operation(bundler_url, &user_op, op.entry_point).await
 }
 

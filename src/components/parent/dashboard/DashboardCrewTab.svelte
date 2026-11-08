@@ -36,6 +36,7 @@
     channelMembers = [],
     loadingMembers = false,
     settingsChainError = '',
+    rolesTreeAnnotationsError = '',
     settingsChainLoading = false,
     settingsChainRefreshing = false,
     squadMemberEvmByNpub = {},
@@ -54,6 +55,8 @@
     channelMembers?: string[];
     loadingMembers?: boolean;
     settingsChainError?: string;
+    /** Hats wearer/roles tree RPC errors (Crew Hats path when a top hat exists). */
+    rolesTreeAnnotationsError?: string;
     settingsChainLoading?: boolean;
     settingsChainRefreshing?: boolean;
     squadMemberEvmByNpub?: Record<string, string>;
@@ -94,7 +97,10 @@
   const showSponsoredCol = $derived(eligibilityCols.showSponsoredCol);
   const sponsorExtRpcKind = $derived(rpcReadErrorKind(sponsorExtError));
   const settingsChainRpcKind = $derived(rpcReadErrorKind(settingsChainError));
-  const crewRpcKinds = $derived(uniqueRpcReadErrorKinds(sponsorExtError, settingsChainError));
+  const rolesAnnotationsRpcKind = $derived(rpcReadErrorKind(rolesTreeAnnotationsError));
+  const crewRpcKinds = $derived(
+    uniqueRpcReadErrorKinds(sponsorExtError, settingsChainError, rolesTreeAnnotationsError),
+  );
 
   onMount(() => {
     if (!parentId) return;
@@ -184,6 +190,9 @@
     {#if !settingsChainRpcKind}
       <p class="chain-read-error" role="alert">{settingsChainError}</p>
     {/if}
+  {/if}
+  {#if rolesTreeAnnotationsError && !rolesAnnotationsRpcKind}
+    <p class="chain-read-error" role="alert">{rolesTreeAnnotationsError}</p>
   {/if}
 
   {#if announcementsGroupId}

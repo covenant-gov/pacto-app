@@ -14,13 +14,15 @@ use crate::evm::contracts::hats::IHats::isWearerOfHatCall;
 use crate::evm::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     isExecutorFullPermissionCall, isExecutorPausedCall,
 };
-use crate::evm::gov_read::{connect_gov_read_provider, parse_top_hat_id};
+use crate::evm::gov_read::{parse_top_hat_id, resolve_gov_read_network};
 use crate::evm::nave_pirata_read::{
     deployment_mentions_module, read_nave_pirata_deployment, read_war_game_active_deployment,
 };
 use crate::evm::pacto_chain_config;
 use crate::evm::rpc::call::eth_call_decode;
-use crate::evm::rpc::{parse_address, wallet_err_json};
+use crate::evm::rpc::{
+    connect_read_provider, next_gov_rpc_url_idx, parse_address, wallet_err_json,
+};
 use crate::evm::sponsor_userop::parse_war_game_userop_context;
 use crate::evm::squad_sponsor_common::squad_id_from_parent_id;
 
@@ -84,15 +86,31 @@ impl GovStack {
                 None,
             )
         })?;
-        let (provider, rpc_ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-        let on_chain = read_war_game_active_deployment(
-            &provider,
-            registry,
-            squad_id_from_parent_id(parent_id),
-            rpc_ctx.key.as_str(),
-            rpc_ctx.chain_id,
-        )
-        .await?;
+        let rpc_ctx = resolve_gov_read_network(network.as_str(), rpc_urls)?;
+        let mut url_idx = 0usize;
+        let on_chain = loop {
+            let provider = connect_read_provider(&rpc_ctx.rpc_urls[url_idx..]).await?;
+            match read_war_game_active_deployment(
+                &provider,
+                registry,
+                squad_id_from_parent_id(parent_id),
+                rpc_ctx.key.as_str(),
+                rpc_ctx.chain_id,
+            )
+            .await
+            {
+                Ok(v) => break v,
+                Err(e) => {
+                    if let Some(next) =
+                        next_gov_rpc_url_idx(&rpc_ctx.rpc_urls, url_idx, &e, "wargame_corroborate")
+                    {
+                        url_idx = next;
+                        continue;
+                    }
+                    return Err(e);
+                }
+            }
+        };
         let on_chain_match = on_chain
             .as_ref()
             .is_some_and(|d| deployment_mentions_module(d, to));
@@ -188,10 +206,31 @@ async fn load_chain_context<R: Runtime>(
         })?,
     };
 
-    let (provider, ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    let deployment =
-        read_nave_pirata_deployment(&provider, registry, top_hat, ctx.key.as_str(), ctx.chain_id)
-            .await?;
+    let rpc_ctx = resolve_gov_read_network(network.as_str(), rpc_urls)?;
+    let mut url_idx = 0usize;
+    let deployment = loop {
+        let provider = connect_read_provider(&rpc_ctx.rpc_urls[url_idx..]).await?;
+        match read_nave_pirata_deployment(
+            &provider,
+            registry,
+            top_hat,
+            rpc_ctx.key.as_str(),
+            rpc_ctx.chain_id,
+        )
+        .await
+        {
+            Ok(v) => break v,
+            Err(e) => {
+                if let Some(next) =
+                    next_gov_rpc_url_idx(&rpc_ctx.rpc_urls, url_idx, &e, "acl_load_chain")
+                {
+                    url_idx = next;
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    };
 
     let safe = parse_address(deployment.safe.as_str())
         .map_err(|e| wallet_err_json("ACL_SAFE", e, None))?;
@@ -305,31 +344,23 @@ pub async fn evaluate_squad_capabilities<R: Runtime>(
     };
 
     let chain = load_chain_context(app, pid, rpc_urls.clone(), stack).await?;
-    let (provider, _ctx) = connect_gov_read_provider(chain.network.as_str(), rpc_urls).await?;
-
-    let wears_captain = is_wearer(&provider, chain.hats, roster, chain.captain_hat_id).await?;
-    let wears_crew = is_wearer(&provider, chain.hats, roster, chain.crew_hat_id).await?;
-    let safe_wears_captain =
-        is_wearer(&provider, chain.hats, chain.safe, chain.captain_hat_id).await?;
-
-    let mut squad_admin_full = false;
-    let mut squad_admin_paused = false;
-    if let Some(admin) = chain.squad_admin {
-        squad_admin_full = eth_call_decode(
-            &provider,
-            admin,
-            &isExecutorFullPermissionCall { _executor: roster },
-        )
-        .await
-        .unwrap_or(false);
-        squad_admin_paused = eth_call_decode(
-            &provider,
-            admin,
-            &isExecutorPausedCall { _executor: roster },
-        )
-        .await
-        .unwrap_or(false);
-    }
+    let rpc_ctx = resolve_gov_read_network(chain.network.as_str(), rpc_urls)?;
+    let mut url_idx = 0usize;
+    let (wears_captain, wears_crew, safe_wears_captain, squad_admin_full, squad_admin_paused) = loop {
+        let provider = connect_read_provider(&rpc_ctx.rpc_urls[url_idx..]).await?;
+        match read_acl_hat_snapshot(&provider, &chain, roster).await {
+            Ok(v) => break v,
+            Err(e) => {
+                if let Some(next) =
+                    next_gov_rpc_url_idx(&rpc_ctx.rpc_urls, url_idx, &e, "acl_hat_snapshot")
+                {
+                    url_idx = next;
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    };
 
     let ctx = HatContext {
         roster_address: format!("{:#x}", roster),
@@ -340,6 +371,42 @@ pub async fn evaluate_squad_capabilities<R: Runtime>(
     Ok(build_snapshot(
         pid,
         ctx,
+        squad_admin_full,
+        squad_admin_paused,
+    ))
+}
+
+async fn read_acl_hat_snapshot<P: Provider>(
+    provider: &P,
+    chain: &SquadAclChain,
+    roster: Address,
+) -> Result<(bool, bool, bool, bool, bool), String> {
+    let wears_captain = is_wearer(provider, chain.hats, roster, chain.captain_hat_id).await?;
+    let wears_crew = is_wearer(provider, chain.hats, roster, chain.crew_hat_id).await?;
+    let safe_wears_captain =
+        is_wearer(provider, chain.hats, chain.safe, chain.captain_hat_id).await?;
+
+    let mut squad_admin_full = false;
+    let mut squad_admin_paused = false;
+    if let Some(admin) = chain.squad_admin {
+        // Soft-fail these probes; only hard wearer reads drive failover.
+        squad_admin_full = eth_call_decode(
+            provider,
+            admin,
+            &isExecutorFullPermissionCall { _executor: roster },
+        )
+        .await
+        .unwrap_or(false);
+        squad_admin_paused =
+            eth_call_decode(provider, admin, &isExecutorPausedCall { _executor: roster })
+                .await
+                .unwrap_or(false);
+    }
+
+    Ok((
+        wears_captain,
+        wears_crew,
+        safe_wears_captain,
         squad_admin_full,
         squad_admin_paused,
     ))
