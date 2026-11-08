@@ -35,18 +35,20 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
 
 export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
 
-/** #settings segmented mode; unknown persisted values reset to `personal`. */
-export type SettingsChannelMode = 'personal' | 'squad';
+/** #settings segmented mode; unknown persisted values reset to `you`. */
+export const SETTINGS_CHANNEL_MODES = ['you', 'us', 'access', 'network'] as const;
+export type SettingsChannelMode = (typeof SETTINGS_CHANNEL_MODES)[number];
 
 export const SETTINGS_CHANNEL_MODE_PREFIX = 'pacto_settings_channel_mode';
 
 export function parseSettingsChannelMode(raw: string | null): SettingsChannelMode {
   const v = raw?.trim();
-  if (v === 'personal' || v === 'squad') return v;
-  return 'personal';
+  if (v === 'personal' || v === 'you') return 'you';
+  if (v === 'us' || v === 'access' || v === 'network') return v;
+  return 'you';
 }
 
-export const settingsChannelMode = writable<SettingsChannelMode>('personal');
+export const settingsChannelMode = writable<SettingsChannelMode>('you');
 
 function openSquadSettingsChannel(mode?: SettingsChannelMode) {
   const squadId = get(activeSquadId);
@@ -67,7 +69,7 @@ function openSquadSettingsChannel(mode?: SettingsChannelMode) {
 export const squadSettingsRpcFocusNonce = writable(0);
 
 export function focusSquadSettingsRpcEditor() {
-  openSquadSettingsChannel('squad');
+  openSquadSettingsChannel('network');
   squadSettingsRpcFocusNonce.update((n) => n + 1);
 }
 
@@ -76,7 +78,7 @@ export const squadSettingsNetworkFocusNonce = writable(0);
 export const squadSettingsNetworkFocusSlot = writable<SquadNetworkSlot>('primary');
 
 export function focusSquadSettingsNetworkEditor(slot: SquadNetworkSlot = 'primary') {
-  openSquadSettingsChannel('squad');
+  openSquadSettingsChannel('network');
   squadSettingsNetworkFocusSlot.set(slot);
   squadSettingsNetworkFocusNonce.update((n) => n + 1);
 }

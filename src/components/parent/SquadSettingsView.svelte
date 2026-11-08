@@ -11,12 +11,15 @@
   import { currentUser } from '../../stores/auth-session';
   import { profiles } from '../../stores/profiles';
   import {
+    SETTINGS_CHANNEL_MODES,
     settingsChannelMode,
     type SettingsChannelMode,
   } from '../../stores/navigation';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import {
-    loadDashboardSettingsTab,
+    loadDashboardSettingsAccessTab,
+    loadDashboardSettingsNetworkTab,
+    loadDashboardSettingsUsTab,
     loadMyDashboardAlertsTab,
     loadMyDashboardStatusTab,
   } from '../../lib/dashboard/dashboard-tab-components';
@@ -170,34 +173,26 @@
   </div>
   <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.settingsChannelMode.section')}>
     <div class="dashboard-mode-switcher" role="group">
-      <button
-        type="button"
-        role="tab"
-        class="dashboard-mode-segment"
-        class:active={settingsMode === 'personal'}
-        aria-selected={settingsMode === 'personal'}
-        onclick={() => selectSettingsMode('personal')}
-      >
-        {$t('governance.settingsChannelMode.personal')}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="dashboard-mode-segment"
-        class:active={settingsMode === 'squad'}
-        aria-selected={settingsMode === 'squad'}
-        onclick={() => selectSettingsMode('squad')}
-      >
-        {$t('governance.settingsChannelMode.squad')}
-      </button>
+      {#each SETTINGS_CHANNEL_MODES as mode (mode)}
+        <button
+          type="button"
+          role="tab"
+          class="dashboard-mode-segment"
+          class:active={settingsMode === mode}
+          aria-selected={settingsMode === mode}
+          onclick={() => selectSettingsMode(mode)}
+        >
+          {$t(`governance.settingsChannelMode.${mode}`)}
+        </button>
+      {/each}
     </div>
   </div>
   <div class="squad-settings-body">
-    {#if visitedSettingsModes.has('personal')}
+    {#if visitedSettingsModes.has('you')}
       <div
         class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={settingsMode === 'personal'}
-        hidden={settingsMode !== 'personal'}
+        class:dashboard-tab-pane-active={settingsMode === 'you'}
+        hidden={settingsMode !== 'you'}
       >
         {#await loadMyDashboardStatusTab() then StatusTab}
           <StatusTab
@@ -218,20 +213,50 @@
         {/await}
       </div>
     {/if}
-    {#if visitedSettingsModes.has('squad')}
+    {#if visitedSettingsModes.has('us')}
       <div
         class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={settingsMode === 'squad'}
-        hidden={settingsMode !== 'squad'}
+        class:dashboard-tab-pane-active={settingsMode === 'us'}
+        hidden={settingsMode !== 'us'}
       >
-        {#await loadDashboardSettingsTab() then SettingsTab}
-          <SettingsTab
+        {#await loadDashboardSettingsUsTab() then UsTab}
+          <UsTab squad={parent} {announcementsGroupId} />
+        {:catch}
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.us')}</p>
+        {/await}
+      </div>
+    {/if}
+    {#if visitedSettingsModes.has('access')}
+      <div
+        class="dashboard-tab-pane"
+        class:dashboard-tab-pane-active={settingsMode === 'access'}
+        hidden={settingsMode !== 'access'}
+      >
+        {#await loadDashboardSettingsAccessTab() then AccessTab}
+          <AccessTab
             squad={parent}
             {squadAdminCtx}
             {announcementsGroupId}
             parentId={parentId ?? ''}
             {channelMembers}
             {squadMemberEvmByNpub}
+            {privilegesAdmin}
+            {pactoGovRevision}
+            {memberEvmOptions}
+          />
+        {:catch}
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.access')}</p>
+        {/await}
+      </div>
+    {/if}
+    {#if visitedSettingsModes.has('network')}
+      <div
+        class="dashboard-tab-pane"
+        class:dashboard-tab-pane-active={settingsMode === 'network'}
+        hidden={settingsMode !== 'network'}
+      >
+        {#await loadDashboardSettingsNetworkTab() then NetworkTab}
+          <NetworkTab
             {primaryNetwork}
             {practiceNetwork}
             onSetPrimaryNetwork={(chain) => setSlot('primary', chain)}
@@ -240,12 +265,9 @@
             onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
             onSetSquadRpcBackup={handleSetSquadRpcBackup}
             onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
-            {privilegesAdmin}
-            {pactoGovRevision}
-            {memberEvmOptions}
           />
         {:catch}
-          <p class="tab-error" role="alert">{$t('governance.tabLoadError.settings')}</p>
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.network')}</p>
         {/await}
       </div>
     {/if}
@@ -295,6 +317,8 @@
   .dashboard-mode-switcher {
     display: inline-flex;
     align-items: stretch;
+    max-width: 100%;
+    overflow-x: auto;
     background: var(--bg-panel);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -302,7 +326,7 @@
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
   }
   .dashboard-mode-segment {
-    padding: 0 14px;
+    padding: 0 10px;
     font-size: 0.9375rem;
     font-weight: 500;
     color: var(--text-muted);
@@ -310,6 +334,7 @@
     border: none;
     border-radius: 8px;
     cursor: pointer;
+    white-space: nowrap;
     transition: color 0.15s, background-color 0.15s;
   }
   .dashboard-mode-segment:hover:not(.active) {

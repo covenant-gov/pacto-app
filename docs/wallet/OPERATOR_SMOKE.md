@@ -66,7 +66,7 @@ See [PACTO_GOV.md](./PACTO_GOV.md) and [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SP
 - [ ] Devtools: `deploy_squad_sponsor_for_parent` (Ext) now defaults `signerWallet` to `'default'` (Default pays gas + deposit; roster EVM stays allowlist owner) — pass `signerWallet: 'squad'` to fund from the squad roster key instead.
 - [ ] **Deploy** → Advanced → **Deploy Squad Admin** standalone for executor AC without Nave Pirata.
 - [ ] After that tx confirms, **Status** shows a **Squad Admin** card: Deployed badge, variant copy, truncated proxy with copy, network, and **Manage privileges in Settings**.
-- [ ] That CTA lands on `#settings`; **Privileges → Manage** opens the roles modal on the same proxy.
+- [ ] That CTA lands on `#settings` → Access; **Privileges → Manage** opens the roles modal on the same proxy.
 - [ ] Re-open the Launchpad: **Deploy Squad Admin (Ext)** shows the deployed address and the *already deployed* reason, and cannot be selected.
 - [ ] **Treasury** → **Deploy Sponsor** opens **Deploy Governance** launchpad (pick Ext or combined hats path from there).
 - [ ] When gov exists and sponsor missing: primary card **Deploy squad sponsor** (hats path via the same wizard).
@@ -196,7 +196,7 @@ Two accounts helpful: **requester** (not in squad) and **holder** (creator or ad
 
 **Bot holders**
 
-- [ ] **Dashboard → Settings → Join inbox holders** shows Join inbox npub, epoch, holder list.
+- [ ] **`#settings` → Access → Join inbox holders** shows Join inbox npub, epoch, holder list.
 - [ ] Creator is initial holder after squad create (Commons on path runs `initJoinInbox`).
 - [ ] Holder adds a second MLS member → key share DM arrives → second device shows **Holds bot key**.
 - [ ] Remove holder → remaining holders see **#personal-alerts** rotate prompt; **Rotate bot key** posts **#announcements** notice and rebroadcasts new bot npub on next Commons publish.

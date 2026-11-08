@@ -1,16 +1,9 @@
 <script lang="ts">
   import JoinInboxHoldersSection from './JoinInboxHoldersSection.svelte';
-  import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadContentPolicySection from './SquadContentPolicySection.svelte';
-  import SquadEndpointsPanel from './SquadEndpointsPanel.svelte';
-  import SquadIdentitySection from './SquadIdentitySection.svelte';
-  import SquadNetworkSection from './SquadNetworkSection.svelte';
   import SquadPrivilegesSection from './SquadPrivilegesSection.svelte';
-  import SquadStickersSection from './SquadStickersSection.svelte';
   import SquadJoinRequestsPanel from '../../squad/SquadJoinRequestsPanel.svelte';
   import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
-  import type { SupportedChainId } from '../../../lib/wallet/chains';
-  import type { SquadRpcConfig } from '../../../lib/squad/squad-rpc';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth-session';
   import { resolvePollsMlsGroupId } from '../../../lib/parent-navbar';
@@ -27,14 +20,6 @@
     channelMembers = [],
     squadMemberEvmByNpub = {},
     memberRolesByAddress = {},
-    primaryNetwork,
-    practiceNetwork,
-    onSetPrimaryNetwork = () => {},
-    onSetPracticeNetwork = () => {},
-    squadRpcConfig = null,
-    onSetSquadRpcPrimary = () => {},
-    onSetSquadRpcBackup = () => {},
-    onClearSquadRpcPrimary = () => {},
     privilegesAdmin = null,
     pactoGovRevision = '',
     memberEvmOptions = [],
@@ -46,14 +31,6 @@
     channelMembers?: string[];
     squadMemberEvmByNpub?: Record<string, string>;
     memberRolesByAddress?: Record<string, string>;
-    primaryNetwork: SupportedChainId;
-    practiceNetwork: SupportedChainId;
-    onSetPrimaryNetwork?: (chain: SupportedChainId) => void;
-    onSetPracticeNetwork?: (chain: SupportedChainId) => void;
-    squadRpcConfig?: SquadRpcConfig | null;
-    onSetSquadRpcPrimary?: (url: string) => string | void | Promise<string | void>;
-    onSetSquadRpcBackup?: (url: string) => string | void | Promise<string | void>;
-    onClearSquadRpcPrimary?: () => void | Promise<void>;
     privilegesAdmin?: ResolvedSquadAdminContext | null;
     pactoGovRevision?: string;
     memberEvmOptions?: { address: string; label: string }[];
@@ -77,11 +54,7 @@
 </script>
 
 <div class="settings-stack">
-  <SquadIdentitySection {squad} />
-
   <SquadJoinRequestsPanel {squad} />
-
-  <SquadBroadcastSettingsSection {squad} />
 
   <SquadPrivilegesSection
     {parentId}
@@ -91,23 +64,6 @@
   />
 
   <SquadContentPolicySection parentId={squad.id} mlsGroupId={resolvePollsMlsGroupId(squad)} />
-
-  <SquadStickersSection {squad} {announcementsGroupId} />
-
-  <SquadNetworkSection
-    {primaryNetwork}
-    {practiceNetwork}
-    {onSetPrimaryNetwork}
-    {onSetPracticeNetwork}
-  />
-
-  <SquadEndpointsPanel
-    squadNetwork={primaryNetwork}
-    {squadRpcConfig}
-    {onSetSquadRpcPrimary}
-    {onSetSquadRpcBackup}
-    {onClearSquadRpcPrimary}
-  />
 
   <JoinInboxHoldersSection
     {announcementsGroupId}

@@ -14,6 +14,7 @@ import {
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   isVirtualHubChannelId,
+  type SettingsChannelMode,
   type Squad,
 } from '../../stores/app';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
@@ -33,7 +34,13 @@ import { get } from 'svelte/store';
  * can land a member in the exact canonical home an item resolves in.
  */
 export type NavigationTarget =
-  | { kind: 'squad-channel'; squadId: string; channelId: string; hubChannelName?: string | null }
+  | {
+      kind: 'squad-channel';
+      squadId: string;
+      channelId: string;
+      hubChannelName?: string | null;
+      settingsMode?: SettingsChannelMode;
+    }
   | { kind: 'squad-dashboard'; squadId: string }
   | { kind: 'dm'; npub: string }
   /** `#events` (announcements group) with one event's detail open. */
@@ -72,11 +79,16 @@ export function openSquadWargame(parentId: string): void {
   navigateToSquadChannel(id, SQUAD_WARGAME_CHANNEL_ID);
 }
 
-/** Open a squad's #settings channel in Squad mode. */
-export function openSquadSettings(parentId: string): void {
+/** Open a squad's #settings channel. Privileges CTAs land on Access. */
+export function openSquadSettings(parentId: string, mode: SettingsChannelMode = 'access'): void {
   const id = parentId.trim();
   if (!id) return;
-  navigateToTarget({ kind: 'squad-channel', squadId: id, channelId: SETTINGS_CHANNEL_ID });
+  navigateToTarget({
+    kind: 'squad-channel',
+    squadId: id,
+    channelId: SETTINGS_CHANNEL_ID,
+    settingsMode: mode,
+  });
 }
 
 /** Full navigation state change for landing on a DM peer's thread. */
@@ -100,8 +112,8 @@ export function navigateToTarget(target: NavigationTarget): void {
     focusSquadEvent(target.squadId, target.eventId);
     return;
   }
-  if (target.channelId === SETTINGS_CHANNEL_ID) {
-    settingsChannelMode.set('squad');
+  if (target.channelId === SETTINGS_CHANNEL_ID && target.settingsMode) {
+    settingsChannelMode.set(target.settingsMode);
   }
   navigateToSquadChannel(target.squadId, target.channelId, target.hubChannelName);
 }
@@ -120,7 +132,7 @@ export function parseEventReminderSourceId(sourceEventId: string): { eventId: st
  * (R22): a real squad channel group id, a DM npub, or — for `action_prompt`
  * entries recorded against a squad's announcements channel (the governance
  * roster-key prompt and pending join requests both use that fallback id,
- * since neither is tied to one specific channel) — `#settings` for
+ * since neither is tied to one specific channel) — `#settings` Access for
  * `join-request:*` items and the squad dashboard for other prompts.
  * `event_reminder` entries open that event's detail in `#events`.
  * Returns `null` for a reference that resolves to nothing (a bug in the
@@ -146,7 +158,12 @@ export function resolveCatchUpTarget(
     }
     if (entry.kind === 'action_prompt' && channel.name === ANNOUNCEMENTS_CHANNEL_NAME) {
       if (entry.sourceEventId?.startsWith('join-request:')) {
-        return { kind: 'squad-channel', squadId: squad.id, channelId: SETTINGS_CHANNEL_ID };
+        return {
+          kind: 'squad-channel',
+          squadId: squad.id,
+          channelId: SETTINGS_CHANNEL_ID,
+          settingsMode: 'access',
+        };
       }
       return { kind: 'squad-dashboard', squadId: squad.id };
     }

@@ -126,16 +126,16 @@ describe('openSquadSettings', () => {
     lastOpenedChannelId.set(null);
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
-    settingsChannelMode.set('personal');
+    settingsChannelMode.set('you');
     squads.set([]);
   });
 
-  it('opens #settings in squad mode', () => {
+  it('opens #settings in access mode', () => {
     openSquadSettings('squad-123');
     expect(get(activeTopNavTab)).toBe('squads');
     expect(get(activeSquadId)).toBe('squad-123');
     expect(get(activeChannelId)).toBe(SETTINGS_CHANNEL_ID);
-    expect(get(settingsChannelMode)).toBe('squad');
+    expect(get(settingsChannelMode)).toBe('access');
     expect(get(activeView)).toBe('hub');
   });
 
@@ -143,7 +143,7 @@ describe('openSquadSettings', () => {
     openSquadSettings('   ');
     expect(get(activeTopNavTab)).toBe('commons');
     expect(get(activeSquadId)).toBeNull();
-    expect(get(settingsChannelMode)).toBe('personal');
+    expect(get(settingsChannelMode)).toBe('you');
   });
 });
 
@@ -159,7 +159,7 @@ describe('navigateToTarget', () => {
     lastOpenedChannelId.set(null);
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
-    settingsChannelMode.set('personal');
+    settingsChannelMode.set('you');
     squads.set([squad('squad-1', [{ name: 'announcements', groupId: 'grp-announce' }, { name: 'polls', groupId: 'grp-polls' }])]);
   });
 
@@ -189,10 +189,21 @@ describe('navigateToTarget', () => {
     expect(get(activeView)).toBe('hub');
   });
 
-  it('a #settings channel target opens squad mode', () => {
+  it('a #settings channel target without settingsMode keeps the current pane', () => {
     navigateToTarget({ kind: 'squad-channel', squadId: 'squad-1', channelId: SETTINGS_CHANNEL_ID });
     expect(get(activeChannelId)).toBe(SETTINGS_CHANNEL_ID);
-    expect(get(settingsChannelMode)).toBe('squad');
+    expect(get(settingsChannelMode)).toBe('you');
+  });
+
+  it('a #settings channel target with settingsMode selects that pane', () => {
+    navigateToTarget({
+      kind: 'squad-channel',
+      squadId: 'squad-1',
+      channelId: SETTINGS_CHANNEL_ID,
+      settingsMode: 'network',
+    });
+    expect(get(activeChannelId)).toBe(SETTINGS_CHANNEL_ID);
+    expect(get(settingsChannelMode)).toBe('network');
   });
 
   it('a squad-event target focuses that event', () => {
@@ -226,12 +237,17 @@ describe('resolveCatchUpTarget', () => {
     expect(target).toEqual({ kind: 'squad-dashboard', squadId: 'squad-1' });
   });
 
-  it('resolves a join-request action_prompt to #settings', () => {
+  it('resolves a join-request action_prompt to #settings Access', () => {
     const target = resolveCatchUpTarget(
       { chatId: 'grp-announce', kind: 'action_prompt', sourceEventId: 'join-request:evt-1' },
       testSquads,
     );
-    expect(target).toEqual({ kind: 'squad-channel', squadId: 'squad-1', channelId: SETTINGS_CHANNEL_ID });
+    expect(target).toEqual({
+      kind: 'squad-channel',
+      squadId: 'squad-1',
+      channelId: SETTINGS_CHANNEL_ID,
+      settingsMode: 'access',
+    });
   });
 
   it('resolves an action_prompt entry on a non-announcements channel to that channel directly', () => {

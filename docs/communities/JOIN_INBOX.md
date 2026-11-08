@@ -16,7 +16,7 @@ Private Commons join: requesters **DM the squad Join inbox** (shared Nostr ident
 
 ## Channel backing
 
-`join_requests` is a **virtual bucket** on the **announcements MLS group** (same physical `groupId` as `#announcements` / `#personal-alerts` / `#polls`). UI surfaces pending requests under **`#settings` → Squad → Join requests**.
+`join_requests` is a **virtual bucket** on the **announcements MLS group** (same physical `groupId` as `#announcements` / `#personal-alerts` / `#polls`). UI surfaces pending requests under **`#settings` → Access → Join requests**.
 
 | UI / wire | Bucket | Notes |
 |---------|--------|--------|
