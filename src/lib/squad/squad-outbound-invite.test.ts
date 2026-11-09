@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn(),
   getDmMessages: vi.fn().mockResolvedValue([]),
-  getMlsGroupMembers: vi.fn().mockResolvedValue({ members: [], admins: [] }),
+  getMlsGroupMembers: vi.fn().mockResolvedValue({
+    group_id: 'g-ann',
+    members: [],
+    admins: [],
+    pending_welcomes: [],
+  }),
 }));
 
 vi.mock('../parent-navbar', () => ({
@@ -247,7 +252,12 @@ describe('squad-outbound-invite flows', () => {
     resetOutboundInviteState();
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
     vi.mocked(getDmMessages).mockReset().mockResolvedValue([]);
-    vi.mocked(getMlsGroupMembers).mockReset().mockResolvedValue({ members: [], admins: [] });
+    vi.mocked(getMlsGroupMembers).mockReset().mockResolvedValue({
+      group_id: 'g-ann',
+      members: [],
+      admins: [],
+      pending_welcomes: [],
+    });
     vi.mocked(admitMemberToSquad).mockReset().mockResolvedValue({
       ok: true,
       announcementsOk: true,
@@ -496,7 +506,12 @@ describe('squad-outbound-invite flows', () => {
         at: 20,
       },
     ] as never);
-    vi.mocked(getMlsGroupMembers).mockResolvedValue({ members: ['npub-bob'], admins: [] });
+    vi.mocked(getMlsGroupMembers).mockResolvedValue({
+      group_id: 'g-ann',
+      members: ['npub-bob'],
+      admins: [],
+      pending_welcomes: [],
+    });
 
     const pending = await loadPendingOutboundInvitesFromMls('g-ann');
     expect(pending).toEqual([

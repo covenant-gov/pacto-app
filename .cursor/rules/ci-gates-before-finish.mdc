@@ -1,0 +1,30 @@
+---
+description: Cursor agents must run frontend CI gates before finishing work or committing/pushing
+alwaysApply: true
+---
+
+# CI gates before finish / commit (Cursor agents)
+
+After any substantive code change under `src/`, `src-tauri/` that affects shared TS, i18n catalogs, or CI scripts — and **before**:
+
+- declaring a plan or implementation “done” / complete
+- creating a git commit (when the user explicitly asked to commit — see [no-unrequested-commits.mdc](no-unrequested-commits.mdc))
+- pushing (when the user explicitly asked to push), if these gates were not just run clean
+
+run and fix until green (same commands as the CI `typecheck` and `lint` jobs):
+
+```bash
+pnpm check
+pnpm lint
+pnpm check:tauri-commands
+pnpm check:i18n-toasts
+```
+
+## Rules of engagement
+
+- Do **not** treat failures in files you touched, or elsewhere on the current branch, as “pre-existing / out of scope” without verifying against `main`. Fix them, or stop and report the blocker.
+- Docs-only / no-code turns follow [ask-when-no-code.mdc](ask-when-no-code.mdc) — skip this gate.
+- Pure `src-tauri/` work: still run the four commands above if any `src/`, locale, or script CI cares about also changed. Rust unit tests remain as in `AGENTS.md`; this rule’s mandatory bar is the frontend CI gate that has been failing PRs.
+- Report gate results briefly in the handoff (pass / fail + what you fixed).
+
+This does not grant commit or push permission.
