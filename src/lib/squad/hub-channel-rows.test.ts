@@ -63,4 +63,25 @@ describe('ensureDefaultHubChannelRows', () => {
     const creating = [{ name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'creating-1', order: 0 }];
     expect(ensureDefaultHubChannelRows(creating)).toBe(creating);
   });
+
+  it('backfills board on announcements group when shelves sit on a different MLS group', () => {
+    const persisted = [
+      { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g1', order: 0 },
+      { name: EVENTS_CHANNEL_NAME, groupId: 'g2', order: 1 },
+      { name: 'ops', groupId: 'g-ops', order: 2 },
+    ];
+    expect(ensureDefaultHubChannelRows(persisted)).toEqual([
+      { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g1', order: 0 },
+      { name: 'ops', groupId: 'g-ops', order: 2 },
+      { name: BOARD_CHANNEL_NAME, groupId: 'g1', order: 3 },
+    ]);
+  });
+
+  it('leaves announcements and board on distinct group ids unchanged', () => {
+    const split = [
+      { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'a', order: 0 },
+      { name: BOARD_CHANNEL_NAME, groupId: 'b', order: 1 },
+    ];
+    expect(ensureDefaultHubChannelRows(split)).toEqual(split);
+  });
 });

@@ -60,7 +60,7 @@ import {
   NEW_CHAT_DRAFT_MESSAGE_PREFIX,
 } from './dm';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
-import { normalizeHubChannelName } from './squads';
+import { migrateLastHubChannelNamesBySquad } from '../lib/squad/hub-channel-names';
 import { hydrateLocale } from './locale';
 import { loadStartupCheckPreference } from './startup-check';
 import { loadSendTypingIndicatorsPreference } from './typing-indicators';
@@ -139,18 +139,18 @@ export function loadAccountState(npub: string): void {
         lastChannelBySquadId.set({});
       }
     }
+    let boardModeFromLegacyShelf: 'polls' | 'events' | 'docs' | null = null;
     const rawHubBySquad = localStorage.getItem(`${LAST_HUB_CHANNEL_NAME_BY_SQUAD_PREFIX}_${npub}`);
     if (rawHubBySquad) {
       try {
         const parsed = JSON.parse(rawHubBySquad) as unknown;
         if (typeof parsed === 'object' && parsed !== null) {
-          const normalized: Record<string, string> = {};
-          for (const [sid, name] of Object.entries(parsed as Record<string, string>)) {
-            if (typeof name !== 'string') continue;
-            const hub = normalizeHubChannelName(name);
-            if (hub) normalized[sid] = hub;
-          }
-          lastHubChannelNameBySquadId.set(normalized);
+          const { hubs, boardModeFromLegacy } = migrateLastHubChannelNamesBySquad(
+            parsed as Record<string, string>,
+            lastSquad,
+          );
+          boardModeFromLegacyShelf = boardModeFromLegacy;
+          lastHubChannelNameBySquadId.set(hubs);
         } else {
           lastHubChannelNameBySquadId.set({});
         }
@@ -174,7 +174,13 @@ export function loadAccountState(npub: string): void {
     const rawSettingsChannelMode = localStorage.getItem(`${SETTINGS_CHANNEL_MODE_PREFIX}_${npub}`);
     settingsChannelMode.set(parseSettingsChannelMode(rawSettingsChannelMode));
     const rawBoardChannelMode = localStorage.getItem(`${BOARD_CHANNEL_MODE_PREFIX}_${npub}`);
-    squadBoardChannelMode.set(parseSquadBoardChannelMode(rawBoardChannelMode));
+    if (rawBoardChannelMode != null && rawBoardChannelMode.trim() !== '') {
+      squadBoardChannelMode.set(parseSquadBoardChannelMode(rawBoardChannelMode));
+    } else if (boardModeFromLegacyShelf) {
+      squadBoardChannelMode.set(boardModeFromLegacyShelf);
+    } else {
+      squadBoardChannelMode.set(parseSquadBoardChannelMode(rawBoardChannelMode));
+    }
   } catch {
     // ignore parse errors
   }

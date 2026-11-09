@@ -72,3 +72,27 @@ export function boardModeFromObsoleteHubName(
   }
   return null;
 }
+
+/**
+ * Normalize persisted hub names to current slugs, capturing board mode from the
+ * last-opened squad's raw obsolete shelf name before it becomes `board`.
+ */
+export function migrateLastHubChannelNamesBySquad(
+  entries: Record<string, string>,
+  lastOpenedSquadId: string | null | undefined,
+): {
+  hubs: Record<string, string>;
+  boardModeFromLegacy: 'polls' | 'events' | 'docs' | null;
+} {
+  const hubs: Record<string, string> = {};
+  let boardModeFromLegacy: 'polls' | 'events' | 'docs' | null = null;
+  const last = lastOpenedSquadId?.trim() || null;
+  for (const [sid, name] of Object.entries(entries)) {
+    if (typeof name !== 'string') continue;
+    const mode = boardModeFromObsoleteHubName(name);
+    if (mode && last && sid === last) boardModeFromLegacy = mode;
+    const hub = normalizeHubChannelName(name);
+    if (hub) hubs[sid] = hub;
+  }
+  return { hubs, boardModeFromLegacy };
+}

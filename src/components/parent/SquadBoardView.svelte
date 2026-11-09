@@ -2,12 +2,15 @@
   import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
   import { BOARD_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import { withPendingBoardFocusModes } from '../../lib/squad/board-visited-modes';
   import { resolvePollsMlsGroupId } from '../../lib/parent-navbar';
   import {
     BOARD_CHANNEL_MODES,
     squadBoardChannelMode,
     type SquadBoardChannelMode,
   } from '../../stores/navigation';
+  import { eventsFocus } from '../../stores/events-navigation';
+  import { docsFocus } from '../../stores/docs-navigation';
   import HubChannelHeader from './HubChannelHeader.svelte';
   import HubModeSwitcher from './HubModeSwitcher.svelte';
   import {
@@ -25,8 +28,17 @@
   let visitedBoardModes = $state(new Set<SquadBoardChannelMode>([$squadBoardChannelMode]));
   $effect(() => {
     const mode = boardMode;
-    if (visitedBoardModes.has(mode)) return;
-    visitedBoardModes = new Set([...visitedBoardModes, mode]);
+    const pid = parentId;
+    const next = withPendingBoardFocusModes(visitedBoardModes, mode, {
+      seedEvents: $eventsFocus?.parentId === pid,
+      seedDocs: $docsFocus?.parentId === pid,
+    });
+    if (
+      next.size !== visitedBoardModes.size ||
+      [...next].some((m) => !visitedBoardModes.has(m))
+    ) {
+      visitedBoardModes = next;
+    }
   });
 
   function selectBoardMode(mode: SquadBoardChannelMode) {

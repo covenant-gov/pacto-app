@@ -51,7 +51,13 @@ export function ensureDefaultHubChannelRows(channels: HubChannelRow[]): HubChann
   const singleGroupDefault =
     mlsDefaults.length <= 1 || mlsDefaults.every((c) => c.groupId === ann!.groupId);
   if (!singleGroupDefault) {
-    return channels.filter((c) => !OBSOLETE_DEFAULT_HUB_NAMES.has(c.name));
+    const withoutObsolete = channels.filter((c) => !OBSOLETE_DEFAULT_HUB_NAMES.has(c.name));
+    if (withoutObsolete.some((c) => c.name === BOARD_CHANNEL_NAME)) return withoutObsolete;
+    const maxOrder = withoutObsolete.reduce((m, c) => Math.max(m, c.order), -1);
+    return [
+      ...withoutObsolete,
+      { name: BOARD_CHANNEL_NAME, groupId: gid, order: maxOrder + 1 },
+    ];
   }
 
   const merged = defaultChannelRowsForGroupId(gid);

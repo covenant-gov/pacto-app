@@ -234,6 +234,43 @@ describe('navigateToTarget', () => {
     expect(get(activeHubChannelName)).toBe('board');
     expect(get(squadBoardChannelMode)).toBe('events');
   });
+
+  it('a later squad-event target for another squad replaces focus and opens that board events mode', () => {
+    squads.set([
+      squad('squad-a', [
+        { name: 'announcements', groupId: 'grp-a' },
+        { name: 'board', groupId: 'grp-a' },
+      ]),
+      squad('squad-b', [
+        { name: 'announcements', groupId: 'grp-b' },
+        { name: 'board', groupId: 'grp-b' },
+      ]),
+    ]);
+    navigateToTarget({
+      kind: 'squad-event',
+      squadId: 'squad-a',
+      channelId: 'grp-a',
+      hubChannelName: 'events',
+      eventId: 'evt-a',
+    });
+    squadBoardChannelMode.set('docs');
+    mocks.eventsFocusSet.mockReset();
+    navigateToTarget({
+      kind: 'squad-event',
+      squadId: 'squad-b',
+      channelId: 'grp-b',
+      hubChannelName: 'events',
+      eventId: 'evt-b',
+    });
+    expect(mocks.eventsFocusSet).toHaveBeenCalledWith({
+      parentId: 'squad-b',
+      eventId: 'evt-b',
+      seriesId: null,
+    });
+    expect(get(activeSquadId)).toBe('squad-b');
+    expect(get(activeHubChannelName)).toBe('board');
+    expect(get(squadBoardChannelMode)).toBe('events');
+  });
 });
 
 describe('resolveCatchUpTarget', () => {

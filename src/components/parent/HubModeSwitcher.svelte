@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { nextHubModeIndex } from '../../lib/ui/hub-mode-tab-keyboard';
+
   let {
     modes,
     active,
@@ -14,18 +16,37 @@
     onSelect: (mode: string) => void;
     onIntent?: (mode: string) => void;
   } = $props();
+
+  function selectAt(index: number, currentTarget: HTMLElement) {
+    const mode = modes[index];
+    if (!mode) return;
+    onSelect(mode);
+    const buttons = currentTarget
+      .closest('[role="tablist"]')
+      ?.querySelectorAll<HTMLElement>('[role="tab"]');
+    buttons?.[index]?.focus();
+  }
+
+  function onTabKeydown(event: KeyboardEvent, index: number) {
+    const next = nextHubModeIndex(modes.length, index, event.key);
+    if (next == null) return;
+    event.preventDefault();
+    selectAt(next, event.currentTarget as HTMLElement);
+  }
 </script>
 
 <div class="hub-view-nav" role="tablist" aria-label={ariaLabel}>
   <div class="hub-mode-switcher" role="group">
-    {#each modes as mode (mode)}
+    {#each modes as mode, index (mode)}
       <button
         type="button"
         role="tab"
         class="hub-mode-segment"
         class:active={active === mode}
         aria-selected={active === mode}
+        tabindex={active === mode ? 0 : -1}
         onclick={() => onSelect(mode)}
+        onkeydown={(e) => onTabKeydown(e, index)}
         onmouseenter={() => onIntent?.(mode)}
         onfocus={() => onIntent?.(mode)}
       >
