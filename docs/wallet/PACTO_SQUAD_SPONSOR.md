@@ -2,13 +2,13 @@
 
 Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory). Sources live upstream only — **not** vendored as a full contract tree in this app repo.
 
-**Canonical source:** [github.com/covenant-gov/pacto-squad-sponsor](https://github.com/covenant-gov/pacto-squad-sponsor) (`dev` branch during active development). Desktop client guide: upstream `docs/DESKTOP_CLIENT_INTEGRATION.md`.
+**Canonical source:** [github.com/covenant-gov/pacto-squad-sponsor](https://github.com/covenant-gov/pacto-squad-sponsor) (`dev` branch during active development). Desktop client guide: upstream [`docs/DESKTOP_CLIENT_INTEGRATION.md`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/docs/DESKTOP_CLIENT_INTEGRATION.md). Locked pool decisions: upstream [`docs/TECH_SPEC.md`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/docs/TECH_SPEC.md) D1 / D10.
 
 ## How Pacto uses it
 
 | Concern | Where in Pacto |
 |---------|----------------|
-| Alloy bindings | `src-tauri/src/evm/contracts/pacto_sponsor/mod.rs` |
+| Alloy bindings | `src-tauri/src/evm/contracts/pacto_sponsor/mod.rs` (clone + factory create/read; **not yet** `ISquadSponsorPool` / `poolOf` / `spendSlots` / `createFreshPool`) |
 | Deploy + read | `squad_sponsor_deploy.rs` (Ext + hats), `squad_sponsor_deposit.rs`, `squad_sponsor_read.rs`, `squad_sponsor_ext.rs` |
 | AuthZ helpers | `squad_sponsor_common.rs` (parent membership, duplicate preflight, signer wallet parse) |
 | Sponsored gov writes | `sponsor_paymaster.rs`, `sponsor_userop.rs`, hooked from `gov_module_write.rs` |
@@ -18,7 +18,22 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 
 **On-chain squad key:** `squadId = keccak256(utf8(parent_id))` where `parent_id` is the squad or network root id in the app.
 
-**Default path:** Launchpad **Deploy Pacto Gov + squad sponsor** — Nave Pirata first, then `createSquadSponsor(squadId, topHatId, registry, [])` so eligibility is captain/crew hat wearers. **Initial pool deposit is optional (0 ETH)** — fund later from Governance → Sponsor treasury. Optional `bootstrapCrew` in the same wizard. If gov already exists and sponsor is missing, the same wizard finishes hats sponsor only (empty parent slot → `createSquadSponsor`; already-wired Ext or a hats clone stays `ALREADY_DEPLOYED`).
+### Primary pool and spend slots
+
+Not a chain-wide ETH vault. Each **parent** (`parentSquadId = keccak256(parentId)`) gets **one primary `SquadSponsorPool`** per chain. ETH and share accounting live on that pool. Eligibility lives on **sponsor clones**. The paymaster only spends when the UserOp’s clone occupies a pool spend slot (`pool.spendSlots()`):
+
+| Slot | Who occupies it | Create path |
+|------|-----------------|-------------|
+| `defacto` | Live / production Ext or hats clone at `parentSquadId` | `createSquadSponsor` / `createSquadSponsorExt` |
+| `wargame` | Active war-game round clone at `warGameSquadId(parent, round)` | `createWarGameSponsor` (app path; Ext variant exists upstream) |
+
+Live and war-game sponsorship for the **same** parent share that primary vault with different eligibility trees. A different parent gets a different pool. Sepolia is the same model as other chains. First create get-or-creates `factory.poolOf(parentSquadId)`; create `msg.value` credits the **parent pool**. Optional `createFreshPool` is an escape hatch (new empty vault; old shares stay on the old pool) — not the app default.
+
+War-game rounds deploy a **new** eligibility clone each time and overwrite the `wargame` slot. Prior round clones stay factory-registered for history but are unslotted and cannot spend. Withdraw leftover shares from the **parent pool** (`sponsor.pool()` / `factory.poolOf(parentSquadId)`), not from a retired clone. War-game create never occupies production `squads[parentSquadId]`. Details and war-game deploy sequence: [WAR_GAME_MODE.md](../governance/WAR_GAME_MODE.md).
+
+**Global username sponsorship** (`SponsorPolicyRegistry` / global paymaster in pacto-username-nft) is a separate funding path. It does not replace `SquadSponsorPool`.
+
+**Default path:** Launchpad **Deploy Pacto Gov + squad sponsor** — Nave Pirata first, then `createSquadSponsor(squadId, topHatId, registry, [])` so eligibility is captain/crew hat wearers (pool `defacto`). **Initial pool deposit is optional (0 ETH)** — fund later from Governance → Sponsor treasury. Optional `bootstrapCrew` in the same wizard. If gov already exists and sponsor is missing, the same wizard finishes hats sponsor only (empty parent slot → `createSquadSponsor`; already-wired Ext or a hats clone stays `ALREADY_DEPLOYED`).
 
 **Advanced Ext:** Launchpad **Advanced → Deploy squad sponsor (Ext)** — `createSquadSponsorExt(squadId, addressOwner)` with `addressOwner` = roster EVM; any parent member may deploy before Pacto Gov exists. Gas/deposit may come from Default; initial deposit is optional. An unwired Ext can later hats-wire via `postInitialize` (**`addressOwner` only**). After Pacto Gov exists, any member may deploy a hats-linked sponsor on an empty slot (Scenario A). War-game deploy does **not** create that parent Ext.
 
@@ -35,7 +50,7 @@ Squad sponsorship is **per-parent** — guest eligibility on squad A never bills
 
 ### Factory deploys
 
-`deploy_gas_router` uses the same eligible-member ordering with **no squad arm** (factories bill global topHat when eligible, else EOA). `msg.value` on create calls (optional squad sponsor deposit) still requires signer ETH; gas may be globally sponsored. Initial sponsor deposit **may be zero**; fund the clone pool later via Treasury.
+`deploy_gas_router` uses the same eligible-member ordering with **no squad arm** (factories bill global topHat when eligible, else EOA). `msg.value` on create calls (optional squad sponsor deposit) still requires signer ETH; gas may be globally sponsored. Initial sponsor deposit **may be zero**; fund the parent sponsor pool later via Treasury.
 
 Deploy modules wired: Nave Pirata, hats/ext squad sponsor, squad admin standalone, war-game sponsor, Safe proxy (when `parent_id` is set for roster/global path).
 
@@ -120,7 +135,7 @@ Do **not** use eth-infinitism `Simple7702Account` at `0xe6Cae83BdE06E4c305530e19
 
 ## Manual smoke (Sepolia)
 
-See **[OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md)** and **[ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md)**. After an address-book pin: full-restart Tauri, recreate squad sponsor clones on the **current** factory from the book, fund the clone pool, then **0 ETH roster → sponsored Bootstrap crew** (section 1).
+See **[OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md)** and **[ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md)**. After an address-book pin: full-restart Tauri, recreate squad sponsor clones on the **current** factory from the book, fund the parent sponsor pool, then **0 ETH roster → sponsored Bootstrap crew** (section 1).
 
 ## Out of scope here
 
