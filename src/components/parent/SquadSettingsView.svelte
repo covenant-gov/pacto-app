@@ -11,15 +11,21 @@
   import { currentUser } from '../../stores/auth-session';
   import { profiles } from '../../stores/profiles';
   import {
+    SETTINGS_CHANNEL_MODES,
     settingsChannelMode,
     type SettingsChannelMode,
   } from '../../stores/navigation';
   import { getProfileDisplayName } from '../../lib/utils/profile';
+  import HubChannelHeader from './HubChannelHeader.svelte';
+  import HubModeSwitcher from './HubModeSwitcher.svelte';
   import {
-    loadDashboardSettingsTab,
+    loadDashboardSettingsAccessTab,
+    loadDashboardSettingsNetworkTab,
+    loadDashboardSettingsUsTab,
     loadMyDashboardAlertsTab,
     loadMyDashboardStatusTab,
   } from '../../lib/dashboard/dashboard-tab-components';
+  import SquadInviteExitHost from './dashboard/SquadInviteExitHost.svelte';
   import { fetchSquadMemberEvmByNpub } from '../../lib/dashboard/parent-dashboard-loaders';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
   import { ensureMlsGroupMembers, membersByGroupId } from '../../stores/mls-group-members';
@@ -159,51 +165,40 @@
     clearSquadRpcPrimary(npub, parentId.trim(), primaryNetwork);
     await publishSquadRpcUpdated(parentId.trim());
   }
+
+  let inviteExitHost: { openInvite: () => void; openExit: () => void } | undefined = $state();
+
+  function openInvite() {
+    inviteExitHost?.openInvite();
+  }
+
+  function openExitSquad() {
+    inviteExitHost?.openExit();
+  }
 </script>
 
 <div class="squad-settings">
-  <div class="dashboard-channel-header">
-    <div class="dashboard-channel-info">
-      <span class="dashboard-channel-icon">#</span>
-      <h3 class="dashboard-channel-name">{SETTINGS_CHANNEL_NAME}</h3>
-    </div>
-  </div>
-  <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.settingsChannelMode.section')}>
-    <div class="dashboard-mode-switcher" role="group">
-      <button
-        type="button"
-        role="tab"
-        class="dashboard-mode-segment"
-        class:active={settingsMode === 'personal'}
-        aria-selected={settingsMode === 'personal'}
-        onclick={() => selectSettingsMode('personal')}
-      >
-        {$t('governance.settingsChannelMode.personal')}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="dashboard-mode-segment"
-        class:active={settingsMode === 'squad'}
-        aria-selected={settingsMode === 'squad'}
-        onclick={() => selectSettingsMode('squad')}
-      >
-        {$t('governance.settingsChannelMode.squad')}
-      </button>
-    </div>
-  </div>
+  <HubChannelHeader channelName={SETTINGS_CHANNEL_NAME} />
+  <HubModeSwitcher
+    modes={SETTINGS_CHANNEL_MODES}
+    active={settingsMode}
+    ariaLabel={$t('governance.settingsChannelMode.section')}
+    labelFor={(mode) => $t(`governance.settingsChannelMode.${mode}`)}
+    onSelect={(mode) => selectSettingsMode(mode as SettingsChannelMode)}
+  />
   <div class="squad-settings-body">
-    {#if visitedSettingsModes.has('personal')}
+    {#if visitedSettingsModes.has('you')}
       <div
         class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={settingsMode === 'personal'}
-        hidden={settingsMode !== 'personal'}
+        class:dashboard-tab-pane-active={settingsMode === 'you'}
+        hidden={settingsMode !== 'you'}
       >
         {#await loadMyDashboardStatusTab() then StatusTab}
           <StatusTab
             {announcementsGroupId}
             parentId={parentId ?? ''}
             {squadMemberEvmByNpub}
+            onExitSquad={openExitSquad}
           >
             {#snippet afterChecklist()}
               {#await loadMyDashboardAlertsTab() then AlertsTab}
@@ -218,20 +213,51 @@
         {/await}
       </div>
     {/if}
-    {#if visitedSettingsModes.has('squad')}
+    {#if visitedSettingsModes.has('us')}
       <div
         class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={settingsMode === 'squad'}
-        hidden={settingsMode !== 'squad'}
+        class:dashboard-tab-pane-active={settingsMode === 'us'}
+        hidden={settingsMode !== 'us'}
       >
-        {#await loadDashboardSettingsTab() then SettingsTab}
-          <SettingsTab
+        {#await loadDashboardSettingsUsTab() then UsTab}
+          <UsTab squad={parent} {announcementsGroupId} />
+        {:catch}
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.us')}</p>
+        {/await}
+      </div>
+    {/if}
+    {#if visitedSettingsModes.has('access')}
+      <div
+        class="dashboard-tab-pane"
+        class:dashboard-tab-pane-active={settingsMode === 'access'}
+        hidden={settingsMode !== 'access'}
+      >
+        {#await loadDashboardSettingsAccessTab() then AccessTab}
+          <AccessTab
             squad={parent}
             {squadAdminCtx}
             {announcementsGroupId}
             parentId={parentId ?? ''}
             {channelMembers}
             {squadMemberEvmByNpub}
+            {privilegesAdmin}
+            {pactoGovRevision}
+            {memberEvmOptions}
+            onInvite={openInvite}
+          />
+        {:catch}
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.access')}</p>
+        {/await}
+      </div>
+    {/if}
+    {#if visitedSettingsModes.has('network')}
+      <div
+        class="dashboard-tab-pane"
+        class:dashboard-tab-pane-active={settingsMode === 'network'}
+        hidden={settingsMode !== 'network'}
+      >
+        {#await loadDashboardSettingsNetworkTab() then NetworkTab}
+          <NetworkTab
             {primaryNetwork}
             {practiceNetwork}
             onSetPrimaryNetwork={(chain) => setSlot('primary', chain)}
@@ -240,16 +266,14 @@
             onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
             onSetSquadRpcBackup={handleSetSquadRpcBackup}
             onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
-            {privilegesAdmin}
-            {pactoGovRevision}
-            {memberEvmOptions}
           />
         {:catch}
-          <p class="tab-error" role="alert">{$t('governance.tabLoadError.settings')}</p>
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.network')}</p>
         {/await}
       </div>
     {/if}
   </div>
+  <SquadInviteExitHost bind:this={inviteExitHost} squad={parent} />
 </div>
 
 <style>
@@ -258,72 +282,6 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-  }
-  .dashboard-channel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-subtle);
-    flex-shrink: 0;
-  }
-  .dashboard-channel-info {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .dashboard-channel-icon {
-    color: var(--text-muted);
-    font-weight: 600;
-  }
-  .dashboard-channel-name {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-  }
-  .dashboard-view-nav {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    height: 48px;
-    min-height: 48px;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-    flex-shrink: 0;
-  }
-  .dashboard-mode-switcher {
-    display: inline-flex;
-    align-items: stretch;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 3px;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
-  }
-  .dashboard-mode-segment {
-    padding: 0 14px;
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: color 0.15s, background-color 0.15s;
-  }
-  .dashboard-mode-segment:hover:not(.active) {
-    color: var(--text-secondary);
-    background: var(--bg-hover);
-  }
-  .dashboard-mode-segment:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-  }
-  .dashboard-mode-segment.active {
-    color: var(--text-primary);
-    background: var(--bg-elevated);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   }
   .squad-settings-body {
     flex: 1;

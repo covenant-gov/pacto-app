@@ -40,7 +40,7 @@ Wire/storage may still use `visibility: 'public' | 'private'` for Commons eligib
 Squad discovery cards are **authored by the Join inbox identity** (same UX as messaging a user from their card: DM the author). Only holders with a local secret can publish.
 
 - **Create with Commons on** → automatic **72 h `#new`** broadcast (exactly **3** tags from create form + reserved `#new`), signed by the Join inbox after `initJoinInbox`.
-- **Dashboard Settings → Commons on → broadcast** → duration + message modal; pick **exactly 3** tags (may differ from a prior broadcast; no `#new`).
+- **`#settings` → Us → Commons on → broadcast** → duration + message modal; pick **exactly 3** tags (may differ from a prior broadcast; no `#new`).
 - Cooldown copy when a broadcast is still active.
 
 ### Publish — user

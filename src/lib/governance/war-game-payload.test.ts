@@ -67,7 +67,7 @@ describe('warGameStatusAction', () => {
     expect(warGameStatusAction(false, true)).toBe('deploy');
   });
 
-  it('opens from #dashboard and redeploys from squad-wargame', () => {
+  it('opens from #governance and redeploys from #gov-practice', () => {
     expect(warGameStatusAction(true, false)).toBe('open');
     expect(warGameStatusAction(true, true)).toBe('redeploy');
   });

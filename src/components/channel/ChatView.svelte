@@ -11,18 +11,15 @@
   import { resolvePollsMlsGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
   import {
     groupTimelineKey,
-    defaultTrioSharesSingleMlsGroup,
+    defaultHubSharesSingleMlsGroup,
     announceCardAllowedForTimelineBucket,
     resolveVirtualBucketForTimelineMessage,
     type VirtualBucket,
   } from '../../lib/mls/virtual-channel-bucket';
   import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
-  import DashboardPollsPanel from '../parent/DashboardPollsPanel.svelte';
-  import SquadEventsPanel from '../parent/SquadEventsPanel.svelte';
-  import SquadDocsPanel from '../parent/SquadDocsPanel.svelte';
   import DocsChannelButton from '../parent/DocsChannelButton.svelte';
   import SaveToDocsDialog from '../parent/SaveToDocsDialog.svelte';
-  import { DOCS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import { TOOLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
   import {
     canOfferSaveToDocs,
     ensureSquadDocAddPolicy,
@@ -57,7 +54,6 @@
     parentCreateErrorById,
     ANNOUNCEMENTS_CHANNEL_NAME,
     POLLS_CHANNEL_NAME,
-    EVENTS_CHANNEL_NAME,
     isVirtualHubChannelId,
     membershipVersionByGroupId,
     mlsHistoryWelcomeGroupIds,
@@ -89,7 +85,6 @@
     incrementMentionAlert,
     clearMentionAlert,
   } from '../../stores/squad-hub-alerts';
-  import { markPollsChannelSeen } from '../../stores/polls-hub-alerts';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import friendsIcon from '../../icons/friends.svg';
   import { get } from 'svelte/store';
@@ -137,16 +132,10 @@
   $: currentUserNpub = $currentUser?.npub;
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
-  $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
-  $: isEventsChannel = (activeParent && activeChannel?.name === EVENTS_CHANNEL_NAME) ?? false;
-  $: isDocsChannel = (activeParent && activeChannel?.name === DOCS_CHANNEL_NAME) ?? false;
-  $: hideChannelOverflowMenu = isAnnouncementsChannel || isPollsChannel || isEventsChannel || isDocsChannel;
+  $: hideChannelOverflowMenu = isAnnouncementsChannel;
   /** Squad chat timeline (announcements or a custom channel): offers Save to Docs and the channel docs shortcut. */
   $: isSquadChatChannel =
     !!activeParent &&
-    !isPollsChannel &&
-    !isEventsChannel &&
-    !isDocsChannel &&
     !isVirtualHubChannelId($activeChannelId);
   $: docsAnnouncementsGroupId = activeParent ? resolvePollsMlsGroupId(activeParent) : null;
   $: if (isSquadChatChannel && activeParent && docsAnnouncementsGroupId) {
@@ -203,7 +192,7 @@
     !!activeParent &&
     !!$activeChannelId &&
     !isVirtualHubChannelId($activeChannelId) &&
-    defaultTrioSharesSingleMlsGroup(activeParent.channels);
+    defaultHubSharesSingleMlsGroup(activeParent.channels);
 
   $: selectedVirtualBucket = activeChannel ? channelNameToVirtualBucket(activeChannel.name) : null;
 
@@ -575,6 +564,8 @@
     if (matches.length === 0) return null;
     if (matches.length === 1) return matches[0].name;
     if (bucket === 'polls') {
+      const tools = matches.find((c) => c.name === TOOLS_CHANNEL_NAME);
+      if (tools) return tools.name;
       const polls = matches.find((c) => c.name === POLLS_CHANNEL_NAME);
       if (polls) return polls.name;
     }
@@ -636,16 +627,13 @@
   }
 
   // Clear the mention badge when the user opens or scrolls-to-bottom of a squad channel.
-  // `#polls` shares the announcements MLS id — mark poll creates seen only; do not clear group unread.
   let lastClearedMentionKey: string | null = null;
   $: if (activeSquad && activeChannel) {
     const key = `${activeSquad.id}:${activeChannel.name}`;
     if (lastClearedMentionKey !== key) {
       lastClearedMentionKey = key;
       clearMentionAlert(activeSquad.id, activeChannel.name);
-      if (isPollsChannel && activeParent?.id) {
-        void markPollsChannelSeen(activeParent.id);
-      } else if (!isEventsChannel && !isDocsChannel && $activeChannelId) {
+      if ($activeChannelId) {
         markAsRead($activeChannelId, null).catch(() => {});
       }
     }
@@ -656,7 +644,7 @@
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     if (isNearBottom && activeSquad && activeChannel) {
       clearMentionAlert(activeSquad.id, activeChannel.name);
-      if (!isPollsChannel && $activeChannelId) {
+      if ($activeChannelId) {
         markAsRead($activeChannelId, null).catch(() => {});
       }
     }
@@ -864,25 +852,7 @@
       <p class="channel-send-error" role="alert">{leaveChannelError}</p>
     {/if}
 
-    {#if isPollsChannel && activeParent}
-      <div class="polls-channel-body">
-        <DashboardPollsPanel
-          parentId={activeParent.id}
-          pollsMlsGroupId={resolvePollsMlsGroupId(activeParent)}
-          variant="channel"
-          fillParent
-        />
-      </div>
-    {:else if isEventsChannel && activeParent}
-      <div class="polls-channel-body">
-        <SquadEventsPanel parentId={activeParent.id} mlsGroupId={resolvePollsMlsGroupId(activeParent)} />
-      </div>
-    {:else if isDocsChannel && activeParent}
-      <div class="polls-channel-body">
-        <SquadDocsPanel parentId={activeParent.id} mlsGroupId={resolvePollsMlsGroupId(activeParent)} />
-      </div>
-    {:else}
-      <div class="messages-container" bind:this={messagesContainer} onscroll={handleMessagesScroll}>
+    <div class="messages-container" bind:this={messagesContainer} onscroll={handleMessagesScroll}>
       <div class="messages-list">
         {#if isChannelCreating}
           <p class="channel-creating-message">{$t('messaging.channel.creatingMessage')}</p>
@@ -979,7 +949,6 @@
         repliedToPreview={replyPreview}
         onCancelReply={cancelReply}
       />
-    {/if}
     {/if}
 
     {#if saveToDocsRequest && activeParent && docsAnnouncementsGroupId}
@@ -1151,14 +1120,6 @@
     height: 20px;
     display: block;
     filter: var(--icon-dropdown-filter);
-  }
-
-  .polls-channel-body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
   }
 
   .channel-menu-dropdown {

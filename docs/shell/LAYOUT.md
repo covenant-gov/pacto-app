@@ -10,8 +10,11 @@ How the logged-in app shell is split after the SM refactor: **Svelte orchestrate
 src/routes/+page.svelte                    thin lazy loader → AuthenticatedApp
 src/components/app/AuthenticatedApp.svelte layout, tab routing, DM send/typing; mounts app event bridge
 src/components/layout/ParentNavbar.svelte   sidebar + modals → lib/parent/* flows
-src/components/parent/ParentDashboard.svelte   #squad-dashboard tab shell (Status→Governance→Treasury→Crew)
-src/components/parent/SquadSettingsView.svelte #settings virtual channel (username | Squad modes)
+src/components/parent/ParentDashboard.svelte   #governance / #gov-practice tab shell (Status→Governance→Treasury→Crew)
+src/components/parent/SquadSettingsView.svelte #settings virtual channel (You | Us | Access | Network)
+src/components/parent/SquadToolsView.svelte    #tools shelf (Polls | Events | Docs); mounted from SquadHubMain, not ChatView
+src/components/parent/HubChannelHeader.svelte  shared `#name` hub header
+src/components/parent/HubModeSwitcher.svelte   shared segmented mode switcher
 src/components/dm/DmThread.svelte             header/input/options + DmMessageRouter
 src/stores/app.ts                 thin re-export barrel (navigation, dm, squads, mls-chat, persistence)
 ```
@@ -24,9 +27,9 @@ src/stores/app.ts                 thin re-export barrel (navigation, dm, squads,
 
 Pinned system channels stay **above** a thin gray divider; member-created MLS channels stay **below**.
 
-**Pinned order:** `squad-dashboard` → `squad-wargame` (when Active) → `announcements` → `polls` → `settings`
+**Pinned order:** `governance` → `gov-practice` (when Active) → `announcements` → `tools` → `settings`
 
-`personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **`#settings` → username mode → Alerts** and **`#settings` → Squad mode → Join requests**. Persisted `__my_dashboard__` remaps to `#settings`.
+`personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **`#settings` → You → Alerts** and **`#settings` → Access → Join requests**. Persisted `__my_dashboard__` remaps to `#settings`.
 
 ---
 
@@ -34,7 +37,7 @@ Pinned system channels stay **above** a thin gray divider; member-created MLS ch
 
 | Module | Owns |
 |--------|------|
-| `navigation.ts` | Top nav, squad/channel selection, squad dashboard and settings channel modes, last-opened maps |
+| `navigation.ts` | Top nav, squad/channel selection, governance / settings / tools channel modes, last-opened maps |
 | `dm.ts` | DMs, inbox, sync, typing, wallet sidebar, `DmMessage` |
 | `squads.ts` | `Squad`, channels, treasury/infra maps, parent create state |
 | `mls-chat.ts` | Group messages, welcomes, membership version |
@@ -57,7 +60,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `parent/exit-parent-flow.ts` | Local remove + MLS leave with revert on failure |
 | `squad-pair-create.ts` | Pair create + `retryParentAnnouncementsCreate` |
 | `dm/resolve-dm-message-presentation.ts` | DM content → presentation kind (pure) |
-| `dashboard/parent-dashboard-loaders.ts` | Shared squad-dashboard fetch helpers |
+| `dashboard/parent-dashboard-loaders.ts` | Shared governance-hub fetch helpers |
 
 ---
 
@@ -67,8 +70,10 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 |------|------|
 | `components/dm/DmMessageRouter.svelte` | Invite cards, wallet cards, plain `Message` |
 | `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + Proposals board (Open \| Executed \| Failed); Squad Admin card when the squad has a standalone `squad_admin` row and no Pacto Gov |
-| `components/parent/dashboard/SquadAdminStatusCard.svelte` | Admin-only deployed state: variant copy, proxy (copy), network, CTA to Settings → Privileges |
-| `components/parent/dashboard/DashboardSettingsTab.svelte` | Squad photo, Join requests, Broadcast, Privileges (ACL / Squad Admin), Stickers, Primary/Practice networks, Chain RPC / Pimlico, Join-inbox holders — mounted from `#settings` |
+| `components/parent/dashboard/SquadAdminStatusCard.svelte` | Admin-only deployed state: variant copy, proxy (copy), network, CTA to Settings → Access → Privileges |
+| `components/parent/dashboard/DashboardSettingsUsTab.svelte` | Squad photo, Commons broadcast, stickers — `#settings` Us |
+| `components/parent/dashboard/DashboardSettingsAccessTab.svelte` | Join requests, Privileges (ACL / Squad Admin), content policy, Join-inbox holders — `#settings` Access |
+| `components/parent/dashboard/DashboardSettingsNetworkTab.svelte` | Primary/Practice networks, Chain RPC / Pimlico — `#settings` Network |
 | `components/parent/dashboard/DashboardGovernanceTab.svelte` | All / Crew / Captain commands + Hats tree |
 | `components/parent/dashboard/DashboardRolesTreeTab.svelte` | Hats tree (mounted at the bottom of Governance) |
 | `components/parent/dashboard/DashboardTreasuryTab.svelte` | Sponsor + governance treasury Safe + other vaults |
@@ -78,13 +83,13 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/parent/dashboard/ParentDashboardModals.svelte` | Deploy/import Safe + privilege modals |
 | `components/parent/dashboard/ParentDashboardMembersPanel.svelte` | Members aside |
 
-Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `crew`). `#settings` uses `settingsChannelMode` (`personal` \| `squad`): username mode is checklist, Alerts, roster EVM, then squad sync; Squad mode is the config stack. Unknown persisted settings modes reset to `personal`.
+`#governance` modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `crew`). `#settings` uses `settingsChannelMode` (`you` \| `us` \| `access` \| `network`): You is checklist, Alerts, roster EVM, then squad sync; Us is photo / broadcast / stickers; Access is join requests, privileges, content policy, join-inbox holders; Network is primary/practice chains, RPC, Pimlico. Leftover `personal` remaps to `you`. Unknown persisted settings modes (including `squad`) reset to `you`. `#tools` uses `squadToolsChannelMode` (`polls` \| `events` \| `docs`); legacy sidebar names `polls` / `events` / `docs` and the superseded `board` slug restore as `#tools` (plus shelf mode when applicable). Unknown tools modes reset to `polls`.
 
-**Status vs Settings.** Status is for frequently needed operational info: Checklist, live Proposals. Settings is for one-time or occasional config: squad photo, Join requests, Squad Broadcast, Privileges (Squad Admin roles), sticker packs, network, Chain RPC, Pimlico key, Join-inbox holders. Network retargeting for future deploys lives in Settings ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` and `roles` slugs) reset to `status`. Arbitrary contract allowlist / call UI is not on Settings.
+**Status vs Settings.** Status is for frequently needed operational info: Checklist, live Proposals. Settings is for one-time or occasional config, split across You / Us / Access / Network. Network retargeting for future deploys lives in Settings → Network ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` and `roles` slugs) reset to `status`. Arbitrary contract allowlist / call UI is not on Settings.
 
-**Invariant:** do not add a new `#squad-dashboard` segmented mode for a single feature. Occasional config goes in a Settings **section**. A new tab is only for a frequently used operational domain with its own data (Governance, Treasury, Crew). Hats tree lives under Governance, not its own tab. Stickers as its own tab is the anti-pattern.
+**Invariant:** do not add a new `#governance` segmented mode for a single feature. Occasional config goes in a Settings **section**. A new tab is only for a frequently used operational domain with its own data (Governance, Treasury, Crew). Hats tree lives under Governance, not its own tab. Stickers as its own tab is the anti-pattern. Polls / Events / Docs share `#tools` with an in-channel mode switch — not three sidebar rows.
 
-**Keep-alive:** After a Squad Dashboard mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders). `#settings` uses the same keep-alive for username and Squad panes.
+**Keep-alive:** After a `#governance` mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders). `#settings` and `#tools` use the same keep-alive for their mode panes. Shared chrome: `HubChannelHeader` + `HubModeSwitcher`.
 
 Governance uses role sub-modes inside `PactoGovGovernanceShell` (All / Crew / Captain command panes; Status owns the Proposals board). The board filters **Open | Executed | Failed** for treasury proposals and mutiny rounds. Crew offboard and crew add/remove stay on Open only, and leave the board when they finish. Propose and vote-mode writes live on **All**; process votes live on Status cards. CTAs use **ACL** (access control) snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 

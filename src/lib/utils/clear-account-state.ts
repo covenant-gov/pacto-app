@@ -22,6 +22,8 @@ import {
   squadNavOrder,
   showMembersPanel,
   squadDashboardChannelMode,
+  settingsChannelMode,
+  squadToolsChannelMode,
   dashboardPollReplicaNonceByParentId,
 } from '../../stores/navigation';
 import {
@@ -329,6 +331,8 @@ export function clearAccountState(npub?: string): void {
   activeDmTab.set('friends');
   activeView.set('hub');
   squadDashboardChannelMode.set('status');
+  settingsChannelMode.set('you');
+  squadToolsChannelMode.set('polls');
   showMembersPanel.set(false);
   walletSidebarOpen.set(false);
   walletSendPrefillFromRequest.set(null);

@@ -116,7 +116,7 @@ Apply **first matching rule** (implementations walk top-to-bottom):
 
 **Rationale for default `announcements`:** safest UX default for unknown content (human-readable traffic); automation paths should **always** set tag or field once virtual routing lands.
 
-**Single MLS stream:** default squad/network traffic uses **one** physical `group_id`. Sidebar UI rows are `#squad-dashboard`, `#announcements`, `#polls`, and `#settings` (dashboards and settings are virtual; announcements/polls share the MLS stream). Buckets `inbox` and `join_requests` remain for transport and are surfaced inside `#settings` (username-mode Alerts / Squad-mode Join requests), not as dedicated channels.
+**Single MLS stream:** default squad/network traffic uses **one** physical `group_id`. Sidebar UI rows are `#governance`, `#announcements`, `#tools`, and `#settings` (governance/settings are virtual; announcements/tools share the MLS stream). `#tools` switches Polls / Events / Docs in-panel. Buckets `inbox` and `join_requests` remain for transport and are surfaced inside `#settings` (You → Alerts / Access → Join requests), not as dedicated channels.
 
 ---
 
@@ -150,7 +150,7 @@ Squad-wide records ride the announcements group as **Kind 30078** rumors selecte
 
 **Silent operations** (policy changes, event updates, RSVPs, cancels, doc updates and removes) return the silent ingest result (`SquadRecordSilent`, same handling as a poll vote): they update the SQLite replica and never create a timeline row. They need no `pacto_bucket` tag and **do not** extend the bucket enum — there is no `events` or `docs` bucket. Record ops that announce something (for example an event-created or doc-added card) are stored as `announcements` messages like a poll create.
 
-Feature shelves such as `#events` and `#docs` are hub rows that read their SQLite replica through Tauri, the same way `#polls` reads the poll replica. They are not virtual buckets of the MLS stream.
+Feature shelves (polls, events, docs) live under `#tools` modes that read their SQLite replica through Tauri. They are not virtual buckets of the MLS stream.
 
 **Admin gate:** policy writes are accepted only from members in the group's MLS `admin_pubkeys`; non-admin policy rumors are dropped on ingest. Turning `restrict_event_create` on deletes every non-admin event of the parent, whatever its timestamp; turning it off restores nothing. Rationale and rejected alternatives: [`../communities/SQUAD_CONTENT_POLICY.md`](../communities/SQUAD_CONTENT_POLICY.md).
 

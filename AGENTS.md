@@ -409,5 +409,5 @@ bd prime                # Refresh Beads context
 - Dark skins are `[data-theme=…]` on `<html>`, not `html.dark`. shadcn `dark:` utilities already key off the data-theme custom variant.
 - Design system foundation is Tailwind CSS 4 + shadcn; theme tokens and decisions belong in repo CSS/docs, not one-off component hex.
 - GitHub stacked PRs are the preferred way to land sequential UI work (foundations then theme tokens).
-- Squad dashboard slug is `dashboard`, not `squad-dashboard`. `#announcements` is publish-only; discussion belongs in governance chat. Proposal mentions should render as number+title pills, not a bare `#n`.
+- Squad governance hub slug is `governance` (practice hub `gov-practice`). Polls, events, and docs share `#tools` with a mode switch. `#announcements` is publish-only; discussion belongs in governance chat. Proposal mentions should render as number+title pills, not a bare `#n`.
 

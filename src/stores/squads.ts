@@ -4,6 +4,8 @@ import type { SquadInfraDto } from '../lib/governance/api';
 import { ensureDefaultHubChannelRows } from '../lib/squad/hub-channel-rows';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  TOOLS_CHANNEL_NAME,
+  DOCS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_ID,
@@ -27,6 +29,8 @@ export type { SquadKind, PairedSquadRef, PairedSquads, SquadVisibility };
 export { partnerSquadsForAnchor, partnerSquadsForHubParent } from '../lib/squad-pair';
 export {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  TOOLS_CHANNEL_NAME,
+  DOCS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_ID,

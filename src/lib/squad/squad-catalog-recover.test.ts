@@ -78,7 +78,7 @@ describe('squad-catalog-recover', () => {
     expect(planned[0]?.id).toBe('grp-ann');
     expect(planned[0]?.name).toBe('Alpha');
     expect(planned[0]?.channels.some((c) => c.name === 'announcements')).toBe(true);
-    expect(planned[0]?.channels.some((c) => c.name === 'polls')).toBe(true);
+    expect(planned[0]?.channels.some((c) => c.name === 'tools')).toBe(true);
   });
 
   it('uses a short id fallback instead of the MLS announcements label', () => {

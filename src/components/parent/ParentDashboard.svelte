@@ -57,6 +57,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import { squadRpcTick } from '../../lib/squad/squad-rpc';
   import { currentUser } from '../../stores/auth-session';
   import friendsIcon from '../../icons/friends.svg';
+  import HubChannelHeader from './HubChannelHeader.svelte';
+  import HubModeSwitcher from './HubModeSwitcher.svelte';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
   import WarGameHubBanner from './dashboard/WarGameHubBanner.svelte';
   import GovernanceDeployCoordinator from './dashboard/GovernanceDeployCoordinator.svelte';
@@ -772,12 +774,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 
 <div class="parent-dashboard-layout">
   <div class="parent-dashboard-main">
-    <div class="dashboard-channel-header">
-      <div class="dashboard-channel-info">
-        <span class="dashboard-channel-icon">#</span>
-        <h3 class="dashboard-channel-name">{warGameStack ? SQUAD_WARGAME_CHANNEL_NAME : SQUAD_DASHBOARD_CHANNEL_NAME}</h3>
-      </div>
-      <div class="dashboard-header-actions">
+    <HubChannelHeader channelName={warGameStack ? SQUAD_WARGAME_CHANNEL_NAME : SQUAD_DASHBOARD_CHANNEL_NAME}>
+      {#snippet actions()}
         <button
           type="button"
           class="channel-members-btn"
@@ -788,31 +786,21 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
         >
           <img src={friendsIcon} alt="" class="channel-members-btn-icon" />
         </button>
-      </div>
-    </div>
+      {/snippet}
+    </HubChannelHeader>
     {#if warGameStack}
       <WarGameHubBanner
         providerPayload={pactoGovRow?.providerPayload}
       />
     {/if}
-    <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.dashboardSection')}>
-      <div class="dashboard-mode-switcher" role="group">
-        {#each DASHBOARD_VIEWS as v (v)}
-          <button
-            type="button"
-            role="tab"
-            class="dashboard-mode-segment"
-            class:active={dashboardView === v}
-            aria-selected={dashboardView === v}
-            onclick={() => selectDashboardView(v)}
-            onmouseenter={() => prefetchDashboardTabIntent(v)}
-            onfocus={() => prefetchDashboardTabIntent(v)}
-          >
-            {$t(`governance.dashboardView.${v}`)}
-          </button>
-        {/each}
-      </div>
-    </div>
+    <HubModeSwitcher
+      modes={DASHBOARD_VIEWS}
+      active={dashboardView}
+      ariaLabel={$t('governance.dashboardSection')}
+      labelFor={(mode) => $t(`governance.dashboardView.${mode}`)}
+      onSelect={(mode) => selectDashboardView(mode as ParentDashboardView)}
+      onIntent={(mode) => prefetchDashboardTabIntent(mode as ParentDashboardView)}
+    />
     <div class="parent-dashboard-body">
       <div class="parent-dashboard" class:parent-dashboard-wide={dashboardView === 'governance'}>
         {#if parent.kind === 'squad-pair' && parent.pairedSquads?.length}
@@ -1012,91 +1000,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     min-width: 0;
   }
 
-  .dashboard-view-nav {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    height: 48px;
-    min-height: 48px;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-    flex-shrink: 0;
-  }
-
-  .dashboard-mode-switcher {
-    display: inline-flex;
-    align-items: stretch;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 3px;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
-  }
-
-  .dashboard-mode-segment {
-    padding: 0 14px;
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: color 0.15s, background-color 0.15s;
-  }
-
-  .dashboard-mode-segment:hover:not(.active) {
-    color: var(--text-secondary);
-    background: var(--bg-hover);
-  }
-
-  .dashboard-mode-segment:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-  }
-
-  .dashboard-mode-segment.active {
-    color: var(--text-primary);
-    background: var(--bg-elevated);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-  }
-
-  .dashboard-channel-header {
-    height: 48px;
-    border-bottom: 1px solid var(--border-subtle);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 16px;
-    flex-shrink: 0;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
-  }
-
-  .dashboard-channel-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .dashboard-channel-icon {
-    color: var(--text-muted);
-    font-size: 1.25rem;
-    font-weight: 600;
-  }
-
-  .dashboard-channel-name {
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0;
-  }
-
-  .dashboard-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
 
   .channel-members-btn {
     padding: 6px 8px;

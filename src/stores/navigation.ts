@@ -16,7 +16,7 @@ export const activeHubChannelName = writable<string | null>(null);
 export type ViewType = 'hub' | 'profile';
 export const activeView = writable<ViewType>('hub');
 
-/** #squad-dashboard segmented mode; unknown persisted values reset to `status`. */
+/** #governance segmented mode; unknown persisted values reset to `status`. */
 export type SquadDashboardChannelMode =
   | 'status'
   | 'governance'
@@ -35,18 +35,34 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
 
 export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
 
-/** #settings segmented mode; unknown persisted values reset to `personal`. */
-export type SettingsChannelMode = 'personal' | 'squad';
+/** #settings segmented mode; unknown persisted values reset to `you`. */
+export const SETTINGS_CHANNEL_MODES = ['you', 'us', 'access', 'network'] as const;
+export type SettingsChannelMode = (typeof SETTINGS_CHANNEL_MODES)[number];
 
 export const SETTINGS_CHANNEL_MODE_PREFIX = 'pacto_settings_channel_mode';
 
 export function parseSettingsChannelMode(raw: string | null): SettingsChannelMode {
   const v = raw?.trim();
-  if (v === 'personal' || v === 'squad') return v;
-  return 'personal';
+  if (v === 'personal' || v === 'you') return 'you';
+  if (v === 'us' || v === 'access' || v === 'network') return v;
+  return 'you';
 }
 
-export const settingsChannelMode = writable<SettingsChannelMode>('personal');
+export const settingsChannelMode = writable<SettingsChannelMode>('you');
+
+/** #tools segmented mode; unknown persisted values reset to `polls`. */
+export const TOOLS_CHANNEL_MODES = ['polls', 'events', 'docs'] as const;
+export type SquadToolsChannelMode = (typeof TOOLS_CHANNEL_MODES)[number];
+
+export const TOOLS_CHANNEL_MODE_PREFIX = 'pacto_squad_tools_mode';
+
+export function parseSquadToolsChannelMode(raw: string | null): SquadToolsChannelMode {
+  const v = raw?.trim();
+  if (v === 'polls' || v === 'events' || v === 'docs') return v;
+  return 'polls';
+}
+
+export const squadToolsChannelMode = writable<SquadToolsChannelMode>('polls');
 
 function openSquadSettingsChannel(mode?: SettingsChannelMode) {
   const squadId = get(activeSquadId);
@@ -67,7 +83,7 @@ function openSquadSettingsChannel(mode?: SettingsChannelMode) {
 export const squadSettingsRpcFocusNonce = writable(0);
 
 export function focusSquadSettingsRpcEditor() {
-  openSquadSettingsChannel('squad');
+  openSquadSettingsChannel('network');
   squadSettingsRpcFocusNonce.update((n) => n + 1);
 }
 
@@ -76,7 +92,7 @@ export const squadSettingsNetworkFocusNonce = writable(0);
 export const squadSettingsNetworkFocusSlot = writable<SquadNetworkSlot>('primary');
 
 export function focusSquadSettingsNetworkEditor(slot: SquadNetworkSlot = 'primary') {
-  openSquadSettingsChannel('squad');
+  openSquadSettingsChannel('network');
   squadSettingsNetworkFocusSlot.set(slot);
   squadSettingsNetworkFocusNonce.update((n) => n + 1);
 }
@@ -144,6 +160,17 @@ squadDashboardChannelMode.subscribe((mode) => {
 settingsChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
   const key = persistenceKey(SETTINGS_CHANNEL_MODE_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, mode);
+  } catch {
+    // ignore quota
+  }
+});
+
+squadToolsChannelMode.subscribe((mode) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(TOOLS_CHANNEL_MODE_PREFIX);
   if (!key) return;
   try {
     localStorage.setItem(key, mode);

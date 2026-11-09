@@ -34,6 +34,9 @@ import {
   SETTINGS_CHANNEL_MODE_PREFIX,
   parseSettingsChannelMode,
   settingsChannelMode,
+  TOOLS_CHANNEL_MODE_PREFIX,
+  parseSquadToolsChannelMode,
+  squadToolsChannelMode,
   lastOpenedSquadId,
   lastOpenedChannelId,
   lastChannelBySquadId,
@@ -57,7 +60,7 @@ import {
   NEW_CHAT_DRAFT_MESSAGE_PREFIX,
 } from './dm';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
-import { normalizeHubChannelName } from './squads';
+import { migrateLastHubChannelNamesBySquad } from '../lib/squad/hub-channel-names';
 import { hydrateLocale } from './locale';
 import { loadStartupCheckPreference } from './startup-check';
 import { loadSendTypingIndicatorsPreference } from './typing-indicators';
@@ -136,18 +139,18 @@ export function loadAccountState(npub: string): void {
         lastChannelBySquadId.set({});
       }
     }
+    let toolsModeFromLegacyShelf: 'polls' | 'events' | 'docs' | null = null;
     const rawHubBySquad = localStorage.getItem(`${LAST_HUB_CHANNEL_NAME_BY_SQUAD_PREFIX}_${npub}`);
     if (rawHubBySquad) {
       try {
         const parsed = JSON.parse(rawHubBySquad) as unknown;
         if (typeof parsed === 'object' && parsed !== null) {
-          const normalized: Record<string, string> = {};
-          for (const [sid, name] of Object.entries(parsed as Record<string, string>)) {
-            if (typeof name !== 'string') continue;
-            const hub = normalizeHubChannelName(name);
-            if (hub) normalized[sid] = hub;
-          }
-          lastHubChannelNameBySquadId.set(normalized);
+          const { hubs, toolsModeFromLegacy } = migrateLastHubChannelNamesBySquad(
+            parsed as Record<string, string>,
+            lastSquad,
+          );
+          toolsModeFromLegacyShelf = toolsModeFromLegacy;
+          lastHubChannelNameBySquadId.set(hubs);
         } else {
           lastHubChannelNameBySquadId.set({});
         }
@@ -170,6 +173,14 @@ export function loadAccountState(npub: string): void {
     squadDashboardChannelMode.set(parseSquadDashboardChannelMode(rawSquadDashboardMode));
     const rawSettingsChannelMode = localStorage.getItem(`${SETTINGS_CHANNEL_MODE_PREFIX}_${npub}`);
     settingsChannelMode.set(parseSettingsChannelMode(rawSettingsChannelMode));
+    const rawBoardChannelMode = localStorage.getItem(`${TOOLS_CHANNEL_MODE_PREFIX}_${npub}`);
+    if (rawBoardChannelMode != null && rawBoardChannelMode.trim() !== '') {
+      squadToolsChannelMode.set(parseSquadToolsChannelMode(rawBoardChannelMode));
+    } else if (toolsModeFromLegacyShelf) {
+      squadToolsChannelMode.set(toolsModeFromLegacyShelf);
+    } else {
+      squadToolsChannelMode.set(parseSquadToolsChannelMode(rawBoardChannelMode));
+    }
   } catch {
     // ignore parse errors
   }

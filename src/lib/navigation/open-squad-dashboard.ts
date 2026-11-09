@@ -10,19 +10,25 @@ import {
   lastOpenedChannelId,
   lastOpenedSquadId,
   settingsChannelMode,
+  squadToolsChannelMode,
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   isVirtualHubChannelId,
+  type SettingsChannelMode,
   type Squad,
+  type SquadToolsChannelMode,
 } from '../../stores/app';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  TOOLS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   SETTINGS_CHANNEL_ID,
+  toolsModeFromObsoleteHubName,
+  normalizeHubChannelName,
 } from '../squad/hub-channel-names';
-import { focusSquadEvent } from '../../stores/events-navigation';
+import { eventsFocus } from '../../stores/events-navigation';
 import { get } from 'svelte/store';
 
 /**
@@ -33,11 +39,22 @@ import { get } from 'svelte/store';
  * can land a member in the exact canonical home an item resolves in.
  */
 export type NavigationTarget =
-  | { kind: 'squad-channel'; squadId: string; channelId: string; hubChannelName?: string | null }
+  | {
+      kind: 'squad-channel';
+      squadId: string;
+      channelId: string;
+      hubChannelName?: string | null;
+      settingsMode?: SettingsChannelMode;
+    }
   | { kind: 'squad-dashboard'; squadId: string }
   | { kind: 'dm'; npub: string }
   /** `#events` (announcements group) with one event's detail open. */
   | { kind: 'squad-event'; squadId: string; channelId: string; hubChannelName: string; eventId: string };
+
+function applyPreferredToolsMode(preferredHubChannelName?: string | null): void {
+  const mode = toolsModeFromObsoleteHubName(preferredHubChannelName);
+  if (mode) squadToolsChannelMode.set(mode as SquadToolsChannelMode);
+}
 
 /** Sets every store a squad-channel navigation touches (nav + memory), matching Toast's `goToSpace`. */
 function navigateToSquadChannel(squadId: string, channelId: string, preferredHubChannelName?: string | null): void {
@@ -49,34 +66,53 @@ function navigateToSquadChannel(squadId: string, channelId: string, preferredHub
   lastOpenedChannelId.set(channelId);
   lastChannelBySquadId.update((m) => ({ ...m, [squadId]: channelId }));
 
+  applyPreferredToolsMode(preferredHubChannelName);
+
   const squad = get(squads).find((s) => s.id === squadId);
   const isVirtual = isVirtualHubChannelId(channelId);
+  const preferred = normalizeHubChannelName(preferredHubChannelName) ?? preferredHubChannelName ?? null;
   const hub = isVirtual
     ? null
-    : resolveHubChannelNameForGroupSelection(squad?.channels ?? [], channelId, preferredHubChannelName ?? null);
+    : resolveHubChannelNameForGroupSelection(squad?.channels ?? [], channelId, preferred);
   activeHubChannelName.set(hub);
   if (hub) lastHubChannelNameBySquadId.update((m) => ({ ...m, [squadId]: hub }));
 }
 
-/** Open a squad's squad-dashboard from Settings, Catch up, or other non-hub views. */
+/** Open a squad's #governance hub from Settings, Catch up, or other non-hub views. */
 export function openSquadDashboard(parentId: string): void {
   const id = parentId.trim();
   if (!id) return;
   navigateToSquadChannel(id, SQUAD_DASHBOARD_CHANNEL_ID);
 }
 
-/** Open a squad's squad-wargame hub from Status or other non-hub views. */
+/** Open a squad's #gov-practice hub from Status or other non-hub views. */
 export function openSquadWargame(parentId: string): void {
   const id = parentId.trim();
   if (!id) return;
   navigateToSquadChannel(id, SQUAD_WARGAME_CHANNEL_ID);
 }
 
-/** Open a squad's #settings channel in Squad mode. */
-export function openSquadSettings(parentId: string): void {
+/** Open `#tools` with an optional mode (polls / events / docs). */
+export function openSquadTools(parentId: string, mode: SquadToolsChannelMode = 'polls'): void {
   const id = parentId.trim();
   if (!id) return;
-  navigateToTarget({ kind: 'squad-channel', squadId: id, channelId: SETTINGS_CHANNEL_ID });
+  const squad = get(squads).find((s) => s.id === id);
+  const announcementsGroupId = squad?.channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId?.trim();
+  if (!announcementsGroupId) return;
+  squadToolsChannelMode.set(mode);
+  navigateToSquadChannel(id, announcementsGroupId, TOOLS_CHANNEL_NAME);
+}
+
+/** Open a squad's #settings channel. Privileges CTAs land on Access. */
+export function openSquadSettings(parentId: string, mode: SettingsChannelMode = 'access'): void {
+  const id = parentId.trim();
+  if (!id) return;
+  navigateToTarget({
+    kind: 'squad-channel',
+    squadId: id,
+    channelId: SETTINGS_CHANNEL_ID,
+    settingsMode: mode,
+  });
 }
 
 /** Full navigation state change for landing on a DM peer's thread. */
@@ -97,11 +133,14 @@ export function navigateToTarget(target: NavigationTarget): void {
     return;
   }
   if (target.kind === 'squad-event') {
-    focusSquadEvent(target.squadId, target.eventId);
+    const pid = target.squadId.trim();
+    if (!pid || !target.eventId) return;
+    eventsFocus.set({ parentId: pid, eventId: target.eventId, seriesId: null });
+    openSquadTools(pid, 'events');
     return;
   }
-  if (target.channelId === SETTINGS_CHANNEL_ID) {
-    settingsChannelMode.set('squad');
+  if (target.channelId === SETTINGS_CHANNEL_ID && target.settingsMode) {
+    settingsChannelMode.set(target.settingsMode);
   }
   navigateToSquadChannel(target.squadId, target.channelId, target.hubChannelName);
 }
@@ -120,9 +159,9 @@ export function parseEventReminderSourceId(sourceEventId: string): { eventId: st
  * (R22): a real squad channel group id, a DM npub, or — for `action_prompt`
  * entries recorded against a squad's announcements channel (the governance
  * roster-key prompt and pending join requests both use that fallback id,
- * since neither is tied to one specific channel) — `#settings` for
+ * since neither is tied to one specific channel) — `#settings` Access for
  * `join-request:*` items and the squad dashboard for other prompts.
- * `event_reminder` entries open that event's detail in `#events`.
+ * `event_reminder` entries open that event's detail in `#tools` → Events.
  * Returns `null` for a reference that resolves to nothing (a bug in the
  * Catch up backend's orphan cleanup, not an expected case here).
  */
@@ -146,7 +185,12 @@ export function resolveCatchUpTarget(
     }
     if (entry.kind === 'action_prompt' && channel.name === ANNOUNCEMENTS_CHANNEL_NAME) {
       if (entry.sourceEventId?.startsWith('join-request:')) {
-        return { kind: 'squad-channel', squadId: squad.id, channelId: SETTINGS_CHANNEL_ID };
+        return {
+          kind: 'squad-channel',
+          squadId: squad.id,
+          channelId: SETTINGS_CHANNEL_ID,
+          settingsMode: 'access',
+        };
       }
       return { kind: 'squad-dashboard', squadId: squad.id };
     }
