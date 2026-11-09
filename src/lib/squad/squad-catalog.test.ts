@@ -106,7 +106,7 @@ describe('squad-catalog', () => {
     await hydrateSquadsFromDb();
     const names = get(squads)[0]?.channels.map((c) => c.name);
     expect(names).toContain('announcements');
-    expect(names).toContain('board');
+    expect(names).toContain('tools');
     expect(names).not.toContain('personal-alerts');
     expect(names).not.toContain('polls');
   });
@@ -185,7 +185,7 @@ describe('squad-catalog', () => {
       channels: [...s.channels, { name: 'general', groupId: 'g2', order: 1 }],
     }));
     expect(invoke).toHaveBeenCalledWith('upsert_squad', expect.any(Object));
-    expect(get(squads)[0]?.channels.map((c) => c.name)).toEqual(['announcements', 'board', 'general']);
+    expect(get(squads)[0]?.channels.map((c) => c.name)).toEqual(['announcements', 'tools', 'general']);
   });
 
   it('serializes persistSquadPatch per parent so the later patch sees the earlier store write', async () => {

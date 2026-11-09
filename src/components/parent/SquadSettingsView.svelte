@@ -25,6 +25,7 @@
     loadMyDashboardAlertsTab,
     loadMyDashboardStatusTab,
   } from '../../lib/dashboard/dashboard-tab-components';
+  import SquadInviteExitHost from './dashboard/SquadInviteExitHost.svelte';
   import { fetchSquadMemberEvmByNpub } from '../../lib/dashboard/parent-dashboard-loaders';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
   import { ensureMlsGroupMembers, membersByGroupId } from '../../stores/mls-group-members';
@@ -164,6 +165,16 @@
     clearSquadRpcPrimary(npub, parentId.trim(), primaryNetwork);
     await publishSquadRpcUpdated(parentId.trim());
   }
+
+  let inviteExitHost: { openInvite: () => void; openExit: () => void } | undefined = $state();
+
+  function openInvite() {
+    inviteExitHost?.openInvite();
+  }
+
+  function openExitSquad() {
+    inviteExitHost?.openExit();
+  }
 </script>
 
 <div class="squad-settings">
@@ -187,6 +198,7 @@
             {announcementsGroupId}
             parentId={parentId ?? ''}
             {squadMemberEvmByNpub}
+            onExitSquad={openExitSquad}
           >
             {#snippet afterChecklist()}
               {#await loadMyDashboardAlertsTab() then AlertsTab}
@@ -231,6 +243,7 @@
             {privilegesAdmin}
             {pactoGovRevision}
             {memberEvmOptions}
+            onInvite={openInvite}
           />
         {:catch}
           <p class="tab-error" role="alert">{$t('governance.tabLoadError.access')}</p>
@@ -260,6 +273,7 @@
       </div>
     {/if}
   </div>
+  <SquadInviteExitHost bind:this={inviteExitHost} squad={parent} />
 </div>
 
 <style>

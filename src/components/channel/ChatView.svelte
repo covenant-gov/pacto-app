@@ -19,7 +19,7 @@
   import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
   import DocsChannelButton from '../parent/DocsChannelButton.svelte';
   import SaveToDocsDialog from '../parent/SaveToDocsDialog.svelte';
-  import { BOARD_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import { TOOLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
   import {
     canOfferSaveToDocs,
     ensureSquadDocAddPolicy,
@@ -564,8 +564,8 @@
     if (matches.length === 0) return null;
     if (matches.length === 1) return matches[0].name;
     if (bucket === 'polls') {
-      const board = matches.find((c) => c.name === BOARD_CHANNEL_NAME);
-      if (board) return board.name;
+      const tools = matches.find((c) => c.name === TOOLS_CHANNEL_NAME);
+      if (tools) return tools.name;
       const polls = matches.find((c) => c.name === POLLS_CHANNEL_NAME);
       if (polls) return polls.name;
     }

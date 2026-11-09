@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BOARD_CHANNEL_NAME,
+  TOOLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_ID,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
-  boardModeFromObsoleteHubName,
+  toolsModeFromObsoleteHubName,
   isSquadDashboardChromeChannelId,
   isVirtualHubChannelId,
   migrateLastHubChannelNamesBySquad,
@@ -44,43 +44,45 @@ describe('remapObsoleteHubChannelId', () => {
 });
 
 describe('normalizeHubChannelName', () => {
-  it('maps legacy shelf names to board', () => {
-    expect(normalizeHubChannelName('polls')).toBe(BOARD_CHANNEL_NAME);
-    expect(normalizeHubChannelName('events')).toBe(BOARD_CHANNEL_NAME);
-    expect(normalizeHubChannelName('docs')).toBe(BOARD_CHANNEL_NAME);
-    expect(normalizeHubChannelName('board')).toBe(BOARD_CHANNEL_NAME);
+  it('maps legacy shelf names and board slug to tools', () => {
+    expect(normalizeHubChannelName('polls')).toBe(TOOLS_CHANNEL_NAME);
+    expect(normalizeHubChannelName('events')).toBe(TOOLS_CHANNEL_NAME);
+    expect(normalizeHubChannelName('docs')).toBe(TOOLS_CHANNEL_NAME);
+    expect(normalizeHubChannelName('board')).toBe(TOOLS_CHANNEL_NAME);
+    expect(normalizeHubChannelName('tools')).toBe(TOOLS_CHANNEL_NAME);
     expect(normalizeHubChannelName('announcements')).toBe('announcements');
     expect(normalizeHubChannelName(null)).toBeNull();
   });
 });
 
-describe('boardModeFromObsoleteHubName', () => {
+describe('toolsModeFromObsoleteHubName', () => {
   it('returns the shelf mode for legacy names', () => {
-    expect(boardModeFromObsoleteHubName('polls')).toBe('polls');
-    expect(boardModeFromObsoleteHubName('events')).toBe('events');
-    expect(boardModeFromObsoleteHubName('docs')).toBe('docs');
-    expect(boardModeFromObsoleteHubName('board')).toBeNull();
-    expect(boardModeFromObsoleteHubName(null)).toBeNull();
+    expect(toolsModeFromObsoleteHubName('polls')).toBe('polls');
+    expect(toolsModeFromObsoleteHubName('events')).toBe('events');
+    expect(toolsModeFromObsoleteHubName('docs')).toBe('docs');
+    expect(toolsModeFromObsoleteHubName('board')).toBeNull();
+    expect(toolsModeFromObsoleteHubName('tools')).toBeNull();
+    expect(toolsModeFromObsoleteHubName(null)).toBeNull();
   });
 });
 
 describe('migrateLastHubChannelNamesBySquad', () => {
-  it('normalizes shelves to board and captures events mode for the last-opened squad', () => {
+  it('normalizes shelves to tools and captures events mode for the last-opened squad', () => {
     expect(
       migrateLastHubChannelNamesBySquad(
         { 'squad-a': 'announcements', 'squad-b': 'events' },
         'squad-b',
       ),
     ).toEqual({
-      hubs: { 'squad-a': 'announcements', 'squad-b': BOARD_CHANNEL_NAME },
-      boardModeFromLegacy: 'events',
+      hubs: { 'squad-a': 'announcements', 'squad-b': TOOLS_CHANNEL_NAME },
+      toolsModeFromLegacy: 'events',
     });
   });
 
   it('captures docs mode for the last-opened squad', () => {
     expect(migrateLastHubChannelNamesBySquad({ 'squad-a': 'docs' }, 'squad-a')).toEqual({
-      hubs: { 'squad-a': BOARD_CHANNEL_NAME },
-      boardModeFromLegacy: 'docs',
+      hubs: { 'squad-a': TOOLS_CHANNEL_NAME },
+      toolsModeFromLegacy: 'docs',
     });
   });
 
@@ -91,8 +93,8 @@ describe('migrateLastHubChannelNamesBySquad', () => {
         'squad-b',
       ),
     ).toEqual({
-      hubs: { 'squad-a': BOARD_CHANNEL_NAME, 'squad-b': 'announcements' },
-      boardModeFromLegacy: null,
+      hubs: { 'squad-a': TOOLS_CHANNEL_NAME, 'squad-b': 'announcements' },
+      toolsModeFromLegacy: null,
     });
   });
 });

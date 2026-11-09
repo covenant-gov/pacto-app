@@ -38,7 +38,7 @@ describe('ChatView Up Arrow editing', () => {
     squads.set([{
       id: 'squad', name: 'Test squad', channels: [
         { name: 'announcements', groupId: 'shared-group', order: 0 },
-        { name: 'board', groupId: 'shared-group', order: 1 },
+        { name: 'tools', groupId: 'shared-group', order: 1 },
         { name: 'general', groupId: 'other-group', order: 2 },
       ],
     } as Squad]);

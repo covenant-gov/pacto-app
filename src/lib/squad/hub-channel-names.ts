@@ -1,9 +1,9 @@
 /** Built-in squad hub sidebar channel slugs (not user-created chat channels). */
 
 export const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
-export const BOARD_CHANNEL_NAME = 'board';
+export const TOOLS_CHANNEL_NAME = 'tools';
 
-/** Board segmented modes (also legacy MLS shelf names). */
+/** Tools segmented modes (also legacy MLS shelf names). */
 export const POLLS_CHANNEL_NAME = 'polls';
 export const EVENTS_CHANNEL_NAME = 'events';
 export const DOCS_CHANNEL_NAME = 'docs';
@@ -19,6 +19,9 @@ export const SQUAD_WARGAME_CHANNEL_NAME = 'gov-practice';
 /** Virtual squad settings (not an MLS group). */
 export const SETTINGS_CHANNEL_ID = '__squad_settings__';
 export const SETTINGS_CHANNEL_NAME = 'settings';
+
+/** Superseded hub slug; normalize to `tools`. */
+const OBSOLETE_TOOLS_CHANNEL_NAME = 'board';
 
 const OBSOLETE_DASHBOARD_IDS: Record<string, string> = {
   __my_dashboard__: SETTINGS_CHANNEL_ID,
@@ -46,24 +49,29 @@ export function isSquadDashboardChromeChannelId(id: string | null | undefined): 
   return id === SQUAD_DASHBOARD_CHANNEL_ID || id === SQUAD_WARGAME_CHANNEL_ID;
 }
 
-/** Legacy shelf names that now live under `#board`. */
-export function isObsoleteBoardShelfName(name: string | null | undefined): boolean {
-  return name === POLLS_CHANNEL_NAME || name === EVENTS_CHANNEL_NAME || name === DOCS_CHANNEL_NAME;
+/** Legacy shelf names / slug that now live under `#tools`. */
+export function isObsoleteToolsShelfName(name: string | null | undefined): boolean {
+  return (
+    name === POLLS_CHANNEL_NAME ||
+    name === EVENTS_CHANNEL_NAME ||
+    name === DOCS_CHANNEL_NAME ||
+    name === OBSOLETE_TOOLS_CHANNEL_NAME
+  );
 }
 
 /**
  * Normalize persisted hub channel names.
- * Legacy polls/events/docs shelf names become `board`.
+ * Legacy polls/events/docs shelves and the superseded `board` slug become `tools`.
  */
 export function normalizeHubChannelName(name: string | null | undefined): string | null {
   const trimmed = name?.trim();
   if (!trimmed) return null;
-  if (isObsoleteBoardShelfName(trimmed)) return BOARD_CHANNEL_NAME;
+  if (isObsoleteToolsShelfName(trimmed)) return TOOLS_CHANNEL_NAME;
   return trimmed;
 }
 
-/** If a persisted hub name was a legacy shelf, return that board mode; otherwise null. */
-export function boardModeFromObsoleteHubName(
+/** If a persisted hub name was a legacy shelf, return that tools mode; otherwise null. */
+export function toolsModeFromObsoleteHubName(
   name: string | null | undefined,
 ): 'polls' | 'events' | 'docs' | null {
   const trimmed = name?.trim();
@@ -74,25 +82,25 @@ export function boardModeFromObsoleteHubName(
 }
 
 /**
- * Normalize persisted hub names to current slugs, capturing board mode from the
- * last-opened squad's raw obsolete shelf name before it becomes `board`.
+ * Normalize persisted hub names to current slugs, capturing tools mode from the
+ * last-opened squad's raw obsolete shelf name before it becomes `tools`.
  */
 export function migrateLastHubChannelNamesBySquad(
   entries: Record<string, string>,
   lastOpenedSquadId: string | null | undefined,
 ): {
   hubs: Record<string, string>;
-  boardModeFromLegacy: 'polls' | 'events' | 'docs' | null;
+  toolsModeFromLegacy: 'polls' | 'events' | 'docs' | null;
 } {
   const hubs: Record<string, string> = {};
-  let boardModeFromLegacy: 'polls' | 'events' | 'docs' | null = null;
+  let toolsModeFromLegacy: 'polls' | 'events' | 'docs' | null = null;
   const last = lastOpenedSquadId?.trim() || null;
   for (const [sid, name] of Object.entries(entries)) {
     if (typeof name !== 'string') continue;
-    const mode = boardModeFromObsoleteHubName(name);
-    if (mode && last && sid === last) boardModeFromLegacy = mode;
+    const mode = toolsModeFromObsoleteHubName(name);
+    if (mode && last && sid === last) toolsModeFromLegacy = mode;
     const hub = normalizeHubChannelName(name);
     if (hub) hubs[sid] = hub;
   }
-  return { hubs, boardModeFromLegacy };
+  return { hubs, toolsModeFromLegacy };
 }

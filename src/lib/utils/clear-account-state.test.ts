@@ -28,7 +28,7 @@ import {
   showMembersPanel,
   squadDashboardChannelMode,
   settingsChannelMode,
-  squadBoardChannelMode,
+  squadToolsChannelMode,
   DEFAULT_TOP_NAV_TAB,
 } from '../../stores/navigation';
 import {
@@ -152,7 +152,7 @@ describe('clearAccountState', () => {
     activeTopNavTab.set('dms');
     squadDashboardChannelMode.set('treasury');
     settingsChannelMode.set('access');
-    squadBoardChannelMode.set('docs');
+    squadToolsChannelMode.set('docs');
     showMembersPanel.set(true);
     squadNavOrder.set(['squad-1', 'squad-2']);
 
@@ -165,7 +165,7 @@ describe('clearAccountState', () => {
     expect(get(activeTopNavTab)).toBe(DEFAULT_TOP_NAV_TAB);
     expect(get(squadDashboardChannelMode)).toBe('status');
     expect(get(settingsChannelMode)).toBe('you');
-    expect(get(squadBoardChannelMode)).toBe('polls');
+    expect(get(squadToolsChannelMode)).toBe('polls');
     expect(get(showMembersPanel)).toBe(false);
     expect(get(squadNavOrder)).toEqual([]);
   });

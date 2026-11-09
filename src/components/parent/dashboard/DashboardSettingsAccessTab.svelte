@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import JoinInboxHoldersSection from './JoinInboxHoldersSection.svelte';
   import SquadContentPolicySection from './SquadContentPolicySection.svelte';
   import SquadPrivilegesSection from './SquadPrivilegesSection.svelte';
@@ -23,6 +24,7 @@
     privilegesAdmin = null,
     pactoGovRevision = '',
     memberEvmOptions = [],
+    onInvite = () => {},
   }: {
     squad: Squad;
     squadAdminCtx?: ResolvedSquadAdminContext | null;
@@ -34,6 +36,7 @@
     privilegesAdmin?: ResolvedSquadAdminContext | null;
     pactoGovRevision?: string;
     memberEvmOptions?: { address: string; label: string }[];
+    onInvite?: () => void;
   } = $props();
 
   let rosterKeyNeeded = $state(false);
@@ -54,6 +57,13 @@
 </script>
 
 <div class="settings-stack">
+  <section class="invite-section" aria-labelledby="settings-access-invite-heading">
+    <h3 id="settings-access-invite-heading" class="section-heading">{$t('nav.parentSidebar.invite')}</h3>
+    <button type="button" class="btn-primary" onclick={onInvite}>
+      {$t('nav.parentSidebar.invite')}
+    </button>
+  </section>
+
   <SquadJoinRequestsPanel {squad} />
 
   <SquadPrivilegesSection
@@ -80,5 +90,29 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+  .invite-section {
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .section-heading {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 12px;
+  }
+  .btn-primary {
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-family: inherit;
+    background: var(--brand);
+    color: var(--on-brand);
+    border: none;
+    cursor: pointer;
+  }
+  .btn-primary:hover {
+    filter: brightness(1.05);
   }
 </style>

@@ -18,6 +18,7 @@
     parentId?: string;
     squadMemberEvmByNpub?: Record<string, string>;
     afterChecklist?: Snippet;
+    onExitSquad?: () => void;
   }
 
   let {
@@ -25,6 +26,7 @@
     parentId = '',
     squadMemberEvmByNpub = {},
     afterChecklist,
+    onExitSquad = () => {},
   }: Props = $props();
 
   let rotateModalOpen = $state(false);
@@ -157,6 +159,13 @@
   </section>
 {/if}
 
+<section class="dashboard-section exit-section" aria-labelledby="my-status-exit-heading">
+  <h3 id="my-status-exit-heading" class="section-heading">{$t('nav.parentSidebar.exit')}</h3>
+  <button type="button" class="btn-danger" onclick={onExitSquad}>
+    {$t('nav.parentSidebar.exit')}
+  </button>
+</section>
+
 <style>
   .dashboard-section {
     border: 1px solid var(--border-subtle);
@@ -239,5 +248,21 @@
   .btn-secondary:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+  .exit-section .btn-danger {
+    margin-top: 12px;
+  }
+  .btn-danger {
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-family: inherit;
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    cursor: pointer;
+  }
+  .btn-danger:hover {
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
   }
 </style>

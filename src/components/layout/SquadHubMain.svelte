@@ -3,9 +3,9 @@
   import { t } from 'svelte-i18n';
   import ParentDashboard from '../parent/ParentDashboard.svelte';
   import SquadSettingsView from '../parent/SquadSettingsView.svelte';
-  import SquadBoardView from '../parent/SquadBoardView.svelte';
+  import SquadToolsView from '../parent/SquadToolsView.svelte';
   import { createLazyComponent } from '../../lib/ui/lazy-svelte-component';
-  import { BOARD_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import { TOOLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
   import {
     rememberHubDashboard,
     retainHubDashboardsForParent,
@@ -115,14 +115,14 @@
   let showSquadSettings = $derived(
     openHubParent != null && effectiveHubChannel.channelId === SETTINGS_CHANNEL_ID,
   );
-  let showSquadBoard = $derived(
-    openHubParent != null && effectiveHubChannel.hubChannelName === BOARD_CHANNEL_NAME,
+  let showSquadTools = $derived(
+    openHubParent != null && effectiveHubChannel.hubChannelName === TOOLS_CHANNEL_NAME,
   );
   let showMlsChatView = $derived(
     openHubParent != null &&
       !!effectiveHubChannel.channelId &&
       !isVirtualHubChannelId(effectiveHubChannel.channelId) &&
-      effectiveHubChannel.hubChannelName !== BOARD_CHANNEL_NAME,
+      effectiveHubChannel.hubChannelName !== TOOLS_CHANNEL_NAME,
   );
   let dashboardParentId = $derived(
     isSquadDashboardChromeChannelId(effectiveHubChannel.channelId) ? openHubParent?.id ?? null : null,
@@ -243,10 +243,10 @@
       </div>
     {/each}
   {/if}
-  {#if showSquadBoard && openHubParent}
-    {#key `${openHubParent.id}:${BOARD_CHANNEL_NAME}`}
+  {#if showSquadTools && openHubParent}
+    {#key `${openHubParent.id}:${TOOLS_CHANNEL_NAME}`}
       <div class="hub-surface">
-        <SquadBoardView parent={openHubParent} />
+        <SquadToolsView parent={openHubParent} />
       </div>
     {/key}
   {:else if showSquadSettings && openHubParent}

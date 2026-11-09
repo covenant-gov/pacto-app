@@ -1,8 +1,6 @@
 <script lang="ts">
   import ParentSidebar from './ParentSidebar.svelte';
   import CreateChannelModal from '../channel/CreateChannelModal.svelte';
-  import InviteToParentModal from '../channel/InviteToParentModal.svelte';
-  import ExitParentModal from '../channel/ExitParentModal.svelte';
   import PairWithSquadModal from '../squad/PairWithSquadModal.svelte';
   import {
     squads,
@@ -26,9 +24,7 @@
     squadNavOrder,
   } from '../../stores/navigation';
   import { removeSquadNavId } from '../../lib/squad/squad-nav-order';
-  import { dmList, requestsList, pendingList } from '../../stores/dm';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
-  import { showToast } from '../../stores/toast';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
@@ -51,11 +47,6 @@
     loadCreateChannelMemberList,
     runCreateChannelInParent,
   } from '../../lib/parent/create-channel-flow';
-  import {
-    loadInviteCandidateNpubs,
-    runInviteMembersToParent,
-  } from '../../lib/parent/invite-members-flow';
-  import { runExitParent } from '../../lib/parent/exit-parent-flow';
   import { buildHubSidebarChannels } from '../../lib/parent-navbar';
   import { pactoGovWargameInfraRow } from '../../lib/governance/api';
   import { isVirtualHubChannelId } from '../../lib/squad/hub-channel-names';
@@ -259,24 +250,14 @@
   );
   let createChannelMembersLabel = $derived($t('nav.parentNavbar.createChannel.membersLabel'));
   let createChannelEmptyMessage = $derived($t('nav.parentNavbar.createChannel.empty'));
-  let inviteModalTitle = $derived($t('nav.parentNavbar.invite.title'));
-  let inviteModalSubtitle = $derived(
-    $t('nav.parentNavbar.invite.subtitle', {
-      values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
-    })
-  );
-  let inviteModalEmptyMessage = $derived($t('nav.parentNavbar.invite.empty'));
 
-  let inviteErrorBanner = $state('');
   let createChannelErrorBanner = $state('');
 
   let errorBanners = $derived([
-    ...(inviteErrorBanner ? [{ id: 'invite', text: inviteErrorBanner }] : []),
     ...(createChannelErrorBanner ? [{ id: 'createChannel', text: createChannelErrorBanner }] : []),
   ]);
 
   function onDismissBanner(id: string) {
-    if (id === 'invite') inviteErrorBanner = '';
     if (id === 'createChannel') createChannelErrorBanner = '';
   }
 
@@ -458,107 +439,6 @@
     return getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
   }
 
-  let showInviteModal = $state(false);
-  let inviteCandidates: string[] = $state([]);
-  let selectedInviteNpubs: string[] = $state([]);
-  let inviteByNpub = $state('');
-  let loadingInvite = $state(false);
-  let inviteError = $state('');
-  let inviting = $state(false);
-
-  function openInviteModal() {
-    showInviteModal = true;
-    selectedInviteNpubs = [];
-    inviteByNpub = '';
-    inviteError = '';
-    void loadInviteCandidates();
-  }
-
-  function toggleInviteCandidate(npub: string) {
-    selectedInviteNpubs = selectedInviteNpubs.includes(npub)
-      ? selectedInviteNpubs.filter((n) => n !== npub)
-      : [...selectedInviteNpubs, npub];
-  }
-
-  async function loadInviteCandidates() {
-    const parent = activeParent;
-    if (!parent) return;
-    loadingInvite = true;
-    try {
-      const dmNpubs = [...$dmList, ...$requestsList, ...$pendingList].map((e) => e.npub);
-      inviteCandidates = await loadInviteCandidateNpubs(parent, dmNpubs, $currentUser?.npub);
-    } catch {
-      inviteCandidates = [];
-    } finally {
-      loadingInvite = false;
-    }
-  }
-
-  function closeInviteModal() {
-    if (!inviting) showInviteModal = false;
-  }
-
-  function handleInvite() {
-    const parent = activeParent;
-    if (!parent) return;
-    const extraNpub = inviteByNpub.trim();
-    const npubsToInvite = [
-      ...selectedInviteNpubs,
-      ...(extraNpub && extraNpub.startsWith('npub1') ? [extraNpub] : []),
-    ];
-    if (npubsToInvite.length === 0) {
-      inviteError = extraNpub
-        ? translate('nav.parentNavbar.invite.invalidNpub')
-        : translate('nav.parentNavbar.invite.noSelection');
-      return;
-    }
-    if (extraNpub && !extraNpub.startsWith('npub1')) {
-      inviteError = translate('nav.parentNavbar.invite.invalidNpub');
-      return;
-    }
-    inviteError = '';
-    inviteErrorBanner = '';
-    showInviteModal = false;
-    inviting = true;
-    runInviteMembersToParent({
-      parent,
-      npubsToInvite,
-      onErrorBanner: (message) => {
-        inviteErrorBanner = message;
-        setTimeout(() => {
-          inviteErrorBanner = '';
-        }, 8000);
-      },
-      onComplete: (_invitedNpubs) => {
-        inviting = false;
-      },
-    });
-  }
-
-  let showExitModal = $state(false);
-  let exitError = $state('');
-
-  function openExitModal() {
-    showExitModal = true;
-    exitError = '';
-  }
-
-  function closeExitModal() {
-    showExitModal = false;
-  }
-
-  function handleExitParent() {
-    const squad = $squads.find((s) => s.id === $activeSquadId);
-    if (!squad) return;
-    showExitModal = false;
-    exitError = '';
-    runExitParent({
-      squad,
-      wasActive: $activeSquadId === squad.id,
-      previousChannelId: $activeChannelId,
-      onFailure: (msg) => showToast(translate('nav.parentNavbar.exit.failure', { values: { squadName: squad.name, message: msg } })),
-    });
-  }
 </script>
 
 <ParentSidebar
@@ -583,8 +463,6 @@
   onCreateChannel={openCreateChannelModal}
   onRetryCreate={handleRetryCreate}
   onDiscardCreate={handleDiscardCreate}
-  onInvite={openInviteModal}
-  onExitSquad={openExitModal}
   partnerSquads={partnerSquads}
   activePartnerSquadId={activePartnerSquadId}
   onSelectPartnerSquad={selectPartnerSquad}
@@ -612,33 +490,6 @@
   onCreateClosed={handleCreateClosedChannel}
   onToggleMember={toggleMember}
   getMemberDisplayName={getMemberDisplayName}
-/>
-
-<InviteToParentModal
-  open={showInviteModal}
-  parentName={activeParent?.name ?? ''}
-  title={inviteModalTitle}
-  subtitle={inviteModalSubtitle}
-  candidates={inviteCandidates}
-  bind:selectedNpubs={selectedInviteNpubs}
-  bind:inviteByNpub={inviteByNpub}
-  loading={loadingInvite}
-  emptyMessage={inviteModalEmptyMessage}
-  error={inviteError}
-  inviting={inviting}
-  onClose={closeInviteModal}
-  onInvite={handleInvite}
-  onToggleCandidate={toggleInviteCandidate}
-  getCandidateDisplayName={getMemberDisplayName}
-/>
-
-<ExitParentModal
-  open={showExitModal}
-  parentName={activeParent?.name ?? ''}
-  error={exitError}
-  exiting={false}
-  onClose={closeExitModal}
-  onConfirm={handleExitParent}
 />
 
 <PairWithSquadModal

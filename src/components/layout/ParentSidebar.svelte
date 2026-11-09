@@ -6,12 +6,11 @@
   import { partitionHubSidebarChannels } from '../../lib/parent-navbar';
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
-    BOARD_CHANNEL_NAME,
+    TOOLS_CHANNEL_NAME,
   } from '../../lib/squad/hub-channel-names';
-  import chevronDownIcon from '../../icons/chevron-down.svg';
   import { t } from 'svelte-i18n';
   import { unreadCountsByChat } from '../../stores/unread';
-  import { dashboardPollReplicaNonceByParentId, squadBoardChannelMode } from '../../stores/navigation';
+  import { dashboardPollReplicaNonceByParentId, squadToolsChannelMode } from '../../stores/navigation';
   import {
     markPollsChannelSeen,
     refreshUnseenPollCreatesForParent,
@@ -64,8 +63,6 @@
     onCreateChannel?: () => void;
     onRetryCreate?: () => void;
     onDiscardCreate?: () => void;
-    onInvite?: () => void;
-    onExitSquad?: () => void;
     /** Partner squad-pairs linked to the active hub. */
     partnerSquads?: { id: string; name: string }[];
     activePartnerSquadId?: string | null;
@@ -97,8 +94,6 @@
     onCreateChannel = () => {},
     onRetryCreate = () => {},
     onDiscardCreate = () => {},
-    onInvite = () => {},
-    onExitSquad,
     partnerSquads = [],
     activePartnerSquadId = null,
     onSelectPartnerSquad = () => {},
@@ -106,7 +101,6 @@
     onPairWithSquad,
   }: Props = $props();
 
-  let menuOpen = $state(false);
   const createErrorId = 'parent-create-error';
 
   let groupIdDupCount = $derived(
@@ -126,14 +120,14 @@
   let showPartnerSquads = $derived(partnerSquads.length > 0 || showPairWithSquadAction);
   let { defaultHubChannels, customChannels } = $derived(partitionHubSidebarChannels(channels));
 
-  const boardActive = $derived(activeView === 'hub' && activeHubChannelName === BOARD_CHANNEL_NAME);
-  const boardMode = $derived($squadBoardChannelMode);
+  const toolsActive = $derived(activeView === 'hub' && activeHubChannelName === TOOLS_CHANNEL_NAME);
+  const toolsMode = $derived($squadToolsChannelMode);
 
   $effect(() => {
     const pid = parentId.trim();
     if (!pid) return;
     void $dashboardPollReplicaNonceByParentId[pid];
-    if (boardActive && boardMode === 'polls') {
+    if (toolsActive && toolsMode === 'polls') {
       void markPollsChannelSeen(pid);
     } else {
       void refreshUnseenPollCreatesForParent(pid);
@@ -145,12 +139,12 @@
     const annGroupId = channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId.trim();
     if (!pid || !annGroupId) return;
     const messages = $backendGroupMessages[annGroupId] ?? [];
-    if (boardActive && boardMode === 'events') {
+    if (toolsActive && toolsMode === 'events') {
       markEventsChannelSeen(pid, messages);
     } else {
       refreshUnseenEventCardsForParent(pid, messages);
     }
-    if (boardActive && boardMode === 'docs') {
+    if (toolsActive && toolsMode === 'docs') {
       markDocsChannelSeen(pid, messages);
     } else {
       refreshUnseenDocCardsForParent(pid, messages);
@@ -165,7 +159,7 @@
     const pid = parentId.trim();
     const out: Record<string, number> = {};
     for (const channel of [...defaultHubChannels, ...customChannels]) {
-      if (channel.name === BOARD_CHANNEL_NAME) {
+      if (channel.name === TOOLS_CHANNEL_NAME) {
         out[channel.name] = pid
           ? (pollAlerts[pid] ?? 0) + (eventAlerts[pid] ?? 0) + (docAlerts[pid] ?? 0)
           : 0;
@@ -176,19 +170,8 @@
     return out;
   });
   let showCustomChannelDivider = $derived(defaultHubChannels.length > 0 && customChannels.length > 0);
-  let inviteLabel = $derived($t('nav.parentSidebar.invite'));
-  let showExit = $derived(typeof onExitSquad === 'function');
-  let exitLabel = $derived($t('nav.parentSidebar.exit'));
-  let onExit = $derived(onExitSquad);
   let resolvedEmptyMessage = $derived(emptyMessage || $t('nav.parentSidebar.empty'));
 </script>
-
-<svelte:window
-  onclick={(e) => {
-    const t = e.target as HTMLElement | null;
-    if (menuOpen && t && !t.closest('.parent-header-actions')) menuOpen = false;
-  }}
-/>
 
 <ResizableSidebar sidebarClass="parent-sidebar">
   {#if hasParent}
@@ -196,47 +179,6 @@
       <div class="parent-header-row">
         <SquadAvatar src={parentIconUrl} name={parentName} seed={parentId || parentName} size={32} />
         <h2 class="parent-name">{parentName}</h2>
-        <div class="parent-header-actions">
-          <button
-            type="button"
-            class="parent-menu-btn"
-            title={$t('nav.parentSidebar.squadOptionsTitle')}
-            aria-label={$t('nav.parentSidebar.squadMenuAria')}
-            onclick={() => (menuOpen = !menuOpen)}
-            aria-haspopup="true"
-            aria-expanded={menuOpen}
-          >
-            <img src={chevronDownIcon} alt="" class="parent-menu-chevron" />
-          </button>
-          {#if menuOpen}
-            <div class="parent-menu-dropdown" role="menu">
-              <button
-                type="button"
-                class="parent-menu-item"
-                role="menuitem"
-                onclick={() => {
-                  menuOpen = false;
-                  onInvite();
-                }}
-              >
-                {inviteLabel}
-              </button>
-              {#if showExit && onExit}
-                <button
-                  type="button"
-                  class="parent-menu-item parent-menu-item-exit"
-                  role="menuitem"
-                  onclick={() => {
-                    menuOpen = false;
-                    onExit();
-                  }}
-                >
-                  {exitLabel}
-                </button>
-              {/if}
-            </div>
-          {/if}
-        </div>
       </div>
       {#if subheading}
         <p class="parent-subheading">{subheading}</p>
@@ -390,82 +332,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .parent-header-actions {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  .parent-menu-btn {
-    padding: 6px 8px;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: var(--text-secondary);
-    font-size: 1.125rem;
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  .parent-menu-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .parent-menu-chevron {
-    width: 18px;
-    height: 18px;
-    display: block;
-    filter: var(--icon-dropdown-filter);
-  }
-
-  .parent-menu-dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 4px;
-    min-width: 160px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    z-index: 50;
-    padding: 4px 0;
-  }
-
-  .parent-menu-item {
-    display: block;
-    width: 100%;
-    padding: 8px 12px;
-    border: none;
-    background: none;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .parent-menu-item:hover {
-    background: var(--bg-hover);
-  }
-
-  .parent-menu-item-exit {
-    color: var(--danger);
-  }
-
-  .parent-menu-item-exit:hover {
-    background: rgba(237, 66, 69, 0.15);
-    color: var(--danger);
-  }
-
-  .parent-menu-item:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .parent-menu-item:disabled:hover {
-    background: none;
   }
 
   .parent-error-banner {

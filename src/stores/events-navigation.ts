@@ -1,16 +1,16 @@
 import { writable, type Writable } from 'svelte/store';
-import { openSquadBoard } from '../lib/navigation/open-squad-dashboard';
+import { openSquadTools } from '../lib/navigation/open-squad-dashboard';
 
 export type EventsFocus = { parentId: string; eventId: string | null; seriesId: string | null };
 
-/** Deep-link request consumed by the `#board` events mode of `parentId`. */
+/** Deep-link request consumed by the `#tools` events mode of `parentId`. */
 export const eventsFocus: Writable<EventsFocus | null> = writable(null);
 
 function openEventsChannel(parentId: string): void {
-  openSquadBoard(parentId, 'events');
+  openSquadTools(parentId, 'events');
 }
 
-/** Opens `#board` → Events with that event's detail. */
+/** Opens `#tools` → Events with that event's detail. */
 export function focusSquadEvent(parentId: string, eventId: string): void {
   const pid = parentId.trim();
   if (!pid || !eventId) return;
@@ -18,7 +18,7 @@ export function focusSquadEvent(parentId: string, eventId: string): void {
   openEventsChannel(pid);
 }
 
-/** Opens `#board` → Events filtered to one weekly series. */
+/** Opens `#tools` → Events filtered to one weekly series. */
 export function focusSquadEventSeries(parentId: string, seriesId: string): void {
   const pid = parentId.trim();
   if (!pid || !seriesId) return;

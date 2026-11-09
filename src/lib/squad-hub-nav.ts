@@ -23,13 +23,13 @@ import {
   type Squad,
 } from '../stores/squads';
 import {
-  boardModeFromObsoleteHubName,
+  toolsModeFromObsoleteHubName,
   normalizeHubChannelName,
   remapObsoleteHubChannelId,
 } from './squad/hub-channel-names';
 import { resolveHubChannelNameForGroupSelection } from './mls/virtual-channel-bucket';
 import { pactoGovWargameInfraRow } from './governance/api';
-import { squadBoardChannelMode } from '../stores/navigation';
+import { squadToolsChannelMode } from '../stores/navigation';
 
 const VIRTUAL_HUB_CHANNEL_IDS = new Set([
   SQUAD_DASHBOARD_CHANNEL_ID,
@@ -91,8 +91,8 @@ export function resolveHubChannelForSquad(
   }
 
   const lastHubRaw = lastHubChannelNameBySquad[squad.id] ?? null;
-  const boardMode = boardModeFromObsoleteHubName(lastHubRaw);
-  if (boardMode) squadBoardChannelMode.set(boardMode);
+  const boardMode = toolsModeFromObsoleteHubName(lastHubRaw);
+  if (boardMode) squadToolsChannelMode.set(boardMode);
 
   const hubChannelName =
     channelId && !VIRTUAL_HUB_CHANNEL_IDS.has(channelId)

@@ -1,6 +1,6 @@
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  BOARD_CHANNEL_NAME,
+  TOOLS_CHANNEL_NAME,
   DOCS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
@@ -18,12 +18,13 @@ const OBSOLETE_DEFAULT_HUB_NAMES = new Set([
   'inbox',
   'join-requests',
   'dashboard',
+  'board',
   POLLS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   DOCS_CHANNEL_NAME,
 ]);
 
-const DEFAULT_HUB_MLS_NAMES = [ANNOUNCEMENTS_CHANNEL_NAME, BOARD_CHANNEL_NAME];
+const DEFAULT_HUB_MLS_NAMES = [ANNOUNCEMENTS_CHANNEL_NAME, TOOLS_CHANNEL_NAME];
 
 /** Default hub MLS rows for an announcements `groupId` (single-group default). */
 export function defaultChannelRowsForGroupId(groupId: string): HubChannelRow[] {
@@ -31,7 +32,7 @@ export function defaultChannelRowsForGroupId(groupId: string): HubChannelRow[] {
 }
 
 /**
- * Backfill missing `#board` and strip obsolete hub rows when the parent uses the
+ * Backfill missing `#tools` and strip obsolete hub rows when the parent uses the
  * single-group default MLS scope. Custom channels keep their relative order after the defaults.
  */
 export function ensureDefaultHubChannelRows(channels: HubChannelRow[]): HubChannelRow[] {
@@ -52,11 +53,11 @@ export function ensureDefaultHubChannelRows(channels: HubChannelRow[]): HubChann
     mlsDefaults.length <= 1 || mlsDefaults.every((c) => c.groupId === ann!.groupId);
   if (!singleGroupDefault) {
     const withoutObsolete = channels.filter((c) => !OBSOLETE_DEFAULT_HUB_NAMES.has(c.name));
-    if (withoutObsolete.some((c) => c.name === BOARD_CHANNEL_NAME)) return withoutObsolete;
+    if (withoutObsolete.some((c) => c.name === TOOLS_CHANNEL_NAME)) return withoutObsolete;
     const maxOrder = withoutObsolete.reduce((m, c) => Math.max(m, c.order), -1);
     return [
       ...withoutObsolete,
-      { name: BOARD_CHANNEL_NAME, groupId: gid, order: maxOrder + 1 },
+      { name: TOOLS_CHANNEL_NAME, groupId: gid, order: maxOrder + 1 },
     ];
   }
 

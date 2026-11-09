@@ -34,9 +34,9 @@ import {
   SETTINGS_CHANNEL_MODE_PREFIX,
   parseSettingsChannelMode,
   settingsChannelMode,
-  BOARD_CHANNEL_MODE_PREFIX,
-  parseSquadBoardChannelMode,
-  squadBoardChannelMode,
+  TOOLS_CHANNEL_MODE_PREFIX,
+  parseSquadToolsChannelMode,
+  squadToolsChannelMode,
   lastOpenedSquadId,
   lastOpenedChannelId,
   lastChannelBySquadId,
@@ -139,17 +139,17 @@ export function loadAccountState(npub: string): void {
         lastChannelBySquadId.set({});
       }
     }
-    let boardModeFromLegacyShelf: 'polls' | 'events' | 'docs' | null = null;
+    let toolsModeFromLegacyShelf: 'polls' | 'events' | 'docs' | null = null;
     const rawHubBySquad = localStorage.getItem(`${LAST_HUB_CHANNEL_NAME_BY_SQUAD_PREFIX}_${npub}`);
     if (rawHubBySquad) {
       try {
         const parsed = JSON.parse(rawHubBySquad) as unknown;
         if (typeof parsed === 'object' && parsed !== null) {
-          const { hubs, boardModeFromLegacy } = migrateLastHubChannelNamesBySquad(
+          const { hubs, toolsModeFromLegacy } = migrateLastHubChannelNamesBySquad(
             parsed as Record<string, string>,
             lastSquad,
           );
-          boardModeFromLegacyShelf = boardModeFromLegacy;
+          toolsModeFromLegacyShelf = toolsModeFromLegacy;
           lastHubChannelNameBySquadId.set(hubs);
         } else {
           lastHubChannelNameBySquadId.set({});
@@ -173,13 +173,13 @@ export function loadAccountState(npub: string): void {
     squadDashboardChannelMode.set(parseSquadDashboardChannelMode(rawSquadDashboardMode));
     const rawSettingsChannelMode = localStorage.getItem(`${SETTINGS_CHANNEL_MODE_PREFIX}_${npub}`);
     settingsChannelMode.set(parseSettingsChannelMode(rawSettingsChannelMode));
-    const rawBoardChannelMode = localStorage.getItem(`${BOARD_CHANNEL_MODE_PREFIX}_${npub}`);
+    const rawBoardChannelMode = localStorage.getItem(`${TOOLS_CHANNEL_MODE_PREFIX}_${npub}`);
     if (rawBoardChannelMode != null && rawBoardChannelMode.trim() !== '') {
-      squadBoardChannelMode.set(parseSquadBoardChannelMode(rawBoardChannelMode));
-    } else if (boardModeFromLegacyShelf) {
-      squadBoardChannelMode.set(boardModeFromLegacyShelf);
+      squadToolsChannelMode.set(parseSquadToolsChannelMode(rawBoardChannelMode));
+    } else if (toolsModeFromLegacyShelf) {
+      squadToolsChannelMode.set(toolsModeFromLegacyShelf);
     } else {
-      squadBoardChannelMode.set(parseSquadBoardChannelMode(rawBoardChannelMode));
+      squadToolsChannelMode.set(parseSquadToolsChannelMode(rawBoardChannelMode));
     }
   } catch {
     // ignore parse errors

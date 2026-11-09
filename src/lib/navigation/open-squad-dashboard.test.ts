@@ -12,7 +12,7 @@ import {
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
   settingsChannelMode,
-  squadBoardChannelMode,
+  squadToolsChannelMode,
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
@@ -167,7 +167,7 @@ describe('navigateToTarget', () => {
     squads.set([
       squad('squad-1', [
         { name: 'announcements', groupId: 'grp-announce' },
-        { name: 'board', groupId: 'grp-announce' },
+        { name: 'tools', groupId: 'grp-announce' },
         { name: 'ops', groupId: 'grp-ops' },
       ]),
     ]);
@@ -216,7 +216,7 @@ describe('navigateToTarget', () => {
     expect(get(settingsChannelMode)).toBe('network');
   });
 
-  it('a squad-event target opens #board events mode for that event', () => {
+  it('a squad-event target opens #tools events mode for that event', () => {
     mocks.eventsFocusSet.mockReset();
     navigateToTarget({
       kind: 'squad-event',
@@ -231,19 +231,19 @@ describe('navigateToTarget', () => {
       seriesId: null,
     });
     expect(get(activeChannelId)).toBe('grp-announce');
-    expect(get(activeHubChannelName)).toBe('board');
-    expect(get(squadBoardChannelMode)).toBe('events');
+    expect(get(activeHubChannelName)).toBe('tools');
+    expect(get(squadToolsChannelMode)).toBe('events');
   });
 
   it('a later squad-event target for another squad replaces focus and opens that board events mode', () => {
     squads.set([
       squad('squad-a', [
         { name: 'announcements', groupId: 'grp-a' },
-        { name: 'board', groupId: 'grp-a' },
+        { name: 'tools', groupId: 'grp-a' },
       ]),
       squad('squad-b', [
         { name: 'announcements', groupId: 'grp-b' },
-        { name: 'board', groupId: 'grp-b' },
+        { name: 'tools', groupId: 'grp-b' },
       ]),
     ]);
     navigateToTarget({
@@ -253,7 +253,7 @@ describe('navigateToTarget', () => {
       hubChannelName: 'events',
       eventId: 'evt-a',
     });
-    squadBoardChannelMode.set('docs');
+    squadToolsChannelMode.set('docs');
     mocks.eventsFocusSet.mockReset();
     navigateToTarget({
       kind: 'squad-event',
@@ -268,8 +268,8 @@ describe('navigateToTarget', () => {
       seriesId: null,
     });
     expect(get(activeSquadId)).toBe('squad-b');
-    expect(get(activeHubChannelName)).toBe('board');
-    expect(get(squadBoardChannelMode)).toBe('events');
+    expect(get(activeHubChannelName)).toBe('tools');
+    expect(get(squadToolsChannelMode)).toBe('events');
   });
 });
 
@@ -277,7 +277,7 @@ describe('resolveCatchUpTarget', () => {
   const testSquads = [
     squad('squad-1', [
       { name: 'announcements', groupId: 'grp-announce' },
-      { name: 'board', groupId: 'grp-announce' },
+      { name: 'tools', groupId: 'grp-announce' },
       { name: 'ops', groupId: 'grp-ops' },
     ]),
   ];

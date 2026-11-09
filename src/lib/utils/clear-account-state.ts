@@ -23,7 +23,7 @@ import {
   showMembersPanel,
   squadDashboardChannelMode,
   settingsChannelMode,
-  squadBoardChannelMode,
+  squadToolsChannelMode,
   dashboardPollReplicaNonceByParentId,
 } from '../../stores/navigation';
 import {
@@ -332,7 +332,7 @@ export function clearAccountState(npub?: string): void {
   activeView.set('hub');
   squadDashboardChannelMode.set('status');
   settingsChannelMode.set('you');
-  squadBoardChannelMode.set('polls');
+  squadToolsChannelMode.set('polls');
   showMembersPanel.set(false);
   walletSidebarOpen.set(false);
   walletSendPrefillFromRequest.set(null);

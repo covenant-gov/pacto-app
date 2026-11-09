@@ -4,7 +4,7 @@
 import type { Channel } from '../stores/squads';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  BOARD_CHANNEL_NAME,
+  TOOLS_CHANNEL_NAME,
   DOCS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
@@ -46,7 +46,7 @@ export function isDefaultHubSidebarChannel(name: string): boolean {
     name === SQUAD_DASHBOARD_CHANNEL_NAME ||
     name === SQUAD_WARGAME_CHANNEL_NAME ||
     name === ANNOUNCEMENTS_CHANNEL_NAME ||
-    name === BOARD_CHANNEL_NAME ||
+    name === TOOLS_CHANNEL_NAME ||
     name === SETTINGS_CHANNEL_NAME
   );
 }
@@ -64,14 +64,14 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
     .sort((a, b) => a.order - b.order);
   const announcements = sorted.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
   const board =
-    sorted.find((c) => c.name === BOARD_CHANNEL_NAME) ??
+    sorted.find((c) => c.name === TOOLS_CHANNEL_NAME) ??
     (announcements
-      ? { name: BOARD_CHANNEL_NAME, groupId: announcements.groupId, order: 1 }
+      ? { name: TOOLS_CHANNEL_NAME, groupId: announcements.groupId, order: 1 }
       : undefined);
   const rest = sorted.filter(
     (c) =>
       c.name !== ANNOUNCEMENTS_CHANNEL_NAME &&
-      c.name !== BOARD_CHANNEL_NAME &&
+      c.name !== TOOLS_CHANNEL_NAME &&
       c.name !== SETTINGS_CHANNEL_NAME,
   );
   const includeWarGame = options?.includeWarGame === true;
@@ -137,7 +137,7 @@ export function resolvePollsMlsGroupId(parent: ParentWithChannels): string | nul
 
 /** Default squad/network MLS rooms to invite people into (announce → board). May share one physical group id. */
 export function orderedDefaultInviteChannels(parent: ParentWithChannels): Channel[] {
-  const order = [ANNOUNCEMENTS_CHANNEL_NAME, BOARD_CHANNEL_NAME];
+  const order = [ANNOUNCEMENTS_CHANNEL_NAME, TOOLS_CHANNEL_NAME];
   return order
     .map((name) => parent.channels.find((c) => c.name === name))
     .filter((c): c is Channel => !!c);

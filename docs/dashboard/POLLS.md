@@ -2,9 +2,9 @@
 
 Polls for a squad/network parent are **replicated across members** via the parent’s **`#announcements` MLS group**. Each device reads SQLite through Tauri (`list_dashboard_polls`); `localStorage` only caches the signed-in user’s last selected option per poll.
 
-`#board` → Polls shows **Create Poll** and vote cards only — no chat timeline or composer.
+`#tools` → Polls shows **Create Poll** and vote cards only — no chat timeline or composer.
 
-**Sidebar badge:** `#board` aggregates unseen poll creates, event cards, and doc cards (not MLS group unread shared with `#announcements`). Opening `#board` → Polls clears the poll portion without marking the announcements MLS chat read. Each parent gets a persisted baseline at first sight (polls created before it never badge); creates that arrive while Polls mode is open are marked seen immediately. Marking seen never lowers a watermark, and overlapping replica updates (for example vote bursts) coalesce into one trailing refetch.
+**Sidebar badge:** `#tools` aggregates unseen poll creates, event cards, and doc cards (not MLS group unread shared with `#announcements`). Opening `#tools` → Polls clears the poll portion without marking the announcements MLS chat read. Each parent gets a persisted baseline at first sight (polls created before it never badge); creates that arrive while Polls mode is open are marked seen immediately. Marking seen never lowers a watermark, and overlapping replica updates (for example vote bursts) coalesce into one trailing refetch.
 
 ## Wire
 
@@ -21,12 +21,12 @@ Squad group records (content policy, events, docs) reuse this pattern with their
 | Parse / DB / commands | `src-tauri/src/dashboard_poll.rs` |
 | Rumor ingest | `src-tauri/src/rumor.rs` (`process_dashboard_poll_rumor`) |
 | Virtual bucket | `src-tauri/src/virtual_channel_bucket.rs`, `src/lib/mls/virtual-channel-bucket.ts` |
-| UI | `#board` → Polls: `DashboardPollsPanel` (Create Poll + vote cards only; no chat). Announce cards: `DashboardPollCreatedAnnounceBody.svelte` |
+| UI | `#tools` → Polls: `DashboardPollsPanel` (Create Poll + vote cards only; no chat). Announce cards: `DashboardPollCreatedAnnounceBody.svelte` |
 | Send helpers | `src/lib/api/nostr.ts` (`sendDashboardPollCreate`, vote) |
 
 ## Manual smoke
 
-Two clients on the same announcements group: create → both see announcement + `#board` Polls cards; A votes → B tally updates without new feed lines; A revotes → B sees updated count.
+Two clients on the same announcements group: create → both see announcement + `#tools` Polls cards; A votes → B tally updates without new feed lines; A revotes → B sees updated count.
 
 ## Related
 

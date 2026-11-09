@@ -1,13 +1,13 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
-  import { BOARD_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
-  import { withPendingBoardFocusModes } from '../../lib/squad/board-visited-modes';
+  import { TOOLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import { withPendingToolsFocusModes } from '../../lib/squad/tools-visited-modes';
   import { resolvePollsMlsGroupId } from '../../lib/parent-navbar';
   import {
-    BOARD_CHANNEL_MODES,
-    squadBoardChannelMode,
-    type SquadBoardChannelMode,
+    TOOLS_CHANNEL_MODES,
+    squadToolsChannelMode,
+    type SquadToolsChannelMode,
   } from '../../stores/navigation';
   import { eventsFocus } from '../../stores/events-navigation';
   import { docsFocus } from '../../stores/docs-navigation';
@@ -23,44 +23,44 @@
 
   const parentId = $derived(parent?.id ?? '');
   const mlsGroupId = $derived(resolvePollsMlsGroupId(parent));
-  const boardMode = $derived($squadBoardChannelMode);
+  const toolsMode = $derived($squadToolsChannelMode);
 
-  let visitedBoardModes = $state(new Set<SquadBoardChannelMode>([$squadBoardChannelMode]));
+  let visitedToolsModes = $state(new Set<SquadToolsChannelMode>([$squadToolsChannelMode]));
   $effect(() => {
-    const mode = boardMode;
+    const mode = toolsMode;
     const pid = parentId;
-    const next = withPendingBoardFocusModes(visitedBoardModes, mode, {
+    const next = withPendingToolsFocusModes(visitedToolsModes, mode, {
       seedEvents: $eventsFocus?.parentId === pid,
       seedDocs: $docsFocus?.parentId === pid,
     });
     if (
-      next.size !== visitedBoardModes.size ||
-      [...next].some((m) => !visitedBoardModes.has(m))
+      next.size !== visitedToolsModes.size ||
+      [...next].some((m) => !visitedToolsModes.has(m))
     ) {
-      visitedBoardModes = next;
+      visitedToolsModes = next;
     }
   });
 
-  function selectBoardMode(mode: SquadBoardChannelMode) {
-    squadBoardChannelMode.set(mode);
+  function selectToolsMode(mode: SquadToolsChannelMode) {
+    squadToolsChannelMode.set(mode);
   }
 </script>
 
-<div class="squad-board">
-  <HubChannelHeader channelName={BOARD_CHANNEL_NAME} />
+<div class="squad-tools">
+  <HubChannelHeader channelName={TOOLS_CHANNEL_NAME} />
   <HubModeSwitcher
-    modes={BOARD_CHANNEL_MODES}
-    active={boardMode}
-    ariaLabel={$t('governance.boardChannelMode.section')}
-    labelFor={(mode) => $t(`governance.boardChannelMode.${mode}`)}
-    onSelect={(mode) => selectBoardMode(mode as SquadBoardChannelMode)}
+    modes={TOOLS_CHANNEL_MODES}
+    active={toolsMode}
+    ariaLabel={$t('governance.toolsChannelMode.section')}
+    labelFor={(mode) => $t(`governance.toolsChannelMode.${mode}`)}
+    onSelect={(mode) => selectToolsMode(mode as SquadToolsChannelMode)}
   />
-  <div class="squad-board-body">
-    {#if visitedBoardModes.has('polls')}
+  <div class="squad-tools-body">
+    {#if visitedToolsModes.has('polls')}
       <div
         class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={boardMode === 'polls'}
-        hidden={boardMode !== 'polls'}
+        class:dashboard-tab-pane-active={toolsMode === 'polls'}
+        hidden={toolsMode !== 'polls'}
       >
         {#await loadDashboardPollsPanel() then PollsPanel}
           <PollsPanel
@@ -74,11 +74,11 @@
         {/await}
       </div>
     {/if}
-    {#if visitedBoardModes.has('events')}
+    {#if visitedToolsModes.has('events')}
       <div
         class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={boardMode === 'events'}
-        hidden={boardMode !== 'events'}
+        class:dashboard-tab-pane-active={toolsMode === 'events'}
+        hidden={toolsMode !== 'events'}
       >
         {#await loadSquadEventsPanel() then EventsPanel}
           <EventsPanel parentId={parentId} mlsGroupId={mlsGroupId} />
@@ -87,11 +87,11 @@
         {/await}
       </div>
     {/if}
-    {#if visitedBoardModes.has('docs')}
+    {#if visitedToolsModes.has('docs')}
       <div
         class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={boardMode === 'docs'}
-        hidden={boardMode !== 'docs'}
+        class:dashboard-tab-pane-active={toolsMode === 'docs'}
+        hidden={toolsMode !== 'docs'}
       >
         {#await loadSquadDocsPanel() then DocsPanel}
           <DocsPanel parentId={parentId} mlsGroupId={mlsGroupId} />
@@ -104,7 +104,7 @@
 </div>
 
 <style>
-  .squad-board {
+  .squad-tools {
     flex: 1;
     min-width: 0;
     width: 100%;
@@ -113,7 +113,7 @@
     height: 100%;
     min-height: 0;
   }
-  .squad-board-body {
+  .squad-tools-body {
     flex: 1;
     min-width: 0;
     min-height: 0;

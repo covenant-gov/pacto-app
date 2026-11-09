@@ -18,7 +18,7 @@ import {
 } from './parent-navbar';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  BOARD_CHANNEL_NAME,
+  TOOLS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_NAME,
   SQUAD_DASHBOARD_CHANNEL_ID,
@@ -27,21 +27,21 @@ import {
   SQUAD_WARGAME_CHANNEL_NAME,
 } from './squad/hub-channel-names';
 
-const DEFAULTS = [ANNOUNCEMENTS_CHANNEL_NAME, BOARD_CHANNEL_NAME];
+const DEFAULTS = [ANNOUNCEMENTS_CHANNEL_NAME, TOOLS_CHANNEL_NAME];
 
 describe('partitionHubSidebarChannels', () => {
   it('splits built-in hub rows from user-created channels', () => {
     const channels = [
       { name: SQUAD_DASHBOARD_CHANNEL_NAME, groupId: SQUAD_DASHBOARD_CHANNEL_ID, order: -2 },
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
-      { name: BOARD_CHANNEL_NAME, groupId: 'g', order: 1 },
+      { name: TOOLS_CHANNEL_NAME, groupId: 'g', order: 1 },
       { name: 'c1', groupId: 'c1g', order: 2 },
     ];
     const { defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels);
     expect(defaultHubChannels.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
-      BOARD_CHANNEL_NAME,
+      TOOLS_CHANNEL_NAME,
     ]);
     expect(customChannels.map((c) => c.name)).toEqual(['c1']);
   });
@@ -69,7 +69,7 @@ describe('buildHubSidebarChannels', () => {
     expect(built.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
-      BOARD_CHANNEL_NAME,
+      TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
       'c1',
     ]);
@@ -82,10 +82,10 @@ describe('buildHubSidebarChannels', () => {
     expect(built.map((c) => c.name)).toEqual([
       SQUAD_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
-      BOARD_CHANNEL_NAME,
+      TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
     ]);
-    expect(built.find((c) => c.name === BOARD_CHANNEL_NAME)?.groupId).toBe('g');
+    expect(built.find((c) => c.name === TOOLS_CHANNEL_NAME)?.groupId).toBe('g');
   });
 
   it('omits gov-practice unless includeWarGame', () => {
@@ -99,7 +99,7 @@ describe('buildHubSidebarChannels', () => {
       SQUAD_DASHBOARD_CHANNEL_NAME,
       SQUAD_WARGAME_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
-      BOARD_CHANNEL_NAME,
+      TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
     ]);
     expect(built[1]).toMatchObject({
@@ -144,7 +144,7 @@ describe('ensureDefaultHubChannelRows', () => {
   it('does not rewrite when announcements and board use distinct MLS group ids', () => {
     const split = [
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'a', order: 0 },
-      { name: BOARD_CHANNEL_NAME, groupId: 'b', order: 1 },
+      { name: TOOLS_CHANNEL_NAME, groupId: 'b', order: 1 },
     ];
     expect(ensureDefaultHubChannelRows(split)).toEqual(split);
   });
@@ -157,7 +157,7 @@ describe('createDefaultParentChannels', () => {
     expect(out.parentId).toBe('mls-single');
     expect(out.channels.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      BOARD_CHANNEL_NAME,
+      TOOLS_CHANNEL_NAME,
     ]);
     expect(out.skippedMembers).toEqual([]);
     expect(out.pendingInvites).toEqual([]);
@@ -188,7 +188,7 @@ describe('uniqueChannelsByGroupIdPreservingOrder', () => {
   it('keeps first channel per group id', () => {
     const channels = [
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
-      { name: BOARD_CHANNEL_NAME, groupId: 'g', order: 1 },
+      { name: TOOLS_CHANNEL_NAME, groupId: 'g', order: 1 },
       { name: 'c1', groupId: 'c1', order: 2 },
     ];
     expect(uniqueChannelsByGroupIdPreservingOrder(channels).map((c) => c.name)).toEqual([

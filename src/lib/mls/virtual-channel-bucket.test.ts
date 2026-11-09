@@ -159,16 +159,16 @@ describe('defaultHubSharesSingleMlsGroup', () => {
     expect(
       defaultHubSharesSingleMlsGroup([
         { name: 'announcements', groupId: 'a', order: 0 },
-        { name: 'board', groupId: 'c', order: 1 },
+        { name: 'tools', groupId: 'c', order: 1 },
       ]),
     ).toBe(false);
   });
 
-  it('is true when announcements and board share one group id', () => {
+  it('is true when announcements and tools share one group id', () => {
     expect(
       defaultHubSharesSingleMlsGroup([
         { name: 'announcements', groupId: 'g', order: 0 },
-        { name: 'board', groupId: 'g', order: 1 },
+        { name: 'tools', groupId: 'g', order: 1 },
       ]),
     ).toBe(true);
   });
@@ -177,7 +177,7 @@ describe('defaultHubSharesSingleMlsGroup', () => {
 describe('resolveHubChannelNameForGroupSelection', () => {
   const channels = [
     { name: 'announcements', groupId: 'g', order: 0 },
-    { name: 'board', groupId: 'g', order: 1 },
+    { name: 'tools', groupId: 'g', order: 1 },
   ];
 
   it('returns the only name when unique', () => {
@@ -185,11 +185,11 @@ describe('resolveHubChannelNameForGroupSelection', () => {
   });
 
   it('respects preferred name among duplicates', () => {
-    expect(resolveHubChannelNameForGroupSelection(channels, 'g', 'board')).toBe('board');
+    expect(resolveHubChannelNameForGroupSelection(channels, 'g', 'tools')).toBe('tools');
   });
 
-  it('maps legacy shelf preference to board', () => {
-    expect(resolveHubChannelNameForGroupSelection(channels, 'g', 'events')).toBe('board');
+  it('maps legacy shelf preference to tools', () => {
+    expect(resolveHubChannelNameForGroupSelection(channels, 'g', 'events')).toBe('tools');
   });
 
   it('falls back to lowest order when preference invalid', () => {

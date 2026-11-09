@@ -50,19 +50,19 @@ export function parseSettingsChannelMode(raw: string | null): SettingsChannelMod
 
 export const settingsChannelMode = writable<SettingsChannelMode>('you');
 
-/** #board segmented mode; unknown persisted values reset to `polls`. */
-export const BOARD_CHANNEL_MODES = ['polls', 'events', 'docs'] as const;
-export type SquadBoardChannelMode = (typeof BOARD_CHANNEL_MODES)[number];
+/** #tools segmented mode; unknown persisted values reset to `polls`. */
+export const TOOLS_CHANNEL_MODES = ['polls', 'events', 'docs'] as const;
+export type SquadToolsChannelMode = (typeof TOOLS_CHANNEL_MODES)[number];
 
-export const BOARD_CHANNEL_MODE_PREFIX = 'pacto_squad_board_mode';
+export const TOOLS_CHANNEL_MODE_PREFIX = 'pacto_squad_tools_mode';
 
-export function parseSquadBoardChannelMode(raw: string | null): SquadBoardChannelMode {
+export function parseSquadToolsChannelMode(raw: string | null): SquadToolsChannelMode {
   const v = raw?.trim();
   if (v === 'polls' || v === 'events' || v === 'docs') return v;
   return 'polls';
 }
 
-export const squadBoardChannelMode = writable<SquadBoardChannelMode>('polls');
+export const squadToolsChannelMode = writable<SquadToolsChannelMode>('polls');
 
 function openSquadSettingsChannel(mode?: SettingsChannelMode) {
   const squadId = get(activeSquadId);
@@ -168,9 +168,9 @@ settingsChannelMode.subscribe((mode) => {
   }
 });
 
-squadBoardChannelMode.subscribe((mode) => {
+squadToolsChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(BOARD_CHANNEL_MODE_PREFIX);
+  const key = persistenceKey(TOOLS_CHANNEL_MODE_PREFIX);
   if (!key) return;
   try {
     localStorage.setItem(key, mode);
