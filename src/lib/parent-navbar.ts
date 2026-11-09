@@ -53,7 +53,7 @@ export function isDefaultHubSidebarChannel(name: string): boolean {
 
 /**
  * Virtual + MLS rows for the squad hub sidebar.
- * Pinned order: governance → gov-practice (when present) → announcements → board → settings → (custom below divider).
+ * Pinned order: announcements → governance → gov-practice (when present) → tools → settings → (custom below divider).
  */
 export function buildHubSidebarChannels<T extends { name: string; groupId: string; order: number }>(
   rawChannels: T[],
@@ -75,13 +75,13 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
       c.name !== SETTINGS_CHANNEL_NAME,
   );
   const includeWarGame = options?.includeWarGame === true;
-  const out: Array<T | { name: string; groupId: string; order: number }> = [
-    {
-      name: SQUAD_DASHBOARD_CHANNEL_NAME,
-      groupId: SQUAD_DASHBOARD_CHANNEL_ID,
-      order: includeWarGame ? -3 : -2,
-    },
-  ];
+  const out: Array<T | { name: string; groupId: string; order: number }> = [];
+  if (announcements) out.push(announcements);
+  out.push({
+    name: SQUAD_DASHBOARD_CHANNEL_NAME,
+    groupId: SQUAD_DASHBOARD_CHANNEL_ID,
+    order: includeWarGame ? -3 : -2,
+  });
   if (includeWarGame) {
     out.push({
       name: SQUAD_WARGAME_CHANNEL_NAME,
@@ -89,7 +89,6 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
       order: -2,
     });
   }
-  if (announcements) out.push(announcements);
   if (board) out.push(board);
   out.push({ name: SETTINGS_CHANNEL_NAME, groupId: SETTINGS_CHANNEL_ID, order: 2 });
   out.push(...rest);

@@ -11,8 +11,9 @@ src/routes/+page.svelte                    thin lazy loader → AuthenticatedApp
 src/components/app/AuthenticatedApp.svelte layout, tab routing, DM send/typing; mounts app event bridge
 src/components/layout/ParentNavbar.svelte   sidebar + modals → lib/parent/* flows
 src/components/parent/ParentDashboard.svelte   #governance / #gov-practice tab shell (Status→Governance→Treasury→Crew)
-src/components/parent/SquadSettingsView.svelte #settings virtual channel (You | Us | Access | Network)
-src/components/parent/SquadToolsView.svelte    #tools shelf (Polls | Events | Docs); mounted from SquadHubMain, not ChatView
+src/components/parent/SquadSettingsView.svelte #settings virtual channel (You | About | Access | Network)
+src/components/parent/SquadToolsView.svelte    #tools shelf (Polls | Events | Docs | Stickers); mounted from SquadHubMain, not ChatView
+src/components/parent/HubViewShell.svelte      shared hub chrome: header + mode switcher + members rail
 src/components/parent/HubChannelHeader.svelte  shared `#name` hub header
 src/components/parent/HubModeSwitcher.svelte   shared segmented mode switcher
 src/components/dm/DmThread.svelte             header/input/options + DmMessageRouter
@@ -27,9 +28,9 @@ src/stores/app.ts                 thin re-export barrel (navigation, dm, squads,
 
 Pinned system channels stay **above** a thin gray divider; member-created MLS channels stay **below**.
 
-**Pinned order:** `governance` → `gov-practice` (when Active) → `announcements` → `tools` → `settings`
+**Pinned order:** `announcements` → `governance` → `gov-practice` (when Active) → `tools` → `settings`
 
-`personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **`#settings` → You → Alerts** and **`#settings` → Access → Join requests**. Persisted `__my_dashboard__` remaps to `#settings`.
+`personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **`#settings` → You → Alerts** and **`#settings` → Access → Pending** (outbound invites + Commons join requests). Persisted `__my_dashboard__` remaps to `#settings`.
 
 ---
 
@@ -71,8 +72,9 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/dm/DmMessageRouter.svelte` | Invite cards, wallet cards, plain `Message` |
 | `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + Proposals board (Open \| Executed \| Failed); Squad Admin card when the squad has a standalone `squad_admin` row and no Pacto Gov |
 | `components/parent/dashboard/SquadAdminStatusCard.svelte` | Admin-only deployed state: variant copy, proxy (copy), network, CTA to Settings → Access → Privileges |
-| `components/parent/dashboard/DashboardSettingsUsTab.svelte` | Squad photo, Commons broadcast, stickers — `#settings` Us |
-| `components/parent/dashboard/DashboardSettingsAccessTab.svelte` | Join requests, Privileges (ACL / Squad Admin), content policy, Join-inbox holders — `#settings` Access |
+| `components/parent/dashboard/DashboardSettingsAboutTab.svelte` | Squad photo, Commons broadcast, Invite + Pending, Join-inbox holders — `#settings` About |
+| `components/parent/dashboard/DashboardSettingsAccessTab.svelte` | Privileges (ACL / Squad Admin), content policy — `#settings` Access |
+| `components/parent/SquadToolsView.svelte` | `#tools` mode panes: polls, events, docs, stickers |
 | `components/parent/dashboard/DashboardSettingsNetworkTab.svelte` | Primary/Practice networks, Chain RPC / Pimlico — `#settings` Network |
 | `components/parent/dashboard/DashboardGovernanceTab.svelte` | All / Crew / Captain commands + Hats tree |
 | `components/parent/dashboard/DashboardRolesTreeTab.svelte` | Hats tree (mounted at the bottom of Governance) |
@@ -83,13 +85,13 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/parent/dashboard/ParentDashboardModals.svelte` | Deploy/import Safe + privilege modals |
 | `components/parent/dashboard/ParentDashboardMembersPanel.svelte` | Members aside |
 
-`#governance` modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `crew`). `#settings` uses `settingsChannelMode` (`you` \| `us` \| `access` \| `network`): You is checklist, Alerts, roster EVM, then squad sync; Us is photo / broadcast / stickers; Access is join requests, privileges, content policy, join-inbox holders; Network is primary/practice chains, RPC, Pimlico. Leftover `personal` remaps to `you`. Unknown persisted settings modes (including `squad`) reset to `you`. `#tools` uses `squadToolsChannelMode` (`polls` \| `events` \| `docs`); legacy sidebar names `polls` / `events` / `docs` and the superseded `board` slug restore as `#tools` (plus shelf mode when applicable). Unknown tools modes reset to `polls`.
+`#governance` modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `crew`). `#settings` uses `settingsChannelMode` (`you` \| `about` \| `access` \| `network`): You is checklist, Alerts, roster EVM, then squad sync; About is photo / broadcast / invite+pending / join-inbox holders; Access is privileges and content policy; Network is primary/practice chains, RPC, Pimlico. Leftover `personal` remaps to `you`; leftover `us` remaps to `about`. Unknown persisted settings modes (including `squad`) reset to `you`. `#tools` uses `squadToolsChannelMode` (`polls` \| `events` \| `docs` \| `stickers`); legacy sidebar names `polls` / `events` / `docs` and the superseded `board` slug restore as `#tools` (plus shelf mode when applicable). Unknown tools modes reset to `polls`.
 
-**Status vs Settings.** Status is for frequently needed operational info: Checklist, live Proposals. Settings is for one-time or occasional config, split across You / Us / Access / Network. Network retargeting for future deploys lives in Settings → Network ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` and `roles` slugs) reset to `status`. Arbitrary contract allowlist / call UI is not on Settings.
+**Status vs Settings.** Status is for frequently needed operational info: Checklist, live Proposals. Settings is for one-time or occasional config, split across You / About / Access / Network. Network retargeting for future deploys lives in Settings → Network ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` and `roles` slugs) reset to `status`. Arbitrary contract allowlist / call UI is not on Settings.
 
-**Invariant:** do not add a new `#governance` segmented mode for a single feature. Occasional config goes in a Settings **section**. A new tab is only for a frequently used operational domain with its own data (Governance, Treasury, Crew). Hats tree lives under Governance, not its own tab. Stickers as its own tab is the anti-pattern. Polls / Events / Docs share `#tools` with an in-channel mode switch — not three sidebar rows.
+**Invariant:** do not add a new `#governance` segmented mode for a single feature. Occasional config goes in a Settings **section**. A new tab is only for a frequently used operational domain with its own data (Governance, Treasury, Crew). Hats tree lives under Governance, not its own tab. Stickers must not be a sidebar channel or a `#governance` mode — pack authoring lives under `#tools` Stickers with polls / events / docs.
 
-**Keep-alive:** After a `#governance` mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders). `#settings` and `#tools` use the same keep-alive for their mode panes. Shared chrome: `HubChannelHeader` + `HubModeSwitcher`.
+**Keep-alive:** After a `#governance` mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders). `#settings` and `#tools` use the same keep-alive for their mode panes. Shared chrome: `HubViewShell` (`HubChannelHeader` + `HubModeSwitcher` + `ParentDashboardMembersPanel`).
 
 Governance uses role sub-modes inside `PactoGovGovernanceShell` (All / Crew / Captain command panes; Status owns the Proposals board). The board filters **Open | Executed | Failed** for treasury proposals and mutiny rounds. Crew offboard and crew add/remove stay on Open only, and leave the board when they finish. Propose and vote-mode writes live on **All**; process votes live on Status cards. CTAs use **ACL** (access control) snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 

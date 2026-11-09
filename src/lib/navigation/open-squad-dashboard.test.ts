@@ -292,7 +292,7 @@ describe('resolveCatchUpTarget', () => {
     expect(target).toEqual({ kind: 'squad-dashboard', squadId: 'squad-1' });
   });
 
-  it('resolves a join-request action_prompt to #settings Access', () => {
+  it('resolves a join-request action_prompt to #settings About', () => {
     const target = resolveCatchUpTarget(
       { chatId: 'grp-announce', kind: 'action_prompt', sourceEventId: 'join-request:evt-1' },
       testSquads,
@@ -301,7 +301,7 @@ describe('resolveCatchUpTarget', () => {
       kind: 'squad-channel',
       squadId: 'squad-1',
       channelId: SETTINGS_CHANNEL_ID,
-      settingsMode: 'access',
+      settingsMode: 'about',
     });
   });
 

@@ -132,6 +132,8 @@ import { PACTO_SQUAD_JOIN_MUTED_PREFIX } from '../squad/squad-join-spam';
 import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { SQUAD_RPC_PREFIX } from '../squad/squad-rpc';
 import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
+import { resetSquadOutboundInviteStores } from '../../stores/squad-outbound-invites';
+import { resetOutboundInviteState } from '../squad/squad-outbound-invite';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
 import {
   LAST_SEEN_POLL_CREATED_AT_PREFIX,
@@ -261,6 +263,8 @@ export function clearAccountState(npub?: string): void {
   resetDeferredSquadRosterKeyParentIds();
   resetMutinyProcessTxStore();
   resetSquadJoinRequestStores();
+  resetSquadOutboundInviteStores();
+  resetOutboundInviteState();
   resetSquadHubAlertStores();
   resetPollsHubAlertStores();
   resetEventsHubAlertStores();

@@ -5,6 +5,10 @@ vi.mock('../../stores/squad-join-requests', () => ({
   syncJoinRequestsForSquad: vi.fn(),
 }));
 
+vi.mock('../../stores/squad-outbound-invites', () => ({
+  syncOutboundInvitesForSquad: vi.fn(),
+}));
+
 vi.mock('../parent/pending-admit', () => ({
   drainPendingAdmitQueue: vi.fn(),
 }));

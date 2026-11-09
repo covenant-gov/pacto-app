@@ -20,9 +20,11 @@ Leave all work in the local working tree for human review unless the user **expl
 
 The user must clearly ask to commit (e.g. “commit this”, “create a commit”, “commit and push”). Same for push and for creating a PR that needs a push.
 
+When that ask comes, frontend CI gates must be green first: [ci-gates-before-finish.mdc](ci-gates-before-finish.mdc).
+
 ## After plan execution
 
-Stop with a short summary of what changed and which files to review. Do **not** `git add`, `git commit`, or `git push` as part of wrapping up.
+Stop with a short summary of what changed and which files to review. Do **not** `git add`, `git commit`, or `git push` as part of wrapping up. Run [ci-gates-before-finish.mdc](ci-gates-before-finish.mdc) before calling the work done.
 
 ## Related
 

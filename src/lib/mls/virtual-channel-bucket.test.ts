@@ -120,6 +120,19 @@ describe('deriveVirtualBucketFromMessageContent', () => {
     ).toBe('join_requests');
   });
 
+  it('routes outbound invite and revoke announces to announcements', () => {
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ type: 'squad_outbound_invite', payload: { parent_id: 'g' } })
+      )
+    ).toBe('announcements');
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ type: 'squad_outbound_invite_revoked', payload: { parent_id: 'g' } })
+      )
+    ).toBe('announcements');
+  });
+
   it('derives join inbox meta and rotate prompt buckets', () => {
     expect(
       deriveVirtualBucketFromMessageContent(

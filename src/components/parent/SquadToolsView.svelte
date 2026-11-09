@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
-  import { TOOLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import { ANNOUNCEMENTS_CHANNEL_NAME, TOOLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
   import { withPendingToolsFocusModes } from '../../lib/squad/tools-visited-modes';
   import { resolvePollsMlsGroupId } from '../../lib/parent-navbar';
   import {
@@ -11,8 +11,8 @@
   } from '../../stores/navigation';
   import { eventsFocus } from '../../stores/events-navigation';
   import { docsFocus } from '../../stores/docs-navigation';
-  import HubChannelHeader from './HubChannelHeader.svelte';
-  import HubModeSwitcher from './HubModeSwitcher.svelte';
+  import HubViewShell from './HubViewShell.svelte';
+  import SquadStickersSection from './dashboard/SquadStickersSection.svelte';
   import {
     loadDashboardPollsPanel,
     loadSquadDocsPanel,
@@ -23,6 +23,11 @@
 
   const parentId = $derived(parent?.id ?? '');
   const mlsGroupId = $derived(resolvePollsMlsGroupId(parent));
+  const announcementsGroupId = $derived(
+    parent?.channels?.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ??
+      parent?.channels?.[0]?.groupId ??
+      null,
+  );
   const toolsMode = $derived($squadToolsChannelMode);
 
   let visitedToolsModes = $state(new Set<SquadToolsChannelMode>([$squadToolsChannelMode]));
@@ -46,15 +51,15 @@
   }
 </script>
 
-<div class="squad-tools">
-  <HubChannelHeader channelName={TOOLS_CHANNEL_NAME} />
-  <HubModeSwitcher
-    modes={TOOLS_CHANNEL_MODES}
-    active={toolsMode}
-    ariaLabel={$t('governance.toolsChannelMode.section')}
-    labelFor={(mode) => $t(`governance.toolsChannelMode.${mode}`)}
-    onSelect={(mode) => selectToolsMode(mode as SquadToolsChannelMode)}
-  />
+<HubViewShell
+  channelName={TOOLS_CHANNEL_NAME}
+  modes={TOOLS_CHANNEL_MODES}
+  active={toolsMode}
+  ariaLabel={$t('governance.toolsChannelMode.section')}
+  labelFor={(mode) => $t(`governance.toolsChannelMode.${mode}`)}
+  onSelect={(mode) => selectToolsMode(mode as SquadToolsChannelMode)}
+  {announcementsGroupId}
+>
   <div class="squad-tools-body">
     {#if visitedToolsModes.has('polls')}
       <div
@@ -100,19 +105,21 @@
         {/await}
       </div>
     {/if}
+    {#if visitedToolsModes.has('stickers')}
+      <div
+        class="dashboard-tab-pane"
+        class:dashboard-tab-pane-active={toolsMode === 'stickers'}
+        hidden={toolsMode !== 'stickers'}
+      >
+        <div class="stickers-pane">
+          <SquadStickersSection squad={parent} {announcementsGroupId} />
+        </div>
+      </div>
+    {/if}
   </div>
-</div>
+</HubViewShell>
 
 <style>
-  .squad-tools {
-    flex: 1;
-    min-width: 0;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-  }
   .squad-tools-body {
     flex: 1;
     min-width: 0;
@@ -133,6 +140,9 @@
   }
   .dashboard-tab-pane[hidden] {
     display: none !important;
+  }
+  .stickers-pane {
+    padding: 16px;
   }
   .tab-error {
     margin: 16px;

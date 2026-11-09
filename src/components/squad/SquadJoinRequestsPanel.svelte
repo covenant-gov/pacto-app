@@ -25,49 +25,83 @@
     syncJoinRequestsForSquad,
   } from '../../stores/squad-join-requests';
   import {
+    ensureOutboundInvitesHydrated,
+    outboundInvitesErrorBySquadId,
+    outboundInvitesHydratedBySquadId,
+    outboundInvitesSyncingBySquadId,
+    pendingOutboundInvitesBySquadId,
+    removePendingOutboundInvite,
+    syncOutboundInvitesForSquad,
+  } from '../../stores/squad-outbound-invites';
+  import {
+    revokeOutboundInviteAnnounce,
+    type PendingOutboundInviteDto,
+  } from '../../lib/squad/squad-outbound-invite';
+  import {
     enqueuePendingAdmit,
     listPendingAdmitForParent,
     pendingAdmitQueue,
     clearPendingAdmitForMember,
   } from '../../lib/parent/pending-admit';
   import type { Squad } from '../../stores/squads';
-  import DashboardAssetCard from '../parent/dashboard/DashboardAssetCard.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
-  let { squad }: { squad: Squad } = $props();
+  let {
+    squad,
+    onInvite = () => {},
+  }: {
+    squad: Squad;
+    onInvite?: () => void;
+  } = $props();
 
   let refreshError = $state('');
   let profileLoadToken = 0;
   let inboxState = $state<JoinInboxState | null>(null);
   let inboxStateLoading = $state(true);
+  let revokingInviteIds = $state(new Set<string>());
 
   const tFn = get(t);
 
   let anyRespondInFlight = $derived($joinRequestRespondInFlight.size > 0);
   let requests = $derived($pendingJoinRequestsBySquadId[squad.id] ?? []);
-  let hydrated = $derived($joinRequestsHydratedBySquadId[squad.id] ?? false);
-  let syncing = $derived($joinRequestsSyncingBySquadId[squad.id] ?? false);
-  let loadError = $derived($joinRequestsErrorBySquadId[squad.id] ?? refreshError);
-  let loading = $derived((!hydrated && syncing) || inboxStateLoading);
+  let invites = $derived($pendingOutboundInvitesBySquadId[squad.id] ?? []);
+  let requestsHydrated = $derived($joinRequestsHydratedBySquadId[squad.id] ?? false);
+  let invitesHydrated = $derived($outboundInvitesHydratedBySquadId[squad.id] ?? false);
+  let requestsSyncing = $derived($joinRequestsSyncingBySquadId[squad.id] ?? false);
+  let invitesSyncing = $derived($outboundInvitesSyncingBySquadId[squad.id] ?? false);
+  let syncing = $derived(requestsSyncing || invitesSyncing);
+  let loadError = $derived(
+    $joinRequestsErrorBySquadId[squad.id] ??
+      $outboundInvitesErrorBySquadId[squad.id] ??
+      refreshError
+  );
+  let loading = $derived(
+    ((!requestsHydrated && requestsSyncing) || (!invitesHydrated && invitesSyncing) || inboxStateLoading) &&
+      requests.length === 0 &&
+      invites.length === 0
+  );
   let canAct = $derived(!!(inboxState?.iAmHolder && inboxState?.hasLocalSecret));
   let admitting = $derived.by(() => {
     void $pendingAdmitQueue;
-    return listPendingAdmitForParent(squad.id).filter((e) => e.kind === 'join');
+    return listPendingAdmitForParent(squad.id).filter((e) => e.kind === 'join' || e.kind === 'invite');
   });
+  let isEmpty = $derived(requests.length === 0 && invites.length === 0 && admitting.length === 0);
 
   $effect(() => {
     if (squad?.id) {
       void ensureJoinRequestsHydrated(squad.id);
+      void ensureOutboundInvitesHydrated(squad.id);
       void loadInboxState(squad.id);
     }
   });
 
   $effect(() => {
-    if (requests.length === 0 && admitting.length === 0) return;
+    if (requests.length === 0 && invites.length === 0 && admitting.length === 0) return;
     const token = ++profileLoadToken;
     const npubs = [
       ...new Set([
         ...requests.map((r) => r.requesterNpub),
+        ...invites.map((i) => i.inviteeNpub),
         ...admitting.map((a) => a.memberNpub),
       ]),
     ];
@@ -91,7 +125,7 @@
     refreshError = '';
     try {
       await loadInboxState(squad.id);
-      await syncJoinRequestsForSquad(squad.id);
+      await Promise.all([syncJoinRequestsForSquad(squad.id), syncOutboundInvitesForSquad(squad.id)]);
     } catch (e) {
       refreshError = e instanceof Error ? e.message : tFn('squad.joinRequests.loadError');
     }
@@ -200,13 +234,34 @@
     }
   }
 
-  function requesterLabel(npub: string): string {
+  async function handleCancelInvite(invite: PendingOutboundInviteDto) {
+    if (revokingInviteIds.has(invite.inviteId)) return;
+    revokingInviteIds = new Set(revokingInviteIds).add(invite.inviteId);
+    try {
+      const ok = await revokeOutboundInviteAnnounce(squad, invite.inviteId, invite.inviteeNpub);
+      if (!ok) {
+        showToast(tFn('squad.pendingAccess.cancelFailed'));
+        return;
+      }
+      removePendingOutboundInvite(squad.id, invite.inviteId);
+      showToast(tFn('squad.pendingAccess.cancelToast'));
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : tFn('squad.pendingAccess.cancelFailed'));
+    } finally {
+      const next = new Set(revokingInviteIds);
+      next.delete(invite.inviteId);
+      revokingInviteIds = next;
+    }
+  }
+
+  function personLabel(npub: string): string {
     return getProfileDisplayName($profiles[npub]) || npub.slice(0, 12) + '…';
   }
 
   function relativeCreated(createdAt: number): string {
-    const ms = createdAt * 1000 - Date.now();
-    const abs = Math.abs(ms);
+    // Join-request createdAt is unix seconds; outbound invite `at` may be ms.
+    const ms = createdAt > 1e12 ? createdAt : createdAt * 1000;
+    const abs = Math.abs(ms - Date.now());
     const minutes = Math.floor(abs / 60000);
     if (minutes < 60) return tFn('squad.joinRequests.minutesAgo', { values: { minutes: Math.max(minutes, 1) } });
     const hours = Math.floor(minutes / 60);
@@ -215,112 +270,240 @@
   }
 </script>
 
-<DashboardAssetCard
-  id="settings-join-requests"
-  headingId="settings-join-requests-heading"
-  heading={$t('squad.joinRequests.title')}
-  hint={!loading && !canAct ? $t('squad.joinRequests.holdersOnlyHint') : ''}
->
-  {#snippet headerAction()}
+<section class="access-invite-section" aria-labelledby="settings-access-invite-heading">
+  <div class="access-invite-header">
+    <h3 id="settings-access-invite-heading" class="section-heading">{$t('squad.pendingAccess.title')}</h3>
     <RefreshIconButton
       disabled={syncing}
       spinning={syncing}
-      ariaLabel={syncing ? $t('squad.joinRequests.refreshingAria') : $t('squad.joinRequests.refreshAria')}
+      ariaLabel={syncing
+        ? $t('squad.pendingAccess.refreshingAria')
+        : $t('squad.pendingAccess.refreshAria')}
       onclick={() => refresh()}
     />
-  {/snippet}
+  </div>
 
-  {#if loading}
-    <p class="join-requests-muted" role="status">{$t('squad.joinRequests.loading')}</p>
-  {:else if loadError}
-    <p class="join-requests-error" role="alert">{loadError}</p>
-  {:else if requests.length === 0 && admitting.length === 0}
-    <p class="join-requests-muted">{$t('squad.joinRequests.empty')}</p>
-  {:else}
-    <ul class="join-requests-list" role="list">
-      {#each admitting as entry (entry.memberNpub + (entry.requestId ?? ''))}
-        <li class="join-request-card">
-          <div class="join-request-main">
-            <p class="join-request-badge">{$t('squad.joinRequests.admittingBadge')}</p>
-            <p class="join-request-name">{requesterLabel(entry.memberNpub)}</p>
-            <p class="join-request-meta">{$t('squad.joinRequests.admittingDetail')}</p>
-            {#if entry.lastError}
-              <p class="join-request-meta">{$t('squad.joinRequests.admittingError', { values: { error: entry.lastError } })}</p>
+  <button type="button" class="btn-primary" onclick={onInvite}>
+    {$t('nav.parentSidebar.invite')}
+  </button>
+
+  <div class="pending-block" aria-labelledby="settings-access-pending-heading">
+    <h4 id="settings-access-pending-heading" class="pending-heading">
+      {$t('squad.pendingAccess.pendingHeading')}
+    </h4>
+
+    {#if !loading && !canAct && requests.length > 0}
+      <p class="join-requests-muted">{$t('squad.pendingAccess.holdersOnlyHint')}</p>
+    {/if}
+
+    {#if loading}
+      <p class="join-requests-muted" role="status">{$t('squad.pendingAccess.loading')}</p>
+    {:else if loadError && isEmpty}
+      <p class="join-requests-error" role="alert">{loadError}</p>
+    {:else if isEmpty}
+      <p class="join-requests-muted">{$t('squad.pendingAccess.empty')}</p>
+    {:else}
+      <ul class="join-requests-list" role="list">
+        {#each admitting as entry (entry.memberNpub + (entry.requestId ?? entry.inviteId ?? ''))}
+          <li class="join-request-card">
+            <div class="join-request-main">
+              <div class="badge-row">
+                <p class="join-request-badge">{$t('squad.joinRequests.admittingBadge')}</p>
+                <p class="status-pending">{$t('squad.pendingAccess.statusPending')}</p>
+              </div>
+              <p class="join-request-summary">
+                <span class="join-request-name">{personLabel(entry.memberNpub)}</span>
+                <span class="join-request-sep" aria-hidden="true">·</span>
+                <span class="join-request-meta">{$t('squad.joinRequests.admittingDetail')}</span>
+              </p>
+              {#if entry.lastError}
+                <p class="join-request-meta">
+                  {$t('squad.joinRequests.admittingError', { values: { error: entry.lastError } })}
+                </p>
+              {/if}
+            </div>
+          </li>
+        {/each}
+
+        {#each requests as request (request.eventId)}
+          <li class="join-request-card">
+            <div class="join-request-main">
+              <div class="badge-row">
+                <p class="join-request-badge is-requested">{$t('squad.pendingAccess.kindRequested')}</p>
+                <p class="status-pending">{$t('squad.pendingAccess.statusPending')}</p>
+              </div>
+              <p class="join-request-summary">
+                <span class="join-request-name">{personLabel(request.requesterNpub)}</span>
+                <span class="join-request-sep" aria-hidden="true">·</span>
+                <span class="join-request-meta">
+                  {$t('squad.joinRequests.requestedTime', {
+                    values: { time: relativeCreated(request.createdAt) },
+                  })}
+                </span>
+              </p>
+              <p class="join-request-npub">{request.requesterNpub}</p>
+            </div>
+            {#if canAct}
+              <div class="join-request-actions">
+                <button
+                  type="button"
+                  class="join-request-btn is-mute"
+                  disabled={anyRespondInFlight}
+                  onclick={() => handleMute(request)}
+                >
+                  {$t('squad.joinRequests.mute')}
+                </button>
+                <button
+                  type="button"
+                  class="join-request-btn is-reject"
+                  disabled={anyRespondInFlight}
+                  onclick={() => handleReject(request)}
+                >
+                  {$joinRequestRespondInFlight.has(request.eventId)
+                    ? $t('squad.joinRequests.working')
+                    : $t('squad.joinRequests.reject')}
+                </button>
+                <button
+                  type="button"
+                  class="join-request-btn is-accept"
+                  disabled={anyRespondInFlight}
+                  onclick={() => handleAccept(request)}
+                >
+                  {$joinRequestRespondInFlight.has(request.eventId)
+                    ? $t('squad.joinRequests.working')
+                    : $t('squad.joinRequests.accept')}
+                </button>
+              </div>
             {/if}
-          </div>
-        </li>
-      {/each}
-      {#each requests as request (request.eventId)}
-        <li class="join-request-card">
-          <div class="join-request-main">
-            <p class="join-request-badge">{$t('squad.joinRequests.badge')}</p>
-            <p class="join-request-name">{requesterLabel(request.requesterNpub)}</p>
-            <p class="join-request-meta">
-              {$t('squad.joinRequests.requestedTime', { values: { time: relativeCreated(request.createdAt) } })}
-            </p>
-            <p class="join-request-npub">{request.requesterNpub}</p>
-          </div>
-          {#if canAct}
+          </li>
+        {/each}
+
+        {#each invites as invite (invite.inviteId)}
+          <li class="join-request-card">
+            <div class="join-request-main">
+              <div class="badge-row">
+                <p class="join-request-badge is-invited">{$t('squad.pendingAccess.kindInvited')}</p>
+                <p class="status-pending">{$t('squad.pendingAccess.statusPending')}</p>
+              </div>
+              <p class="join-request-summary">
+                <span class="join-request-name">{personLabel(invite.inviteeNpub)}</span>
+                <span class="join-request-sep" aria-hidden="true">·</span>
+                <span class="join-request-meta">
+                  {$t('squad.pendingAccess.invitedTime', {
+                    values: { time: relativeCreated(invite.createdAt) },
+                  })}
+                </span>
+              </p>
+              <p class="join-request-npub">{invite.inviteeNpub}</p>
+            </div>
             <div class="join-request-actions">
               <button
                 type="button"
-                class="join-request-btn is-mute"
-                disabled={anyRespondInFlight}
-                onclick={() => handleMute(request)}
-              >
-                {$t('squad.joinRequests.mute')}
-              </button>
-              <button
-                type="button"
                 class="join-request-btn is-reject"
-                disabled={anyRespondInFlight}
-                onclick={() => handleReject(request)}
+                disabled={revokingInviteIds.has(invite.inviteId)}
+                onclick={() => handleCancelInvite(invite)}
               >
-                {$joinRequestRespondInFlight.has(request.eventId)
-                  ? $t('squad.joinRequests.working')
-                  : $t('squad.joinRequests.reject')}
-              </button>
-              <button
-                type="button"
-                class="join-request-btn is-accept"
-                disabled={anyRespondInFlight}
-                onclick={() => handleAccept(request)}
-              >
-                {$joinRequestRespondInFlight.has(request.eventId)
-                  ? $t('squad.joinRequests.working')
-                  : $t('squad.joinRequests.accept')}
+                {revokingInviteIds.has(invite.inviteId)
+                  ? $t('squad.pendingAccess.cancelWorking')
+                  : $t('squad.pendingAccess.cancel')}
               </button>
             </div>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {/if}
-</DashboardAssetCard>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+</section>
 
 <style>
+  .access-invite-section {
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .access-invite-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .section-heading {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0;
+  }
+
+  .btn-primary {
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-family: inherit;
+    background: var(--brand);
+    color: var(--on-brand);
+    border: none;
+    cursor: pointer;
+    align-self: flex-start;
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.05);
+  }
+
+  .pending-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .pending-heading {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
   .join-requests-list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
   }
 
   .join-request-card {
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 12px;
+    padding: 10px 12px;
     background: var(--bg-elevated);
     display: flex;
-    flex-direction: column;
-    gap: 12px;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .join-request-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
 
   .join-request-badge {
     display: inline-block;
-    margin: 0 0 4px 0;
+    margin: 0;
     padding: 2px 8px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--brand) 18%, transparent);
@@ -330,10 +513,34 @@
     width: fit-content;
   }
 
-  .join-request-name {
+  .join-request-badge.is-invited {
+    background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+    color: var(--text-secondary);
+  }
+
+  .status-pending {
     margin: 0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+
+  .join-request-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35em;
+    margin: 4px 0 0 0;
+    font-size: 0.8125rem;
+  }
+
+  .join-request-name {
     font-weight: 600;
     color: var(--text-primary);
+  }
+
+  .join-request-sep {
+    color: var(--text-muted);
   }
 
   .join-request-meta,
@@ -343,6 +550,10 @@
     font-size: 0.8125rem;
   }
 
+  .join-request-summary .join-request-meta {
+    margin: 0;
+  }
+
   .join-request-npub {
     font-family: monospace;
     word-break: break-all;
@@ -350,12 +561,16 @@
 
   .join-request-actions {
     display: flex;
-    gap: 8px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
   }
 
   .join-request-btn {
-    flex: 1;
-    padding: 8px 12px;
+    flex: 0 0 auto;
+    min-height: 24px;
+    padding: 4px 10px;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: transparent;
@@ -396,7 +611,7 @@
 
   .join-requests-muted,
   .join-requests-error {
-    margin: 8px 0;
+    margin: 0;
     font-size: 0.875rem;
   }
 

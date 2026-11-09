@@ -29,7 +29,7 @@ never resurrect a removed pack. Primary key is `(squad_id, pack_id)`, so every
 member's local copy converges independently from the same announce stream.
 
 A member with no squad packs sees an empty state in the composer's Stickers
-tab explaining that any squad member can create one from squad settings.
+tab explaining that any squad member can create one from #tools → Stickers.
 
 ---
 
@@ -178,9 +178,9 @@ them — squad membership gates the *pack*, not the *message*.
 
 ## 6. Authoring surface
 
-A squad member curates a pack from **Settings → Us** in the squad dashboard
+A squad member curates a pack from **#tools → Stickers**
 (`src/components/parent/dashboard/SquadStickersSection.svelte`, hosted by
-`DashboardSettingsUsTab.svelte`): add an image, assign it a shortcode, remove an
+`SquadToolsView.svelte`): add an image, assign it a shortcode, remove an
 entry, rename the pack, save. Saving is two steps and both must happen for
 other members to see the result: `saveStickerPack(...)` persists locally and
 stamps `updated_at`, then the caller sends the `sticker_pack_updated` announce
@@ -274,4 +274,4 @@ distribution and Klipy granting production API access.
   exercise, but no human or MCP session has watched a real cross-device sync
   happen.
 
-*Verified against `src-tauri/src/{db.rs,sticker_pack.rs,virtual_channel_bucket.rs,migrations/V20260809062933__sticker_packs.sql}`, `src/lib/api/stickers.ts`, `src/stores/stickers.ts`, `src/lib/app/tauri-subscriptions.ts`, `src/lib/utils/clear-account-state.ts`, `src/lib/announcements.ts`, `src/components/dm/MessageInput.svelte`, `src/components/parent/dashboard/SquadStickersSection.svelte`, `src/components/parent/dashboard/DashboardSettingsUsTab.svelte`, `src/components/parent/ParentDashboard.svelte`, and `docs/plans/2026-08-08-001-feat-sticker-gif-picker-plan.md`.*
+*Verified against `src-tauri/src/{db.rs,sticker_pack.rs,virtual_channel_bucket.rs,migrations/V20260809062933__sticker_packs.sql}`, `src/lib/api/stickers.ts`, `src/stores/stickers.ts`, `src/lib/app/tauri-subscriptions.ts`, `src/lib/utils/clear-account-state.ts`, `src/lib/announcements.ts`, `src/components/dm/MessageInput.svelte`, `src/components/parent/dashboard/SquadStickersSection.svelte`, `src/components/parent/SquadToolsView.svelte`, `src/components/parent/ParentDashboard.svelte`, and `docs/plans/2026-08-08-001-feat-sticker-gif-picker-plan.md`.*

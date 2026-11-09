@@ -242,7 +242,7 @@ make clean-cargo   # wipe the target dir; keeps sandboxes
 - **PR screenshots:** every PR with a UI change must show visual evidence in its description: screenshots, or a `ce-demo-reel` GIF for flows that are easier to follow in motion. Upload them with `scripts/pr-screenshot.sh <pr-number> <images...> --width 1100`, which stores them in [`covenant-gov/pacto-pr-assets`](https://github.com/covenant-gov/pacto-pr-assets) under `assets/pacto/pr-<number>/` and prints commit-pinned `<img>` tags for the PR body. Never commit images to this repo. Prefer Tauri MCP screenshots from `make dev-sandbox`; when the bridge is unavailable, a browser preview with mocked data is acceptable if the PR says so. Use mock or sandbox data only, since the assets repo is public.
 - **Greenfield posture:** do not preserve legacy layouts, old wire formats, or dual-read paths unless explicitly asked. Alpha-only repair code in `docs/legacy-fixes/` should be removed before public beta.
 - **Do not delete or narrow `.cursor/rules/`** unless the user explicitly asked to remove or replace a policy.
-- **Run lint before committing or pushing:** always run `pnpm lint` and fix all reported violations before creating a commit or pushing a branch.
+- **Run frontend CI gates before finishing agent work or committing/pushing when asked:** `pnpm check`, `pnpm lint`, `pnpm check:tauri-commands`, and `pnpm check:i18n-toasts` must be green. Cursor agents: see `.cursor/rules/ci-gates-before-finish.mdc`.
 - **`install.sh` at the repo root installs an external CLI (`pacto-bot-api`)**, not the Pacto desktop app; do not use it for local desktop setup.
 
 ## UI Validation with Tauri MCP

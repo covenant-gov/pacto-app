@@ -80,6 +80,9 @@ describe('summarizeStructuredMessageContent', () => {
       summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_outbound_invite' }), tFn)
     ).toBe('messaging.structuredNotice.squadInvitePending');
     expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_outbound_invite_revoked' }), tFn)
+    ).toBe('messaging.structuredNotice.squadInviteRevoked');
+    expect(
       summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_admit_needed' }), tFn)
     ).toBe('messaging.structuredNotice.squadMemberAdmit');
     expect(

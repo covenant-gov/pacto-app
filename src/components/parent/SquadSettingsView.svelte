@@ -16,12 +16,11 @@
     type SettingsChannelMode,
   } from '../../stores/navigation';
   import { getProfileDisplayName } from '../../lib/utils/profile';
-  import HubChannelHeader from './HubChannelHeader.svelte';
-  import HubModeSwitcher from './HubModeSwitcher.svelte';
+  import HubViewShell from './HubViewShell.svelte';
   import {
+    loadDashboardSettingsAboutTab,
     loadDashboardSettingsAccessTab,
     loadDashboardSettingsNetworkTab,
-    loadDashboardSettingsUsTab,
     loadMyDashboardAlertsTab,
     loadMyDashboardStatusTab,
   } from '../../lib/dashboard/dashboard-tab-components';
@@ -177,15 +176,15 @@
   }
 </script>
 
-<div class="squad-settings">
-  <HubChannelHeader channelName={SETTINGS_CHANNEL_NAME} />
-  <HubModeSwitcher
-    modes={SETTINGS_CHANNEL_MODES}
-    active={settingsMode}
-    ariaLabel={$t('governance.settingsChannelMode.section')}
-    labelFor={(mode) => $t(`governance.settingsChannelMode.${mode}`)}
-    onSelect={(mode) => selectSettingsMode(mode as SettingsChannelMode)}
-  />
+<HubViewShell
+  channelName={SETTINGS_CHANNEL_NAME}
+  modes={SETTINGS_CHANNEL_MODES}
+  active={settingsMode}
+  ariaLabel={$t('governance.settingsChannelMode.section')}
+  labelFor={(mode) => $t(`governance.settingsChannelMode.${mode}`)}
+  onSelect={(mode) => selectSettingsMode(mode as SettingsChannelMode)}
+  {announcementsGroupId}
+>
   <div class="squad-settings-body">
     {#if visitedSettingsModes.has('you')}
       <div
@@ -213,16 +212,24 @@
         {/await}
       </div>
     {/if}
-    {#if visitedSettingsModes.has('us')}
+    {#if visitedSettingsModes.has('about')}
       <div
         class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={settingsMode === 'us'}
-        hidden={settingsMode !== 'us'}
+        class:dashboard-tab-pane-active={settingsMode === 'about'}
+        hidden={settingsMode !== 'about'}
       >
-        {#await loadDashboardSettingsUsTab() then UsTab}
-          <UsTab squad={parent} {announcementsGroupId} />
+        {#await loadDashboardSettingsAboutTab() then AboutTab}
+          <AboutTab
+            squad={parent}
+            {squadAdminCtx}
+            {announcementsGroupId}
+            parentId={parentId ?? ''}
+            {channelMembers}
+            {squadMemberEvmByNpub}
+            onInvite={openInvite}
+          />
         {:catch}
-          <p class="tab-error" role="alert">{$t('governance.tabLoadError.us')}</p>
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.about')}</p>
         {/await}
       </div>
     {/if}
@@ -235,15 +242,10 @@
         {#await loadDashboardSettingsAccessTab() then AccessTab}
           <AccessTab
             squad={parent}
-            {squadAdminCtx}
-            {announcementsGroupId}
             parentId={parentId ?? ''}
-            {channelMembers}
-            {squadMemberEvmByNpub}
             {privilegesAdmin}
             {pactoGovRevision}
             {memberEvmOptions}
-            onInvite={openInvite}
           />
         {:catch}
           <p class="tab-error" role="alert">{$t('governance.tabLoadError.access')}</p>
@@ -274,15 +276,9 @@
     {/if}
   </div>
   <SquadInviteExitHost bind:this={inviteExitHost} squad={parent} />
-</div>
+</HubViewShell>
 
 <style>
-  .squad-settings {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-  }
   .squad-settings-body {
     flex: 1;
     min-height: 0;

@@ -36,7 +36,7 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
 export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
 
 /** #settings segmented mode; unknown persisted values reset to `you`. */
-export const SETTINGS_CHANNEL_MODES = ['you', 'us', 'access', 'network'] as const;
+export const SETTINGS_CHANNEL_MODES = ['you', 'about', 'access', 'network'] as const;
 export type SettingsChannelMode = (typeof SETTINGS_CHANNEL_MODES)[number];
 
 export const SETTINGS_CHANNEL_MODE_PREFIX = 'pacto_settings_channel_mode';
@@ -44,21 +44,22 @@ export const SETTINGS_CHANNEL_MODE_PREFIX = 'pacto_settings_channel_mode';
 export function parseSettingsChannelMode(raw: string | null): SettingsChannelMode {
   const v = raw?.trim();
   if (v === 'personal' || v === 'you') return 'you';
-  if (v === 'us' || v === 'access' || v === 'network') return v;
+  if (v === 'us') return 'about';
+  if (v === 'about' || v === 'access' || v === 'network') return v;
   return 'you';
 }
 
 export const settingsChannelMode = writable<SettingsChannelMode>('you');
 
 /** #tools segmented mode; unknown persisted values reset to `polls`. */
-export const TOOLS_CHANNEL_MODES = ['polls', 'events', 'docs'] as const;
+export const TOOLS_CHANNEL_MODES = ['polls', 'events', 'docs', 'stickers'] as const;
 export type SquadToolsChannelMode = (typeof TOOLS_CHANNEL_MODES)[number];
 
 export const TOOLS_CHANNEL_MODE_PREFIX = 'pacto_squad_tools_mode';
 
 export function parseSquadToolsChannelMode(raw: string | null): SquadToolsChannelMode {
   const v = raw?.trim();
-  if (v === 'polls' || v === 'events' || v === 'docs') return v;
+  if (v === 'polls' || v === 'events' || v === 'docs' || v === 'stickers') return v;
   return 'polls';
 }
 

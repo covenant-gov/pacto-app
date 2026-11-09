@@ -135,7 +135,8 @@ describe('navigation', () => {
 
   it('parses known settings channel modes and resets unknown values to you', () => {
     expect(parseSettingsChannelMode('you')).toBe('you');
-    expect(parseSettingsChannelMode('us')).toBe('us');
+    expect(parseSettingsChannelMode('about')).toBe('about');
+    expect(parseSettingsChannelMode('us')).toBe('about');
     expect(parseSettingsChannelMode('access')).toBe('access');
     expect(parseSettingsChannelMode('network')).toBe('network');
     expect(parseSettingsChannelMode('personal')).toBe('you');
@@ -155,6 +156,7 @@ describe('navigation', () => {
     expect(parseSquadToolsChannelMode('polls')).toBe('polls');
     expect(parseSquadToolsChannelMode('events')).toBe('events');
     expect(parseSquadToolsChannelMode('docs')).toBe('docs');
+    expect(parseSquadToolsChannelMode('stickers')).toBe('stickers');
     expect(parseSquadToolsChannelMode(null)).toBe('polls');
     expect(parseSquadToolsChannelMode('')).toBe('polls');
     expect(parseSquadToolsChannelMode('tools')).toBe('polls');

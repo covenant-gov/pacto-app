@@ -6,7 +6,6 @@
     ANNOUNCEMENTS_CHANNEL_NAME,
     SQUAD_DASHBOARD_CHANNEL_NAME,
     SQUAD_WARGAME_CHANNEL_NAME,
-    showMembersPanel,
     membershipVersionByGroupId,
     squadDashboardChannelMode,
     type SquadDashboardChannelMode,
@@ -56,10 +55,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   } from '../../lib/squad/squad-network';
   import { squadRpcTick } from '../../lib/squad/squad-rpc';
   import { currentUser } from '../../stores/auth-session';
-  import friendsIcon from '../../icons/friends.svg';
-  import HubChannelHeader from './HubChannelHeader.svelte';
-  import HubModeSwitcher from './HubModeSwitcher.svelte';
-  import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
+  import HubViewShell from './HubViewShell.svelte';
   import WarGameHubBanner from './dashboard/WarGameHubBanner.svelte';
   import GovernanceDeployCoordinator from './dashboard/GovernanceDeployCoordinator.svelte';
   import {
@@ -675,7 +671,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     parent?.channels?.[0]?.groupId ??
     null;
 
-  let prevMembersGroupIdForPanel: string | null = null;
   let prevMembersVersionByGroup: Record<string, number> = {};
   $: channelMembers = announcementsGroupId ? ($membersByGroupId[announcementsGroupId] ?? []) : [];
   $: loadingMembers =
@@ -723,26 +718,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     void loadSponsorExtStatus();
   }
 
-  function openDashboardMembersPanel() {
-    showMembersPanel.set(true);
-    prevMembersGroupIdForPanel = announcementsGroupId;
-    if (announcementsGroupId) void ensureMlsGroupMembers(announcementsGroupId);
-  }
-
-  function toggleMembersPanel() {
-    if ($showMembersPanel) {
-      showMembersPanel.set(false);
-    } else {
-      openDashboardMembersPanel();
-    }
-  }
-
-  $: if ($showMembersPanel && announcementsGroupId && prevMembersGroupIdForPanel !== announcementsGroupId) {
-    prevMembersGroupIdForPanel = announcementsGroupId;
-    void ensureMlsGroupMembers(announcementsGroupId);
-  }
-  $: if (!$showMembersPanel) prevMembersGroupIdForPanel = null;
-
   // Refresh roster on MLS membership bumps even when the Members panel is closed (Crew / invite).
   $: if (announcementsGroupId) {
     const gid = announcementsGroupId;
@@ -772,37 +747,22 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 </script>
 
-<div class="parent-dashboard-layout">
-  <div class="parent-dashboard-main">
-    <HubChannelHeader channelName={warGameStack ? SQUAD_WARGAME_CHANNEL_NAME : SQUAD_DASHBOARD_CHANNEL_NAME}>
-      {#snippet actions()}
-        <button
-          type="button"
-          class="channel-members-btn"
-          title={$t('governance.members.title')}
-          onclick={toggleMembersPanel}
-          aria-label={$showMembersPanel ? $t('governance.members.close') : $t('governance.members.view')}
-          aria-expanded={$showMembersPanel}
-        >
-          <img src={friendsIcon} alt="" class="channel-members-btn-icon" />
-        </button>
-      {/snippet}
-    </HubChannelHeader>
+<HubViewShell
+  channelName={warGameStack ? SQUAD_WARGAME_CHANNEL_NAME : SQUAD_DASHBOARD_CHANNEL_NAME}
+  modes={DASHBOARD_VIEWS}
+  active={dashboardView}
+  ariaLabel={$t('governance.dashboardSection')}
+  labelFor={(mode) => $t(`governance.dashboardView.${mode}`)}
+  onSelect={(mode) => selectDashboardView(mode as ParentDashboardView)}
+  onIntent={(mode) => prefetchDashboardTabIntent(mode as ParentDashboardView)}
+  {announcementsGroupId}
+>
+  {#snippet banner()}
     {#if warGameStack}
-      <WarGameHubBanner
-        providerPayload={pactoGovRow?.providerPayload}
-      />
+      <WarGameHubBanner providerPayload={pactoGovRow?.providerPayload} />
     {/if}
-    <HubModeSwitcher
-      modes={DASHBOARD_VIEWS}
-      active={dashboardView}
-      ariaLabel={$t('governance.dashboardSection')}
-      labelFor={(mode) => $t(`governance.dashboardView.${mode}`)}
-      onSelect={(mode) => selectDashboardView(mode as ParentDashboardView)}
-      onIntent={(mode) => prefetchDashboardTabIntent(mode as ParentDashboardView)}
-    />
-    <div class="parent-dashboard-body">
-      <div class="parent-dashboard" class:parent-dashboard-wide={dashboardView === 'governance'}>
+  {/snippet}
+  <div class="parent-dashboard" class:parent-dashboard-wide={dashboardView === 'governance'}>
         {#if parent.kind === 'squad-pair' && parent.pairedSquads?.length}
           <div class="dashboard-header">
             <p class="dashboard-subtitle">
@@ -940,15 +900,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
           {/await}
           </div>
         {/if}
-      </div>
-    </div>
   </div>
-  <ParentDashboardMembersPanel
-    open={$showMembersPanel}
-    {channelMembers}
-    {loadingMembers}
-  />
-</div>
+</HubViewShell>
 
 <GovernanceDeployCoordinator
   bind:this={deployCoordinator}
@@ -976,55 +929,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 />
 
 <style>
-  .parent-dashboard-layout {
-    flex: 1;
-    display: flex;
-    flex-direction: row;
-    background: var(--bg-panel);
-    height: 100%;
-    min-width: 0;
-    border-left: 1px solid var(--border-subtle);
-  }
-
-  .parent-dashboard-main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .parent-dashboard-body {
-    flex: 1;
-    overflow: auto;
-    min-height: 0;
-    min-width: 0;
-  }
-
-
-  .channel-members-btn {
-    padding: 6px 8px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .channel-members-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .channel-members-btn-icon {
-    width: 20px;
-    height: 20px;
-    display: block;
-    filter: var(--icon-dropdown-filter);
-  }
-
   .parent-dashboard {
     padding: 24px;
     max-width: 560px;

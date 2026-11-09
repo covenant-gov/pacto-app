@@ -159,7 +159,7 @@ export function parseEventReminderSourceId(sourceEventId: string): { eventId: st
  * (R22): a real squad channel group id, a DM npub, or — for `action_prompt`
  * entries recorded against a squad's announcements channel (the governance
  * roster-key prompt and pending join requests both use that fallback id,
- * since neither is tied to one specific channel) — `#settings` Access for
+ * since neither is tied to one specific channel) — `#settings` About for
  * `join-request:*` items and the squad dashboard for other prompts.
  * `event_reminder` entries open that event's detail in `#tools` → Events.
  * Returns `null` for a reference that resolves to nothing (a bug in the
@@ -189,7 +189,7 @@ export function resolveCatchUpTarget(
           kind: 'squad-channel',
           squadId: squad.id,
           channelId: SETTINGS_CHANNEL_ID,
-          settingsMode: 'access',
+          settingsMode: 'about',
         };
       }
       return { kind: 'squad-dashboard', squadId: squad.id };
