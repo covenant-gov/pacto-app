@@ -311,8 +311,11 @@
                 <p class="join-request-badge">{$t('squad.joinRequests.admittingBadge')}</p>
                 <p class="status-pending">{$t('squad.pendingAccess.statusPending')}</p>
               </div>
-              <p class="join-request-name">{personLabel(entry.memberNpub)}</p>
-              <p class="join-request-meta">{$t('squad.joinRequests.admittingDetail')}</p>
+              <p class="join-request-summary">
+                <span class="join-request-name">{personLabel(entry.memberNpub)}</span>
+                <span class="join-request-sep" aria-hidden="true">·</span>
+                <span class="join-request-meta">{$t('squad.joinRequests.admittingDetail')}</span>
+              </p>
               {#if entry.lastError}
                 <p class="join-request-meta">
                   {$t('squad.joinRequests.admittingError', { values: { error: entry.lastError } })}
@@ -329,11 +332,14 @@
                 <p class="join-request-badge is-requested">{$t('squad.pendingAccess.kindRequested')}</p>
                 <p class="status-pending">{$t('squad.pendingAccess.statusPending')}</p>
               </div>
-              <p class="join-request-name">{personLabel(request.requesterNpub)}</p>
-              <p class="join-request-meta">
-                {$t('squad.joinRequests.requestedTime', {
-                  values: { time: relativeCreated(request.createdAt) },
-                })}
+              <p class="join-request-summary">
+                <span class="join-request-name">{personLabel(request.requesterNpub)}</span>
+                <span class="join-request-sep" aria-hidden="true">·</span>
+                <span class="join-request-meta">
+                  {$t('squad.joinRequests.requestedTime', {
+                    values: { time: relativeCreated(request.createdAt) },
+                  })}
+                </span>
               </p>
               <p class="join-request-npub">{request.requesterNpub}</p>
             </div>
@@ -379,11 +385,14 @@
                 <p class="join-request-badge is-invited">{$t('squad.pendingAccess.kindInvited')}</p>
                 <p class="status-pending">{$t('squad.pendingAccess.statusPending')}</p>
               </div>
-              <p class="join-request-name">{personLabel(invite.inviteeNpub)}</p>
-              <p class="join-request-meta">
-                {$t('squad.pendingAccess.invitedTime', {
-                  values: { time: relativeCreated(invite.createdAt) },
-                })}
+              <p class="join-request-summary">
+                <span class="join-request-name">{personLabel(invite.inviteeNpub)}</span>
+                <span class="join-request-sep" aria-hidden="true">·</span>
+                <span class="join-request-meta">
+                  {$t('squad.pendingAccess.invitedTime', {
+                    values: { time: relativeCreated(invite.createdAt) },
+                  })}
+                </span>
               </p>
               <p class="join-request-npub">{invite.inviteeNpub}</p>
             </div>
@@ -466,17 +475,23 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
   }
 
   .join-request-card {
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 12px;
+    padding: 10px 12px;
     background: var(--bg-elevated);
     display: flex;
-    flex-direction: column;
-    gap: 12px;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .join-request-main {
+    flex: 1;
+    min-width: 0;
   }
 
   .badge-row {
@@ -484,7 +499,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
-    margin-bottom: 4px;
   }
 
   .join-request-badge {
@@ -511,10 +525,22 @@
     color: var(--text-muted);
   }
 
+  .join-request-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35em;
+    margin: 4px 0 0 0;
+    font-size: 0.8125rem;
+  }
+
   .join-request-name {
-    margin: 0;
     font-weight: 600;
     color: var(--text-primary);
+  }
+
+  .join-request-sep {
+    color: var(--text-muted);
   }
 
   .join-request-meta,
@@ -524,6 +550,10 @@
     font-size: 0.8125rem;
   }
 
+  .join-request-summary .join-request-meta {
+    margin: 0;
+  }
+
   .join-request-npub {
     font-family: monospace;
     word-break: break-all;
@@ -531,12 +561,16 @@
 
   .join-request-actions {
     display: flex;
-    gap: 8px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
   }
 
   .join-request-btn {
-    flex: 1;
-    padding: 8px 12px;
+    flex: 0 0 auto;
+    min-height: 24px;
+    padding: 4px 10px;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: transparent;
