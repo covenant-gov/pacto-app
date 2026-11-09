@@ -12,6 +12,7 @@ const {
   publishSquadIdentityUpdated,
   getMlsGroupMembers,
   inviteMemberToGroup,
+  sendSquadRecordsSnapshot,
   mockParent,
 } = vi.hoisted(() => {
   /** Minimal writable stand-in so hoisted mocks avoid `require('svelte/store')`. */
@@ -46,6 +47,7 @@ const {
     publishSquadIdentityUpdated: vi.fn(),
     getMlsGroupMembers: vi.fn(),
     inviteMemberToGroup: vi.fn(),
+    sendSquadRecordsSnapshot: vi.fn(),
     currentUser: makeStore<{ npub: string } | null>({ npub: 'npub1responder' }),
     mockParent: {
       id: 'ann-gid',
@@ -129,6 +131,10 @@ vi.mock('./join-inbox', () => ({
   ),
 }));
 
+vi.mock('../api/squad-records', () => ({
+  sendSquadRecordsSnapshot: (...args: unknown[]) => sendSquadRecordsSnapshot(...args),
+}));
+
 vi.mock('../../stores/auth-session', () => ({
   currentUser,
 }));
@@ -158,6 +164,7 @@ describe('squad-state-sync', () => {
     publishSquadRpcUpdated.mockResolvedValue(true);
     publishSquadChannelsCatalog.mockResolvedValue(true);
     publishSquadIdentityUpdated.mockResolvedValue(true);
+    sendSquadRecordsSnapshot.mockResolvedValue(undefined);
     getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [], pending_welcomes: [] });
     inviteMemberToGroup.mockResolvedValue(undefined);
     listSquadInfra.mockResolvedValue([]);
@@ -203,7 +210,17 @@ describe('squad-state-sync', () => {
       parent_id: 'ann-gid',
       request_id: 'req-1',
       requester_npub: 'npub1joiner',
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica', 'join_inbox'],
+      requested: [
+        'evm',
+        'infra',
+        'network',
+        'rpc',
+        'channels',
+        'identity',
+        'gov_replica',
+        'join_inbox',
+        'records',
+      ],
     });
   });
 
@@ -429,6 +446,7 @@ describe('squad-state-sync', () => {
     publishSquadRpcUpdated.mockResolvedValue(false);
     publishSquadChannelsCatalog.mockResolvedValue(false);
     publishSquadIdentityUpdated.mockResolvedValue(false);
+    sendSquadRecordsSnapshot.mockRejectedValue(new Error('skip'));
     inviteMemberToGroup.mockRejectedValue(new Error('skip'));
     listSquadInfra.mockResolvedValue([]);
     const raw = formatSquadStateSyncRequest({
@@ -475,6 +493,31 @@ describe('squad-state-sync', () => {
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
     expect(publishSquadIdentityUpdated).not.toHaveBeenCalled();
+  });
+
+  it('republishes the squad records replica for peer requests', async () => {
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-records',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(sendSquadRecordsSnapshot).toHaveBeenCalledWith({ mlsGroupId: 'ann-gid', parentId: 'ann-gid' });
+  });
+
+  it('skips records snapshot when requested omits records', async () => {
+    const raw = JSON.stringify({
+      type: SQUAD_STATE_SYNC_REQUEST_TYPE,
+      payload: {
+        parent_id: 'ann-gid',
+        request_id: 'req-no-records',
+        requester_npub: 'npub1joiner',
+        requested: ['evm'],
+      },
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(sendSquadRecordsSnapshot).not.toHaveBeenCalled();
+    expect(publishSquadEvmRosterSnapshot).toHaveBeenCalled();
   });
 
   it('skips identity republish when requested omits identity', async () => {

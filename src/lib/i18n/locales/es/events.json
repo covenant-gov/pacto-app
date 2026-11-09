@@ -3,7 +3,7 @@
 	"events.panel.ariaLabel": "Eventos del escuadrón",
 	"events.panel.create": "Añadir evento",
 	"events.panel.loading": "Cargando eventos…",
-	"events.panel.empty": "Aún no hay eventos. Los eventos publicados antes de que te unieras a este escuadrón no se muestran aquí.",
+	"events.panel.empty": "Aún no hay eventos.",
 	"events.panel.upcoming": "Próximos",
 	"events.panel.past": "Pasados",
 	"events.panel.cancelled": "Cancelado",

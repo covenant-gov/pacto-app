@@ -3,7 +3,7 @@
 	"events.panel.ariaLabel": "Squad events",
 	"events.panel.create": "Add event",
 	"events.panel.loading": "Loading events…",
-	"events.panel.empty": "No events yet. Events posted before you joined this squad are not shown here.",
+	"events.panel.empty": "No events yet.",
 	"events.panel.upcoming": "Upcoming",
 	"events.panel.past": "Past",
 	"events.panel.cancelled": "Cancelled",

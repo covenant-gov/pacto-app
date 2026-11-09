@@ -77,6 +77,28 @@ pub struct SquadContentPolicyView {
     pub admin_is_member: bool,
 }
 
+/// Replica row as a policy rumor, or `None` when both flags are still the default off/zero.
+pub(crate) fn snapshot_policy_wire(
+    parent_id: &str,
+    p: &SquadContentPolicy,
+) -> Option<SquadContentPolicyWire> {
+    if !p.restrict_event_create
+        && !p.restrict_doc_add
+        && p.restrict_event_create_updated_at_ms <= 0
+        && p.restrict_doc_add_updated_at_ms <= 0
+    {
+        return None;
+    }
+    Some(SquadContentPolicyWire {
+        schema: POLICY_SCHEMA.to_string(),
+        parent_id: parent_id.to_string(),
+        restrict_event_create: p.restrict_event_create,
+        restrict_event_create_updated_at_ms: p.restrict_event_create_updated_at_ms,
+        restrict_doc_add: p.restrict_doc_add,
+        restrict_doc_add_updated_at_ms: p.restrict_doc_add_updated_at_ms,
+    })
+}
+
 /// Absent row = both off, timestamps 0.
 pub fn load_policy(
     conn: &rusqlite::Connection,

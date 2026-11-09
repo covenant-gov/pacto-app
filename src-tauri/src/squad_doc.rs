@@ -7,18 +7,18 @@
 use std::collections::HashMap;
 
 use nostr_sdk::prelude::*;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
+use crate::TAURI_APP;
 use crate::nostr_tags;
 use crate::rumor::{ConversationType, RumorContext, RumorEvent, RumorProcessingResult};
 use crate::squad_records::{
-    self, card_message, signer_identity, store_local_card, with_conn, SquadGroupRole,
-    SQUAD_DOC_D_TAG,
+    self, SQUAD_DOC_D_TAG, SquadGroupRole, card_message, signer_identity, store_local_card,
+    with_conn,
 };
 use crate::url_secrets::mask_doc_url;
-use crate::TAURI_APP;
 
 const SCHEMA: &str = "pacto.squad_doc.v1";
 const REPLICA_UPDATED_EVENT: &str = "squad_doc_replica_updated";
@@ -232,7 +232,7 @@ fn fields_from_wire(w: &DocWire) -> Option<DocFields> {
 }
 
 /// Ingest bound on peer-set stamps.
-fn stamp_acceptable(updated_at_ms: i64, now_ms: i64) -> bool {
+pub(crate) fn stamp_acceptable(updated_at_ms: i64, now_ms: i64) -> bool {
     updated_at_ms >= 0 && updated_at_ms <= now_ms.saturating_add(MAX_FUTURE_SKEW_MS)
 }
 
@@ -315,8 +315,7 @@ struct DocRow {
     hidden: bool,
 }
 
-const DOC_COLUMNS: &str =
-    "doc_id, parent_id, mls_group_id, url, title, provider, channel_id, note, \
+const DOC_COLUMNS: &str = "doc_id, parent_id, mls_group_id, url, title, provider, channel_id, note, \
      author_npub, add_rumor_id, created_at_ms, updated_at_ms, updated_by_npub, hidden";
 
 fn row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<DocRow> {
@@ -695,6 +694,144 @@ fn load_docs(
             updated_by_npub: row.updated_by_npub,
         })
         .collect())
+}
+
+/// Visible doc row for late-joiner catch-up (snake_case wire).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DocSnapshot {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+    pub provider: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub author_npub: String,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub updated_by_npub: String,
+}
+
+pub(crate) fn collect_snapshot_docs(
+    conn: &Connection,
+    parent_id: &str,
+    cap: usize,
+) -> Result<Vec<DocSnapshot>, String> {
+    let docs = load_docs(conn, parent_id, "")?;
+    Ok(docs
+        .into_iter()
+        .take(cap)
+        .map(|d| DocSnapshot {
+            id: d.id,
+            url: d.url,
+            title: d.title,
+            provider: d.provider.as_str().to_string(),
+            channel_id: d.channel_id,
+            note: d.note,
+            author_npub: d.author_npub,
+            created_at_ms: d.created_at_ms,
+            updated_at_ms: d.updated_at_ms,
+            updated_by_npub: d.updated_by_npub,
+        })
+        .collect())
+}
+
+/// Fill-only: insert a missing visible doc. Hidden local rows stay hidden.
+pub(crate) fn apply_snapshot_docs(
+    conn: &Connection,
+    parent_id: &str,
+    mls_group_id: &str,
+    docs: &[DocSnapshot],
+    rumor_id: &str,
+    admin_npubs: &[String],
+    restrict_doc_add: bool,
+    now_ms: i64,
+) -> Result<bool, String> {
+    let mut changed = false;
+    for doc in docs {
+        if doc.id.trim().is_empty()
+            || doc.author_npub.trim().is_empty()
+            || !stamp_acceptable(doc.updated_at_ms, now_ms)
+            || !stamp_acceptable(doc.created_at_ms, now_ms)
+        {
+            continue;
+        }
+        if restrict_doc_add && !author_is_admin(admin_npubs, &doc.author_npub) {
+            continue;
+        }
+        let Some(fields) = snapshot_doc_fields(doc) else {
+            continue;
+        };
+        match load_row(conn, &doc.id)? {
+            Some(_) => continue,
+            None => {
+                insert_snapshot_doc(conn, parent_id, mls_group_id, doc, &fields, rumor_id)?;
+                changed = true;
+            }
+        }
+    }
+    Ok(changed)
+}
+
+fn snapshot_doc_fields(d: &DocSnapshot) -> Option<DocFields> {
+    let url = valid_url(&d.url)?;
+    let title = d.title.trim();
+    if title.is_empty() {
+        return None;
+    }
+    Some(DocFields {
+        url,
+        title: title.to_string(),
+        provider: Provider::parse(&d.provider),
+        channel_id: trimmed_opt(d.channel_id.as_deref()),
+        note: trimmed_opt(d.note.as_deref()),
+    })
+}
+
+fn author_is_admin(admin_npubs: &[String], npub: &str) -> bool {
+    let npub = npub.trim();
+    !npub.is_empty() && admin_npubs.iter().any(|a| a == npub)
+}
+
+fn insert_snapshot_doc(
+    conn: &Connection,
+    parent_id: &str,
+    mls_group_id: &str,
+    doc: &DocSnapshot,
+    fields: &DocFields,
+    rumor_id: &str,
+) -> Result<(), String> {
+    let created = doc.created_at_ms.max(0);
+    let updated = doc.updated_at_ms.max(created);
+    let updated_by = if doc.updated_by_npub.trim().is_empty() {
+        doc.author_npub.as_str()
+    } else {
+        doc.updated_by_npub.as_str()
+    };
+    let add_rumor_id = format!("{rumor_id}:doc:{}", doc.id);
+    conn.execute(
+        "INSERT INTO squad_docs (doc_id, parent_id, mls_group_id, url, title, provider, channel_id, note,
+            author_npub, add_rumor_id, created_at_ms, updated_at_ms, updated_by_npub, hidden)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0)",
+        params![
+            doc.id,
+            parent_id,
+            mls_group_id,
+            fields.url,
+            fields.title,
+            fields.provider.as_str(),
+            fields.channel_id,
+            fields.note,
+            doc.author_npub,
+            add_rumor_id,
+            created,
+            updated,
+            updated_by,
+        ],
+    )
+    .map_err(|e| format!("Failed to insert snapshot doc: {}", e))?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

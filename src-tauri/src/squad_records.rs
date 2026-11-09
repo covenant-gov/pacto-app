@@ -1,8 +1,8 @@
 //! Shared helpers for squad group records (content policy, events, docs) carried as
 //! kind 30078 rumors in a squad's MLS group.
 
-use nostr_sdk::prelude::{NostrSigner, PublicKey};
 use nostr_sdk::ToBech32;
+use nostr_sdk::prelude::{NostrSigner, PublicKey};
 use rusqlite::Connection;
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -12,6 +12,7 @@ use crate::stored_event::event_kind;
 pub const SQUAD_CONTENT_POLICY_D_TAG: &str = "pacto_squad_content_policy";
 pub const SQUAD_EVENT_D_TAG: &str = "pacto_squad_event";
 pub const SQUAD_DOC_D_TAG: &str = "pacto_squad_doc";
+pub const SQUAD_RECORDS_SNAPSHOT_D_TAG: &str = "pacto_squad_records_snapshot";
 
 pub(crate) fn with_conn<R: Runtime, T>(
     handle: &AppHandle<R>,

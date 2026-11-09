@@ -173,11 +173,11 @@ describe('SquadDocsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Add doc' })).toBeNull();
   });
 
-  it('shows the add button and the join-history empty copy when open', async () => {
+  it('shows the add button and empty copy when open', async () => {
     state.docs = [];
     render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy());
-    expect(screen.getByText(/before you joined/)).toBeTruthy();
+    expect(screen.getByText('No docs yet.')).toBeTruthy();
   });
 
   it('drops the previous squad rows when the next squad fails to load', async () => {
