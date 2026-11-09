@@ -75,6 +75,19 @@ describe('buildHubSidebarChannels', () => {
     ]);
   });
 
+  it('synthesizes announcements from tools when the announcements row is missing', () => {
+    const built = buildHubSidebarChannels([
+      { name: TOOLS_CHANNEL_NAME, groupId: 'g', order: 1 },
+    ]);
+    expect(built.map((c) => c.name)).toEqual([
+      ANNOUNCEMENTS_CHANNEL_NAME,
+      SQUAD_DASHBOARD_CHANNEL_NAME,
+      TOOLS_CHANNEL_NAME,
+      SETTINGS_CHANNEL_NAME,
+    ]);
+    expect(built.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId).toBe('g');
+  });
+
   it('synthesizes board from announcements when board row is missing', () => {
     const built = buildHubSidebarChannels([
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },

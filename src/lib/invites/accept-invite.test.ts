@@ -250,6 +250,36 @@ describe('accept-invite channel persistence', () => {
     vi.useRealTimers();
   });
 
+  it('accepts one welcome when the waiter and pending admission complete together', async () => {
+    let releaseAccept: () => void = () => {};
+    const entered = new Promise<void>((resolve) => {
+      vi.mocked(acceptMlsWelcome).mockImplementation(
+        () =>
+          new Promise((resolveAccept) => {
+            releaseAccept = () => resolveAccept(true);
+            resolve();
+          }),
+      );
+    });
+    let lists = 0;
+    vi.mocked(listPendingMlsWelcomes).mockImplementation(async () => {
+      lists += 1;
+      if (lists === 1) return [];
+      return [{ ...pendingWelcome, nostr_group_id: 'pending-squad' }];
+    });
+    const done = acceptAnnouncementsInvite(
+      { groupId: 'pending-squad', name: 'Pending' },
+      'msg-pending',
+      { inviteId: 'inv-9', admitterNpubs: ['npub1admitter'] },
+    );
+    await entered;
+    const second = tryCompletePendingSquadAdmission('pending-squad');
+    releaseAccept();
+    await Promise.all([done, second]);
+    expect(acceptMlsWelcome).toHaveBeenCalledTimes(1);
+    expect(get(squads).some((s) => s.id === 'pending-squad')).toBe(true);
+  });
+
   it('tryCompletePendingSquadAdmission keeps invite iconUrl', async () => {
     upsertPendingSquadAdmission({
       messageId: 'msg-pending',

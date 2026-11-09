@@ -9,20 +9,28 @@ import type { Channel } from '../../stores/squads';
 
 const channels: Channel[] = [
   { name: 'announcements', groupId: 'g-ann', order: 0 },
-  { name: 'polls', groupId: 'g-ann', order: 1 },
-  { name: 'ops', groupId: 'g-ops', order: 2, access: 'open' },
-  { name: 'secret', groupId: 'g-sec', order: 3, access: 'closed' },
-  { name: 'legacy', groupId: 'g-leg', order: 4 },
+  { name: 'tools', groupId: 'g-ann', order: 1 },
+  { name: 'polls', groupId: 'g-ann', order: 2 },
+  { name: 'ops', groupId: 'g-ops', order: 3, access: 'open' },
+  { name: 'secret', groupId: 'g-sec', order: 4, access: 'closed' },
+  { name: 'legacy', groupId: 'g-leg', order: 5 },
+  { name: 'alias', groupId: 'g-ann', order: 6, access: 'open' },
 ];
 
 describe('channel-access', () => {
   it('treats missing access on custom channels as open', () => {
-    expect(resolveChannelAccess(channels[4])).toBe('open');
-    expect(isOpenCustomChannel(channels[4])).toBe(true);
+    expect(resolveChannelAccess(channels[5])).toBe('open');
+    expect(isOpenCustomChannel(channels[5])).toBe(true);
   });
 
   it('lists distinct open custom targets including legacy rows', () => {
     expect(openCustomChannelTargets(channels).map((c) => c.groupId)).toEqual(['g-ops', 'g-leg']);
+  });
+
+  it('does not invite tools or any row on the announcements group', () => {
+    expect(isOpenCustomChannel(channels[1])).toBe(false);
+    expect(openCustomChannelTargets(channels).some((c) => c.groupId === 'g-ann')).toBe(false);
+    expect(catalogChannelsForAnnounce(channels).some((c) => c.groupId === 'g-ann')).toBe(false);
   });
 
   it('skips creating placeholders, blanks, and duplicate group ids', () => {
@@ -38,8 +46,8 @@ describe('channel-access', () => {
 
   it('catalog announce includes open and legacy customs, not closed', () => {
     expect(catalogChannelsForAnnounce(channels)).toEqual([
-      { name: 'ops', groupId: 'g-ops', order: 2, access: 'open' },
-      { name: 'legacy', groupId: 'g-leg', order: 4, access: 'open' },
+      { name: 'ops', groupId: 'g-ops', order: 3, access: 'open' },
+      { name: 'legacy', groupId: 'g-leg', order: 5, access: 'open' },
     ]);
   });
 });

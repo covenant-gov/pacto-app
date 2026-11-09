@@ -90,6 +90,18 @@ describe('ensureDefaultHubChannelRows', () => {
     ]);
   });
 
+  it('backfills announcements when only tools was persisted', () => {
+    const fixed = ensureDefaultHubChannelRows([
+      { name: TOOLS_CHANNEL_NAME, groupId: 'g', order: 1 },
+      { name: 'ops', groupId: 'g-ops', order: 2 },
+    ]);
+    expect(fixed).toEqual([
+      { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
+      { name: TOOLS_CHANNEL_NAME, groupId: 'g', order: 1 },
+      { name: 'ops', groupId: 'g-ops', order: 2 },
+    ]);
+  });
+
   it('leaves announcements and tools on distinct group ids unchanged', () => {
     const split = [
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'a', order: 0 },
