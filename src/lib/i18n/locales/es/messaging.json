@@ -374,6 +374,7 @@
 	"messaging.structuredNotice.squadIdentityUpdated": "Foto del escuad actualizada",
 	"messaging.structuredNotice.squadInviteAccepted": "Invitación al escuad aceptada",
 	"messaging.structuredNotice.squadInvitePending": "Invitación al escuad pendiente",
+	"messaging.structuredNotice.squadInviteRevoked": "Invitación al escuad cancelada",
 	"messaging.structuredNotice.squadJoinRequest": "Solicitud de unión a escuad",
 	"messaging.structuredNotice.squadJoinResponse": "Respuesta de unión a escuad",
 	"messaging.structuredNotice.squadJoinUpdate": "Actualización de unión a escuad",

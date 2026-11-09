@@ -107,6 +107,7 @@ pub fn normalize_virtual_bucket_for_message(
                 ty,
                 Some(
                     "squad_outbound_invite"
+                        | "squad_outbound_invite_revoked"
                         | "squad_admit_needed"
                         | "squad_channels_catalog"
                         | "squad_identity_updated"

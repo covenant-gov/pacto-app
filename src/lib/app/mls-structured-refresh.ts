@@ -20,9 +20,12 @@ import { applySquadRpcUpdated, parseSquadRpcUpdated } from '../squad/squad-rpc-s
 import {
   onMlsAdmitNeeded,
   onMlsOutboundInviteAnnounce,
+  onMlsOutboundInviteRevoked,
   parseSquadAdmitNeeded,
   parseSquadOutboundInvite,
+  parseSquadOutboundInviteRevoked,
 } from '../squad/squad-outbound-invite';
+import { syncOutboundInvitesForSquad } from '../../stores/squad-outbound-invites';
 import {
   applySquadChannelsCatalog,
   parseSquadChannelsCatalog,
@@ -110,10 +113,16 @@ export function onMlsStructuredMessage(
 
   if (parseSquadOutboundInvite(raw)) {
     onMlsOutboundInviteAnnounce(raw);
+    if (gid) void syncOutboundInvitesForSquad(gid);
+  }
+  if (parseSquadOutboundInviteRevoked(raw)) {
+    onMlsOutboundInviteRevoked(raw);
+    if (gid) void syncOutboundInvitesForSquad(gid);
   }
   if (parseSquadAdmitNeeded(raw)) {
     onMlsAdmitNeeded(raw, gid);
     void drainPendingAdmitQueue();
+    if (gid) void syncOutboundInvitesForSquad(gid);
   }
   if (parseSquadChannelsCatalog(raw)) {
     applySquadChannelsCatalog(raw, gid);

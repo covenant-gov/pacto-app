@@ -48,6 +48,7 @@ const TYPE_KEYS: Record<string, string> = {
   squad_event_series_created: 'messaging.structuredNotice.squadEventSeriesCreated',
   squad_doc_added: 'messaging.structuredNotice.squadDocAdded',
   squad_outbound_invite: 'messaging.structuredNotice.squadInvitePending',
+  squad_outbound_invite_revoked: 'messaging.structuredNotice.squadInviteRevoked',
   squad_admit_needed: 'messaging.structuredNotice.squadMemberAdmit',
   squad_rejoin_request: 'messaging.structuredNotice.squadRejoinRequest',
   squad_channels_catalog: 'messaging.structuredNotice.squadChannelsUpdated',

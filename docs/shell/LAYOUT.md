@@ -29,7 +29,7 @@ Pinned system channels stay **above** a thin gray divider; member-created MLS ch
 
 **Pinned order:** `governance` → `gov-practice` (when Active) → `announcements` → `tools` → `settings`
 
-`personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **`#settings` → You → Alerts** and **`#settings` → Access → Join requests**. Persisted `__my_dashboard__` remaps to `#settings`.
+`personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **`#settings` → You → Alerts** and **`#settings` → Access → Pending** (outbound invites + Commons join requests). Persisted `__my_dashboard__` remaps to `#settings`.
 
 ---
 
@@ -72,7 +72,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + Proposals board (Open \| Executed \| Failed); Squad Admin card when the squad has a standalone `squad_admin` row and no Pacto Gov |
 | `components/parent/dashboard/SquadAdminStatusCard.svelte` | Admin-only deployed state: variant copy, proxy (copy), network, CTA to Settings → Access → Privileges |
 | `components/parent/dashboard/DashboardSettingsUsTab.svelte` | Squad photo, Commons broadcast, stickers — `#settings` Us |
-| `components/parent/dashboard/DashboardSettingsAccessTab.svelte` | Join requests, Privileges (ACL / Squad Admin), content policy, Join-inbox holders — `#settings` Access |
+| `components/parent/dashboard/DashboardSettingsAccessTab.svelte` | Invite + Pending (outbound invites / join requests), Privileges (ACL / Squad Admin), content policy, Join-inbox holders — `#settings` Access |
 | `components/parent/dashboard/DashboardSettingsNetworkTab.svelte` | Primary/Practice networks, Chain RPC / Pimlico — `#settings` Network |
 | `components/parent/dashboard/DashboardGovernanceTab.svelte` | All / Crew / Captain commands + Hats tree |
 | `components/parent/dashboard/DashboardRolesTreeTab.svelte` | Hats tree (mounted at the bottom of Governance) |

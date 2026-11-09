@@ -374,6 +374,7 @@
 	"messaging.structuredNotice.squadIdentityUpdated": "Squad photo updated",
 	"messaging.structuredNotice.squadInviteAccepted": "Squad invite accepted",
 	"messaging.structuredNotice.squadInvitePending": "Squad invite pending",
+	"messaging.structuredNotice.squadInviteRevoked": "Squad invite canceled",
 	"messaging.structuredNotice.squadJoinRequest": "Squad join request",
 	"messaging.structuredNotice.squadJoinResponse": "Squad join response",
 	"messaging.structuredNotice.squadJoinUpdate": "Squad join update",

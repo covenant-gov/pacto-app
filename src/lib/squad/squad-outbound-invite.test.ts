@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn(),
   getDmMessages: vi.fn().mockResolvedValue([]),
+  getMlsGroupMembers: vi.fn().mockResolvedValue({ members: [], admins: [] }),
 }));
 
 vi.mock('../parent-navbar', () => ({
@@ -43,7 +44,7 @@ vi.mock('../../stores/squads', async () => {
   };
 });
 
-import { getDmMessages, sendDmMessage } from '../api/nostr';
+import { getDmMessages, getMlsGroupMembers, sendDmMessage } from '../api/nostr';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { admitMemberToSquad } from '../parent/admit-member';
 import { enqueuePendingAdmit } from '../parent/pending-admit';
@@ -53,18 +54,26 @@ import {
   formatSquadAdmitNeeded,
   formatSquadInviteAccepted,
   formatSquadOutboundInvite,
+  formatSquadOutboundInviteRevoked,
   handleInviteeConsentForAdmit,
+  isOutboundInviteRevoked,
+  loadPendingOutboundInvitesFromMls,
+  mergePendingOutboundInvitesFromMlsMessages,
   onMlsAdmitNeeded,
   onMlsOutboundInviteAnnounce,
+  onMlsOutboundInviteRevoked,
   parseSquadAdmitNeeded,
   parseSquadInviteAccepted,
   parseSquadOutboundInvite,
+  parseSquadOutboundInviteRevoked,
   publishInviteAcceptedClaims,
   publishOutboundInviteAnnounce,
   rememberOutboundInvite,
-  resetOutboundInviteStateForTests,
+  resetOutboundInviteState,
+  revokeOutboundInviteAnnounce,
   SQUAD_ADMIT_NEEDED_TYPE,
   SQUAD_INVITE_ACCEPTED_TYPE,
+  SQUAD_OUTBOUND_INVITE_REVOKED_TYPE,
   SQUAD_OUTBOUND_INVITE_TYPE,
 } from './squad-outbound-invite';
 
@@ -80,6 +89,26 @@ describe('squad-outbound-invite parsers', () => {
     const raw = formatSquadOutboundInvite(validOutbound);
     expect(JSON.parse(raw).type).toBe(SQUAD_OUTBOUND_INVITE_TYPE);
     expect(parseSquadOutboundInvite(raw)).toEqual(validOutbound);
+  });
+
+  it('round-trips outbound invite revoked format/parse', () => {
+    const payload = {
+      parent_id: 'g-ann',
+      invite_id: 'inv-1',
+      invitee_npub: 'npub-bob',
+    };
+    const raw = formatSquadOutboundInviteRevoked(payload);
+    expect(JSON.parse(raw).type).toBe(SQUAD_OUTBOUND_INVITE_REVOKED_TYPE);
+    expect(parseSquadOutboundInviteRevoked(raw)).toEqual(payload);
+  });
+
+  it('rejects invalid revoked payloads', () => {
+    expect(parseSquadOutboundInviteRevoked(null)).toBeNull();
+    expect(
+      parseSquadOutboundInviteRevoked(
+        JSON.stringify({ type: SQUAD_OUTBOUND_INVITE_REVOKED_TYPE, payload: { parent_id: 'p' } }),
+      ),
+    ).toBeNull();
   });
 
   it('rejects invalid outbound invite payloads', () => {
@@ -215,9 +244,10 @@ describe('squad-outbound-invite parsers', () => {
 
 describe('squad-outbound-invite flows', () => {
   beforeEach(() => {
-    resetOutboundInviteStateForTests();
+    resetOutboundInviteState();
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
     vi.mocked(getDmMessages).mockReset().mockResolvedValue([]);
+    vi.mocked(getMlsGroupMembers).mockReset().mockResolvedValue({ members: [], admins: [] });
     vi.mocked(admitMemberToSquad).mockReset().mockResolvedValue({
       ok: true,
       announcementsOk: true,
@@ -425,5 +455,88 @@ describe('squad-outbound-invite flows', () => {
     onMlsAdmitNeeded(formatSquadAdmitNeeded(validOutbound), 'g-ann');
     await vi.waitFor(() => expect(getDmMessages).toHaveBeenCalled());
     expect(admitMemberToSquad).not.toHaveBeenCalled();
+  });
+
+  it('mergePendingOutboundInvitesFromMlsMessages drops revoked invites', () => {
+    const pending = mergePendingOutboundInvitesFromMlsMessages([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10 },
+      {
+        content: formatSquadOutboundInviteRevoked({
+          parent_id: 'g-ann',
+          invite_id: 'inv-1',
+          invitee_npub: 'npub-bob',
+        }),
+        at: 20,
+      },
+    ]);
+    expect(pending).toEqual([]);
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
+  it('mergePendingOutboundInvitesFromMlsMessages keeps latest invite when not revoked', () => {
+    const pending = mergePendingOutboundInvitesFromMlsMessages([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10 },
+      {
+        content: formatSquadOutboundInvite({ ...validOutbound, invite_id: 'inv-2', invitee_npub: 'npub-cara' }),
+        at: 30,
+      },
+    ]);
+    expect(pending.map((p) => p.inviteId)).toEqual(['inv-2', 'inv-1']);
+  });
+
+  it('loadPendingOutboundInvitesFromMls filters roster members', async () => {
+    vi.mocked(getDmMessages).mockResolvedValue([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10 },
+      {
+        content: formatSquadOutboundInvite({
+          ...validOutbound,
+          invite_id: 'inv-2',
+          invitee_npub: 'npub-cara',
+        }),
+        at: 20,
+      },
+    ] as never);
+    vi.mocked(getMlsGroupMembers).mockResolvedValue({ members: ['npub-bob'], admins: [] });
+
+    const pending = await loadPendingOutboundInvitesFromMls('g-ann');
+    expect(pending).toEqual([
+      expect.objectContaining({ inviteId: 'inv-2', inviteeNpub: 'npub-cara' }),
+    ]);
+  });
+
+  it('revokeOutboundInviteAnnounce publishes revoke and blocks later admit', async () => {
+    const parent = {
+      id: 'g-ann',
+      name: 'Alpha',
+      channels: [{ name: 'announcements', groupId: 'g-ann', order: 0 }],
+      kind: 'squad' as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    rememberOutboundInvite(validOutbound);
+    const ok = await revokeOutboundInviteAnnounce(parent, 'inv-1', 'npub-bob');
+    expect(ok).toBe(true);
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      'g-ann',
+      expect.stringContaining(SQUAD_OUTBOUND_INVITE_REVOKED_TYPE),
+      '',
+      { virtualBucket: 'announcements' },
+    );
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+
+    await handleInviteeConsentForAdmit(validOutbound);
+    expect(admitMemberToSquad).not.toHaveBeenCalled();
+  });
+
+  it('onMlsOutboundInviteRevoked remembers revoke', () => {
+    rememberOutboundInvite(validOutbound);
+    onMlsOutboundInviteRevoked(
+      formatSquadOutboundInviteRevoked({
+        parent_id: 'g-ann',
+        invite_id: 'inv-1',
+        invitee_npub: 'npub-bob',
+      }),
+    );
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
   });
 });

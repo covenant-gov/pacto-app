@@ -62,6 +62,8 @@ A resend skips the store-reset KeyPackage-freshness gate (`resolve_fresh_keypack
 
 **Squad layer (consent-first):** Creating a squad builds a **creator-only** announcements MLS group (`create_group_chat` with empty `member_ids`). Selected contacts are invited afterward via `sendConsentFirstSquadInvite` (`inviteId` + `admitterNpubs` + `squad_outbound_invite` announce + DM). MLS-add runs only after the invitee Accepts (admit pipeline). The Join inbox Nostr identity is never an MLS leaf.
 
+**Access → Pending:** Settings Access shows a unified pending list under Invite: outbound `squad_outbound_invite` rows (**Invited**) and Commons join requests (**Requested**). Cancel publishes `squad_outbound_invite_revoked` on announcements; admitters ignore later Accept for that `invite_id`. Rows clear when revoked, when the invitee is already on the roster, or after a successful admit. Invitee decline clearing the squad-wide row is a follow-up.
+
 **Resend:** After admit, if Welcome delivery fails, Members shows a pending badge. **Resend invite** remove-then-re-adds (Restore) and sends a fresh consent-first DM so Accept still works if the Welcome is late. Channel create still sends the under-the-hood `channel_in_squad` notify to selected members.
 
 **Partial-failure state:** if a resend's remove commits but the re-add fails, the member ends up outside the group while still flagged pending in `pending_welcomes`; the panel keeps them visible so the admin can retry rather than silently dropping them.
