@@ -34,6 +34,7 @@ pub mod sponsor_policy_registry;
 pub mod sponsor_preflight;
 pub mod sponsor_userop;
 pub mod sponsored_action_label;
+pub mod privilege_role_id;
 pub mod squad_admin_deploy;
 pub mod squad_admin_write;
 pub mod squad_allowlist;

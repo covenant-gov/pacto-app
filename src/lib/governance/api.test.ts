@@ -49,8 +49,10 @@ import {
   crewOffboardHasVoted,
   squadAdminCreateRole,
   squadSponsorSetPermittedAddress,
+  squadAdminDisableExecutor,
   squadAdminEnableExecutor,
   squadAdminEnableFullPermission,
+  getSquadAdminRoleCatalog,
   squadAdminInfraId,
   squadAdminInfraRow,
   squadInfraLegacyProvider,
@@ -881,39 +883,74 @@ describe('api command wrappers', () => {
     });
   });
 
-  it('squadAdminCreateRole sends squad_admin_create_role with trimmed label', async () => {
+  it('squadAdminCreateRole sends squad_admin_create_role with trimmed roleId', async () => {
     mockedInvoke.mockResolvedValueOnce({});
+    const roleId = ' 0x4d61746500000000000000000000000000000000000000000000000000010007 ';
     await squadAdminCreateRole({
       network: NETWORK,
       parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
-      roleLabel: ' Treasurer ',
+      roleId,
     });
     expect(mockedInvoke).toHaveBeenCalledWith('squad_admin_create_role', {
       network: NETWORK,
       parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
-      roleLabel: 'Treasurer',
+      roleId: roleId.trim(),
       rpcUrls: expect.any(Array),
     });
   });
 
   it('squadAdminEnableExecutor sends squad_admin_enable_executor', async () => {
     mockedInvoke.mockResolvedValueOnce({});
+    const roleId = ' 0x4d61746500000000000000000000000000000000000000000000000000010007 ';
     await squadAdminEnableExecutor({
       network: NETWORK,
       parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
       executorAddress: '0xexec',
-      roleLabel: ' Treasurer ',
+      roleId,
     });
     expect(mockedInvoke).toHaveBeenCalledWith('squad_admin_enable_executor', {
       network: NETWORK,
       parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
       executorAddress: '0xexec',
-      roleLabel: 'Treasurer',
+      roleId: roleId.trim(),
       rpcUrls: expect.any(Array),
+    });
+  });
+
+  it('squadAdminDisableExecutor sends squad_admin_disable_executor', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    const roleId = '0x4d61746500000000000000000000000000000000000000000000000000010007';
+    await squadAdminDisableExecutor({
+      network: NETWORK,
+      parentId: 'parent-1',
+      squadAdminProxy: '0xadmin',
+      executorAddress: '0xexec',
+      roleId,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('squad_admin_disable_executor', {
+      network: NETWORK,
+      parentId: 'parent-1',
+      squadAdminProxy: '0xadmin',
+      executorAddress: '0xexec',
+      roleId,
+      rpcUrls: expect.any(Array),
+    });
+  });
+
+  it('getSquadAdminRoleCatalog sends get_squad_admin_role_catalog', async () => {
+    mockedInvoke.mockResolvedValueOnce({ roles: [] });
+    await getSquadAdminRoleCatalog({
+      network: NETWORK,
+      squadAdminProxy: ' 0xadmin ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_squad_admin_role_catalog', {
+      network: NETWORK,
+      squadAdminProxy: '0xadmin',
+      rpcUrls: null,
     });
   });
 
@@ -988,7 +1025,7 @@ describe('governance process gossip after writes', () => {
       network: NETWORK,
       parentId: PARENT,
       squadAdminProxy: '0xadmin',
-      roleLabel: 'Treasurer',
+      roleId: '0x4d61746500000000000000000000000000000000000000000000000000010007',
     });
     expect(JSON.parse(String(mockedSendDm.mock.calls[0]?.[1])).payload.kind).toBe('hats');
     expect(get(governanceProcessNonceByParentId)[PARENT]).toBe(1);

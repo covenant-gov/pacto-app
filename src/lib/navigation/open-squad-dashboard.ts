@@ -10,6 +10,7 @@ import {
   lastOpenedChannelId,
   lastOpenedSquadId,
   settingsChannelMode,
+  squadDashboardChannelMode,
   squadToolsChannelMode,
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
@@ -85,6 +86,14 @@ export function openSquadDashboard(parentId: string): void {
   navigateToSquadChannel(id, SQUAD_DASHBOARD_CHANNEL_ID);
 }
 
+/** Open `#governance` → Crew (Privileges builder lives under the roster). */
+export function openSquadCrewPrivileges(parentId: string): void {
+  const id = parentId.trim();
+  if (!id) return;
+  openSquadDashboard(id);
+  squadDashboardChannelMode.set('crew');
+}
+
 /** Open a squad's #gov-practice hub from Status or other non-hub views. */
 export function openSquadWargame(parentId: string): void {
   const id = parentId.trim();
@@ -103,7 +112,7 @@ export function openSquadTools(parentId: string, mode: SquadToolsChannelMode = '
   navigateToSquadChannel(id, announcementsGroupId, TOOLS_CHANNEL_NAME);
 }
 
-/** Open a squad's #settings channel. Privileges CTAs land on Access. */
+/** Open a squad's #settings channel. */
 export function openSquadSettings(parentId: string, mode: SettingsChannelMode = 'access'): void {
   const id = parentId.trim();
   if (!id) return;

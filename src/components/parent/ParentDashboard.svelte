@@ -894,6 +894,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onRefreshSponsorExt={refreshSponsorExtStatus}
               hasSponsor={hasSponsor}
               sponsorHatsMode={sponsorVariant === 'hats'}
+              squadAdminProxy={squadAdminCtx?.proxy ?? ''}
+              squadAdminNetwork={squadAdminNetwork}
+              {warGameStack}
+              memberEvmOptions={memberEvmOptionsForRoles}
+              onPrivilegesChanged={refreshOnChainGovSnapshots}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.crew')}</p>
@@ -911,15 +916,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   hasSponsor={liveHasSponsor}
   {hasPactoGov}
   {hasSquadAdmin}
-  {warGameStack}
-  squadAdminProxy={squadAdminCtx?.proxy ?? ''}
-  {squadAdminNetwork}
   {squadNetwork}
   sponsorUnwiredExt={liveHasSponsor && sponsorVariant === 'ext' && sponsorExtStatus?.hatsWired !== true}
   pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
   quartermaster={pactoPayload?.quartermaster ?? ''}
   {captainMemberOptions}
-  memberEvmOptions={memberEvmOptionsForRoles}
   {onConfirmImportSafe}
   {onPactoGovDeployComplete}
   {onSponsorDeployComplete}

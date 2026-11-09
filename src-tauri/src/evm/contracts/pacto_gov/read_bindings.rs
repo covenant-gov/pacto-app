@@ -211,6 +211,8 @@ sol! {
     interface ISquadAdminBase {
         function createRole(bytes32 _role) external;
 
+        function deleteRole(bytes32 _role) external;
+
         function enableExecutor(address _executor, bytes32 _role) external;
 
         function enableFullPermission(address _executor, bool _enable) external;
@@ -224,6 +226,10 @@ sol! {
         function isExecutorFullPermission(address _executor) external view returns (bool _fullPermission);
 
         function isExecutorPaused(address _executor) external view returns (bool _paused);
+
+        function roleCount() external view returns (uint256 _count);
+
+        function roleAt(uint256 _index) external view returns (bytes32 _role);
     }
 
     interface ISquadAdminExt {

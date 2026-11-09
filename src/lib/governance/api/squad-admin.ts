@@ -7,7 +7,12 @@ export interface SquadAdminExecutorRolesDto {
   address: string;
   fullPermission: boolean;
   paused: boolean;
+  /** Catalog role ids (`0x…`) with `hasExecutorRole` (excludes FULL/PAUSE sentinels). */
   roles: { role: string; enabled: boolean }[];
+}
+
+export interface SquadAdminRoleCatalogDto {
+  roles: string[];
 }
 
 export async function getSquadAdminExecutorRoles(params: {
@@ -22,6 +27,18 @@ export async function getSquadAdminExecutorRoles(params: {
     executorAddress: params.executorAddress.trim(),
     rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadAdminExecutorRolesDto;
+}
+
+export async function getSquadAdminRoleCatalog(params: {
+  network: string;
+  squadAdminProxy: string;
+  parentId?: string | null;
+}): Promise<SquadAdminRoleCatalogDto> {
+  return (await invoke('get_squad_admin_role_catalog', {
+    network: params.network,
+    squadAdminProxy: params.squadAdminProxy.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as SquadAdminRoleCatalogDto;
 }
 
 /** Wire payload for `governance_updated` when squad-admin infra is deployed. */
@@ -93,14 +110,15 @@ export async function squadAdminCreateRole(params: {
   network: string;
   parentId: string;
   squadAdminProxy: string;
-  roleLabel: string;
+  /** Packed privilege role id (`0x` + 64 hex). */
+  roleId: string;
 }): Promise<SquadAdminWriteResultDto> {
   return afterGovWrite(
     (await invoke('squad_admin_create_role', {
       network: params.network,
       parentId: params.parentId.trim(),
       squadAdminProxy: params.squadAdminProxy.trim(),
-      roleLabel: params.roleLabel.trim(),
+      roleId: params.roleId.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as SquadAdminWriteResultDto,
     { parentId: params.parentId, kind: 'hats', address: params.squadAdminProxy },
@@ -112,7 +130,7 @@ export async function squadAdminEnableExecutor(params: {
   parentId: string;
   squadAdminProxy: string;
   executorAddress: string;
-  roleLabel: string;
+  roleId: string;
 }): Promise<SquadAdminWriteResultDto> {
   return afterGovWrite(
     (await invoke('squad_admin_enable_executor', {
@@ -120,7 +138,27 @@ export async function squadAdminEnableExecutor(params: {
       parentId: params.parentId.trim(),
       squadAdminProxy: params.squadAdminProxy.trim(),
       executorAddress: params.executorAddress.trim(),
-      roleLabel: params.roleLabel.trim(),
+      roleId: params.roleId.trim(),
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    })) as SquadAdminWriteResultDto,
+    { parentId: params.parentId, kind: 'hats', address: params.executorAddress },
+  );
+}
+
+export async function squadAdminDisableExecutor(params: {
+  network: string;
+  parentId: string;
+  squadAdminProxy: string;
+  executorAddress: string;
+  roleId: string;
+}): Promise<SquadAdminWriteResultDto> {
+  return afterGovWrite(
+    (await invoke('squad_admin_disable_executor', {
+      network: params.network,
+      parentId: params.parentId.trim(),
+      squadAdminProxy: params.squadAdminProxy.trim(),
+      executorAddress: params.executorAddress.trim(),
+      roleId: params.roleId.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as SquadAdminWriteResultDto,
     { parentId: params.parentId, kind: 'hats', address: params.executorAddress },

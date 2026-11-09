@@ -1,4 +1,4 @@
-//! Squad Admin roster mutations: createRole, enableExecutor, enableFullPermission.
+//! Squad Admin roster mutations: createRole, enable/disableExecutor, enableFullPermission.
 
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, B256};
@@ -8,8 +8,9 @@ use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
-    createRoleCall, enableExecutorCall, enableFullPermissionCall,
+    createRoleCall, disableExecutorCall, enableExecutorCall, enableFullPermissionCall,
 };
+use super::privilege_role_id::parse_role_id_hex;
 use super::gov_read::{connect_gov_read_provider, parse_top_hat_id, rpc_urls_or_default};
 use super::nave_pirata_read::{read_nave_pirata_deployment, read_war_game_active_deployment};
 use super::pacto_chain_config;
@@ -25,23 +26,8 @@ use super::squad_sponsor_common::squad_id_from_parent_id;
 use super::wallet_chain_config;
 use crate::db;
 
-pub fn bytes32_role_tag(label: &str) -> Result<B256, String> {
-    let trimmed = label.trim();
-    if trimmed.is_empty() {
-        return Err("role label must be non-empty".to_string());
-    }
-    if trimmed.len() > crate::app_config::ROLE_LABEL_MAX_LENGTH as usize {
-        return Err(format!(
-            "role label must be at most {} ASCII characters",
-            crate::app_config::ROLE_LABEL_MAX_LENGTH
-        ));
-    }
-    if !trimmed.is_ascii() {
-        return Err("role label must be ASCII".to_string());
-    }
-    let mut buf = [0u8; 32];
-    buf[..trimmed.len()].copy_from_slice(trimmed.as_bytes());
-    Ok(B256::from(buf))
+fn parse_packed_role_id(role_id: &str) -> Result<B256, String> {
+    parse_role_id_hex(role_id).map_err(|e| wallet_err_json("INVALID_ROLE", e, None))
 }
 
 #[derive(Serialize)]
@@ -231,12 +217,11 @@ pub async fn squad_admin_create_role<R: Runtime>(
     network: String,
     parent_id: String,
     squad_admin_proxy: String,
-    role_label: String,
+    role_id: String,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
-    let role = bytes32_role_tag(role_label.as_str())
-        .map_err(|e| wallet_err_json("INVALID_ROLE", e, None))?;
+    let role = parse_packed_role_id(role_id.as_str())?;
     let calldata = createRoleCall { _role: role }.abi_encode();
     squad_admin_write(
         app,
@@ -257,15 +242,45 @@ pub async fn squad_admin_enable_executor<R: Runtime>(
     parent_id: String,
     squad_admin_proxy: String,
     executor_address: String,
-    role_label: String,
+    role_id: String,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let exec = parse_address(executor_address.trim())
         .map_err(|e| wallet_err_json("INVALID_EXECUTOR", e, None))?;
-    let role = bytes32_role_tag(role_label.as_str())
-        .map_err(|e| wallet_err_json("INVALID_ROLE", e, None))?;
+    let role = parse_packed_role_id(role_id.as_str())?;
     let calldata = enableExecutorCall {
+        _executor: exec,
+        _role: role,
+    }
+    .abi_encode();
+    squad_admin_write(
+        app,
+        network,
+        parent_id,
+        squad_admin_proxy,
+        calldata,
+        GovCapability::SquadAdminEnableExecutor,
+        rpc_urls,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn squad_admin_disable_executor<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    parent_id: String,
+    squad_admin_proxy: String,
+    executor_address: String,
+    role_id: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<SquadAdminWriteResult, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&app)?;
+    let exec = parse_address(executor_address.trim())
+        .map_err(|e| wallet_err_json("INVALID_EXECUTOR", e, None))?;
+    let role = parse_packed_role_id(role_id.as_str())?;
+    let calldata = disableExecutorCall {
         _executor: exec,
         _role: role,
     }
@@ -314,16 +329,17 @@ pub async fn squad_admin_enable_full_permission<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::{bytes32_role_tag, squad_admin_from_deployment_matches};
+    use super::{parse_packed_role_id, squad_admin_from_deployment_matches};
     use alloy::primitives::address;
 
     #[test]
-    fn bytes32_role_tag_rejects_empty_and_overlong() {
-        assert!(bytes32_role_tag("").is_err());
-        assert!(
-            bytes32_role_tag(&"a".repeat(crate::app_config::ROLE_LABEL_MAX_LENGTH + 1)).is_err()
-        );
-        assert!(bytes32_role_tag("FULL").is_ok());
+    fn parse_packed_role_id_rejects_bad_hex() {
+        assert!(parse_packed_role_id("").is_err());
+        assert!(parse_packed_role_id("0x1234").is_err());
+        assert!(parse_packed_role_id(
+            "0x4d61746500000000000000000000000000000000000000000000000000010007"
+        )
+        .is_ok());
     }
 
     #[test]
