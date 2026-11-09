@@ -57,7 +57,7 @@ describe('partitionHubSidebarChannels', () => {
 });
 
 describe('buildHubSidebarChannels', () => {
-  it('pins governance then announcements and board; strips obsolete rows', () => {
+  it('pins announcements then governance tools and settings; strips obsolete rows', () => {
     const raw = [
       ...defaultChannelRowsForGroupId('g'),
       { name: 'my-dashboard', groupId: '__my_dashboard__', order: 8 },
@@ -67,8 +67,8 @@ describe('buildHubSidebarChannels', () => {
     ];
     const built = buildHubSidebarChannels(raw);
     expect(built.map((c) => c.name)).toEqual([
-      SQUAD_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
+      SQUAD_DASHBOARD_CHANNEL_NAME,
       TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
       'c1',
@@ -80,8 +80,8 @@ describe('buildHubSidebarChannels', () => {
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
     ]);
     expect(built.map((c) => c.name)).toEqual([
-      SQUAD_DASHBOARD_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
+      SQUAD_DASHBOARD_CHANNEL_NAME,
       TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
     ]);
@@ -96,13 +96,13 @@ describe('buildHubSidebarChannels', () => {
   it('pins gov-practice immediately after governance when includeWarGame', () => {
     const built = buildHubSidebarChannels(defaultChannelRowsForGroupId('g'), { includeWarGame: true });
     expect(built.map((c) => c.name)).toEqual([
+      ANNOUNCEMENTS_CHANNEL_NAME,
       SQUAD_DASHBOARD_CHANNEL_NAME,
       SQUAD_WARGAME_CHANNEL_NAME,
-      ANNOUNCEMENTS_CHANNEL_NAME,
       TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
     ]);
-    expect(built[1]).toMatchObject({
+    expect(built[2]).toMatchObject({
       name: SQUAD_WARGAME_CHANNEL_NAME,
       groupId: SQUAD_WARGAME_CHANNEL_ID,
     });

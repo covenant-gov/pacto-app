@@ -16,8 +16,7 @@
     type SettingsChannelMode,
   } from '../../stores/navigation';
   import { getProfileDisplayName } from '../../lib/utils/profile';
-  import HubChannelHeader from './HubChannelHeader.svelte';
-  import HubModeSwitcher from './HubModeSwitcher.svelte';
+  import HubViewShell from './HubViewShell.svelte';
   import {
     loadDashboardSettingsAboutTab,
     loadDashboardSettingsAccessTab,
@@ -177,15 +176,15 @@
   }
 </script>
 
-<div class="squad-settings">
-  <HubChannelHeader channelName={SETTINGS_CHANNEL_NAME} />
-  <HubModeSwitcher
-    modes={SETTINGS_CHANNEL_MODES}
-    active={settingsMode}
-    ariaLabel={$t('governance.settingsChannelMode.section')}
-    labelFor={(mode) => $t(`governance.settingsChannelMode.${mode}`)}
-    onSelect={(mode) => selectSettingsMode(mode as SettingsChannelMode)}
-  />
+<HubViewShell
+  channelName={SETTINGS_CHANNEL_NAME}
+  modes={SETTINGS_CHANNEL_MODES}
+  active={settingsMode}
+  ariaLabel={$t('governance.settingsChannelMode.section')}
+  labelFor={(mode) => $t(`governance.settingsChannelMode.${mode}`)}
+  onSelect={(mode) => selectSettingsMode(mode as SettingsChannelMode)}
+  {announcementsGroupId}
+>
   <div class="squad-settings-body">
     {#if visitedSettingsModes.has('you')}
       <div
@@ -277,15 +276,9 @@
     {/if}
   </div>
   <SquadInviteExitHost bind:this={inviteExitHost} squad={parent} />
-</div>
+</HubViewShell>
 
 <style>
-  .squad-settings {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-  }
   .squad-settings-body {
     flex: 1;
     min-height: 0;

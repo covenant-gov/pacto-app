@@ -13,6 +13,7 @@ src/components/layout/ParentNavbar.svelte   sidebar + modals → lib/parent/* fl
 src/components/parent/ParentDashboard.svelte   #governance / #gov-practice tab shell (Status→Governance→Treasury→Crew)
 src/components/parent/SquadSettingsView.svelte #settings virtual channel (You | About | Access | Network)
 src/components/parent/SquadToolsView.svelte    #tools shelf (Polls | Events | Docs | Stickers); mounted from SquadHubMain, not ChatView
+src/components/parent/HubViewShell.svelte      shared hub chrome: header + mode switcher + members rail
 src/components/parent/HubChannelHeader.svelte  shared `#name` hub header
 src/components/parent/HubModeSwitcher.svelte   shared segmented mode switcher
 src/components/dm/DmThread.svelte             header/input/options + DmMessageRouter
@@ -27,7 +28,7 @@ src/stores/app.ts                 thin re-export barrel (navigation, dm, squads,
 
 Pinned system channels stay **above** a thin gray divider; member-created MLS channels stay **below**.
 
-**Pinned order:** `governance` → `gov-practice` (when Active) → `announcements` → `tools` → `settings`
+**Pinned order:** `announcements` → `governance` → `gov-practice` (when Active) → `tools` → `settings`
 
 `personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **`#settings` → You → Alerts** and **`#settings` → Access → Pending** (outbound invites + Commons join requests). Persisted `__my_dashboard__` remaps to `#settings`.
 
@@ -90,7 +91,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 
 **Invariant:** do not add a new `#governance` segmented mode for a single feature. Occasional config goes in a Settings **section**. A new tab is only for a frequently used operational domain with its own data (Governance, Treasury, Crew). Hats tree lives under Governance, not its own tab. Stickers must not be a sidebar channel or a `#governance` mode — pack authoring lives under `#tools` Stickers with polls / events / docs.
 
-**Keep-alive:** After a `#governance` mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders). `#settings` and `#tools` use the same keep-alive for their mode panes. Shared chrome: `HubChannelHeader` + `HubModeSwitcher`.
+**Keep-alive:** After a `#governance` mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders). `#settings` and `#tools` use the same keep-alive for their mode panes. Shared chrome: `HubViewShell` (`HubChannelHeader` + `HubModeSwitcher` + `ParentDashboardMembersPanel`).
 
 Governance uses role sub-modes inside `PactoGovGovernanceShell` (All / Crew / Captain command panes; Status owns the Proposals board). The board filters **Open | Executed | Failed** for treasury proposals and mutiny rounds. Crew offboard and crew add/remove stay on Open only, and leave the board when they finish. Propose and vote-mode writes live on **All**; process votes live on Status cards. CTAs use **ACL** (access control) snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 

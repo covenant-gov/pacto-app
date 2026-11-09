@@ -11,8 +11,7 @@
   } from '../../stores/navigation';
   import { eventsFocus } from '../../stores/events-navigation';
   import { docsFocus } from '../../stores/docs-navigation';
-  import HubChannelHeader from './HubChannelHeader.svelte';
-  import HubModeSwitcher from './HubModeSwitcher.svelte';
+  import HubViewShell from './HubViewShell.svelte';
   import SquadStickersSection from './dashboard/SquadStickersSection.svelte';
   import {
     loadDashboardPollsPanel,
@@ -52,15 +51,15 @@
   }
 </script>
 
-<div class="squad-tools">
-  <HubChannelHeader channelName={TOOLS_CHANNEL_NAME} />
-  <HubModeSwitcher
-    modes={TOOLS_CHANNEL_MODES}
-    active={toolsMode}
-    ariaLabel={$t('governance.toolsChannelMode.section')}
-    labelFor={(mode) => $t(`governance.toolsChannelMode.${mode}`)}
-    onSelect={(mode) => selectToolsMode(mode as SquadToolsChannelMode)}
-  />
+<HubViewShell
+  channelName={TOOLS_CHANNEL_NAME}
+  modes={TOOLS_CHANNEL_MODES}
+  active={toolsMode}
+  ariaLabel={$t('governance.toolsChannelMode.section')}
+  labelFor={(mode) => $t(`governance.toolsChannelMode.${mode}`)}
+  onSelect={(mode) => selectToolsMode(mode as SquadToolsChannelMode)}
+  {announcementsGroupId}
+>
   <div class="squad-tools-body">
     {#if visitedToolsModes.has('polls')}
       <div
@@ -118,18 +117,9 @@
       </div>
     {/if}
   </div>
-</div>
+</HubViewShell>
 
 <style>
-  .squad-tools {
-    flex: 1;
-    min-width: 0;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-  }
   .squad-tools-body {
     flex: 1;
     min-width: 0;
