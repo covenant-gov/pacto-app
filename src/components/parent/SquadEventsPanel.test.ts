@@ -131,11 +131,11 @@ describe('SquadEventsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Add event' })).toBeNull();
   });
 
-  it('shows the create control and the join-history empty copy when open', async () => {
+  it('shows the create control and empty copy when open', async () => {
     state.events = [];
     state.policy = policy();
     render(SquadEventsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add event' })).toBeTruthy());
-    expect(screen.getByText(/before you joined/)).toBeTruthy();
+    expect(screen.getByText('No events yet.')).toBeTruthy();
   });
 });

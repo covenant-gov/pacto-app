@@ -6,19 +6,19 @@
 use std::collections::HashMap;
 
 use nostr_sdk::prelude::*;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Runtime};
 
+use crate::TAURI_APP;
 use crate::nostr_tags;
 use crate::rumor::{ConversationType, RumorContext, RumorEvent, RumorProcessingResult};
 use crate::squad_event_time as civil;
 use crate::squad_records::{
-    self, card_message, signer_identity, store_local_card, with_conn, SquadGroupRole,
-    SQUAD_EVENT_D_TAG,
+    self, SQUAD_EVENT_D_TAG, SquadGroupRole, card_message, signer_identity, store_local_card,
+    with_conn,
 };
-use crate::TAURI_APP;
 
 const SCHEMA: &str = "pacto.squad_event.v1";
 pub const KIND_ALL_DAY: u16 = 31922;
@@ -445,7 +445,7 @@ pub fn fields_from_input(input: &SquadEventInput) -> Result<EventFields, String>
 }
 
 /// Ingest bound on peer-set stamps.
-fn stamp_acceptable(updated_at_ms: i64, now_ms: i64) -> bool {
+pub(crate) fn stamp_acceptable(updated_at_ms: i64, now_ms: i64) -> bool {
     updated_at_ms >= 0 && updated_at_ms <= now_ms.saturating_add(MAX_FUTURE_SKEW_MS)
 }
 
@@ -1177,6 +1177,245 @@ fn load_events(
             }
         })
         .collect())
+}
+
+/// One RSVP as carried in a replica snapshot (snake_case wire).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct EventSnapshotRsvp {
+    pub member_npub: String,
+    pub status: RsvpStatus,
+    pub updated_at_ms: i64,
+}
+
+/// Current event row plus RSVPs, for late-joiner catch-up.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct EventSnapshot {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series_id: Option<String>,
+    pub kind: u16,
+    pub title: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_unix: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_unix: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_date: Option<String>,
+    pub start_tzid: String,
+    pub place: Place,
+    pub location: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+    pub status: EventStatus,
+    pub author_npub: String,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub updated_by_npub: String,
+    #[serde(default)]
+    pub rsvps: Vec<EventSnapshotRsvp>,
+}
+
+pub(crate) fn collect_snapshot_events(
+    conn: &Connection,
+    parent_id: &str,
+    cap: usize,
+) -> Result<Vec<EventSnapshot>, String> {
+    let events = load_events(conn, parent_id, "")?;
+    // `load_events` is oldest-first; keep the newest `cap` in that order.
+    let skip = events.len().saturating_sub(cap);
+    Ok(events
+        .into_iter()
+        .skip(skip)
+        .map(|e| EventSnapshot {
+            id: e.id,
+            series_id: e.series_id,
+            kind: e.kind,
+            title: e.title,
+            summary: e.summary,
+            start_unix: e.start_unix,
+            end_unix: e.end_unix,
+            start_date: e.start_date,
+            end_date: e.end_date,
+            start_tzid: e.start_tzid,
+            place: e.place,
+            location: e.location,
+            channel_id: e.channel_id,
+            status: e.status,
+            author_npub: e.author_npub,
+            created_at_ms: e.created_at_ms,
+            updated_at_ms: e.updated_at_ms,
+            updated_by_npub: e.updated_by_npub,
+            rsvps: e
+                .rsvps
+                .into_iter()
+                .map(|r| EventSnapshotRsvp {
+                    member_npub: r.member_npub,
+                    status: r.status,
+                    updated_at_ms: r.updated_at_ms,
+                })
+                .collect(),
+        })
+        .collect())
+}
+
+fn snapshot_fields(e: &EventSnapshot) -> Option<EventFields> {
+    let fields = EventFields {
+        kind: e.kind,
+        title: e.title.clone(),
+        summary: e.summary.clone(),
+        start_unix: e.start_unix,
+        end_unix: e.end_unix,
+        start_date: e.start_date.clone(),
+        end_date: e.end_date.clone(),
+        start_tzid: e.start_tzid.clone(),
+        place: e.place,
+        location: e.location.clone(),
+        channel_id: trimmed_opt(e.channel_id.as_deref()),
+    };
+    validate_fields(&fields).ok()?;
+    Some(fields)
+}
+
+fn snapshot_hash(e: &EventSnapshot) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(serde_json::to_vec(e).unwrap_or_default());
+    hex::encode(hasher.finalize())
+}
+
+fn author_is_admin(admin_npubs: &[String], npub: &str) -> bool {
+    let npub = npub.trim();
+    !npub.is_empty() && admin_npubs.iter().any(|a| a == npub)
+}
+
+/// Fill-only: insert a missing event (and missing RSVPs). Existing rows keep their body.
+pub(crate) fn apply_snapshot_events(
+    conn: &Connection,
+    parent_id: &str,
+    mls_group_id: &str,
+    events: &[EventSnapshot],
+    rumor_id: &str,
+    admin_npubs: &[String],
+    restrict_event_create: bool,
+    now_ms: i64,
+) -> Result<bool, String> {
+    let mut changed = false;
+    for event in events {
+        if event.id.trim().is_empty()
+            || event.author_npub.trim().is_empty()
+            || !stamp_acceptable(event.updated_at_ms, now_ms)
+            || !stamp_acceptable(event.created_at_ms, now_ms)
+        {
+            continue;
+        }
+        if restrict_event_create && !author_is_admin(admin_npubs, &event.author_npub) {
+            continue;
+        }
+        let Some(fields) = snapshot_fields(event) else {
+            continue;
+        };
+        match load_row(conn, &event.id)? {
+            Some(row) if row.parent_id == parent_id && row.mls_group_id == mls_group_id => {}
+            Some(_) => continue,
+            None => {
+                insert_snapshot_event(conn, parent_id, mls_group_id, event, &fields)?;
+                changed = true;
+            }
+        }
+        changed |= fill_snapshot_rsvps(conn, &event.id, rumor_id, &event.rsvps, now_ms)?;
+    }
+    Ok(changed)
+}
+
+fn insert_snapshot_event(
+    conn: &Connection,
+    parent_id: &str,
+    mls_group_id: &str,
+    event: &EventSnapshot,
+    fields: &EventFields,
+) -> Result<(), String> {
+    let created = event.created_at_ms.max(0);
+    let updated = event.updated_at_ms.max(created);
+    let updated_by = if event.updated_by_npub.trim().is_empty() {
+        event.author_npub.as_str()
+    } else {
+        event.updated_by_npub.as_str()
+    };
+    conn.execute(
+        "INSERT INTO squad_events (event_id, parent_id, mls_group_id, series_id, nip52_kind, title, summary,
+            start_unix, end_unix, start_date, end_date, start_tzid, place_kind, location, channel_id, status,
+            author_npub, created_at_ms, updated_at_ms, updated_by_npub, content_hash)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+        params![
+            event.id,
+            parent_id,
+            mls_group_id,
+            event.series_id,
+            fields.kind,
+            fields.title,
+            fields.summary,
+            fields.start_unix,
+            fields.end_unix,
+            fields.start_date,
+            fields.end_date,
+            fields.start_tzid,
+            fields.place.as_str(),
+            fields.location,
+            fields.channel_id,
+            event.status.as_str(),
+            event.author_npub,
+            created,
+            updated,
+            updated_by,
+            snapshot_hash(event),
+        ],
+    )
+    .map_err(|e| format!("Failed to insert snapshot event: {}", e))?;
+    Ok(())
+}
+
+fn fill_snapshot_rsvps(
+    conn: &Connection,
+    event_id: &str,
+    rumor_id: &str,
+    rsvps: &[EventSnapshotRsvp],
+    now_ms: i64,
+) -> Result<bool, String> {
+    let mut changed = false;
+    for rsvp in rsvps {
+        if rsvp.member_npub.trim().is_empty() || !stamp_acceptable(rsvp.updated_at_ms, now_ms) {
+            continue;
+        }
+        let exists: Option<i64> = conn
+            .query_row(
+                "SELECT 1 FROM squad_event_rsvps WHERE event_id = ?1 AND member_npub = ?2",
+                params![event_id, rsvp.member_npub],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to load snapshot rsvp: {}", e))?;
+        if exists.is_some() {
+            continue;
+        }
+        let row_rumor = format!("{rumor_id}:{event_id}:{}", rsvp.member_npub);
+        conn.execute(
+            "INSERT INTO squad_event_rsvps (event_id, member_npub, status, updated_at_ms, rumor_id)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                event_id,
+                rsvp.member_npub,
+                rsvp.status.as_str(),
+                rsvp.updated_at_ms,
+                row_rumor
+            ],
+        )
+        .map_err(|e| format!("Failed to insert snapshot rsvp: {}", e))?;
+        changed = true;
+    }
+    Ok(changed)
 }
 
 fn my_rsvp_updated_at(
@@ -2233,7 +2472,7 @@ mod tests {
 
     #[test]
     fn backdated_member_create_and_restrict_on_converge_in_either_order() {
-        use crate::squad_content_policy::{apply_policy, build_set_wire, PolicyFlag};
+        use crate::squad_content_policy::{PolicyFlag, apply_policy, build_set_wire};
         let restrict = build_set_wire(
             &Default::default(),
             PARENT,
@@ -2312,9 +2551,11 @@ mod tests {
 
         let events = load_events(&conn, PARENT, ALICE).unwrap();
         assert!(events.iter().all(|e| e.series_id.as_deref() == Some("s-1")));
-        assert!(events
-            .iter()
-            .all(|e| e.my_rsvp == Some(RsvpStatus::Accepted)));
+        assert!(
+            events
+                .iter()
+                .all(|e| e.my_rsvp == Some(RsvpStatus::Accepted))
+        );
     }
 
     #[test]
@@ -2456,27 +2697,31 @@ mod tests {
             serde_json::to_string(&first).unwrap(),
             serde_json::to_string(&retry).unwrap()
         );
-        assert!(preflight_series(
-            &occ,
-            &existing,
-            "other-series",
-            PARENT,
-            GROUP,
-            ALICE,
-            retry_now
-        )
-        .is_err());
+        assert!(
+            preflight_series(
+                &occ,
+                &existing,
+                "other-series",
+                PARENT,
+                GROUP,
+                ALICE,
+                retry_now
+            )
+            .is_err()
+        );
         assert!(preflight_series(&occ, &existing, "s-1", PARENT, GROUP, BOB, retry_now).is_err());
-        assert!(preflight_series(
-            &occ,
-            &existing,
-            "s-1",
-            PARENT,
-            GROUP,
-            ALICE,
-            now + 30 * 86_400_000
-        )
-        .is_err());
+        assert!(
+            preflight_series(
+                &occ,
+                &existing,
+                "s-1",
+                PARENT,
+                GROUP,
+                ALICE,
+                now + 30 * 86_400_000
+            )
+            .is_err()
+        );
         assert_eq!(count_rows(&conn, "squad_events"), 1);
     }
 
@@ -2931,10 +3176,12 @@ mod tests {
             serde_json::to_value(rsvp_wire("ev-1", PARENT, RsvpStatus::Tentative, 1)).unwrap();
         assert_eq!(rsvp["op"], "rsvp");
         assert_eq!(rsvp["status"], "tentative");
-        assert!(parse_wire(
-            r#"{"schema":"other","op":"create","id":"x","parent_id":"p","updated_at_ms":1}"#
-        )
-        .is_none());
+        assert!(
+            parse_wire(
+                r#"{"schema":"other","op":"create","id":"x","parent_id":"p","updated_at_ms":1}"#
+            )
+            .is_none()
+        );
         assert!(parse_wire(&serde_json::to_string(&create("ev-1", &f, 1)).unwrap()).is_some());
     }
 

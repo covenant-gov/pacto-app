@@ -145,10 +145,13 @@ Squad-wide records ride the announcements group as **Kind 30078** rumors selecte
 | `pacto_squad_content_policy` | Active | `pacto.squad_content_policy.v1` — admin-only add restrictions (`restrict_event_create`, `restrict_doc_add`), each with its own `*_updated_at_ms`; per-flag last timestamp wins |
 | `pacto_squad_event` | Active | `pacto.squad_event.v1` — squad events and RSVPs (see below) |
 | `pacto_squad_doc` | Active | `pacto.squad_doc.v1` — squad docs shelf links (see below) |
+| `pacto_squad_records_snapshot` | Active | `pacto.squad_records_snapshot.v1` — silent late-joiner replica: current events (with RSVPs), visible docs, and content policy |
 
 **Group gate:** a record is accepted only when the payload `parent_id` equals the MLS group it arrived in (a parent's id is its announcements group id), the same check as the side-effect ingest gate above. Records naming another parent are dropped on ingest, and send commands reject a mismatched `mls_group_id` with `squad_records_wrong_group`.
 
-**Silent operations** (policy changes, event updates, RSVPs, cancels, doc updates and removes) return the silent ingest result (`SquadRecordSilent`, same handling as a poll vote): they update the SQLite replica and never create a timeline row. They need no `pacto_bucket` tag and **do not** extend the bucket enum — there is no `events` or `docs` bucket. Record ops that announce something (for example an event-created or doc-added card) are stored as `announcements` messages like a poll create.
+**Silent operations** (policy changes, event updates, RSVPs, cancels, doc updates and removes, replica snapshots) return the silent ingest result (`SquadRecordSilent`, same handling as a poll vote): they update the SQLite replica and never create a timeline row. They need no `pacto_bucket` tag and **do not** extend the bucket enum — there is no `events` or `docs` bucket. Record ops that announce something (for example an event-created or doc-added card) are stored as `announcements` messages like a poll create.
+
+**Late joiners:** MLS history before a welcome is unreadable. After a member joins `#announcements`, `squad_state_sync_request` includes `records`. Online peers send one `pacto_squad_records_snapshot` rumor with the current replica. Ingest is fill-only for missing event/doc/RSVP rows (existing rows keep their body; remove stays sticky). Policy from the snapshot applies only when the signer is a current MLS admin, last-timestamp-wins per flag. The joiner cannot prove the copy against the MLS transcript. Do not re-emit announcement cards for the copied rows.
 
 Feature shelves (polls, events, docs) live under `#tools` modes that read their SQLite replica through Tauri. They are not virtual buckets of the MLS stream.
 

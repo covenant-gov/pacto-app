@@ -159,6 +159,7 @@ export const chatFixtures: Record<string, MockCommandHandler> = {
   send_squad_doc_add: () => undefined,
   send_squad_doc_update: () => undefined,
   send_squad_doc_remove: () => undefined,
+  send_squad_records_snapshot: () => undefined,
   start_typing: () => true,
   mark_as_read: () => true,
 };
