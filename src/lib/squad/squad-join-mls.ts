@@ -359,6 +359,16 @@ export async function respondToMlsJoinRequest(input: {
   try {
     const me = get(currentUser)?.npub;
     if (!me) return { ok: false, error: get(t)('errors.notSignedIn') };
+    if (input.status === 'accepted') {
+      const {
+        requireMySquadPrivilege,
+        squadPrivilegeDeniedMessage,
+      } = await import('../governance/squad-privilege-enforce');
+      const priv = await requireMySquadPrivilege(input.squadId, 'inviteAccept');
+      if (!priv.ok) {
+        return { ok: false, error: squadPrivilegeDeniedMessage(priv, get(t)) };
+      }
+    }
     const pending = await loadPendingJoinRequestsFromMls(input.squadId);
     const row = pending.find((r) => r.eventId === requestId);
     if (!row) {

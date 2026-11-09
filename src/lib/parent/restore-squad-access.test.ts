@@ -157,7 +157,10 @@ describe('restoreMemberToSquad', () => {
 
   it('drops the restore cooldown when the account changes', async () => {
     await restoreMemberToSquad({ parent: squad, memberNpub: 'npub1bob' });
-    await vi.waitFor(() => expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub1bob'));
+    await vi.waitFor(() =>
+      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub1bob', false, 'g-ann'),
+    );
+    expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ann', 'npub1bob');
     expect(await restoreMemberToSquad({ parent: squad, memberNpub: 'npub1bob' })).toEqual({
       ok: true,
       skipped: 'cooldown',

@@ -12,6 +12,7 @@ const {
   publishSquadIdentityUpdated,
   getMlsGroupMembers,
   inviteMemberToGroup,
+  requireMySquadPrivilege,
   mockParent,
 } = vi.hoisted(() => {
   /** Minimal writable stand-in so hoisted mocks avoid `require('svelte/store')`. */
@@ -46,6 +47,11 @@ const {
     publishSquadIdentityUpdated: vi.fn(),
     getMlsGroupMembers: vi.fn(),
     inviteMemberToGroup: vi.fn(),
+    requireMySquadPrivilege: vi.fn(async (_parentId: string, _action: string) => ({
+      ok: true as const,
+      active: false,
+      flags: null,
+    })),
     currentUser: makeStore<{ npub: string } | null>({ npub: 'npub1responder' }),
     mockParent: {
       id: 'ann-gid',
@@ -61,6 +67,11 @@ const {
     },
   };
 });
+
+vi.mock('../governance/squad-privilege-enforce', () => ({
+  requireMySquadPrivilege: (parentId: string, action: string) =>
+    requireMySquadPrivilege(parentId, action),
+}));
 
 vi.mock('../api/nostr', () => ({
   sendDmMessage: (...args: unknown[]) => sendDmMessage(...args),
@@ -160,6 +171,8 @@ describe('squad-state-sync', () => {
     publishSquadIdentityUpdated.mockResolvedValue(true);
     getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [], pending_welcomes: [] });
     inviteMemberToGroup.mockResolvedValue(undefined);
+    requireMySquadPrivilege.mockReset();
+    requireMySquadPrivilege.mockResolvedValue({ ok: true, active: false, flags: null });
     listSquadInfra.mockResolvedValue([]);
     mockParent.iconUrl = 'https://cdn.example/a.jpg';
     const session = new Map<string, string>();
@@ -310,7 +323,7 @@ describe('squad-state-sync', () => {
       requestId: 'req-2',
       requesterNpub: 'npub1responder',
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1responder');
     expect(publishSquadEvmRosterSnapshot).not.toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
   });
@@ -357,7 +370,7 @@ describe('squad-state-sync', () => {
       requestId: 'req-3',
       requesterNpub: 'npub1joiner',
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(publishSquadEvmRosterSnapshot).toHaveBeenCalledWith('ann-gid', null);
     expect(publishSquadNetworkUpdated).toHaveBeenCalledWith('ann-gid');
     expect(publishSquadIdentityUpdated).toHaveBeenCalled();
@@ -382,7 +395,7 @@ describe('squad-state-sync', () => {
       requestId: 'req-catalog-bind',
       requesterNpub: 'npub1joiner',
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(publishSquadEvmRosterSnapshot).toHaveBeenCalledWith('ann-gid', 'squad-catalog');
     mockParent.id = 'ann-gid';
   });
@@ -394,7 +407,7 @@ describe('squad-state-sync', () => {
       requestId: 'req-unbound',
       requesterNpub: 'npub1joiner',
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(publishSquadEvmRosterSnapshot).toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).toHaveBeenCalledWith('ann-gid');
   });
@@ -405,8 +418,8 @@ describe('squad-state-sync', () => {
       requestId: 'req-4',
       requesterNpub: 'npub1joiner',
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(publishSquadEvmRosterSnapshot).toHaveBeenCalledTimes(1);
     expect(publishSquadNetworkUpdated).toHaveBeenCalledTimes(1);
   });
@@ -417,7 +430,7 @@ describe('squad-state-sync', () => {
       requestId: 'req-5',
       requesterNpub: 'npub1joiner',
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(publishSquadEvmRosterSnapshot).not.toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
     expect(listSquadInfra).not.toHaveBeenCalled();
@@ -436,8 +449,8 @@ describe('squad-state-sync', () => {
       requestId: 'req-6',
       requesterNpub: 'npub1joiner',
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(publishSquadEvmRosterSnapshot).toHaveBeenCalledTimes(2);
   });
 
@@ -458,7 +471,7 @@ describe('squad-state-sync', () => {
         requested: ['infra', 'channels'],
       },
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(publishSquadEvmRosterSnapshot).not.toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
     expect(publishSquadChannelsCatalog).toHaveBeenCalled();
@@ -473,7 +486,7 @@ describe('squad-state-sync', () => {
       requestId: 'req-no-icon',
       requesterNpub: 'npub1joiner',
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(publishSquadIdentityUpdated).not.toHaveBeenCalled();
   });
 
@@ -487,8 +500,30 @@ describe('squad-state-sync', () => {
         requested: ['evm'],
       },
     });
-    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(publishSquadIdentityUpdated).not.toHaveBeenCalled();
     expect(publishSquadEvmRosterSnapshot).toHaveBeenCalled();
+  });
+
+  it('admits a missing open channel with the parent id', async () => {
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-admit',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
+    expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub1joiner', false, 'ann-gid');
+  });
+
+  it('ignores a sync request whose author is not the requester', async () => {
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-forged',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1other');
+    expect(inviteMemberToGroup).not.toHaveBeenCalled();
+    expect(publishSquadEvmRosterSnapshot).not.toHaveBeenCalled();
+    expect(publishSquadChannelsCatalog).not.toHaveBeenCalled();
   });
 });

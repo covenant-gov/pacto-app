@@ -29,6 +29,8 @@ import {
   buildWarGameUpdatedPayload,
   warGameActionFromProviderPayload,
 } from '../governance/war-game-announce';
+import { sameMlsGroupId } from '../invites/declined-welcomes';
+import { requireMySquadPrivilege } from '../governance/squad-privilege-enforce';
 import { currentUser } from '../../stores/auth-session';
 import { publishSquadEvmRosterSnapshot } from './squad-evm-roster-snapshot';
 import { publishSquadNetworkUpdated } from './squad-network-share';
@@ -250,6 +252,7 @@ export async function maybeAutoRequestSquadStateSyncAfterJoin(
 export async function respondToSquadStateSyncRequest(
   content: string | null | undefined,
   groupId: string,
+  authorNpub?: string | null,
 ): Promise<void> {
   const req = parseSquadStateSyncRequest(content);
   if (!req) return;
@@ -258,6 +261,8 @@ export async function respondToSquadStateSyncRequest(
   const me = get(currentUser)?.npub?.trim();
   if (!me) return;
   if (req.requester_npub === me) return;
+  const author = authorNpub?.trim() ?? '';
+  if (!author || !sameMlsGroupId(author, req.requester_npub)) return;
 
   const parentId = req.parent_id;
   const respondKey = `${parentId}:${req.request_id}`;
@@ -454,39 +459,44 @@ export async function respondToSquadStateSyncRequest(
       }
 
       const requester = req.requester_npub;
-      for (const ch of openCustomChannelTargets(parent.channels)) {
-        const admitKey = `${req.request_id}:${ch.groupId}:${requester}`;
-        if (channelAdmitKeys.has(admitKey)) continue;
-        try {
-          const members = await getMlsGroupMembers(ch.groupId);
-          if ((members.members ?? []).includes(requester)) {
+      const priv = await requireMySquadPrivilege(parentId, 'inviteAccept');
+      if (!priv.ok) {
+        console.warn('[squad-state-sync] open channel admit denied', priv.reason);
+      } else {
+        for (const ch of openCustomChannelTargets(parent.channels)) {
+          const admitKey = `${req.request_id}:${ch.groupId}:${requester}`;
+          if (channelAdmitKeys.has(admitKey)) continue;
+          try {
+            const members = await getMlsGroupMembers(ch.groupId);
+            if ((members.members ?? []).includes(requester)) {
+              channelAdmitKeys.add(admitKey);
+              pruneChannelAdmitKeys();
+              anyOk = true;
+              continue;
+            }
+            await inviteMemberToGroup(ch.groupId, requester, false, parentId);
             channelAdmitKeys.add(admitKey);
             pruneChannelAdmitKeys();
+            const announcementsGroupId =
+              getAnnouncementsChannel(parent)?.groupId?.trim() || parent.id.trim();
+            try {
+              await sendDmMessage(
+                requester,
+                formatChannelInSquadMessage({
+                  type: 'channel_in_squad',
+                  squadName: parent.name,
+                  announcementsGroupId,
+                  channelGroupId: ch.groupId,
+                  channelName: ch.name,
+                }),
+              );
+            } catch (e) {
+              console.warn('[squad-state-sync] channel notify failed', e);
+            }
             anyOk = true;
-            continue;
-          }
-          await inviteMemberToGroup(ch.groupId, requester);
-          channelAdmitKeys.add(admitKey);
-          pruneChannelAdmitKeys();
-          const announcementsGroupId =
-            getAnnouncementsChannel(parent)?.groupId?.trim() || parent.id.trim();
-          try {
-            await sendDmMessage(
-              requester,
-              formatChannelInSquadMessage({
-                type: 'channel_in_squad',
-                squadName: parent.name,
-                announcementsGroupId,
-                channelGroupId: ch.groupId,
-                channelName: ch.name,
-              }),
-            );
           } catch (e) {
-            console.warn('[squad-state-sync] channel notify failed', e);
+            console.warn('[squad-state-sync] open channel admit failed', ch.groupId.slice(0, 12), e);
           }
-          anyOk = true;
-        } catch (e) {
-          console.warn('[squad-state-sync] open channel admit failed', ch.groupId.slice(0, 12), e);
         }
       }
     }

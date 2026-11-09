@@ -17,8 +17,8 @@ use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     roleCountCall,
 };
 use super::gov_read::{connect_gov_read_provider, parse_top_hat_id, resolve_gov_read_network};
-use super::privilege_role_id::role_id_to_hex;
 use super::pacto_chain_config;
+use super::privilege_role_id::role_id_to_hex;
 use super::rpc::{
     call::eth_call_decode, connect_read_provider, is_retryable_gov_rpc_error, parse_address,
     wallet_err_json,

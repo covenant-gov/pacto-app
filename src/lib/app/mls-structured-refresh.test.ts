@@ -59,7 +59,14 @@ vi.mock('../../stores/auth-session', () => ({
   currentUser,
 }));
 
+vi.mock('../governance/squad-privilege-enforce', () => ({
+  decideSquadPrivilege: vi.fn(async () => ({ ok: true, active: false, flags: null })),
+  requireMySquadPrivilege: vi.fn(async () => ({ ok: true, active: false, flags: null })),
+  squadPrivilegeDeniedMessage: vi.fn(() => 'denied'),
+}));
+
 import { onMlsStructuredMessage } from './mls-structured-refresh';
+import { decideSquadPrivilege } from '../governance/squad-privilege-enforce';
 import {
   governanceProcessNonceByParentId,
   squadAllowlistNonceByParentId,
@@ -91,6 +98,12 @@ describe('onMlsStructuredMessage', () => {
     joinInboxMetaNonceBySquadId.set({});
     governanceProcessNonceByParentId.set({});
     vi.mocked(syncJoinRequestsForSquad).mockClear();
+    vi.mocked(decideSquadPrivilege).mockReset();
+    vi.mocked(decideSquadPrivilege).mockResolvedValue({
+      ok: true,
+      active: false,
+      flags: null,
+    });
     respondToSquadStateSyncRequest.mockClear();
     applySquadIdentityUpdated.mockClear();
     currentUser.set({ npub: 'npub1alice' });
@@ -173,11 +186,11 @@ describe('onMlsStructuredMessage', () => {
       requestId: 'r1',
       requesterNpub: 'npub1joiner',
     });
-    onMlsStructuredMessage(raw, 'g1', handlers);
-    expect(respondToSquadStateSyncRequest).toHaveBeenCalledWith(raw, 'g1');
+    onMlsStructuredMessage(raw, 'g1', handlers, 'npub1joiner');
+    expect(respondToSquadStateSyncRequest).toHaveBeenCalledWith(raw, 'g1', 'npub1joiner');
   });
 
-  it('applies squad_network_updated into local override', () => {
+  it('applies squad_network_updated into local override', async () => {
     const handlers = {
       mergeTreasurySafesForParent: vi.fn(),
       mergeSquadInfraForParent: vi.fn(),
@@ -188,11 +201,45 @@ describe('onMlsStructuredMessage', () => {
       pair: { primary: 'sepolia', practice: 'sepolia' },
     });
     onMlsStructuredMessage(raw, 'g1', handlers);
-    expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({ primary: 'sepolia', practice: 'sepolia' });
+    await vi.waitFor(() => {
+      expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({
+        primary: 'sepolia',
+        practice: 'sepolia',
+      });
+    });
     expect(localStorage.getItem(`${SQUAD_NETWORK_PREFIX}_npub1alice`)).toBeTruthy();
   });
 
-  it('does not apply untrusted practice=local from squad_network_updated', () => {
+  it('does not apply squad_network_updated when privilege denies', async () => {
+    let release: (decision: { ok: false; reason: 'denied'; active: true }) => void = () => {};
+    const pending = new Promise<{ ok: false; reason: 'denied'; active: true }>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(decideSquadPrivilege).mockImplementationOnce(() => pending);
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    const raw = formatSquadNetworkUpdated({
+      parentId: 'g1',
+      pair: { primary: 'sepolia', practice: 'sepolia' },
+    });
+    onMlsStructuredMessage(raw, 'g1', handlers);
+    await vi.waitFor(() => {
+      expect(decideSquadPrivilege).toHaveBeenCalledWith({
+        parentId: 'g1',
+        memberNpub: '__missing__',
+        action: 'manageNetwork',
+      });
+    });
+    release({ ok: false, reason: 'denied', active: true });
+    await pending;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(loadSquadNetworkPair('npub1alice', 'g1')).toBeNull();
+  });
+
+  it('does not apply untrusted practice=local from squad_network_updated', async () => {
     const handlers = {
       mergeTreasurySafesForParent: vi.fn(),
       mergeSquadInfraForParent: vi.fn(),
@@ -203,14 +250,19 @@ describe('onMlsStructuredMessage', () => {
       pair: { primary: 'sepolia', practice: 'local' },
     });
     onMlsStructuredMessage(raw, 'g1', handlers);
+    await vi.waitFor(() => {
+      expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({
+        primary: 'sepolia',
+        practice: 'sepolia',
+      });
+    });
     const stored = loadSquadNetworkPair('npub1alice', 'g1');
-    expect(stored).toEqual({ primary: 'sepolia', practice: 'sepolia' });
     expect(resolvePracticeSquadNetwork({ override: stored?.practice, infraChain: null })).toBe(
       'sepolia',
     );
   });
 
-  it('does not apply untrusted primary=local from squad_network_updated', () => {
+  it('does not apply untrusted primary=local from squad_network_updated', async () => {
     const handlers = {
       mergeTreasurySafesForParent: vi.fn(),
       mergeSquadInfraForParent: vi.fn(),
@@ -221,13 +273,15 @@ describe('onMlsStructuredMessage', () => {
       pair: { primary: 'local', practice: 'sepolia' },
     });
     onMlsStructuredMessage(raw, 'g1', handlers);
-    expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({
-      primary: 'sepolia',
-      practice: 'sepolia',
+    await vi.waitFor(() => {
+      expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({
+        primary: 'sepolia',
+        practice: 'sepolia',
+      });
     });
   });
 
-  it('applies practice=local from squad_network_updated when wargame infra is local', () => {
+  it('applies practice=local from squad_network_updated when wargame infra is local', async () => {
     squadInfraByParentId.set({
       g1: [
         {
@@ -251,7 +305,12 @@ describe('onMlsStructuredMessage', () => {
       pair: { primary: 'sepolia', practice: 'local' },
     });
     onMlsStructuredMessage(raw, 'g1', handlers);
-    expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({ primary: 'sepolia', practice: 'local' });
+    await vi.waitFor(() => {
+      expect(loadSquadNetworkPair('npub1alice', 'g1')).toEqual({
+        primary: 'sepolia',
+        practice: 'local',
+      });
+    });
   });
 
   it('ignores squad_network_updated when parent_id mismatches groupId', () => {
@@ -384,7 +443,7 @@ describe('onMlsStructuredMessage', () => {
     expect(syncJoinRequestsForSquad).toHaveBeenCalledWith('g1');
   });
 
-  it('handles safe/evm announces, outbound invite types, and nonce fallbacks', () => {
+  it('handles safe/evm announces, outbound invite types, and nonce fallbacks', async () => {
     const handlers = {
       mergeTreasurySafesForParent: vi.fn(),
       mergeSquadInfraForParent: vi.fn(),
@@ -517,6 +576,8 @@ describe('onMlsStructuredMessage', () => {
       'g1',
       handlers,
     );
-    expect(syncJoinRequestsForSquad).toHaveBeenCalledWith('join-squad');
+    await vi.waitFor(() => {
+      expect(syncJoinRequestsForSquad).toHaveBeenCalledWith('join-squad');
+    });
   });
 });

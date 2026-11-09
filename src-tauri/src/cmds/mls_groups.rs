@@ -683,14 +683,30 @@ pub(crate) async fn add_mls_member_device(
 /// `is_resend`: true for the "Resend invite" UI action on an already-pending member (lets
 /// `add_member_device` no-op if a concurrent call already resolved it); false for a genuine
 /// first-time invite or "Restore access".
+/// `privilege_parent_id`: when set, require FLAG_INVITE_ACCEPT (or FULL) on that parent
+/// before MLS add. Omitted paths (restore/resend helpers) stay unchecked here.
 #[tauri::command]
 pub(crate) async fn invite_member_to_group(
     group_id: String,
     member_npub: String,
     is_resend: bool,
+    privilege_parent_id: Option<String>,
 ) -> Result<(), String> {
     session::heartbeat();
     require_key_derivation_version_2()?;
+    if let Some(parent) = privilege_parent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
+        crate::evm::squad_privilege_enforce::require_current_user_squad_privilege(
+            &handle,
+            parent,
+            crate::evm::squad_privilege_enforce::SquadPrivilegeAction::InviteAccept,
+        )
+        .await?;
+    }
     // Refresh keypackages for the new member
     let devices = refresh_keypackages_for_contact(member_npub.clone())
         .await

@@ -50,7 +50,9 @@ pub fn encode_privilege_role_id(name: &str, flags: u16) -> Result<B256, String> 
     Ok(B256::from(buf))
 }
 
-pub fn decode_privilege_role_id(role: B256) -> Result<DecodedPrivilegeRoleId, PrivilegeRoleIdDecodeError> {
+pub fn decode_privilege_role_id(
+    role: B256,
+) -> Result<DecodedPrivilegeRoleId, PrivilegeRoleIdDecodeError> {
     let bytes = role.as_slice();
     let reserved = bytes[28];
     let version = bytes[29];

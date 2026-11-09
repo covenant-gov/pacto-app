@@ -52,6 +52,8 @@ Tauri IPC is not a security boundary if only the UI gates.
 | Module | `src-tauri/src/evm/access_control/` |
 | Shared gov send | `gov_module_write::send_gov_module_call` (capability + write lock + `chain_id`) |
 | Squad Admin writes | `squad_admin_write.rs` (parent from infra / payload; no personal-signer fallback) |
+| Packed role encode/decode | `privilege_role_id` (TS + Rust); Crew UI `CrewPrivilegesSection` |
+| MLS/Commons privilege enforce | `squad-privilege-enforce.ts` + Rust `squad_privilege_enforce` (optional `privilegeParentId` on invite) |
 | Tracked tokens | `db::upsert_squad_tracked_token` / `remove_squad_tracked_token` |
 | UI snapshot | `get_squad_capabilities` → `governance-privilege.ts` / `PactoGovGovernanceShell` |
 
@@ -77,7 +79,20 @@ Write routing to `GovStack::WarGame` does **not** trust MLS `war_game_updated` J
 | `mutateTrackedTokens` | Captain **or** Crew hat |
 | `squadAdminCreateRole` / `squadAdminEnableExecutor` / `squadAdminEnableFull` | Captain hat |
 
-Squad Admin executor flags (`FULL`, `PAUSE`, custom tags) appear on the capability snapshot for UI; granting those roles is captain-gated today.
+Squad Admin executor flags (`FULL`, `PAUSE`, custom tags) appear on the capability snapshot for UI; granting those roles is captain-gated today (1st Mate signing is deferred).
+
+### Packed privilege roles (Crew → Privileges)
+
+Custom catalog roles pack a short name + action flags into `bytes32` (pacto-gov SquadAdmin encoding v1). Decode/encode lives in `privilege-role-id` (TS + Rust). Effective flags OR across enabled catalog roles; `FULL` grants all known actions; `PAUSE` overrides. Privilege decisions (publish and MLS arrival) read executor roles on the trusted RPC. Crew catalog and dashboard role labels keep the squad RPC list.
+
+| Action flag | Publish / UI preflight | Receive (arrival-time) |
+|-------------|------------------------|-------------------------|
+| `inviteAccept` | Consent-first invite, admit, join accept, channel invite, state-sync open-channel admit, restore of a missing open channel; Rust `invite_member_to_group` when `privilegeParentId` is set. MLS-admin resend and restore of an existing leaf stay unchecked | Outbound invite / admit-needed / join-response MLS applies |
+| `createChannel` | Create-channel flow and catalog send, including state-sync republish | Channels catalog MLS apply |
+| `broadcast` | Commons broadcast + `resolveCanBroadcastSquad` | (publish-gated) |
+| `manageNetwork` | Network + RPC share publish | Network / RPC MLS apply |
+
+**Inactive SquadAdmin** (no resolvable proxy in local infra): all of the above allow. **Active SquadAdmin**: require roster binding + FULL or the flag; unbound / RPC failure / pause / missing flag → deny. Receive paths ignore event `created_at` and fail closed when the author npub is missing while SquadAdmin is active. Join-inbox holder FULL gate is unchanged (separate path).
 
 ## Funding deploy / deposit vs roster ownership
 

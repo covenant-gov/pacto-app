@@ -10,10 +10,13 @@ use super::access_control::{require_capability, with_gov_write_lock, GovCapabili
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     createRoleCall, disableExecutorCall, enableExecutorCall, enableFullPermissionCall,
 };
-use super::privilege_role_id::parse_role_id_hex;
 use super::gov_read::{connect_gov_read_provider, parse_top_hat_id, rpc_urls_or_default};
 use super::nave_pirata_read::{read_nave_pirata_deployment, read_war_game_active_deployment};
 use super::pacto_chain_config;
+use super::privilege_role_id::{
+    decode_privilege_role_id, parse_role_id_hex, PrivilegeRoleIdDecodeError,
+    PRIVILEGE_KNOWN_ACTION_MASK,
+};
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
@@ -27,7 +30,22 @@ use super::wallet_chain_config;
 use crate::db;
 
 fn parse_packed_role_id(role_id: &str) -> Result<B256, String> {
-    parse_role_id_hex(role_id).map_err(|e| wallet_err_json("INVALID_ROLE", e, None))
+    let role = parse_role_id_hex(role_id).map_err(|e| wallet_err_json("INVALID_ROLE", e, None))?;
+    let decoded = decode_privilege_role_id(role).map_err(|e| {
+        let msg = match e {
+            PrivilegeRoleIdDecodeError::UnknownVersion => "unknown privilege role version",
+            PrivilegeRoleIdDecodeError::ReservedNonzero => "privilege role reserved byte must be 0",
+        };
+        wallet_err_json("INVALID_ROLE", msg, None)
+    })?;
+    if decoded.flags & !PRIVILEGE_KNOWN_ACTION_MASK != 0 {
+        return Err(wallet_err_json(
+            "INVALID_ROLE",
+            "unknown/reserved privilege flag bits must be 0 when encoding v1",
+            None,
+        ));
+    }
+    Ok(role)
 }
 
 #[derive(Serialize)]
@@ -340,6 +358,22 @@ mod tests {
             "0x4d61746500000000000000000000000000000000000000000000000000010007"
         )
         .is_ok());
+        assert!(parse_packed_role_id(
+            "0x5800000000000000000000000000000000000000000000000000000000000001"
+        )
+        .is_err());
+        assert!(parse_packed_role_id(
+            "0x5800000000000000000000000000000000000000000000000000000000020001"
+        )
+        .is_err());
+        assert!(parse_packed_role_id(
+            "0x58000000000000000000000000000000000000000000000000000000ab010001"
+        )
+        .is_err());
+        assert!(parse_packed_role_id(
+            "0x5800000000000000000000000000000000000000000000000000000000010021"
+        )
+        .is_err());
     }
 
     #[test]

@@ -77,14 +77,17 @@ function tryParseRoot(content: string): Record<string, unknown> | null {
 /**
  * Apply FE refresh for structured MLS content after SQLite side effects.
  * Call from mls_message_new / message_update (group path).
+ * `authorNpub` enables arrival-time SquadAdmin privilege checks (ignore event created_at).
  */
 export function onMlsStructuredMessage(
   content: string | null | undefined,
   groupId: string,
-  handlers: MlsStructuredRefreshHandlers
+  handlers: MlsStructuredRefreshHandlers,
+  authorNpub?: string | null,
 ): void {
   const raw = content ?? '';
   const gid = groupId.trim();
+  const author = authorNpub?.trim() || '';
   const announce = parseAnnouncement(raw);
 
   if (announce?.type === 'squad_safe_updated') {
@@ -108,24 +111,32 @@ export function onMlsStructuredMessage(
   }
 
   if (parseSquadStateSyncRequest(raw)) {
-    void respondToSquadStateSyncRequest(raw, gid);
+    void respondToSquadStateSyncRequest(raw, gid, author);
   }
 
   if (parseSquadOutboundInvite(raw)) {
-    onMlsOutboundInviteAnnounce(raw);
-    if (gid) void syncOutboundInvitesForSquad(gid);
+    void applyPrivilegedMlsAction(author, gid, 'inviteAccept', () => {
+      onMlsOutboundInviteAnnounce(raw);
+      if (gid) void syncOutboundInvitesForSquad(gid);
+    });
   }
   if (parseSquadOutboundInviteRevoked(raw)) {
-    onMlsOutboundInviteRevoked(raw);
-    if (gid) void syncOutboundInvitesForSquad(gid);
+    void applyPrivilegedMlsAction(author, gid, 'inviteAccept', () => {
+      onMlsOutboundInviteRevoked(raw);
+      if (gid) void syncOutboundInvitesForSquad(gid);
+    });
   }
   if (parseSquadAdmitNeeded(raw)) {
-    onMlsAdmitNeeded(raw, gid);
-    void drainPendingAdmitQueue();
-    if (gid) void syncOutboundInvitesForSquad(gid);
+    void applyPrivilegedMlsAction(author, gid, 'inviteAccept', () => {
+      onMlsAdmitNeeded(raw, gid);
+      void drainPendingAdmitQueue();
+      if (gid) void syncOutboundInvitesForSquad(gid);
+    });
   }
   if (parseSquadChannelsCatalog(raw)) {
-    applySquadChannelsCatalog(raw, gid);
+    void applyPrivilegedMlsAction(author, gid, 'createChannel', () => {
+      applySquadChannelsCatalog(raw, gid);
+    });
   }
   if (parseSquadIdentityUpdated(raw)) {
     applySquadIdentityUpdated(raw, gid);
@@ -135,13 +146,15 @@ export function onMlsStructuredMessage(
   if (networkUpdate && networkUpdate.parent_id === gid) {
     const me = get(currentUser)?.npub?.trim();
     if (me) {
-      const infraRows = get(squadInfraByParentId)[networkUpdate.parent_id] ?? [];
-      applySquadNetworkUpdated(
-        networkUpdate,
-        me,
-        practiceInfraChainFromSquadRows(infraRows),
-        infraChainFromSquadRows(infraRows),
-      );
+      void applyPrivilegedMlsAction(author, networkUpdate.parent_id, 'manageNetwork', () => {
+        const infraRows = get(squadInfraByParentId)[networkUpdate.parent_id] ?? [];
+        applySquadNetworkUpdated(
+          networkUpdate,
+          me,
+          practiceInfraChainFromSquadRows(infraRows),
+          infraChainFromSquadRows(infraRows),
+        );
+      });
     }
   }
 
@@ -149,7 +162,9 @@ export function onMlsStructuredMessage(
   if (rpcUpdate && rpcUpdate.parent_id === gid) {
     const me = get(currentUser)?.npub?.trim();
     if (me) {
-      applySquadRpcUpdated(rpcUpdate, me);
+      void applyPrivilegedMlsAction(author, rpcUpdate.parent_id, 'manageNetwork', () => {
+        applySquadRpcUpdated(rpcUpdate, me);
+      });
     }
   }
 
@@ -185,9 +200,33 @@ export function onMlsStructuredMessage(
       (typeof root.squadId === 'string' && root.squadId.trim()) ||
       (typeof root.squad_id === 'string' && root.squad_id.trim()) ||
       gid;
-    if (squadId) {
-      void syncJoinRequestsForSquad(squadId);
+    if (schema === SQUAD_JOIN_REQUEST_RESPONSE_SCHEMA) {
+      void applyPrivilegedMlsAction(author, squadId, 'inviteAccept', () => {
+        if (squadId) void syncJoinRequestsForSquad(squadId);
+        void drainPendingAdmitQueue();
+      });
+    } else {
+      if (squadId) void syncJoinRequestsForSquad(squadId);
+      void drainPendingAdmitQueue();
     }
-    void drainPendingAdmitQueue();
   }
+}
+
+async function applyPrivilegedMlsAction(
+  authorNpub: string,
+  parentId: string,
+  action: 'inviteAccept' | 'createChannel' | 'manageNetwork',
+  apply: () => void,
+): Promise<void> {
+  const pid = parentId.trim();
+  if (!pid) return;
+  // Missing author: fail closed when SquadAdmin is active (checked inside decide).
+  const { decideSquadPrivilege } = await import('../governance/squad-privilege-enforce');
+  const decision = await decideSquadPrivilege({
+    parentId: pid,
+    memberNpub: authorNpub || '__missing__',
+    action,
+  });
+  if (!decision.ok) return;
+  apply();
 }

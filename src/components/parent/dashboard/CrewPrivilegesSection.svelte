@@ -17,7 +17,11 @@
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import {
+    FLAG_BROADCAST,
+    FLAG_CREATE_CHANNEL,
     FLAG_FIRST_MATE,
+    FLAG_INVITE_ACCEPT,
+    FLAG_MANAGE_NETWORK,
     PRIVILEGE_FLAG_CHIPS,
     PRIVILEGE_ROLE_NAME_MAX_BYTES,
     describePrivilegeCatalogRole,
@@ -72,10 +76,10 @@
   const isCaptain = $derived(privilege?.wearsCaptain === true);
 
   const builderFlags = $derived(
-    (flagInvite ? 1 << 0 : 0) |
-      (flagChannel ? 1 << 1 : 0) |
-      (flagBroadcast ? 1 << 2 : 0) |
-      (flagNetwork ? 1 << 3 : 0) |
+    (flagInvite ? FLAG_INVITE_ACCEPT : 0) |
+      (flagChannel ? FLAG_CREATE_CHANNEL : 0) |
+      (flagBroadcast ? FLAG_BROADCAST : 0) |
+      (flagNetwork ? FLAG_MANAGE_NETWORK : 0) |
       (flagFirstMate ? FLAG_FIRST_MATE : 0),
   );
 

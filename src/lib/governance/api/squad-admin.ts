@@ -20,12 +20,16 @@ export async function getSquadAdminExecutorRoles(params: {
   squadAdminProxy: string;
   executorAddress: string;
   parentId?: string | null;
+  /** Privilege decisions ignore squad RPC overrides. Display reads leave this false. */
+  trustedRpc?: boolean;
 }): Promise<SquadAdminExecutorRolesDto> {
   return (await invoke('get_squad_admin_executor_roles', {
     network: params.network,
     squadAdminProxy: params.squadAdminProxy.trim(),
     executorAddress: params.executorAddress.trim(),
-    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+    rpcUrls: params.trustedRpc
+      ? null
+      : squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadAdminExecutorRolesDto;
 }
 

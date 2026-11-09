@@ -19,6 +19,7 @@ import {
   EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
 } from './hub-channel-names';
+import { requireMySquadPrivilege } from '../governance/squad-privilege-enforce';
 import { dmError } from '../utils/dm-debug';
 import { markMlsHistoryWelcome } from '../../stores/mls-history-welcome';
 
@@ -77,6 +78,8 @@ export async function publishSquadChannelsCatalog(parent: Squad): Promise<boolea
   const announcements = getAnnouncementsChannel(parent);
   const gid = announcements.groupId?.trim();
   if (!gid) return false;
+  const priv = await requireMySquadPrivilege(gid, 'createChannel');
+  if (!priv.ok) return false;
   const channels = catalogChannelsForAnnounce(parent.channels);
   const json = formatSquadChannelsCatalog({ parent_id: gid, channels });
   try {

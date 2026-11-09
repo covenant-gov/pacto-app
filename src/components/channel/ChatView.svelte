@@ -482,6 +482,7 @@
     }
   }
   function squadChannelInviteContext(): {
+    parentId: string;
     squadName: string;
     announcementsGroupId: string;
     channelName: string;
@@ -491,6 +492,7 @@
     const announcements = getAnnouncementsChannel(activeSquad);
     if (!announcements?.groupId) return null;
     return {
+      parentId: activeSquad.id,
       squadName: activeSquad.name,
       announcementsGroupId: announcements.groupId,
       channelName: activeChannel.name,

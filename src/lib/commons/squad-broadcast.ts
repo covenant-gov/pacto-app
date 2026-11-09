@@ -102,6 +102,15 @@ export async function publishSquadCommonsBroadcast(
   const gate = await requireJoinInboxHolder(squad.id);
   if (gate) return { ok: false, error: gate };
 
+  const {
+    requireMySquadPrivilege,
+    squadPrivilegeDeniedMessage,
+  } = await import('../governance/squad-privilege-enforce');
+  const priv = await requireMySquadPrivilege(squad.id, 'broadcast');
+  if (!priv.ok) {
+    return { ok: false, error: squadPrivilegeDeniedMessage(priv, tFn) };
+  }
+
   const active = await fetchActiveSquadCommonsBroadcast(squad.id);
   if (active) {
     if (options.skipIfActive) return { ok: true, skipped: true };

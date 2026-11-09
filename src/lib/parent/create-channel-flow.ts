@@ -61,6 +61,24 @@ export function runCreateChannelInParent(opts: {
 
   void (async () => {
     try {
+      const {
+        requireMySquadPrivilege,
+        squadPrivilegeDeniedMessage,
+      } = await import('../governance/squad-privilege-enforce');
+      const { t } = await import('svelte-i18n');
+      const priv = await requireMySquadPrivilege(squadId, 'createChannel');
+      if (!priv.ok) {
+        await persistSquadPatch(squadId, (s) => ({
+          ...s,
+          channels: s.channels.filter((ch) => ch.groupId !== placeholderId),
+        }));
+        if (get(activeChannelId) === placeholderId) {
+          activeChannelId.set(null);
+          activeHubChannelName.set(null);
+        }
+        onErrorBanner(squadPrivilegeDeniedMessage(priv, get(t)));
+        return;
+      }
       const { groupId, skippedMembers, pendingInvites } = await createGroupChat(name, selectedNpubs);
       await persistSquadPatch(squadId, (s) => ({
         ...s,

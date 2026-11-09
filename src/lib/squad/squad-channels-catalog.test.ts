@@ -1,6 +1,19 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
+const { requireMySquadPrivilege } = vi.hoisted(() => ({
+  requireMySquadPrivilege: vi.fn(async (_parentId: string, _action: string) => ({
+    ok: true as const,
+    active: false,
+    flags: null,
+  })),
+}));
+
+vi.mock('../governance/squad-privilege-enforce', () => ({
+  requireMySquadPrivilege: (parentId: string, action: string) =>
+    requireMySquadPrivilege(parentId, action),
+}));
+
 vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn(),
   listPendingMlsWelcomes: vi.fn(),
@@ -62,6 +75,8 @@ describe('squad-channels-catalog', () => {
     resetMlsHistoryWelcomeForTests();
     setCurrentNpubForPersistence('npub1test');
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
+    requireMySquadPrivilege.mockReset();
+    requireMySquadPrivilege.mockResolvedValue({ ok: true, active: false, flags: null });
     vi.mocked(listPendingMlsWelcomes).mockReset().mockResolvedValue([]);
     vi.mocked(acceptMlsWelcome).mockReset().mockResolvedValue(true);
     vi.mocked(persistSquadPatch).mockClear();
@@ -124,6 +139,17 @@ describe('squad-channels-catalog', () => {
     const body = vi.mocked(sendDmMessage).mock.calls[0][1] as string;
     const parsed = parseSquadChannelsCatalog(body);
     expect(parsed?.channels).toEqual([{ name: 'z', groupId: 'g-z', order: 2, access: 'open' }]);
+  });
+
+  it('does not send the catalog when createChannel is denied', async () => {
+    requireMySquadPrivilege.mockResolvedValueOnce({
+      ok: false,
+      reason: 'denied',
+      active: true,
+    } as never);
+    const sent = await publishSquadChannelsCatalog(get(squads)[0]!);
+    expect(sent).toBe(false);
+    expect(sendDmMessage).not.toHaveBeenCalled();
   });
 
   it('parseSquadChannelsCatalog rejects bad envelopes and skips bad rows', () => {

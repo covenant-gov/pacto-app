@@ -847,6 +847,33 @@ describe('api command wrappers', () => {
     });
   });
 
+  it('getSquadAdminExecutorRoles trustedRpc omits squad RPC overrides', async () => {
+    mockedInvoke.mockResolvedValue({});
+    await getSquadAdminExecutorRoles({
+      network: NETWORK,
+      squadAdminProxy: '0xadmin',
+      executorAddress: '0xexec',
+      parentId: PARENT,
+    });
+    const untrusted = mockedInvoke.mock.calls.at(-1)?.[1] as { rpcUrls: string[] | null };
+    expect(Array.isArray(untrusted.rpcUrls)).toBe(true);
+    expect(untrusted.rpcUrls?.length).toBeGreaterThan(0);
+
+    await getSquadAdminExecutorRoles({
+      network: NETWORK,
+      squadAdminProxy: '0xadmin',
+      executorAddress: '0xexec',
+      parentId: PARENT,
+      trustedRpc: true,
+    });
+    expect(mockedInvoke).toHaveBeenLastCalledWith('get_squad_admin_executor_roles', {
+      network: NETWORK,
+      squadAdminProxy: '0xadmin',
+      executorAddress: '0xexec',
+      rpcUrls: null,
+    });
+  });
+
   it('deploySquadAdminForParent sends deploy_squad_admin_for_parent with optional owner and captainHatId', async () => {
     mockedInvoke.mockResolvedValueOnce({});
     await deploySquadAdminForParent({

@@ -177,7 +177,7 @@ async function restoreChannelsInBackground(
     }
     for (const ch of plan.admitOpen) {
       try {
-        await inviteMemberToGroup(ch.groupId, npub);
+        await inviteMemberToGroup(ch.groupId, npub, false, parent.id);
         noteMembershipChanged(ch.groupId);
         try {
           await notifyChannelWelcome(parent, ch.groupId, ch.name, npub);

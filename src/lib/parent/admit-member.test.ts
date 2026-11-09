@@ -6,6 +6,11 @@ vi.mock('../api/nostr', () => ({
   formatChannelInSquadMessage: vi.fn(() => 'payload'),
 }));
 
+vi.mock('../governance/squad-privilege-enforce', () => ({
+  requireMySquadPrivilege: vi.fn(async () => ({ ok: true, active: false, flags: null })),
+  squadPrivilegeDeniedMessage: vi.fn(() => 'denied'),
+}));
+
 vi.mock('../parent-navbar', () => ({
   getAnnouncementsChannel: vi.fn(() => ({
     name: 'announcements',
@@ -58,19 +63,19 @@ describe('admitMemberToSquad', () => {
     const result = await admitMemberToSquad({ parent, memberNpub: 'npub-bob' });
     expect(result.ok).toBe(true);
     expect(result.announcementsOk).toBe(true);
-    expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ann', 'npub-bob');
+    expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ann', 'npub-bob', false, 'g-ann');
     await vi.waitFor(() => {
-      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub-bob');
+      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub-bob', false, 'g-ann');
     });
-    expect(inviteMemberToGroup).not.toHaveBeenCalledWith('g-sec', 'npub-bob');
+    expect(inviteMemberToGroup).not.toHaveBeenCalledWith('g-sec', 'npub-bob', false, 'g-ann');
   });
 
   it('still invites when the member already holds a leaf (Restore path)', async () => {
     const result = await admitMemberToSquad({ parent, memberNpub: 'npub-bob' });
     expect(result.announcementsOk).toBe(true);
-    expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ann', 'npub-bob');
+    expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ann', 'npub-bob', false, 'g-ann');
     await vi.waitFor(() => {
-      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub-bob');
+      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub-bob', false, 'g-ann');
     });
   });
 
@@ -97,7 +102,7 @@ describe('admitMemberToSquad', () => {
     expect(result.ok).toBe(true);
     expect(result.announcementsOk).toBe(true);
     await vi.waitFor(() => {
-      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ann', 'npub-bob');
+      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ann', 'npub-bob', false, 'g-ann');
     });
   });
 
@@ -120,7 +125,7 @@ describe('admitMemberToSquad', () => {
 
     gate.resolve();
     await vi.waitFor(() => {
-      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub-bob');
+      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub-bob', false, 'g-ann');
     });
   });
 
