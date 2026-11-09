@@ -60,10 +60,8 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 # .github/workflows/ci.yaml). Prebuilt binary, matches the runner's glibc.
 # Pinned (not `latest`) so an upstream release can't silently change test
 # behavior or JUnit output on a PR that didn't touch this file; keep in
-# sync with the version in .github/workflows/ci.yaml's install steps.
-# ci.yaml still installs it per-run too, so a PR landing before this image
-# is rebuilt (ci-image.yaml only rebuilds on push to main) isn't broken;
-# that step is redundant, not required, once this layer ships.
+# sync with .github/workflows/ci.yaml Verify cargo-nextest (same version string).
+# CI jobs use this image binary only; they do not re-download from get.nexte.st.
 ARG NEXTEST_VERSION=0.9.143
 RUN NEXTEST_PLATFORM=$(case "$(dpkg --print-architecture)" in \
         amd64) echo linux ;; \
