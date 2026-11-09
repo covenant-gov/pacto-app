@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
-  import { TOOLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import { ANNOUNCEMENTS_CHANNEL_NAME, TOOLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
   import { withPendingToolsFocusModes } from '../../lib/squad/tools-visited-modes';
   import { resolvePollsMlsGroupId } from '../../lib/parent-navbar';
   import {
@@ -13,6 +13,7 @@
   import { docsFocus } from '../../stores/docs-navigation';
   import HubChannelHeader from './HubChannelHeader.svelte';
   import HubModeSwitcher from './HubModeSwitcher.svelte';
+  import SquadStickersSection from './dashboard/SquadStickersSection.svelte';
   import {
     loadDashboardPollsPanel,
     loadSquadDocsPanel,
@@ -23,6 +24,11 @@
 
   const parentId = $derived(parent?.id ?? '');
   const mlsGroupId = $derived(resolvePollsMlsGroupId(parent));
+  const announcementsGroupId = $derived(
+    parent?.channels?.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ??
+      parent?.channels?.[0]?.groupId ??
+      null,
+  );
   const toolsMode = $derived($squadToolsChannelMode);
 
   let visitedToolsModes = $state(new Set<SquadToolsChannelMode>([$squadToolsChannelMode]));
@@ -100,6 +106,17 @@
         {/await}
       </div>
     {/if}
+    {#if visitedToolsModes.has('stickers')}
+      <div
+        class="dashboard-tab-pane"
+        class:dashboard-tab-pane-active={toolsMode === 'stickers'}
+        hidden={toolsMode !== 'stickers'}
+      >
+        <div class="stickers-pane">
+          <SquadStickersSection squad={parent} {announcementsGroupId} />
+        </div>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -133,6 +150,9 @@
   }
   .dashboard-tab-pane[hidden] {
     display: none !important;
+  }
+  .stickers-pane {
+    padding: 16px;
   }
   .tab-error {
     margin: 16px;

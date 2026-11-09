@@ -298,7 +298,7 @@
 	"messaging.messageInput.noGifsFound": "No se encontraron GIFs",
 	"messaging.messageInput.noMembersFound": "No se encontraron miembros para \"{query}\"",
 	"messaging.messageInput.noStickerPacks": "Aún no hay paquetes de stickers",
-	"messaging.messageInput.noStickerPacksHint": "Cualquier miembro del escuad puede crear un paquete de stickers desde los ajustes del escuad.",
+	"messaging.messageInput.noStickerPacksHint": "Cualquier miembro del escuad puede crear un paquete de stickers desde #tools → Stickers.",
 	"messaging.messageInput.noStickersFound": "No se encontraron stickers para \"{query}\"",
 	"messaging.messageInput.pasteFailed": "No se pudo leer el archivo pegado.",
 	"messaging.messageInput.pendingAttachmentAria": "Adjunto pendiente",

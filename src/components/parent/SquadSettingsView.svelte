@@ -19,9 +19,9 @@
   import HubChannelHeader from './HubChannelHeader.svelte';
   import HubModeSwitcher from './HubModeSwitcher.svelte';
   import {
+    loadDashboardSettingsAboutTab,
     loadDashboardSettingsAccessTab,
     loadDashboardSettingsNetworkTab,
-    loadDashboardSettingsUsTab,
     loadMyDashboardAlertsTab,
     loadMyDashboardStatusTab,
   } from '../../lib/dashboard/dashboard-tab-components';
@@ -213,16 +213,24 @@
         {/await}
       </div>
     {/if}
-    {#if visitedSettingsModes.has('us')}
+    {#if visitedSettingsModes.has('about')}
       <div
         class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={settingsMode === 'us'}
-        hidden={settingsMode !== 'us'}
+        class:dashboard-tab-pane-active={settingsMode === 'about'}
+        hidden={settingsMode !== 'about'}
       >
-        {#await loadDashboardSettingsUsTab() then UsTab}
-          <UsTab squad={parent} {announcementsGroupId} />
+        {#await loadDashboardSettingsAboutTab() then AboutTab}
+          <AboutTab
+            squad={parent}
+            {squadAdminCtx}
+            {announcementsGroupId}
+            parentId={parentId ?? ''}
+            {channelMembers}
+            {squadMemberEvmByNpub}
+            onInvite={openInvite}
+          />
         {:catch}
-          <p class="tab-error" role="alert">{$t('governance.tabLoadError.us')}</p>
+          <p class="tab-error" role="alert">{$t('governance.tabLoadError.about')}</p>
         {/await}
       </div>
     {/if}
@@ -235,15 +243,10 @@
         {#await loadDashboardSettingsAccessTab() then AccessTab}
           <AccessTab
             squad={parent}
-            {squadAdminCtx}
-            {announcementsGroupId}
             parentId={parentId ?? ''}
-            {channelMembers}
-            {squadMemberEvmByNpub}
             {privilegesAdmin}
             {pactoGovRevision}
             {memberEvmOptions}
-            onInvite={openInvite}
           />
         {:catch}
           <p class="tab-error" role="alert">{$t('governance.tabLoadError.access')}</p>
