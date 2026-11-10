@@ -10,6 +10,8 @@ import {
   migrateLastHubChannelNamesBySquad,
   normalizeHubChannelName,
   remapObsoleteHubChannelId,
+  defaultGovernanceStackChannelId,
+  resolveGovernanceChromeChannelId,
 } from './hub-channel-names';
 
 describe('isVirtualHubChannelId', () => {
@@ -30,6 +32,32 @@ describe('isSquadDashboardChromeChannelId', () => {
     expect(isSquadDashboardChromeChannelId(SQUAD_WARGAME_CHANNEL_ID)).toBe(true);
     expect(isSquadDashboardChromeChannelId(SETTINGS_CHANNEL_ID)).toBe(false);
     expect(isSquadDashboardChromeChannelId('__my_dashboard__')).toBe(false);
+  });
+});
+
+describe('defaultGovernanceStackChannelId', () => {
+  it('prefers Wargame when live pacto_gov is absent', () => {
+    expect(defaultGovernanceStackChannelId(false)).toBe(SQUAD_WARGAME_CHANNEL_ID);
+  });
+
+  it('prefers Live when live pacto_gov exists', () => {
+    expect(defaultGovernanceStackChannelId(true)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+  });
+});
+
+describe('resolveGovernanceChromeChannelId', () => {
+  it('restores last chrome id over the practice-first default', () => {
+    expect(resolveGovernanceChromeChannelId(SQUAD_DASHBOARD_CHANNEL_ID, false)).toBe(
+      SQUAD_DASHBOARD_CHANNEL_ID,
+    );
+    expect(resolveGovernanceChromeChannelId(SQUAD_WARGAME_CHANNEL_ID, true)).toBe(
+      SQUAD_WARGAME_CHANNEL_ID,
+    );
+  });
+
+  it('falls back to practice-first default when last is not chrome', () => {
+    expect(resolveGovernanceChromeChannelId('g-ops', false)).toBe(SQUAD_WARGAME_CHANNEL_ID);
+    expect(resolveGovernanceChromeChannelId(null, true)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
   });
 });
 

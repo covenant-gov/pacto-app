@@ -34,7 +34,7 @@ The DM/embedded wallet works on any enabled chain. **On-chain squad infrastructu
 Each squad has two deploy slots, both defaulting to Sepolia:
 
 - **Primary** — `#governance` checklist and production deploys
-- **Practice/Wargame** — `#gov-practice` checklist and wargame deploys
+- **Practice/Wargame** — `#governance` → Wargame checklist and wargame deploys
 
 Create-squad persists both defaults. Members retarget **future** deploys from `#settings` → Network (already-deployed infra is never migrated). Effective chain per slot: user override → matching infra chain → slot default. Flipping Primary to Arbitrum later is `DEFAULT_SQUAD_PRIMARY_NETWORK` plus adding `arbitrum` to the deployable set and protocol addresses.
 

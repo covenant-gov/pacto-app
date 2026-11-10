@@ -94,7 +94,7 @@ export function openSquadCrewPrivileges(parentId: string): void {
   squadDashboardChannelMode.set('crew');
 }
 
-/** Open a squad's #gov-practice hub from Status or other non-hub views. */
+/** Open `#governance` on the Wargame (practice) stack from Status or other views. */
 export function openSquadWargame(parentId: string): void {
   const id = parentId.trim();
   if (!id) return;

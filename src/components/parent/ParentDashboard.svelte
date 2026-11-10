@@ -5,11 +5,12 @@
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
     SQUAD_DASHBOARD_CHANNEL_NAME,
-    SQUAD_WARGAME_CHANNEL_NAME,
     membershipVersionByGroupId,
     squadDashboardChannelMode,
     type SquadDashboardChannelMode,
   } from '../../stores/app';
+  import { openSquadDashboard, openSquadWargame } from '../../lib/navigation/open-squad-dashboard';
+  import GovernanceStackSwitcher from './GovernanceStackSwitcher.svelte';
 import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
 import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
   import { getProfileDisplayName } from '../../lib/utils/profile';
@@ -748,7 +749,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 </script>
 
 <HubViewShell
-  channelName={warGameStack ? SQUAD_WARGAME_CHANNEL_NAME : SQUAD_DASHBOARD_CHANNEL_NAME}
+  channelName={SQUAD_DASHBOARD_CHANNEL_NAME}
   modes={DASHBOARD_VIEWS}
   active={dashboardView}
   ariaLabel={$t('governance.dashboardSection')}
@@ -757,6 +758,17 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   onIntent={(mode) => prefetchDashboardTabIntent(mode as ParentDashboardView)}
   {announcementsGroupId}
 >
+  {#snippet headerLeading()}
+    <GovernanceStackSwitcher
+      {warGameStack}
+      onSelectLive={() => {
+        if (parentId) openSquadDashboard(parentId);
+      }}
+      onSelectWargame={() => {
+        if (parentId) openSquadWargame(parentId);
+      }}
+    />
+  {/snippet}
   {#snippet banner()}
     {#if warGameStack}
       <WarGameHubBanner providerPayload={pactoGovRow?.providerPayload} />

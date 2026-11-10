@@ -21,6 +21,7 @@
     onSelect,
     onIntent,
     announcementsGroupId = null,
+    headerLeading,
     banner,
     children,
   }: {
@@ -32,6 +33,8 @@
     onSelect: (mode: string) => void;
     onIntent?: (mode: string) => void;
     announcementsGroupId?: string | null;
+    /** Optional control(s) left of the members button (e.g. Live | Wargame). */
+    headerLeading?: Snippet;
     banner?: Snippet;
     children: Snippet;
   } = $props();
@@ -77,6 +80,9 @@
   <div class="hub-view-shell-main">
     <HubChannelHeader {channelName}>
       {#snippet actions()}
+        {#if headerLeading}
+          {@render headerLeading()}
+        {/if}
         <button
           type="button"
           class="channel-members-btn"
