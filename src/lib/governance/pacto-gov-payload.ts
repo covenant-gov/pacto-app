@@ -1,4 +1,5 @@
 import type { SquadAdminExecutorRolesDto } from './api';
+import { decodePrivilegeRoleId } from './privilege-role-id';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 
@@ -116,16 +117,29 @@ export function squadAdminExecutorManageScopeFromDto(
   return { fullPermission: d.fullPermission, paused: d.paused };
 }
 
+/** Display token for one enabled catalog role id (decoded name, else short hex). */
+export function formatPrivilegeCatalogRoleLabel(roleId: string): string {
+  const decoded = decodePrivilegeRoleId(roleId);
+  if (decoded.ok) {
+    const name = decoded.name.trim();
+    return name || roleId.slice(0, 10);
+  }
+  const t = roleId.trim();
+  return t.length > 10 ? `${t.slice(0, 10)}…` : t || '—';
+}
+
 /**
  * Canonical English tokens for role maps / caches / rights parsing.
- * Protocol role ids (e.g. TREASURY) stay as-is. Localize at display with
- * `localizeSquadAdminExecutorRolesLabel`.
+ * Packed catalog ids decode to display names when encoding is known.
+ * Localize Full/Paused at display with `localizeSquadAdminExecutorRolesLabel`.
  */
 export function formatSquadAdminExecutorRoles(d: SquadAdminExecutorRolesDto): string {
   if (d.fullPermission) {
     return d.paused ? 'Full (paused)' : 'Full';
   }
-  const enabled = d.roles.filter((r) => r.enabled).map((r) => r.role);
+  const enabled = d.roles
+    .filter((r) => r.enabled)
+    .map((r) => formatPrivilegeCatalogRoleLabel(r.role));
   if (enabled.length === 0) {
     return d.paused ? 'Paused' : '—';
   }

@@ -12,7 +12,7 @@ Backend-owned limits and feature flags, fetched by the frontend over Tauri IPC i
 | `CHANNEL_NAME_MAX_LENGTH` | `channelNameMaxLength` | 35 | `create_group_chat` (channel creation; squad root always uses the fixed `announcements` name) |
 | `COMMONS_MAX_TAGS` | `commonsMaxTags` | 3 | `commons::normalize_commons_tags`, `squad_catalog::normalize_commons_tags` |
 | `DEPLOY_SAFE_MAX_SIGNERS` | `deploySafeMaxSigners` | 10 | UI only (Safe contract itself allows more) |
-| `ROLE_LABEL_MAX_LENGTH` | `roleLabelMaxLength` | 32 | `evm::squad_admin_write::bytes32_role_tag` (bytes32 packing) |
+| `ROLE_LABEL_MAX_LENGTH` | `roleLabelMaxLength` | 32 | legacy app-config mirror; packed privilege names use 28-byte cap in `privilege-role-id` |
 | `WALLET_ACCOUNT_LABEL_MAX_LENGTH` | `walletAccountLabelMaxLength` | 64 | `evm::evm_accounts::add_evm_account` / `update_evm_account` |
 | `CUSTOM_TOKEN_SYMBOL_MAX_LENGTH` | `customTokenSymbolMaxLength` | 16 | UI only (watched tokens are local-only, no backend write path) |
 | `PIN_DIGIT_COUNT` | `pinDigitCount` | 6 | Compile-time `assert!(>= 4)`; not currently re-validated per-write |
@@ -25,7 +25,7 @@ Fields marked **UI only** have no corresponding backend write-path check (there'
 ```mermaid
 flowchart LR
   const[app_config.rs constants] --> cmd[get_app_config Tauri command]
-  const --> writes[Write-path checks\ncreate_group_chat, upsert_squad,\nadd_evm_account, bytes32_role_tag, ...]
+  const --> writes[Write-path checks\ncreate_group_chat, upsert_squad,\nadd_evm_account, ...]
   cmd -- IPC --> store[appConfig store\nsrc/stores/app-config.ts]
   store --> ui[Svelte components\nmaxlength, validation, error copy]
   store -.on fetch failure or\nschema mismatch.-> fallback[DEFAULT_APP_CONFIG\none error toast]

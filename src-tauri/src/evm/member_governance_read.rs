@@ -13,22 +13,16 @@ use tauri::{AppHandle, Runtime};
 
 use super::contracts::hats::IHats::{isWearerOfHatCall, TransferHat};
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
-    hasExecutorRoleCall, isExecutorFullPermissionCall, isExecutorPausedCall,
+    hasExecutorRoleCall, isExecutorFullPermissionCall, isExecutorPausedCall, roleAtCall,
+    roleCountCall,
 };
 use super::gov_read::{connect_gov_read_provider, parse_top_hat_id, resolve_gov_read_network};
 use super::pacto_chain_config;
+use super::privilege_role_id::role_id_to_hex;
 use super::rpc::{
     call::eth_call_decode, connect_read_provider, is_retryable_gov_rpc_error, parse_address,
     wallet_err_json,
 };
-
-fn bytes32_tag(label: &str) -> B256 {
-    let mut buf = [0u8; 32];
-    let b = label.as_bytes();
-    let n = b.len().min(32);
-    buf[..n].copy_from_slice(&b[..n]);
-    B256::from(buf)
-}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,6 +51,7 @@ pub struct SquadAdminExecutorRolesDto {
     pub address: String,
     pub full_permission: bool,
     pub paused: bool,
+    /// Catalog role ids (`0x…`) with `hasExecutorRole` result (excludes FULL/PAUSE sentinels).
     pub roles: Vec<SquadAdminRoleFlagDto>,
 }
 
@@ -65,6 +60,37 @@ pub struct SquadAdminExecutorRolesDto {
 pub struct SquadAdminRoleFlagDto {
     pub role: String,
     pub enabled: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadAdminRoleCatalogDto {
+    pub roles: Vec<String>,
+}
+
+async fn read_squad_admin_role_catalog<P: Provider>(
+    provider: &P,
+    admin: Address,
+) -> Result<Vec<B256>, String> {
+    let count: U256 = eth_call_decode(provider, admin, &roleCountCall {})
+        .await
+        .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
+    // Hard cap against pathological catalogs in a single UI/read pass.
+    let n = usize::try_from(count).unwrap_or(usize::MAX).min(256);
+    let mut roles = Vec::with_capacity(n);
+    for i in 0..n {
+        let role: B256 = eth_call_decode(
+            provider,
+            admin,
+            &roleAtCall {
+                _index: U256::from(i),
+            },
+        )
+        .await
+        .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
+        roles.push(role);
+    }
+    Ok(roles)
 }
 
 async fn is_wearer<P: Provider>(
@@ -214,7 +240,7 @@ pub async fn get_member_hat_wearers<R: Runtime>(
     Ok(out)
 }
 
-/// Check standard SquadAdmin sentinel roles for one executor address.
+/// FULL/PAUSE plus per-catalog-role `hasExecutorRole` for one executor.
 #[tauri::command]
 pub async fn get_squad_admin_executor_roles<R: Runtime>(
     _app: AppHandle<R>,
@@ -242,10 +268,9 @@ pub async fn get_squad_admin_executor_roles<R: Runtime>(
         .await
         .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
 
-    let role_tags = ["FULL", "PAUSE"];
-    let mut roles = Vec::new();
-    for tag in role_tags {
-        let role = bytes32_tag(tag);
+    let catalog = read_squad_admin_role_catalog(&provider, admin).await?;
+    let mut roles = Vec::with_capacity(catalog.len());
+    for role in catalog {
         let enabled: bool = eth_call_decode(
             &provider,
             admin,
@@ -257,7 +282,7 @@ pub async fn get_squad_admin_executor_roles<R: Runtime>(
         .await
         .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
         roles.push(SquadAdminRoleFlagDto {
-            role: tag.to_string(),
+            role: role_id_to_hex(role),
             enabled,
         });
     }
@@ -267,6 +292,23 @@ pub async fn get_squad_admin_executor_roles<R: Runtime>(
         full_permission: full,
         paused,
         roles,
+    })
+}
+
+/// Enumerate on-chain SquadAdmin catalog role ids (excludes FULL/PAUSE sentinels).
+#[tauri::command]
+pub async fn get_squad_admin_role_catalog<R: Runtime>(
+    _app: AppHandle<R>,
+    network: String,
+    squad_admin_proxy: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<SquadAdminRoleCatalogDto, String> {
+    let admin = parse_address(squad_admin_proxy.trim())
+        .map_err(|e| wallet_err_json("INVALID_SQUAD_ADMIN", e, None))?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+    let catalog = read_squad_admin_role_catalog(&provider, admin).await?;
+    Ok(SquadAdminRoleCatalogDto {
+        roles: catalog.into_iter().map(role_id_to_hex).collect(),
     })
 }
 

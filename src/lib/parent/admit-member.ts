@@ -66,9 +66,24 @@ export async function admitMemberToSquad(opts: {
   admitInFlight.add(key);
 
   try {
+    const {
+      requireMySquadPrivilege,
+      squadPrivilegeDeniedMessage,
+    } = await import('../governance/squad-privilege-enforce');
+    const priv = await requireMySquadPrivilege(parent.id, 'inviteAccept');
+    if (!priv.ok) {
+      admitInFlight.delete(key);
+      return {
+        ok: false,
+        announcementsOk: false,
+        openChannelsInvited: 0,
+        error: squadPrivilegeDeniedMessage(priv, get(t)),
+      };
+    }
+
     // Always invite: an existing leaf is a Restore (remove-then-re-add) after MLS store reset.
     try {
-      await inviteMemberToGroup(announcementsGid, npub);
+      await inviteMemberToGroup(announcementsGid, npub, false, parent.id);
     } catch (e) {
       const lastErr = friendlyMessage(getInvokeErrorMessage(e));
       admitInFlight.delete(key);
@@ -103,7 +118,7 @@ async function inviteOpenChannelsInBackground(
   try {
     for (const ch of openCustomChannelTargets(parent.channels)) {
       try {
-        await inviteMemberToGroup(ch.groupId, npub);
+        await inviteMemberToGroup(ch.groupId, npub, false, parent.id);
         try {
           await notifyChannelWelcome(parent, ch.groupId, ch.name, npub);
         } catch (e) {

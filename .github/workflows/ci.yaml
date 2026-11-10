@@ -248,9 +248,14 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Install cargo-nextest
-        # Pinned to match Dockerfile.ci's ARG NEXTEST_VERSION -- keep both in sync.
-        run: curl -LsSf https://get.nexte.st/0.9.143/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+      - name: Verify cargo-nextest
+        # Bundled in pacto-ci image (Dockerfile.ci ARG NEXTEST_VERSION). Keep pins in sync.
+        run: |
+          cargo nextest --version
+          case "$(cargo nextest --version)" in
+            "cargo-nextest 0.9.143"*) ;;
+            *) echo "expected cargo-nextest 0.9.143 from pacto-ci image" >&2; exit 1 ;;
+          esac
 
       - name: Rust unit tests
         working-directory: src-tauri
@@ -293,9 +298,14 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Install cargo-nextest
-        # Pinned to match Dockerfile.ci's ARG NEXTEST_VERSION -- keep both in sync.
-        run: curl -LsSf https://get.nexte.st/0.9.143/linux | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+      - name: Verify cargo-nextest
+        # Bundled in pacto-ci image (Dockerfile.ci ARG NEXTEST_VERSION). Keep pins in sync.
+        run: |
+          cargo nextest --version
+          case "$(cargo nextest --version)" in
+            "cargo-nextest 0.9.143"*) ;;
+            *) echo "expected cargo-nextest 0.9.143 from pacto-ci image" >&2; exit 1 ;;
+          esac
 
       - name: Harness unit tests
         working-directory: src-tauri

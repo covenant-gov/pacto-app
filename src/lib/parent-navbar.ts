@@ -62,9 +62,14 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
   const sorted = [...rawChannels]
     .filter((c) => !OBSOLETE_HUB_SIDEBAR_NAMES.has(c.name))
     .sort((a, b) => a.order - b.order);
-  const announcements = sorted.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
+  const storedTools = sorted.find((c) => c.name === TOOLS_CHANNEL_NAME);
+  const announcements =
+    sorted.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME) ??
+    (storedTools
+      ? { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: storedTools.groupId, order: 0 }
+      : undefined);
   const board =
-    sorted.find((c) => c.name === TOOLS_CHANNEL_NAME) ??
+    storedTools ??
     (announcements
       ? { name: TOOLS_CHANNEL_NAME, groupId: announcements.groupId, order: 1 }
       : undefined);

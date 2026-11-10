@@ -32,12 +32,13 @@ export function defaultChannelRowsForGroupId(groupId: string): HubChannelRow[] {
 }
 
 /**
- * Backfill missing `#tools` and strip obsolete hub rows when the parent uses the
- * single-group default MLS scope. Custom channels keep their relative order after the defaults.
+ * Backfill missing `#announcements` / `#tools` and strip obsolete hub rows when the
+ * parent uses the single-group default MLS scope. Custom channels keep their relative order after the defaults.
  */
 export function ensureDefaultHubChannelRows(channels: HubChannelRow[]): HubChannelRow[] {
   const ann = channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
-  const gid = ann?.groupId?.trim();
+  const tools = channels.find((c) => c.name === TOOLS_CHANNEL_NAME);
+  const gid = (ann?.groupId ?? tools?.groupId)?.trim();
   if (!gid || gid.startsWith('creating-')) return channels;
 
   const hasAllDefaults = DEFAULT_HUB_MLS_NAMES.every((name) => channels.some((c) => c.name === name));
@@ -50,13 +51,16 @@ export function ensureDefaultHubChannelRows(channels: HubChannelRow[]): HubChann
       (OBSOLETE_DEFAULT_HUB_NAMES.has(c.name) && !c.groupId.startsWith('__')),
   );
   const singleGroupDefault =
-    mlsDefaults.length <= 1 || mlsDefaults.every((c) => c.groupId === ann!.groupId);
+    mlsDefaults.length <= 1 || mlsDefaults.every((c) => c.groupId === gid);
   if (!singleGroupDefault) {
     const withoutObsolete = channels.filter((c) => !OBSOLETE_DEFAULT_HUB_NAMES.has(c.name));
-    if (withoutObsolete.some((c) => c.name === TOOLS_CHANNEL_NAME)) return withoutObsolete;
-    const maxOrder = withoutObsolete.reduce((m, c) => Math.max(m, c.order), -1);
+    const withAnn = withoutObsolete.some((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)
+      ? withoutObsolete
+      : [{ name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: gid, order: 0 }, ...withoutObsolete];
+    if (withAnn.some((c) => c.name === TOOLS_CHANNEL_NAME)) return withAnn;
+    const maxOrder = withAnn.reduce((m, c) => Math.max(m, c.order), -1);
     return [
-      ...withoutObsolete,
+      ...withAnn,
       { name: TOOLS_CHANNEL_NAME, groupId: gid, order: maxOrder + 1 },
     ];
   }

@@ -3,6 +3,7 @@ import {
   DOCS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
+  TOOLS_CHANNEL_NAME,
 } from '../squad/hub-channel-names';
 import type { Channel } from '../../stores/squads';
 
@@ -10,6 +11,7 @@ export type ChannelAccess = 'open' | 'closed';
 
 const HUB_CHANNEL_NAMES = new Set([
   ANNOUNCEMENTS_CHANNEL_NAME,
+  TOOLS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   DOCS_CHANNEL_NAME,
@@ -32,12 +34,17 @@ export function isOpenCustomChannel(ch: Channel): boolean {
 
 /** Distinct physical MLS groups for open custom channels (skips placeholders). */
 export function openCustomChannelTargets(channels: Channel[]): Channel[] {
+  const announcementsGid = channels
+    .find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)
+    ?.groupId.trim()
+    .toLowerCase();
   const seen = new Set<string>();
   const out: Channel[] = [];
   for (const ch of channels) {
     if (!isOpenCustomChannel(ch)) continue;
     const gid = ch.groupId.trim();
     if (!gid || gid.startsWith('creating-') || seen.has(gid)) continue;
+    if (announcementsGid && gid.toLowerCase() === announcementsGid) continue;
     seen.add(gid);
     out.push(ch);
   }

@@ -36,6 +36,11 @@ vi.mock('../governance/api', () => ({
   listSquadInfra: (...args: unknown[]) => listSquadInfra(...args),
 }));
 
+vi.mock('../governance/squad-privilege-enforce', () => ({
+  requireMySquadPrivilege: vi.fn(async () => ({ ok: true, active: false, flags: null })),
+  squadPrivilegeDeniedMessage: vi.fn(() => 'denied'),
+}));
+
 vi.mock('../../stores/auth-session', () => ({
   currentUser,
 }));

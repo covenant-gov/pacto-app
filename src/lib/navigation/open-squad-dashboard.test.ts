@@ -12,6 +12,7 @@ import {
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
   settingsChannelMode,
+  squadDashboardChannelMode,
   squadToolsChannelMode,
   squads,
   SQUAD_DASHBOARD_CHANNEL_ID,
@@ -20,6 +21,7 @@ import {
   type Squad,
 } from '../../stores/app';
 import {
+  openSquadCrewPrivileges,
   openSquadDashboard,
   openSquadSettings,
   openSquadWargame,
@@ -148,6 +150,38 @@ describe('openSquadSettings', () => {
     expect(get(activeTopNavTab)).toBe('commons');
     expect(get(activeSquadId)).toBeNull();
     expect(get(settingsChannelMode)).toBe('you');
+  });
+});
+
+describe('openSquadCrewPrivileges', () => {
+  beforeEach(() => {
+    activeTopNavTab.set('commons');
+    activeSquadId.set(null);
+    activeChannelId.set(null);
+    activeHubChannelName.set(null);
+    activeView.set('hub');
+    lastOpenedSquadId.set(null);
+    lastOpenedChannelId.set(null);
+    lastChannelBySquadId.set({});
+    lastHubChannelNameBySquadId.set({});
+    squadDashboardChannelMode.set('status');
+    squads.set([]);
+  });
+
+  it('opens #governance on Crew mode', () => {
+    openSquadCrewPrivileges('squad-123');
+    expect(get(activeTopNavTab)).toBe('squads');
+    expect(get(activeSquadId)).toBe('squad-123');
+    expect(get(activeChannelId)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+    expect(get(squadDashboardChannelMode)).toBe('crew');
+    expect(get(activeView)).toBe('hub');
+  });
+
+  it('does nothing when id is empty', () => {
+    openSquadCrewPrivileges('   ');
+    expect(get(activeTopNavTab)).toBe('commons');
+    expect(get(activeSquadId)).toBeNull();
+    expect(get(squadDashboardChannelMode)).toBe('status');
   });
 });
 

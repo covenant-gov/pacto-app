@@ -90,6 +90,22 @@ describe('squad admin executor role labels', () => {
     ).toBe('Paused');
   });
 
+  it('formats packed catalog role names from bytes32 ids', () => {
+    expect(
+      formatSquadAdminExecutorRoles({
+        address: '0x1',
+        fullPermission: false,
+        paused: false,
+        roles: [
+          {
+            role: '0x4d61746500000000000000000000000000000000000000000000000000010007',
+            enabled: true,
+          },
+        ],
+      }),
+    ).toBe('Mate');
+  });
+
   it('derives manage scope from DTO and canonical labels', () => {
     expect(
       squadAdminExecutorManageScopeFromDto({

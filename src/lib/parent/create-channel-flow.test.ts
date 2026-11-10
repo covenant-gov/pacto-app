@@ -7,6 +7,11 @@ vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn(),
 }));
 
+vi.mock('../governance/squad-privilege-enforce', () => ({
+  requireMySquadPrivilege: vi.fn(async () => ({ ok: true, active: false, flags: null })),
+  squadPrivilegeDeniedMessage: vi.fn(() => 'denied'),
+}));
+
 vi.mock('../squad/skipped-members', () => ({
   warnSkippedMembers: vi.fn(),
   skippedMembersNotice: vi.fn((skipped: unknown[]) => (skipped.length ? 'skipped-notice' : '')),

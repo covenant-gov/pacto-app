@@ -5,10 +5,15 @@ import {
 } from '../api/nostr';
 import { bumpMembershipVersion } from '../../stores/mls-chat';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
+import {
+  requireMySquadPrivilege,
+  squadPrivilegeDeniedMessage,
+} from '../governance/squad-privilege-enforce';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 
 export interface SquadChannelInviteContext {
+  parentId: string;
   squadName: string;
   announcementsGroupId: string;
   channelName: string;
@@ -24,7 +29,19 @@ export function runInviteMemberToChannel(opts: {
   const { groupId, memberNpub, squad, onError } = opts;
   void (async () => {
     try {
-      await inviteMemberToGroup(groupId, memberNpub);
+      const parentId = squad?.parentId.trim() ?? '';
+      if (squad) {
+        if (!parentId) {
+          onError(get(t)('squad.access.inviteFailed'));
+          return;
+        }
+        const priv = await requireMySquadPrivilege(parentId, 'inviteAccept');
+        if (!priv.ok) {
+          onError(squadPrivilegeDeniedMessage(priv, get(t)));
+          return;
+        }
+      }
+      await inviteMemberToGroup(groupId, memberNpub, false, squad ? parentId : null);
       bumpMembershipVersion(groupId);
     } catch (e) {
       onError(friendlyMessage(getInvokeErrorMessage(e, get(t)('squad.access.inviteFailed'))));

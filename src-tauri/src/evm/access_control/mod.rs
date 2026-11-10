@@ -7,6 +7,7 @@ mod write_serialize;
 
 pub use capability::{GovCapability, SquadCapabilitiesDto};
 pub use evaluate::{evaluate_squad_capabilities, require_capability, GovStack};
+pub(crate) use identity::resolve_acl_roster_address;
 pub use write_serialize::{with_gov_write_lock, with_gov_write_locks};
 
 use tauri::{AppHandle, Runtime};

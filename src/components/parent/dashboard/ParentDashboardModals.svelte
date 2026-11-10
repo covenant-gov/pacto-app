@@ -1,7 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import LaunchpadModal from '../governance/LaunchpadModal.svelte';
-  import SquadRolesModal from '../governance/SquadRolesModal.svelte';
   import ChainIdSelect from '../../wallet/ChainIdSelect.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { DEFAULT_CHAIN_ID } from '../../../lib/wallet/chains';
@@ -19,12 +18,8 @@
     parentId: string;
     announcementsGroupId?: string | null;
     treasurySafeCount?: number;
-    warGameStack?: boolean;
-    squadAdminProxy?: string;
-    squadAdminNetwork?: SupportedChainId;
     /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
     squadNetwork?: SupportedChainId | null;
-    memberEvmOptions?: { address: string; label: string }[];
     captainMemberOptions?: PactoGovCaptainOption[];
 
     showDeploySafeModal?: boolean;
@@ -33,7 +28,6 @@
     showGovAndSponsorDeploy?: boolean;
     showExtSponsorDeploy?: boolean;
     showSquadAdminDeploy?: boolean;
-    showSquadRolesModal?: boolean;
     showSetSafeModal?: boolean;
     /** When set, combined wizard finishes hats sponsor only. */
     existingTopHatId?: string;
@@ -75,7 +69,6 @@
     onCloseGovAndSponsorDeploy?: () => void;
     onCloseExtSponsorDeploy?: () => void;
     onCloseSquadAdminDeploy?: () => void;
-    onCloseSquadRolesModal?: () => void;
     onLaunchpadAction?: (action: import('../../../lib/governance/launchpad-cta').LaunchpadRouteAction) => void;
   }
 
@@ -83,11 +76,7 @@
     parentId,
     announcementsGroupId = null,
     treasurySafeCount = 0,
-    warGameStack = false,
-    squadAdminProxy = '',
-    squadAdminNetwork = DEFAULT_CHAIN_ID,
     squadNetwork = null,
-    memberEvmOptions = [],
     captainMemberOptions = [],
 
     showDeploySafeModal = $bindable(false),
@@ -96,7 +85,6 @@
     showGovAndSponsorDeploy = $bindable(false),
     showExtSponsorDeploy = $bindable(false),
     showSquadAdminDeploy = $bindable(false),
-    showSquadRolesModal = $bindable(false),
     showSetSafeModal = $bindable(false),
     existingTopHatId = '',
     quartermaster = '',
@@ -120,7 +108,6 @@
     onCloseGovAndSponsorDeploy = () => {},
     onCloseExtSponsorDeploy = () => {},
     onCloseSquadAdminDeploy = () => {},
-    onCloseSquadRolesModal = () => {},
     onLaunchpadAction = () => {},
   }: Props = $props();
 
@@ -302,16 +289,6 @@
     </div>
   </div>
 {/if}
-
-<SquadRolesModal
-  open={showSquadRolesModal}
-  onClose={onCloseSquadRolesModal}
-  {parentId}
-  {squadAdminProxy}
-  network={squadAdminNetwork}
-  {memberEvmOptions}
-  {warGameStack}
-/>
 
 <style>
   .modal-overlay {

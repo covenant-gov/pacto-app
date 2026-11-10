@@ -706,13 +706,16 @@ export async function acceptMlsWelcome(welcomeEventIdHex: string): Promise<boole
 export async function inviteMemberToGroup(
   groupId: string,
   memberNpub: string,
-  isResend = false
+  isResend = false,
+  /** When set, Rust requires FLAG_INVITE_ACCEPT (or FULL) on this parent before MLS add. */
+  privilegeParentId?: string | null,
 ): Promise<void> {
   dmLog('invite_member_to_group', { groupId: groupId.slice(0, 16) + '…', memberNpub: memberNpub.slice(0, 20) + '…' });
   await invoke('invite_member_to_group', {
     groupId,
     memberNpub,
     isResend,
+    privilegeParentId: privilegeParentId?.trim() || null,
   });
   dmLog('invite_member_to_group done');
 }

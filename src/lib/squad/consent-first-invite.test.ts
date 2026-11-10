@@ -25,6 +25,11 @@ vi.mock('./squad-outbound-invite', () => ({
   publishOutboundInviteAnnounce: vi.fn(),
 }));
 
+vi.mock('../governance/squad-privilege-enforce', () => ({
+  requireMySquadPrivilege: vi.fn(async () => ({ ok: true, active: false, flags: null })),
+  squadPrivilegeDeniedMessage: vi.fn(() => 'denied'),
+}));
+
 vi.mock('../../stores/auth-session', () => ({
   currentUser: { subscribe: vi.fn() },
 }));

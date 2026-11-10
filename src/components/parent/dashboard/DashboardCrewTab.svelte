@@ -30,6 +30,8 @@
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind, uniqueRpcReadErrorKinds } from '../../../lib/squad/rpc-read-error';
   import { localizeSquadAdminExecutorRolesLabel } from '../../../lib/governance/pacto-gov-payload';
+  import CrewPrivilegesSection from './CrewPrivilegesSection.svelte';
+  import type { SupportedChainId } from '../../../lib/wallet/chains';
 
   let {
     announcementsGroupId = null,
@@ -50,6 +52,11 @@
     onRefreshSponsorExt = () => {},
     sponsorHatsMode = false,
     hasSponsor = false,
+    squadAdminProxy = '',
+    squadAdminNetwork = 'sepolia' as SupportedChainId,
+    warGameStack = false,
+    memberEvmOptions = [],
+    onPrivilegesChanged = () => {},
   }: {
     announcementsGroupId?: string | null;
     channelMembers?: string[];
@@ -72,6 +79,11 @@
     /** Hats-linked sponsor: eligibility from captain/crew wear. */
     sponsorHatsMode?: boolean;
     hasSponsor?: boolean;
+    squadAdminProxy?: string;
+    squadAdminNetwork?: SupportedChainId;
+    warGameStack?: boolean;
+    memberEvmOptions?: { address: string; label: string }[];
+    onPrivilegesChanged?: () => void;
   } = $props();
 
   let sponsoringAddress = $state('');
@@ -328,6 +340,17 @@
     <p class="muted">{$t('governance.crew.noChannel')}</p>
   {/if}
 </section>
+
+{#if squadAdminProxy.trim()}
+  <CrewPrivilegesSection
+    {parentId}
+    squadAdminProxy={squadAdminProxy.trim()}
+    network={squadAdminNetwork}
+    {warGameStack}
+    {memberEvmOptions}
+    {onPrivilegesChanged}
+  />
+{/if}
 
 <style>
   .sponsor-owner-banner {

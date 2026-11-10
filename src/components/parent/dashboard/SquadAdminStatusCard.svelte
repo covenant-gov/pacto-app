@@ -7,7 +7,7 @@
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
-  import { openSquadSettings } from '../../../lib/navigation/open-squad-dashboard';
+  import { openSquadCrewPrivileges } from '../../../lib/navigation/open-squad-dashboard';
   import { showToast } from '../../../stores/toast';
 
   let {
@@ -81,7 +81,7 @@
     <dd>{networkLabel}</dd>
   </dl>
   {#snippet footer()}
-    <button type="button" class="btn-text" onclick={() => openSquadSettings(parentId)}>
+    <button type="button" class="btn-text" onclick={() => openSquadCrewPrivileges(parentId)}>
       {$t('governance.squadAdminCard.managePrivileges')}
     </button>
   {/snippet}

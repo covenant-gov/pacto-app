@@ -560,7 +560,23 @@ describe('inviteMemberToGroup', () => {
   it('invokes invite_member_to_group with groupId and memberNpub', async () => {
     mockedInvoke.mockResolvedValueOnce(undefined);
     await inviteMemberToGroup('g1', 'npub1');
-    expect(mockedInvoke).toHaveBeenCalledWith('invite_member_to_group', { groupId: 'g1', memberNpub: 'npub1', isResend: false });
+    expect(mockedInvoke).toHaveBeenCalledWith('invite_member_to_group', {
+      groupId: 'g1',
+      memberNpub: 'npub1',
+      isResend: false,
+      privilegeParentId: null,
+    });
+  });
+
+  it('passes privilegeParentId when provided', async () => {
+    mockedInvoke.mockResolvedValueOnce(undefined);
+    await inviteMemberToGroup('g1', 'npub1', false, 'parent-1');
+    expect(mockedInvoke).toHaveBeenCalledWith('invite_member_to_group', {
+      groupId: 'g1',
+      memberNpub: 'npub1',
+      isResend: false,
+      privilegeParentId: 'parent-1',
+    });
   });
 });
 

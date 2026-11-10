@@ -19,6 +19,10 @@ vi.mock('../utils/tauri-errors', () => ({
     typeof e === 'string' && e ? e : fallback
   ),
 }));
+vi.mock('../governance/squad-privilege-enforce', () => ({
+  requireMySquadPrivilege: vi.fn(async () => ({ ok: true, active: false, flags: null })),
+  squadPrivilegeDeniedMessage: vi.fn(() => 'denied'),
+}));
 vi.mock('../../stores/toast', () => ({
   showToast: vi.fn(),
 }));

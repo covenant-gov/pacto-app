@@ -137,6 +137,13 @@ export async function publishSquadNetworkUpdated(
   const me = get(currentUser)?.npub?.trim();
   if (!me) return false;
 
+  const { requireMySquadPrivilege } = await import('../governance/squad-privilege-enforce');
+  const priv = await requireMySquadPrivilege(gid, 'manageNetwork');
+  if (!priv.ok) {
+    console.warn('[squad-network] privilege denied', priv.reason);
+    return false;
+  }
+
   const stored = loadSquadNetworkPair(me, gid);
   let rows: { infraType: string; chain?: string | null }[] = [];
   try {

@@ -91,6 +91,13 @@ export async function publishSquadRpcUpdated(announcementsGroupId: string): Prom
   const me = get(currentUser)?.npub?.trim();
   if (!me) return false;
 
+  const { requireMySquadPrivilege } = await import('../governance/squad-privilege-enforce');
+  const priv = await requireMySquadPrivilege(gid, 'manageNetwork');
+  if (!priv.ok) {
+    dmWarn('[squad-rpc] privilege denied', priv.reason);
+    return false;
+  }
+
   const stored = loadSquadRpcConfig(me, gid);
   const chain = stored?.chain ?? loadSquadNetworkSlot(me, gid, 'primary') ?? DEFAULT_SQUAD_PRIMARY_NETWORK;
   const config = effectiveSquadRpcConfig(me, gid, chain);

@@ -14,7 +14,7 @@
   } from '../../../lib/governance/start-pacto-gov-deploy';
   import type { CombinedGovSponsorDeployComplete } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
   import type { LaunchpadRouteAction } from '../../../lib/governance/launchpad-cta';
-  import { openSquadSettings } from '../../../lib/navigation/open-squad-dashboard';
+  import { openSquadCrewPrivileges } from '../../../lib/navigation/open-squad-dashboard';
   import ParentDashboardModals from './ParentDashboardModals.svelte';
 
   interface Props {
@@ -24,9 +24,6 @@
     hasSponsor?: boolean;
     hasPactoGov?: boolean;
     hasSquadAdmin?: boolean;
-    warGameStack?: boolean;
-    squadAdminProxy?: string;
-    squadAdminNetwork?: SupportedChainId;
     /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
     squadNetwork?: SupportedChainId | null;
     /** Ext sponsor exists but is not hats-wired yet (wire / finish path). */
@@ -34,7 +31,6 @@
     /** Top hat id of the deployed Pacto Gov row ('' before gov deploy). */
     pactoGovTopHatId?: string;
     quartermaster?: string;
-    memberEvmOptions?: { address: string; label: string }[];
     captainMemberOptions?: PactoGovCaptainOption[];
     onConfirmImportSafe?: (params: {
       safeAddress: string;
@@ -82,14 +78,10 @@
     hasSponsor = false,
     hasPactoGov = false,
     hasSquadAdmin = false,
-    warGameStack = false,
-    squadAdminProxy = '',
-    squadAdminNetwork = DEFAULT_CHAIN_ID,
     squadNetwork = null,
     sponsorUnwiredExt = false,
     pactoGovTopHatId = '',
     quartermaster = '',
-    memberEvmOptions = [],
     captainMemberOptions = [],
     onConfirmImportSafe = undefined,
     onPactoGovDeployComplete = undefined,
@@ -106,7 +98,6 @@
   let showGovAndSponsorDeploy = $state(false);
   let showExtSponsorDeploy = $state(false);
   let showSquadAdminDeploy = $state(false);
-  let showSquadRolesModal = $state(false);
 
   let setSafeInput = $state('');
   let setSafeChain = $state<SupportedChainId>(DEFAULT_CHAIN_ID);
@@ -202,7 +193,7 @@
   export function openSquadAdminDeploy(): void {
     if (!requireBackupVerified()) return;
     if (hasSquadAdmin) {
-      openSquadSettings(parentId);
+      openSquadCrewPrivileges(parentId);
       return;
     }
     if (parentId?.trim()) showSquadAdminDeploy = true;
@@ -368,7 +359,7 @@
       infraRowId: out.infraRowId,
     });
     showToast(tFn('governance.squadAdmin.toastDeployed'));
-    openSquadSettings(parentId);
+    openSquadCrewPrivileges(parentId);
   }
 </script>
 
@@ -376,13 +367,9 @@
   {parentId}
   {announcementsGroupId}
   {treasurySafeCount}
-  {warGameStack}
-  {squadAdminProxy}
-  {squadAdminNetwork}
   {squadNetwork}
   onLaunchpadAction={handleLaunchpadAction}
   {captainMemberOptions}
-  {memberEvmOptions}
   {existingTopHatId}
   {quartermaster}
   bind:showDeploySafeModal
@@ -391,7 +378,6 @@
   bind:showGovAndSponsorDeploy
   bind:showExtSponsorDeploy
   bind:showSquadAdminDeploy
-  bind:showSquadRolesModal
   bind:showSetSafeModal
   bind:setSafeInput
   bind:setSafeChain
@@ -404,7 +390,6 @@
   onCloseGovAndSponsorDeploy={() => (showGovAndSponsorDeploy = false)}
   onCloseExtSponsorDeploy={() => (showExtSponsorDeploy = false)}
   onCloseSquadAdminDeploy={() => (showSquadAdminDeploy = false)}
-  onCloseSquadRolesModal={() => (showSquadRolesModal = false)}
   onCloseSetSafe={closeSetSafeModal}
   onConfirmSetSafe={confirmSetSafe}
   onDeploySafeSuccess={handleDeploySafeSuccess}

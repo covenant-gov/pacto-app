@@ -67,6 +67,9 @@ const channelInvitePendingAccept = new Map<string, { parentId: string; channelNa
 /** In-flight consent-first Accept waiters keyed by announcements group id (lowercase). */
 const pendingWelcomeWaiters = new Map<string, Set<() => void>>();
 
+/** One accept-and-finalize per announcements group while a join is in flight. */
+const squadJoinInFlight = new Map<string, Promise<void>>();
+
 export const ACCEPT_WELCOME_POLL_MS = 400;
 /** Short opportunistic wait after claims; never a hard failure gate. */
 export const ACCEPT_WELCOME_FAST_PATH_MS = 5_000;
@@ -80,6 +83,7 @@ export function resetInviteAcceptState(): void {
   acceptedSquadInviteGroupIds.clear();
   channelInvitePendingAccept.clear();
   pendingWelcomeWaiters.clear();
+  squadJoinInFlight.clear();
   acceptingSquadInviteId.set(null);
   acceptingChannelInSquadId.set(null);
 }
@@ -87,6 +91,33 @@ export function resetInviteAcceptState(): void {
 export function squadInviteResolvedByMembership(groupId: string): boolean {
   const target = groupId.trim().toLowerCase();
   return get(squads).some((s) => s.id.trim().toLowerCase() === target);
+}
+
+/** Accept one welcome and materialize the squad. Overlapping callers share the same join. */
+async function acceptAndFinalizeSquadJoin(
+  groupId: string,
+  welcomeId: string,
+  finalize: () => Promise<void>,
+): Promise<void> {
+  const key = groupId.trim().toLowerCase();
+  const existing = squadJoinInFlight.get(key);
+  if (existing) {
+    await existing;
+    return;
+  }
+  if (squadInviteResolvedByMembership(groupId)) return;
+
+  const work = (async () => {
+    acceptedSquadInviteGroupIds.add(groupId);
+    await acceptMlsWelcome(welcomeId);
+    await finalize();
+  })();
+  squadJoinInFlight.set(key, work);
+  try {
+    await work;
+  } finally {
+    if (squadJoinInFlight.get(key) === work) squadJoinInFlight.delete(key);
+  }
 }
 
 function findPendingWelcomeForGroup(
@@ -164,13 +195,12 @@ export async function tryCompletePendingSquadAdmission(groupId: string): Promise
   }
   const welcome = await listPendingWelcomeForGroup(groupId);
   if (!welcome) return false;
-  acceptedSquadInviteGroupIds.add(groupId);
-  await acceptMlsWelcome(welcome.id);
-  await finalizeSquadAfterAnnouncementsWelcome(
-    { groupId, name: pending.squadName, iconUrl: pending.iconUrl },
-    pending.messageId
+  await acceptAndFinalizeSquadJoin(groupId, welcome.id, () =>
+    finalizeSquadAfterAnnouncementsWelcome(
+      { groupId, name: pending.squadName, iconUrl: pending.iconUrl },
+      pending.messageId,
+    ),
   );
-  clearPendingSquadAdmissionByGroupId(groupId);
   resolveOneCatchUpEntry(pending.messageId).catch(() => {});
   return true;
 }
@@ -295,9 +325,9 @@ export async function acceptAnnouncementsInvite(
   const welcome = await resolvePendingWelcomeForGroupInitial(payload.groupId);
   if (welcome) {
     clearDeclinedWelcomeGroupId(payload.groupId);
-    acceptedSquadInviteGroupIds.add(payload.groupId);
-    await acceptMlsWelcome(welcome.id);
-    await finalizeSquadAfterAnnouncementsWelcome(payload, messageId);
+    await acceptAndFinalizeSquadJoin(payload.groupId, welcome.id, () =>
+      finalizeSquadAfterAnnouncementsWelcome(payload, messageId),
+    );
     return;
   }
 
@@ -353,10 +383,9 @@ export async function acceptAnnouncementsInvite(
     return;
   }
   if (waited) {
-    clearPendingSquadAdmissionByGroupId(payload.groupId);
-    acceptedSquadInviteGroupIds.add(payload.groupId);
-    await acceptMlsWelcome(waited.id);
-    await finalizeSquadAfterAnnouncementsWelcome(payload, messageId);
+    await acceptAndFinalizeSquadJoin(payload.groupId, waited.id, () =>
+      finalizeSquadAfterAnnouncementsWelcome(payload, messageId),
+    );
   }
   // No welcome yet — card stays in joining state until an admitter completes MLS Add.
 }

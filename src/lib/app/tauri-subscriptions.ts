@@ -271,7 +271,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
           [chat_id]: [...out, m].sort((a: DmMessage, b: DmMessage) => a.at - b.at),
         };
       });
-      onMlsStructuredMessage(m.content, chat_id, handlers);
+      onMlsStructuredMessage(m.content, chat_id, handlers, m.npub);
     }
   });
 
@@ -342,7 +342,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       );
       return { ...byGroup, [group_id]: [...withoutOpt, m] };
     });
-    onMlsStructuredMessage(m.content, group_id, handlers);
+    onMlsStructuredMessage(m.content, group_id, handlers, m.npub);
     if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
   });
 

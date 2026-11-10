@@ -69,6 +69,15 @@ export async function sendConsentFirstSquadInvite(
     return { ok: false, error: tt('squad.consentFirstInvite.invalidInvitee') };
   }
 
+  const {
+    requireMySquadPrivilege,
+    squadPrivilegeDeniedMessage,
+  } = await import('../governance/squad-privilege-enforce');
+  const priv = await requireMySquadPrivilege(parent.id, 'inviteAccept');
+  if (!priv.ok) {
+    return { ok: false, error: squadPrivilegeDeniedMessage(priv, tt) };
+  }
+
   const myNpub = get(currentUser)?.npub;
   const admitterNpubs =
     opts?.admitterNpubs ?? (await resolveAdmitterNpubs(groupId, myNpub));
