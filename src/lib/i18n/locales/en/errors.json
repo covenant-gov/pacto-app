@@ -32,5 +32,6 @@
 	"errors.squadRecords.docNotFound": "This doc is no longer on the shelf.",
 	"errors.squadRecords.docNotEditable": "You cannot change this doc.",
 	"errors.squadRecords.docInvalidUrl": "Use a link that starts with http:// or https://.",
-	"errors.squadRecords.docInvalidTitle": "Add a title."
+	"errors.squadRecords.docInvalidTitle": "Add a title.",
+	"errors.dm.voiceFailed": "Failed to send voice message"
 }

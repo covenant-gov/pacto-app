@@ -67,6 +67,7 @@ import { loadSendTypingIndicatorsPreference } from './typing-indicators';
 import { loadStripTrackingMarkersPreference } from './strip-tracking-markers';
 import { loadWebPreviewsPreference } from './web-previews';
 import { loadFeatureFlagOverrides } from './feature-flags';
+import { loadVoiceSettings } from './voice-settings';
 import { loadBiometricUnlockPreference } from './biometric-unlock';
 import { loadMlsHistoryWelcome } from './mls-history-welcome';
 import { loadLastSeenPollCreatedAt } from './polls-hub-alerts';
@@ -191,6 +192,7 @@ export function loadAccountState(npub: string): void {
   loadStripTrackingMarkersPreference(npub);
   loadWebPreviewsPreference(npub);
   loadFeatureFlagOverrides(npub);
+  loadVoiceSettings(npub);
   loadBiometricUnlockPreference(npub);
   loadLastSeenPollCreatedAt(npub);
   loadLastSeenEventCardAt(npub);

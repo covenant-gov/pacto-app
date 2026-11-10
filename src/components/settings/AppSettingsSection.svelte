@@ -19,6 +19,7 @@
   import WhatsNewModal from '../updater/WhatsNewModal.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import PrivacySettingsSection from './PrivacySettingsSection.svelte';
+  import VoiceSettingsSection from './VoiceSettingsSection.svelte';
   import { getSessionTimeout, setSessionTimeout } from '../../lib/api/auth';
   import { locale, setLocale, LOCALE_OPTIONS } from '../../stores/locale';
   import { currentUser } from '../../stores/auth-session';
@@ -324,6 +325,8 @@
     <hr class="app-settings-divider" />
 
     <PrivacySettingsSection />
+
+    <VoiceSettingsSection />
   </div>
 </SettingsCollapsibleSection>
 
