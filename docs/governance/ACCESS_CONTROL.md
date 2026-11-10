@@ -89,10 +89,64 @@ Custom catalog roles pack a short name + action flags into `bytes32` (pacto-gov 
 |-------------|------------------------|-------------------------|
 | `inviteAccept` | Consent-first invite, admit, join accept, channel invite, state-sync open-channel admit, restore of a missing open channel; Rust `invite_member_to_group` when `privilegeParentId` is set. MLS-admin resend and restore of an existing leaf stay unchecked | Outbound invite / admit-needed / join-response MLS applies |
 | `createChannel` | Create-channel flow and catalog send, including state-sync republish | Channels catalog MLS apply |
-| `broadcast` | Commons broadcast + `resolveCanBroadcastSquad` | (publish-gated) |
+| `broadcast` | Commons broadcast + `resolveCanBroadcastSquad` | Publish-gated today; Alpha target: honest ingest/display filter (see Enforceability) |
 | `manageNetwork` | Network + RPC share publish | Network / RPC MLS apply |
 
 **Inactive SquadAdmin** (no resolvable proxy in local infra): all of the above allow. **Active SquadAdmin**: require roster binding + FULL or the flag; unbound / RPC failure / pause / missing flag → deny. Receive paths ignore event `created_at` and fail closed when the author npub is missing while SquadAdmin is active. Join-inbox holder FULL gate is unchanged (separate path).
+
+## Enforceability (on-chain recognition vs MLS)
+
+Alpha bar for **on-chain-enforceable** packed privileges: when SquadAdmin is active, honest Pacto clients refuse to **recognize / merge / surface** the action as valid squad product state if the author’s roster-bound EVM lacks the flag. Force is **publish preflight + Rust ingest**, not frontend-only. A forked client may still emit MLS ciphertext; peers simply do not adopt the side effect.
+
+**MLS-only** means authority lives in the MLS engine (`admin_pubkeys`, leaf Add/Remove/Restore, group commits). Once someone is an MLS admin of an existing group, chain flags cannot stop a hostile client from using that power. Product UX may still prompt with privileges; that is not real force.
+
+```mermaid
+flowchart LR
+  action[Squad_action]
+  action --> recog{Honest_clients_must_recognize_to_matter}
+  recog -->|yes| chain[SquadAdmin_gate_publish_plus_Rust_ingest]
+  recog -->|no_crypto_already_decides| mls[MLS_admin_pubkeys_only]
+```
+
+Privileges gate **recognition of product actions**. MLS admin gates **group crypto ops**. If a squad makes everyone an MLS admin for easier sync, on-chain “only these people may admin” does **not** work — do not design Privileges as a substitute for MLS admin.
+
+Raw IPC that bypasses product flows (`create_group_chat` without catalog, Commons publish without TS) is **not** a security boundary for hostile local users; peer recognition is.
+
+Hats / `require_capability` (treasury, mutiny, SquadAdmin **role management**) stay contract-final for **signing**. That path is already on-chain and outside this recognition vs MLS matrix.
+
+### Chain-enforceable (recognition)
+
+| Action | Why force works | Today | Alpha target |
+|--------|-----------------|-------|--------------|
+| `createChannel` | Open channels only appear via catalog / create flow peers merge | TS publish + TS receive (`applyPrivilegedMlsAction`); raw `create_group_chat` ungated | Keep as chain class; catalog and related structured checks in **Rust ingest** |
+| `manageNetwork` | Network/RPC share only affects local squad config if merged | TS publish + TS receive | Rust ingest parity |
+| `inviteAccept` (consent invite, admit, join **response**, structured admit signals) | Honest clients skip applying those structured side effects without the flag | TS + Rust invite when `privilegeParentId` is set; receive FE-only | Chain class for structured admit/invite product state; Rust ingest for those payloads |
+| `broadcast` | Commons rows can be ignored by honest clients if author lacks flag | Publish UI only; Rust/Commons ingest ungated | Filter publish **and** honest ingest/display; not MLS crypto |
+
+### MLS-only (cannot meaningfully force on-chain)
+
+| Action | Why chain does not force |
+|--------|---------------------------|
+| MLS Add / Remove / Restore leaf in an **existing** group | Engine membership; hostile MLS admin can commit regardless of SquadAdmin |
+| Who is MLS `admin_pubkeys` (including “everyone admin for easier sync”) | Crypto admin set; on-chain “specific admins” cannot override leaf powers |
+| Channel / group encryption and branching | MLS engine |
+| Resend / restore MLS access paths that intentionally skip `privilegeParentId` | Documented MLS-admin restore; chain-gating would not stop hostile admin restores |
+
+### Packed flag class map
+
+| Flag | Class |
+|------|--------|
+| `inviteAccept` | Chain (structured product flows only; not raw MLS Add/Restore) |
+| `createChannel` | Chain (catalog / open-channel recognition) |
+| `broadcast` | Chain (Commons publish + honest ingest/display) |
+| `manageNetwork` | Chain (network/RPC share merge) |
+| `firstMate` | Catalog / deferred signing — not MLS force; no recognition gate until 1st Mate signing ships |
+
+### Non-normative leftover
+
+`squad_content_policy` / Settings Access “only admins add events/docs” uses MLS `admin_pubkeys` booleans, not SquadAdmin packed roles. It is **not** the long-term privilege model. Do not expand it; later work may delete or replace it. Event/doc add gates, if any, belong under the recognition model above as a separate product decision.
+
+Pre-gov privilege source and inherit/override when SquadAdmin deploys are out of scope for this section.
 
 ## Funding deploy / deposit vs roster ownership
 

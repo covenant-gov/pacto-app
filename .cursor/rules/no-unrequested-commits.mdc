@@ -24,7 +24,7 @@ When that ask comes, frontend CI gates must be green first: [ci-gates-before-fin
 
 ## After plan execution
 
-Stop with a short summary of what changed and which files to review. Do **not** `git add`, `git commit`, or `git push` as part of wrapping up. Run [ci-gates-before-finish.mdc](ci-gates-before-finish.mdc) before calling the work done.
+Stop with a short summary of what changed and which files to review. Do **not** `git add`, `git commit`, or `git push` as part of wrapping up. Run [ci-gates-before-finish.mdc](ci-gates-before-finish.mdc) before calling the work done. Always include a commit subject line per [plan-build-commit-subject.mdc](plan-build-commit-subject.mdc) (handoff only — still not permission to commit).
 
 ## Related
 
