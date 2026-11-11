@@ -154,9 +154,12 @@ image actually appears in a message bubble.
 `MessageAttachment.svelte` must never put `attachment.url` in an `<img src>`.
 The bytes at that URL are ciphertext; the browser renders a broken image. An
 image is displayable only after `download_attachment` has fetched the blob,
-decrypted it with the rumor's key and nonce, and written it to disk. Success
-arrives as a `message_update` event carrying `downloaded: true` and the local
-`path`, which is what the component renders.
+decrypted it with the rumor's key and nonce, and written it to disk — or when
+the decrypted file is already at the cache path. Both success paths emit
+`message_update` carrying `downloaded: true` and the local `path`, which is
+what the component renders. Downloaded status is persisted with
+`update_attachment_downloaded_status` (a tags UPDATE), not a second
+`save_message` (`INSERT OR IGNORE` would no-op on the existing kind-15 row).
 
 Until then the component shows the `img_meta.blurhash` decoded locally — it
 travels inside the encrypted rumor, so it costs no network round trip and leaks

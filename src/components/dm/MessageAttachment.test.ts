@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import MessageAttachment from './MessageAttachment.svelte';
 import { downloadAttachment, decodeBlurhash, saveAttachmentAs } from '../../lib/api/nostr';
 import { fetchGifBlobUrl } from '../../lib/api/klipy';
+import { showToast } from '../../stores/toast';
 import type { Attachment } from '../../stores/dm';
 
 vi.mock('../../icons/file.svg', () => ({ default: '/file.svg' }));
@@ -16,9 +17,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 vi.mock('../../lib/api/nostr', () => ({
-  downloadAttachment: vi.fn().mockResolvedValue(undefined),
+  downloadAttachment: vi.fn().mockResolvedValue(true),
   decodeBlurhash: vi.fn().mockResolvedValue('data:image/png;base64,blur'),
   saveAttachmentAs: vi.fn().mockResolvedValue('/dest/saved-path'),
+}));
+
+vi.mock('../../stores/toast', () => ({
+  showToast: vi.fn(),
 }));
 
 vi.mock('../../lib/api/klipy', async (importOriginal) => {
@@ -35,6 +40,7 @@ const mockedDownload = vi.mocked(downloadAttachment);
 const mockedDecodeBlurhash = vi.mocked(decodeBlurhash);
 const mockedSaveAttachmentAs = vi.mocked(saveAttachmentAs);
 const mockedFetchGifBlobUrl = vi.mocked(fetchGifBlobUrl);
+const mockedShowToast = vi.mocked(showToast);
 
 const baseAttachment: Attachment = {
   id: 'abc123',
@@ -52,6 +58,7 @@ const baseAttachment: Attachment = {
 describe('MessageAttachment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedDownload.mockResolvedValue(true);
     mockedDecodeBlurhash.mockResolvedValue('data:image/png;base64,blur');
     mockedSaveAttachmentAs.mockResolvedValue('/dest/saved-path');
     (window as Window & { __TAURI__?: unknown }).__TAURI__ = {};
@@ -97,6 +104,37 @@ describe('MessageAttachment', () => {
 
     await fireEvent.click(screen.getByLabelText('Download Image.png'));
     expect(mockedDownload).toHaveBeenCalledWith('npub1abc', 'm1', 'abc123');
+    expect(mockedShowToast).not.toHaveBeenCalled();
+  });
+
+  it('toasts when download_attachment returns false', async () => {
+    mockedDownload.mockResolvedValue(false);
+    render(MessageAttachment, { props: { attachment: baseAttachment, chatId: 'npub1abc', messageId: 'm1' } });
+
+    await fireEvent.click(screen.getByLabelText('Download Image.png'));
+    await waitFor(() => {
+      expect(mockedShowToast).toHaveBeenCalledWith(
+        'Could not download the file.',
+        undefined,
+        undefined,
+        { error: true },
+      );
+    });
+  });
+
+  it('toasts when download_attachment throws', async () => {
+    mockedDownload.mockRejectedValue(new Error('URL may be invalid or expired.'));
+    render(MessageAttachment, { props: { attachment: baseAttachment, chatId: 'npub1abc', messageId: 'm1' } });
+
+    await fireEvent.click(screen.getByLabelText('Download Image.png'));
+    await waitFor(() => {
+      expect(mockedShowToast).toHaveBeenCalledWith(
+        'URL may be invalid or expired.',
+        undefined,
+        undefined,
+        { error: true },
+      );
+    });
   });
 
   it('swaps the blurhash for the local file once the download lands', async () => {

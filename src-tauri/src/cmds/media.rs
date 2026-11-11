@@ -2,11 +2,100 @@
 
 use crate::util;
 use crate::{
-    calculate_file_hash, crypto, db, net, save_chat_messages, Attachment, ChatType, Message, STATE,
-    TAURI_APP,
+    calculate_file_hash, crypto, db, net, save_chat_messages, Attachment, Chat, ChatType, Message,
+    STATE, TAURI_APP,
 };
 use nostr_sdk::prelude::*;
 use tauri::{AppHandle, Emitter, Manager};
+
+fn is_target_chat(chat: &Chat, npub: &str) -> bool {
+    match &chat.chat_type {
+        ChatType::MlsGroup => chat.id == npub,
+        ChatType::DirectMessage => chat.has_participant(npub),
+    }
+}
+
+struct DownloadedAttachmentSync {
+    chat_id: String,
+    db_attachment_id: String,
+    message: Message,
+}
+
+/// Marks the attachment downloaded in memory. `lookup_id` is the id currently
+/// stored (nonce or ox hash); `new_id` is the on-disk hash after decrypt.
+fn mark_attachment_downloaded(
+    chats: &mut [Chat],
+    npub: &str,
+    msg_id: &str,
+    lookup_id: &str,
+    new_id: &str,
+    path: &str,
+) -> Option<DownloadedAttachmentSync> {
+    for chat in chats {
+        if !is_target_chat(chat, npub) {
+            continue;
+        }
+        let chat_id = chat.id().clone();
+        let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) else {
+            continue;
+        };
+        let Some(attachment) = message.attachments.iter_mut().find(|a| a.id == lookup_id) else {
+            continue;
+        };
+        attachment.id = new_id.to_string();
+        attachment.downloading = false;
+        attachment.downloaded = true;
+        attachment.path = path.to_string();
+        return Some(DownloadedAttachmentSync {
+            chat_id,
+            db_attachment_id: lookup_id.to_string(),
+            message: message.clone(),
+        });
+    }
+    None
+}
+
+fn emit_attachment_download_success<R: tauri::Runtime>(
+    handle: &AppHandle<R>,
+    npub: &str,
+    msg_id: &str,
+    old_id: &str,
+    new_id: &str,
+    path: Option<&str>,
+    message: &Message,
+    chat_id: &str,
+) {
+    let mut payload = serde_json::json!({
+        "profile_id": npub,
+        "msg_id": msg_id,
+        "old_id": old_id,
+        "id": new_id,
+        "success": true,
+    });
+    if let Some(path) = path {
+        payload["result"] = serde_json::json!(path);
+    }
+    let _ = handle.emit("attachment_download_result", payload);
+    let _ = handle.emit(
+        "message_update",
+        serde_json::json!({
+            "old_id": &message.id,
+            "message": message,
+            "chat_id": chat_id
+        }),
+    );
+}
+
+fn persist_attachment_downloaded<R: tauri::Runtime>(
+    handle: &AppHandle<R>,
+    chat_id: &str,
+    msg_id: &str,
+    attachment_id: &str,
+    path: &str,
+) {
+    let _ =
+        db::update_attachment_downloaded_status(handle, chat_id, msg_id, attachment_id, true, path);
+}
 
 /// Decrypts and saves an attachment to disk
 ///
@@ -95,6 +184,62 @@ mod remote_plaintext_attachment_tests {
     }
 }
 
+#[cfg(test)]
+mod download_finalize_tests {
+    use super::*;
+
+    fn sample_attachment(id: &str) -> Attachment {
+        Attachment {
+            id: id.to_string(),
+            extension: "png".to_string(),
+            downloaded: false,
+            downloading: true,
+            ..Attachment::default()
+        }
+    }
+
+    fn dm_with_attachment(peer: &str, msg_id: &str, attachment_id: &str) -> Chat {
+        let mut chat = Chat::new_dm(peer.to_string());
+        chat.messages.push(Message {
+            id: msg_id.to_string(),
+            attachments: vec![sample_attachment(attachment_id)],
+            ..Message::default()
+        });
+        chat
+    }
+
+    #[test]
+    fn marks_downloaded_and_renames_id() {
+        let mut chats = vec![dm_with_attachment("npub1peer", "m1", "nonce")];
+        let sync = mark_attachment_downloaded(
+            &mut chats,
+            "npub1peer",
+            "m1",
+            "nonce",
+            "hash",
+            "/tmp/hash.png",
+        )
+        .expect("attachment should be found");
+        let att = &sync.message.attachments[0];
+        assert_eq!(att.id, "hash");
+        assert!(att.downloaded);
+        assert!(!att.downloading);
+        assert_eq!(att.path, "/tmp/hash.png");
+        assert_eq!(sync.db_attachment_id, "nonce");
+        assert_eq!(sync.chat_id, "npub1peer");
+        assert_eq!(chats[0].messages[0].attachments[0].id, "hash");
+    }
+
+    #[test]
+    fn returns_none_when_attachment_is_missing() {
+        let mut chats = vec![dm_with_attachment("npub1peer", "m1", "nonce")];
+        assert!(
+            mark_attachment_downloaded(&mut chats, "npub1peer", "m1", "other", "hash", "/x")
+                .is_none()
+        );
+    }
+}
+
 #[tauri::command]
 pub(crate) async fn generate_blurhash_preview(
     npub: String,
@@ -159,82 +304,76 @@ pub(crate) async fn download_attachment(
     let attachment = {
         let mut state = STATE.lock().await;
 
-        // Find the message and attachment in chats
         let mut found_attachment = None;
+        let mut on_disk_path: Option<String> = None;
         for chat in &mut state.chats {
-            // For group chats, npub is the group_id; for DMs, it's a participant npub
-            let is_target_chat = match &chat.chat_type {
-                ChatType::MlsGroup => chat.id == npub,
-                ChatType::DirectMessage => chat.has_participant(&npub),
+            if !is_target_chat(chat, &npub) {
+                continue;
+            }
+            let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) else {
+                continue;
             };
+            let Some(attachment) = message
+                .attachments
+                .iter_mut()
+                .find(|a| a.id == attachment_id)
+            else {
+                continue;
+            };
+            if attachment.downloading {
+                return false;
+            }
 
-            if is_target_chat {
-                if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
-                    if let Some(attachment) = message
-                        .attachments
-                        .iter_mut()
-                        .find(|a| a.id == attachment_id)
-                    {
-                        // Check that we're not already downloading
-                        if attachment.downloading {
-                            return false;
-                        }
-
-                        // Check if file already exists on disk (downloaded but flag was wrong)
-                        let base_directory = if cfg!(target_os = "ios") {
-                            tauri::path::BaseDirectory::Document
-                        } else {
-                            tauri::path::BaseDirectory::Download
-                        };
-
-                        if let Ok(vector_dir) = handle.path().resolve("pacto", base_directory) {
-                            let file_path = vector_dir
-                                .join(format!("{}.{}", &attachment.id, &attachment.extension));
-                            if file_path.exists() {
-                                // File already exists! Update the state and return success
-                                attachment.downloaded = true;
-                                attachment.path = file_path.to_string_lossy().to_string();
-
-                                // Emit success event
-                                handle
-                                    .emit(
-                                        "attachment_download_result",
-                                        serde_json::json!({
-                                            "profile_id": npub,
-                                            "msg_id": msg_id,
-                                            "id": attachment_id,
-                                            "success": true,
-                                            "result": file_path.to_string_lossy().to_string()
-                                        }),
-                                    )
-                                    .unwrap();
-
-                                // Also update the database
-                                let chat_id_for_db = chat.id().to_string();
-                                let msg_id_clone = msg_id.clone();
-                                let attachment_id_clone = attachment_id.clone();
-                                let path_str = file_path.to_string_lossy().to_string();
-                                drop(state); // Release lock before DB call
-
-                                let _ = db::update_attachment_downloaded_status(
-                                    handle,
-                                    &chat_id_for_db,
-                                    &msg_id_clone,
-                                    &attachment_id_clone,
-                                    true,
-                                    &path_str,
-                                );
-
-                                return true;
-                            }
-                        }
-
-                        // Enable the downloading flag to prevent re-calls
-                        attachment.downloading = true;
-                        found_attachment = Some(attachment.clone());
-                        break;
-                    }
+            let base_directory = if cfg!(target_os = "ios") {
+                tauri::path::BaseDirectory::Document
+            } else {
+                tauri::path::BaseDirectory::Download
+            };
+            if let Ok(vector_dir) = handle.path().resolve("pacto", base_directory) {
+                let file_path =
+                    vector_dir.join(format!("{}.{}", &attachment.id, &attachment.extension));
+                if file_path.exists() {
+                    on_disk_path = Some(file_path.to_string_lossy().to_string());
+                    break;
                 }
+            }
+
+            attachment.downloading = true;
+            found_attachment = Some(attachment.clone());
+            break;
+        }
+
+        if let Some(path_str) = on_disk_path {
+            let sync = mark_attachment_downloaded(
+                &mut state.chats,
+                &npub,
+                &msg_id,
+                &attachment_id,
+                &attachment_id,
+                &path_str,
+            );
+            if let Some(sync) = sync {
+                emit_attachment_download_success(
+                    handle,
+                    &npub,
+                    &msg_id,
+                    &attachment_id,
+                    &attachment_id,
+                    Some(&path_str),
+                    &sync.message,
+                    &sync.chat_id,
+                );
+                let chat_id = sync.chat_id;
+                let db_attachment_id = sync.db_attachment_id;
+                drop(state);
+                persist_attachment_downloaded(
+                    handle,
+                    &chat_id,
+                    &msg_id,
+                    &db_attachment_id,
+                    &path_str,
+                );
+                return true;
             }
         }
 
@@ -484,87 +623,46 @@ pub(crate) async fn download_attachment(
             return false;
         }
         Ok(hash_file_path) => {
-            // Successfully decrypted and saved
-            // Extract the hash from the filename (format: {hash}.{extension})
             let file_hash = hash_file_path
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or(&attachment_id)
                 .to_string();
+            let path_str = hash_file_path.to_string_lossy().to_string();
 
-            // Update state with successful download
-            {
+            let sync = {
                 let mut state = STATE.lock().await;
-
-                // Find and update the attachment
-                for chat in &mut state.chats {
-                    let is_target_chat = match &chat.chat_type {
-                        ChatType::MlsGroup => chat.id == npub,
-                        ChatType::DirectMessage => chat.has_participant(&npub),
-                    };
-
-                    if is_target_chat {
-                        if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
-                            if let Some(attachment_index) = message
-                                .attachments
-                                .iter()
-                                .position(|a| a.id == attachment_id)
-                            {
-                                let attachment = &mut message.attachments[attachment_index];
-                                attachment.id = file_hash.clone(); // Update ID from nonce to hash
-                                attachment.downloading = false;
-                                attachment.downloaded = true;
-                                attachment.path = hash_file_path.to_string_lossy().to_string(); // Update to hash-based path
-                                break;
-                            }
-                        }
-                    }
+                let sync = mark_attachment_downloaded(
+                    &mut state.chats,
+                    &npub,
+                    &msg_id,
+                    &attachment_id,
+                    &file_hash,
+                    &path_str,
+                );
+                if let Some(ref sync) = sync {
+                    emit_attachment_download_success(
+                        handle,
+                        &npub,
+                        &msg_id,
+                        &attachment_id,
+                        &file_hash,
+                        None,
+                        &sync.message,
+                        &sync.chat_id,
+                    );
                 }
+                sync
+            };
 
-                // Emit the finished download with both old and new IDs
-                handle
-                    .emit(
-                        "attachment_download_result",
-                        serde_json::json!({
-                            "profile_id": npub,
-                            "msg_id": msg_id,
-                            "old_id": attachment_id,
-                            "id": file_hash,
-                            "success": true,
-                        }),
-                    )
-                    .unwrap();
-
-                // Persist updated message/attachment metadata to the database
-                if let Some(handle) = TAURI_APP.get() {
-                    // Find and save only the updated message
-                    let updated_chat = state.get_chat(&npub).unwrap();
-                    let updated_message = {
-                        updated_chat
-                            .messages
-                            .iter()
-                            .find(|m| m.id == msg_id)
-                            .cloned()
-                    }
-                    .unwrap();
-
-                    // Update the frontend state
-                    handle
-                        .emit(
-                            "message_update",
-                            serde_json::json!({
-                                "old_id": &updated_message.id,
-                                "message": updated_message.clone(),
-                                "chat_id": updated_chat.id()
-                            }),
-                        )
-                        .unwrap();
-
-                    // Drop the STATE lock before performing async I/O
-                    drop(state);
-
-                    let _ = db::save_message(handle.clone(), &npub, &updated_message).await;
-                }
+            if let Some(sync) = sync {
+                persist_attachment_downloaded(
+                    handle,
+                    &sync.chat_id,
+                    &msg_id,
+                    &sync.db_attachment_id,
+                    &path_str,
+                );
             }
 
             true
@@ -642,52 +740,44 @@ pub(crate) async fn save_attachment_as(
         let decrypted_path =
             decrypt_and_save_attachment(handle, &encrypted_data, &attachment).await?;
 
-        // Bring shared state and the DB in sync so the app treats this attachment as downloaded,
-        // matching the bookkeeping `download_attachment` performs on success.
         let file_hash = decrypted_path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or(&attachment_id)
             .to_string();
-        let updated_message = {
+        let path_str = decrypted_path.to_string_lossy().to_string();
+        let sync = {
             let mut state = STATE.lock().await;
-            let mut updated = None;
-            for chat in &mut state.chats {
-                let is_target_chat = match &chat.chat_type {
-                    ChatType::MlsGroup => chat.id == npub,
-                    ChatType::DirectMessage => chat.has_participant(&npub),
-                };
-                if is_target_chat {
-                    if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
-                        if let Some(att) = message
-                            .attachments
-                            .iter_mut()
-                            .find(|a| a.id == attachment_id)
-                        {
-                            att.id = file_hash.clone();
-                            att.downloading = false;
-                            att.downloaded = true;
-                            att.path = decrypted_path.to_string_lossy().to_string();
-                        }
-                        updated = Some(message.clone());
-                    }
-                    break;
-                }
+            let sync = mark_attachment_downloaded(
+                &mut state.chats,
+                &npub,
+                &msg_id,
+                &attachment_id,
+                &file_hash,
+                &path_str,
+            );
+            if let Some(ref sync) = sync {
+                emit_attachment_download_success(
+                    handle,
+                    &npub,
+                    &msg_id,
+                    &attachment_id,
+                    &file_hash,
+                    None,
+                    &sync.message,
+                    &sync.chat_id,
+                );
             }
-            updated
+            sync
         };
-        if let Some(message) = updated_message {
-            handle
-                .emit(
-                    "message_update",
-                    serde_json::json!({
-                        "old_id": &message.id,
-                        "message": &message,
-                        "chat_id": &npub
-                    }),
-                )
-                .ok();
-            let _ = db::save_message(handle.clone(), &npub, &message).await;
+        if let Some(sync) = sync {
+            persist_attachment_downloaded(
+                handle,
+                &sync.chat_id,
+                &msg_id,
+                &sync.db_attachment_id,
+                &path_str,
+            );
         }
 
         decrypted_path

@@ -460,3 +460,16 @@ describe('Message editing', () => {
     expect(screen.queryByText(/\(edited/)).toBeNull();
   });
 });
+
+describe('Message caption body', () => {
+  it('does not reserve a blank text line when the body is empty', () => {
+    render(Message, { props: { id: 'msg-file', authorName: 'Alice', content: '' } });
+    expect(screen.queryByRole('document')).toBeNull();
+  });
+
+  it('renders caption text above the rest of the message', () => {
+    render(Message, { props: { id: 'msg-file', authorName: 'Alice', content: 'caption probe one' } });
+    expect(screen.getByRole('document')).toBeTruthy();
+    expect(screen.getByText('caption probe one')).toBeTruthy();
+  });
+});
