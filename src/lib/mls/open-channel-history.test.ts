@@ -27,6 +27,7 @@ vi.mock('../utils/dm-debug', () => ({
 import {
   loadOpenChannelHistory,
   mergeOpenChannelPage,
+  reloadOpenChannelHistoryIfVisible,
   shouldApplyChannelOpenLoad,
 } from './open-channel-history';
 import { backendGroupMessages } from '../../stores/mls-chat';
@@ -170,5 +171,102 @@ describe('loadOpenChannelHistory', () => {
     await flush();
 
     expect(get(backendGroupMessages)[groupId]).toBeUndefined();
+  });
+});
+
+describe('reloadOpenChannelHistoryIfVisible', () => {
+  const groupId = 'group-1';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    backendGroupMessages.set({ [groupId]: [msg('a')] });
+    loadedOffsetByChat.set({});
+    messageCountByChat.set({ [groupId]: 1 });
+    activeChannelId.set(groupId);
+    activeTopNavTab.set('squads');
+    getChatMessageCount.mockResolvedValue(1);
+    getDmMessages.mockResolvedValue([msg('a')]);
+  });
+
+  it('skips the page read when rows exist and the count is unchanged', async () => {
+    await reloadOpenChannelHistoryIfVisible();
+    await flush();
+
+    expect(getChatMessageCount).toHaveBeenCalledTimes(1);
+    expect(getDmMessages).not.toHaveBeenCalled();
+  });
+
+  it('reads the page when the count changed', async () => {
+    getChatMessageCount.mockResolvedValue(2);
+
+    await reloadOpenChannelHistoryIfVisible();
+    await flush();
+
+    expect(getDmMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the page when the store has no rows for the channel', async () => {
+    backendGroupMessages.set({});
+
+    await reloadOpenChannelHistoryIfVisible();
+    await flush();
+
+    expect(getDmMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the page when no count was recorded yet', async () => {
+    messageCountByChat.set({});
+
+    await reloadOpenChannelHistoryIfVisible();
+    await flush();
+
+    expect(getDmMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the page when the count request fails', async () => {
+    getChatMessageCount.mockRejectedValueOnce(new Error('boom'));
+
+    await reloadOpenChannelHistoryIfVisible();
+    await flush();
+
+    expect(getDmMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing off the squads tab or for virtual and placeholder channels', async () => {
+    activeTopNavTab.set('dms');
+    await reloadOpenChannelHistoryIfVisible();
+
+    activeTopNavTab.set('squads');
+    activeChannelId.set('creating-1');
+    await reloadOpenChannelHistoryIfVisible();
+
+    expect(getChatMessageCount).not.toHaveBeenCalled();
+    expect(getDmMessages).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the channel changes while the count is in flight', async () => {
+    const count = Promise.withResolvers<number>();
+    getChatMessageCount.mockReturnValue(count.promise);
+
+    const reload = reloadOpenChannelHistoryIfVisible();
+    activeChannelId.set('group-2');
+    count.resolve(5);
+    await reload;
+
+    expect(getDmMessages).not.toHaveBeenCalled();
+  });
+
+  it('keeps an in-flight open load alive when the reload is skipped', async () => {
+    const pending = Promise.withResolvers<DmMessage[]>();
+    getDmMessages.mockReturnValue(pending.promise);
+    backendGroupMessages.set({ [groupId]: [msg('live')] });
+
+    loadOpenChannelHistory(groupId);
+    await reloadOpenChannelHistoryIfVisible();
+    pending.resolve([msg('page-1')]);
+    await flush();
+
+    expect(getDmMessages).toHaveBeenCalledTimes(1);
+    expect(get(backendGroupMessages)[groupId].map((m) => m.id)).toEqual(['page-1', 'live']);
   });
 });

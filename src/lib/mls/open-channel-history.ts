@@ -87,10 +87,27 @@ export function loadOpenChannelHistory(groupId: string): void {
     });
 }
 
-/** Re-read the open MLS channel after sync so a pre-sync empty page cannot stick. */
-export function reloadOpenChannelHistoryIfVisible(): void {
+function visibleMlsChannelId(): string | null {
   const groupId = get(activeChannelId);
-  if (get(activeTopNavTab) !== 'squads') return;
-  if (!groupId || isVirtualHubChannelId(groupId) || groupId.startsWith('creating-')) return;
+  if (get(activeTopNavTab) !== 'squads') return null;
+  if (!groupId || isVirtualHubChannelId(groupId) || groupId.startsWith('creating-')) return null;
+  return groupId;
+}
+
+/** Re-read the open MLS channel after sync; skip the page read when rows exist and the count is unchanged. */
+export async function reloadOpenChannelHistoryIfVisible(): Promise<void> {
+  const groupId = visibleMlsChannelId();
+  if (!groupId) return;
+
+  let count: number | null = null;
+  try {
+    count = await getChatMessageCount(groupId);
+  } catch (err) {
+    dmError('open channel: reload getChatMessageCount failed', err);
+  }
+  if (visibleMlsChannelId() !== groupId) return;
+
+  const hasRows = (get(backendGroupMessages)[groupId]?.length ?? 0) > 0;
+  if (hasRows && count !== null && count === get(messageCountByChat)[groupId]) return;
   loadOpenChannelHistory(groupId);
 }
