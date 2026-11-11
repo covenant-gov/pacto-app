@@ -6,6 +6,8 @@ import type { SquadDocDto } from '../../lib/api/squad-docs';
 const state = vi.hoisted(() => ({
   docs: [] as unknown[],
   canAdd: true,
+  rpcFails: false,
+  privilege: vi.fn(),
   invoke: vi.fn(),
   openExternalUrl: vi.fn(),
   copyTextToClipboard: vi.fn(),
@@ -16,15 +18,12 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() =
 vi.mock('../../lib/utils/open-external', () => ({ openExternalUrl: state.openExternalUrl }));
 vi.mock('../../lib/utils/clipboard-copy', () => ({ copyTextToClipboard: state.copyTextToClipboard }));
 vi.mock('../../lib/governance/squad-privilege-enforce', () => ({
-  requireMySquadPrivilege: vi.fn(async () =>
-    state.canAdd
-      ? { ok: true, active: false, flags: null }
-      : { ok: false, reason: 'denied', active: true },
-  ),
+  requireMySquadPrivilege: state.privilege,
 }));
 
 import SquadDocsPanel from './SquadDocsPanel.svelte';
 import { docsFocus } from '../../stores/docs-navigation';
+import { bumpSquadPrivilegeNonce, squadPrivilegeNonceByParentId } from '../../stores/squad-privilege-refresh';
 import { squads, type Squad } from '../../stores/squads';
 
 const PAD = 'https://cryptpad.fr/pad/#/2/pad/edit/secret';
@@ -60,6 +59,14 @@ beforeEach(() => {
   state.openExternalUrl.mockReset();
   state.copyTextToClipboard.mockReset().mockResolvedValue(true);
   state.canAdd = true;
+  state.rpcFails = false;
+  state.privilege.mockReset().mockImplementation(async () => {
+    if (state.rpcFails) return { ok: false, reason: 'rpc', active: true };
+    return state.canAdd
+      ? { ok: true, active: false, flags: null }
+      : { ok: false, reason: 'denied', active: true };
+  });
+  squadPrivilegeNonceByParentId.set({});
   squads.set([
     {
       id: 'p',
@@ -156,6 +163,27 @@ describe('SquadDocsPanel', () => {
     state.canAdd = false;
     render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
     await screen.findByText('You cannot add docs.');
+    expect(screen.queryByRole('button', { name: 'Add doc' })).toBeNull();
+  });
+
+  it('keeps the add button offered when the privilege read fails', async () => {
+    state.docs = [];
+    state.rpcFails = true;
+    render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy());
+    expect(screen.queryByText('You cannot add docs.')).toBeNull();
+  });
+
+  it('re-reads the privilege after a local role change', async () => {
+    state.docs = [];
+    render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy());
+    expect(state.privilege).toHaveBeenCalledTimes(1);
+
+    state.canAdd = false;
+    bumpSquadPrivilegeNonce('p');
+    await screen.findByText('You cannot add docs.');
+    expect(state.privilege).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('button', { name: 'Add doc' })).toBeNull();
   });
 

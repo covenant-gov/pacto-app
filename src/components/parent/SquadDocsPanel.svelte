@@ -6,6 +6,7 @@
   import EditIconButton from '../ui/EditIconButton.svelte';
   import { listSquadDocs, sendSquadDocRemove, type SquadDocDto } from '../../lib/api/squad-docs';
   import { requireMySquadPrivilege } from '../../lib/governance/squad-privilege-enforce';
+  import { privilegeUiAllowed } from '../../lib/governance/squad-privilege-ui';
   import { maskDocUrl } from '../../lib/docs/mask-url';
   import { filterDocs, sortDocsNewestFirst, type DocsFilter } from '../../lib/docs/shelf';
   import { formatEventTimestampMs, memberDisplayLabel } from '../../lib/squad/squad-event-display';
@@ -16,6 +17,7 @@
   import { currentUser } from '../../stores/auth-session';
   import { squadDocReplicaNonceByParentId } from '../../stores/docs-hub-alerts';
   import { docsFocus } from '../../stores/docs-navigation';
+  import { squadPrivilegeNonceByParentId } from '../../stores/squad-privilege-refresh';
   import { loadProfile, profiles } from '../../stores/profiles';
   import { squads } from '../../stores/squads';
   import { showToast } from '../../stores/toast';
@@ -48,6 +50,7 @@
   const pid = $derived(parentId.trim());
   const gid = $derived(mlsGroupId?.trim() ?? '');
   const replicaNonce = $derived(pid ? ($squadDocReplicaNonceByParentId[pid] ?? 0) : 0);
+  const privilegeNonce = $derived(pid ? ($squadPrivilegeNonceByParentId[pid] ?? 0) : 0);
   const channels = $derived($squads.find((s) => s.id === pid)?.channels ?? []);
   const channelOptions = $derived(eventChannelOptions(channels));
   const visible = $derived(sortDocsNewestFirst(filterDocs(docs, filter)));
@@ -107,7 +110,7 @@
     const gen = ++policyGen;
     try {
       const decision = await requireMySquadPrivilege(id, 'addDoc');
-      if (gen === policyGen) canAdd = decision.ok;
+      if (gen === policyGen) canAdd = privilegeUiAllowed(decision);
     } catch {
       if (gen === policyGen) canAdd = null;
     } finally {
@@ -121,6 +124,7 @@
   });
 
   $effect(() => {
+    void privilegeNonce;
     if (pid) void loadPrivilege(pid);
   });
 

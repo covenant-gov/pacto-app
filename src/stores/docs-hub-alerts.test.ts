@@ -18,7 +18,6 @@ import {
   loadLastSeenDocCardAt,
   markDocsChannelSeen,
   refreshUnseenDocCardsForParent,
-  reloadSquadDocAddPolicy,
   resetDocsHubAlertStores,
   squadDocAddPolicyByParentId,
   unseenDocCardCountByParentId,
@@ -140,20 +139,26 @@ describe('Save to Docs privilege gate', () => {
     expect(canOfferSaveToDocs(false)).toBe(false);
   });
 
-  it('loads once per parent and reloads when asked', async () => {
+  it('loads once per parent and reloads when the privilege nonce changes', async () => {
     mocks.requireMySquadPrivilege
       .mockResolvedValueOnce({ ok: true, active: false, flags: null })
       .mockResolvedValueOnce({ ok: false, reason: 'denied', active: true });
-    ensureSquadDocAddPolicy('g', PARENT, 0);
-    ensureSquadDocAddPolicy('g', PARENT, 0);
+    ensureSquadDocAddPolicy('g', PARENT, 0, 0);
+    ensureSquadDocAddPolicy('g', PARENT, 0, 0);
     await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toBe(true));
     expect(mocks.requireMySquadPrivilege).toHaveBeenCalledTimes(1);
     expect(mocks.requireMySquadPrivilege).toHaveBeenCalledWith(PARENT, 'addDoc');
 
-    reloadSquadDocAddPolicy(PARENT);
+    ensureSquadDocAddPolicy('g', PARENT, 0, 1);
     await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toBe(false));
-    reloadSquadDocAddPolicy('unknown-parent');
     expect(mocks.requireMySquadPrivilege).toHaveBeenCalledTimes(2);
+  });
+
+  it('stores null on an rpc failure so the item stays offered', async () => {
+    mocks.requireMySquadPrivilege.mockResolvedValue({ ok: false, reason: 'rpc', active: true });
+    ensureSquadDocAddPolicy('g', PARENT, 0);
+    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toBeNull());
+    expect(canOfferSaveToDocs(get(squadDocAddPolicyByParentId)[PARENT])).toBe(true);
   });
 
   it('reloads when the announcements group membership version changes', async () => {

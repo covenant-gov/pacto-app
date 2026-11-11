@@ -7,6 +7,7 @@
   import EventDetail from './EventDetail.svelte';
   import { listSquadEvents, type SquadEventDto } from '../../lib/api/squad-events';
   import { requireMySquadPrivilege } from '../../lib/governance/squad-privilege-enforce';
+  import { privilegeUiAllowed } from '../../lib/governance/squad-privilege-ui';
   import {
     eventZoneDiffers,
     formatEventDuration,
@@ -20,6 +21,7 @@
   import { squadRecordErrorMessage } from '../../lib/squad/squad-record-errors';
   import { squadEventReplicaNonceByParentId } from '../../stores/events-hub-alerts';
   import { eventsFocus } from '../../stores/events-navigation';
+  import { squadPrivilegeNonceByParentId } from '../../stores/squad-privilege-refresh';
   import { squads } from '../../stores/squads';
 
   interface Props {
@@ -48,6 +50,7 @@
   const pid = $derived(parentId.trim());
   const gid = $derived(mlsGroupId?.trim() ?? '');
   const replicaNonce = $derived(pid ? ($squadEventReplicaNonceByParentId[pid] ?? 0) : 0);
+  const privilegeNonce = $derived(pid ? ($squadPrivilegeNonceByParentId[pid] ?? 0) : 0);
   const channels = $derived($squads.find((s) => s.id === pid)?.channels ?? []);
   const timeOpts = $derived({ locale: $locale ?? undefined, clockFormat: $eventTimeFormat, viewerZone });
   const ordered = $derived(orderShelfEvents(events, { nowMs, viewerZone, seriesId: seriesFilter }));
@@ -79,7 +82,7 @@
     const gen = ++policyGen;
     try {
       const decision = await requireMySquadPrivilege(id, 'createEvent');
-      if (gen === policyGen) canCreate = decision.ok;
+      if (gen === policyGen) canCreate = privilegeUiAllowed(decision);
     } catch {
       if (gen === policyGen) canCreate = null;
     } finally {
@@ -93,6 +96,7 @@
   });
 
   $effect(() => {
+    void privilegeNonce;
     if (pid) void loadPrivilege(pid);
   });
 

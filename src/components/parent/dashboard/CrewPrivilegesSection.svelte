@@ -31,6 +31,7 @@
   } from '../../../lib/governance/privilege-role-id';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { showToast } from '../../../stores/toast';
+  import { bumpSquadPrivilegeNonce } from '../../../stores/squad-privilege-refresh';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
 
@@ -217,6 +218,7 @@
         drafting = false;
         resetBuilder();
         await loadCatalog();
+        bumpSquadPrivilegeNonce(parentId);
         onPrivilegesChanged();
       },
       onError: (message) => {

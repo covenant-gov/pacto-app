@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { SquadEventDto } from '../../lib/api/squad-events';
 
 const state = vi.hoisted(() => ({
   events: [] as unknown[],
   canCreate: true,
+  rpcFails: false,
+  privilege: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -17,14 +19,11 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 vi.mock('../../lib/governance/squad-privilege-enforce', () => ({
-  requireMySquadPrivilege: vi.fn(async () =>
-    state.canCreate
-      ? { ok: true, active: false, flags: null }
-      : { ok: false, reason: 'denied', active: true },
-  ),
+  requireMySquadPrivilege: state.privilege,
 }));
 
 import SquadEventsPanel from './SquadEventsPanel.svelte';
+import { bumpSquadPrivilegeNonce, squadPrivilegeNonceByParentId } from '../../stores/squad-privilege-refresh';
 import { eventsFocus } from '../../stores/events-navigation';
 import { eventTimeFormat } from '../../stores/event-time-format';
 import { formatEventStart } from '../../lib/squad/squad-event-display';
@@ -56,6 +55,17 @@ function ev(id: string, title: string): SquadEventDto {
     canEdit: false,
   };
 }
+
+beforeEach(() => {
+  state.rpcFails = false;
+  state.privilege.mockReset().mockImplementation(async () => {
+    if (state.rpcFails) return { ok: false, reason: 'rpc', active: true };
+    return state.canCreate
+      ? { ok: true, active: false, flags: null }
+      : { ok: false, reason: 'denied', active: true };
+  });
+  squadPrivilegeNonceByParentId.set({});
+});
 
 afterEach(() => {
   cleanup();
@@ -113,6 +123,29 @@ describe('SquadEventsPanel', () => {
     state.canCreate = false;
     render(SquadEventsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
     await screen.findByText('You cannot add events.');
+    expect(screen.queryByRole('button', { name: 'Add event' })).toBeNull();
+  });
+
+  it('keeps the create control offered when the privilege read fails', async () => {
+    state.events = [];
+    state.canCreate = true;
+    state.rpcFails = true;
+    render(SquadEventsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add event' })).toBeTruthy());
+    expect(screen.queryByText('You cannot add events.')).toBeNull();
+  });
+
+  it('re-reads the privilege after a local role change', async () => {
+    state.events = [];
+    state.canCreate = true;
+    render(SquadEventsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add event' })).toBeTruthy());
+    expect(state.privilege).toHaveBeenCalledTimes(1);
+
+    state.canCreate = false;
+    bumpSquadPrivilegeNonce('p');
+    await screen.findByText('You cannot add events.');
+    expect(state.privilege).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('button', { name: 'Add event' })).toBeNull();
   });
 

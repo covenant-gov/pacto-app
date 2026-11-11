@@ -100,6 +100,10 @@ Custom catalog roles pack a short name + action flags into `bytes32` (pacto-gov 
 
 **Timing of the create/add check:** `createEvent` and `addDoc` are decided once, when a client first gets a definite answer for the rumor, against current chain state. Stored rows are not re-checked, so revoking a flag later does not remove existing events or docs. Sender timestamps are not trusted for this. Edge case: a client that processes a rumor only after the author's flag was revoked (for example, one that was offline) drops it, while clients that saw it earlier keep it.
 
+**Ingest read cache:** the receive-side executor read (pause, FULL, catalog roles) is cached per `(chain, SquadAdmin proxy, executor)` for 30 seconds (`EXEC_STATE_TTL`). Only successful reads are cached; an RPC failure is never stored. A local role write drops that proxy's entries; roles changed elsewhere can still pass ingest for up to the TTL. Publish preflight always reads fresh.
+
+**UI refresh:** Events and Docs create/add controls and Save to Docs re-read the viewer's privilege on open and after a local role write in Crew → Privileges. An RPC failure keeps the control offered (the backend still enforces); denied, paused, and unbound hide it. Role changes made elsewhere appear on the next open.
+
 ## Enforceability (on-chain recognition vs MLS)
 
 Alpha bar for **on-chain-enforceable** packed privileges: when SquadAdmin is active, honest Pacto clients refuse to **recognize / merge / surface** the action as valid squad product state if the author’s roster-bound EVM lacks the flag. Force is **publish preflight + Rust ingest**, not frontend-only. A forked client may still emit MLS ciphertext; peers simply do not adopt the side effect.
