@@ -163,6 +163,19 @@ describe('resolveDmMessagePresentation', () => {
     expect(resolveDmMessagePresentation(msg({ content }))).toEqual({ kind: 'hidden' });
   });
 
+  it('hides squad_invite_declined claim DMs', () => {
+    const content = JSON.stringify({
+      type: 'squad_invite_declined',
+      payload: {
+        parent_id: 'g1',
+        invite_id: 'inv1',
+        invitee_npub: NPUB_A,
+        squad_name: 'Alpha',
+      },
+    });
+    expect(resolveDmMessagePresentation(msg({ content }))).toEqual({ kind: 'hidden' });
+  });
+
   it('classifies squad invite JSON', () => {
     const p = resolveDmMessagePresentation(msg({ content: SQUAD_INVITE }));
     expect(p.kind).toBe('squad-invite');

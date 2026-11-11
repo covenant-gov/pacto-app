@@ -90,7 +90,6 @@
     lastOpenedChannelId,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
-    declinedSquadInviteIds,
     declinedChannelInviteMessageIds,
     dmChatsByNpub,
     deletingDmNpubs,
@@ -154,9 +153,7 @@
     acceptingSquadInviteId,
     acceptingChannelInSquadId,
   } from '../../lib/invites/accept-invite';
-  import { declineWelcomeForGroup } from '../../lib/invites/pending-welcomes-store';
-  import { clearPendingSquadAdmissionByGroupId } from '../../stores/pending-squad-admission';
-  import { parseSquadInviteMessage } from '../../lib/api/nostr';
+  import { declineConsentFirstSquadInvite } from '../../lib/squad/decline-squad-invite';
 
   const PAGE_SIZE = 100;
 
@@ -965,16 +962,9 @@
                 onAcceptSquadInvite={(msg) => acceptSquadOrPairInvite(msg)}
                 onAcceptChannelInSquad={acceptChannelInSquadInvite}
                 onDeclineSquad={(msg: DmMessage) => {
-                  declinedSquadInviteIds.update((ids: string[]) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
-                  // Also refuse the matching MLS welcome, so a pending-welcome
-                  // card cannot re-offer a squad the user just turned down.
-                  const declined = parseSquadInviteMessage(msg.content ?? '');
-                  if (declined) {
-                    declineWelcomeForGroup(declined.groupId);
-                    // Unstick "joining" so a later invite for this group shows as pending.
-                    clearPendingSquadAdmissionByGroupId(declined.groupId);
-                  }
-                  resolveOneCatchUpEntry(msg.id).catch(() => {});
+                  void declineConsentFirstSquadInvite(msg).catch((e) =>
+                    dmError('declineConsentFirstSquadInvite', e)
+                  );
                 }}
                 onDeclineChannelInSquad={(msg: DmMessage) => {
                   declinedChannelInviteMessageIds.update((ids: string[]) =>

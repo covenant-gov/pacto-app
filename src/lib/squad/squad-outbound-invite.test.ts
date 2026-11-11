@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { get } from 'svelte/store';
 
 vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn(),
@@ -28,6 +29,16 @@ vi.mock('../parent/pending-admit', () => ({
   clearPendingAdmitForMember: vi.fn(),
 }));
 
+vi.mock('../../stores/squad-outbound-invites', () => ({
+  removePendingOutboundInvite: vi.fn(),
+  syncOutboundInvitesForSquad: vi.fn(),
+}));
+
+vi.mock('../governance/squad-privilege-enforce', () => ({
+  decideSquadPrivilege: vi.fn(),
+  requireMySquadPrivilege: vi.fn(),
+}));
+
 vi.mock('../../stores/auth-session', async () => {
   const { writable } = await import('svelte/store');
   return { currentUser: writable({ npub: 'npub-me' }) };
@@ -50,6 +61,7 @@ vi.mock('../../stores/squads', async () => {
 });
 
 import { getDmMessages, getMlsGroupMembers, sendDmMessage } from '../api/nostr';
+import { decideSquadPrivilege, requireMySquadPrivilege } from '../governance/squad-privilege-enforce';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { admitMemberToSquad } from '../parent/admit-member';
 import { enqueuePendingAdmit } from '../parent/pending-admit';
@@ -58,29 +70,41 @@ import { squads } from '../../stores/squads';
 import {
   formatSquadAdmitNeeded,
   formatSquadInviteAccepted,
+  formatSquadInviteDeclined,
   formatSquadOutboundInvite,
+  formatSquadOutboundInviteDeclined,
   formatSquadOutboundInviteRevoked,
   handleInviteeConsentForAdmit,
+  handleInviteeDeclineForAnnounce,
   isOutboundInviteRevoked,
   loadPendingOutboundInvitesFromMls,
   mergePendingOutboundInvitesFromMlsMessages,
   onMlsAdmitNeeded,
   onMlsOutboundInviteAnnounce,
+  onMlsOutboundInviteDeclined,
   onMlsOutboundInviteRevoked,
   parseSquadAdmitNeeded,
   parseSquadInviteAccepted,
+  parseSquadInviteDeclined,
   parseSquadOutboundInvite,
+  parseSquadOutboundInviteDeclined,
   parseSquadOutboundInviteRevoked,
   publishInviteAcceptedClaims,
+  publishInviteDeclinedClaims,
   publishOutboundInviteAnnounce,
   rememberOutboundInvite,
   resetOutboundInviteState,
   revokeOutboundInviteAnnounce,
   SQUAD_ADMIT_NEEDED_TYPE,
   SQUAD_INVITE_ACCEPTED_TYPE,
+  SQUAD_INVITE_DECLINED_TYPE,
+  SQUAD_OUTBOUND_INVITE_DECLINED_TYPE,
   SQUAD_OUTBOUND_INVITE_REVOKED_TYPE,
   SQUAD_OUTBOUND_INVITE_TYPE,
 } from './squad-outbound-invite';
+
+const ALLOWED = { ok: true, active: true, flags: null } as const;
+const DENIED = { ok: false, reason: 'denied', active: true } as const;
 
 const validOutbound = {
   parent_id: 'g-ann',
@@ -161,6 +185,26 @@ describe('squad-outbound-invite parsers', () => {
     });
   });
 
+  it('round-trips outbound invite declined format/parse', () => {
+    const payload = {
+      parent_id: 'g-ann',
+      invite_id: 'inv-1',
+      invitee_npub: 'npub-bob',
+    };
+    const raw = formatSquadOutboundInviteDeclined(payload);
+    expect(JSON.parse(raw).type).toBe(SQUAD_OUTBOUND_INVITE_DECLINED_TYPE);
+    expect(parseSquadOutboundInviteDeclined(raw)).toEqual(payload);
+  });
+
+  it('rejects invalid MLS declined payloads', () => {
+    expect(parseSquadOutboundInviteDeclined(null)).toBeNull();
+    expect(
+      parseSquadOutboundInviteDeclined(
+        JSON.stringify({ type: SQUAD_OUTBOUND_INVITE_DECLINED_TYPE, payload: { parent_id: 'p' } }),
+      ),
+    ).toBeNull();
+  });
+
   it('round-trips invite accepted format/parse', () => {
     const raw = formatSquadInviteAccepted(validOutbound);
     expect(JSON.parse(raw).type).toBe(SQUAD_INVITE_ACCEPTED_TYPE);
@@ -211,6 +255,30 @@ describe('squad-outbound-invite parsers', () => {
     });
   });
 
+  it('round-trips invite declined format/parse', () => {
+    const raw = formatSquadInviteDeclined(validOutbound);
+    expect(JSON.parse(raw).type).toBe(SQUAD_INVITE_DECLINED_TYPE);
+    expect(parseSquadInviteDeclined(raw)).toEqual(validOutbound);
+  });
+
+  it('rejects invalid invite declined payloads', () => {
+    expect(parseSquadInviteDeclined(undefined)).toBeNull();
+    expect(parseSquadInviteDeclined('plain')).toBeNull();
+    expect(parseSquadInviteDeclined('{bad')).toBeNull();
+    expect(parseSquadInviteDeclined(JSON.stringify({ type: 'other' }))).toBeNull();
+    expect(
+      parseSquadInviteDeclined(JSON.stringify({ type: SQUAD_INVITE_DECLINED_TYPE })),
+    ).toBeNull();
+    expect(
+      parseSquadInviteDeclined(
+        JSON.stringify({
+          type: SQUAD_INVITE_DECLINED_TYPE,
+          payload: { parent_id: '', invite_id: 'i', invitee_npub: 'n', squad_name: 's' },
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it('round-trips admit needed format/parse', () => {
     const payload = {
       parent_id: 'g-ann',
@@ -252,6 +320,12 @@ describe('squad-outbound-invite flows', () => {
     resetOutboundInviteState();
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
     vi.mocked(getDmMessages).mockReset().mockResolvedValue([]);
+    vi.mocked(decideSquadPrivilege)
+      .mockReset()
+      .mockResolvedValue({ ok: true, active: false, flags: null });
+    vi.mocked(requireMySquadPrivilege)
+      .mockReset()
+      .mockResolvedValue({ ok: true, active: false, flags: null });
     vi.mocked(getMlsGroupMembers).mockReset().mockResolvedValue({
       group_id: 'g-ann',
       members: [],
@@ -316,6 +390,34 @@ describe('squad-outbound-invite flows', () => {
     };
     await expect(publishOutboundInviteAnnounce(parent, 'inv-1', 'npub-bob')).resolves.toBe(false);
     expect(sendDmMessage).not.toHaveBeenCalled();
+  });
+
+  it('publishInviteDeclinedClaims DMs distinct admitters', async () => {
+    await expect(
+      publishInviteDeclinedClaims({
+        parentId: 'g-ann',
+        inviteId: 'inv-1',
+        inviteeNpub: 'npub-bob',
+        squadName: 'Alpha',
+        admitterNpubs: ['npub-me', 'npub-me', ' npub-other ', 'npub-bob', ''],
+      }),
+    ).resolves.toBe(true);
+    expect(sendDmMessage).toHaveBeenCalledTimes(2);
+    expect(sendDmMessage).toHaveBeenCalledWith('npub-me', expect.stringContaining(SQUAD_INVITE_DECLINED_TYPE));
+    expect(sendDmMessage).toHaveBeenCalledWith('npub-other', expect.stringContaining(SQUAD_INVITE_DECLINED_TYPE));
+  });
+
+  it('publishInviteDeclinedClaims reports failure when every DM send fails', async () => {
+    vi.mocked(sendDmMessage).mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    await expect(
+      publishInviteDeclinedClaims({
+        parentId: 'g-ann',
+        inviteId: 'inv-1',
+        inviteeNpub: 'npub-bob',
+        squadName: 'Alpha',
+        admitterNpubs: ['npub-me', 'npub-other'],
+      }),
+    ).resolves.toBe(false);
   });
 
   it('publishInviteAcceptedClaims DMs distinct admitters', async () => {
@@ -467,6 +569,38 @@ describe('squad-outbound-invite flows', () => {
     expect(admitMemberToSquad).not.toHaveBeenCalled();
   });
 
+  it('mergePendingOutboundInvitesFromMlsMessages drops declined invites', () => {
+    const pending = mergePendingOutboundInvitesFromMlsMessages([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10 },
+      {
+        content: formatSquadOutboundInviteDeclined({
+          parent_id: 'g-ann',
+          invite_id: 'inv-1',
+          invitee_npub: 'npub-bob',
+        }),
+        at: 20,
+      },
+    ]);
+    expect(pending).toEqual([]);
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
+  it('mergePendingOutboundInvitesFromMlsMessages sorts by at before applying a decline listed first', () => {
+    const pending = mergePendingOutboundInvitesFromMlsMessages([
+      {
+        content: formatSquadOutboundInviteDeclined({
+          parent_id: 'g-ann',
+          invite_id: 'inv-1',
+          invitee_npub: 'npub-bob',
+        }),
+        at: 20,
+      },
+      { content: formatSquadOutboundInvite(validOutbound), at: 10 },
+    ]);
+    expect(pending).toEqual([]);
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
   it('mergePendingOutboundInvitesFromMlsMessages drops revoked invites', () => {
     const pending = mergePendingOutboundInvitesFromMlsMessages([
       { content: formatSquadOutboundInvite(validOutbound), at: 10 },
@@ -553,5 +687,207 @@ describe('squad-outbound-invite flows', () => {
       }),
     );
     expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
+  it('onMlsOutboundInviteDeclined closes the invite', () => {
+    rememberOutboundInvite(validOutbound);
+    onMlsOutboundInviteDeclined(
+      formatSquadOutboundInviteDeclined({
+        parent_id: 'g-ann',
+        invite_id: 'inv-1',
+        invitee_npub: 'npub-bob',
+      }),
+    );
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
+  it('handleInviteeDeclineForAnnounce publishes MLS decline for a known invite', async () => {
+    rememberOutboundInvite(validOutbound);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      'g-ann',
+      expect.stringContaining(SQUAD_OUTBOUND_INVITE_DECLINED_TYPE),
+      '',
+      { virtualBucket: 'announcements' },
+    );
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+
+    await handleInviteeConsentForAdmit(validOutbound);
+    expect(admitMemberToSquad).not.toHaveBeenCalled();
+  });
+
+  it('handleInviteeDeclineForAnnounce ignores sender mismatch', async () => {
+    rememberOutboundInvite(validOutbound);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-mallory');
+    expect(sendDmMessage).not.toHaveBeenCalled();
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(false);
+  });
+
+  it('handleInviteeDeclineForAnnounce ignores unknown invites', async () => {
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(sendDmMessage).not.toHaveBeenCalled();
+  });
+
+  it('handleInviteeDeclineForAnnounce does nothing without local inviteAccept privilege', async () => {
+    vi.mocked(requireMySquadPrivilege).mockResolvedValue(DENIED);
+    rememberOutboundInvite(validOutbound);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(requireMySquadPrivilege).toHaveBeenCalledWith('g-ann', 'inviteAccept');
+    expect(sendDmMessage).not.toHaveBeenCalled();
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(false);
+  });
+
+  it('handleInviteeDeclineForAnnounce skips invites already admitted', async () => {
+    rememberOutboundInvite(validOutbound);
+    await handleInviteeConsentForAdmit(validOutbound);
+    expect(admitMemberToSquad).toHaveBeenCalledTimes(1);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(sendDmMessage).not.toHaveBeenCalled();
+  });
+
+  it('handleInviteeDeclineForAnnounce leaves the invite open when the announce send fails', async () => {
+    rememberOutboundInvite(validOutbound);
+    vi.mocked(sendDmMessage).mockResolvedValueOnce(false);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(false);
+
+    vi.mocked(sendDmMessage).mockResolvedValue(true);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+    const mlsSends = vi
+      .mocked(sendDmMessage)
+      .mock.calls.filter(([target]) => target === 'g-ann');
+    expect(mlsSends).toHaveLength(2);
+  });
+
+  it('handleInviteeDeclineForAnnounce publishes once for concurrent claims', async () => {
+    rememberOutboundInvite(validOutbound);
+    await Promise.all([
+      handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob'),
+      handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob'),
+    ]);
+    const mlsSends = vi
+      .mocked(sendDmMessage)
+      .mock.calls.filter(([target]) => target === 'g-ann');
+    expect(mlsSends).toHaveLength(1);
+  });
+
+  it('handleInviteeDeclineForAnnounce waits for squads to hydrate', async () => {
+    rememberOutboundInvite(validOutbound);
+    const squad = get(squads)[0];
+    squads.set([]);
+    const pending = handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    squads.set([squad]);
+    await pending;
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      'g-ann',
+      expect.stringContaining(SQUAD_OUTBOUND_INVITE_DECLINED_TYPE),
+      '',
+      { virtualBucket: 'announcements' },
+    );
+  });
+
+  it('handleInviteeDeclineForAnnounce gives up when the squad never appears', async () => {
+    vi.useFakeTimers();
+    try {
+      rememberOutboundInvite(validOutbound);
+      squads.set([]);
+      const pending = handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
+      expect(sendDmMessage).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('squad-outbound-invite history author gate', () => {
+  const declinedRow = formatSquadOutboundInviteDeclined({
+    parent_id: 'g-ann',
+    invite_id: 'inv-1',
+    invitee_npub: 'npub-bob',
+  });
+
+  beforeEach(() => {
+    resetOutboundInviteState();
+    vi.mocked(getDmMessages).mockReset().mockResolvedValue([]);
+    vi.mocked(getMlsGroupMembers).mockReset().mockResolvedValue({
+      group_id: 'g-ann',
+      members: [],
+      admins: [],
+      pending_welcomes: [],
+    });
+    vi.mocked(admitMemberToSquad).mockReset().mockResolvedValue({
+      ok: true,
+      announcementsOk: true,
+      openChannelsInvited: 0,
+    });
+    vi.mocked(decideSquadPrivilege)
+      .mockReset()
+      .mockImplementation(async ({ memberNpub }) => (memberNpub === 'npub-admin' ? ALLOWED : DENIED));
+    currentUser.set({ npub: 'npub-me' } as never);
+    squads.set([
+      {
+        id: 'g-ann',
+        name: 'Alpha',
+        channels: [{ name: 'announcements', groupId: 'g-ann', order: 0 }],
+        kind: 'squad',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it('ignores a decline authored by a member without inviteAccept', async () => {
+    vi.mocked(getDmMessages).mockResolvedValue([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: false, npub: 'npub-admin' },
+      { content: declinedRow, at: 20, mine: false, npub: 'npub-mallory' },
+    ] as never);
+    const pending = await loadPendingOutboundInvitesFromMls('g-ann');
+    expect(pending).toEqual([expect.objectContaining({ inviteId: 'inv-1' })]);
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(false);
+  });
+
+  it('applies a decline authored by a privileged member', async () => {
+    vi.mocked(getDmMessages).mockResolvedValue([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: false, npub: 'npub-admin' },
+      { content: declinedRow, at: 20, mine: false, npub: 'npub-admin' },
+    ] as never);
+    await expect(loadPendingOutboundInvitesFromMls('g-ann')).resolves.toEqual([]);
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
+  it('does not trust a forged invite announce when validating an accept claim', async () => {
+    vi.mocked(getDmMessages).mockResolvedValue([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: false, npub: 'npub-mallory' },
+    ] as never);
+    await handleInviteeConsentForAdmit(validOutbound);
+    expect(admitMemberToSquad).not.toHaveBeenCalled();
+  });
+
+  it('attributes own messages to the local user and unattributed rows to a missing author', async () => {
+    vi.mocked(getDmMessages).mockResolvedValue([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: true },
+      { content: declinedRow, at: 20, mine: false },
+    ] as never);
+    await loadPendingOutboundInvitesFromMls('g-ann');
+    const authors = vi.mocked(decideSquadPrivilege).mock.calls.map(([p]) => p.memberNpub);
+    expect(authors).toEqual(['npub-me', '__missing__']);
+  });
+
+  it('checks each distinct author once and skips non-lifecycle rows', async () => {
+    vi.mocked(getDmMessages).mockResolvedValue([
+      { content: 'hello', at: 5, mine: false, npub: 'npub-mallory' },
+      { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: false, npub: 'npub-admin' },
+      {
+        content: formatSquadOutboundInvite({ ...validOutbound, invite_id: 'inv-2' }),
+        at: 11,
+        mine: false,
+        npub: 'npub-admin',
+      },
+    ] as never);
+    await loadPendingOutboundInvitesFromMls('g-ann');
+    expect(decideSquadPrivilege).toHaveBeenCalledTimes(1);
   });
 });

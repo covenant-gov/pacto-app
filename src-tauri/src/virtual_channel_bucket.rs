@@ -108,6 +108,7 @@ pub fn normalize_virtual_bucket_for_message(
                 Some(
                     "squad_outbound_invite"
                         | "squad_outbound_invite_revoked"
+                        | "squad_outbound_invite_declined"
                         | "squad_admit_needed"
                         | "squad_channels_catalog"
                         | "squad_identity_updated"
@@ -272,6 +273,14 @@ mod tests {
     #[test]
     fn squad_identity_updated_derives_announcements_bucket() {
         let content = r#"{"type":"squad_identity_updated","payload":{"parent_id":"p","icon_url":"https://cdn.example/a.jpg"}}"#;
+        let bucket =
+            normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn squad_outbound_invite_declined_derives_announcements_bucket() {
+        let content = r#"{"type":"squad_outbound_invite_declined","payload":{"parent_id":"p","invite_id":"i","invitee_npub":"npub1x"}}"#;
         let bucket =
             normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
         assert_eq!(bucket.as_deref(), Some("announcements"));

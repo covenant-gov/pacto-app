@@ -20,9 +20,11 @@ import { applySquadRpcUpdated, parseSquadRpcUpdated } from '../squad/squad-rpc-s
 import {
   onMlsAdmitNeeded,
   onMlsOutboundInviteAnnounce,
+  onMlsOutboundInviteDeclined,
   onMlsOutboundInviteRevoked,
   parseSquadAdmitNeeded,
   parseSquadOutboundInvite,
+  parseSquadOutboundInviteDeclined,
   parseSquadOutboundInviteRevoked,
 } from '../squad/squad-outbound-invite';
 import { syncOutboundInvitesForSquad } from '../../stores/squad-outbound-invites';
@@ -123,6 +125,12 @@ export function onMlsStructuredMessage(
   if (parseSquadOutboundInviteRevoked(raw)) {
     void applyPrivilegedMlsAction(author, gid, 'inviteAccept', () => {
       onMlsOutboundInviteRevoked(raw);
+      if (gid) void syncOutboundInvitesForSquad(gid);
+    });
+  }
+  if (parseSquadOutboundInviteDeclined(raw)) {
+    void applyPrivilegedMlsAction(author, gid, 'inviteAccept', () => {
+      onMlsOutboundInviteDeclined(raw);
       if (gid) void syncOutboundInvitesForSquad(gid);
     });
   }
