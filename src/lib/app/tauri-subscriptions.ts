@@ -14,7 +14,9 @@ import { onMlsStructuredMessage } from './mls-structured-refresh';
 import { handleChannelAddedToSquad, handleMlsWelcomeAccepted, notifyPendingInviteWelcome } from '../invites/accept-invite';
 import {
   handleInviteeConsentForAdmit,
+  handleInviteeDeclineForAnnounce,
   parseSquadInviteAccepted,
+  parseSquadInviteDeclined,
 } from '../squad/squad-outbound-invite';
 import {
   handleSquadRejoinRequest,
@@ -182,6 +184,11 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     const inviteAccepted = parseSquadInviteAccepted(content);
     if (inviteAccepted && !message.mine) {
       void handleInviteeConsentForAdmit(inviteAccepted, { broadcastAdmitNeeded: true });
+      return;
+    }
+    const inviteDeclined = parseSquadInviteDeclined(content);
+    if (inviteDeclined && !message.mine) {
+      void handleInviteeDeclineForAnnounce(inviteDeclined, message.npub ?? chat_id);
       return;
     }
     if (!message.mine) {

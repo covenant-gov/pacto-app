@@ -58,26 +58,35 @@ import { squads } from '../../stores/squads';
 import {
   formatSquadAdmitNeeded,
   formatSquadInviteAccepted,
+  formatSquadInviteDeclined,
   formatSquadOutboundInvite,
+  formatSquadOutboundInviteDeclined,
   formatSquadOutboundInviteRevoked,
   handleInviteeConsentForAdmit,
+  handleInviteeDeclineForAnnounce,
   isOutboundInviteRevoked,
   loadPendingOutboundInvitesFromMls,
   mergePendingOutboundInvitesFromMlsMessages,
   onMlsAdmitNeeded,
   onMlsOutboundInviteAnnounce,
+  onMlsOutboundInviteDeclined,
   onMlsOutboundInviteRevoked,
   parseSquadAdmitNeeded,
   parseSquadInviteAccepted,
+  parseSquadInviteDeclined,
   parseSquadOutboundInvite,
+  parseSquadOutboundInviteDeclined,
   parseSquadOutboundInviteRevoked,
   publishInviteAcceptedClaims,
+  publishInviteDeclinedClaims,
   publishOutboundInviteAnnounce,
   rememberOutboundInvite,
   resetOutboundInviteState,
   revokeOutboundInviteAnnounce,
   SQUAD_ADMIT_NEEDED_TYPE,
   SQUAD_INVITE_ACCEPTED_TYPE,
+  SQUAD_INVITE_DECLINED_TYPE,
+  SQUAD_OUTBOUND_INVITE_DECLINED_TYPE,
   SQUAD_OUTBOUND_INVITE_REVOKED_TYPE,
   SQUAD_OUTBOUND_INVITE_TYPE,
 } from './squad-outbound-invite';
@@ -161,6 +170,26 @@ describe('squad-outbound-invite parsers', () => {
     });
   });
 
+  it('round-trips outbound invite declined format/parse', () => {
+    const payload = {
+      parent_id: 'g-ann',
+      invite_id: 'inv-1',
+      invitee_npub: 'npub-bob',
+    };
+    const raw = formatSquadOutboundInviteDeclined(payload);
+    expect(JSON.parse(raw).type).toBe(SQUAD_OUTBOUND_INVITE_DECLINED_TYPE);
+    expect(parseSquadOutboundInviteDeclined(raw)).toEqual(payload);
+  });
+
+  it('rejects invalid MLS declined payloads', () => {
+    expect(parseSquadOutboundInviteDeclined(null)).toBeNull();
+    expect(
+      parseSquadOutboundInviteDeclined(
+        JSON.stringify({ type: SQUAD_OUTBOUND_INVITE_DECLINED_TYPE, payload: { parent_id: 'p' } }),
+      ),
+    ).toBeNull();
+  });
+
   it('round-trips invite accepted format/parse', () => {
     const raw = formatSquadInviteAccepted(validOutbound);
     expect(JSON.parse(raw).type).toBe(SQUAD_INVITE_ACCEPTED_TYPE);
@@ -209,6 +238,30 @@ describe('squad-outbound-invite parsers', () => {
       invitee_npub: 'n',
       squad_name: 'Name',
     });
+  });
+
+  it('round-trips invite declined format/parse', () => {
+    const raw = formatSquadInviteDeclined(validOutbound);
+    expect(JSON.parse(raw).type).toBe(SQUAD_INVITE_DECLINED_TYPE);
+    expect(parseSquadInviteDeclined(raw)).toEqual(validOutbound);
+  });
+
+  it('rejects invalid invite declined payloads', () => {
+    expect(parseSquadInviteDeclined(undefined)).toBeNull();
+    expect(parseSquadInviteDeclined('plain')).toBeNull();
+    expect(parseSquadInviteDeclined('{bad')).toBeNull();
+    expect(parseSquadInviteDeclined(JSON.stringify({ type: 'other' }))).toBeNull();
+    expect(
+      parseSquadInviteDeclined(JSON.stringify({ type: SQUAD_INVITE_DECLINED_TYPE })),
+    ).toBeNull();
+    expect(
+      parseSquadInviteDeclined(
+        JSON.stringify({
+          type: SQUAD_INVITE_DECLINED_TYPE,
+          payload: { parent_id: '', invite_id: 'i', invitee_npub: 'n', squad_name: 's' },
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('round-trips admit needed format/parse', () => {
@@ -316,6 +369,19 @@ describe('squad-outbound-invite flows', () => {
     };
     await expect(publishOutboundInviteAnnounce(parent, 'inv-1', 'npub-bob')).resolves.toBe(false);
     expect(sendDmMessage).not.toHaveBeenCalled();
+  });
+
+  it('publishInviteDeclinedClaims DMs distinct admitters', async () => {
+    await publishInviteDeclinedClaims({
+      parentId: 'g-ann',
+      inviteId: 'inv-1',
+      inviteeNpub: 'npub-bob',
+      squadName: 'Alpha',
+      admitterNpubs: ['npub-me', 'npub-me', ' npub-other ', 'npub-bob', ''],
+    });
+    expect(sendDmMessage).toHaveBeenCalledTimes(2);
+    expect(sendDmMessage).toHaveBeenCalledWith('npub-me', expect.stringContaining(SQUAD_INVITE_DECLINED_TYPE));
+    expect(sendDmMessage).toHaveBeenCalledWith('npub-other', expect.stringContaining(SQUAD_INVITE_DECLINED_TYPE));
   });
 
   it('publishInviteAcceptedClaims DMs distinct admitters', async () => {
@@ -467,6 +533,38 @@ describe('squad-outbound-invite flows', () => {
     expect(admitMemberToSquad).not.toHaveBeenCalled();
   });
 
+  it('mergePendingOutboundInvitesFromMlsMessages drops declined invites', () => {
+    const pending = mergePendingOutboundInvitesFromMlsMessages([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10 },
+      {
+        content: formatSquadOutboundInviteDeclined({
+          parent_id: 'g-ann',
+          invite_id: 'inv-1',
+          invitee_npub: 'npub-bob',
+        }),
+        at: 20,
+      },
+    ]);
+    expect(pending).toEqual([]);
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
+  it('mergePendingOutboundInvitesFromMlsMessages keeps invite dropped when decline is later', () => {
+    const pending = mergePendingOutboundInvitesFromMlsMessages([
+      {
+        content: formatSquadOutboundInviteDeclined({
+          parent_id: 'g-ann',
+          invite_id: 'inv-1',
+          invitee_npub: 'npub-bob',
+        }),
+        at: 20,
+      },
+      { content: formatSquadOutboundInvite(validOutbound), at: 10 },
+    ]);
+    expect(pending).toEqual([]);
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
   it('mergePendingOutboundInvitesFromMlsMessages drops revoked invites', () => {
     const pending = mergePendingOutboundInvitesFromMlsMessages([
       { content: formatSquadOutboundInvite(validOutbound), at: 10 },
@@ -553,5 +651,44 @@ describe('squad-outbound-invite flows', () => {
       }),
     );
     expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
+  it('onMlsOutboundInviteDeclined closes the invite', () => {
+    rememberOutboundInvite(validOutbound);
+    onMlsOutboundInviteDeclined(
+      formatSquadOutboundInviteDeclined({
+        parent_id: 'g-ann',
+        invite_id: 'inv-1',
+        invitee_npub: 'npub-bob',
+      }),
+    );
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+  });
+
+  it('handleInviteeDeclineForAnnounce publishes MLS decline for a known invite', async () => {
+    rememberOutboundInvite(validOutbound);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      'g-ann',
+      expect.stringContaining(SQUAD_OUTBOUND_INVITE_DECLINED_TYPE),
+      '',
+      { virtualBucket: 'announcements' },
+    );
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+
+    await handleInviteeConsentForAdmit(validOutbound);
+    expect(admitMemberToSquad).not.toHaveBeenCalled();
+  });
+
+  it('handleInviteeDeclineForAnnounce ignores sender mismatch', async () => {
+    rememberOutboundInvite(validOutbound);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-mallory');
+    expect(sendDmMessage).not.toHaveBeenCalled();
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(false);
+  });
+
+  it('handleInviteeDeclineForAnnounce ignores unknown invites', async () => {
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(sendDmMessage).not.toHaveBeenCalled();
   });
 });

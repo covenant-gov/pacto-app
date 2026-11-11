@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { subscribeAppEvents, type AppEventHandlers } from './tauri-subscriptions';
+import { handleInviteeDeclineForAnnounce } from '../squad/squad-outbound-invite';
 import type { DmMessage } from '../../stores/dm';
 
 const mocks = vi.hoisted(() => {
@@ -146,6 +147,7 @@ vi.mock('../squad/squad-outbound-invite', async (importOriginal) => {
   return {
     ...actual,
     handleInviteeConsentForAdmit: vi.fn(),
+    handleInviteeDeclineForAnnounce: vi.fn(),
   };
 });
 
@@ -410,6 +412,33 @@ describe('subscribeAppEvents', () => {
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: true }) });
       expect(mocks.mockFunctions.syncMlsGroupsNow).not.toHaveBeenCalled();
+    });
+
+    it('relays invitee decline claims to admit handling', () => {
+      const content = JSON.stringify({
+        type: 'squad_invite_declined',
+        payload: {
+          parent_id: 'g-ann',
+          invite_id: 'inv-1',
+          invitee_npub: 'npub1sender',
+          squad_name: 'Alpha',
+        },
+      });
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', {
+        chat_id: 'npub1sender',
+        message: dmMessage({ content, npub: 'npub1sender', mine: false }),
+      });
+      expect(handleInviteeDeclineForAnnounce).toHaveBeenCalledWith(
+        {
+          parent_id: 'g-ann',
+          invite_id: 'inv-1',
+          invitee_npub: 'npub1sender',
+          squad_name: 'Alpha',
+        },
+        'npub1sender',
+      );
+      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
     });
 
     it('binds a rejoin request to the DM sender and does not store it', () => {

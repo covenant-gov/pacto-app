@@ -74,6 +74,7 @@ import {
   squadTrackedTokensNonceByParentId,
 } from '../../stores/navigation';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
+import { syncOutboundInvitesForSquad } from '../../stores/squad-outbound-invites';
 import { formatSquadStateSyncRequest } from '../squad/squad-state-sync';
 import { formatSquadNetworkUpdated } from '../squad/squad-network-share';
 import {
@@ -98,6 +99,7 @@ describe('onMlsStructuredMessage', () => {
     joinInboxMetaNonceBySquadId.set({});
     governanceProcessNonceByParentId.set({});
     vi.mocked(syncJoinRequestsForSquad).mockClear();
+    vi.mocked(syncOutboundInvitesForSquad).mockClear();
     vi.mocked(decideSquadPrivilege).mockReset();
     vi.mocked(decideSquadPrivilege).mockResolvedValue({
       ok: true,
@@ -522,6 +524,18 @@ describe('onMlsStructuredMessage', () => {
       'g1',
       handlers,
     );
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_outbound_invite_declined',
+        payload: { parent_id: 'g1', invite_id: 'i1', invitee_npub: 'npub1bob' },
+        pacto_virtual_bucket: 'announcements',
+      }),
+      'g1',
+      handlers,
+    );
+    await vi.waitFor(() => {
+      expect(syncOutboundInvitesForSquad).toHaveBeenCalledWith('g1');
+    });
     onMlsStructuredMessage(
       JSON.stringify({
         type: 'squad_channels_catalog',

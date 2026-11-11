@@ -4,7 +4,7 @@ import {
   type NostrProfile,
   type SquadInvitePayload,
 } from '../api/nostr';
-import { parseSquadInviteAccepted } from '../squad/squad-outbound-invite';
+import { parseSquadInviteAccepted, parseSquadInviteDeclined } from '../squad/squad-outbound-invite';
 import {
   parseWalletPeerInfoDecline,
   parseWalletPeerInfoGrant,
@@ -53,6 +53,7 @@ export function resolveDmMessagePresentation(msg: DmMessage): DmMessagePresentat
   // Channel joins are under-the-hood; never show as invite cards or notice bars.
   if (parseChannelInSquadMessage(content)) return { kind: 'hidden' };
   if (parseSquadInviteAccepted(content)) return { kind: 'hidden' };
+  if (parseSquadInviteDeclined(content)) return { kind: 'hidden' };
   const invite = parseSquadInviteMessage(content);
   if (invite) {
     return invite.kind === 'squad-pair'

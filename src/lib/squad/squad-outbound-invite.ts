@@ -13,7 +13,9 @@ import { getAnnouncementsChannel } from '../parent-navbar';
 
 export const SQUAD_OUTBOUND_INVITE_TYPE = 'squad_outbound_invite';
 export const SQUAD_OUTBOUND_INVITE_REVOKED_TYPE = 'squad_outbound_invite_revoked';
+export const SQUAD_OUTBOUND_INVITE_DECLINED_TYPE = 'squad_outbound_invite_declined';
 export const SQUAD_INVITE_ACCEPTED_TYPE = 'squad_invite_accepted';
+export const SQUAD_INVITE_DECLINED_TYPE = 'squad_invite_declined';
 export const SQUAD_ADMIT_NEEDED_TYPE = 'squad_admit_needed';
 
 export type SquadOutboundInvitePayload = {
@@ -35,6 +37,9 @@ export type SquadInviteAcceptedPayload = {
   invitee_npub: string;
   squad_name: string;
 };
+
+export type SquadInviteDeclinedPayload = SquadInviteAcceptedPayload;
+export type SquadOutboundInviteDeclinedPayload = SquadOutboundInviteRevokedPayload;
 
 export type SquadAdmitNeededPayload = {
   parent_id: string;
@@ -142,8 +147,57 @@ export function parseSquadOutboundInviteRevoked(
   }
 }
 
+export function formatSquadOutboundInviteDeclined(payload: SquadOutboundInviteDeclinedPayload): string {
+  return JSON.stringify({
+    type: SQUAD_OUTBOUND_INVITE_DECLINED_TYPE,
+    payload,
+    pacto_virtual_bucket: 'announcements',
+  });
+}
+
+export function parseSquadOutboundInviteDeclined(
+  content: string | null | undefined
+): SquadOutboundInviteDeclinedPayload | null {
+  if (!content?.trim().startsWith('{')) return null;
+  try {
+    const root = JSON.parse(content) as Record<string, unknown>;
+    if (root.type !== SQUAD_OUTBOUND_INVITE_DECLINED_TYPE) return null;
+    const p = root.payload as Record<string, unknown> | undefined;
+    if (!p || typeof p !== 'object') return null;
+    const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
+    const invite_id = typeof p.invite_id === 'string' ? p.invite_id.trim() : '';
+    const invitee_npub = typeof p.invitee_npub === 'string' ? p.invitee_npub.trim() : '';
+    if (!parent_id || !invite_id || !invitee_npub) return null;
+    return { parent_id, invite_id, invitee_npub };
+  } catch {
+    return null;
+  }
+}
+
 export function formatSquadInviteAccepted(payload: SquadInviteAcceptedPayload): string {
   return JSON.stringify({ type: SQUAD_INVITE_ACCEPTED_TYPE, payload });
+}
+
+export function formatSquadInviteDeclined(payload: SquadInviteDeclinedPayload): string {
+  return JSON.stringify({ type: SQUAD_INVITE_DECLINED_TYPE, payload });
+}
+
+export function parseSquadInviteDeclined(content: string | null | undefined): SquadInviteDeclinedPayload | null {
+  if (!content?.trim().startsWith('{')) return null;
+  try {
+    const root = JSON.parse(content) as Record<string, unknown>;
+    if (root.type !== SQUAD_INVITE_DECLINED_TYPE) return null;
+    const p = root.payload as Record<string, unknown> | undefined;
+    if (!p || typeof p !== 'object') return null;
+    const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
+    const invite_id = typeof p.invite_id === 'string' ? p.invite_id.trim() : '';
+    const invitee_npub = typeof p.invitee_npub === 'string' ? p.invitee_npub.trim() : '';
+    const squad_name = typeof p.squad_name === 'string' ? p.squad_name.trim() : '';
+    if (!parent_id || !invite_id || !invitee_npub) return null;
+    return { parent_id, invite_id, invitee_npub, squad_name };
+  } catch {
+    return null;
+  }
 }
 
 export function parseSquadInviteAccepted(content: string | null | undefined): SquadInviteAcceptedPayload | null {
@@ -273,10 +327,11 @@ export function mergePendingOutboundInvitesFromMlsMessages(
 
   const sorted = [...msgs].sort((a, b) => (a.at || 0) - (b.at || 0));
   for (const m of sorted) {
-    const revoked = parseSquadOutboundInviteRevoked(m.content);
-    if (revoked) {
-      rememberOutboundInviteRevoked(revoked);
-      byInviteId.set(revoked.invite_id, { kind: 'revoke', at: m.at, payload: revoked });
+    const closed =
+      parseSquadOutboundInviteRevoked(m.content) ?? parseSquadOutboundInviteDeclined(m.content);
+    if (closed) {
+      rememberOutboundInviteRevoked(closed);
+      byInviteId.set(closed.invite_id, { kind: 'revoke', at: m.at, payload: closed });
       continue;
     }
     const invite = parseSquadOutboundInvite(m.content);
@@ -390,19 +445,11 @@ export async function revokeOutboundInviteAnnounce(
   return ok;
 }
 
-export async function publishInviteAcceptedClaims(opts: {
-  parentId: string;
-  inviteId: string;
-  inviteeNpub: string;
-  squadName: string;
-  admitterNpubs: string[];
-}): Promise<void> {
-  const body = formatSquadInviteAccepted({
-    parent_id: opts.parentId,
-    invite_id: opts.inviteId,
-    invitee_npub: opts.inviteeNpub,
-    squad_name: opts.squadName,
-  });
+async function publishInviteClaimDms(
+  body: string,
+  opts: { inviteeNpub: string; admitterNpubs: string[] },
+  warnLabel: string,
+): Promise<void> {
   const targets = [...new Set(opts.admitterNpubs.map((n) => n.trim()).filter(Boolean))];
   await Promise.allSettled(
     targets
@@ -411,10 +458,105 @@ export async function publishInviteAcceptedClaims(opts: {
         try {
           await sendDmMessage(npub, body);
         } catch (e) {
-          console.warn('[outbound-invite] accept claim DM failed', npub.slice(0, 16), e);
+          console.warn(`[outbound-invite] ${warnLabel} claim DM failed`, npub.slice(0, 16), e);
         }
       }),
   );
+}
+
+export async function publishInviteAcceptedClaims(opts: {
+  parentId: string;
+  inviteId: string;
+  inviteeNpub: string;
+  squadName: string;
+  admitterNpubs: string[];
+}): Promise<void> {
+  await publishInviteClaimDms(
+    formatSquadInviteAccepted({
+      parent_id: opts.parentId,
+      invite_id: opts.inviteId,
+      invitee_npub: opts.inviteeNpub,
+      squad_name: opts.squadName,
+    }),
+    opts,
+    'accept',
+  );
+}
+
+export async function publishInviteDeclinedClaims(opts: {
+  parentId: string;
+  inviteId: string;
+  inviteeNpub: string;
+  squadName: string;
+  admitterNpubs: string[];
+}): Promise<void> {
+  await publishInviteClaimDms(
+    formatSquadInviteDeclined({
+      parent_id: opts.parentId,
+      invite_id: opts.inviteId,
+      invitee_npub: opts.inviteeNpub,
+      squad_name: opts.squadName,
+    }),
+    opts,
+    'decline',
+  );
+}
+
+/** Cancel a pending outbound invite via invitee decline; same closed set as admin revoke. */
+export async function publishOutboundInviteDeclinedAnnounce(
+  parent: Squad,
+  inviteId: string,
+  inviteeNpub: string
+): Promise<boolean> {
+  const announcements = getAnnouncementsChannel(parent);
+  const gid = announcements.groupId?.trim();
+  if (!gid) return false;
+  const payload: SquadOutboundInviteDeclinedPayload = {
+    parent_id: gid,
+    invite_id: inviteId.trim(),
+    invitee_npub: inviteeNpub.trim(),
+  };
+  rememberOutboundInviteRevoked(payload);
+  const json = formatSquadOutboundInviteDeclined(payload);
+  const ok = await sendDmMessage(gid, json, '', { virtualBucket: 'announcements' });
+  if (ok) {
+    void import('../../stores/squad-outbound-invites').then(({ removePendingOutboundInvite }) => {
+      removePendingOutboundInvite(gid, inviteId);
+    });
+  }
+  return ok;
+}
+
+/**
+ * Admitter received invitee decline claim (DM): close the invite on announcements.
+ * Sender must be the invitee; claim requires a matching outbound invite announcement.
+ */
+export async function handleInviteeDeclineForAnnounce(
+  payload: { parent_id: string; invite_id: string; invitee_npub: string },
+  senderNpub: string,
+): Promise<void> {
+  if (senderNpub.trim().toLowerCase() !== payload.invitee_npub.trim().toLowerCase()) {
+    console.warn('[outbound-invite] ignoring decline with mismatched sender', payload.invite_id);
+    return;
+  }
+  const me = get(currentUser)?.npub?.trim();
+  if (!me) return;
+  if (payload.invitee_npub.trim().toLowerCase() === me.toLowerCase()) return;
+
+  if (isOutboundInviteRevoked(payload.parent_id, payload.invite_id)) return;
+
+  const parent =
+    get(squads).find((s) => s.id === payload.parent_id) ??
+    get(squads).find((s) => getAnnouncementsChannel(s).groupId === payload.parent_id);
+  if (!parent) return;
+
+  const known = await ensureOutboundInviteKnown(payload);
+  if (!known) {
+    console.warn('[outbound-invite] ignoring unvalidated decline claim', payload.invite_id);
+    return;
+  }
+
+  await publishOutboundInviteDeclinedAnnounce(parent, payload.invite_id, payload.invitee_npub);
 }
 
 function acceptHandleKey(inviteId: string, inviteeNpub: string): string {
@@ -514,6 +656,11 @@ export function onMlsOutboundInviteAnnounce(content: string): void {
 
 export function onMlsOutboundInviteRevoked(content: string): void {
   const parsed = parseSquadOutboundInviteRevoked(content);
+  if (parsed) rememberOutboundInviteRevoked(parsed);
+}
+
+export function onMlsOutboundInviteDeclined(content: string): void {
+  const parsed = parseSquadOutboundInviteDeclined(content);
   if (parsed) rememberOutboundInviteRevoked(parsed);
 }
 
