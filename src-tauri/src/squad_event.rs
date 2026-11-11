@@ -1244,6 +1244,14 @@ async fn apply_and_emit<R: Runtime>(
     Ok(applied)
 }
 
+/// Ops that create product state and so need the author's `createEvent` privilege.
+fn needs_privilege_gate(op: Op) -> bool {
+    match op {
+        Op::Create | Op::SeriesCard => true,
+        Op::Update | Op::Rsvp | Op::Cancel => false,
+    }
+}
+
 /// MLS ingest for `d` = `pacto_squad_event`. Never yields a chat row except the announcements card.
 pub async fn process_rumor(
     rumor: RumorEvent,
@@ -1270,7 +1278,7 @@ pub async fn process_rumor(
         .map_err(|e| format!("pubkey bech32: {}", e))?;
     let role = squad_records::group_role(handle, group_id, &signer).await;
     let rumor_id = rumor.id.to_hex();
-    if matches!(w.op, Op::Create | Op::SeriesCard) {
+    if needs_privilege_gate(w.op) {
         let parked = Parked {
             rumor_id: rumor_id.clone(),
             kind: PrivilegeKind::Event,
@@ -2936,5 +2944,190 @@ mod tests {
         assert_eq!(ev["status"], "active");
         assert_eq!(ev["myRsvp"], "accepted");
         assert_eq!(ev["rsvps"][0]["memberNpub"], ALICE);
+    }
+
+    mod deferred {
+        use super::*;
+        use crate::evm::squad_privilege_enforce::MemberPrivilege;
+        use crate::squad_record_privilege::test_support::{
+            binding_decision, certify_peer_share, parked_count, seed_members, setup,
+        };
+        use crate::squad_record_privilege::{admit_with, drain_with, Kind, Parked};
+
+        fn payload(id: &str, ts: i64) -> String {
+            serde_json::to_string(&create(id, &fields("2026-01-15T09:00"), ts)).expect("json")
+        }
+
+        fn parked(rumor_id: &str, author: &str, content: String) -> Parked {
+            Parked {
+                rumor_id: rumor_id.into(),
+                kind: Kind::Event,
+                parent_id: PARENT.into(),
+                mls_group_id: GROUP.into(),
+                author_npub: author.into(),
+                payload_json: content,
+            }
+        }
+
+        fn stored(app: &tauri::App<tauri::test::MockRuntime>, id: &str) -> Option<EventRow> {
+            with_conn(app.handle(), |c| load_row(c, id)).expect("load")
+        }
+
+        async fn undecided(_: Parked) -> MemberPrivilege {
+            MemberPrivilege::Undecided
+        }
+
+        async fn allowed(_: Parked) -> MemberPrivilege {
+            MemberPrivilege::Allowed
+        }
+
+        async fn denied(_: Parked) -> MemberPrivilege {
+            MemberPrivilege::Denied
+        }
+
+        #[test]
+        fn only_create_ops_need_the_privilege_gate() {
+            for (op, gated) in [
+                (Op::Create, true),
+                (Op::SeriesCard, true),
+                (Op::Update, false),
+                (Op::Rsvp, false),
+                (Op::Cancel, false),
+            ] {
+                assert_eq!(needs_privilege_gate(op), gated, "{op:?}");
+            }
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_stores_a_member_create() {
+            let app = setup("npub1evdeferredstores");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            apply_deferred(app.handle(), GROUP, ALICE, "r1", &payload("ev-1", 1_000))
+                .await
+                .expect("apply");
+            let row = stored(&app, "ev-1").expect("stored");
+            assert_eq!(row.author_npub, ALICE);
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_ignores_a_non_member_signer() {
+            let app = setup("npub1evdeferrednonmember");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            apply_deferred(app.handle(), GROUP, OUTSIDER, "r1", &payload("ev-1", 1_000))
+                .await
+                .expect("apply");
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_ignores_a_parent_that_does_not_match_the_group() {
+            let app = setup("npub1evdeferredparent");
+            seed_members(app.handle(), "other-group", &[ALICE]);
+            apply_deferred(
+                app.handle(),
+                "other-group",
+                ALICE,
+                "r1",
+                &payload("ev-1", 1_000),
+            )
+            .await
+            .expect("apply");
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_ignores_a_future_dated_stamp_and_bad_content() {
+            let app = setup("npub1evdeferredstamp");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            let future = now_ms() + MAX_FUTURE_SKEW_MS + 60_000;
+            apply_deferred(app.handle(), GROUP, ALICE, "r1", &payload("ev-1", future))
+                .await
+                .expect("apply");
+            apply_deferred(app.handle(), GROUP, ALICE, "r2", "not json")
+                .await
+                .expect("apply");
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn drain_applies_allowed_and_clears_the_parked_row() {
+            let app = setup("npub1evdrainallowed");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            assert!(
+                !admit_with(
+                    app.handle(),
+                    parked("r1", ALICE, payload("ev-1", 1_000)),
+                    undecided
+                )
+                .await
+            );
+            assert_eq!(parked_count(app.handle()), 1);
+
+            drain_with(app.handle(), Some(PARENT), None, allowed).await;
+            assert_eq!(parked_count(app.handle()), 0);
+            assert!(stored(&app, "ev-1").is_some());
+        }
+
+        #[tokio::test]
+        async fn drain_drops_denied_without_applying() {
+            let app = setup("npub1evdraindenied");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            admit_with(
+                app.handle(),
+                parked("r1", ALICE, payload("ev-1", 1_000)),
+                undecided,
+            )
+            .await;
+
+            drain_with(app.handle(), Some(PARENT), None, denied).await;
+            assert_eq!(parked_count(app.handle()), 0);
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn drain_keeps_undecided_without_applying() {
+            let app = setup("npub1evdrainundecided");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            admit_with(
+                app.handle(),
+                parked("r1", ALICE, payload("ev-1", 1_000)),
+                undecided,
+            )
+            .await;
+
+            drain_with(app.handle(), Some(PARENT), None, undecided).await;
+            assert_eq!(parked_count(app.handle()), 1);
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn parked_create_applies_once_the_authors_binding_arrives() {
+            let app = setup("npub1evparkbinddrain");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            let handle = app.handle().clone();
+            let decide = |row: Parked| binding_decision(handle.clone(), row);
+
+            assert!(
+                !admit_with(
+                    app.handle(),
+                    parked("r1", ALICE, payload("ev-1", 1_000)),
+                    decide
+                )
+                .await
+            );
+            drain_with(app.handle(), Some(PARENT), None, decide).await;
+            assert_eq!(parked_count(app.handle()), 1, "still unbound");
+            assert!(stored(&app, "ev-1").is_none());
+
+            certify_peer_share(
+                app.handle(),
+                PARENT,
+                ALICE,
+                "0x3333333333333333333333333333333333333333",
+            );
+            drain_with(app.handle(), Some(PARENT), None, decide).await;
+            assert_eq!(parked_count(app.handle()), 0);
+            assert!(stored(&app, "ev-1").is_some());
+        }
     }
 }

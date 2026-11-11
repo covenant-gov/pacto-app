@@ -143,6 +143,13 @@ export const PRIVILEGE_FLAG_CHIPS: PrivilegeFlagChip[] = [
   { bit: 6, flag: FLAG_ADD_DOC, key: 'addDoc' },
 ];
 
+/** OR the flag bit of every chip key set in `selected`. */
+export function packPrivilegeFlags(
+  selected: Partial<Record<PrivilegeFlagChip['key'], boolean>>,
+): number {
+  return PRIVILEGE_FLAG_CHIPS.reduce((bits, chip) => (selected[chip.key] ? bits | chip.flag : bits), 0);
+}
+
 /** Catalog row summary for UI lists. */
 export function describePrivilegeCatalogRole(roleId: string): {
   roleId: string;

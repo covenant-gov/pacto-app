@@ -28,6 +28,7 @@
     PRIVILEGE_ROLE_NAME_MAX_BYTES,
     describePrivilegeCatalogRole,
     encodePrivilegeRoleId,
+    packPrivilegeFlags,
   } from '../../../lib/governance/privilege-role-id';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { showToast } from '../../../stores/toast';
@@ -82,13 +83,15 @@
   const isCaptain = $derived(privilege?.wearsCaptain === true);
 
   const builderFlags = $derived(
-    (flagInvite ? FLAG_INVITE_ACCEPT : 0) |
-      (flagChannel ? FLAG_CREATE_CHANNEL : 0) |
-      (flagBroadcast ? FLAG_BROADCAST : 0) |
-      (flagNetwork ? FLAG_MANAGE_NETWORK : 0) |
-      (flagFirstMate ? FLAG_FIRST_MATE : 0) |
-      (flagEvent ? FLAG_CREATE_EVENT : 0) |
-      (flagDoc ? FLAG_ADD_DOC : 0),
+    packPrivilegeFlags({
+      inviteAccept: flagInvite,
+      createChannel: flagChannel,
+      broadcast: flagBroadcast,
+      manageNetwork: flagNetwork,
+      firstMate: flagFirstMate,
+      createEvent: flagEvent,
+      addDoc: flagDoc,
+    }),
   );
 
   const previewRoleId = $derived.by(() => {

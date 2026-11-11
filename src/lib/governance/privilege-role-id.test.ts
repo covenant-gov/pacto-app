@@ -10,6 +10,7 @@ import {
   decodePrivilegeRoleId,
   describePrivilegeCatalogRole,
   encodePrivilegeRoleId,
+  packPrivilegeFlags,
 } from './privilege-role-id';
 
 /** Hex vectors from pacto-gov docs/SquadAdmin.md (PR #58). */
@@ -144,5 +145,29 @@ describe('privilege-role-id encode/decode (gov PR #58 vectors)', () => {
     expect(row.ok).toBe(true);
     expect(row.name).toBe('Ops');
     expect(row.hasFirstMate).toBe(true);
+  });
+});
+
+describe('packPrivilegeFlags', () => {
+  it('packs nothing for an empty selection', () => {
+    expect(packPrivilegeFlags({})).toBe(0);
+    expect(packPrivilegeFlags({ addDoc: false, createEvent: false })).toBe(0);
+  });
+
+  it('maps each chip key to its own bit', () => {
+    expect(packPrivilegeFlags({ inviteAccept: true })).toBe(FLAG_INVITE_ACCEPT);
+    expect(packPrivilegeFlags({ createChannel: true })).toBe(FLAG_CREATE_CHANNEL);
+    expect(packPrivilegeFlags({ broadcast: true })).toBe(FLAG_BROADCAST);
+    expect(packPrivilegeFlags({ manageNetwork: true })).toBe(FLAG_MANAGE_NETWORK);
+    expect(packPrivilegeFlags({ firstMate: true })).toBe(FLAG_FIRST_MATE);
+    expect(packPrivilegeFlags({ createEvent: true })).toBe(1 << 5);
+    expect(packPrivilegeFlags({ addDoc: true })).toBe(1 << 6);
+  });
+
+  it('round-trips event and doc flags through the packed role id', () => {
+    const flags = packPrivilegeFlags({ createEvent: true, addDoc: true });
+    const roleId = encodePrivilegeRoleId({ name: 'Ed', flags });
+    const decoded = decodePrivilegeRoleId(roleId);
+    expect(decoded.ok && decoded.knownFlags).toBe(FLAG_CREATE_EVENT | FLAG_ADD_DOC);
   });
 });

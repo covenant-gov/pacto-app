@@ -187,6 +187,19 @@ describe('SquadDocsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Add doc' })).toBeNull();
   });
 
+  it('ignores a role change for a different squad', async () => {
+    state.docs = [];
+    render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy());
+    expect(state.privilege).toHaveBeenCalledTimes(1);
+
+    state.canAdd = false;
+    bumpSquadPrivilegeNonce('other-parent');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(state.privilege).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy();
+  });
+
   it('shows the add button and the join-history empty copy when open', async () => {
     state.docs = [];
     render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });

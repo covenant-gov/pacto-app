@@ -149,6 +149,20 @@ describe('SquadEventsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Add event' })).toBeNull();
   });
 
+  it('ignores a role change for a different squad', async () => {
+    state.events = [];
+    state.canCreate = true;
+    render(SquadEventsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add event' })).toBeTruthy());
+    expect(state.privilege).toHaveBeenCalledTimes(1);
+
+    state.canCreate = false;
+    bumpSquadPrivilegeNonce('other-parent');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(state.privilege).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Add event' })).toBeTruthy();
+  });
+
   it('shows the create control and the join-history empty copy when open', async () => {
     state.events = [];
     state.canCreate = true;

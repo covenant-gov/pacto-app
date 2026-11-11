@@ -154,6 +154,26 @@ describe('Save to Docs privilege gate', () => {
     expect(mocks.requireMySquadPrivilege).toHaveBeenCalledTimes(2);
   });
 
+  it('does nothing for a blank group id or a blank parent id', async () => {
+    ensureSquadDocAddPolicy('', PARENT, 0);
+    ensureSquadDocAddPolicy('   ', PARENT, 0);
+    ensureSquadDocAddPolicy(null, PARENT, 0);
+    ensureSquadDocAddPolicy(undefined, PARENT, 0);
+    ensureSquadDocAddPolicy('g', '  ', 0);
+    await Promise.resolve();
+    expect(mocks.requireMySquadPrivilege).not.toHaveBeenCalled();
+    expect(get(squadDocAddPolicyByParentId)).toEqual({});
+  });
+
+  it('keeps policies for different parents independent', async () => {
+    mocks.requireMySquadPrivilege.mockResolvedValue({ ok: true, active: false, flags: null });
+    ensureSquadDocAddPolicy('g', PARENT, 0, 0);
+    ensureSquadDocAddPolicy('g', 'parent-2', 0, 0);
+    await vi.waitFor(() => expect(mocks.requireMySquadPrivilege).toHaveBeenCalledTimes(2));
+    expect(mocks.requireMySquadPrivilege).toHaveBeenCalledWith(PARENT, 'addDoc');
+    expect(mocks.requireMySquadPrivilege).toHaveBeenCalledWith('parent-2', 'addDoc');
+  });
+
   it('stores null on an rpc failure so the item stays offered', async () => {
     mocks.requireMySquadPrivilege.mockResolvedValue({ ok: false, reason: 'rpc', active: true });
     ensureSquadDocAddPolicy('g', PARENT, 0);
