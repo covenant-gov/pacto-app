@@ -61,6 +61,10 @@ vi.mock('../api/nostr', () => ({
   syncMlsGroupsNow: (...args: unknown[]) => syncMlsGroupsNow(...args),
 }));
 
+vi.mock('../mls/open-channel-history', () => ({
+  reloadOpenChannelHistoryIfVisible: vi.fn(),
+}));
+
 vi.mock('../utils/dm-debug', () => ({
   dmLog: (...args: unknown[]) => dmLog(...args),
   dmError: (...args: unknown[]) => dmError(...args),

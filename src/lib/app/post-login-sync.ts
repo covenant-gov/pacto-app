@@ -8,6 +8,7 @@ import { listen, type UnlistenFn } from '../api';
 import { connect as apiConnect } from '../api/auth';
 import { monitorRelayConnections, type RelayStatus } from '../api/relays';
 import { fetchMessages, refreshProfileNow, startNotifs, syncMlsGroupsNow } from '../api/nostr';
+import { reloadOpenChannelHistoryIfVisible } from '../mls/open-channel-history';
 import { dmLog } from '../utils/dm-debug';
 import { dmSyncStatus } from '../../stores/dm';
 import { startProfileLoad } from '../../stores/profiles';
@@ -78,7 +79,9 @@ export function runPostLoginNetworkSync(npub: string): void {
       console.error('Auto profile refresh failed:', e);
     }
 
-    syncMlsGroupsNow(null).catch((e) => console.error('syncMlsGroupsNow after login failed:', e));
+    syncMlsGroupsNow(null)
+      .finally(reloadOpenChannelHistoryIfVisible)
+      .catch((e) => console.error('syncMlsGroupsNow after login failed:', e));
     dmLog('post-login: network sync done');
 
     runStartupUpdateCheckIfEnabled();
