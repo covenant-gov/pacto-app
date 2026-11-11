@@ -7,7 +7,7 @@
     resolveCatchUpTarget,
     navigateToTarget,
     parseEventReminderSourceId,
-  } from '../../lib/navigation/open-squad-dashboard';
+  } from '../../lib/navigation/open-squad-governance';
   import { formatEventTimestampMs } from '../../lib/squad/squad-event-display';
   import { squads } from '../../stores/squads';
   import { profiles } from '../../stores/profiles';
@@ -56,7 +56,7 @@
       return getProfileDisplayName($profiles[target.npub]);
     }
     const squad = $squads.find((s) => s.id === target.squadId);
-    if (target.kind === 'squad-dashboard') return squad?.name ?? '';
+    if (target.kind === 'squad-governance') return squad?.name ?? '';
     if (target.kind === 'squad-channel' && target.channelId === SETTINGS_CHANNEL_ID) {
       return squad ? `${squad.name} · #${SETTINGS_CHANNEL_NAME}` : '';
     }

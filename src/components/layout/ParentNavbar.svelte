@@ -49,7 +49,7 @@
   import { buildHubSidebarChannels } from '../../lib/parent-navbar';
   import {
     isVirtualHubChannelId,
-    SQUAD_DASHBOARD_CHANNEL_NAME,
+    SQUAD_GOVERNANCE_CHANNEL_NAME,
   } from '../../lib/squad/hub-channel-names';
   import { deferredSquadRosterKeyParentIds } from '../../lib/squad/squad-roster-key-choice';
   import {
@@ -260,7 +260,7 @@
   function selectChannel(channel: { groupId: string; name: string }) {
     const sid = $activeSquadId;
     const groupId =
-      channel.name === SQUAD_DASHBOARD_CHANNEL_NAME && sid
+      channel.name === SQUAD_GOVERNANCE_CHANNEL_NAME && sid
         ? governanceChannelIdForSidebarClick(sid, get(lastChannelBySquadId))
         : channel.groupId;
     const isVirtual = isVirtualHubChannelId(groupId);

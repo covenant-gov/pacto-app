@@ -28,9 +28,9 @@ import {
 import { loadBackupVerified } from './backup-verification';
 import { loadTorRoutingEnabled } from './tor';
 import {
-  SQUAD_DASHBOARD_MODE_PREFIX,
-  parseSquadDashboardChannelMode,
-  squadDashboardChannelMode,
+  SQUAD_GOVERNANCE_MODE_PREFIX,
+  parseSquadGovernanceChannelMode,
+  squadGovernanceChannelMode,
   SETTINGS_CHANNEL_MODE_PREFIX,
   parseSettingsChannelMode,
   settingsChannelMode,
@@ -169,8 +169,8 @@ export function loadAccountState(npub: string): void {
       }
     }
     // reconcileStaleInviteDecisions already runs after hydrateSquadsFromDb() completes
-    const rawSquadDashboardMode = localStorage.getItem(`${SQUAD_DASHBOARD_MODE_PREFIX}_${npub}`);
-    squadDashboardChannelMode.set(parseSquadDashboardChannelMode(rawSquadDashboardMode));
+    const rawSquadDashboardMode = localStorage.getItem(`${SQUAD_GOVERNANCE_MODE_PREFIX}_${npub}`);
+    squadGovernanceChannelMode.set(parseSquadGovernanceChannelMode(rawSquadDashboardMode));
     const rawSettingsChannelMode = localStorage.getItem(`${SETTINGS_CHANNEL_MODE_PREFIX}_${npub}`);
     settingsChannelMode.set(parseSettingsChannelMode(rawSettingsChannelMode));
     const rawBoardChannelMode = localStorage.getItem(`${TOOLS_CHANNEL_MODE_PREFIX}_${npub}`);

@@ -4,12 +4,13 @@
   import type { Squad } from '../../stores/app';
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
-    SQUAD_DASHBOARD_CHANNEL_NAME,
+    SQUAD_GOVERNANCE_CHANNEL_NAME,
+    SQUAD_WARGAME_CHANNEL_NAME,
     membershipVersionByGroupId,
-    squadDashboardChannelMode,
-    type SquadDashboardChannelMode,
+    squadGovernanceChannelMode,
+    type SquadGovernanceChannelMode,
   } from '../../stores/app';
-  import { openSquadDashboard, openSquadWargame } from '../../lib/navigation/open-squad-dashboard';
+  import { openSquadGovernance, openSquadWargame } from '../../lib/navigation/open-squad-governance';
   import GovernanceStackSwitcher from './GovernanceStackSwitcher.svelte';
 import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
 import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
@@ -89,7 +90,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import { settingsChainCacheKey } from '../../lib/dashboard/settings-chain-cache';
   import { squadMemberEvmByParentId } from '../../stores/squads';
 
-  type ParentDashboardView = SquadDashboardChannelMode;
+  type ParentDashboardView = SquadGovernanceChannelMode;
   const DASHBOARD_VIEWS: ParentDashboardView[] = [
     'status',
     'governance',
@@ -97,7 +98,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     'crew',
   ];
 
-  $: dashboardView = $squadDashboardChannelMode;
+  $: dashboardView = $squadGovernanceChannelMode;
   let visitedDashboardViews: Set<ParentDashboardView> = new Set();
   $: if (!visitedDashboardViews.has(dashboardView)) {
     visitedDashboardViews = new Set([...visitedDashboardViews, dashboardView]);
@@ -691,7 +692,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   function selectDashboardView(id: ParentDashboardView) {
-    squadDashboardChannelMode.set(id);
+    squadGovernanceChannelMode.set(id);
     if ((id === 'status' || id === 'crew') && announcementsGroupId) {
       void ensureMlsGroupMembers(announcementsGroupId);
     }
@@ -749,7 +750,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 </script>
 
 <HubViewShell
-  channelName={SQUAD_DASHBOARD_CHANNEL_NAME}
+  channelName={warGameStack ? SQUAD_WARGAME_CHANNEL_NAME : SQUAD_GOVERNANCE_CHANNEL_NAME}
   modes={DASHBOARD_VIEWS}
   active={dashboardView}
   ariaLabel={$t('governance.dashboardSection')}
@@ -762,7 +763,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     <GovernanceStackSwitcher
       {warGameStack}
       onSelectLive={() => {
-        if (parentId) openSquadDashboard(parentId);
+        if (parentId) openSquadGovernance(parentId);
       }}
       onSelectWargame={() => {
         if (parentId) openSquadWargame(parentId);

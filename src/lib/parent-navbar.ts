@@ -10,8 +10,8 @@ import {
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_ID,
   SETTINGS_CHANNEL_NAME,
-  SQUAD_DASHBOARD_CHANNEL_ID,
-  SQUAD_DASHBOARD_CHANNEL_NAME,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_NAME,
   SQUAD_WARGAME_CHANNEL_NAME,
 } from './squad/hub-channel-names';
 import {
@@ -43,7 +43,7 @@ const OBSOLETE_HUB_SIDEBAR_NAMES = new Set([
 /** Built-in hub rows (pinned dashboards + default MLS), not user-created chat channels. */
 export function isDefaultHubSidebarChannel(name: string): boolean {
   return (
-    name === SQUAD_DASHBOARD_CHANNEL_NAME ||
+    name === SQUAD_GOVERNANCE_CHANNEL_NAME ||
     name === ANNOUNCEMENTS_CHANNEL_NAME ||
     name === TOOLS_CHANNEL_NAME ||
     name === SETTINGS_CHANNEL_NAME
@@ -81,8 +81,8 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
   const out: Array<T | { name: string; groupId: string; order: number }> = [];
   if (announcements) out.push(announcements);
   out.push({
-    name: SQUAD_DASHBOARD_CHANNEL_NAME,
-    groupId: SQUAD_DASHBOARD_CHANNEL_ID,
+    name: SQUAD_GOVERNANCE_CHANNEL_NAME,
+    groupId: SQUAD_GOVERNANCE_CHANNEL_ID,
     order: -2,
   });
   if (board) out.push(board);

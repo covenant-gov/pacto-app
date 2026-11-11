@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   TOOLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_ID,
-  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   toolsModeFromObsoleteHubName,
-  isSquadDashboardChromeChannelId,
+  isSquadGovernanceChromeChannelId,
   isVirtualHubChannelId,
   migrateLastHubChannelNamesBySquad,
   normalizeHubChannelName,
@@ -16,7 +16,7 @@ import {
 
 describe('isVirtualHubChannelId', () => {
   it('matches governance, gov-practice, and settings', () => {
-    expect(isVirtualHubChannelId(SQUAD_DASHBOARD_CHANNEL_ID)).toBe(true);
+    expect(isVirtualHubChannelId(SQUAD_GOVERNANCE_CHANNEL_ID)).toBe(true);
     expect(isVirtualHubChannelId(SQUAD_WARGAME_CHANNEL_ID)).toBe(true);
     expect(isVirtualHubChannelId(SETTINGS_CHANNEL_ID)).toBe(true);
     expect(isVirtualHubChannelId('__my_dashboard__')).toBe(false);
@@ -26,12 +26,12 @@ describe('isVirtualHubChannelId', () => {
   });
 });
 
-describe('isSquadDashboardChromeChannelId', () => {
+describe('isSquadGovernanceChromeChannelId', () => {
   it('matches governance and gov-practice only', () => {
-    expect(isSquadDashboardChromeChannelId(SQUAD_DASHBOARD_CHANNEL_ID)).toBe(true);
-    expect(isSquadDashboardChromeChannelId(SQUAD_WARGAME_CHANNEL_ID)).toBe(true);
-    expect(isSquadDashboardChromeChannelId(SETTINGS_CHANNEL_ID)).toBe(false);
-    expect(isSquadDashboardChromeChannelId('__my_dashboard__')).toBe(false);
+    expect(isSquadGovernanceChromeChannelId(SQUAD_GOVERNANCE_CHANNEL_ID)).toBe(true);
+    expect(isSquadGovernanceChromeChannelId(SQUAD_WARGAME_CHANNEL_ID)).toBe(true);
+    expect(isSquadGovernanceChromeChannelId(SETTINGS_CHANNEL_ID)).toBe(false);
+    expect(isSquadGovernanceChromeChannelId('__my_dashboard__')).toBe(false);
   });
 });
 
@@ -41,14 +41,14 @@ describe('defaultGovernanceStackChannelId', () => {
   });
 
   it('prefers Live when live pacto_gov exists', () => {
-    expect(defaultGovernanceStackChannelId(true)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+    expect(defaultGovernanceStackChannelId(true)).toBe(SQUAD_GOVERNANCE_CHANNEL_ID);
   });
 });
 
 describe('resolveGovernanceChromeChannelId', () => {
   it('restores last chrome id over the practice-first default', () => {
-    expect(resolveGovernanceChromeChannelId(SQUAD_DASHBOARD_CHANNEL_ID, false)).toBe(
-      SQUAD_DASHBOARD_CHANNEL_ID,
+    expect(resolveGovernanceChromeChannelId(SQUAD_GOVERNANCE_CHANNEL_ID, false)).toBe(
+      SQUAD_GOVERNANCE_CHANNEL_ID,
     );
     expect(resolveGovernanceChromeChannelId(SQUAD_WARGAME_CHANNEL_ID, true)).toBe(
       SQUAD_WARGAME_CHANNEL_ID,
@@ -57,14 +57,14 @@ describe('resolveGovernanceChromeChannelId', () => {
 
   it('falls back to practice-first default when last is not chrome', () => {
     expect(resolveGovernanceChromeChannelId('g-ops', false)).toBe(SQUAD_WARGAME_CHANNEL_ID);
-    expect(resolveGovernanceChromeChannelId(null, true)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+    expect(resolveGovernanceChromeChannelId(null, true)).toBe(SQUAD_GOVERNANCE_CHANNEL_ID);
   });
 });
 
 describe('remapObsoleteHubChannelId', () => {
   it('remaps obsolete virtual ids to settings / governance / gov-practice', () => {
     expect(remapObsoleteHubChannelId('__my_dashboard__')).toBe(SETTINGS_CHANNEL_ID);
-    expect(remapObsoleteHubChannelId('__squad_dashboard__')).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+    expect(remapObsoleteHubChannelId('__squad_dashboard__')).toBe(SQUAD_GOVERNANCE_CHANNEL_ID);
     expect(remapObsoleteHubChannelId('__squad_wargame__')).toBe(SQUAD_WARGAME_CHANNEL_ID);
     expect(remapObsoleteHubChannelId(SETTINGS_CHANNEL_ID)).toBe(SETTINGS_CHANNEL_ID);
     expect(remapObsoleteHubChannelId(null)).toBeNull();

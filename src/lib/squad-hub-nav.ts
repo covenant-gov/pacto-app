@@ -17,7 +17,7 @@ import {
   squads,
   squadInfraByParentId,
   SETTINGS_CHANNEL_ID,
-  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   isVirtualHubChannelId,
   type Squad,
@@ -27,14 +27,14 @@ import {
   normalizeHubChannelName,
   remapObsoleteHubChannelId,
   defaultGovernanceStackChannelId,
-  isSquadDashboardChromeChannelId,
+  isSquadGovernanceChromeChannelId,
 } from './squad/hub-channel-names';
 import { resolveHubChannelNameForGroupSelection } from './mls/virtual-channel-bucket';
 import { pactoGovInfraRow } from './governance/api';
 import { squadToolsChannelMode } from '../stores/navigation';
 
 const VIRTUAL_HUB_CHANNEL_IDS = new Set([
-  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   SETTINGS_CHANNEL_ID,
 ]);
@@ -118,7 +118,7 @@ export function governanceChannelIdForSidebarClick(
   lastChannelBySquad: Record<string, string>,
 ): string {
   const last = remapObsoleteHubChannelId(lastChannelBySquad[squadId]) ?? null;
-  if (last && isSquadDashboardChromeChannelId(last)) return last;
+  if (last && isSquadGovernanceChromeChannelId(last)) return last;
   return defaultGovernanceStackChannelId(hasLivePactoGov(squadId));
 }
 

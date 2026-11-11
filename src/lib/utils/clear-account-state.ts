@@ -21,7 +21,7 @@ import {
   lastHubChannelNameBySquadId,
   squadNavOrder,
   showMembersPanel,
-  squadDashboardChannelMode,
+  squadGovernanceChannelMode,
   settingsChannelMode,
   squadToolsChannelMode,
   dashboardPollReplicaNonceByParentId,
@@ -179,6 +179,8 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_last_channel_by_squad',
   'pacto_last_hub_channel_name_by_squad',
   'pacto_squad_nav_order',
+  'pacto_squad_governance_mode',
+  'pacto_squad_dashboard_mode', // superseded prefix; wipe on logout
   'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
   'pacto_wallet_summary_cache_v1',
@@ -334,7 +336,7 @@ export function clearAccountState(npub?: string): void {
   activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
   activeDmTab.set('friends');
   activeView.set('hub');
-  squadDashboardChannelMode.set('status');
+  squadGovernanceChannelMode.set('status');
   settingsChannelMode.set('you');
   squadToolsChannelMode.set('polls');
   showMembersPanel.set(false);

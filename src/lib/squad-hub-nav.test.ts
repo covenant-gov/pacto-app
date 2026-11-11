@@ -21,7 +21,7 @@ import {
   squads,
   squadInfraByParentId,
   SETTINGS_CHANNEL_ID,
-  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   type Squad,
 } from '../stores/squads';
@@ -134,7 +134,7 @@ describe('resolveHubChannelForSquad', () => {
         },
       ],
     });
-    expect(resolveHubChannelForSquad(squad, {}, {}).channelId).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+    expect(resolveHubChannelForSquad(squad, {}, {}).channelId).toBe(SQUAD_GOVERNANCE_CHANNEL_ID);
   });
 
   it('restores last dashboard and MLS channel selections', () => {
@@ -146,8 +146,8 @@ describe('resolveHubChannelForSquad', () => {
       ],
     };
     expect(
-      resolveHubChannelForSquad(squad, { 'squad-a': SQUAD_DASHBOARD_CHANNEL_ID }, {}).channelId,
-    ).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+      resolveHubChannelForSquad(squad, { 'squad-a': SQUAD_GOVERNANCE_CHANNEL_ID }, {}).channelId,
+    ).toBe(SQUAD_GOVERNANCE_CHANNEL_ID);
     expect(
       resolveHubChannelForSquad(squad, { 'squad-a': 'g-ops' }, {}).channelId,
     ).toBe('g-ops');
@@ -182,8 +182,8 @@ describe('governanceChannelIdForSidebarClick', () => {
 
   it('restores last chrome id', () => {
     expect(
-      governanceChannelIdForSidebarClick('squad-a', { 'squad-a': SQUAD_DASHBOARD_CHANNEL_ID }),
-    ).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+      governanceChannelIdForSidebarClick('squad-a', { 'squad-a': SQUAD_GOVERNANCE_CHANNEL_ID }),
+    ).toBe(SQUAD_GOVERNANCE_CHANNEL_ID);
     expect(
       governanceChannelIdForSidebarClick('squad-a', { 'squad-a': SQUAD_WARGAME_CHANNEL_ID }),
     ).toBe(SQUAD_WARGAME_CHANNEL_ID);

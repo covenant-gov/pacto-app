@@ -12,23 +12,23 @@ import {
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
   settingsChannelMode,
-  squadDashboardChannelMode,
+  squadGovernanceChannelMode,
   squadToolsChannelMode,
   squads,
-  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   SETTINGS_CHANNEL_ID,
   type Squad,
 } from '../../stores/app';
 import {
   openSquadCrewPrivileges,
-  openSquadDashboard,
+  openSquadGovernance,
   openSquadSettings,
   openSquadWargame,
   navigateToTarget,
   parseEventReminderSourceId,
   resolveCatchUpTarget,
-} from './open-squad-dashboard';
+} from './open-squad-governance';
 
 const mocks = vi.hoisted(() => ({
   eventsFocusSet: vi.fn(),
@@ -50,7 +50,7 @@ function squad(id: string, channels: { name: string; groupId: string }[]): Squad
   } as Squad;
 }
 
-describe('openSquadDashboard', () => {
+describe('openSquadGovernance', () => {
   beforeEach(() => {
     activeTopNavTab.set('commons');
     activeSquadId.set(null);
@@ -66,26 +66,26 @@ describe('openSquadDashboard', () => {
   });
 
   it('sets active tab, squad, dashboard channel, and view', () => {
-    openSquadDashboard('squad-123');
+    openSquadGovernance('squad-123');
     expect(get(activeTopNavTab)).toBe('squads');
     expect(get(activeSquadId)).toBe('squad-123');
-    expect(get(activeChannelId)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+    expect(get(activeChannelId)).toBe(SQUAD_GOVERNANCE_CHANNEL_ID);
     expect(get(activeView)).toBe('hub');
   });
 
   it('trims whitespace from parent id', () => {
-    openSquadDashboard('  squad-456  ');
+    openSquadGovernance('  squad-456  ');
     expect(get(activeSquadId)).toBe('squad-456');
   });
 
   it('does nothing when id is empty', () => {
-    openSquadDashboard('');
+    openSquadGovernance('');
     expect(get(activeTopNavTab)).toBe('commons');
     expect(get(activeSquadId)).toBeNull();
   });
 
   it('does nothing when id is whitespace-only', () => {
-    openSquadDashboard('   ');
+    openSquadGovernance('   ');
     expect(get(activeTopNavTab)).toBe('commons');
     expect(get(activeSquadId)).toBeNull();
   });
@@ -164,7 +164,7 @@ describe('openSquadCrewPrivileges', () => {
     lastOpenedChannelId.set(null);
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
-    squadDashboardChannelMode.set('status');
+    squadGovernanceChannelMode.set('status');
     squads.set([]);
   });
 
@@ -172,8 +172,8 @@ describe('openSquadCrewPrivileges', () => {
     openSquadCrewPrivileges('squad-123');
     expect(get(activeTopNavTab)).toBe('squads');
     expect(get(activeSquadId)).toBe('squad-123');
-    expect(get(activeChannelId)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
-    expect(get(squadDashboardChannelMode)).toBe('crew');
+    expect(get(activeChannelId)).toBe(SQUAD_GOVERNANCE_CHANNEL_ID);
+    expect(get(squadGovernanceChannelMode)).toBe('crew');
     expect(get(activeView)).toBe('hub');
   });
 
@@ -181,7 +181,7 @@ describe('openSquadCrewPrivileges', () => {
     openSquadCrewPrivileges('   ');
     expect(get(activeTopNavTab)).toBe('commons');
     expect(get(activeSquadId)).toBeNull();
-    expect(get(squadDashboardChannelMode)).toBe('status');
+    expect(get(squadGovernanceChannelMode)).toBe('status');
   });
 });
 
@@ -220,9 +220,9 @@ describe('navigateToTarget', () => {
     expect(get(lastHubChannelNameBySquadId)).toEqual({ 'squad-1': 'ops' });
   });
 
-  it('a squad-dashboard target opens the virtual dashboard channel with no hub channel name', () => {
-    navigateToTarget({ kind: 'squad-dashboard', squadId: 'squad-1' });
-    expect(get(activeChannelId)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+  it('a squad-governance target opens the virtual governance channel with no hub channel name', () => {
+    navigateToTarget({ kind: 'squad-governance', squadId: 'squad-1' });
+    expect(get(activeChannelId)).toBe(SQUAD_GOVERNANCE_CHANNEL_ID);
     expect(get(activeHubChannelName)).toBeNull();
   });
 
@@ -323,7 +323,7 @@ describe('resolveCatchUpTarget', () => {
 
   it('resolves an action_prompt entry on the announcements channel to the squad dashboard', () => {
     const target = resolveCatchUpTarget({ chatId: 'grp-announce', kind: 'action_prompt' }, testSquads);
-    expect(target).toEqual({ kind: 'squad-dashboard', squadId: 'squad-1' });
+    expect(target).toEqual({ kind: 'squad-governance', squadId: 'squad-1' });
   });
 
   it('resolves a join-request action_prompt to #settings About', () => {

@@ -7,7 +7,7 @@
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
-  import { openSquadCrewPrivileges } from '../../../lib/navigation/open-squad-dashboard';
+  import { openSquadCrewPrivileges } from '../../../lib/navigation/open-squad-governance';
   import { showToast } from '../../../stores/toast';
 
   let {

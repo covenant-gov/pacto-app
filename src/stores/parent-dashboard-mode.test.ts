@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { parseSquadDashboardChannelMode } from './navigation';
+import { parseSquadGovernanceChannelMode } from './navigation';
 
-describe('parseSquadDashboardChannelMode', () => {
+describe('parseSquadGovernanceChannelMode', () => {
   it('accepts known modes', () => {
-    expect(parseSquadDashboardChannelMode('status')).toBe('status');
-    expect(parseSquadDashboardChannelMode('governance')).toBe('governance');
-    expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
-    expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
-    expect(parseSquadDashboardChannelMode('settings')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('status')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('governance')).toBe('governance');
+    expect(parseSquadGovernanceChannelMode('treasury')).toBe('treasury');
+    expect(parseSquadGovernanceChannelMode('crew')).toBe('crew');
+    expect(parseSquadGovernanceChannelMode('settings')).toBe('status');
   });
 
   it('resets unknown values to status', () => {
-    expect(parseSquadDashboardChannelMode(null)).toBe('status');
-    expect(parseSquadDashboardChannelMode('')).toBe('status');
-    expect(parseSquadDashboardChannelMode('stickers')).toBe('status');
-    expect(parseSquadDashboardChannelMode('roles')).toBe('status');
-    expect(parseSquadDashboardChannelMode('roles_tree')).toBe('status');
+    expect(parseSquadGovernanceChannelMode(null)).toBe('status');
+    expect(parseSquadGovernanceChannelMode('')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('stickers')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('roles')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('roles_tree')).toBe('status');
   });
 });

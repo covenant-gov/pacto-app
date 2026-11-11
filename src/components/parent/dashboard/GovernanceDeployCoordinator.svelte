@@ -2,7 +2,7 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   const tFn = get(t);
-  import type { SquadDashboardChannelMode } from '../../../stores/app';
+  import type { SquadGovernanceChannelMode } from '../../../stores/app';
   import { showToast } from '../../../stores/toast';
   import { TREASURY_SAFE_UI_CAP } from '../../../lib/treasury/treasury-safes';
   import { requireBackupVerified } from '../../../stores/backup-verification';
@@ -14,7 +14,7 @@
   } from '../../../lib/governance/start-pacto-gov-deploy';
   import type { CombinedGovSponsorDeployComplete } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
   import type { LaunchpadRouteAction } from '../../../lib/governance/launchpad-cta';
-  import { openSquadCrewPrivileges } from '../../../lib/navigation/open-squad-dashboard';
+  import { openSquadCrewPrivileges } from '../../../lib/navigation/open-squad-governance';
   import ParentDashboardModals from './ParentDashboardModals.svelte';
 
   interface Props {
@@ -66,7 +66,7 @@
       infraRowId: string;
     }) => Promise<void>;
     /** Navigate the dashboard after a deploy completes. */
-    onNavigate?: (view: SquadDashboardChannelMode) => void;
+    onNavigate?: (view: SquadGovernanceChannelMode) => void;
     /** Warm member/EVM caches before a deploy wizard opens. */
     onPrefetchDeployContext?: () => void;
   }

@@ -2,7 +2,7 @@
 
 <script lang="ts">
   import { toastMessage, clearToast, runToastRetryAction, type ToastGoTo } from '../../stores/toast';
-  import { navigateToTarget } from '../../lib/navigation/open-squad-dashboard';
+  import { navigateToTarget } from '../../lib/navigation/open-squad-governance';
   import { t } from 'svelte-i18n';
 
   function goToSpace(goTo: ToastGoTo) {

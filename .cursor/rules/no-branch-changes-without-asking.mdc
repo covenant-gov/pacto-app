@@ -5,6 +5,16 @@ alwaysApply: true
 
 # No branch changes without consulting
 
-- Do **not** create, checkout, switch, rename, or delete git branches unless the user explicitly asks.
-- That includes `git checkout -b`, `git switch`, `git branch -m`, and similar.
-- If a new branch or switch seems needed, propose it and wait for approval.
+- Do **not** create, checkout, switch, rename, or delete git branches unless the user explicitly asks in this turn.
+- That includes `git checkout -b`, `git switch`, `git branch -m`, `git branch -D`, and similar.
+
+## Plan approval is not permission
+
+- A plan that **suggests** a new branch, a switch, or “land on a dedicated branch” does **not** authorize any branch change.
+- Approving or implementing that plan is **not** implicit permission to create or switch branches.
+- If a plan (approved or not) calls for a branch change and the human has **not** explicitly said to change branches, **stop and ask** before any `checkout` / `switch` / `branch -b` / delete.
+- Never treat Plan → Build, “implement the plan”, “execute the plan”, or todo completion as branch authority.
+
+## Required ask
+
+Switching, creating, renaming, or deleting a branch must **never** happen unless the human explicitly says to do that. If they have not said it in clear words, the agent must ask and wait.
