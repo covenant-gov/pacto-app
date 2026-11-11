@@ -74,7 +74,6 @@
     dmThreadAnnouncementsByNpub,
     appendPendingOutboundDmMessage,
     removeOutboundDmMessage,
-    backendGroupMessages,
     ungroupedChannels,
     messageCountByChat,
     loadedOffsetByChat,
@@ -132,16 +131,17 @@
   } from '../../lib/governance/standalone-safe-payload';
   import { resolveAutomatedAnnounceGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
-  import { syncSquadsHubSelection, parentIdForChannelGroup } from '../../lib/squad-hub-nav';
+  import {
+    loadOpenChannelHistory,
+    reloadOpenChannelHistoryIfVisible,
+  } from '../../lib/mls/open-channel-history';
+  import { syncSquadsHubSelection } from '../../lib/squad-hub-nav';
   import { portal } from '../../lib/utils/portal';
   import { subscribeAppEvents } from '../../lib/app/tauri-subscriptions';
   import { backupVerificationModalOpen } from '../../stores/backup-verification';
   import BackupVerificationModal from '../../components/backup/BackupVerificationModal.svelte';
   import BackupBanner from '../../components/backup/BackupBanner.svelte';
-  import {
-    scheduleAllSquadsHubWarmup,
-    ensureMlsAutomationReplayed,
-  } from '../../lib/app/hub-prefetch';
+  import { scheduleAllSquadsHubWarmup } from '../../lib/app/hub-prefetch';
   import {
     syncSquadInfraForParent as mergeSquadInfraForParent,
     syncTreasurySafesForParent as mergeTreasurySafesForParent,
@@ -577,26 +577,7 @@
     !$activeChannelId.startsWith('creating-') &&
     $activeTopNavTab === 'squads'
   ) {
-    const groupId = $activeChannelId;
-    const parentIdAtOpen = parentIdForChannelGroup(get(squads), groupId);
-    dmLog('open channel', { groupId: groupId.slice(0, 20) + '…' });
-    getChatMessageCount(groupId)
-      .then((count) => {
-        messageCountByChat.update((by: Record<string, number>) => ({ ...by, [groupId]: count }));
-      })
-      .catch((err) => dmError('open channel: getChatMessageCount failed', err));
-    getDmMessages(groupId, PAGE_SIZE, 0)
-      .then((msgs) => {
-        dmLog('open channel: messages loaded', { groupId: groupId.slice(0, 20) + '…', count: msgs.length });
-        backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => ({
-          ...byGroup,
-          [groupId]: msgs as DmMessage[],
-        }));
-        const parentId = parentIdForChannelGroup(get(squads), groupId) ?? parentIdAtOpen;
-        ensureMlsAutomationReplayed(groupId, parentId);
-        loadedOffsetByChat.update((by: Record<string, number>) => ({ ...by, [groupId]: PAGE_SIZE }));
-      })
-      .catch((err) => dmError('open channel: getDmMessages failed', err));
+    loadOpenChannelHistory($activeChannelId);
   }
 
   async function loadOlder() {
@@ -819,7 +800,9 @@
   let prevTopNavTab: string | undefined = undefined;
   $: if ($activeTopNavTab === 'squads' && prevTopNavTab !== 'squads') {
     prevTopNavTab = 'squads';
-    syncMlsGroupsNow(null).catch(() => {});
+    syncMlsGroupsNow(null)
+      .finally(reloadOpenChannelHistoryIfVisible)
+      .catch(() => {});
     clearUngroupedChannels();
     syncSquadsHubSelection();
   } else if ($activeTopNavTab !== 'squads') {
