@@ -7,7 +7,7 @@
 ## 1. Kicking a member (`remove_member_device`)
 
 - App calls the MLS engine’s **`remove_members`** with the target pubkey; **MDK enforces admin policy** — Pacto does not duplicate an admin check in Rust before the call.
-- At **group creation**, config typically sets **only the creator** as admin (`NostrGroupConfigData` / `vec![my_pubkey]`). So in practice **only the creator** can remove members unless MDK group config gains more admins.
+- At **group creation**, announcements and channels created before announcements-admin seeding set **only the creator** as admin (`NostrGroupConfigData` / `vec![creator]`). A **new custom channel** also admins the announcements group's `admin_pubkeys`, and those extra admins are members of the channel. There is no in-app admin add after create. So a pre-seed channel can be restored only by its creator.
 
 After a successful remove: evolution event published, **`merge_pending_commit`** locally, **`mls_group_updated`** for UI refresh.
 
@@ -47,7 +47,7 @@ If publish/merge is skipped, **`get_mls_group_members`** still lists the leaver 
 
 Older engines sometimes returned **`Unprocessable`** with failure reason **`not processing proposal from non-admin`**. Pacto still maps that to **`finalize_voluntary_leave_as_admin`** (admin **`remove_members`** + publish + merge + leave announce). SelfRemove auto-commit is the primary path on MDK 0.8.
 
-**Admin handoff:** Pacto does **not** currently expose “add admin” / “transfer MLS admin”. Only the creator is admin at creation. If the **creator leaves**, the MLS group may end up with **no admins** → **no further kicks** from MLS until MDK + app support admin updates. Squad-level roles (e.g. Hats) are a separate product layer.
+**Admin handoff:** Pacto does **not** expose “add admin” / “transfer MLS admin” after create. Announcements stay creator-only. A new custom channel also includes the announcements admin set at create; a channel created earlier does not. If the **sole admin leaves**, the MLS group may end up with **no admins** → **no further kicks** from MLS. Squad-level roles (e.g. Hats) are a separate product layer.
 
 ---
 

@@ -430,6 +430,7 @@ pub(crate) async fn run_create_mls_group(
     name: String,
     avatar_ref: Option<String>,
     initial_member_devices: Vec<(String, String)>,
+    admin_npubs: Vec<String>,
 ) -> Result<mls::GroupCreateOutcome, String> {
     tokio::task::spawn_blocking(move || {
         // Get handle in blocking context
@@ -439,9 +440,66 @@ pub(crate) async fn run_create_mls_group(
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
-            mls.create_group(&name, avatar_ref.as_deref(), &initial_member_devices)
-                .await
-                .map_err(|e| e.to_string())
+            mls.create_group(
+                &name,
+                avatar_ref.as_deref(),
+                &initial_member_devices,
+                &admin_npubs,
+            )
+            .await
+            .map_err(|e| e.to_string())
+        })
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+async fn current_signer_npub() -> Result<String, String> {
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
+    let signer = client.signer().await.map_err(|e| e.to_string())?;
+    let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
+    pk.to_bech32().map_err(|e| e.to_string())
+}
+
+/// Engine `admin_pubkeys` for a wire or engine group id, as npubs.
+async fn load_mls_group_admin_npubs(group_id: String) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async move {
+            let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
+            let meta = mls.read_groups().await.map_err(|e| e.to_string())?;
+            let engine_id = meta
+                .iter()
+                .find(|g| g.group_id == group_id || g.engine_group_id == group_id)
+                .map(|m| {
+                    if m.engine_group_id.is_empty() {
+                        m.group_id.clone()
+                    } else {
+                        m.engine_group_id.clone()
+                    }
+                })
+                .ok_or_else(|| format!("Announcements group {} was not found", group_id))?;
+            let engine = mls.engine().map_err(|e| e.to_string())?;
+            let admins = engine
+                .get_groups()
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .find(|g| hex::encode(g.mls_group_id.as_slice()) == engine_id)
+                .map(|g| {
+                    g.admin_pubkeys
+                        .iter()
+                        .filter_map(|pk| pk.to_bech32().ok())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if admins.is_empty() {
+                return Err(format!(
+                    "No MLS admins found for announcements group {}",
+                    group_id
+                ));
+            }
+            Ok(admins)
         })
     })
     .await
@@ -452,6 +510,7 @@ pub(crate) async fn run_create_mls_group(
 /// - Validates non-empty group name (channel name; squad display name is a separate
 ///   field validated in `squad_catalog::upsert_squad`). `member_ids` may be empty
 ///   (creator-only group; consent-first invites add humans after create).
+/// - `seed_admin_group_id`, when set, unions that group's MLS admins into this channel. Each extra admin is also a member. A seeded admin with no usable KeyPackage aborts the create.
 /// - For each member npub, refreshes their latest device keypackage(s)
 /// - A member with zero keypackages after refresh, or whose KeyPackage the MLS engine cannot
 ///   parse (e.g. a legacy event missing the MIP-00/02 encoding tag), is skipped rather than
@@ -464,12 +523,13 @@ pub(crate) async fn run_create_mls_group(
 /// - For now we choose the first returned device as the member's device to add
 ///   This can be evolved to pick "newest" by fetched_at if exposed; UI can later allow device selection.
 ///
-/// Frontend invokes this via: invoke('create_group_chat', { groupName, memberIds }) and gets
+/// Frontend invokes this via: invoke('create_group_chat', { groupName, memberIds, seedAdminGroupId }) and gets
 /// back `{ groupId, skippedMembers }`. Skipped members are never sent squad-invite DMs.
 #[tauri::command]
 pub(crate) async fn create_group_chat(
     group_name: String,
     member_ids: Vec<String>,
+    seed_admin_group_id: Option<String>,
 ) -> Result<GroupChatCreated, String> {
     session::heartbeat();
     require_key_derivation_version_2()?;
@@ -503,12 +563,27 @@ pub(crate) async fn create_group_chat(
         ));
     }
     // Empty member_ids = creator-only group (consent-first invites add humans later).
+    let seed_id = seed_admin_group_id.unwrap_or_default();
+    let seed_id = seed_id.trim().to_string();
+    let announcements_admins = if seed_id.is_empty() {
+        Vec::new()
+    } else {
+        load_mls_group_admin_npubs(seed_id).await?
+    };
+    let creator_npub = if announcements_admins.is_empty() {
+        String::new()
+    } else {
+        current_signer_npub().await?
+    };
+    let roster =
+        mls::union_channel_create_roster(&creator_npub, &member_ids, &announcements_admins);
 
     // For each member id (npub), refresh keypackages and pick one device to add
-    let mut initial_member_devices: Vec<(String, String)> = Vec::with_capacity(member_ids.len());
+    let mut initial_member_devices: Vec<(String, String)> =
+        Vec::with_capacity(roster.members.len());
     let mut preflight_skipped: Vec<mls::SkippedMember> = Vec::new();
 
-    for npub in member_ids {
+    for npub in roster.members {
         // Attempt to refresh and fetch device keypackages for this contact
         // If this fails for any reason, abort group creation with actionable error text
         let devices = refresh_keypackages_for_contact(npub.clone())
@@ -534,6 +609,16 @@ pub(crate) async fn create_group_chat(
         }
     }
 
+    let resolved_npubs: Vec<String> = initial_member_devices
+        .iter()
+        .map(|(npub, _)| npub.clone())
+        .collect();
+    let missing_admins =
+        mls::seeded_admins_missing_keypackage(&creator_npub, &roster.admins, &resolved_npubs);
+    if !missing_admins.is_empty() {
+        return Err(mls::announcements_admin_keypackage_error(&missing_admins));
+    }
+
     // If members were requested but everyone was skipped, abort with a clear error
     if initial_member_devices.is_empty() && !preflight_skipped.is_empty() {
         return Err(format!(
@@ -556,7 +641,13 @@ pub(crate) async fn create_group_chat(
 
     // Delegate to the shared helper that persists metadata, publishes welcomes and emits UI
     // events; avatar_ref is None for now (out of scope for this subtask)
-    let outcome = run_create_mls_group(name.to_string(), None, initial_member_devices).await?;
+    let outcome = run_create_mls_group(
+        name.to_string(),
+        None,
+        initial_member_devices,
+        roster.admins,
+    )
+    .await?;
 
     let skipped_members = merge_skipped_members(preflight_skipped, outcome.skipped);
     for s in &skipped_members {
@@ -1483,7 +1574,7 @@ pub(crate) async fn refresh_keypackages_for_contact(
     // Load existing index
     let mut index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
 
-    // Remove any existing entries for this owner+device_id to avoid duplicates
+    // Remove refreshed event-id rows. The welcomed sentinel is not an event id and stays.
     for new_entry in &new_entries {
         let owner = new_entry
             .get("owner_pubkey")
@@ -1494,9 +1585,15 @@ pub(crate) async fn refresh_keypackages_for_contact(
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         index.retain(|entry| {
-            let same_owner = entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner);
-            let same_device = entry.get("device_id").and_then(|v| v.as_str()) == Some(device);
-            !(same_owner && same_device)
+            let existing_owner = entry
+                .get("owner_pubkey")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let existing_device = entry
+                .get("device_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            mls::refresh_keeps_index_row(existing_device, existing_owner == owner, device)
         });
     }
 

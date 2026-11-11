@@ -3,7 +3,11 @@
   import Modal from '../ui/Modal.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { restoreMlsMemberAccess } from '../../lib/parent/restore-mls-access';
-  import { restoreMemberToSquad, squadForAnnouncementsGroup } from '../../lib/parent/restore-squad-access';
+  import {
+    mlsMemberPanelAction,
+    restoreMemberToSquad,
+    squadForAnnouncementsGroup,
+  } from '../../lib/parent/restore-squad-access';
   import { showToast } from '../../stores/toast';
   import { squads } from '../../stores/squads';
   import type { NostrProfile } from '../../stores/profiles';
@@ -30,7 +34,7 @@
     !!currentUserNpub && admins.some((a) => a === currentUserNpub),
   );
 
-  /** Squad-wide restore applies only on the announcements panel; channel panels restore that channel. */
+  /** Squad-wide restore. Custom channels do not show Restore. */
   const owningSquad = $derived(squadForAnnouncementsGroup($squads, groupId));
 
   // Union of engine members and pending-only npubs: a resend can remove the engine leaf before
@@ -111,6 +115,12 @@
       {#each renderNpubs as npub (npub)}
         {@const avatarSrc = getProfileAvatarSrc(profiles[npub])}
         {@const isPending = pendingWelcomes.includes(npub)}
+        {@const memberAction = mlsMemberPanelAction({
+          isPending,
+          canRestore,
+          isAnnouncements: !!owningSquad,
+          isSelf: npub === currentUserNpub,
+        })}
         <div class="members-panel-member">
           {#if avatarSrc}
             <img src={avatarSrc} alt="" class="members-panel-avatar" />
@@ -123,7 +133,7 @@
               {$t('messaging.channel.mlsPendingInviteBadge')}
             </span>
           {/if}
-          {#if isPending && canRestore}
+          {#if memberAction === 'resend'}
             <button
               type="button"
               class="resend-invite"
@@ -134,7 +144,7 @@
             >
               {$t('messaging.channel.mlsResendInviteButton')}
             </button>
-          {:else if canRestore && npub !== currentUserNpub}
+          {:else if memberAction === 'restore'}
             <button
               type="button"
               class="restore-access"

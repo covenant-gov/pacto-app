@@ -107,6 +107,20 @@ export function planSquadMemberRestore(opts: {
   return { restoreGroupIds, admitOpen };
 }
 
+export type MlsMemberPanelAction = 'resend' | 'restore' | 'none';
+
+/** Resend stays on every pending welcome. Restore is announcements-only. */
+export function mlsMemberPanelAction(opts: {
+  isPending: boolean;
+  canRestore: boolean;
+  isAnnouncements: boolean;
+  isSelf: boolean;
+}): MlsMemberPanelAction {
+  if (opts.isPending && opts.canRestore) return 'resend';
+  if (opts.canRestore && opts.isAnnouncements && !opts.isSelf) return 'restore';
+  return 'none';
+}
+
 async function notifyChannelWelcome(
   parent: Squad,
   channelGroupId: string,

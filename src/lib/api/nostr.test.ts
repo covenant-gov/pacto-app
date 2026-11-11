@@ -361,6 +361,16 @@ describe('createGroupChat', () => {
     const result = await createGroupChat('Squad', ['npub1', 'npub2']);
     expect(result.pendingInvites).toEqual([{ npub: 'npub1', reason: 'Welcome delivery failed' }]);
   });
+
+  it('passes seedAdminGroupId only when a channel create supplies it', async () => {
+    mockedInvoke.mockResolvedValueOnce({ groupId: 'group-id', skippedMembers: [], pendingInvites: [] });
+    await createGroupChat('ops', ['npub1'], 'g-ann');
+    expect(mockedInvoke).toHaveBeenCalledWith('create_group_chat', {
+      groupName: 'ops',
+      memberIds: ['npub1'],
+      seedAdminGroupId: 'g-ann',
+    });
+  });
 });
 
 describe('listMlsGroups', () => {
