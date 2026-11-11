@@ -16,7 +16,10 @@ import {
   POLLS_CHANNEL_NAME,
 } from './hub-channel-names';
 import { requireMySquadPrivilege } from '../governance/squad-privilege-enforce';
-import { upsertPendingOpenChannelJoin } from './pending-open-channel-joins';
+import {
+  forgetPendingOpenChannelJoinsNotListed,
+  upsertPendingOpenChannelJoin,
+} from './pending-open-channel-joins';
 import { tryCompleteOpenChannelJoins } from './open-channel-join';
 
 export const SQUAD_CHANNELS_CATALOG_TYPE = 'squad_channels_catalog';
@@ -116,8 +119,14 @@ export function applySquadChannelsCatalog(content: string, groupId: string): voi
       if (!changed) return squad;
       return { ...squad, channels: next };
     });
-    for (const row of parsed.channels) {
-      if (row.access === 'closed') continue;
+    const listed = parsed.channels.filter((row) => row.access !== 'closed');
+    forgetPendingOpenChannelJoinsNotListed(
+      parent.id,
+      listed.map((row) => row.groupId),
+    );
+    const attached = get(squads).find((s) => s.id === parent.id)?.channels ?? [];
+    for (const row of listed) {
+      if (attached.some((c) => sameGroupId(c.groupId, row.groupId))) continue;
       upsertPendingOpenChannelJoin({
         parentId: parent.id,
         groupId: row.groupId,

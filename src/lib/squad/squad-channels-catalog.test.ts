@@ -70,6 +70,7 @@ import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
   pendingOpenChannelJoins,
   resetPendingOpenChannelJoins,
+  upsertPendingOpenChannelJoin,
 } from './pending-open-channel-joins';
 import {
   applySquadChannelsCatalog,
@@ -211,5 +212,60 @@ describe('squad-channels-catalog', () => {
     });
     expect(get(pendingOpenChannelJoins)[0]?.groupId).toBe('g-ops');
     expect(get(squads)[0]?.channels.some((c) => c.name === 'ops')).toBe(false);
+  });
+
+  it('apply stores no wanted row for a channel already on the parent', async () => {
+    squads.set([
+      {
+        id: 'ann-gid',
+        name: 'h2',
+        channels: [
+          { name: 'announcements', groupId: 'ann-gid', order: 0 },
+          { name: 'ops', groupId: 'G-OPS', order: 2, access: 'open' },
+        ],
+        kind: 'squad',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    const raw = formatSquadChannelsCatalog({
+      parent_id: 'ann-gid',
+      channels: [
+        { name: 'ops', groupId: 'g-ops', order: 2, access: 'open' },
+        { name: 'new', groupId: 'g-new', order: 3, access: 'open' },
+      ],
+    });
+    applySquadChannelsCatalog(raw, 'ann-gid');
+    await vi.waitFor(() => {
+      expect(tryCompleteOpenChannelJoins).toHaveBeenCalled();
+    });
+    expect(get(pendingOpenChannelJoins).map((row) => row.groupId)).toEqual(['g-new']);
+  });
+
+  it('apply forgets wanted rows the catalog no longer lists', async () => {
+    upsertPendingOpenChannelJoin({
+      parentId: 'ann-gid',
+      groupId: 'g-gone',
+      name: 'gone',
+      access: 'open',
+    });
+    upsertPendingOpenChannelJoin({
+      parentId: 'other-parent',
+      groupId: 'g-other',
+      name: 'other',
+      access: 'open',
+    });
+    const raw = formatSquadChannelsCatalog({
+      parent_id: 'ann-gid',
+      channels: [{ name: 'ops', groupId: 'g-ops', order: 2, access: 'open' }],
+    });
+    applySquadChannelsCatalog(raw, 'ann-gid');
+    await vi.waitFor(() => {
+      expect(tryCompleteOpenChannelJoins).toHaveBeenCalled();
+    });
+    expect(get(pendingOpenChannelJoins).map((row) => row.groupId).sort()).toEqual([
+      'g-ops',
+      'g-other',
+    ]);
   });
 });

@@ -298,7 +298,7 @@ function addChannelToParent(
 ): void {
   markMlsHistoryWelcome(channelGroupId);
   void persistSquadPatch(parentId, (squad) => {
-    if (squad.channels.some((ch) => ch.groupId === channelGroupId)) return squad;
+    if (squad.channels.some((ch) => sameMlsGroupId(ch.groupId, channelGroupId))) return squad;
     return {
       ...squad,
       channels: [

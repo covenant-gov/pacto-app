@@ -19,9 +19,18 @@ vi.mock('../api/nostr', () => ({
   listMlsGroups: vi.fn(),
 }));
 
+const requestSquadStateSync = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+
+vi.mock('./squad-state-sync', () => ({
+  requestSquadStateSync: (...args: unknown[]) => requestSquadStateSync(...args),
+}));
+
 import { listMlsGroups, listPendingMlsWelcomes } from '../api/nostr';
+import { declinedWelcomeGroupIds } from '../../stores/invite-decisions';
+import { resetPendingSquadAdmissions } from '../../stores/pending-squad-admission';
 import {
   openChannelJoinTarget,
+  resetOpenChannelJoinSessionForTests,
   tryCompleteOpenChannelJoins,
 } from './open-channel-join';
 import {
@@ -66,6 +75,10 @@ describe('open-channel-join', () => {
     resetPendingOpenChannelJoins();
     acceptStagedChannelWelcome.mockReset().mockResolvedValue(undefined);
     attachChannelToParent.mockReset();
+    requestSquadStateSync.mockClear();
+    resetOpenChannelJoinSessionForTests();
+    resetPendingSquadAdmissions();
+    declinedWelcomeGroupIds.set([]);
     vi.mocked(listPendingMlsWelcomes).mockReset().mockResolvedValue([]);
     vi.mocked(listMlsGroups).mockReset().mockResolvedValue(['ann-gid']);
     squads.set([parentSquad()]);
@@ -155,5 +168,59 @@ describe('open-channel-join', () => {
       name: 'c1',
     });
     expect(openChannelJoinTarget('ann-gid')).toBeNull();
+  });
+
+  it('does not heal a custom row that shares the announcements group id or a placeholder', async () => {
+    squads.set([
+      parentSquad({
+        channels: [
+          { name: 'announcements', groupId: 'ann-gid', order: 0 },
+          { name: 'shared', groupId: 'ann-gid', order: 2, access: 'open' },
+          { name: 'pending', groupId: 'creating-1', order: 3, access: 'open' },
+        ],
+      }),
+    ]);
+    vi.mocked(listPendingMlsWelcomes).mockResolvedValue([
+      welcome({ id: 'w-ann', nostr_group_id: 'ann-gid' }),
+      welcome({ id: 'w-new', nostr_group_id: 'creating-1' }),
+    ]);
+    await tryCompleteOpenChannelJoins();
+    expect(acceptStagedChannelWelcome).not.toHaveBeenCalled();
+    expect(attachChannelToParent).not.toHaveBeenCalled();
+  });
+
+  it('does not re-attach a healthy local channel the device already joined', async () => {
+    squads.set([
+      parentSquad({
+        channels: [
+          { name: 'announcements', groupId: 'ann-gid', order: 0 },
+          { name: 'c1', groupId: 'g-c1', order: 2, access: 'open' },
+        ],
+      }),
+    ]);
+    vi.mocked(listMlsGroups).mockResolvedValue(['ann-gid', 'G-C1']);
+    await tryCompleteOpenChannelJoins();
+    expect(acceptStagedChannelWelcome).not.toHaveBeenCalled();
+    expect(attachChannelToParent).not.toHaveBeenCalled();
+  });
+
+  it('requests a catalog once for a pending welcome that matches no squad or channel', async () => {
+    vi.mocked(listPendingMlsWelcomes).mockResolvedValue([welcome({ nostr_group_id: 'g-new' })]);
+    await tryCompleteOpenChannelJoins('g-new');
+    await tryCompleteOpenChannelJoins('g-new');
+    expect(requestSquadStateSync).toHaveBeenCalledTimes(1);
+    expect(requestSquadStateSync).toHaveBeenCalledWith('ann-gid');
+  });
+
+  it('does not request a catalog for squad, declined, or absent welcomes', async () => {
+    vi.mocked(listPendingMlsWelcomes).mockResolvedValue([
+      welcome({ nostr_group_id: 'ann-gid' }),
+      welcome({ id: 'w-d', nostr_group_id: 'g-declined' }),
+    ]);
+    declinedWelcomeGroupIds.set(['g-declined']);
+    await tryCompleteOpenChannelJoins('ann-gid');
+    await tryCompleteOpenChannelJoins('g-declined');
+    await tryCompleteOpenChannelJoins('g-missing');
+    expect(requestSquadStateSync).not.toHaveBeenCalled();
   });
 });

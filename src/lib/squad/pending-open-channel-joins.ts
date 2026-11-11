@@ -9,6 +9,7 @@ import { sameMlsGroupId } from '../invites/declined-welcomes';
 
 export const PENDING_OPEN_CHANNEL_JOINS_PREFIX = 'pacto_pending_open_channel_joins';
 const MAX_ROWS = 50;
+export const PENDING_OPEN_CHANNEL_JOIN_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 export type PendingOpenChannelJoin = {
   parentId: string;
@@ -61,7 +62,8 @@ export function loadPendingOpenChannelJoins(): void {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown;
     const rows = Array.isArray(parsed) ? parsed.filter(isJoinRow) : [];
-    pendingOpenChannelJoins.set(rows.slice(0, MAX_ROWS));
+    const cutoff = Date.now() - PENDING_OPEN_CHANNEL_JOIN_TTL_MS;
+    pendingOpenChannelJoins.set(rows.filter((row) => row.at >= cutoff).slice(0, MAX_ROWS));
   } catch {
     pendingOpenChannelJoins.set([]);
   }
@@ -95,6 +97,27 @@ export function forgetPendingOpenChannelJoin(groupId: string): void {
   const id = groupId.trim();
   if (!id) return;
   setRows(get(pendingOpenChannelJoins).filter((row) => !sameMlsGroupId(row.groupId, id)));
+}
+
+/** Drop wanted rows older than the TTL. */
+export function pruneExpiredPendingOpenChannelJoins(now = Date.now()): void {
+  const rows = get(pendingOpenChannelJoins);
+  const kept = rows.filter((row) => row.at >= now - PENDING_OPEN_CHANNEL_JOIN_TTL_MS);
+  if (kept.length !== rows.length) setRows(kept);
+}
+
+/** Drop a parent's wanted rows whose group id is not in `listedGroupIds`. */
+export function forgetPendingOpenChannelJoinsNotListed(
+  parentId: string,
+  listedGroupIds: string[],
+): void {
+  const rows = get(pendingOpenChannelJoins);
+  const kept = rows.filter(
+    (row) =>
+      !sameMlsGroupId(row.parentId, parentId) ||
+      listedGroupIds.some((id) => sameMlsGroupId(id, row.groupId)),
+  );
+  if (kept.length !== rows.length) setRows(kept);
 }
 
 export function resetPendingOpenChannelJoins(): void {

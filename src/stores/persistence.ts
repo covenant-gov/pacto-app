@@ -25,9 +25,7 @@ import {
   loadPendingApprovedJoins,
   tryCompletePendingApprovedJoins,
 } from '../lib/squad/join-request-finalize';
-import {
-  loadPendingOpenChannelJoins,
-} from '../lib/squad/pending-open-channel-joins';
+import { loadPendingOpenChannelJoins } from '../lib/squad/pending-open-channel-joins';
 import { tryCompleteOpenChannelJoins } from '../lib/squad/open-channel-join';
 import { loadBackupVerified } from './backup-verification';
 import { loadTorRoutingEnabled } from './tor';
