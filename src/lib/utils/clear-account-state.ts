@@ -112,6 +112,10 @@ import {
   PENDING_APPROVED_JOINS_PREFIX,
   resetPendingApprovedJoins,
 } from '../squad/join-request-finalize';
+import {
+  PENDING_OPEN_CHANNEL_JOINS_PREFIX,
+  resetPendingOpenChannelJoins,
+} from '../squad/pending-open-channel-joins';
 import { stopJoinInboxHolderSync } from '../squad/join-inbox-holder-sync';
 import { resetCommonsPrefetchSession } from '../commons/commons-prefetch';
 import { resetDashboardPrefetchSession } from '../app/dashboard-parent-prefetch';
@@ -207,6 +211,7 @@ const SCOPED_KEY_PREFIXES = [
   SQUAD_REJOIN_PENDING_PREFIX,
   SQUAD_REJOIN_HANDLED_PREFIX,
   PENDING_APPROVED_JOINS_PREFIX,
+  PENDING_OPEN_CHANNEL_JOINS_PREFIX,
   STARTUP_CHECK_PREFIX,
   STARTUP_CHECK_PREFIX_V1,
   TYPING_INDICATORS_PREFIX,
@@ -253,6 +258,7 @@ export function clearAccountState(npub?: string): void {
   resetPendingWelcomeFinalizations();
   joiningWelcomeGroupIds.set([]);
   resetPendingApprovedJoins();
+  resetPendingOpenChannelJoins();
   resetRelayedWalletTxKeys();
   resetDashboardPrefetchSession();
   resetCommonsPrefetchSession();

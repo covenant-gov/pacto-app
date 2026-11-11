@@ -1,6 +1,36 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+
+const acceptStagedChannelWelcome = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const acceptOfferedWelcome = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const resolveOneCatchUpEntry = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock('../../lib/invites/accept-invite', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/invites/accept-invite')>();
+  return {
+    ...actual,
+    acceptStagedChannelWelcome: (...args: unknown[]) => acceptStagedChannelWelcome(...args),
+  };
+});
+
+vi.mock('../../lib/invites/pending-welcomes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/invites/pending-welcomes')>();
+  return {
+    ...actual,
+    acceptOfferedWelcome: (...args: unknown[]) => acceptOfferedWelcome(...args),
+  };
+});
+
+vi.mock('../../stores/catch-up', () => ({
+  resolveOneCatchUpEntry: (...args: unknown[]) => resolveOneCatchUpEntry(...args),
+  hydrateCatchUpCount: vi.fn(),
+}));
+
+vi.mock('../../stores/events-navigation', () => ({
+  focusSquadEvent: vi.fn(),
+  focusSquadEventSeries: vi.fn(),
+}));
 
 import CatchUpEntry from './CatchUpEntry.svelte';
 import { pendingMlsWelcomes } from '../../stores/mls-chat';
@@ -9,11 +39,11 @@ import { backendDmMessages } from '../../stores/dm';
 import type { CatchUpEntry as CatchUpEntryType } from '../../lib/api/catch-up';
 import { formatEventTimestampMs } from '../../lib/squad/squad-event-display';
 import { eventTimeFormat } from '../../stores/event-time-format';
-
-vi.mock('../../stores/events-navigation', () => ({
-  focusSquadEvent: vi.fn(),
-  focusSquadEventSeries: vi.fn(),
-}));
+import {
+  resetPendingOpenChannelJoins,
+  upsertPendingOpenChannelJoin,
+} from '../../lib/squad/pending-open-channel-joins';
+import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 
 function welcomeEntry(overrides: Partial<CatchUpEntryType> = {}): CatchUpEntryType {
   return {
@@ -29,6 +59,11 @@ describe('CatchUpEntry', () => {
     pendingMlsWelcomes.set([]);
     squads.set([]);
     backendDmMessages.set({});
+    setCurrentNpubForPersistence('npub1joiner');
+    resetPendingOpenChannelJoins();
+    acceptStagedChannelWelcome.mockReset().mockResolvedValue(undefined);
+    acceptOfferedWelcome.mockReset().mockResolvedValue(undefined);
+    resolveOneCatchUpEntry.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -37,6 +72,8 @@ describe('CatchUpEntry', () => {
     pendingMlsWelcomes.set([]);
     squads.set([]);
     backendDmMessages.set({});
+    resetPendingOpenChannelJoins();
+    setCurrentNpubForPersistence(null);
   });
 
   it('disables Accept when no matching pending welcome exists for the entry chatId', () => {
@@ -71,5 +108,39 @@ describe('CatchUpEntry', () => {
     expect(screen.getByText('Event reminder')).toBeTruthy();
     expect(screen.getByText(formatEventTimestampMs(fireAtMs, { locale: 'en', clockFormat }))).toBeTruthy();
     expect((screen.getByText('Event reminder').closest('button') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('accepts a wanted open-channel welcome as a channel, not a new squad', async () => {
+    upsertPendingOpenChannelJoin({
+      parentId: 'ann-gid',
+      groupId: 'g-c1',
+      name: 'c1',
+      access: 'open',
+    });
+    pendingMlsWelcomes.set([
+      {
+        id: 'w-c1',
+        wrapper_event_id: 'ev-1',
+        nostr_group_id: 'g-c1',
+        group_name: 'c1',
+        group_description: null,
+        group_admin_pubkeys: [],
+        group_relays: [],
+        welcomer: 'npub1admit',
+        member_count: 2,
+      },
+    ]);
+    render(CatchUpEntry, { props: { entry: welcomeEntry({ chatId: 'g-c1' }) } });
+    await fireEvent.click(screen.getByText('Accept'));
+    await vi.waitFor(() => {
+      expect(acceptStagedChannelWelcome).toHaveBeenCalledWith({
+        welcomeId: 'w-c1',
+        channelGroupId: 'g-c1',
+        parentId: 'ann-gid',
+        channelName: 'c1',
+        access: 'open',
+      });
+    });
+    expect(acceptOfferedWelcome).not.toHaveBeenCalled();
   });
 });

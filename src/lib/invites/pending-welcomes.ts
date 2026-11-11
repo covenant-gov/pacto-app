@@ -68,6 +68,8 @@ export interface OfferedWelcomeInputs {
   declinedGroupIds: string[];
   /** Groups whose DM invite was already accepted; the consent-first path owns those. */
   pendingAdmissionGroupIds: string[];
+  /** Local custom-channel or wanted open-channel group ids — not a new squad. */
+  channelGroupIds?: string[];
   blockedNpubs: ReadonlySet<string>;
   /**
    * Engine-accepted welcomes whose local squad row never materialized. Shown
@@ -98,13 +100,14 @@ export function offeredWelcomes({
   squadIds,
   declinedGroupIds,
   pendingAdmissionGroupIds,
+  channelGroupIds = [],
   blockedNpubs,
   unmaterialized,
 }: OfferedWelcomeInputs): OfferedWelcome[] {
   // One normalization path for every id filter: group ids reach us from MLS
   // metadata, squad rows and localStorage, and their case does not always match.
   const resolved = new Set(
-    [...squadIds, ...declinedGroupIds, ...pendingAdmissionGroupIds].map((id) =>
+    [...squadIds, ...declinedGroupIds, ...pendingAdmissionGroupIds, ...channelGroupIds].map((id) =>
       id.trim().toLowerCase()
     )
   );

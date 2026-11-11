@@ -62,7 +62,10 @@ function tt(
 const acceptedSquadInviteGroupIds = new Set<string>();
 
 /** Maps channel group id → parent squad while welcome accept is in flight. */
-const channelInvitePendingAccept = new Map<string, { parentId: string; channelName: string }>();
+const channelInvitePendingAccept = new Map<
+  string,
+  { parentId: string; channelName: string; access?: 'open' | 'closed' }
+>();
 
 /** In-flight consent-first Accept waiters keyed by announcements group id (lowercase). */
 const pendingWelcomeWaiters = new Map<string, Set<() => void>>();
@@ -278,6 +281,15 @@ export function reconcileStaleInviteDecisions(): void {
   });
 }
 
+export function attachChannelToParent(
+  parentId: string,
+  channelGroupId: string,
+  channelName: string,
+  access?: 'open' | 'closed'
+): void {
+  addChannelToParent(parentId, channelGroupId, channelName, access);
+}
+
 function addChannelToParent(
   parentId: string,
   channelGroupId: string,
@@ -286,7 +298,7 @@ function addChannelToParent(
 ): void {
   markMlsHistoryWelcome(channelGroupId);
   void persistSquadPatch(parentId, (squad) => {
-    if (squad.channels.some((ch) => ch.groupId === channelGroupId)) return squad;
+    if (squad.channels.some((ch) => sameMlsGroupId(ch.groupId, channelGroupId))) return squad;
     return {
       ...squad,
       channels: [
@@ -448,6 +460,9 @@ export async function finalizeSquadAfterAnnouncementsWelcome(
   );
   bumpMembershipVersion(payload.groupId);
   void maybeAutoRequestSquadStateSyncAfterJoin(payload.groupId);
+  void import('../squad/open-channel-join')
+    .then(({ tryCompleteOpenChannelJoins }) => tryCompleteOpenChannelJoins())
+    .catch((e) => dmError('tryCompleteOpenChannelJoins after announcements welcome', e));
   pendingReadyToast.set({
     text: tt('messaging.inviteCard.squadReadyToast', { name: payload.name }),
     goTo: {
@@ -561,10 +576,12 @@ export async function acceptStagedChannelWelcome(opts: {
   channelGroupId: string;
   parentId: string;
   channelName: string;
+  access?: 'open' | 'closed';
 }): Promise<void> {
   channelInvitePendingAccept.set(opts.channelGroupId, {
     parentId: opts.parentId,
     channelName: opts.channelName,
+    access: opts.access,
   });
   acceptedSquadInviteGroupIds.add(opts.channelGroupId);
   try {
@@ -583,7 +600,12 @@ export function handleMlsWelcomeAccepted(group_id: string): void {
   if (channelInviteInfo) {
     channelInvitePendingAccept.delete(group_id);
     acceptedSquadInviteGroupIds.delete(group_id);
-    addChannelToParent(channelInviteInfo.parentId, group_id, channelInviteInfo.channelName);
+    addChannelToParent(
+      channelInviteInfo.parentId,
+      group_id,
+      channelInviteInfo.channelName,
+      channelInviteInfo.access
+    );
     return;
   }
   if (acceptedSquadInviteGroupIds.has(group_id)) {
