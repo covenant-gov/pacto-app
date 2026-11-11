@@ -150,7 +150,7 @@ Hats / `require_capability` (treasury, mutiny, SquadAdmin **role management**) s
 
 Settings has no Access mode. Event and doc create/add use the packed flags above. Incoming `pacto_squad_content_policy` rumors are dropped. Update and remove of another member’s event or doc stay MLS-admin (or the author).
 
-Pre-gov privilege source and inherit/override when SquadAdmin deploys are out of scope for this section.
+Pre-gov privilege source and inherit/override when SquadAdmin deploys are out of scope for this section. Flag-by-flag gaps: [`PRIVILEGE_GAPS.md`](./PRIVILEGE_GAPS.md).
 
 ## Funding deploy / deposit vs roster ownership
 
