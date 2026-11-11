@@ -75,7 +75,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + Proposals board (Open \| Executed \| Failed); Squad Admin card when the squad has a standalone `squad_admin` row and no Pacto Gov |
 | `components/parent/dashboard/SquadAdminStatusCard.svelte` | Admin-only deployed state: variant copy, proxy (copy), network, CTA to Governance → Crew → Privileges |
 | `components/parent/dashboard/DashboardSettingsAboutTab.svelte` | Squad photo, Commons broadcast, Invite + Pending, Join-inbox holders — `#settings` About |
-| `components/parent/dashboard/CrewPrivilegesSection.svelte` | Role builder + catalog assign/revoke under `#governance` Crew |
+| `components/parent/dashboard/CrewPrivilegesSection.svelte` | Role list, permission checkboxes, assign/revoke under `#governance` Crew |
 | `components/parent/SquadToolsView.svelte` | `#tools` mode panes: polls, events, docs, stickers |
 | `components/parent/dashboard/DashboardSettingsNetworkTab.svelte` | Primary/Practice networks, Chain RPC / Pimlico — `#settings` Network |
 | `components/parent/dashboard/DashboardGovernanceTab.svelte` | All / Crew / Captain commands + Hats tree |
