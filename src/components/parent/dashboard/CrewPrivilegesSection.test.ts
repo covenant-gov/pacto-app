@@ -13,21 +13,21 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../lib/governance/api', () => api);
-vi.mock('../../../lib/evm/on-chain-background', () => ({
-  runOnChainInBackground: vi.fn(
+vi.mock('../../../lib/governance/gov-write-background', () => ({
+  runGovWriteInBackground: vi.fn(
     (opts: {
       job: () => Promise<unknown>;
-      onSuccess?: (r: unknown) => unknown;
-      onError?: (message: string, e: unknown) => void;
+      onSettled?: () => void | Promise<void>;
     }) => {
       void (async () => {
         try {
-          const result = await opts.job();
-          await opts.onSuccess?.(result);
-        } catch (e) {
-          opts.onError?.(e instanceof Error ? e.message : String(e), e);
+          await opts.job();
+          await opts.onSettled?.();
+        } catch {
+          /* write errors toast via the real helper */
         }
       })();
+      return true;
     },
   ),
 }));
@@ -184,8 +184,7 @@ describe('CrewPrivilegesSection privilege refresh', () => {
 
     await draftEventDocRole(view.container, newRole);
 
-    await screen.findByRole('alert');
-    expect(api.squadAdminCreateRole).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(api.squadAdminCreateRole).toHaveBeenCalledTimes(1));
     expect(nonce()).toBe(0);
     expect(onPrivilegesChanged).not.toHaveBeenCalled();
   });

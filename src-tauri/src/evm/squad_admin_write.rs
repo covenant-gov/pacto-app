@@ -1,29 +1,23 @@
 //! Squad Admin roster mutations: createRole, enable/disableExecutor, enableFullPermission.
 
-use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, B256};
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
-use super::access_control::{require_capability, with_gov_write_lock, GovCapability, GovStack};
+use super::access_control::GovCapability;
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     createRoleCall, disableExecutorCall, enableExecutorCall, enableFullPermissionCall,
 };
-use super::gov_read::{connect_gov_read_provider, parse_top_hat_id, rpc_urls_or_default};
+use super::gov_module_write::send_gov_module_call;
+use super::gov_read::{connect_gov_read_provider, parse_top_hat_id};
 use super::nave_pirata_read::{read_nave_pirata_deployment, read_war_game_active_deployment};
 use super::pacto_chain_config;
 use super::privilege_role_id::{
     decode_privilege_role_id, parse_role_id_hex, PrivilegeRoleIdDecodeError,
     PRIVILEGE_KNOWN_ACTION_MASK,
 };
-use super::rpc::signer::{
-    load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
-};
-use super::rpc::{
-    connect_signing_provider, contract_call_request, parse_address, send_and_confirm,
-    wallet_err_json,
-};
+use super::rpc::{parse_address, wallet_err_json};
 use super::sponsor_userop::parse_war_game_userop_context;
 use super::squad_sponsor_common::squad_id_from_parent_id;
 use super::wallet_chain_config;
@@ -55,6 +49,7 @@ pub struct SquadAdminWriteResult {
     pub chain: String,
     pub chain_id: u64,
     pub squad_admin_proxy: String,
+    pub funded_by: String,
 }
 
 async fn squad_admin_write<R: Runtime>(
@@ -78,11 +73,6 @@ async fn squad_admin_write<R: Runtime>(
         ));
     };
 
-    let urls = rpc_urls_or_default(net, rpc_urls.clone());
-    if urls.is_empty() {
-        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
-    }
-
     let parent = resolve_squad_admin_parent(
         &app,
         parent_id.as_str(),
@@ -92,30 +82,24 @@ async fn squad_admin_write<R: Runtime>(
     )
     .await?;
 
-    let stack =
-        GovStack::for_wargame_target_corroborated(&app, parent.as_str(), admin, rpc_urls.clone())
-            .await?;
-    require_capability(&app, parent.as_str(), capability, rpc_urls, stack).await?;
-    require_roster_treasury_signing_allowed(app.clone(), parent.as_str()).await?;
-
-    let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), parent.as_str()).await?;
-    // Key by signer EOA: multiple parents can resolve to the same roster key.
-    let _write_guard = with_gov_write_lock(signer.address()).await;
-    let provider = connect_signing_provider(&urls, wallet).await?;
-    let tx = contract_call_request(admin, calldata).with_chain_id(net.chain_id);
-    let receipt = send_and_confirm(
-        &provider,
-        tx,
-        "Timed out waiting for squad admin confirmation. The transaction may still confirm — do not resubmit the same calldata; check the explorer with the returned tx hash.",
+    let (tx_hash, chain, chain_id, funded_by) = send_gov_module_call(
+        app,
+        network,
+        parent,
+        admin,
+        calldata,
+        capability,
+        rpc_urls,
     )
     .await?;
-    super::squad_privilege_enforce::invalidate_exec_state_cache(net.key.as_str(), admin);
+    super::squad_privilege_enforce::invalidate_exec_state_cache(chain.as_str(), admin);
 
     Ok(SquadAdminWriteResult {
-        tx_hash: format!("0x{:x}", receipt.transaction_hash),
-        chain: net.key.clone(),
-        chain_id: net.chain_id,
+        tx_hash,
+        chain,
+        chain_id,
         squad_admin_proxy: format!("{:#x}", admin),
+        funded_by,
     })
 }
 

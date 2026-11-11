@@ -51,7 +51,7 @@ Tauri IPC is not a security boundary if only the UI gates.
 |-------|------|
 | Module | `src-tauri/src/evm/access_control/` |
 | Shared gov send | `gov_module_write::send_gov_module_call` (capability + write lock + `chain_id`) |
-| Squad Admin writes | `squad_admin_write.rs` (parent from infra / payload; no personal-signer fallback) |
+| Squad Admin writes | `squad_admin_write.rs` → `send_gov_module_call` (parent from infra / payload; same sponsored routing as other gov modules) |
 | Packed role encode/decode | `privilege_role_id` (TS + Rust); Crew UI `CrewPrivilegesSection` |
 | MLS/Commons privilege enforce | `squad-privilege-enforce.ts` + Rust `squad_privilege_enforce` (optional `privilegeParentId` on invite) |
 | Tracked tokens | `db::upsert_squad_tracked_token` / `remove_squad_tracked_token` |

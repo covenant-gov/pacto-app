@@ -23,10 +23,8 @@
     encodePrivilegeRoleId,
     packPrivilegeFlags,
   } from '../../../lib/governance/privilege-role-id';
-  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
-  import { showToast } from '../../../stores/toast';
+  import { runGovWriteInBackground } from '../../../lib/governance/gov-write-background';
   import { bumpSquadPrivilegeNonce } from '../../../stores/squad-privilege-refresh';
-  import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
 
   let {
@@ -210,18 +208,18 @@
   }
 
   function runAction(
-    fn: () => Promise<unknown>,
-    successMessage: string,
+    job: () => Promise<unknown>,
+    label: string,
+    actionKey: string,
     afterSuccess?: () => void | Promise<void>,
   ) {
     actionError = '';
-    runOnChainInBackground({
-      startedToast: tFn('governance.squadRoles.toast.submitted'),
-      jobLabel: tFn('governance.privileges.sectionTitle'),
+    runGovWriteInBackground({
+      label,
       parentId: parentId.trim(),
-      job: fn,
-      onSuccess: async () => {
-        showToast(successMessage);
+      actionKey,
+      job,
+      onSettled: async () => {
         if (afterSuccess) {
           await afterSuccess();
         } else {
@@ -229,9 +227,6 @@
         }
         bumpSquadPrivilegeNonce(parentId);
         onPrivilegesChanged();
-      },
-      onError: (message) => {
-        actionError = message;
       },
     });
   }
@@ -257,7 +252,6 @@
       });
       return;
     }
-    const label = previewDecoded.name;
     const createdRoleId = previewRoleId;
     runAction(
       () =>
@@ -267,7 +261,8 @@
           squadAdminProxy: proxy,
           roleId: createdRoleId,
         }),
-      tFn('governance.squadRoles.toast.roleCreated', { values: { label } }),
+      tFn('governance.squadRoles.action.createRole'),
+      'squad-admin-create-role',
       async () => {
         resetBuilder();
         selectedRoleId = createdRoleId;
@@ -296,7 +291,6 @@
       actionError = tFn('governance.squadRoles.error.invalidExecutor');
       return;
     }
-    const label = selectedRow?.name ?? shortEvmAddress(roleId);
     runAction(
       () =>
         squadAdminEnableExecutor({
@@ -306,7 +300,8 @@
           executorAddress: exec,
           roleId,
         }),
-      tFn('governance.squadRoles.toast.executorEnabled', { values: { label } }),
+      tFn('governance.squadRoles.action.enableExecutor'),
+      'squad-admin-enable-executor',
     );
   }
 
@@ -329,7 +324,6 @@
       actionError = tFn('governance.squadRoles.error.invalidExecutor');
       return;
     }
-    const label = selectedRow?.name ?? shortEvmAddress(roleId);
     runAction(
       () =>
         squadAdminDisableExecutor({
@@ -339,7 +333,8 @@
           executorAddress: exec,
           roleId,
         }),
-      tFn('governance.privileges.toast.executorDisabled', { values: { label } }),
+      tFn('governance.privileges.action.revoke'),
+      'squad-admin-disable-executor',
     );
   }
 
@@ -362,9 +357,8 @@
           executorAddress: exec,
           enable: grantFullPermission,
         }),
-      grantFullPermission
-        ? tFn('governance.squadRoles.toast.fullGranted')
-        : tFn('governance.squadRoles.toast.fullRevoked'),
+      tFn('governance.squadRoles.action.applyFull'),
+      'squad-admin-enable-full',
     );
   }
 
