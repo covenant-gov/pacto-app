@@ -52,6 +52,26 @@ enum ExecDecision {
     Deny,
 }
 
+/// Pause wins; then FULL or any needed flag allows.
+fn decide(paused: bool, full: bool, known: u16, needed: u16) -> ExecDecision {
+    if paused {
+        ExecDecision::Paused
+    } else if full || known & needed != 0 {
+        ExecDecision::Allow
+    } else {
+        ExecDecision::Deny
+    }
+}
+
+/// Receive-side outcome. `Undecided` means the chain was not consulted successfully
+/// (RPC failure or no roster binding yet), so the caller must not drop the record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemberPrivilege {
+    Allowed,
+    Denied,
+    Undecided,
+}
+
 struct ResolvedAdmin {
     proxy: Address,
     chain: String,
@@ -151,7 +171,7 @@ async fn executor_decision<P: Provider>(
         .await
         .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
     if paused {
-        return Ok(ExecDecision::Paused);
+        return Ok(decide(true, false, 0, needed));
     }
     let full: bool = eth_call_decode(
         provider,
@@ -161,7 +181,7 @@ async fn executor_decision<P: Provider>(
     .await
     .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
     if full {
-        return Ok(ExecDecision::Allow);
+        return Ok(decide(false, true, 0, needed));
     }
     let catalog = read_catalog_role_ids(provider, admin).await?;
     let mut known = 0u16;
@@ -183,11 +203,7 @@ async fn executor_decision<P: Provider>(
             known |= decoded.known_flags & PRIVILEGE_KNOWN_ACTION_MASK;
         }
     }
-    if known & needed == 0 {
-        Ok(ExecDecision::Deny)
-    } else {
-        Ok(ExecDecision::Allow)
-    }
+    Ok(decide(false, false, known, needed))
 }
 
 /// Roster address for `member_npub`: current account uses the squad binding, peers use the certified share.
@@ -218,31 +234,55 @@ fn executor_address_for_member<R: Runtime>(
         .map_err(|e| wallet_err_json("INVALID_EXECUTOR", e, None))
 }
 
-/// `Ok(true)` when SquadAdmin is inactive or the member holds the flag.
-/// `Ok(false)` when active and unbound, paused, or missing the flag. RPC errors are `Err`.
+/// `Allowed` when SquadAdmin is inactive or the member holds the flag.
+/// `Denied` when active and paused or missing the flag.
+/// `Undecided` on RPC/read failure or when the member has no roster binding yet.
 pub async fn member_has_squad_privilege<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
     member_npub: &str,
     action: SquadPrivilegeAction,
-) -> Result<bool, String> {
+) -> MemberPrivilege {
     let pid = parent_id.trim();
     if pid.is_empty() {
-        return Ok(false);
+        return MemberPrivilege::Denied;
     }
-    let Some(admin) = resolve_squad_admin_proxy_from_infra(app, pid)? else {
-        return Ok(true);
+    let admin = match resolve_squad_admin_proxy_from_infra(app, pid) {
+        Ok(Some(admin)) => admin,
+        Ok(None) => return MemberPrivilege::Allowed,
+        Err(_) => return MemberPrivilege::Undecided,
     };
-    let Some(exec) = executor_address_for_member(app, pid, member_npub)? else {
-        return Ok(false);
+    let exec = match executor_address_for_member(app, pid, member_npub) {
+        Ok(Some(exec)) => exec,
+        Ok(None) | Err(_) => return MemberPrivilege::Undecided,
     };
-    let (provider, _ctx) = connect_gov_read_provider(admin.chain.as_str(), None).await?;
-    Ok(
-        match executor_decision(&provider, admin.proxy, exec, action.flag_bit()).await? {
-            ExecDecision::Allow => true,
-            ExecDecision::Paused | ExecDecision::Deny => false,
-        },
-    )
+    let Ok((provider, _ctx)) = connect_gov_read_provider(admin.chain.as_str(), None).await else {
+        return MemberPrivilege::Undecided;
+    };
+    match executor_decision(&provider, admin.proxy, exec, action.flag_bit()).await {
+        Ok(ExecDecision::Allow) => MemberPrivilege::Allowed,
+        Ok(ExecDecision::Paused | ExecDecision::Deny) => MemberPrivilege::Denied,
+        Err(_) => MemberPrivilege::Undecided,
+    }
+}
+
+/// Send-side check for `member_npub`: fails closed on `Denied` (`denied_code`) and on `Undecided`.
+pub async fn require_member_squad_privilege<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    member_npub: &str,
+    action: SquadPrivilegeAction,
+    denied_code: &str,
+) -> Result<(), String> {
+    match member_has_squad_privilege(app, parent_id, member_npub, action).await {
+        MemberPrivilege::Allowed => Ok(()),
+        MemberPrivilege::Denied => Err(denied_code.to_string()),
+        MemberPrivilege::Undecided => Err(wallet_err_json(
+            "SQUAD_ADMIN_READ",
+            "Squad Admin privilege could not be read",
+            None,
+        )),
+    }
 }
 
 /// Require current user's packed privilege for `action` on `parent_id`.
@@ -277,5 +317,29 @@ pub async fn require_current_user_squad_privilege<R: Runtime>(
             "Missing Squad Admin privilege for this action",
             None,
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn is(d: ExecDecision, want: &str) -> bool {
+        matches!(
+            (d, want),
+            (ExecDecision::Allow, "allow")
+                | (ExecDecision::Paused, "paused")
+                | (ExecDecision::Deny, "deny")
+        )
+    }
+
+    #[test]
+    fn decide_truth_table() {
+        let need = FLAG_CREATE_EVENT;
+        assert!(is(decide(true, true, need, need), "paused"));
+        assert!(is(decide(false, true, 0, need), "allow"));
+        assert!(is(decide(false, false, need, need), "allow"));
+        assert!(is(decide(false, false, FLAG_ADD_DOC, need), "deny"));
+        assert!(is(decide(false, false, 0, need), "deny"));
     }
 }

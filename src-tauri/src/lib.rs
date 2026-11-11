@@ -77,6 +77,7 @@ mod squad_event;
 mod squad_event_reminders;
 mod squad_event_time;
 mod squad_gov_replica;
+mod squad_record_privilege;
 mod squad_records;
 mod url_secrets;
 

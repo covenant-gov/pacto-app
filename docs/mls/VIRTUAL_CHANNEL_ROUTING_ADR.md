@@ -152,7 +152,7 @@ Squad-wide records ride the announcements group as **Kind 30078** rumors selecte
 
 Feature shelves (polls, events, docs) live under `#tools` modes that read their SQLite replica through Tauri. They are not virtual buckets of the MLS stream.
 
-**Create/add gate:** when SquadAdmin is active, `create` / `series_card` and doc `add` are stored only if the signer’s roster binding (or certified squad EVM share) has `createEvent` or `addDoc` (or FULL). Inactive SquadAdmin allows any member. Update and remove of another member’s row stay author-or-MLS-admin. `pacto_squad_content_policy` rumors are dropped.
+**Create/add gate:** when SquadAdmin is active, `create` / `series_card` and doc `add` are stored only if the signer’s roster binding (or certified squad EVM share) has `createEvent` or `addDoc` (or FULL). Paused or missing flag drops the rumor; an RPC failure or a signer with no binding yet parks it in `squad_record_privilege_pending` until a re-check decides. Inactive SquadAdmin allows any member. Update and remove of another member’s row stay author-or-MLS-admin. `pacto_squad_content_policy` rumors are dropped.
 
 ### Squad events (`pacto_squad_event`)
 

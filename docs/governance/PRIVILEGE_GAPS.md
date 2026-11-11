@@ -2,7 +2,7 @@
 
 Packed flags in Crew → Privileges, versus what honest clients actually refuse. Normative model: [`ACCESS_CONTROL.md`](./ACCESS_CONTROL.md). This matrix is the gap list, not a second policy.
 
-Inactive SquadAdmin allows every packed action. Active SquadAdmin denies unbound, paused, RPC failure, and a missing flag.
+Inactive SquadAdmin allows every packed action. Active SquadAdmin denies unbound, paused, RPC failure, and a missing flag on publish. On receive for `createEvent` / `addDoc`, paused and a missing flag drop the rumor; RPC failure and a missing roster binding park it and re-check later.
 
 | Flag | UI | Publish | Receive | Rust ingest | Gap |
 |------|----|---------|---------|-------------|-----|

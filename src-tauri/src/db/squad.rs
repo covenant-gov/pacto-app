@@ -4156,13 +4156,21 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
     let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
         return;
     };
-    if !apply_verified_roster_bind_cert(&conn, chat_id, &cert) {
+    let applied = apply_verified_roster_bind_cert(&conn, chat_id, &cert);
+    if !applied {
         eprintln!(
             "[roster_bind] apply squad_member_evm_share failed parent={} member={}",
             cert.parent_id, cert.member_npub
         );
     }
     crate::account_manager::return_db_connection(conn);
+    if applied {
+        crate::squad_record_privilege::spawn_drain(
+            handle,
+            &cert.parent_id,
+            Some(&cert.member_npub),
+        );
+    }
 }
 
 /// Certified roster snapshot. Forwarder must be an MLS member; each cert is independent.
@@ -4212,6 +4220,7 @@ pub fn try_apply_squad_evm_roster_snapshot<R: Runtime>(
     let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
         return;
     };
+    let mut any_applied = false;
     for cert in members {
         if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(
             handle,
@@ -4221,7 +4230,9 @@ pub fn try_apply_squad_evm_roster_snapshot<R: Runtime>(
         {
             continue;
         }
-        if !apply_verified_roster_bind_cert(&conn, chat_id, &cert) {
+        if apply_verified_roster_bind_cert(&conn, chat_id, &cert) {
+            any_applied = true;
+        } else {
             eprintln!(
                 "[roster_bind] apply roster snapshot cert failed parent={} member={}",
                 cert.parent_id, cert.member_npub
@@ -4229,4 +4240,7 @@ pub fn try_apply_squad_evm_roster_snapshot<R: Runtime>(
         }
     }
     crate::account_manager::return_db_connection(conn);
+    if any_applied {
+        crate::squad_record_privilege::spawn_drain(handle, &parent_id, None);
+    }
 }

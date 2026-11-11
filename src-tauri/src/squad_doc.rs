@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::nostr_tags;
 use crate::rumor::{ConversationType, RumorContext, RumorEvent, RumorProcessingResult};
+use crate::squad_record_privilege::{admit, Kind as PrivilegeKind, Parked};
 use crate::squad_records::{
     self, card_message, signer_identity, store_local_card, with_conn, SquadGroupRole,
     SQUAD_DOC_D_TAG,
@@ -773,14 +774,20 @@ pub async fn process_rumor(
         .to_bech32()
         .map_err(|e| format!("pubkey bech32: {}", e))?;
     let role = squad_records::group_role(handle, group_id, &signer).await;
-    if w.op == Op::Add
-        && ensure_add_privilege(handle, &w.parent_id, &signer)
-            .await
-            .is_err()
-    {
-        return Ok(RumorProcessingResult::SquadRecordSilent);
-    }
     let rumor_id = rumor.id.to_hex();
+    if w.op == Op::Add {
+        let parked = Parked {
+            rumor_id: rumor_id.clone(),
+            kind: PrivilegeKind::Doc,
+            parent_id: w.parent_id.clone(),
+            mls_group_id: group_id.to_string(),
+            author_npub: signer.clone(),
+            payload_json: rumor.content.clone(),
+        };
+        if !admit(handle, parked).await {
+            return Ok(RumorProcessingResult::SquadRecordSilent);
+        }
+    }
     let meta = OpMeta {
         rumor_id: &rumor_id,
         mls_group_id: group_id,
@@ -829,18 +836,39 @@ async fn ensure_add_privilege<R: Runtime>(
     parent_id: &str,
     npub: &str,
 ) -> Result<(), String> {
-    let allowed = crate::evm::squad_privilege_enforce::member_has_squad_privilege(
+    crate::evm::squad_privilege_enforce::require_member_squad_privilege(
         handle,
         parent_id,
         npub,
         crate::evm::squad_privilege_enforce::SquadPrivilegeAction::AddDoc,
+        err::ADD_RESTRICTED,
     )
-    .await?;
-    if allowed {
-        Ok(())
-    } else {
-        Err(err::ADD_RESTRICTED.into())
+    .await
+}
+
+/// Applies a parked add rumor once its privilege check allows it. No announcements card.
+pub(crate) async fn apply_deferred<R: Runtime>(
+    handle: &AppHandle<R>,
+    mls_group_id: &str,
+    signer: &str,
+    rumor_id: &str,
+    content: &str,
+) -> Result<(), String> {
+    let Some(w) = parse_wire(content) else {
+        return Ok(());
+    };
+    if !crate::db::side_effect_parent_matches_chat(mls_group_id, &w.parent_id)
+        || !stamp_acceptable(w.updated_at_ms, now_ms())
+    {
+        return Ok(());
     }
+    let role = squad_records::group_role(handle, mls_group_id, signer).await;
+    let meta = OpMeta {
+        rumor_id,
+        mls_group_id,
+        signer_npub: signer,
+    };
+    apply_and_emit(handle, &w, meta, role).await.map(|_| ())
 }
 
 /// Visible stored row of this parent that the caller may edit or remove.
