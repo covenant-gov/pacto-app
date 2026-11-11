@@ -27,6 +27,7 @@ describe('govWriteFundingHint', () => {
 
   it('returns i18n keys for sponsored vs self-funded', () => {
     expect(govWriteFundingHint('sponsored')).toBe('governance.funding.sponsored');
+    expect(govWriteFundingHint('global_sponsored')).toBe('governance.funding.globalSponsored');
     expect(govWriteFundingHint('self_funded')).toBe('governance.funding.selfFunded');
   });
 
@@ -101,8 +102,9 @@ describe('displayGovWriteFundingHint', () => {
 });
 
 describe('fundedByFromWriteResult', () => {
-  it('reads sponsored or self_funded and ignores unknown', () => {
+  it('reads sponsored, global_sponsored, or self_funded and ignores unknown', () => {
     expect(fundedByFromWriteResult({ fundedBy: 'sponsored' })).toBe('sponsored');
+    expect(fundedByFromWriteResult({ fundedBy: 'global_sponsored' })).toBe('global_sponsored');
     expect(fundedByFromWriteResult({ fundedBy: 'self_funded' })).toBe('self_funded');
     expect(fundedByFromWriteResult({ fundedBy: 'maybe' })).toBeNull();
     expect(fundedByFromWriteResult({})).toBeNull();
@@ -114,6 +116,9 @@ describe('govWriteSubmittedToast', () => {
   it('picks mode-specific toast keys', () => {
     expect(govWriteSubmittedToast('Vote', 'sponsored')).toBe(
       'governance.toast.submittedSponsored:{"label":"Vote"}',
+    );
+    expect(govWriteSubmittedToast('Vote', 'global_sponsored')).toBe(
+      'governance.toast.submittedGlobalSponsored:{"label":"Vote"}',
     );
     expect(govWriteSubmittedToast('Vote', 'self_funded')).toBe(
       'governance.toast.submittedSelfFunded:{"label":"Vote"}',
@@ -128,6 +133,9 @@ describe('govWriteConfirmedToast', () => {
   it('picks mode-specific confirmed toast keys', () => {
     expect(govWriteConfirmedToast('Vote', 'sponsored')).toBe(
       'governance.toast.confirmedSponsored:{"label":"Vote"}',
+    );
+    expect(govWriteConfirmedToast('Vote', 'global_sponsored')).toBe(
+      'governance.toast.confirmedGlobalSponsored:{"label":"Vote"}',
     );
     expect(govWriteConfirmedToast('Vote', 'self_funded')).toBe(
       'governance.toast.confirmedSelfFunded:{"label":"Vote"}',

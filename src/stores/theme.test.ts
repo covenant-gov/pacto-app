@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { get } from 'svelte/store';
 
 const windowApi = vi.hoisted(() => ({
@@ -141,5 +142,23 @@ describe('theme', () => {
 
     await syncWindowChrome('techno');
     expect(windowApi.setTheme).toHaveBeenCalledWith('light');
+  });
+});
+
+describe('startup window background', () => {
+  const read = (path: string) => readFileSync(path, 'utf8');
+
+  it('matches the default skin --bg-elevated in config, html shell, and theme module', () => {
+    const css = read(`src/styles/themes/${DEFAULT_THEME}.css`);
+    const token = css.match(/--bg-elevated:\s*(#[0-9a-fA-F]{6})/)?.[1];
+    expect(token?.toLowerCase()).toBe(DEFAULT_WINDOW_BG);
+
+    const conf = JSON.parse(read('src-tauri/tauri.conf.json')) as {
+      app: { windows: { backgroundColor?: string }[] };
+    };
+    expect(conf.app.windows[0].backgroundColor?.toLowerCase()).toBe(DEFAULT_WINDOW_BG);
+
+    const html = read('src/app.html');
+    expect(html).toContain(`html, body { background-color: ${DEFAULT_WINDOW_BG}; }`);
   });
 });

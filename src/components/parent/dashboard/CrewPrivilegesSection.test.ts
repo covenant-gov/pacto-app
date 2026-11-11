@@ -12,6 +12,8 @@ const api = vi.hoisted(() => ({
   squadAdminEnableFullPermission: vi.fn(),
 }));
 
+const writeFailed = vi.hoisted(() => vi.fn());
+
 vi.mock('../../../lib/governance/api', () => api);
 vi.mock('../../../lib/governance/gov-write-background', () => ({
   runGovWriteInBackground: vi.fn(
@@ -23,8 +25,8 @@ vi.mock('../../../lib/governance/gov-write-background', () => ({
         try {
           await opts.job();
           await opts.onSettled?.();
-        } catch {
-          /* write errors toast via the real helper */
+        } catch (e) {
+          writeFailed(e);
         }
       })();
       return true;
@@ -83,6 +85,7 @@ describe('CrewPrivilegesSection privilege refresh', () => {
   beforeEach(() => {
     squadPrivilegeNonceByParentId.set({});
     for (const fn of Object.values(api)) fn.mockReset();
+    writeFailed.mockReset();
     api.getSquadCapabilities.mockResolvedValue(captainSnapshot());
     api.getSquadAdminRoleCatalog.mockResolvedValue({ roles: [] });
     api.squadAdminCreateRole.mockResolvedValue({ txHash: '0xabc' });
@@ -178,15 +181,19 @@ describe('CrewPrivilegesSection privilege refresh', () => {
     expect(api.getSquadAdminRoleCatalog.mock.calls.length).toBeGreaterThan(catalogCallsBefore);
   });
 
-  it('does not bump the nonce or notify when the write fails', async () => {
+  it('does not bump the nonce or notify when the write fails, and keeps the draft', async () => {
     api.squadAdminCreateRole.mockRejectedValue(new Error('rpc exploded'));
     const { view, newRole, onPrivilegesChanged } = await renderReady();
 
     await draftEventDocRole(view.container, newRole);
 
-    await waitFor(() => expect(api.squadAdminCreateRole).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(writeFailed).toHaveBeenCalledTimes(1));
+    expect(api.squadAdminCreateRole).toHaveBeenCalledTimes(1);
     expect(nonce()).toBe(0);
     expect(onPrivilegesChanged).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Create role' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Assign' })).toBeNull();
+    expect(view.container.querySelector<HTMLInputElement>('#crew-priv-role-name')?.value).toBe('Ed');
   });
 
   it('does not submit or bump when the role name is empty', async () => {
