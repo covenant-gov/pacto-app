@@ -139,6 +139,11 @@ describe('resolveDmMessagePresentation', () => {
     expect(resolveDmMessagePresentation(msg({ content }))).toEqual({ kind: 'hidden' });
   });
 
+  it('hides a channel history gift wrap', () => {
+    const content = JSON.stringify({ type: 'history_chunk', messages: [] });
+    expect(resolveDmMessagePresentation(msg({ content }))).toEqual({ kind: 'hidden' });
+  });
+
   it('hides unknown schema / MLS leftover JSON instead of a notice bar', () => {
     const content = JSON.stringify({ schema: 'pacto.future.thing.v1', foo: 1 });
     expect(resolveDmMessagePresentation(msg({ content }))).toEqual({ kind: 'hidden' });

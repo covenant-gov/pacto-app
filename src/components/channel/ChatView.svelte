@@ -77,6 +77,8 @@
   import { replyTargetExcerpt } from '../../lib/messaging/reply-quote';
   import { clearPendingReactions } from '../../lib/messaging/reactions';
   import { editableUntil, type MessageEditRequest } from '../../lib/messaging/message-edit';
+  import { isHistoryRequestContent } from '../../lib/mls/channel-history-backfill';
+  import { beginChannelHistoryBackfill, importedHistoryIdsByGroup, refreshImportedHistoryIds } from '../../lib/mls/channel-history-session';
   import { submitMessageEdit } from '../../lib/messaging/submit-message-edit';
   import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
@@ -203,6 +205,23 @@
       ? [...($backendGroupTimelineMessages[groupTimelineKey($activeChannelId, selectedVirtualBucket)] ?? [])]
       : currentMessages;
 
+  $: if (showMlsHistoryWelcome && activeChannel?.name && activeChannel.groupId) {
+    beginChannelHistoryBackfill(activeChannel.name, activeChannel.groupId);
+  }
+  let importedHistoryLoadedFor = '';
+  $: if ($activeChannelId && $activeChannelId !== importedHistoryLoadedFor) {
+    importedHistoryLoadedFor = $activeChannelId;
+    void refreshImportedHistoryIds($activeChannelId);
+  }
+  $: importedHistoryIdSet = new Set(
+    $importedHistoryIdsByGroup[($activeChannelId ?? '').trim().toLowerCase()] ?? []
+  );
+  $: historyTimelineMessages = virtualTimelineMessages.filter(
+    (message) => !isHistoryRequestContent(message.content ?? '')
+  );
+  $: historyAbove = historyTimelineMessages.filter((message) => importedHistoryIdSet.has(message.id));
+  $: historyBelow = historyTimelineMessages.filter((message) => !importedHistoryIdSet.has(message.id));
+
   function toMessageProps(msg: DmMessage) {
     const currentUserNpub = $currentUser?.npub;
     const currentUserProfile = currentUserNpub ? $profiles[currentUserNpub] : null;
@@ -236,7 +255,7 @@
       failed: msg.failed,
       edited: msg.edited,
       editHistory: msg.edit_history,
-      editableUntil: editableUntil(msg),
+      editableUntil: importedHistoryIdSet.has(msg.id) ? null : editableUntil(msg),
     };
     if (msg.mine) {
       base.authorName = tFn('messaging.message.authorYou');
@@ -540,7 +559,7 @@
   let messagesContainer: HTMLDivElement | null = null;
   let scrollPrevTimelineKey: string | null = null;
   let lastScrolledToBottomTimelineKey: string | null = null;
-  $: if (virtualTimelineMessages.length && messagesContainer) {
+  $: if (historyTimelineMessages.length && messagesContainer) {
     const el = messagesContainer;
     const channelJustChanged = messagesTimelineKey !== scrollPrevTimelineKey;
     const firstTimeWithMessages = messagesTimelineKey !== lastScrolledToBottomTimelineKey;
@@ -557,7 +576,7 @@
       }
     }, 0);
   }
-  $: if (messagesTimelineKey !== scrollPrevTimelineKey && !virtualTimelineMessages.length) scrollPrevTimelineKey = messagesTimelineKey;
+  $: if (messagesTimelineKey !== scrollPrevTimelineKey && !historyTimelineMessages.length) scrollPrevTimelineKey = messagesTimelineKey;
 
   function channelNameForMentionAlert(
     groupId: string,
@@ -873,15 +892,7 @@
               </button>
             </div>
           {/if}
-          {#if showMlsHistoryWelcome}
-            <div class="mls-history-welcome" role="note">
-              <p class="mls-history-welcome-title">{$t('messaging.channel.mlsWelcomeTitle')}</p>
-              <p class="mls-history-welcome-body">
-                {$t('messaging.channel.mlsWelcomeBody')}
-              </p>
-            </div>
-          {/if}
-          {#each virtualTimelineMessages as message, i (`${messagesTimelineKey}:${message.id}`)}
+          {#each historyAbove as message, i (`${messagesTimelineKey}:copy:${message.id}`)}
             {@const props = toMessageProps(message)}
             {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
             {@const joinInboxAnnounce =
@@ -915,7 +926,56 @@
                 onEdit={(_id, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
                 onSaveToDocs={saveToDocsHandler}
                 compact={shouldStackChannelWithPrevious(
-                  virtualTimelineMessages[i - 1],
+                  historyAbove[i - 1],
+                  message,
+                  channelMessageIsCard
+                )}
+              />
+            {/if}
+          {/each}
+          {#if showMlsHistoryWelcome}
+            <div class="mls-history-welcome" role="note">
+              <p class="mls-history-welcome-title">{$t('messaging.channel.mlsWelcomeTitle')}</p>
+              <p class="mls-history-welcome-body">
+                {$t('messaging.channel.mlsWelcomeBody')}
+              </p>
+            </div>
+          {/if}
+          {#each historyBelow as message, i (`${messagesTimelineKey}:${message.id}`)}
+            {@const props = toMessageProps(message)}
+            {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
+            {@const joinInboxAnnounce =
+              channelParsesStructuredAnnounces ? parseJoinInboxAnnounceMessage(message.content) : null}
+            {@const announceForCard =
+              parsed && announceCardAllowedForTimelineBucket(parsed, message) ? parsed : null}
+            {#if announceForCard}
+              <AnnounceCard
+                id={message.id}
+                announce={announceForCard}
+                authorName={props.authorName}
+                authorNpub={message.npub}
+                timestamp={props.timestamp}
+              />
+            {:else if joinInboxAnnounce}
+              <JoinInboxAnnounceCard
+                id={message.id}
+                announce={joinInboxAnnounce}
+                authorName={props.authorName}
+                authorNpub={message.npub}
+                timestamp={props.timestamp}
+              />
+            {:else}
+              <Message
+                {...props}
+                editRequest={editRequest?.scope === messagesTimelineKey && editRequest.messageId === message.id ? editRequest : null}
+                chatId={$activeChannelId ?? ''}
+                {onReact}
+                {onCopy}
+                {onReply}
+                onEdit={(_id, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
+                onSaveToDocs={saveToDocsHandler}
+                compact={shouldStackChannelWithPrevious(
+                  historyBelow[i - 1],
                   message,
                   channelMessageIsCard
                 )}
@@ -936,7 +996,7 @@
       />
     {:else}
       <MessageShortcutComposer
-        messages={virtualTimelineMessages.filter((message) => !channelMessageIsCard(message))}
+        messages={historyTimelineMessages.filter((message) => !channelMessageIsCard(message))}
         scope={messagesTimelineKey}
         bind:editRequest
         channelName={channelName}

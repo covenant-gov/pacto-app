@@ -136,7 +136,7 @@ mod sandbox_handle;
 // Backend-mediated clipboard export for sensitive secrets.
 mod export;
 
-// 30-day human-chat rows for a channel history copy. No Tauri command until send is wired.
+// 30-day human-chat copy for a device that just accepted a welcome.
 mod history_backfill;
 
 // Debug-only headless login used by agents and the e2e harness.
@@ -1679,6 +1679,10 @@ pub fn run() {
             cmds::mls_groups::invite_member_to_group,
             cmds::mls_groups::remove_mls_member_device,
             cmds::mls_groups::get_mls_group_members,
+            history_backfill::commands::export_channel_history,
+            history_backfill::commands::import_channel_history,
+            history_backfill::commands::list_imported_history_ids,
+            history_backfill::commands::send_history_gift_wrap,
             cmds::mls_groups::leave_mls_group,
             cmds::chat::list_group_cursors,
             cmds::mls_groups::refresh_keypackages_for_contact,

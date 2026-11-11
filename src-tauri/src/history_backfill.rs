@@ -51,7 +51,6 @@ pub(crate) fn is_structured_product_content(content: &str) -> bool {
 ///
 /// Kinds 14, 15, and 16 are decrypted with `key` before the human-chat check.
 /// A row that fails decryption is skipped.
-#[allow(dead_code)]
 pub fn export_channel_history(
     conn: &Connection,
     group_id: &str,
@@ -161,7 +160,6 @@ fn decode_row(row: RawEvent, key: &[u8; 32]) -> Option<HistoryExportMessage> {
 }
 
 /// Rows written by a history import. `inserted_ids` omits ids that already existed.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryImportResult {
     pub inserted_ids: Vec<String>,
@@ -169,7 +167,6 @@ pub struct HistoryImportResult {
 
 /// Write accepted chunk rows. Rejects the whole batch when any row is not human chat.
 /// Does not call `apply_mls_virtual_bucket_side_effects`.
-#[allow(dead_code)]
 pub fn import_channel_history(
     conn: &mut Connection,
     group_id: &str,
@@ -301,6 +298,173 @@ fn timeline_message(message: &HistoryExportMessage, mine: bool, bucket: Option<&
         npub: Some(message.author_npub.clone()),
         virtual_bucket: bucket.map(str::to_string),
         ..Default::default()
+    }
+}
+
+/// Kind-14 gift wrap that must not become a DM.
+pub(crate) fn is_history_backfill_gift(content: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(content.trim()) else {
+        return false;
+    };
+    matches!(
+        value.get("type").and_then(|kind| kind.as_str()),
+        Some("history_chunk") | Some("history_unavailable")
+    )
+}
+
+const HISTORY_WINDOW_SECS: u64 = 30 * 24 * 60 * 60;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryWireMessage {
+    pub id: String,
+    pub kind: u16,
+    pub created_at: u64,
+    pub author_npub: String,
+    pub content: String,
+    pub tags: Vec<Vec<String>>,
+    pub reference_id: Option<String>,
+}
+
+fn bucket_from_wire(bucket: Option<String>) -> Result<HistoryExportBucket, String> {
+    match bucket.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(HistoryExportBucket::Unfiltered),
+        Some("announcements") => Ok(HistoryExportBucket::Announcements),
+        Some(_) => Err("invalid history bucket".to_string()),
+    }
+}
+
+fn to_export_message(message: HistoryWireMessage) -> HistoryExportMessage {
+    HistoryExportMessage {
+        id: message.id,
+        kind: message.kind,
+        created_at: message.created_at,
+        author_npub: message.author_npub,
+        content: message.content,
+        tags: message.tags,
+        reference_id: message.reference_id,
+    }
+}
+
+fn to_wire_message(message: HistoryExportMessage) -> HistoryWireMessage {
+    HistoryWireMessage {
+        id: message.id,
+        kind: message.kind,
+        created_at: message.created_at,
+        author_npub: message.author_npub,
+        content: message.content,
+        tags: message.tags,
+        reference_id: message.reference_id,
+    }
+}
+
+fn with_account_conn<T>(
+    f: impl FnOnce(&mut rusqlite::Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let handle = crate::TAURI_APP
+        .get()
+        .ok_or_else(|| "app handle missing".to_string())?;
+    let mut conn = crate::account_manager::get_db_connection(handle)?;
+    let result = f(&mut conn);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
+fn now_unix() -> Result<(u64, u64), String> {
+    let elapsed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?;
+    Ok((elapsed.as_secs(), elapsed.as_millis() as u64))
+}
+
+pub mod commands {
+    use super::{
+        bucket_from_wire, is_history_backfill_gift, now_unix, to_export_message, to_wire_message,
+        with_account_conn, HistoryExportMessage, HistoryWireMessage, HISTORY_WINDOW_SECS,
+    };
+
+    #[tauri::command]
+    pub fn export_channel_history(
+        group_id: String,
+        bucket: Option<String>,
+    ) -> Result<Vec<HistoryWireMessage>, String> {
+        let bucket = bucket_from_wire(bucket)?;
+        let key = crate::current_encryption_key().ok_or("encryption key unavailable")?;
+        let (now_secs, _) = now_unix()?;
+        let since = now_secs.saturating_sub(HISTORY_WINDOW_SECS);
+        with_account_conn(|conn| {
+            super::export_channel_history(conn, &group_id, bucket, since, &key)
+                .map(|rows| rows.into_iter().map(to_wire_message).collect())
+        })
+    }
+
+    #[tauri::command]
+    pub fn import_channel_history(
+        group_id: String,
+        bucket: Option<String>,
+        messages: Vec<HistoryWireMessage>,
+    ) -> Result<Vec<String>, String> {
+        let bucket = bucket_from_wire(bucket)?;
+        let key = crate::current_encryption_key().ok_or("encryption key unavailable")?;
+        let local_npub = crate::account_manager::get_current_account()?;
+        let (_, received_at_ms) = now_unix()?;
+        let rows: Vec<HistoryExportMessage> = messages.into_iter().map(to_export_message).collect();
+        with_account_conn(|conn| {
+            super::import_channel_history(
+                conn,
+                &group_id,
+                bucket,
+                &local_npub,
+                &rows,
+                received_at_ms,
+                &key,
+            )
+            .map(|result| result.inserted_ids)
+        })
+    }
+
+    #[tauri::command]
+    pub fn list_imported_history_ids(group_id: String) -> Result<Vec<String>, String> {
+        let group_id = group_id.trim().to_lowercase();
+        if group_id.is_empty() {
+            return Ok(Vec::new());
+        }
+        with_account_conn(|conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT e.id FROM events e
+                     JOIN chats c ON c.id = e.chat_id
+                     WHERE lower(c.chat_identifier) = ?1 AND e.history_import = 1
+                     ORDER BY e.created_at ASC, e.id ASC",
+                )
+                .map_err(|e| e.to_string())?;
+            let ids = stmt
+                .query_map([&group_id], |row| row.get(0))
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<String>, _>>()
+                .map_err(|e| e.to_string())?;
+            Ok(ids)
+        })
+    }
+
+    #[tauri::command]
+    pub async fn send_history_gift_wrap(
+        recipient_npub: String,
+        content: String,
+    ) -> Result<(), String> {
+        if !is_history_backfill_gift(&content) {
+            return Err("not a history gift".to_string());
+        }
+        let client = crate::get_nostr_client().map_err(|e| e.to_string())?;
+        let signer = client.signer().await.map_err(|e| e.to_string())?;
+        let my_pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
+        let receiver =
+            nostr_sdk::PublicKey::parse(recipient_npub.trim()).map_err(|e| e.to_string())?;
+        let rumor = nostr_sdk::EventBuilder::private_msg_rumor(receiver, content).build(my_pk);
+        crate::message::gift_wrap_to_trusted_in_pool(&client, &receiver, rumor, Vec::new())
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 }
 

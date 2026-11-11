@@ -74,7 +74,7 @@
 	"messaging.channel.mlsRestoreSquadSuccess": "Squad restore started for {name}. They should see the squad after their app accepts the welcome.",
 	"messaging.channel.mlsRestoreWorking": "Restoring…",
 	"messaging.channel.mlsRejoinRestoring": "Restoring squad access…",
-	"messaging.channel.mlsWelcomeBody": "Your decryptable MLS history starts here. Messages from before you joined can’t be decrypted on this device—that’s how MLS works, not a sync failure. New messages in this group will appear below.",
+	"messaging.channel.mlsWelcomeBody": "Earlier lines are a copy from a member. This device still cannot decrypt the pre-join MLS transcript. New messages in this group appear below.",
 	"messaging.channel.mlsWelcomeTitle": "Welcome to this channel",
 	"messaging.channel.nameCharCount": "{count}/{max} characters",
 	"messaging.channel.nameLabel": "Channel name",

@@ -21,6 +21,7 @@ import {
   type JoinInboxResponseDmDto,
 } from '../squad/squad-join-mls';
 import { summarizeStructuredMessageContent, type MessageFormatter } from '../messaging/structured-content-notice';
+import { isHistoryGiftWrapContent, isHistoryRequestContent } from '../mls/channel-history-backfill';
 import { getProfileAvatarSrc, getProfileDisplayName } from '../utils/profile';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
@@ -52,6 +53,7 @@ export function resolveDmMessagePresentation(msg: DmMessage): DmMessagePresentat
   const content = msg.content ?? '';
   // Channel joins are under-the-hood; never show as invite cards or notice bars.
   if (parseChannelInSquadMessage(content)) return { kind: 'hidden' };
+  if (isHistoryGiftWrapContent(content) || isHistoryRequestContent(content)) return { kind: 'hidden' };
   if (parseSquadInviteAccepted(content)) return { kind: 'hidden' };
   if (parseSquadInviteDeclined(content)) return { kind: 'hidden' };
   const invite = parseSquadInviteMessage(content);
