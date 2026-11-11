@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   getProfileDisplayName,
+  getOwnProfileTitleName,
   getProfileAvatarSrc,
   getProfileBannerSrc,
   cachedOrRemoteImageSrc,
@@ -47,6 +48,35 @@ function makeProfile(overrides?: Partial<NostrProfile>): NostrProfile {
     ...overrides,
   };
 }
+
+describe('getOwnProfileTitleName', () => {
+  it('returns null for missing profile', () => {
+    expect(getOwnProfileTitleName(null)).toBeNull();
+    expect(getOwnProfileTitleName(undefined)).toBeNull();
+  });
+
+  it('prefers display_name over name', () => {
+    expect(getOwnProfileTitleName(makeProfile({ display_name: 'Display', name: 'Name' }))).toBe(
+      'Display'
+    );
+  });
+
+  it('falls back to name when display_name is empty', () => {
+    expect(getOwnProfileTitleName(makeProfile({ display_name: '', name: 'alpha-test' }))).toBe(
+      'alpha-test'
+    );
+  });
+
+  it('returns null when both are whitespace', () => {
+    expect(getOwnProfileTitleName(makeProfile({ display_name: '  ', name: ' ' }))).toBeNull();
+  });
+
+  it('ignores nickname', () => {
+    expect(
+      getOwnProfileTitleName(makeProfile({ nickname: 'Nick', name: '', display_name: '' }))
+    ).toBeNull();
+  });
+});
 
 describe('profileNeedsRelayHydration', () => {
   it('is true for null/undefined and empty shells', () => {
