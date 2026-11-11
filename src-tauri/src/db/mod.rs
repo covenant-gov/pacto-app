@@ -143,7 +143,7 @@ pub use messaging::{
     get_messages_around_id, get_related_events, load_recent_wrapper_ids, message_exists_in_db,
     populate_reply_context, record_discarded_giftwrap, repair_legacy_hex_reaction_npubs, save_chat,
     save_chat_messages, save_event, save_link_preview_metadata, save_message, save_reaction_event,
-    saved_edit_is_authorized, update_attachment_downloaded_status, update_wrapper_event_id,
+    saved_edit_is_authorized, set_attachment_downloaded, update_wrapper_event_id,
     upsert_dm_deletion_cutoff, vacuum_database, wrapper_event_exists, AttachmentRef, SlimChatDB,
 };
 

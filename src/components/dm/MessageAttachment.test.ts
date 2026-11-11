@@ -17,7 +17,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 vi.mock('../../lib/api/nostr', () => ({
-  downloadAttachment: vi.fn().mockResolvedValue(true),
+  downloadAttachment: vi.fn().mockResolvedValue(undefined),
   decodeBlurhash: vi.fn().mockResolvedValue('data:image/png;base64,blur'),
   saveAttachmentAs: vi.fn().mockResolvedValue('/dest/saved-path'),
 }));
@@ -58,7 +58,7 @@ const baseAttachment: Attachment = {
 describe('MessageAttachment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedDownload.mockResolvedValue(true);
+    mockedDownload.mockResolvedValue(undefined);
     mockedDecodeBlurhash.mockResolvedValue('data:image/png;base64,blur');
     mockedSaveAttachmentAs.mockResolvedValue('/dest/saved-path');
     (window as Window & { __TAURI__?: unknown }).__TAURI__ = {};
@@ -107,8 +107,23 @@ describe('MessageAttachment', () => {
     expect(mockedShowToast).not.toHaveBeenCalled();
   });
 
-  it('toasts when download_attachment returns false', async () => {
-    mockedDownload.mockResolvedValue(false);
+  it('toasts the backend reason when download_attachment rejects', async () => {
+    mockedDownload.mockRejectedValue('Downloaded file too small (3 bytes). URL may be invalid or expired.');
+    render(MessageAttachment, { props: { attachment: baseAttachment, chatId: 'npub1abc', messageId: 'm1' } });
+
+    await fireEvent.click(screen.getByLabelText('Download Image.png'));
+    await waitFor(() => {
+      expect(mockedShowToast).toHaveBeenCalledWith(
+        'Downloaded file too small (3 bytes). URL may be invalid or expired.',
+        undefined,
+        undefined,
+        { error: true },
+      );
+    });
+  });
+
+  it('falls back to a generic message when the rejection carries no reason', async () => {
+    mockedDownload.mockRejectedValue(undefined);
     render(MessageAttachment, { props: { attachment: baseAttachment, chatId: 'npub1abc', messageId: 'm1' } });
 
     await fireEvent.click(screen.getByLabelText('Download Image.png'));
@@ -122,19 +137,16 @@ describe('MessageAttachment', () => {
     });
   });
 
-  it('toasts when download_attachment throws', async () => {
-    mockedDownload.mockRejectedValue(new Error('URL may be invalid or expired.'));
+  it('allows a retry after a failed download', async () => {
+    mockedDownload.mockRejectedValueOnce('URL may be invalid or expired.');
     render(MessageAttachment, { props: { attachment: baseAttachment, chatId: 'npub1abc', messageId: 'm1' } });
 
     await fireEvent.click(screen.getByLabelText('Download Image.png'));
-    await waitFor(() => {
-      expect(mockedShowToast).toHaveBeenCalledWith(
-        'URL may be invalid or expired.',
-        undefined,
-        undefined,
-        { error: true },
-      );
-    });
+    await waitFor(() => expect(mockedShowToast).toHaveBeenCalledTimes(1));
+
+    await fireEvent.click(screen.getByLabelText('Download Image.png'));
+    await waitFor(() => expect(mockedDownload).toHaveBeenCalledTimes(2));
+    expect(mockedShowToast).toHaveBeenCalledTimes(1);
   });
 
   it('swaps the blurhash for the local file once the download lands', async () => {

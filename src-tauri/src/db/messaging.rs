@@ -928,18 +928,25 @@ pub async fn load_recent_wrapper_ids<R: Runtime>(
     }
 }
 
-/// Update the downloaded status of an attachment in the database
-pub fn update_attachment_downloaded_status<R: Runtime>(
+/// Marks an attachment downloaded in the event's `attachments` tag and records its local path.
+pub fn set_attachment_downloaded<R: Runtime>(
     handle: &AppHandle<R>,
-    _chat_id: &str, // No longer needed - we query by event ID directly
     msg_id: &str,
     attachment_id: &str,
-    downloaded: bool,
     path: &str,
 ) -> Result<(), String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = set_attachment_downloaded_in(&conn, msg_id, attachment_id, path);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
 
-    // Get the current tags JSON from the events table
+fn set_attachment_downloaded_in(
+    conn: &rusqlite::Connection,
+    msg_id: &str,
+    attachment_id: &str,
+    path: &str,
+) -> Result<(), String> {
     let tags_json: String = conn
         .query_row(
             "SELECT tags FROM events WHERE id = ?1",
@@ -948,57 +955,41 @@ pub fn update_attachment_downloaded_status<R: Runtime>(
         )
         .map_err(|e| format!("Event not found: {}", e))?;
 
-    // Parse the tags
     let mut tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap_or_default();
-
-    // Find the "attachments" tag
     let attachments_tag_idx = tags
         .iter()
         .position(|tag| tag.first().map(|s| s.as_str()) == Some("attachments"));
 
-    let attachments_json = attachments_tag_idx
-        .and_then(|idx| tags.get(idx))
-        .and_then(|tag| tag.get(1))
-        .map(|s| s.as_str())
-        .unwrap_or("[]");
+    let mut attachments: Vec<Attachment> = attachments_tag_idx
+        .and_then(|idx| tags[idx].get(1))
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or_default();
 
-    // Parse and update the attachment
-    let mut attachments: Vec<Attachment> =
-        serde_json::from_str(attachments_json).unwrap_or_default();
+    let att = attachments
+        .iter_mut()
+        .find(|a| a.id == attachment_id)
+        .ok_or_else(|| "Attachment not found in event".to_string())?;
+    att.downloaded = true;
+    att.downloading = false;
+    att.path = path.to_string();
 
-    if let Some(att) = attachments.iter_mut().find(|a| a.id == attachment_id) {
-        att.downloaded = downloaded;
-        att.downloading = false;
-        att.path = path.to_string();
-    } else {
-        crate::account_manager::return_db_connection(conn);
-        return Err("Attachment not found in event".to_string());
+    let attachments_tag = vec![
+        "attachments".to_string(),
+        serde_json::to_string(&attachments)
+            .map_err(|e| format!("Failed to serialize attachments: {}", e))?,
+    ];
+    match attachments_tag_idx {
+        Some(idx) => tags[idx] = attachments_tag,
+        None => tags.push(attachments_tag),
     }
 
-    // Serialize the updated attachments back to JSON
-    let updated_attachments_json = serde_json::to_string(&attachments)
-        .map_err(|e| format!("Failed to serialize attachments: {}", e))?;
-
-    // Update the tags array - either update existing "attachments" tag or add new one
-    if let Some(idx) = attachments_tag_idx {
-        tags[idx] = vec!["attachments".to_string(), updated_attachments_json];
-    } else {
-        tags.push(vec!["attachments".to_string(), updated_attachments_json]);
-    }
-
-    // Serialize the tags back to JSON
     let updated_tags_json =
         serde_json::to_string(&tags).map_err(|e| format!("Failed to serialize tags: {}", e))?;
-
-    // Update the event in the database
     conn.execute(
         "UPDATE events SET tags = ?1 WHERE id = ?2",
         rusqlite::params![updated_tags_json, msg_id],
     )
     .map_err(|e| format!("Failed to update event: {}", e))?;
-
-    crate::account_manager::return_db_connection(conn);
-
     Ok(())
 }
 
@@ -2878,6 +2869,166 @@ mod reply_context_fallback_tests {
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].content, "testing text");
         assert_eq!(views[0].attachments.len(), 1);
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
+}
+
+#[cfg(test)]
+mod attachment_downloaded_tests {
+    use super::*;
+
+    fn conn_with_event(msg_id: &str, attachments: &[Attachment]) -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        let tags = serde_json::to_string(&vec![vec![
+            "attachments".to_string(),
+            serde_json::to_string(attachments).unwrap(),
+        ]])
+        .unwrap();
+        insert_event(&conn, msg_id, &tags);
+        conn
+    }
+
+    fn insert_event(conn: &rusqlite::Connection, msg_id: &str, tags: &str) {
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at)
+             VALUES ('npub1attachmentpeer', 0, '[]', 1000)",
+            [],
+        )
+        .expect("chat");
+        conn.execute(
+            "INSERT INTO events (id, chat_id, kind, content, tags, created_at, received_at, mine)
+             VALUES (?1, last_insert_rowid(), 15, '', ?2, 1000, 1000, 0)",
+            rusqlite::params![msg_id, tags],
+        )
+        .expect("event");
+    }
+
+    fn stored_attachments(conn: &rusqlite::Connection, msg_id: &str) -> Vec<Attachment> {
+        let tags_json: String = conn
+            .query_row(
+                "SELECT tags FROM events WHERE id = ?1",
+                rusqlite::params![msg_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap();
+        let tag = tags.iter().find(|t| t[0] == "attachments").unwrap();
+        serde_json::from_str(&tag[1]).unwrap()
+    }
+
+    fn attachment(id: &str) -> Attachment {
+        Attachment {
+            id: id.to_string(),
+            extension: "png".to_string(),
+            downloaded: false,
+            downloading: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn marks_only_the_target_attachment_downloaded() {
+        let conn = conn_with_event("m1", &[attachment("a1"), attachment("a2")]);
+        set_attachment_downloaded_in(&conn, "m1", "a2", "/tmp/a2.png").unwrap();
+
+        let stored = stored_attachments(&conn, "m1");
+        assert!(!stored[0].downloaded && stored[0].path.is_empty());
+        assert!(stored[1].downloaded);
+        assert!(!stored[1].downloading);
+        assert_eq!(stored[1].path, "/tmp/a2.png");
+    }
+
+    #[test]
+    fn unknown_event_is_an_error() {
+        let conn = conn_with_event("m1", &[attachment("a1")]);
+        let err = set_attachment_downloaded_in(&conn, "missing", "a1", "/x").unwrap_err();
+        assert!(err.contains("Event not found"), "{err}");
+    }
+
+    #[test]
+    fn unknown_attachment_is_an_error_and_leaves_row_untouched() {
+        let conn = conn_with_event("m1", &[attachment("a1")]);
+        let err = set_attachment_downloaded_in(&conn, "m1", "other", "/x").unwrap_err();
+        assert!(err.contains("Attachment not found"), "{err}");
+        assert!(!stored_attachments(&conn, "m1")[0].downloaded);
+    }
+
+    #[test]
+    fn event_without_attachments_tag_is_an_error() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        insert_event(&conn, "m1", "[]");
+        assert!(set_attachment_downloaded_in(&conn, "m1", "a1", "/x").is_err());
+    }
+
+    /// A second `save_message` is a no-op (`INSERT OR IGNORE`); the tags UPDATE is what
+    /// makes `downloaded` and `path` survive a reload, and failures must not strand the
+    /// pooled connection.
+    #[tokio::test]
+    async fn downloaded_state_survives_reload_and_errors_return_the_connection() {
+        let test_npub = "npub1attachmentdownloadedpersist";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+        let profile_dir =
+            crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        crate::set_encryption_key([7u8; 32]);
+
+        let chat_id = "npub1attachmentdownloadedpeer";
+        let message = Message {
+            id: "attachment-downloaded-msg".to_string(),
+            mine: false,
+            npub: Some(chat_id.to_string()),
+            at: 1_700_000_000_000,
+            attachments: vec![attachment("att-1")],
+            ..Default::default()
+        };
+        save_message(app.handle().clone(), chat_id, &message)
+            .await
+            .unwrap();
+
+        let downloaded = Message {
+            attachments: vec![Attachment {
+                downloaded: true,
+                path: "/tmp/att-1.png".to_string(),
+                ..attachment("att-1")
+            }],
+            ..message.clone()
+        };
+        save_message(app.handle().clone(), chat_id, &downloaded)
+            .await
+            .unwrap();
+        let chat_int = crate::db::get_chat_id_by_identifier(app.handle(), chat_id).unwrap();
+        let views = get_message_views(app.handle(), chat_int, 10, 0, None)
+            .await
+            .unwrap();
+        assert!(
+            !views[0].attachments[0].downloaded,
+            "second save is a no-op"
+        );
+
+        set_attachment_downloaded(app.handle(), &message.id, "att-1", "/tmp/att-1.png").unwrap();
+        let views = get_message_views(app.handle(), chat_int, 10, 0, None)
+            .await
+            .unwrap();
+        assert!(views[0].attachments[0].downloaded);
+        assert_eq!(views[0].attachments[0].path, "/tmp/att-1.png");
+
+        assert!(set_attachment_downloaded(app.handle(), "missing", "att-1", "/x").is_err());
+        assert!(crate::account_manager::db_connection_is_pooled());
+        assert!(set_attachment_downloaded(app.handle(), &message.id, "nope", "/x").is_err());
+        assert!(crate::account_manager::db_connection_is_pooled());
 
         crate::clear_encryption_key();
         crate::account_manager::close_db_connection();

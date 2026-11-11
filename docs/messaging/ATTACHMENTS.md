@@ -158,8 +158,14 @@ decrypted it with the rumor's key and nonce, and written it to disk — or when
 the decrypted file is already at the cache path. Both success paths emit
 `message_update` carrying `downloaded: true` and the local `path`, which is
 what the component renders. Downloaded status is persisted with
-`update_attachment_downloaded_status` (a tags UPDATE), not a second
+`set_attachment_downloaded` (a tags UPDATE), not a second
 `save_message` (`INSERT OR IGNORE` would no-op on the existing kind-15 row).
+
+`download_attachment` resolves on success, and also when the file was already
+on disk or another call is mid-fetch. It rejects with a user-facing reason
+(expired URL, undecryptable blob, missing key), which the tile shows as an error
+toast. `message_update` is the only success signal. A persist failure is logged
+and does not fail the download: the file is on disk and the UI is already updated.
 
 Until then the component shows the `img_meta.blurhash` decoded locally — it
 travels inside the encrypted rumor, so it costs no network round trip and leaks

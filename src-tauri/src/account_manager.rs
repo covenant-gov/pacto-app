@@ -537,6 +537,11 @@ pub fn return_db_connection(conn: rusqlite::Connection) {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn db_connection_is_pooled() -> bool {
+    DB_CONNECTION_POOL.lock().unwrap().is_some()
+}
+
 /// Close the current database connection (e.g., when switching accounts)
 pub fn close_db_connection() {
     let mut pool = DB_CONNECTION_POOL.lock().unwrap();

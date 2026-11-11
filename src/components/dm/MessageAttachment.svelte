@@ -176,10 +176,7 @@
     downloading = true;
     try {
       // Success arrives as a `message_update` carrying the decrypted local path.
-      const ok = await downloadAttachment(chatId, messageId, attachment.id);
-      if (!ok) {
-        showToast($t('messaging.attachment.downloadFailed'), undefined, undefined, { error: true });
-      }
+      await downloadAttachment(chatId, messageId, attachment.id);
     } catch (err) {
       showToast(
         getInvokeErrorMessage(err, $t('messaging.attachment.downloadFailed')),
