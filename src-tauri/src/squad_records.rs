@@ -1,4 +1,4 @@
-//! Shared helpers for squad group records (content policy, events, docs) carried as
+//! Shared helpers for squad group records (events, docs) carried as
 //! kind 30078 rumors in a squad's MLS group.
 
 use nostr_sdk::prelude::{NostrSigner, PublicKey};
@@ -9,7 +9,6 @@ use tauri::{AppHandle, Emitter, Runtime};
 use crate::message::Message;
 use crate::stored_event::event_kind;
 
-pub const SQUAD_CONTENT_POLICY_D_TAG: &str = "pacto_squad_content_policy";
 pub const SQUAD_EVENT_D_TAG: &str = "pacto_squad_event";
 pub const SQUAD_DOC_D_TAG: &str = "pacto_squad_doc";
 
@@ -103,17 +102,6 @@ pub async fn group_role<R: Runtime>(
     }
     let admins = engine_admin_npubs(handle, &ids.engine_id);
     role_from(is_member, &admins, npub)
-}
-
-/// Current admin npubs of the group's `admin_pubkeys` (empty on failure).
-pub async fn group_admin_npubs<R: Runtime>(
-    handle: &AppHandle<R>,
-    mls_group_id: &str,
-) -> Vec<String> {
-    match resolve_group_ids(handle, mls_group_id).await {
-        Some(ids) => engine_admin_npubs(handle, &ids.engine_id),
-        None => Vec::new(),
-    }
 }
 
 struct GroupIds {

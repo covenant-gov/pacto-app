@@ -26,7 +26,7 @@ import {
   lastHubChannelNameBySquadId,
   squadNavOrder,
   showMembersPanel,
-  squadDashboardChannelMode,
+  squadGovernanceChannelMode,
   settingsChannelMode,
   squadToolsChannelMode,
   DEFAULT_TOP_NAV_TAB,
@@ -106,7 +106,7 @@ describe('clearAccountState', () => {
     activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     activeDmTab.set('friends');
     activeView.set('hub');
-    squadDashboardChannelMode.set('status');
+    squadGovernanceChannelMode.set('status');
     showMembersPanel.set(false);
     walletSidebarOpen.set(false);
     composingNewChat.set(false);
@@ -150,8 +150,8 @@ describe('clearAccountState', () => {
     activeHubChannelName.set('hub-1');
     activeView.set('profile');
     activeTopNavTab.set('dms');
-    squadDashboardChannelMode.set('treasury');
-    settingsChannelMode.set('access');
+    squadGovernanceChannelMode.set('treasury');
+    settingsChannelMode.set('network');
     squadToolsChannelMode.set('docs');
     showMembersPanel.set(true);
     squadNavOrder.set(['squad-1', 'squad-2']);
@@ -163,7 +163,7 @@ describe('clearAccountState', () => {
     expect(get(activeHubChannelName)).toBeNull();
     expect(get(activeView)).toBe('hub');
     expect(get(activeTopNavTab)).toBe(DEFAULT_TOP_NAV_TAB);
-    expect(get(squadDashboardChannelMode)).toBe('status');
+    expect(get(squadGovernanceChannelMode)).toBe('status');
     expect(get(settingsChannelMode)).toBe('you');
     expect(get(squadToolsChannelMode)).toBe('polls');
     expect(get(showMembersPanel)).toBe(false);

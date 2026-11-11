@@ -1,12 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
-import type { SquadContentPolicyView } from '../lib/api/squad-content-policy';
-import type * as SquadContentPolicyApi from '../lib/api/squad-content-policy';
 
-const mocks = vi.hoisted(() => ({ getSquadContentPolicy: vi.fn() }));
-vi.mock('../lib/api/squad-content-policy', async (importOriginal) => ({
-  ...(await importOriginal<typeof SquadContentPolicyApi>()),
-  getSquadContentPolicy: mocks.getSquadContentPolicy,
+const mocks = vi.hoisted(() => ({ requireMySquadPrivilege: vi.fn() }));
+vi.mock('../lib/governance/squad-privilege-enforce', () => ({
+  requireMySquadPrivilege: mocks.requireMySquadPrivilege,
 }));
 
 import { currentUser } from './auth-session';
@@ -21,7 +18,6 @@ import {
   loadLastSeenDocCardAt,
   markDocsChannelSeen,
   refreshUnseenDocCardsForParent,
-  reloadSquadDocAddPolicy,
   resetDocsHubAlertStores,
   squadDocAddPolicyByParentId,
   unseenDocCardCountByParentId,
@@ -49,18 +45,6 @@ function docUpdate(id: string, at: number): DocCardMessageLike {
     at,
     npub: OTHER,
     content: JSON.stringify({ schema: 'pacto.squad_doc.v1', op: 'update', id, parent_id: PARENT, updated_at_ms: at }),
-  };
-}
-
-function policy(overrides: Partial<SquadContentPolicyView> = {}): SquadContentPolicyView {
-  return {
-    restrictEventCreate: false,
-    restrictEventCreateUpdatedAtMs: 0,
-    restrictDocAdd: false,
-    restrictDocAddUpdatedAtMs: 0,
-    callerIsAdmin: false,
-    adminIsMember: true,
-    ...overrides,
   };
 }
 
@@ -142,53 +126,80 @@ describe('docs hub alert stores', () => {
   });
 });
 
-describe('Save to Docs policy gate', () => {
+describe('Save to Docs privilege gate', () => {
   beforeEach(() => {
     resetDocsHubAlertStores();
-    mocks.getSquadContentPolicy.mockReset();
+    mocks.requireMySquadPrivilege.mockReset();
   });
 
-  it('offers the item only when the policy lets the caller add', () => {
+  it('offers the item when allowed or when the read failed', () => {
     expect(canOfferSaveToDocs(undefined)).toBe(false);
     expect(canOfferSaveToDocs(null)).toBe(true);
-    expect(canOfferSaveToDocs(policy())).toBe(true);
-    expect(canOfferSaveToDocs(policy({ restrictDocAdd: true }))).toBe(false);
-    expect(canOfferSaveToDocs(policy({ restrictDocAdd: true, callerIsAdmin: true }))).toBe(true);
+    expect(canOfferSaveToDocs(true)).toBe(true);
+    expect(canOfferSaveToDocs(false)).toBe(false);
   });
 
-  it('loads once per parent and reloads on a policy change', async () => {
-    mocks.getSquadContentPolicy.mockResolvedValueOnce(policy()).mockResolvedValueOnce(policy({ restrictDocAdd: true }));
-    ensureSquadDocAddPolicy('g', PARENT, 0);
-    ensureSquadDocAddPolicy('g', PARENT, 0);
-    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toEqual(policy()));
-    expect(mocks.getSquadContentPolicy).toHaveBeenCalledTimes(1);
-    expect(mocks.getSquadContentPolicy).toHaveBeenCalledWith('g', PARENT);
+  it('loads once per parent and reloads when the privilege nonce changes', async () => {
+    mocks.requireMySquadPrivilege
+      .mockResolvedValueOnce({ ok: true, active: false, flags: null })
+      .mockResolvedValueOnce({ ok: false, reason: 'denied', active: true });
+    ensureSquadDocAddPolicy('g', PARENT, 0, 0);
+    ensureSquadDocAddPolicy('g', PARENT, 0, 0);
+    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toBe(true));
+    expect(mocks.requireMySquadPrivilege).toHaveBeenCalledTimes(1);
+    expect(mocks.requireMySquadPrivilege).toHaveBeenCalledWith(PARENT, 'addDoc');
 
-    reloadSquadDocAddPolicy(PARENT);
-    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]?.restrictDocAdd).toBe(true));
-    reloadSquadDocAddPolicy('unknown-parent');
-    expect(mocks.getSquadContentPolicy).toHaveBeenCalledTimes(2);
+    ensureSquadDocAddPolicy('g', PARENT, 0, 1);
+    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toBe(false));
+    expect(mocks.requireMySquadPrivilege).toHaveBeenCalledTimes(2);
   });
 
-  it('reloads when the announcements group membership version changes, e.g. an admin promotion', async () => {
-    mocks.getSquadContentPolicy
-      .mockResolvedValueOnce(policy({ restrictDocAdd: true }))
-      .mockResolvedValueOnce(policy({ restrictDocAdd: true, callerIsAdmin: true }));
-    ensureSquadDocAddPolicy('g', PARENT, 3);
-    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]?.restrictDocAdd).toBe(true));
-    expect(canOfferSaveToDocs(get(squadDocAddPolicyByParentId)[PARENT])).toBe(false);
+  it('does nothing for a blank group id or a blank parent id', async () => {
+    ensureSquadDocAddPolicy('', PARENT, 0);
+    ensureSquadDocAddPolicy('   ', PARENT, 0);
+    ensureSquadDocAddPolicy(null, PARENT, 0);
+    ensureSquadDocAddPolicy(undefined, PARENT, 0);
+    ensureSquadDocAddPolicy('g', '  ', 0);
+    await Promise.resolve();
+    expect(mocks.requireMySquadPrivilege).not.toHaveBeenCalled();
+    expect(get(squadDocAddPolicyByParentId)).toEqual({});
+  });
 
-    ensureSquadDocAddPolicy('g', PARENT, 3);
-    expect(mocks.getSquadContentPolicy).toHaveBeenCalledTimes(1);
+  it('keeps policies for different parents independent', async () => {
+    mocks.requireMySquadPrivilege.mockResolvedValue({ ok: true, active: false, flags: null });
+    ensureSquadDocAddPolicy('g', PARENT, 0, 0);
+    ensureSquadDocAddPolicy('g', 'parent-2', 0, 0);
+    await vi.waitFor(() => expect(mocks.requireMySquadPrivilege).toHaveBeenCalledTimes(2));
+    expect(mocks.requireMySquadPrivilege).toHaveBeenCalledWith(PARENT, 'addDoc');
+    expect(mocks.requireMySquadPrivilege).toHaveBeenCalledWith('parent-2', 'addDoc');
+  });
 
-    ensureSquadDocAddPolicy('g', PARENT, 4);
-    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]?.callerIsAdmin).toBe(true));
-    expect(mocks.getSquadContentPolicy).toHaveBeenCalledTimes(2);
+  it('stores null on an rpc failure so the item stays offered', async () => {
+    mocks.requireMySquadPrivilege.mockResolvedValue({ ok: false, reason: 'rpc', active: true });
+    ensureSquadDocAddPolicy('g', PARENT, 0);
+    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toBeNull());
     expect(canOfferSaveToDocs(get(squadDocAddPolicyByParentId)[PARENT])).toBe(true);
   });
 
-  it('stores null when the policy read fails', async () => {
-    mocks.getSquadContentPolicy.mockRejectedValue(new Error('boom'));
+  it('reloads when the announcements group membership version changes', async () => {
+    mocks.requireMySquadPrivilege
+      .mockResolvedValueOnce({ ok: false, reason: 'denied', active: true })
+      .mockResolvedValueOnce({ ok: true, active: true, flags: null });
+    ensureSquadDocAddPolicy('g', PARENT, 3);
+    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toBe(false));
+    expect(canOfferSaveToDocs(get(squadDocAddPolicyByParentId)[PARENT])).toBe(false);
+
+    ensureSquadDocAddPolicy('g', PARENT, 3);
+    expect(mocks.requireMySquadPrivilege).toHaveBeenCalledTimes(1);
+
+    ensureSquadDocAddPolicy('g', PARENT, 4);
+    await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toBe(true));
+    expect(mocks.requireMySquadPrivilege).toHaveBeenCalledTimes(2);
+    expect(canOfferSaveToDocs(get(squadDocAddPolicyByParentId)[PARENT])).toBe(true);
+  });
+
+  it('stores null when the privilege read fails', async () => {
+    mocks.requireMySquadPrivilege.mockRejectedValue(new Error('boom'));
     ensureSquadDocAddPolicy('g', PARENT, 0);
     await vi.waitFor(() => expect(get(squadDocAddPolicyByParentId)[PARENT]).toBeNull());
   });

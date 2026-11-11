@@ -49,7 +49,7 @@ vi.mock('../../stores/toast', () => ({
 
 vi.mock('../../stores/squads', () => ({
   squads: createMockWritable<Squad[]>([]),
-  SQUAD_DASHBOARD_CHANNEL_ID: '__governance__',
+  SQUAD_GOVERNANCE_CHANNEL_ID: '__governance__',
 }));
 
 vi.mock('../../stores/navigation', () => ({

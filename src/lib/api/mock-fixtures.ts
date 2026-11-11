@@ -13,15 +13,6 @@ const mockState = {
   sessionUnlocked: false,
 };
 
-const MOCK_SQUAD_CONTENT_POLICY = {
-  restrictEventCreate: false,
-  restrictEventCreateUpdatedAtMs: 0,
-  restrictDocAdd: false,
-  restrictDocAddUpdatedAtMs: 0,
-  callerIsAdmin: true,
-  adminIsMember: true,
-};
-
 export const authFixtures: Record<string, MockCommandHandler> = {
   login: () => ({ public: MOCK_NPUB, pubkey_hex: MOCK_PUBKEY_HEX, private: MOCK_NSEC }),
   login_with_recovery_phrase: () => ({
@@ -139,13 +130,6 @@ export const chatFixtures: Record<string, MockCommandHandler> = {
   list_dashboard_polls: () => [],
   send_dashboard_poll_create: () => undefined,
   send_dashboard_poll_vote: () => undefined,
-  get_squad_content_policy: () => ({ ...MOCK_SQUAD_CONTENT_POLICY }),
-  set_squad_content_policy: (args) => ({
-    ...MOCK_SQUAD_CONTENT_POLICY,
-    ...(args.flag === 'restrict_doc_add'
-      ? { restrictDocAdd: args.value === true, restrictDocAddUpdatedAtMs: Date.now() }
-      : { restrictEventCreate: args.value === true, restrictEventCreateUpdatedAtMs: Date.now() }),
-  }),
   list_squad_events: () => [],
   send_squad_event_create: () => undefined,
   send_squad_event_series: () => undefined,

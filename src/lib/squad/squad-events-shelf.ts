@@ -1,13 +1,12 @@
 import type { SquadEventDto } from '../api/squad-events';
-import { canCreateSquadEvent, type SquadContentPolicyView } from '../api/squad-content-policy';
 
-/** `create` shows the button; `adminOnly` / `lockedOut` show why it is absent. */
-export type ShelfCreateControl = 'create' | 'adminOnly' | 'lockedOut';
+/** `create` shows the button; `denied` explains why it is absent. */
+export type ShelfCreateControl = 'create' | 'denied';
 
-/** Missing policy (load failed) falls back to the default: anyone can create; the backend still enforces. */
-export function shelfCreateControl(policy: SquadContentPolicyView | null): ShelfCreateControl {
-  if (!policy || canCreateSquadEvent(policy)) return 'create';
-  return policy.adminIsMember ? 'adminOnly' : 'lockedOut';
+/** `null` (privilege read failed) falls open; the backend still enforces. */
+export function shelfCreateControl(allowed: boolean | null): ShelfCreateControl {
+  if (allowed === false) return 'denied';
+  return 'create';
 }
 
 function civilDateInZone(unix: number, zone: string): string {

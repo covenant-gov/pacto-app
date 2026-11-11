@@ -22,14 +22,14 @@ import { isCrewOffboardActive, parseQuorumBps } from '../lib/governance/crew-off
 import { resolveGovernancePrivilege } from '../lib/governance/governance-privilege';
 import { isMutinyActive } from '../lib/governance/gov-proposal-lists';
 import { parsePactoGovProviderPayload } from '../lib/governance/pacto-gov-payload';
-import { openSquadDashboard } from '../lib/navigation/open-squad-dashboard';
+import { openSquadGovernance } from '../lib/navigation/open-squad-governance';
 import { parseSupportedChainId } from '../lib/wallet/chains';
 import { announcementsGroupIdForSquad } from './squad-hub-alerts';
 import { hydrateCatchUpCount, resolveOneCatchUpEntry } from './catch-up';
-import { squadDashboardChannelMode } from './navigation';
+import { squadGovernanceChannelMode } from './navigation';
 import { squadInfraByParentId, type Squad } from './squads';
 import { showToast, type ToastGoTo } from './toast';
-import { SQUAD_DASHBOARD_CHANNEL_ID } from '../lib/squad/hub-channel-names';
+import { SQUAD_GOVERNANCE_CHANNEL_ID } from '../lib/squad/hub-channel-names';
 
 /** Derived gov prompts keyed by squad id (for Alerts tab). */
 export const govActionPromptsBySquadId = writable<Record<string, GovActionPrompt[]>>({});
@@ -50,7 +50,7 @@ function toastGoTo(squad: Squad): ToastGoTo {
     type: 'squad',
     name: squad.name,
     id: squad.id,
-    channelId: SQUAD_DASHBOARD_CHANNEL_ID,
+    channelId: SQUAD_GOVERNANCE_CHANNEL_ID,
   };
 }
 
@@ -262,6 +262,6 @@ export async function refreshGovActionPromptsForSquad(squad: Squad): Promise<voi
 
 /** Open squad Governance tab from an alert card. */
 export function openGovernanceFromPrompt(parentId: string): void {
-  openSquadDashboard(parentId);
-  squadDashboardChannelMode.set('governance');
+  openSquadGovernance(parentId);
+  squadGovernanceChannelMode.set('governance');
 }

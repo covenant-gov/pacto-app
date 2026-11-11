@@ -21,8 +21,8 @@ import {
   TOOLS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_NAME,
-  SQUAD_DASHBOARD_CHANNEL_ID,
-  SQUAD_DASHBOARD_CHANNEL_NAME,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_NAME,
   SQUAD_WARGAME_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_NAME,
 } from './squad/hub-channel-names';
@@ -32,27 +32,27 @@ const DEFAULTS = [ANNOUNCEMENTS_CHANNEL_NAME, TOOLS_CHANNEL_NAME];
 describe('partitionHubSidebarChannels', () => {
   it('splits built-in hub rows from user-created channels', () => {
     const channels = [
-      { name: SQUAD_DASHBOARD_CHANNEL_NAME, groupId: SQUAD_DASHBOARD_CHANNEL_ID, order: -2 },
+      { name: SQUAD_GOVERNANCE_CHANNEL_NAME, groupId: SQUAD_GOVERNANCE_CHANNEL_ID, order: -2 },
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
       { name: TOOLS_CHANNEL_NAME, groupId: 'g', order: 1 },
       { name: 'c1', groupId: 'c1g', order: 2 },
     ];
     const { defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels);
     expect(defaultHubChannels.map((c) => c.name)).toEqual([
-      SQUAD_DASHBOARD_CHANNEL_NAME,
+      SQUAD_GOVERNANCE_CHANNEL_NAME,
       ANNOUNCEMENTS_CHANNEL_NAME,
       TOOLS_CHANNEL_NAME,
     ]);
     expect(customChannels.map((c) => c.name)).toEqual(['c1']);
   });
 
-  it('treats gov-practice as a built-in hub row', () => {
+  it('does not treat gov-practice as a sidebar hub row', () => {
     const { defaultHubChannels, customChannels } = partitionHubSidebarChannels([
       { name: SQUAD_WARGAME_CHANNEL_NAME, groupId: SQUAD_WARGAME_CHANNEL_ID, order: -2 },
       { name: 'ops', groupId: 'g-ops', order: 2 },
     ]);
-    expect(defaultHubChannels.map((c) => c.name)).toEqual([SQUAD_WARGAME_CHANNEL_NAME]);
-    expect(customChannels.map((c) => c.name)).toEqual(['ops']);
+    expect(defaultHubChannels.map((c) => c.name)).toEqual([]);
+    expect(customChannels.map((c) => c.name)).toEqual([SQUAD_WARGAME_CHANNEL_NAME, 'ops']);
   });
 });
 
@@ -68,7 +68,7 @@ describe('buildHubSidebarChannels', () => {
     const built = buildHubSidebarChannels(raw);
     expect(built.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      SQUAD_DASHBOARD_CHANNEL_NAME,
+      SQUAD_GOVERNANCE_CHANNEL_NAME,
       TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
       'c1',
@@ -81,7 +81,7 @@ describe('buildHubSidebarChannels', () => {
     ]);
     expect(built.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      SQUAD_DASHBOARD_CHANNEL_NAME,
+      SQUAD_GOVERNANCE_CHANNEL_NAME,
       TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
     ]);
@@ -94,31 +94,25 @@ describe('buildHubSidebarChannels', () => {
     ]);
     expect(built.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      SQUAD_DASHBOARD_CHANNEL_NAME,
+      SQUAD_GOVERNANCE_CHANNEL_NAME,
       TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
     ]);
     expect(built.find((c) => c.name === TOOLS_CHANNEL_NAME)?.groupId).toBe('g');
   });
 
-  it('omits gov-practice unless includeWarGame', () => {
-    const built = buildHubSidebarChannels(defaultChannelRowsForGroupId('g'));
+  it('never injects a gov-practice sidebar row', () => {
+    const built = buildHubSidebarChannels([
+      ...defaultChannelRowsForGroupId('g'),
+      { name: SQUAD_WARGAME_CHANNEL_NAME, groupId: SQUAD_WARGAME_CHANNEL_ID, order: -2 },
+    ]);
     expect(built.map((c) => c.name)).not.toContain(SQUAD_WARGAME_CHANNEL_NAME);
-  });
-
-  it('pins gov-practice immediately after governance when includeWarGame', () => {
-    const built = buildHubSidebarChannels(defaultChannelRowsForGroupId('g'), { includeWarGame: true });
     expect(built.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      SQUAD_DASHBOARD_CHANNEL_NAME,
-      SQUAD_WARGAME_CHANNEL_NAME,
+      SQUAD_GOVERNANCE_CHANNEL_NAME,
       TOOLS_CHANNEL_NAME,
       SETTINGS_CHANNEL_NAME,
     ]);
-    expect(built[2]).toMatchObject({
-      name: SQUAD_WARGAME_CHANNEL_NAME,
-      groupId: SQUAD_WARGAME_CHANNEL_ID,
-    });
   });
 });
 

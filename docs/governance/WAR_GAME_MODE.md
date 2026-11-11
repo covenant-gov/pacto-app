@@ -2,7 +2,7 @@
 
 Practice stack for Pacto Gov: same protocol, accelerated timings, **Sepolia only**. Real governance stays on the production `pacto_gov` singleton and `NavePirataRegistry`.
 
-Public rules: [Wargame](https://covenant-gov.github.io/pacto-app/wargame/) on the download site. Hub channel after first deploy: `gov-practice`.
+Public rules: [Wargame](https://covenant-gov.github.io/pacto-app/wargame/) on the download site. App surface: `#governance` → **Wargame** (practice). Internal routing id remains `__gov_practice__`.
 
 ## Settled product decisions
 
@@ -12,20 +12,20 @@ These close the research questions in GitHub #138. Do not re-open them as “fir
 
 **Config.** Production deploy defaults stay **7 days** crew-change delay / **7 days** proposal expiry / **Majority (51%)** / **3000 bps** quorum. War-game defaults are **5 minutes**, customizable down to **1 minute** (`MIN_GOV_DELAY`). Clients may customize both duration knobs and TA vote mode / quorum. At factory init, `proposalExpiry` also seeds Mutiny `mutinyExpiry` and Quartermaster `crewOffboardExpiry`.
 
-**Copy.** Official name **war-game mode**. Hub slug **`gov-practice`**. Public tab label **Wargame**. Any member may start; the starter is captain. After deploy, the captain may randomize from Mutiny among other crew-hat wearers. Sponsor and Squad Admin deploys have no timing knobs.
+**Copy.** Official name **war-game mode**. Public label **Wargame** with secondary **Practice governance**. Internal stack id **`__gov_practice__`** (not a sidebar slug). Any member may start; the starter is captain. After deploy, the captain may randomize from Mutiny among other crew-hat wearers. Sponsor and Squad Admin deploys have no timing knobs.
 
 ## What is not this stack
 
 - Mutiny is always **51% snapshot**, independent of the TA Majority / Quorum switch.
 - Crew-led offboard is always **quorum-of-cast** on Quartermaster, independent of that switch.
-- Hide/archive of `gov-practice` and in-app video are out of scope for the first cut.
+- Hide/archive of the Wargame stack and in-app video are out of scope for the first cut.
 
 ## App surfaces
 
 | Surface | Role |
 |---------|------|
-| Status checklist | Encourage “Deploy wargame” before real gov; not a hard gate. After deploy, `#governance` shows “Open gov-practice” and `#gov-practice` shows “Redeploy wargame” — never both. Production “Deploy Squad governance” / “Deploy Squad admin” rows live on `#governance` only |
-| `gov-practice` | Virtual hub row (not an MLS group); Sepolia + Active game infra |
+| Status checklist | Encourage “Deploy wargame” before real gov; not a hard gate. After deploy, Live stack shows “Open Wargame” and Wargame stack shows “Redeploy wargame” — never both. Production “Deploy Squad governance” / “Deploy Squad admin” rows live on the Live stack only |
+| `#governance` → Wargame | Header context switch (not a sidebar row); Sepolia + Active game infra; `openSquadWargame` selects `__gov_practice__` under the hood |
 | `#announcements` | Deploy / retire / redeploy fan-out so all members sync the row |
 | Launchpad | Unchanged production singleton |
 

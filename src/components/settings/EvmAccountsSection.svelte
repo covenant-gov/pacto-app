@@ -8,7 +8,7 @@
     listEvmAccountSquadBindings,
     type EvmAccountSquadBinding,
   } from '../../lib/squad/evm-account-squad-bindings';
-  import { openSquadDashboard } from '../../lib/navigation/open-squad-dashboard';
+  import { openSquadGovernance } from '../../lib/navigation/open-squad-governance';
   import { squads } from '../../stores/app';
   import type { Squad } from '../../stores/squads';
   import {
@@ -272,7 +272,7 @@
                       <button
                         type="button"
                         class="evm-account-squad-link"
-                        onclick={() => openSquadDashboard(link.parentId)}
+                        onclick={() => openSquadGovernance(link.parentId)}
                       >
                         <span class="evm-account-squad-name">{squadName(link.parentId)}</span>
                         <span class="evm-account-squad-id" title={link.parentId}>{shortParentId(link.parentId)}</span>

@@ -17,7 +17,7 @@ These files are **tracked in git** and are intended for references from **source
 | [HD_DERIVATION_V1.md](./HD_DERIVATION_V1.md) | BIP-44 path, address hash rule, legacy cutover, golden vector. |
 | [ONCHAIN_READ_PATTERN.md](./ONCHAIN_READ_PATTERN.md) | Shared pattern: persist / hydrate / background refresh for WalletBar + Safe-style reads. |
 | [PACTO_GOV.md](./PACTO_GOV.md) | Upstream [covenant-gov/pacto-gov](https://github.com/covenant-gov/pacto-gov); Alloy bindings and env deploy addresses. |
-| [../governance/ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) | Roster ↔ Hats / Squad Admin **ACL** (access control): capabilities, fail-closed signing preflight, UI snapshot. |
+| [../governance/ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) | Roster ↔ Hats / Squad Admin **ACL**: capabilities, packed-privilege enforceability (chain recognition vs MLS-only), fail-closed signing preflight, UI snapshot. |
 | [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) | Upstream [covenant-gov/pacto-squad-sponsor](https://github.com/covenant-gov/pacto-squad-sponsor); deploy, summary read, `squad_infra`. |
 | [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md) | Normative ERC-4337 / EIP-7702 transport spec (policy, lanes, Pimlico fees, pipeline); L0–L4; Sepolia fund matrix. |
 | [SPONSORED_USEROP_SEPOLIA_EXAMPLE.md](./SPONSORED_USEROP_SEPOLIA_EXAMPLE.md) | Walkthrough of one Sepolia squad-sponsor UserOp (nesting + gas settlement Mermaid; Etherscan tabs). |

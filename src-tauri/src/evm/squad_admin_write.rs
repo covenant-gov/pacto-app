@@ -109,6 +109,7 @@ async fn squad_admin_write<R: Runtime>(
         "Timed out waiting for squad admin confirmation. The transaction may still confirm — do not resubmit the same calldata; check the explorer with the returned tx hash.",
     )
     .await?;
+    super::squad_privilege_enforce::invalidate_exec_state_cache(net.key.as_str(), admin);
 
     Ok(SquadAdminWriteResult {
         tx_hash: format!("0x{:x}", receipt.transaction_hash),
@@ -372,6 +373,10 @@ mod tests {
         .is_err());
         assert!(parse_packed_role_id(
             "0x5800000000000000000000000000000000000000000000000000000000010021"
+        )
+        .is_ok());
+        assert!(parse_packed_role_id(
+            "0x5800000000000000000000000000000000000000000000000000000000010081"
         )
         .is_err());
     }

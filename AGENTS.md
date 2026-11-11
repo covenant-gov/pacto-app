@@ -137,7 +137,7 @@ make clean-cargo   # wipe the target dir; keeps sandboxes
   - **Do not use in new files:** `export let`, `$:`, `on:` directives, `<slot>`, `createEventDispatcher`.
   - **Stores stay on `svelte/store`.** The 44 modules in `src/stores/` are deliberately out of scope. `$store` auto-subscription works in runes-mode components and is not deprecated — read stores with `$store` and do not convert them to `$state` or `.svelte.ts`.
   - **Do not opportunistically convert unrelated legacy files** while working a feature. Conversion runs in planned domain batches; see `docs/plans/2026-07-25-001-refactor-svelte-5-runes-migration-plan.md`.
-  - **Exception — legacy shells.** `src/components/app/AuthenticatedApp.svelte`, `src/components/channel/ChatView.svelte`, and `src/components/parent/ParentDashboard.svelte` stay legacy shells. When a feature touches one, carve the new functionality into a runes child component rather than converting the shell. A legacy parent hosting a runes child is fully supported.
+  - **Exception — legacy shells.** `src/components/app/AuthenticatedApp.svelte`, `src/components/channel/ChatView.svelte`, and `src/components/parent/SquadGovernanceView.svelte` stay legacy shells. When a feature touches one, carve the new functionality into a runes child component rather than converting the shell. A legacy parent hosting a runes child is fully supported.
 - **Backend calls:** Use `import { invoke } from '@tauri-apps/api/core'` and type as `invoke<T>('command_name', { arg1, arg2 })`. Command names are `snake_case`; payload keys are `camelCase` and converted by Tauri v2.
 - **State:** One store file per domain. Re-export from `src/stores/app.ts` when cross-cutting. Reset stores in `beforeEach`/`afterEach` in tests.
 - **Persistence:** Any new `localStorage` key must be npub-scoped via `persistenceKey(prefix)` from `src/stores/persistence-context.ts`. Call `loadAccountState(npub)` after login and `clearAccountState(npub)` on logout.
@@ -409,5 +409,5 @@ bd prime                # Refresh Beads context
 - Dark skins are `[data-theme=…]` on `<html>`, not `html.dark`. shadcn `dark:` utilities already key off the data-theme custom variant.
 - Design system foundation is Tailwind CSS 4 + shadcn; theme tokens and decisions belong in repo CSS/docs, not one-off component hex.
 - GitHub stacked PRs are the preferred way to land sequential UI work (foundations then theme tokens).
-- Squad governance hub slug is `governance` (practice hub `gov-practice`). Polls, events, and docs share `#tools` with a mode switch. `#announcements` is publish-only; discussion belongs in governance chat. Proposal mentions should render as number+title pills, not a bare `#n`.
+- Squad governance hub slug is `governance` with Live | Wargame in the header (internal stack id `__gov_practice__`). Polls, events, and docs share `#tools` with a mode switch. `#announcements` is publish-only; discussion belongs in governance chat. Proposal mentions should render as number+title pills, not a bare `#n`.
 

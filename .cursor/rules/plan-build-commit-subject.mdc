@@ -1,0 +1,30 @@
+---
+description: After Plan Build or per-todo review pauses, always offer a commit subject line
+alwaysApply: true
+---
+
+# Plan Build → commit subject
+
+When finishing a **Plan → Build**, **implement the plan**, **execute the plan**, or equivalent — and when pausing for human review after one or more plan todos — end the handoff with a **commit subject line** for the changelog since the last such pause (or since the build started).
+
+## When
+
+| Situation | What to include |
+|-----------|-----------------|
+| Entire plan build finished | One subject covering all work in that build |
+| Per-todo / staged execution, pause for review | One subject covering **only** the changes in this pause |
+
+## Format
+
+Follow [commit-subject-category.mdc](commit-subject-category.mdc) — one pasteable line:
+
+```text
+docs: …
+```
+
+## Rules
+
+- Always provide the subject in the handoff; do **not** create the commit unless the user explicitly asks ([no-unrequested-commits.mdc](no-unrequested-commits.mdc)).
+- Subject summarizes **why** / outcome for the current changelog, not a file list.
+- If there are no file changes in the pause, say so and omit a subject (or say `n/a`).
+- If CI gates ran for that pause, keep the usual gate note; still include the subject when there are changes.

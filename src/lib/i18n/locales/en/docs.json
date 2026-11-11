@@ -1,6 +1,7 @@
 {
 	"docs.panel.ariaLabel": "Squad docs",
 	"docs.panel.add": "Add doc",
+	"docs.panel.denied": "You cannot add docs.",
 	"docs.panel.loading": "Loading docs…",
 	"docs.panel.empty": "No docs yet. Links saved before you joined this squad are not listed here.",
 	"docs.panel.emptyFiltered": "No docs match this filter.",

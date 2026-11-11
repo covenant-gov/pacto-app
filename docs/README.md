@@ -23,15 +23,15 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[storage-layout/](./storage-layout/)** | SQLite schema, paths, logout, local message encryption |
 | **[communities/DESIGN.md](./communities/DESIGN.md)** | **Squads & in-app Networks**: shared MLS model, stable ids, invites, persistence |
 | **[communities/JOIN_INBOX.md](./communities/JOIN_INBOX.md)** | Join inbox wire (`join_requests` virtual bucket) |
-| **[communities/SQUAD_CONTENT_POLICY.md](./communities/SQUAD_CONTENT_POLICY.md)** | Admin-only events/docs: restrict-on semantics, sender-set timestamps, alternatives (MLS epoch, on-chain) with pros/cons |
+| **[communities/SQUAD_CONTENT_POLICY.md](./communities/SQUAD_CONTENT_POLICY.md)** | Superseded. Event/doc create/add is SquadAdmin `createEvent` / `addDoc` |
 | **[design-system/](./design-system/)** | **UI design system**: theming tokens, shell regions, MUST/SHOULD/NEVER, decisions ([README](./design-system/README.md)) |
 | **[shell/LAYOUT.md](./shell/LAYOUT.md)** | **Logged-in shell**: page layout, store slices, lib modules, dashboard/DM routers |
 | **[dashboard/POLLS.md](./dashboard/POLLS.md)** | Dashboard polls: MLS announcements transport, replica, vote rules |
 | **[dashboard/ASSET_CARDS.md](./dashboard/ASSET_CARDS.md)** | Sponsor / Treasury / vault card chrome (`DashboardAssetCard`) |
 | **[legacy-fixes/](./legacy-fixes/)** | Alpha-only repair and migration paths to remove before beta or public v1 ([catalog](./legacy-fixes/CATALOG.md)) |
 | **[wallet/](./wallet/)** | Embedded EVM wallet, RPC, chain config, DM payment messages ([on-chain read pattern](./wallet/ONCHAIN_READ_PATTERN.md)) |
-| **[governance/ACCESS_CONTROL.md](./governance/ACCESS_CONTROL.md)** | Nostr↔EVM roster **ACL** (access control): Hats / Squad Admin capabilities, fail-closed signing preflight |
-| **[governance/WAR_GAME_MODE.md](./governance/WAR_GAME_MODE.md)** | War-game vs production gov: coexistence, timings, `gov-practice` |
+| **[governance/ACCESS_CONTROL.md](./governance/ACCESS_CONTROL.md)** | Nostr↔EVM roster **ACL**: Hats / Squad Admin capabilities, packed-privilege **enforceability** (chain recognition vs MLS-only), fail-closed signing preflight |
+| **[governance/WAR_GAME_MODE.md](./governance/WAR_GAME_MODE.md)** | War-game vs production gov: coexistence, timings, `#governance` → Wargame |
 | **[CHAIN_TERMINOLOGY.md](./CHAIN_TERMINOLOGY.md)** | Canonical network keys (`local`, not `anvil`); one spelling per chain |
 | **[i18n.md](./i18n.md)** | Locale catalogs (`en`/`es`); Spanish **escuad** slang for Squad |
 | **[RUNTIME_CONFIG.md](./RUNTIME_CONFIG.md)** | Backend-owned `AppConfig` limits/flags over Tauri IPC: source of truth, Zod validation, fallback behavior, how to add a new limit |

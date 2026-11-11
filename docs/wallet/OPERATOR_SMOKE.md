@@ -196,7 +196,7 @@ Two accounts helpful: **requester** (not in squad) and **holder** (creator or ad
 
 **Bot holders**
 
-- [ ] **`#settings` → Access → Join inbox holders** shows Join inbox npub, epoch, holder list.
+- [ ] **`#settings` → About → Join inbox holders** shows Join inbox npub, epoch, holder list.
 - [ ] Creator is initial holder after squad create (Commons on path runs `initJoinInbox`).
 - [ ] Holder adds a second MLS member → key share DM arrives → second device shows **Holds bot key**.
 - [ ] Remove holder → remaining holders see **#personal-alerts** rotate prompt; **Rotate bot key** posts **#announcements** notice and rebroadcasts new bot npub on next Commons publish.

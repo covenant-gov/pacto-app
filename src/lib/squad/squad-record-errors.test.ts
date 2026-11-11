@@ -7,7 +7,7 @@ const t = (key: string) => (en as Record<string, string>)[key] ?? key;
 describe('squadRecordErrorMessage', () => {
   it('translates known codes from strings and Error objects', () => {
     expect(squadRecordErrorMessage('squad_event_create_restricted', t)).toBe(
-      'Only squad admins can add events in this squad.',
+      'You cannot add events in this squad.',
     );
     expect(squadRecordErrorMessage(new Error(' squad_event_not_found '), t)).toBe('This event is no longer available.');
     expect(squadRecordErrorMessage('squad_doc_invalid_url', t)).toBe('Use a link that starts with http:// or https://.');

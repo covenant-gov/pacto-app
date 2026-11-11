@@ -15,9 +15,6 @@ export const loadDashboardCrewTab = createLazyComponent(
 export const loadDashboardSettingsAboutTab = createLazyComponent(
   () => import('../../components/parent/dashboard/DashboardSettingsAboutTab.svelte'),
 );
-export const loadDashboardSettingsAccessTab = createLazyComponent(
-  () => import('../../components/parent/dashboard/DashboardSettingsAccessTab.svelte'),
-);
 export const loadDashboardSettingsNetworkTab = createLazyComponent(
   () => import('../../components/parent/dashboard/DashboardSettingsNetworkTab.svelte'),
 );

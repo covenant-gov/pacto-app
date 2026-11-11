@@ -10,10 +10,10 @@ import {
   lastOpenedChannelId,
   lastOpenedSquadId,
   settingsChannelMode,
-  squadDashboardChannelMode,
+  squadGovernanceChannelMode,
   squadToolsChannelMode,
   squads,
-  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   isVirtualHubChannelId,
   type SettingsChannelMode,
@@ -35,8 +35,8 @@ import { get } from 'svelte/store';
 /**
  * A complete deep-link target. Generalizes the navigation state Toast's
  * `goToSpace` set for a squad channel (the only pre-existing complete
- * example — see the Planning Contract) to also cover a squad's dashboard
- * tab and a DM peer, so `sourceEventId`-referencing surfaces like Catch up
+ * example — see the Planning Contract) to also cover a squad's governance
+ * hub and a DM peer, so `sourceEventId`-referencing surfaces like Catch up
  * can land a member in the exact canonical home an item resolves in.
  */
 export type NavigationTarget =
@@ -47,7 +47,7 @@ export type NavigationTarget =
       hubChannelName?: string | null;
       settingsMode?: SettingsChannelMode;
     }
-  | { kind: 'squad-dashboard'; squadId: string }
+  | { kind: 'squad-governance'; squadId: string }
   | { kind: 'dm'; npub: string }
   /** `#events` (announcements group) with one event's detail open. */
   | { kind: 'squad-event'; squadId: string; channelId: string; hubChannelName: string; eventId: string };
@@ -80,21 +80,21 @@ function navigateToSquadChannel(squadId: string, channelId: string, preferredHub
 }
 
 /** Open a squad's #governance hub from Settings, Catch up, or other non-hub views. */
-export function openSquadDashboard(parentId: string): void {
+export function openSquadGovernance(parentId: string): void {
   const id = parentId.trim();
   if (!id) return;
-  navigateToSquadChannel(id, SQUAD_DASHBOARD_CHANNEL_ID);
+  navigateToSquadChannel(id, SQUAD_GOVERNANCE_CHANNEL_ID);
 }
 
 /** Open `#governance` → Crew (Privileges builder lives under the roster). */
 export function openSquadCrewPrivileges(parentId: string): void {
   const id = parentId.trim();
   if (!id) return;
-  openSquadDashboard(id);
-  squadDashboardChannelMode.set('crew');
+  openSquadGovernance(id);
+  squadGovernanceChannelMode.set('crew');
 }
 
-/** Open a squad's #gov-practice hub from Status or other non-hub views. */
+/** Open `#governance` on the Wargame (practice) stack from Status or other views. */
 export function openSquadWargame(parentId: string): void {
   const id = parentId.trim();
   if (!id) return;
@@ -113,7 +113,7 @@ export function openSquadTools(parentId: string, mode: SquadToolsChannelMode = '
 }
 
 /** Open a squad's #settings channel. */
-export function openSquadSettings(parentId: string, mode: SettingsChannelMode = 'access'): void {
+export function openSquadSettings(parentId: string, mode: SettingsChannelMode = 'you'): void {
   const id = parentId.trim();
   if (!id) return;
   navigateToTarget({
@@ -137,8 +137,8 @@ export function navigateToTarget(target: NavigationTarget): void {
     navigateToDm(target.npub);
     return;
   }
-  if (target.kind === 'squad-dashboard') {
-    navigateToSquadChannel(target.squadId, SQUAD_DASHBOARD_CHANNEL_ID);
+  if (target.kind === 'squad-governance') {
+    navigateToSquadChannel(target.squadId, SQUAD_GOVERNANCE_CHANNEL_ID);
     return;
   }
   if (target.kind === 'squad-event') {
@@ -169,7 +169,7 @@ export function parseEventReminderSourceId(sourceEventId: string): { eventId: st
  * entries recorded against a squad's announcements channel (the governance
  * roster-key prompt and pending join requests both use that fallback id,
  * since neither is tied to one specific channel) — `#settings` About for
- * `join-request:*` items and the squad dashboard for other prompts.
+ * `join-request:*` items and the squad governance hub for other prompts.
  * `event_reminder` entries open that event's detail in `#tools` → Events.
  * Returns `null` for a reference that resolves to nothing (a bug in the
  * Catch up backend's orphan cleanup, not an expected case here).
@@ -201,7 +201,7 @@ export function resolveCatchUpTarget(
           settingsMode: 'about',
         };
       }
-      return { kind: 'squad-dashboard', squadId: squad.id };
+      return { kind: 'squad-governance', squadId: squad.id };
     }
     return { kind: 'squad-channel', squadId: squad.id, channelId: entry.chatId };
   }

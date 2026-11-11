@@ -7,9 +7,9 @@ import {
   activeChannelId,
   activeHubChannelName,
   activeView,
-  squadDashboardChannelMode,
-  SQUAD_DASHBOARD_MODE_PREFIX,
-  parseSquadDashboardChannelMode,
+  squadGovernanceChannelMode,
+  SQUAD_GOVERNANCE_MODE_PREFIX,
+  parseSquadGovernanceChannelMode,
   settingsChannelMode,
   SETTINGS_CHANNEL_MODE_PREFIX,
   parseSettingsChannelMode,
@@ -74,7 +74,7 @@ describe('navigation', () => {
     activeChannelId.set(null);
     activeHubChannelName.set(null);
     activeView.set('hub');
-    squadDashboardChannelMode.set('status');
+    squadGovernanceChannelMode.set('status');
     settingsChannelMode.set('you');
     squadToolsChannelMode.set('polls');
     squadSettingsRpcFocusNonce.set(0);
@@ -103,41 +103,41 @@ describe('navigation', () => {
     expect(get(activeChannelId)).toBeNull();
     expect(get(activeHubChannelName)).toBeNull();
     expect(get(activeView)).toBe('hub');
-    expect(get(squadDashboardChannelMode)).toBe('status');
+    expect(get(squadGovernanceChannelMode)).toBe('status');
     expect(get(settingsChannelMode)).toBe('you');
     expect(get(squadToolsChannelMode)).toBe('polls');
     expect(get(showMembersPanel)).toBe(false);
   });
 
   it('parses known squad dashboard channel modes', () => {
-    expect(parseSquadDashboardChannelMode('status')).toBe('status');
-    expect(parseSquadDashboardChannelMode('governance')).toBe('governance');
-    expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
-    expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
-    expect(parseSquadDashboardChannelMode('settings')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('status')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('governance')).toBe('governance');
+    expect(parseSquadGovernanceChannelMode('treasury')).toBe('treasury');
+    expect(parseSquadGovernanceChannelMode('crew')).toBe('crew');
+    expect(parseSquadGovernanceChannelMode('settings')).toBe('status');
   });
 
   it('resets unknown squad dashboard modes to status', () => {
-    expect(parseSquadDashboardChannelMode(null)).toBe('status');
-    expect(parseSquadDashboardChannelMode('')).toBe('status');
-    expect(parseSquadDashboardChannelMode('nope')).toBe('status');
-    expect(parseSquadDashboardChannelMode('polls')).toBe('status');
-    expect(parseSquadDashboardChannelMode('modules')).toBe('status');
-    expect(parseSquadDashboardChannelMode('stickers')).toBe('status');
-    expect(parseSquadDashboardChannelMode('roles')).toBe('status');
+    expect(parseSquadGovernanceChannelMode(null)).toBe('status');
+    expect(parseSquadGovernanceChannelMode('')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('nope')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('polls')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('modules')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('stickers')).toBe('status');
+    expect(parseSquadGovernanceChannelMode('roles')).toBe('status');
   });
 
   it('persists squad dashboard channel mode under an npub-scoped key', () => {
     setCurrentNpubForPersistence('npub1abc');
-    squadDashboardChannelMode.set('treasury');
-    expect(storage.get(`${SQUAD_DASHBOARD_MODE_PREFIX}_npub1abc`)).toBe('treasury');
+    squadGovernanceChannelMode.set('treasury');
+    expect(storage.get(`${SQUAD_GOVERNANCE_MODE_PREFIX}_npub1abc`)).toBe('treasury');
   });
 
   it('parses known settings channel modes and resets unknown values to you', () => {
     expect(parseSettingsChannelMode('you')).toBe('you');
     expect(parseSettingsChannelMode('about')).toBe('about');
     expect(parseSettingsChannelMode('us')).toBe('about');
-    expect(parseSettingsChannelMode('access')).toBe('access');
+    expect(parseSettingsChannelMode('access')).toBe('you');
     expect(parseSettingsChannelMode('network')).toBe('network');
     expect(parseSettingsChannelMode('personal')).toBe('you');
     expect(parseSettingsChannelMode('squad')).toBe('you');
@@ -148,8 +148,8 @@ describe('navigation', () => {
 
   it('persists settings channel mode under an npub-scoped key', () => {
     setCurrentNpubForPersistence('npub1abc');
-    settingsChannelMode.set('access');
-    expect(storage.get(`${SETTINGS_CHANNEL_MODE_PREFIX}_npub1abc`)).toBe('access');
+    settingsChannelMode.set('network');
+    expect(storage.get(`${SETTINGS_CHANNEL_MODE_PREFIX}_npub1abc`)).toBe('network');
   });
 
   it('parses known board channel modes and resets unknown values to polls', () => {
@@ -220,7 +220,7 @@ describe('navigation', () => {
   });
 
   it('skips persistence when no npub is set', () => {
-    squadDashboardChannelMode.set('crew');
+    squadGovernanceChannelMode.set('crew');
     expect(storage.size).toBe(0);
   });
 
@@ -230,27 +230,27 @@ describe('navigation', () => {
   });
 
   it('focusSquadSettingsRpcEditor opens #settings in network mode and bumps the RPC focus nonce', () => {
-    squadDashboardChannelMode.set('governance');
+    squadGovernanceChannelMode.set('governance');
     settingsChannelMode.set('you');
     expect(get(squadSettingsRpcFocusNonce)).toBe(0);
     focusSquadSettingsRpcEditor();
     expect(get(activeChannelId)).toBe('__squad_settings__');
     expect(get(settingsChannelMode)).toBe('network');
-    expect(get(squadDashboardChannelMode)).toBe('governance');
+    expect(get(squadGovernanceChannelMode)).toBe('governance');
     expect(get(squadSettingsRpcFocusNonce)).toBe(1);
     focusSquadSettingsRpcEditor();
     expect(get(squadSettingsRpcFocusNonce)).toBe(2);
   });
 
   it('focusSquadSettingsNetworkEditor opens #settings in network mode and bumps the network focus nonce', () => {
-    squadDashboardChannelMode.set('governance');
+    squadGovernanceChannelMode.set('governance');
     settingsChannelMode.set('you');
     expect(get(squadSettingsNetworkFocusNonce)).toBe(0);
     focusSquadSettingsNetworkEditor('practice');
     expect(get(activeChannelId)).toBe('__squad_settings__');
     expect(get(settingsChannelMode)).toBe('network');
     expect(get(squadSettingsNetworkFocusSlot)).toBe('practice');
-    expect(get(squadDashboardChannelMode)).toBe('governance');
+    expect(get(squadGovernanceChannelMode)).toBe('governance');
     expect(get(squadSettingsNetworkFocusNonce)).toBe(1);
     focusSquadSettingsNetworkEditor();
     expect(get(squadSettingsNetworkFocusNonce)).toBe(2);

@@ -25,6 +25,7 @@
     ensureSquadDocAddPolicy,
     squadDocAddPolicyByParentId,
   } from '../../stores/docs-hub-alerts';
+  import { squadPrivilegeNonceByParentId } from '../../stores/squad-privilege-refresh';
   import {
     ensureMlsGroupMembers,
     membersByGroupId,
@@ -142,7 +143,8 @@
     ensureSquadDocAddPolicy(
       docsAnnouncementsGroupId,
       activeParent.id,
-      $membershipVersionByGroupId[docsAnnouncementsGroupId] ?? 0
+      $membershipVersionByGroupId[docsAnnouncementsGroupId] ?? 0,
+      $squadPrivilegeNonceByParentId[activeParent.id] ?? 0
     );
   }
   $: saveToDocsHandler =

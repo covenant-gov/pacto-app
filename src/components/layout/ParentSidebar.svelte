@@ -7,6 +7,8 @@
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
     TOOLS_CHANNEL_NAME,
+    SQUAD_GOVERNANCE_CHANNEL_NAME,
+    isSquadGovernanceChromeChannelId,
   } from '../../lib/squad/hub-channel-names';
   import { t } from 'svelte-i18n';
   import { unreadCountsByChat } from '../../stores/unread';
@@ -221,11 +223,13 @@
                 name={channel.name}
                 alertCount={hubAlertByChannelName[channel.name] ?? 0}
                 active={activeView === 'hub' &&
-                  activeChannelId === channel.groupId &&
-                  (groupIdDupCount[channel.groupId] <= 1 ||
-                    activeHubChannelName === channel.name ||
-                    (activeHubChannelName == null &&
-                      firstNameByGroupId[channel.groupId] === channel.name))}
+                  (channel.name === SQUAD_GOVERNANCE_CHANNEL_NAME
+                    ? isSquadGovernanceChromeChannelId(activeChannelId)
+                    : activeChannelId === channel.groupId &&
+                      (groupIdDupCount[channel.groupId] <= 1 ||
+                        activeHubChannelName === channel.name ||
+                        (activeHubChannelName == null &&
+                          firstNameByGroupId[channel.groupId] === channel.name)))}
               />
             </div>
           {/each}

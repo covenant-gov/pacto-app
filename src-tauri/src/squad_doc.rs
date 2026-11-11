@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::nostr_tags;
 use crate::rumor::{ConversationType, RumorContext, RumorEvent, RumorProcessingResult};
+use crate::squad_record_privilege::{admit, Kind as PrivilegeKind, Parked};
 use crate::squad_records::{
     self, card_message, signer_identity, store_local_card, with_conn, SquadGroupRole,
     SQUAD_DOC_D_TAG,
@@ -387,14 +388,8 @@ impl Applied {
     }
 }
 
-fn may_add(conn: &Connection, parent_id: &str, role: SquadGroupRole) -> Result<bool, String> {
-    if !role.is_member {
-        return Ok(false);
-    }
-    if role.is_admin {
-        return Ok(true);
-    }
-    Ok(!crate::squad_content_policy::load_policy(conn, parent_id)?.restrict_doc_add)
+fn may_add(role: SquadGroupRole) -> bool {
+    role.is_member
 }
 
 /// Applies one op from `meta.signer_npub` whose role in `meta.mls_group_id` is `role`.
@@ -453,7 +448,7 @@ fn insert_add(
     meta: &OpMeta<'_>,
     role: SquadGroupRole,
 ) -> Result<Applied, String> {
-    if !may_add(conn, &w.parent_id, role)? {
+    if !may_add(role) {
         return Ok(Applied::Ignored);
     }
     conn.execute(
@@ -754,6 +749,14 @@ async fn apply_and_emit<R: Runtime>(
     Ok(applied)
 }
 
+/// Ops that create product state and so need the author's `addDoc` privilege.
+fn needs_privilege_gate(op: Op) -> bool {
+    match op {
+        Op::Add => true,
+        Op::Update | Op::Remove => false,
+    }
+}
+
 /// MLS ingest for `d` = `pacto_squad_doc`. Never yields a chat row except the add card.
 pub async fn process_rumor(
     rumor: RumorEvent,
@@ -780,6 +783,19 @@ pub async fn process_rumor(
         .map_err(|e| format!("pubkey bech32: {}", e))?;
     let role = squad_records::group_role(handle, group_id, &signer).await;
     let rumor_id = rumor.id.to_hex();
+    if needs_privilege_gate(w.op) {
+        let parked = Parked {
+            rumor_id: rumor_id.clone(),
+            kind: PrivilegeKind::Doc,
+            parent_id: w.parent_id.clone(),
+            mls_group_id: group_id.to_string(),
+            author_npub: signer.clone(),
+            payload_json: rumor.content.clone(),
+        };
+        if !admit(handle, parked).await {
+            return Ok(RumorProcessingResult::SquadRecordSilent);
+        }
+    }
     let meta = OpMeta {
         rumor_id: &rumor_id,
         mls_group_id: group_id,
@@ -815,14 +831,52 @@ fn ensure_announcements_group(mls_group_id: &str, parent_id: &str) -> Result<(),
     }
 }
 
-fn ensure_may_add(conn: &Connection, parent_id: &str, role: SquadGroupRole) -> Result<(), String> {
-    if !role.is_member {
-        return Err(err::NOT_MEMBER.into());
+fn ensure_may_add(role: SquadGroupRole) -> Result<(), String> {
+    if may_add(role) {
+        Ok(())
+    } else {
+        Err(err::NOT_MEMBER.into())
     }
-    if !may_add(conn, parent_id, role)? {
-        return Err(err::ADD_RESTRICTED.into());
+}
+
+async fn ensure_add_privilege<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    npub: &str,
+) -> Result<(), String> {
+    crate::evm::squad_privilege_enforce::require_member_squad_privilege(
+        handle,
+        parent_id,
+        npub,
+        crate::evm::squad_privilege_enforce::SquadPrivilegeAction::AddDoc,
+        err::ADD_RESTRICTED,
+    )
+    .await
+}
+
+/// Applies a parked add rumor once its privilege check allows it. No announcements card.
+pub(crate) async fn apply_deferred<R: Runtime>(
+    handle: &AppHandle<R>,
+    mls_group_id: &str,
+    signer: &str,
+    rumor_id: &str,
+    content: &str,
+) -> Result<(), String> {
+    let Some(w) = parse_wire(content) else {
+        return Ok(());
+    };
+    if !crate::db::side_effect_parent_matches_chat(mls_group_id, &w.parent_id)
+        || !stamp_acceptable(w.updated_at_ms, now_ms())
+    {
+        return Ok(());
     }
-    Ok(())
+    let role = squad_records::group_role(handle, mls_group_id, signer).await;
+    let meta = OpMeta {
+        rumor_id,
+        mls_group_id,
+        signer_npub: signer,
+    };
+    apply_and_emit(handle, &w, meta, role).await.map(|_| ())
 }
 
 /// Visible stored row of this parent that the caller may edit or remove.
@@ -912,10 +966,9 @@ pub async fn send_squad_doc_add<R: Runtime>(
     let fields = fields_from_input(&doc)?;
     let (pk, npub) = signer_identity().await?;
     let role = squad_records::group_role(&handle, &mls_group_id, &npub).await;
-    let existing = with_conn(&handle, |c| {
-        ensure_may_add(c, &parent_id, role)?;
-        load_row(c, &doc_id)
-    })?;
+    ensure_may_add(role)?;
+    ensure_add_privilege(&handle, &parent_id, &npub).await?;
+    let existing = with_conn(&handle, |c| load_row(c, &doc_id))?;
     if let Some(row) = existing {
         // Retry after a send that already landed.
         if row.author_npub == npub && row.parent_id == parent_id && !row.hidden {
@@ -1093,15 +1146,6 @@ mod tests {
         load_docs(conn, PARENT, caller).expect("list")
     }
 
-    fn set_restrict_doc_add(conn: &Connection, on: bool) {
-        conn.execute(
-            "INSERT INTO squad_content_policy (parent_id, restrict_doc_add, restrict_doc_add_updated_at_ms)
-             VALUES (?1, ?2, 1)",
-            params![PARENT, on],
-        )
-        .expect("policy");
-    }
-
     #[test]
     fn add_stores_raw_url_and_card_masks_it() {
         let conn = conn();
@@ -1227,29 +1271,12 @@ mod tests {
     }
 
     #[test]
-    fn restriction_on_ignores_member_add_and_stores_admin_add() {
-        let conn = conn();
-        set_restrict_doc_add(&conn, true);
-        let (applied, card) = ingest(&conn, &add("d1", CRYPTPAD, ALICE, 100), "r1", ALICE);
-        assert_eq!(applied, Applied::Ignored);
-        assert!(card.is_none());
-        assert!(load_row(&conn, "d1").expect("load").is_none());
-        let (applied, card) = ingest(&conn, &add("d2", CRYPTPAD, ADMIN, 100), "r2", ADMIN);
-        assert_eq!(applied, Applied::Changed { inserted: true });
-        assert!(card.is_some());
+    fn members_may_add_and_outsiders_may_not() {
+        assert!(ensure_may_add(role_of(ALICE)).is_ok());
         assert_eq!(
-            ensure_may_add(&conn, PARENT, role_of(ALICE)),
-            Err(err::ADD_RESTRICTED.to_string())
+            ensure_may_add(role_of(OUTSIDER)),
+            Err(err::NOT_MEMBER.to_string())
         );
-        assert!(ensure_may_add(&conn, PARENT, role_of(ADMIN)).is_ok());
-    }
-
-    #[test]
-    fn restriction_off_lets_members_add() {
-        let conn = conn();
-        set_restrict_doc_add(&conn, false);
-        let (applied, _) = ingest(&conn, &add("d1", CRYPTPAD, ALICE, 100), "r1", ALICE);
-        assert_eq!(applied, Applied::Changed { inserted: true });
     }
 
     #[test]
@@ -1424,6 +1451,343 @@ mod tests {
         assert_eq!(line, "[squad_doc] add applied doc=d1 visible=1");
         for secret in ["http", "cryptpad", "s3cretKey", "Plan", NOTE] {
             assert!(!line.contains(secret), "{secret}");
+        }
+    }
+
+    mod deferred {
+        use super::*;
+        use crate::evm::squad_privilege_enforce::MemberPrivilege;
+        use crate::squad_record_privilege::test_support::{
+            binding_decision, certify_peer_share, eventually, mark_sweep_done, parked_count,
+            reset_drain_throttle, seed_members, settle, setup,
+        };
+        use crate::squad_record_privilege::{admit_with, drain_with, Kind, Parked};
+
+        fn payload(id: &str, ts: i64) -> String {
+            serde_json::to_string(&add(id, CRYPTPAD, ALICE, ts)).expect("json")
+        }
+
+        fn parked(rumor_id: &str, author: &str, content: String) -> Parked {
+            Parked {
+                rumor_id: rumor_id.into(),
+                kind: Kind::Doc,
+                parent_id: PARENT.into(),
+                mls_group_id: GROUP.into(),
+                author_npub: author.into(),
+                payload_json: content,
+            }
+        }
+
+        fn stored(app: &tauri::App<tauri::test::MockRuntime>, id: &str) -> Option<DocRow> {
+            with_conn(app.handle(), |c| load_row(c, id)).expect("load")
+        }
+
+        async fn undecided(_: Parked) -> MemberPrivilege {
+            MemberPrivilege::Undecided
+        }
+
+        async fn allowed(_: Parked) -> MemberPrivilege {
+            MemberPrivilege::Allowed
+        }
+
+        async fn denied(_: Parked) -> MemberPrivilege {
+            MemberPrivilege::Denied
+        }
+
+        #[test]
+        fn only_add_needs_the_privilege_gate() {
+            for (op, gated) in [(Op::Add, true), (Op::Update, false), (Op::Remove, false)] {
+                assert_eq!(needs_privilege_gate(op), gated, "{op:?}");
+            }
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_stores_a_member_add() {
+            let app = setup("npub1docdeferredstores");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            apply_deferred(app.handle(), GROUP, ALICE, "r1", &payload("d1", 1_000))
+                .await
+                .expect("apply");
+            let row = stored(&app, "d1").expect("stored");
+            assert_eq!(row.author_npub, ALICE);
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_ignores_a_non_member_signer() {
+            let app = setup("npub1docdeferrednonmember");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            apply_deferred(app.handle(), GROUP, OUTSIDER, "r1", &payload("d1", 1_000))
+                .await
+                .expect("apply");
+            assert!(stored(&app, "d1").is_none());
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_ignores_a_parent_that_does_not_match_the_group() {
+            let app = setup("npub1docdeferredparent");
+            seed_members(app.handle(), "other-group", &[ALICE]);
+            apply_deferred(
+                app.handle(),
+                "other-group",
+                ALICE,
+                "r1",
+                &payload("d1", 1_000),
+            )
+            .await
+            .expect("apply");
+            assert!(stored(&app, "d1").is_none());
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_ignores_a_future_dated_stamp_and_bad_content() {
+            let app = setup("npub1docdeferredstamp");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            let future = now_ms() + MAX_FUTURE_SKEW_MS + 60_000;
+            apply_deferred(app.handle(), GROUP, ALICE, "r1", &payload("d1", future))
+                .await
+                .expect("apply");
+            apply_deferred(app.handle(), GROUP, ALICE, "r2", "not json")
+                .await
+                .expect("apply");
+            assert!(stored(&app, "d1").is_none());
+        }
+
+        #[tokio::test]
+        async fn drain_applies_allowed_and_clears_the_parked_row() {
+            let app = setup("npub1docdrainallowed");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            assert!(
+                !admit_with(
+                    app.handle(),
+                    parked("r1", ALICE, payload("d1", 1_000)),
+                    undecided
+                )
+                .await
+            );
+            assert_eq!(parked_count(app.handle()), 1);
+
+            drain_with(app.handle(), Some(PARENT), None, allowed).await;
+            assert_eq!(parked_count(app.handle()), 0);
+            assert!(stored(&app, "d1").is_some());
+        }
+
+        #[tokio::test]
+        async fn drain_drops_denied_without_applying() {
+            let app = setup("npub1docdraindenied");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            admit_with(
+                app.handle(),
+                parked("r1", ALICE, payload("d1", 1_000)),
+                undecided,
+            )
+            .await;
+
+            drain_with(app.handle(), Some(PARENT), None, denied).await;
+            assert_eq!(parked_count(app.handle()), 0);
+            assert!(stored(&app, "d1").is_none());
+        }
+
+        #[tokio::test]
+        async fn drain_keeps_undecided_without_applying() {
+            let app = setup("npub1docdrainundecided");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            admit_with(
+                app.handle(),
+                parked("r1", ALICE, payload("d1", 1_000)),
+                undecided,
+            )
+            .await;
+
+            drain_with(app.handle(), Some(PARENT), None, undecided).await;
+            assert_eq!(parked_count(app.handle()), 1);
+            assert!(stored(&app, "d1").is_none());
+        }
+
+        #[tokio::test]
+        async fn parked_add_applies_once_the_authors_binding_arrives() {
+            let app = setup("npub1docparkbinddrain");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            let handle = app.handle().clone();
+            let decide = |row: Parked| binding_decision(handle.clone(), row);
+
+            assert!(
+                !admit_with(
+                    app.handle(),
+                    parked("r1", ALICE, payload("d1", 1_000)),
+                    decide
+                )
+                .await
+            );
+            drain_with(app.handle(), Some(PARENT), None, decide).await;
+            assert_eq!(parked_count(app.handle()), 1, "still unbound");
+            assert!(stored(&app, "d1").is_none());
+
+            certify_peer_share(
+                app.handle(),
+                PARENT,
+                ALICE,
+                "0x3333333333333333333333333333333333333333",
+            );
+            drain_with(app.handle(), Some(PARENT), None, decide).await;
+            assert_eq!(parked_count(app.handle()), 0);
+            assert!(stored(&app, "d1").is_some());
+        }
+
+        const SIGNER_KEY: &str =
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+        fn signer() -> alloy::signers::local::PrivateKeySigner {
+            SIGNER_KEY.parse().expect("key")
+        }
+
+        fn share(member: &str, signed_for: &str) -> String {
+            let signer = signer();
+            let sig = crate::evm::roster_bind_cert::sign_roster_bind_cert(
+                &signer, PARENT, signed_for, 100,
+            )
+            .expect("sign");
+            format!(
+                r#"{{"version":2,"type":"squad_member_evm_share","payload":{{"parent_id":"{PARENT}","member_npub":"{member}","evm_address":"{:#x}","issued_at":100,"signature":"{sig}"}}}}"#,
+                signer.address()
+            )
+        }
+
+        fn snapshot(member: &str, signed_for: &str) -> String {
+            let signer = signer();
+            let sig = crate::evm::roster_bind_cert::sign_roster_bind_cert(
+                &signer, PARENT, signed_for, 100,
+            )
+            .expect("sign");
+            format!(
+                r#"{{"version":1,"type":"squad_evm_roster_snapshot","payload":{{"parent_id":"{PARENT}","members":[{{"member_npub":"{member}","evm_address":"{:#x}","issued_at":100,"signature":"{sig}"}}]}}}}"#,
+                signer.address()
+            )
+        }
+
+        async fn park_alice_doc(app: &tauri::App<tauri::test::MockRuntime>) {
+            seed_members(app.handle(), GROUP, &[ALICE, BOB]);
+            assert!(
+                !admit_with(
+                    app.handle(),
+                    parked("r1", ALICE, payload("d1", 1_000)),
+                    undecided
+                )
+                .await
+            );
+            assert_eq!(parked_count(app.handle()), 1);
+        }
+
+        #[tokio::test]
+        async fn a_verified_share_drains_the_authors_parked_add() {
+            reset_drain_throttle();
+            let app = setup("npub1docshareapplies");
+            park_alice_doc(&app).await;
+
+            crate::db::try_apply_squad_member_evm_share(
+                app.handle(),
+                &share(ALICE, ALICE),
+                GROUP,
+                Some(ALICE),
+            );
+            eventually("parked add to apply", || {
+                parked_count(app.handle()) == 0 && stored(&app, "d1").is_some()
+            })
+            .await;
+        }
+
+        #[tokio::test]
+        async fn a_share_that_does_not_verify_leaves_the_parked_add() {
+            let app = setup("npub1docsharerejected");
+            park_alice_doc(&app).await;
+
+            // Signed for a different member, so verification fails and nothing is applied.
+            crate::db::try_apply_squad_member_evm_share(
+                app.handle(),
+                &share(ALICE, BOB),
+                GROUP,
+                Some(ALICE),
+            );
+            // Authored by someone other than the member it names.
+            crate::db::try_apply_squad_member_evm_share(
+                app.handle(),
+                &share(ALICE, ALICE),
+                GROUP,
+                Some(BOB),
+            );
+            settle().await;
+            assert_eq!(parked_count(app.handle()), 1);
+            assert!(stored(&app, "d1").is_none());
+        }
+
+        #[tokio::test]
+        async fn a_roster_snapshot_from_a_member_drains_the_parent() {
+            reset_drain_throttle();
+            let app = setup("npub1docsnapshotapplies");
+            park_alice_doc(&app).await;
+
+            crate::db::try_apply_squad_evm_roster_snapshot(
+                app.handle(),
+                &snapshot(ALICE, ALICE),
+                GROUP,
+                Some(BOB),
+            );
+            eventually("parked add to apply", || {
+                parked_count(app.handle()) == 0 && stored(&app, "d1").is_some()
+            })
+            .await;
+        }
+
+        #[tokio::test]
+        async fn a_roster_snapshot_that_does_not_apply_leaves_the_parked_add() {
+            let app = setup("npub1docsnapshotrejected");
+            park_alice_doc(&app).await;
+
+            // Forwarder is not a group member.
+            crate::db::try_apply_squad_evm_roster_snapshot(
+                app.handle(),
+                &snapshot(ALICE, ALICE),
+                GROUP,
+                Some(OUTSIDER),
+            );
+            // Cert signed for another member.
+            crate::db::try_apply_squad_evm_roster_snapshot(
+                app.handle(),
+                &snapshot(ALICE, BOB),
+                GROUP,
+                Some(BOB),
+            );
+            settle().await;
+            assert_eq!(parked_count(app.handle()), 1);
+            assert!(stored(&app, "d1").is_none());
+        }
+
+        #[tokio::test]
+        async fn the_background_sweep_drains_every_parked_add() {
+            reset_drain_throttle();
+            let app = setup("npub1docsweepdrains");
+            park_alice_doc(&app).await;
+
+            crate::squad_record_privilege::spawn_drain_all_if_due(app.handle());
+            eventually("sweep to apply", || {
+                parked_count(app.handle()) == 0 && stored(&app, "d1").is_some()
+            })
+            .await;
+        }
+
+        #[tokio::test]
+        async fn the_background_sweep_is_throttled() {
+            reset_drain_throttle();
+            let app = setup("npub1docsweepthrottled");
+            mark_sweep_done();
+            park_alice_doc(&app).await;
+
+            crate::squad_record_privilege::spawn_drain_all_if_due(app.handle());
+            settle().await;
+            assert_eq!(
+                parked_count(app.handle()),
+                1,
+                "second sweep inside the interval is skipped"
+            );
         }
     }
 }

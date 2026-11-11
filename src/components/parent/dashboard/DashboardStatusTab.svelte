@@ -26,7 +26,7 @@
     resolveStandaloneSquadAdminState,
   } from '../../../lib/governance/squad-admin-payload';
   import { syncSquadInfraForParent } from '../../../lib/dashboard/dashboard-data-sync';
-  import { openSquadWargame } from '../../../lib/navigation/open-squad-dashboard';
+  import { openSquadWargame } from '../../../lib/navigation/open-squad-governance';
   import { isActiveWarGameStack, warGameStatusAction } from '../../../lib/governance/war-game-payload';
   import DeployWarGameModal from '../governance/DeployWarGameModal.svelte';
   import SquadAdminStatusCard from './SquadAdminStatusCard.svelte';

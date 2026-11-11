@@ -10,9 +10,8 @@ import {
   POLLS_CHANNEL_NAME,
   SETTINGS_CHANNEL_ID,
   SETTINGS_CHANNEL_NAME,
-  SQUAD_DASHBOARD_CHANNEL_ID,
-  SQUAD_DASHBOARD_CHANNEL_NAME,
-  SQUAD_WARGAME_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_NAME,
   SQUAD_WARGAME_CHANNEL_NAME,
 } from './squad/hub-channel-names';
 import {
@@ -35,6 +34,7 @@ const OBSOLETE_HUB_SIDEBAR_NAMES = new Set([
   'monitor',
   'inbox',
   'join-requests',
+  SQUAD_WARGAME_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   EVENTS_CHANNEL_NAME,
   DOCS_CHANNEL_NAME,
@@ -43,8 +43,7 @@ const OBSOLETE_HUB_SIDEBAR_NAMES = new Set([
 /** Built-in hub rows (pinned dashboards + default MLS), not user-created chat channels. */
 export function isDefaultHubSidebarChannel(name: string): boolean {
   return (
-    name === SQUAD_DASHBOARD_CHANNEL_NAME ||
-    name === SQUAD_WARGAME_CHANNEL_NAME ||
+    name === SQUAD_GOVERNANCE_CHANNEL_NAME ||
     name === ANNOUNCEMENTS_CHANNEL_NAME ||
     name === TOOLS_CHANNEL_NAME ||
     name === SETTINGS_CHANNEL_NAME
@@ -53,11 +52,11 @@ export function isDefaultHubSidebarChannel(name: string): boolean {
 
 /**
  * Virtual + MLS rows for the squad hub sidebar.
- * Pinned order: announcements → governance → gov-practice (when present) → tools → settings → (custom below divider).
+ * Pinned order: announcements → governance → tools → settings → (custom below divider).
+ * Wargame lives under `#governance` (Live | Wargame), not as a sidebar row.
  */
 export function buildHubSidebarChannels<T extends { name: string; groupId: string; order: number }>(
   rawChannels: T[],
-  options?: { includeWarGame?: boolean },
 ): Array<T | { name: string; groupId: string; order: number }> {
   const sorted = [...rawChannels]
     .filter((c) => !OBSOLETE_HUB_SIDEBAR_NAMES.has(c.name))
@@ -79,21 +78,13 @@ export function buildHubSidebarChannels<T extends { name: string; groupId: strin
       c.name !== TOOLS_CHANNEL_NAME &&
       c.name !== SETTINGS_CHANNEL_NAME,
   );
-  const includeWarGame = options?.includeWarGame === true;
   const out: Array<T | { name: string; groupId: string; order: number }> = [];
   if (announcements) out.push(announcements);
   out.push({
-    name: SQUAD_DASHBOARD_CHANNEL_NAME,
-    groupId: SQUAD_DASHBOARD_CHANNEL_ID,
-    order: includeWarGame ? -3 : -2,
+    name: SQUAD_GOVERNANCE_CHANNEL_NAME,
+    groupId: SQUAD_GOVERNANCE_CHANNEL_ID,
+    order: -2,
   });
-  if (includeWarGame) {
-    out.push({
-      name: SQUAD_WARGAME_CHANNEL_NAME,
-      groupId: SQUAD_WARGAME_CHANNEL_ID,
-      order: -2,
-    });
-  }
   if (board) out.push(board);
   out.push({ name: SETTINGS_CHANNEL_NAME, groupId: SETTINGS_CHANNEL_ID, order: 2 });
   out.push(...rest);

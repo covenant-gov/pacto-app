@@ -2,11 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import type { SquadDocDto } from '../../lib/api/squad-docs';
-import type { SquadContentPolicyView } from '../../lib/api/squad-content-policy';
 
 const state = vi.hoisted(() => ({
   docs: [] as unknown[],
-  policy: null as unknown,
+  canAdd: true,
+  rpcFails: false,
+  privilege: vi.fn(),
   invoke: vi.fn(),
   openExternalUrl: vi.fn(),
   copyTextToClipboard: vi.fn(),
@@ -16,9 +17,13 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 vi.mock('../../lib/utils/open-external', () => ({ openExternalUrl: state.openExternalUrl }));
 vi.mock('../../lib/utils/clipboard-copy', () => ({ copyTextToClipboard: state.copyTextToClipboard }));
+vi.mock('../../lib/governance/squad-privilege-enforce', () => ({
+  requireMySquadPrivilege: state.privilege,
+}));
 
 import SquadDocsPanel from './SquadDocsPanel.svelte';
 import { docsFocus } from '../../stores/docs-navigation';
+import { bumpSquadPrivilegeNonce, squadPrivilegeNonceByParentId } from '../../stores/squad-privilege-refresh';
 import { squads, type Squad } from '../../stores/squads';
 
 const PAD = 'https://cryptpad.fr/pad/#/2/pad/edit/secret';
@@ -42,18 +47,6 @@ function doc(id: string, title: string, overrides: Partial<SquadDocDto> = {}): S
   };
 }
 
-function policy(overrides: Partial<SquadContentPolicyView> = {}): SquadContentPolicyView {
-  return {
-    restrictEventCreate: false,
-    restrictEventCreateUpdatedAtMs: 0,
-    restrictDocAdd: false,
-    restrictDocAddUpdatedAtMs: 0,
-    callerIsAdmin: false,
-    adminIsMember: true,
-    ...overrides,
-  };
-}
-
 function titles(): string[] {
   return screen.getAllByRole('button', { name: /^Open .* in your browser$/ }).map((b) => b.textContent?.trim() ?? '');
 }
@@ -61,12 +54,19 @@ function titles(): string[] {
 beforeEach(() => {
   state.invoke.mockReset().mockImplementation((command: string) => {
     if (command === 'list_squad_docs') return Promise.resolve(state.docs);
-    if (command === 'get_squad_content_policy') return Promise.resolve(state.policy);
     return Promise.resolve(null);
   });
   state.openExternalUrl.mockReset();
   state.copyTextToClipboard.mockReset().mockResolvedValue(true);
-  state.policy = policy();
+  state.canAdd = true;
+  state.rpcFails = false;
+  state.privilege.mockReset().mockImplementation(async () => {
+    if (state.rpcFails) return { ok: false, reason: 'rpc', active: true };
+    return state.canAdd
+      ? { ok: true, active: false, flags: null }
+      : { ok: false, reason: 'denied', active: true };
+  });
+  squadPrivilegeNonceByParentId.set({});
   squads.set([
     {
       id: 'p',
@@ -158,19 +158,46 @@ describe('SquadDocsPanel', () => {
     );
   });
 
-  it('has no add button when restricted and the caller is not an admin', async () => {
+  it('has no add button when the privilege is denied', async () => {
     state.docs = [];
-    state.policy = policy({ restrictDocAdd: true });
+    state.canAdd = false;
     render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
-    await screen.findByText('Only squad admins can add docs.');
+    await screen.findByText('You cannot add docs.');
     expect(screen.queryByRole('button', { name: 'Add doc' })).toBeNull();
   });
 
-  it('says nobody can add when no admin is still a member', async () => {
-    state.policy = policy({ restrictDocAdd: true, adminIsMember: false });
+  it('keeps the add button offered when the privilege read fails', async () => {
+    state.docs = [];
+    state.rpcFails = true;
     render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
-    await screen.findByText(/Nobody can add docs/);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy());
+    expect(screen.queryByText('You cannot add docs.')).toBeNull();
+  });
+
+  it('re-reads the privilege after a local role change', async () => {
+    state.docs = [];
+    render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy());
+    expect(state.privilege).toHaveBeenCalledTimes(1);
+
+    state.canAdd = false;
+    bumpSquadPrivilegeNonce('p');
+    await screen.findByText('You cannot add docs.');
+    expect(state.privilege).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('button', { name: 'Add doc' })).toBeNull();
+  });
+
+  it('ignores a role change for a different squad', async () => {
+    state.docs = [];
+    render(SquadDocsPanel, { props: { parentId: 'p', mlsGroupId: 'g' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy());
+    expect(state.privilege).toHaveBeenCalledTimes(1);
+
+    state.canAdd = false;
+    bumpSquadPrivilegeNonce('other-parent');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(state.privilege).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Add doc' })).toBeTruthy();
   });
 
   it('shows the add button and the join-history empty copy when open', async () => {
@@ -187,7 +214,6 @@ describe('SquadDocsPanel', () => {
 
     state.invoke.mockImplementation((command: string) => {
       if (command === 'list_squad_docs') return Promise.reject(new Error('boom'));
-      if (command === 'get_squad_content_policy') return Promise.resolve(state.policy);
       return Promise.resolve(null);
     });
     await rerender({ parentId: 'q', mlsGroupId: 'h' });

@@ -1,5 +1,5 @@
 import { writable, type Writable } from 'svelte/store';
-import { openSquadTools } from '../lib/navigation/open-squad-dashboard';
+import { openSquadTools } from '../lib/navigation/open-squad-governance';
 
 /** `channelId` pre-selects the shelf filter; `docId` highlights one row (and clears the filter). */
 export type DocsFocus = { parentId: string; docId: string | null; channelId: string | null };

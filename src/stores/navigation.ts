@@ -17,15 +17,15 @@ export type ViewType = 'hub' | 'profile';
 export const activeView = writable<ViewType>('hub');
 
 /** #governance segmented mode; unknown persisted values reset to `status`. */
-export type SquadDashboardChannelMode =
+export type SquadGovernanceChannelMode =
   | 'status'
   | 'governance'
   | 'treasury'
   | 'crew';
 
-export const SQUAD_DASHBOARD_MODE_PREFIX = 'pacto_squad_dashboard_mode';
+export const SQUAD_GOVERNANCE_MODE_PREFIX = 'pacto_squad_governance_mode';
 
-export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboardChannelMode {
+export function parseSquadGovernanceChannelMode(raw: string | null): SquadGovernanceChannelMode {
   const v = raw?.trim();
   if (v === 'status' || v === 'governance' || v === 'treasury' || v === 'crew') {
     return v;
@@ -33,10 +33,10 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
   return 'status';
 }
 
-export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
+export const squadGovernanceChannelMode = writable<SquadGovernanceChannelMode>('status');
 
 /** #settings segmented mode; unknown persisted values reset to `you`. */
-export const SETTINGS_CHANNEL_MODES = ['you', 'about', 'access', 'network'] as const;
+export const SETTINGS_CHANNEL_MODES = ['you', 'about', 'network'] as const;
 export type SettingsChannelMode = (typeof SETTINGS_CHANNEL_MODES)[number];
 
 export const SETTINGS_CHANNEL_MODE_PREFIX = 'pacto_settings_channel_mode';
@@ -45,7 +45,7 @@ export function parseSettingsChannelMode(raw: string | null): SettingsChannelMod
   const v = raw?.trim();
   if (v === 'personal' || v === 'you') return 'you';
   if (v === 'us') return 'about';
-  if (v === 'about' || v === 'access' || v === 'network') return v;
+  if (v === 'about' || v === 'network') return v;
   return 'you';
 }
 
@@ -147,9 +147,9 @@ export function bumpGovernanceProcessNonce(parentId: string): void {
 /** Bumped when Join inbox meta / key_rotated MLS announces apply. */
 export const joinInboxMetaNonceBySquadId = writable<Record<string, number>>({});
 
-squadDashboardChannelMode.subscribe((mode) => {
+squadGovernanceChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(SQUAD_DASHBOARD_MODE_PREFIX);
+  const key = persistenceKey(SQUAD_GOVERNANCE_MODE_PREFIX);
   if (!key) return;
   try {
     localStorage.setItem(key, mode);

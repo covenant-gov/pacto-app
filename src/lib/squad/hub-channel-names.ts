@@ -9,10 +9,10 @@ export const EVENTS_CHANNEL_NAME = 'events';
 export const DOCS_CHANNEL_NAME = 'docs';
 
 /** Virtual squad-wide governance hub (not an MLS group). */
-export const SQUAD_DASHBOARD_CHANNEL_ID = '__governance__';
-export const SQUAD_DASHBOARD_CHANNEL_NAME = 'governance';
+export const SQUAD_GOVERNANCE_CHANNEL_ID = '__governance__';
+export const SQUAD_GOVERNANCE_CHANNEL_NAME = 'governance';
 
-/** Virtual war-game / practice gov hub (not an MLS group). Shown after a completed war-game deploy. */
+/** Internal Wargame stack id under `#governance` (not an MLS group; not a sidebar row). */
 export const SQUAD_WARGAME_CHANNEL_ID = '__gov_practice__';
 export const SQUAD_WARGAME_CHANNEL_NAME = 'gov-practice';
 
@@ -25,14 +25,14 @@ const OBSOLETE_TOOLS_CHANNEL_NAME = 'board';
 
 const OBSOLETE_DASHBOARD_IDS: Record<string, string> = {
   __my_dashboard__: SETTINGS_CHANNEL_ID,
-  __squad_dashboard__: SQUAD_DASHBOARD_CHANNEL_ID,
+  __squad_dashboard__: SQUAD_GOVERNANCE_CHANNEL_ID,
   __squad_wargame__: SQUAD_WARGAME_CHANNEL_ID,
 };
 
 /** Virtual hub rows: not MLS groups and not chat `VirtualBucket`s. */
 export function isVirtualHubChannelId(id: string | null | undefined): boolean {
   return (
-    id === SQUAD_DASHBOARD_CHANNEL_ID ||
+    id === SQUAD_GOVERNANCE_CHANNEL_ID ||
     id === SQUAD_WARGAME_CHANNEL_ID ||
     id === SETTINGS_CHANNEL_ID
   );
@@ -44,9 +44,24 @@ export function remapObsoleteHubChannelId(id: string | null | undefined): string
   return OBSOLETE_DASHBOARD_IDS[id] ?? id;
 }
 
-/** Squad-wide governance chrome (`governance` or `gov-practice`). */
-export function isSquadDashboardChromeChannelId(id: string | null | undefined): boolean {
-  return id === SQUAD_DASHBOARD_CHANNEL_ID || id === SQUAD_WARGAME_CHANNEL_ID;
+/** Squad-wide governance chrome (`governance` Live or Wargame stack). */
+export function isSquadGovernanceChromeChannelId(id: string | null | undefined): boolean {
+  return id === SQUAD_GOVERNANCE_CHANNEL_ID || id === SQUAD_WARGAME_CHANNEL_ID;
+}
+
+/** Default stack when no remembered chrome id. Practice-first when live `pacto_gov` is absent. */
+export function defaultGovernanceStackChannelId(hasLivePactoGov: boolean): string {
+  return hasLivePactoGov ? SQUAD_GOVERNANCE_CHANNEL_ID : SQUAD_WARGAME_CHANNEL_ID;
+}
+
+/** Restore last Live/Wargame chrome id, else practice-first default. */
+export function resolveGovernanceChromeChannelId(
+  lastChannelId: string | null | undefined,
+  hasLivePactoGov: boolean,
+): string {
+  const remapped = remapObsoleteHubChannelId(lastChannelId) ?? null;
+  if (remapped && isSquadGovernanceChromeChannelId(remapped)) return remapped;
+  return defaultGovernanceStackChannelId(hasLivePactoGov);
 }
 
 /** Legacy shelf names / slug that now live under `#tools`. */

@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 use crate::nostr_tags;
 use crate::rumor::{ConversationType, RumorContext, RumorEvent, RumorProcessingResult};
 use crate::squad_event_time as civil;
+use crate::squad_record_privilege::{admit, Kind as PrivilegeKind, Parked};
 use crate::squad_records::{
     self, card_message, signer_identity, store_local_card, with_conn, SquadGroupRole,
     SQUAD_EVENT_D_TAG,
@@ -718,14 +719,8 @@ impl Applied {
     }
 }
 
-fn may_create(conn: &Connection, parent_id: &str, role: SquadGroupRole) -> Result<bool, String> {
-    if !role.is_member {
-        return Ok(false);
-    }
-    if role.is_admin {
-        return Ok(true);
-    }
-    Ok(!crate::squad_content_policy::load_policy(conn, parent_id)?.restrict_event_create)
+fn may_create(role: SquadGroupRole) -> bool {
+    role.is_member
 }
 
 /// Author or admin, and still a member.
@@ -749,7 +744,7 @@ pub fn apply_op(
         return Ok(Applied::Ignored);
     }
     if w.op == Op::SeriesCard {
-        let ok = series_card_content(w).is_some() && may_create(conn, &w.parent_id, role)?;
+        let ok = series_card_content(w).is_some() && may_create(role);
         return Ok(if ok {
             Applied::SeriesCard
         } else {
@@ -818,7 +813,7 @@ fn insert_create(
     meta: &OpMeta<'_>,
     role: SquadGroupRole,
 ) -> Result<Applied, String> {
-    if !may_create(conn, &w.parent_id, role)? {
+    if !may_create(role) {
         return Ok(Applied::Ignored);
     }
     let tx = conn
@@ -1249,6 +1244,14 @@ async fn apply_and_emit<R: Runtime>(
     Ok(applied)
 }
 
+/// Ops that create product state and so need the author's `createEvent` privilege.
+fn needs_privilege_gate(op: Op) -> bool {
+    match op {
+        Op::Create | Op::SeriesCard => true,
+        Op::Update | Op::Rsvp | Op::Cancel => false,
+    }
+}
+
 /// MLS ingest for `d` = `pacto_squad_event`. Never yields a chat row except the announcements card.
 pub async fn process_rumor(
     rumor: RumorEvent,
@@ -1275,6 +1278,19 @@ pub async fn process_rumor(
         .map_err(|e| format!("pubkey bech32: {}", e))?;
     let role = squad_records::group_role(handle, group_id, &signer).await;
     let rumor_id = rumor.id.to_hex();
+    if needs_privilege_gate(w.op) {
+        let parked = Parked {
+            rumor_id: rumor_id.clone(),
+            kind: PrivilegeKind::Event,
+            parent_id: w.parent_id.clone(),
+            mls_group_id: group_id.to_string(),
+            author_npub: signer.clone(),
+            payload_json: rumor.content.clone(),
+        };
+        if !admit(handle, parked).await {
+            return Ok(RumorProcessingResult::SquadRecordSilent);
+        }
+    }
     let meta = OpMeta {
         rumor_id: &rumor_id,
         mls_group_id: group_id,
@@ -1317,18 +1333,52 @@ fn ensure_announcements_group(mls_group_id: &str, parent_id: &str) -> Result<(),
     }
 }
 
-fn ensure_may_create(
-    conn: &Connection,
+fn ensure_may_create(role: SquadGroupRole) -> Result<(), String> {
+    if may_create(role) {
+        Ok(())
+    } else {
+        Err(err::NOT_MEMBER.into())
+    }
+}
+
+async fn ensure_create_privilege<R: Runtime>(
+    handle: &AppHandle<R>,
     parent_id: &str,
-    role: SquadGroupRole,
+    npub: &str,
 ) -> Result<(), String> {
-    if !role.is_member {
-        return Err(err::NOT_MEMBER.into());
+    crate::evm::squad_privilege_enforce::require_member_squad_privilege(
+        handle,
+        parent_id,
+        npub,
+        crate::evm::squad_privilege_enforce::SquadPrivilegeAction::CreateEvent,
+        err::CREATE_RESTRICTED,
+    )
+    .await
+}
+
+/// Applies a parked create/series-card rumor once its privilege check allows it. No announcements card.
+pub(crate) async fn apply_deferred<R: Runtime>(
+    handle: &AppHandle<R>,
+    mls_group_id: &str,
+    signer: &str,
+    rumor_id: &str,
+    content: &str,
+) -> Result<(), String> {
+    let Some(w) = parse_wire(content) else {
+        return Ok(());
+    };
+    if !crate::db::side_effect_parent_matches_chat(mls_group_id, &w.parent_id)
+        || !stamp_acceptable(w.updated_at_ms, now_ms())
+    {
+        return Ok(());
     }
-    if !may_create(conn, parent_id, role)? {
-        return Err(err::CREATE_RESTRICTED.into());
-    }
-    Ok(())
+    let role = squad_records::group_role(handle, mls_group_id, signer).await;
+    let meta = OpMeta {
+        rumor_id,
+        mls_group_id,
+        signer_npub: signer,
+    };
+    apply_and_emit(handle, &w, meta, role).await.map(|_| ())
 }
 
 /// Stored row of this parent (`squad_event_not_found` otherwise).
@@ -1624,10 +1674,9 @@ pub async fn send_squad_event_create<R: Runtime>(
     let fields = fields_for_schedule(&event)?;
     let (pk, npub) = signer_identity().await?;
     let role = squad_records::group_role(&handle, &mls_group_id, &npub).await;
-    let existing = with_conn(&handle, |c| {
-        ensure_may_create(c, &parent_id, role)?;
-        load_row(c, &event_id)
-    })?;
+    ensure_may_create(role)?;
+    ensure_create_privilege(&handle, &parent_id, &npub).await?;
+    let existing = with_conn(&handle, |c| load_row(c, &event_id))?;
     if let Some(row) = existing {
         // Retry after a send that already landed.
         if row.author_npub == npub && row.series_id.is_none() && row.parent_id == parent_id {
@@ -1672,8 +1721,9 @@ pub async fn send_squad_event_series<R: Runtime>(
     let occurrences = selected_occurrences(&event, &week_offsets)?;
     let (pk, npub) = signer_identity().await?;
     let role = squad_records::group_role(&handle, &mls_group_id, &npub).await;
+    ensure_may_create(role)?;
+    ensure_create_privilege(&handle, &parent_id, &npub).await?;
     let existing = with_conn(&handle, |c| {
-        ensure_may_create(c, &parent_id, role)?;
         event_ids
             .iter()
             .map(|id| load_row(c, id))
@@ -1942,15 +1992,6 @@ mod tests {
             .expect("count")
     }
 
-    fn restrict_create(conn: &Connection) {
-        conn.execute(
-            "INSERT INTO squad_content_policy (parent_id, restrict_event_create, restrict_event_create_updated_at_ms, restrict_event_create_by_npub)
-             VALUES (?1, 1, 1, ?2)",
-            params![PARENT, ADMIN],
-        )
-        .expect("policy");
-    }
-
     /// Mirrors the series send: eight silent creates plus one card wire.
     fn series(series_id: &str, ids: &[String]) -> (Vec<EventWire>, EventWire) {
         let occ = occurrences(
@@ -2201,73 +2242,6 @@ mod tests {
         let stored = row(&conn, "ev-1");
         assert_eq!(stored.fields.start_unix, moved.start_unix);
         assert_eq!(stored.updated_at_ms, 3_000);
-    }
-
-    #[test]
-    fn restriction_ignores_member_create_and_stores_admin_create() {
-        let conn = conn();
-        restrict_create(&conn);
-        let (member, card) = ingest(
-            &conn,
-            &create("ev-1", &fields("2026-01-15T09:00"), 1_000),
-            "r1",
-            ALICE,
-        );
-        assert_eq!(member, Applied::Ignored);
-        assert!(card.is_none());
-        assert!(load_row(&conn, "ev-1").unwrap().is_none());
-
-        let (admin, card) = ingest(
-            &conn,
-            &create("ev-2", &fields("2026-01-15T09:00"), 1_000),
-            "r2",
-            ADMIN,
-        );
-        assert_eq!(admin, Applied::Changed { inserted: true });
-        assert!(card.is_some());
-        assert_eq!(row(&conn, "ev-2").author_npub, ADMIN);
-
-        let (_, card) = ingest(&conn, &series("s-1", &series_ids()).1, "r3", ALICE);
-        assert!(card.is_none());
-    }
-
-    #[test]
-    fn backdated_member_create_and_restrict_on_converge_in_either_order() {
-        use crate::squad_content_policy::{apply_policy, build_set_wire, PolicyFlag};
-        let restrict = build_set_wire(
-            &Default::default(),
-            PARENT,
-            PolicyFlag::RestrictEventCreate,
-            true,
-            5_000,
-        );
-        let f = fields("2026-01-15T09:00");
-        let backdated = create("ev-member", &f, 0);
-        let admin_event = create("ev-admin", &f, 6_000);
-        for policy_first in [true, false] {
-            let conn = conn();
-            let apply_restrict = |c: &Connection| {
-                apply_policy(c, &restrict, ADMIN, true, &[ADMIN.to_string()]).expect("policy");
-            };
-            if policy_first {
-                apply_restrict(&conn);
-            }
-            ingest(&conn, &backdated, "r-member", ALICE);
-            ingest(&conn, &admin_event, "r-admin", ADMIN);
-            if !policy_first {
-                apply_restrict(&conn);
-            }
-            let ids: Vec<String> = load_events(&conn, PARENT, ADMIN)
-                .unwrap()
-                .into_iter()
-                .map(|e| e.id)
-                .collect();
-            assert_eq!(
-                ids,
-                vec!["ev-admin".to_string()],
-                "policy_first={policy_first}"
-            );
-        }
     }
 
     #[test]
@@ -2832,16 +2806,9 @@ mod tests {
             code(err::NOT_FOUND)
         );
 
-        assert_eq!(
-            ensure_may_create(&conn, PARENT, role_of(OUTSIDER)),
-            code(err::NOT_MEMBER)
-        );
-        restrict_create(&conn);
-        assert_eq!(
-            ensure_may_create(&conn, PARENT, role_of(BOB)),
-            code(err::CREATE_RESTRICTED)
-        );
-        assert!(ensure_may_create(&conn, PARENT, role_of(ADMIN)).is_ok());
+        assert_eq!(ensure_may_create(role_of(OUTSIDER)), code(err::NOT_MEMBER));
+        assert!(ensure_may_create(role_of(BOB)).is_ok());
+        assert!(ensure_may_create(role_of(ADMIN)).is_ok());
     }
 
     #[test]
@@ -2977,5 +2944,190 @@ mod tests {
         assert_eq!(ev["status"], "active");
         assert_eq!(ev["myRsvp"], "accepted");
         assert_eq!(ev["rsvps"][0]["memberNpub"], ALICE);
+    }
+
+    mod deferred {
+        use super::*;
+        use crate::evm::squad_privilege_enforce::MemberPrivilege;
+        use crate::squad_record_privilege::test_support::{
+            binding_decision, certify_peer_share, parked_count, seed_members, setup,
+        };
+        use crate::squad_record_privilege::{admit_with, drain_with, Kind, Parked};
+
+        fn payload(id: &str, ts: i64) -> String {
+            serde_json::to_string(&create(id, &fields("2026-01-15T09:00"), ts)).expect("json")
+        }
+
+        fn parked(rumor_id: &str, author: &str, content: String) -> Parked {
+            Parked {
+                rumor_id: rumor_id.into(),
+                kind: Kind::Event,
+                parent_id: PARENT.into(),
+                mls_group_id: GROUP.into(),
+                author_npub: author.into(),
+                payload_json: content,
+            }
+        }
+
+        fn stored(app: &tauri::App<tauri::test::MockRuntime>, id: &str) -> Option<EventRow> {
+            with_conn(app.handle(), |c| load_row(c, id)).expect("load")
+        }
+
+        async fn undecided(_: Parked) -> MemberPrivilege {
+            MemberPrivilege::Undecided
+        }
+
+        async fn allowed(_: Parked) -> MemberPrivilege {
+            MemberPrivilege::Allowed
+        }
+
+        async fn denied(_: Parked) -> MemberPrivilege {
+            MemberPrivilege::Denied
+        }
+
+        #[test]
+        fn only_create_ops_need_the_privilege_gate() {
+            for (op, gated) in [
+                (Op::Create, true),
+                (Op::SeriesCard, true),
+                (Op::Update, false),
+                (Op::Rsvp, false),
+                (Op::Cancel, false),
+            ] {
+                assert_eq!(needs_privilege_gate(op), gated, "{op:?}");
+            }
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_stores_a_member_create() {
+            let app = setup("npub1evdeferredstores");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            apply_deferred(app.handle(), GROUP, ALICE, "r1", &payload("ev-1", 1_000))
+                .await
+                .expect("apply");
+            let row = stored(&app, "ev-1").expect("stored");
+            assert_eq!(row.author_npub, ALICE);
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_ignores_a_non_member_signer() {
+            let app = setup("npub1evdeferrednonmember");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            apply_deferred(app.handle(), GROUP, OUTSIDER, "r1", &payload("ev-1", 1_000))
+                .await
+                .expect("apply");
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_ignores_a_parent_that_does_not_match_the_group() {
+            let app = setup("npub1evdeferredparent");
+            seed_members(app.handle(), "other-group", &[ALICE]);
+            apply_deferred(
+                app.handle(),
+                "other-group",
+                ALICE,
+                "r1",
+                &payload("ev-1", 1_000),
+            )
+            .await
+            .expect("apply");
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn apply_deferred_ignores_a_future_dated_stamp_and_bad_content() {
+            let app = setup("npub1evdeferredstamp");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            let future = now_ms() + MAX_FUTURE_SKEW_MS + 60_000;
+            apply_deferred(app.handle(), GROUP, ALICE, "r1", &payload("ev-1", future))
+                .await
+                .expect("apply");
+            apply_deferred(app.handle(), GROUP, ALICE, "r2", "not json")
+                .await
+                .expect("apply");
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn drain_applies_allowed_and_clears_the_parked_row() {
+            let app = setup("npub1evdrainallowed");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            assert!(
+                !admit_with(
+                    app.handle(),
+                    parked("r1", ALICE, payload("ev-1", 1_000)),
+                    undecided
+                )
+                .await
+            );
+            assert_eq!(parked_count(app.handle()), 1);
+
+            drain_with(app.handle(), Some(PARENT), None, allowed).await;
+            assert_eq!(parked_count(app.handle()), 0);
+            assert!(stored(&app, "ev-1").is_some());
+        }
+
+        #[tokio::test]
+        async fn drain_drops_denied_without_applying() {
+            let app = setup("npub1evdraindenied");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            admit_with(
+                app.handle(),
+                parked("r1", ALICE, payload("ev-1", 1_000)),
+                undecided,
+            )
+            .await;
+
+            drain_with(app.handle(), Some(PARENT), None, denied).await;
+            assert_eq!(parked_count(app.handle()), 0);
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn drain_keeps_undecided_without_applying() {
+            let app = setup("npub1evdrainundecided");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            admit_with(
+                app.handle(),
+                parked("r1", ALICE, payload("ev-1", 1_000)),
+                undecided,
+            )
+            .await;
+
+            drain_with(app.handle(), Some(PARENT), None, undecided).await;
+            assert_eq!(parked_count(app.handle()), 1);
+            assert!(stored(&app, "ev-1").is_none());
+        }
+
+        #[tokio::test]
+        async fn parked_create_applies_once_the_authors_binding_arrives() {
+            let app = setup("npub1evparkbinddrain");
+            seed_members(app.handle(), GROUP, &[ALICE]);
+            let handle = app.handle().clone();
+            let decide = |row: Parked| binding_decision(handle.clone(), row);
+
+            assert!(
+                !admit_with(
+                    app.handle(),
+                    parked("r1", ALICE, payload("ev-1", 1_000)),
+                    decide
+                )
+                .await
+            );
+            drain_with(app.handle(), Some(PARENT), None, decide).await;
+            assert_eq!(parked_count(app.handle()), 1, "still unbound");
+            assert!(stored(&app, "ev-1").is_none());
+
+            certify_peer_share(
+                app.handle(),
+                PARENT,
+                ALICE,
+                "0x3333333333333333333333333333333333333333",
+            );
+            drain_with(app.handle(), Some(PARENT), None, decide).await;
+            assert_eq!(parked_count(app.handle()), 0);
+            assert!(stored(&app, "ev-1").is_some());
+        }
     }
 }

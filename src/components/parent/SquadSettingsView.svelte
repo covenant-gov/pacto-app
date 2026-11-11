@@ -9,17 +9,14 @@
     squadMemberEvmByParentId,
   } from '../../stores/app';
   import { currentUser } from '../../stores/auth-session';
-  import { profiles } from '../../stores/profiles';
   import {
     SETTINGS_CHANNEL_MODES,
     settingsChannelMode,
     type SettingsChannelMode,
   } from '../../stores/navigation';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
   import HubViewShell from './HubViewShell.svelte';
   import {
     loadDashboardSettingsAboutTab,
-    loadDashboardSettingsAccessTab,
     loadDashboardSettingsNetworkTab,
     loadMyDashboardAlertsTab,
     loadMyDashboardStatusTab,
@@ -28,11 +25,7 @@
   import { fetchSquadMemberEvmByNpub } from '../../lib/dashboard/parent-dashboard-loaders';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
   import { ensureMlsGroupMembers, membersByGroupId } from '../../stores/mls-group-members';
-  import {
-    resolveSettingsPrivilegesAdmin,
-    resolveSquadAdminContext,
-    settingsPrivilegesRevision,
-  } from '../../lib/governance/squad-admin-payload';
+  import { resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
   import { pactoGovInfraRow, pactoGovWargameInfraRow, sponsorInfraRow } from '../../lib/governance/api';
   import {
     loadSquadNetworkPair,
@@ -63,20 +56,8 @@
   );
   const infraRows = $derived($squadInfraByParentId[parentId] ?? []);
   const squadAdminCtx = $derived(resolveSquadAdminContext(infraRows));
-  const privilegesAdmin = $derived(resolveSettingsPrivilegesAdmin(infraRows));
-  const pactoGovRevision = $derived(settingsPrivilegesRevision(infraRows, privilegesAdmin));
   const channelMembers = $derived(announcementsGroupId ? ($membersByGroupId[announcementsGroupId] ?? []) : []);
   const squadMemberEvmByNpub = $derived(parentId ? ($squadMemberEvmByParentId[parentId] ?? {}) : {});
-  const memberEvmOptions = $derived(
-    channelMembers
-      .map((npub) => {
-        const addr = squadMemberEvmByNpub[npub]?.trim();
-        if (!addr) return null;
-        const name = getProfileDisplayName($profiles[npub]) || npub.slice(0, 12);
-        return { address: addr, label: name };
-      })
-      .filter((row): row is { address: string; label: string } => row != null),
-  );
   const settingsMode = $derived($settingsChannelMode);
 
   let visitedSettingsModes = $state(new Set<SettingsChannelMode>([$settingsChannelMode]));
@@ -230,25 +211,6 @@
           />
         {:catch}
           <p class="tab-error" role="alert">{$t('governance.tabLoadError.about')}</p>
-        {/await}
-      </div>
-    {/if}
-    {#if visitedSettingsModes.has('access')}
-      <div
-        class="dashboard-tab-pane"
-        class:dashboard-tab-pane-active={settingsMode === 'access'}
-        hidden={settingsMode !== 'access'}
-      >
-        {#await loadDashboardSettingsAccessTab() then AccessTab}
-          <AccessTab
-            squad={parent}
-            parentId={parentId ?? ''}
-            {privilegesAdmin}
-            {pactoGovRevision}
-            {memberEvmOptions}
-          />
-        {:catch}
-          <p class="tab-error" role="alert">{$t('governance.tabLoadError.access')}</p>
         {/await}
       </div>
     {/if}

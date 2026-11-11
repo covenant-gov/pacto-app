@@ -67,7 +67,7 @@ describe('warGameStatusAction', () => {
     expect(warGameStatusAction(false, true)).toBe('deploy');
   });
 
-  it('opens from #governance and redeploys from #gov-practice', () => {
+  it('opens Wargame from Live and redeploys on Wargame stack', () => {
     expect(warGameStatusAction(true, false)).toBe('open');
     expect(warGameStatusAction(true, true)).toBe('redeploy');
   });

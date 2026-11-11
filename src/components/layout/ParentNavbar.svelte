@@ -10,7 +10,6 @@
     parentPendingCreateMembers,
     parentPendingCreateOptions,
     parentRetryingCreateIds,
-    squadInfraByParentId,
     type Squad,
   } from '../../stores/squads';
   import {
@@ -31,7 +30,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { partnerSquadsForHubParent } from '../../lib/squad-pair';
-  import { activateSquadHub } from '../../lib/squad-hub-nav';
+  import { activateSquadHub, governanceChannelIdForSidebarClick } from '../../lib/squad-hub-nav';
   import {
     collectInviteNpubsForSquads,
     pairPartnerExcludeSquadIds,
@@ -48,8 +47,10 @@
     runCreateChannelInParent,
   } from '../../lib/parent/create-channel-flow';
   import { buildHubSidebarChannels } from '../../lib/parent-navbar';
-  import { pactoGovWargameInfraRow } from '../../lib/governance/api';
-  import { isVirtualHubChannelId } from '../../lib/squad/hub-channel-names';
+  import {
+    isVirtualHubChannelId,
+    SQUAD_GOVERNANCE_CHANNEL_NAME,
+  } from '../../lib/squad/hub-channel-names';
   import { deferredSquadRosterKeyParentIds } from '../../lib/squad/squad-roster-key-choice';
   import {
     ensureJoinRequestsHydratedForSquads,
@@ -102,12 +103,7 @@
   let rawChannels = $derived(
     activeParent ? [...activeParent.channels].sort((a, b) => a.order - b.order) : []
   );
-  let includeWarGame = $derived(
-    activeParent ? pactoGovWargameInfraRow($squadInfraByParentId[activeParent.id]) != null : false
-  );
-  let channels = $derived(
-    activeParent ? buildHubSidebarChannels(rawChannels, { includeWarGame }) : []
-  );
+  let channels = $derived(activeParent ? buildHubSidebarChannels(rawChannels) : []);
 
   let creating = $derived(
     activeParent &&
@@ -262,13 +258,17 @@
   }
 
   function selectChannel(channel: { groupId: string; name: string }) {
-    const isVirtual = isVirtualHubChannelId(channel.groupId);
-    activeChannelId.set(channel.groupId);
+    const sid = $activeSquadId;
+    const groupId =
+      channel.name === SQUAD_GOVERNANCE_CHANNEL_NAME && sid
+        ? governanceChannelIdForSidebarClick(sid, get(lastChannelBySquadId))
+        : channel.groupId;
+    const isVirtual = isVirtualHubChannelId(groupId);
+    activeChannelId.set(groupId);
     activeHubChannelName.set(isVirtual ? null : channel.name);
     activeView.set('hub');
-    if ($activeSquadId) {
-      const sid = $activeSquadId;
-      lastChannelBySquadId.update((m) => ({ ...m, [sid]: channel.groupId }));
+    if (sid) {
+      lastChannelBySquadId.update((m) => ({ ...m, [sid]: groupId }));
       lastHubChannelNameBySquadId.update((m) => {
         const next = { ...m };
         if (isVirtual) delete next[sid];

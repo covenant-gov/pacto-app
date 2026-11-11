@@ -534,6 +534,7 @@ pub(crate) fn spawn_scan_loop(unlocked_at_ms: i64) -> Option<tauri::async_runtim
         loop {
             tick.tick().await;
             scan_and_deliver(&handle, unlocked_at_ms).await;
+            crate::squad_record_privilege::spawn_drain_all_if_due(&handle);
         }
     }))
 }

@@ -66,7 +66,7 @@ export function isActiveWarGameStack(raw: string | null | undefined): boolean {
 
 export type WarGameStatusAction = 'deploy' | 'open' | 'redeploy';
 
-/** One Status CTA: deploy first, then open from #governance or redeploy on #gov-practice. */
+/** One Status CTA: deploy first, then open Wargame stack from Live or redeploy on Wargame. */
 export function warGameStatusAction(
   hasActiveWarGame: boolean,
   onWarGameHub: boolean,

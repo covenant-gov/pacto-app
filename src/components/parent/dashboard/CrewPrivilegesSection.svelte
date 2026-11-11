@@ -17,8 +17,10 @@
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import {
+    FLAG_ADD_DOC,
     FLAG_BROADCAST,
     FLAG_CREATE_CHANNEL,
+    FLAG_CREATE_EVENT,
     FLAG_FIRST_MATE,
     FLAG_INVITE_ACCEPT,
     FLAG_MANAGE_NETWORK,
@@ -26,9 +28,11 @@
     PRIVILEGE_ROLE_NAME_MAX_BYTES,
     describePrivilegeCatalogRole,
     encodePrivilegeRoleId,
+    packPrivilegeFlags,
   } from '../../../lib/governance/privilege-role-id';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { showToast } from '../../../stores/toast';
+  import { bumpSquadPrivilegeNonce } from '../../../stores/squad-privilege-refresh';
   import { shortEvmAddress } from '../../../lib/governance/hats-tree-annotations';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
 
@@ -62,6 +66,9 @@
   let flagBroadcast = $state(false);
   let flagNetwork = $state(false);
   let flagFirstMate = $state(false);
+  let flagEvent = $state(false);
+  let flagDoc = $state(false);
+  let drafting = $state(false);
 
   let selectedRoleId = $state('');
   let executorAddress = $state('');
@@ -76,11 +83,15 @@
   const isCaptain = $derived(privilege?.wearsCaptain === true);
 
   const builderFlags = $derived(
-    (flagInvite ? FLAG_INVITE_ACCEPT : 0) |
-      (flagChannel ? FLAG_CREATE_CHANNEL : 0) |
-      (flagBroadcast ? FLAG_BROADCAST : 0) |
-      (flagNetwork ? FLAG_MANAGE_NETWORK : 0) |
-      (flagFirstMate ? FLAG_FIRST_MATE : 0),
+    packPrivilegeFlags({
+      inviteAccept: flagInvite,
+      createChannel: flagChannel,
+      broadcast: flagBroadcast,
+      manageNetwork: flagNetwork,
+      firstMate: flagFirstMate,
+      createEvent: flagEvent,
+      addDoc: flagDoc,
+    }),
   );
 
   const previewRoleId = $derived.by(() => {
@@ -144,10 +155,12 @@
         parentId,
       });
       catalogIds = res.roles ?? [];
-      if (selectedRoleId && !catalogIds.includes(selectedRoleId)) {
-        selectedRoleId = catalogIds[0] ?? '';
-      } else if (!selectedRoleId && catalogIds.length > 0) {
-        selectedRoleId = catalogIds[0];
+      if (!drafting) {
+        if (selectedRoleId && !catalogIds.includes(selectedRoleId)) {
+          selectedRoleId = catalogIds[0] ?? '';
+        } else if (!selectedRoleId && catalogIds.length > 0) {
+          selectedRoleId = catalogIds[0];
+        }
       }
     } catch (e) {
       catalogError =
@@ -165,6 +178,35 @@
     flagBroadcast = false;
     flagNetwork = false;
     flagFirstMate = false;
+    flagEvent = false;
+    flagDoc = false;
+  }
+
+  function startDraft() {
+    drafting = true;
+    selectedRoleId = '';
+    resetBuilder();
+  }
+
+  function selectRole(roleId: string) {
+    drafting = false;
+    selectedRoleId = roleId;
+  }
+
+  function flagChecked(flag: number, draft: boolean): boolean {
+    if (drafting) return draft;
+    return ((selectedRow?.knownFlags ?? 0) & flag) !== 0;
+  }
+
+  function setDraftFlag(flag: 'invite' | 'channel' | 'broadcast' | 'network' | 'firstMate' | 'event' | 'doc', on: boolean) {
+    if (!drafting) return;
+    if (flag === 'invite') flagInvite = on;
+    else if (flag === 'channel') flagChannel = on;
+    else if (flag === 'broadcast') flagBroadcast = on;
+    else if (flag === 'network') flagNetwork = on;
+    else if (flag === 'firstMate') flagFirstMate = on;
+    else if (flag === 'event') flagEvent = on;
+    else flagDoc = on;
   }
 
   function runAction(fn: () => Promise<unknown>, successMessage: string) {
@@ -176,8 +218,10 @@
       job: fn,
       onSuccess: async () => {
         showToast(successMessage);
+        drafting = false;
         resetBuilder();
         await loadCatalog();
+        bumpSquadPrivilegeNonce(parentId);
         onPrivilegesChanged();
       },
       onError: (message) => {
@@ -330,29 +374,39 @@
         onclick={() => void loadAll()}
       />
     </div>
-    <p class="muted privileges-desc">
-      {$t('governance.privileges.description', { values: { proxy: shortEvmAddress(proxy) } })}
-    </p>
 
     {#if !writesEnabled}
-      <p class="muted" role="status">
-        {$t('governance.privileges.captainOnlyWrites')}
-        {#if saGate.reason}
-          <span class="gate-reason">{$t(saGate.reason)}</span>
-        {/if}
-      </p>
+      <p class="muted" role="status">{$t('governance.privileges.captainOnly')}</p>
     {/if}
 
     {#if catalogError}
       <p class="input-error" role="alert">{catalogError}</p>
     {/if}
 
-    <div class="privileges-grid">
-      <div class="privileges-panel">
-        <h4 class="panel-title">{$t('governance.privileges.builderTitle')}</h4>
-        {#if catalogIds.length === 0 && !catalogLoading}
-          <p class="muted">{$t('governance.privileges.emptyCatalog')}</p>
+    <div class="privileges-layout">
+      <div class="role-list">
+        <button type="button" class="role-row" class:selected={drafting} disabled={!writesEnabled} onclick={startDraft}>
+          {$t('governance.privileges.newRole')}
+        </button>
+        {#if catalogLoading && catalogRows.length === 0}
+          <p class="muted">{$t('governance.crew.loading')}</p>
+        {:else if catalogRows.length === 0}
+          <p class="muted">{$t('governance.privileges.catalogEmpty')}</p>
+        {:else}
+          {#each catalogRows as row (row.roleId)}
+            <button
+              type="button"
+              class="role-row"
+              class:selected={!drafting && row.roleId === selectedRoleId}
+              onclick={() => selectRole(row.roleId)}
+            >
+              <span class="catalog-name">{row.ok ? row.name : $t('governance.privileges.unknownEncoding')}</span>
+            </button>
+          {/each}
         {/if}
+      </div>
+
+      <div class="role-editor">
         <label class="field-label" for="crew-priv-role-name">{$t('governance.privileges.roleName')}</label>
         <input
           id="crew-priv-role-name"
@@ -362,110 +416,119 @@
           autocomplete="off"
           spellcheck="false"
           placeholder={$t('governance.privileges.roleNamePlaceholder')}
-          bind:value={roleName}
-          disabled={!writesEnabled}
+          value={drafting ? roleName : (selectedRow?.name ?? '')}
+          disabled={!drafting || !writesEnabled}
+          oninput={(e) => {
+            if (drafting) roleName = e.currentTarget.value;
+          }}
         />
-        <fieldset class="flag-set" disabled={!writesEnabled}>
-          <legend class="field-label">{$t('governance.privileges.flagsLegend')}</legend>
+
+        <fieldset class="flag-set" disabled={!writesEnabled || !drafting}>
+          <legend class="field-label">{$t('governance.privileges.group.members')}</legend>
           <label class="flag-check">
-            <input type="checkbox" bind:checked={flagInvite} />
+            <input
+              type="checkbox"
+              checked={flagChecked(FLAG_INVITE_ACCEPT, flagInvite)}
+              onchange={(e) => setDraftFlag('invite', e.currentTarget.checked)}
+            />
             {flagLabel('inviteAccept')}
           </label>
-          <label class="flag-check">
-            <input type="checkbox" bind:checked={flagChannel} />
-            {flagLabel('createChannel')}
-          </label>
-          <label class="flag-check">
-            <input type="checkbox" bind:checked={flagBroadcast} />
-            {flagLabel('broadcast')}
-          </label>
-          <label class="flag-check">
-            <input type="checkbox" bind:checked={flagNetwork} />
-            {flagLabel('manageNetwork')}
-          </label>
-          {#if isCaptain}
+          {#if isCaptain || (!drafting && (selectedRow?.hasFirstMate ?? false))}
             <label class="flag-check">
-              <input type="checkbox" bind:checked={flagFirstMate} />
+              <input
+                type="checkbox"
+                checked={flagChecked(FLAG_FIRST_MATE, flagFirstMate)}
+                onchange={(e) => setDraftFlag('firstMate', e.currentTarget.checked)}
+              />
               {flagLabel('firstMate')}
             </label>
           {/if}
         </fieldset>
-        {#if previewDecoded?.ok}
-          <p class="preview muted">
-            {$t('governance.privileges.preview')}:
-            <strong>{previewDecoded.name}</strong>
-            ·
-            {#each PRIVILEGE_FLAG_CHIPS.filter((c) => (previewDecoded.knownFlags & c.flag) !== 0) as chip (chip.bit)}
-              <span class="flag-chip">{flagLabel(chip.key)}</span>
-            {:else}
-              <span class="flag-chip muted">{$t('governance.privileges.noFlags')}</span>
-            {/each}
-          </p>
-          <code class="role-hex" title={previewRoleId}>{previewRoleId.slice(0, 18)}…</code>
-        {/if}
-        <button type="button" class="btn-secondary" disabled={!writesEnabled} onclick={createRole}>
-          {$t('governance.squadRoles.action.createRole')}
-        </button>
-      </div>
 
-      <div class="privileges-panel">
-        <h4 class="panel-title">{$t('governance.privileges.catalogTitle')}</h4>
-        {#if catalogLoading && catalogIds.length === 0}
-          <p class="muted">{$t('governance.crew.loading')}</p>
-        {:else if catalogRows.length === 0}
-          <p class="muted">{$t('governance.privileges.catalogEmpty')}</p>
-        {:else}
-          <ul class="catalog-list">
-            {#each catalogRows as row (row.roleId)}
-              <li>
-                <button
-                  type="button"
-                  class="catalog-row"
-                  class:selected={row.roleId === selectedRoleId}
-                  onclick={() => (selectedRoleId = row.roleId)}
-                >
-                  <span class="catalog-name">{row.name}</span>
-                  {#if !row.ok}
-                    <span class="flag-chip warn">{$t('governance.privileges.unknownEncoding')}</span>
-                  {:else}
-                    {#each PRIVILEGE_FLAG_CHIPS.filter((c) => (row.knownFlags & c.flag) !== 0) as chip (chip.bit)}
-                      <span class="flag-chip">{flagLabel(chip.key)}</span>
-                    {/each}
-                  {/if}
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-
-        <GovMemberPicker
-          bind:value={executorAddress}
-          options={memberEvmOptions}
-          labelKey="governance.squadRoles.executorLabel"
-          ariaLabelKey="governance.squadRoles.executorLabel"
-          emptyKey="governance.gate.noSquadMemberForRole"
-          selectId="crew-priv-executor"
-          disabled={!writesEnabled}
-        />
-
-        <div class="assign-actions">
-          <button type="button" class="btn-secondary" disabled={!writesEnabled} onclick={enableExecutor}>
-            {$t('governance.privileges.action.assign')}
-          </button>
-          <button type="button" class="btn-secondary" disabled={!writesEnabled} onclick={disableExecutor}>
-            {$t('governance.privileges.action.revoke')}
-          </button>
-        </div>
-
-        <div class="full-row">
+        <fieldset class="flag-set" disabled={!writesEnabled || !drafting}>
+          <legend class="field-label">{$t('governance.privileges.group.channels')}</legend>
           <label class="flag-check">
-            <input type="checkbox" bind:checked={grantFullPermission} disabled={!writesEnabled} />
-            {$t('governance.squadRoles.grantFull')}
+            <input
+              type="checkbox"
+              checked={flagChecked(FLAG_CREATE_CHANNEL, flagChannel)}
+              onchange={(e) => setDraftFlag('channel', e.currentTarget.checked)}
+            />
+            {flagLabel('createChannel')}
           </label>
-          <button type="button" class="btn-secondary" disabled={!writesEnabled} onclick={applyFull}>
-            {$t('governance.squadRoles.action.applyFull')}
+        </fieldset>
+
+        <fieldset class="flag-set" disabled={!writesEnabled || !drafting}>
+          <legend class="field-label">{$t('governance.privileges.group.content')}</legend>
+          <label class="flag-check">
+            <input
+              type="checkbox"
+              checked={flagChecked(FLAG_CREATE_EVENT, flagEvent)}
+              onchange={(e) => setDraftFlag('event', e.currentTarget.checked)}
+            />
+            {flagLabel('createEvent')}
+          </label>
+          <label class="flag-check">
+            <input
+              type="checkbox"
+              checked={flagChecked(FLAG_ADD_DOC, flagDoc)}
+              onchange={(e) => setDraftFlag('doc', e.currentTarget.checked)}
+            />
+            {flagLabel('addDoc')}
+          </label>
+          <label class="flag-check">
+            <input
+              type="checkbox"
+              checked={flagChecked(FLAG_BROADCAST, flagBroadcast)}
+              onchange={(e) => setDraftFlag('broadcast', e.currentTarget.checked)}
+            />
+            {flagLabel('broadcast')}
+          </label>
+        </fieldset>
+
+        <fieldset class="flag-set" disabled={!writesEnabled || !drafting}>
+          <legend class="field-label">{$t('governance.privileges.group.network')}</legend>
+          <label class="flag-check">
+            <input
+              type="checkbox"
+              checked={flagChecked(FLAG_MANAGE_NETWORK, flagNetwork)}
+              onchange={(e) => setDraftFlag('network', e.currentTarget.checked)}
+            />
+            {flagLabel('manageNetwork')}
+          </label>
+        </fieldset>
+
+        {#if drafting}
+          <button type="button" class="btn-secondary" disabled={!writesEnabled} onclick={createRole}>
+            {$t('governance.squadRoles.action.createRole')}
           </button>
-        </div>
+        {:else}
+          <GovMemberPicker
+            bind:value={executorAddress}
+            options={memberEvmOptions}
+            labelKey="governance.squadRoles.executorLabel"
+            ariaLabelKey="governance.squadRoles.executorLabel"
+            emptyKey="governance.gate.noSquadMemberForRole"
+            selectId="crew-priv-executor"
+            disabled={!writesEnabled || !selectedRoleId}
+          />
+          <div class="assign-actions">
+            <button type="button" class="btn-secondary" disabled={!writesEnabled || !selectedRoleId} onclick={enableExecutor}>
+              {$t('governance.privileges.action.assign')}
+            </button>
+            <button type="button" class="btn-secondary" disabled={!writesEnabled || !selectedRoleId} onclick={disableExecutor}>
+              {$t('governance.privileges.action.revoke')}
+            </button>
+          </div>
+          <div class="full-row">
+            <label class="flag-check">
+              <input type="checkbox" bind:checked={grantFullPermission} disabled={!writesEnabled} />
+              {$t('governance.squadRoles.grantFull')}
+            </label>
+            <button type="button" class="btn-secondary" disabled={!writesEnabled} onclick={applyFull}>
+              {$t('governance.squadRoles.action.applyFull')}
+            </button>
+          </div>
+        {/if}
       </div>
     </div>
 
@@ -487,7 +550,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
   }
   .section-heading {
     font-size: 0.875rem;
@@ -495,52 +558,63 @@
     color: var(--text-secondary);
     margin: 0;
   }
-  .privileges-desc {
-    margin: 0 0 12px;
-  }
-  .muted {
-    color: var(--text-muted);
-    font-size: 0.875rem;
-  }
-  .gate-reason {
-    display: block;
-    margin-top: 4px;
-  }
-  .privileges-grid {
+  .privileges-layout {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
     gap: 16px;
+    align-items: start;
   }
-  .privileges-panel {
+  .role-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    min-width: 0;
+    gap: 4px;
   }
-  .panel-title {
-    margin: 0;
-    font-size: 0.8125rem;
-    font-weight: 600;
+  .role-row {
+    text-align: left;
+    border: 1px solid transparent;
+    background: transparent;
     color: var(--text-primary);
+    border-radius: 6px;
+    padding: 8px 10px;
+    cursor: pointer;
+    min-height: 32px;
+  }
+  .role-row:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+  .role-row.selected {
+    background: var(--bg-hover);
+    border-color: var(--border-subtle);
+  }
+  .role-row:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .role-row:focus-visible {
+    outline: 2px solid var(--border-focus, var(--brand));
+    outline-offset: 2px;
   }
   .field-label {
+    display: block;
     font-size: 0.75rem;
-    color: var(--text-muted);
+    color: var(--text-secondary);
+    margin: 0 0 4px;
   }
   .privileges-input {
     width: 100%;
     box-sizing: border-box;
-    padding: 8px 10px;
-    border: 1px solid var(--border-subtle);
+    margin-bottom: 12px;
+    min-height: 32px;
+    padding: 6px 8px;
     border-radius: 6px;
+    border: 1px solid var(--border-subtle);
     background: var(--bg-elevated);
     color: var(--text-primary);
-    font: inherit;
   }
   .flag-set {
-    margin: 0;
+    border: 0;
+    margin: 0 0 10px;
     padding: 0;
-    border: none;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -549,62 +623,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .preview {
-    margin: 0;
-    line-height: 1.4;
-  }
-  .flag-chip {
-    display: inline-block;
-    margin: 2px 4px 2px 0;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: var(--bg-hover);
-    font-size: 0.6875rem;
-    color: var(--text-secondary);
-  }
-  .flag-chip.warn {
-    color: var(--danger, #c44);
-  }
-  .role-hex {
-    font-family: ui-monospace, monospace;
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    word-break: break-all;
-  }
-  .catalog-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    border: 1px solid var(--border-subtle);
-    border-radius: 6px;
-    max-height: 180px;
-    overflow: auto;
-  }
-  .catalog-row {
-    width: 100%;
-    text-align: left;
-    padding: 8px 10px;
-    border: none;
-    border-bottom: 1px solid var(--border-subtle);
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
-  .catalog-row:last-child {
-    border-bottom: none;
-  }
-  .catalog-row.selected {
-    background: var(--bg-hover);
-  }
-  .catalog-name {
-    display: block;
-    font-weight: 500;
-    margin-bottom: 2px;
+    min-height: 24px;
+    font-size: 0.875rem;
   }
   .assign-actions,
   .full-row {
@@ -612,24 +632,19 @@
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
+    margin-top: 8px;
+  }
+  .muted {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
   }
   .input-error {
-    color: var(--danger, #c44);
+    color: var(--danger, var(--text-primary));
     font-size: 0.8125rem;
-    margin: 8px 0 0;
   }
-  .btn-secondary {
-    padding: 6px 12px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 6px;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    font: inherit;
-    font-size: 0.8125rem;
-    cursor: pointer;
-  }
-  .btn-secondary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  @media (max-width: 640px) {
+    .privileges-layout {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

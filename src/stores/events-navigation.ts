@@ -1,5 +1,5 @@
 import { writable, type Writable } from 'svelte/store';
-import { openSquadTools } from '../lib/navigation/open-squad-dashboard';
+import { openSquadTools } from '../lib/navigation/open-squad-governance';
 
 export type EventsFocus = { parentId: string; eventId: string | null; seriesId: string | null };
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Component } from 'svelte';
   import { t } from 'svelte-i18n';
-  import ParentDashboard from '../parent/ParentDashboard.svelte';
+  import SquadGovernanceView from '../parent/SquadGovernanceView.svelte';
   import SquadSettingsView from '../parent/SquadSettingsView.svelte';
   import SquadToolsView from '../parent/SquadToolsView.svelte';
   import { createLazyComponent } from '../../lib/ui/lazy-svelte-component';
@@ -35,7 +35,7 @@
     SETTINGS_CHANNEL_ID,
     SQUAD_WARGAME_CHANNEL_ID,
     isVirtualHubChannelId,
-    isSquadDashboardChromeChannelId,
+    isSquadGovernanceChromeChannelId,
     type Squad,
   } from '../../stores/squads';
   import type { SquadInfraDto } from '../../lib/governance/api';
@@ -103,10 +103,10 @@
       $lastHubChannelNameBySquadId,
     );
   });
-  let showParentDashboard = $derived(
+  let showSquadGovernance = $derived(
     openHubParent != null &&
       (!effectiveHubChannel.channelId ||
-        isSquadDashboardChromeChannelId(effectiveHubChannel.channelId)),
+        isSquadGovernanceChromeChannelId(effectiveHubChannel.channelId)),
   );
   let currentHubWarGame = $derived(effectiveHubChannel.channelId === SQUAD_WARGAME_CHANNEL_ID);
   let currentHubDashboardKey = $derived(
@@ -125,7 +125,7 @@
       effectiveHubChannel.hubChannelName !== TOOLS_CHANNEL_NAME,
   );
   let dashboardParentId = $derived(
-    isSquadDashboardChromeChannelId(effectiveHubChannel.channelId) ? openHubParent?.id ?? null : null,
+    isSquadGovernanceChromeChannelId(effectiveHubChannel.channelId) ? openHubParent?.id ?? null : null,
   );
 
   function isCreatingSquadId(squadId: string): boolean {
@@ -146,7 +146,7 @@
       if (visitedHubDashboards.length > 0) visitedHubDashboards = [];
       return;
     }
-    visitedHubDashboards = showParentDashboard
+    visitedHubDashboards = showSquadGovernance
       ? rememberHubDashboard(visitedHubDashboards, openHubParent.id, currentHubWarGame)
       : retainHubDashboardsForParent(visitedHubDashboards, openHubParent.id);
   });
@@ -228,9 +228,9 @@
     {#each visitedHubDashboards as hub (hub.key)}
       <div
         class="hub-dashboard-keep-alive"
-        hidden={!(showParentDashboard && currentHubDashboardKey === hub.key)}
+        hidden={!(showSquadGovernance && currentHubDashboardKey === hub.key)}
       >
-        <ParentDashboard
+        <SquadGovernanceView
           parent={openHubParent}
           warGameStack={hub.warGameStack}
           treasurySafes={treasurySafesForParent(openHubParent)}
@@ -265,7 +265,7 @@
     <p class="surface-loading muted" role="status">{$t('app.loading.squad')}</p>
   {:else if showOpenFailed}
     <p class="surface-loading muted" role="status">{$t('app.squadOpenFailed')}</p>
-  {:else if !showParentDashboard}
+  {:else if !showSquadGovernance}
     <p class="surface-loading muted" role="status">{$t('app.selectSquadChannel')}</p>
   {/if}
 </div>

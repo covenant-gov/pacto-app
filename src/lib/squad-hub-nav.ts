@@ -17,7 +17,7 @@ import {
   squads,
   squadInfraByParentId,
   SETTINGS_CHANNEL_ID,
-  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   isVirtualHubChannelId,
   type Squad,
@@ -26,22 +26,23 @@ import {
   toolsModeFromObsoleteHubName,
   normalizeHubChannelName,
   remapObsoleteHubChannelId,
+  defaultGovernanceStackChannelId,
+  isSquadGovernanceChromeChannelId,
 } from './squad/hub-channel-names';
 import { resolveHubChannelNameForGroupSelection } from './mls/virtual-channel-bucket';
-import { pactoGovWargameInfraRow } from './governance/api';
+import { pactoGovInfraRow } from './governance/api';
 import { squadToolsChannelMode } from '../stores/navigation';
 
 const VIRTUAL_HUB_CHANNEL_IDS = new Set([
-  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_GOVERNANCE_CHANNEL_ID,
   SQUAD_WARGAME_CHANNEL_ID,
   SETTINGS_CHANNEL_ID,
 ]);
 
-/** True when a war-game hub row exists, or infra for this parent has not hydrated yet. */
-function isWarGameHubAvailable(parentId: string): boolean {
+function hasLivePactoGov(parentId: string): boolean {
   const map = get(squadInfraByParentId);
-  if (!Object.prototype.hasOwnProperty.call(map, parentId)) return true;
-  return pactoGovWargameInfraRow(map[parentId]) != null;
+  if (!Object.prototype.hasOwnProperty.call(map, parentId)) return false;
+  return pactoGovInfraRow(map[parentId]) != null;
 }
 
 export function resolveHubParentSquad(allSquads: Squad[], squadId: string | null): Squad | undefined {
@@ -76,9 +77,7 @@ export function resolveHubChannelForSquad(
   const lastForSquad = remapObsoleteHubChannelId(lastChannelBySquad[squad.id]) ?? undefined;
   const lastValid =
     !!lastForSquad &&
-    (sorted.some((c) => c.groupId === lastForSquad) ||
-      (VIRTUAL_HUB_CHANNEL_IDS.has(lastForSquad) &&
-        (lastForSquad !== SQUAD_WARGAME_CHANNEL_ID || isWarGameHubAvailable(squad.id))));
+    (sorted.some((c) => c.groupId === lastForSquad) || VIRTUAL_HUB_CHANNEL_IDS.has(lastForSquad));
 
   let channelId: string | null;
   if (lastValid && lastForSquad && isVirtualHubChannelId(lastForSquad)) {
@@ -87,7 +86,7 @@ export function resolveHubChannelForSquad(
     channelId =
       sorted.find((c) => c.groupId === lastForSquad)?.groupId ?? firstCh?.groupId ?? null;
   } else {
-    channelId = SQUAD_DASHBOARD_CHANNEL_ID;
+    channelId = defaultGovernanceStackChannelId(hasLivePactoGov(squad.id));
   }
 
   const lastHubRaw = lastHubChannelNameBySquad[squad.id] ?? null;
@@ -109,9 +108,18 @@ export function resolveHubChannelForSquad(
 function isActiveChannelValidForSquad(squad: Squad, channelId: string | null): boolean {
   const id = remapObsoleteHubChannelId(channelId) ?? null;
   if (!id || id.startsWith('creating-')) return false;
-  if (id === SQUAD_WARGAME_CHANNEL_ID) return isWarGameHubAvailable(squad.id);
   if (VIRTUAL_HUB_CHANNEL_IDS.has(id)) return true;
   return squad.channels.some((c) => c.groupId === id);
+}
+
+/** Channel id to open when the sidebar `#governance` row is clicked. */
+export function governanceChannelIdForSidebarClick(
+  squadId: string,
+  lastChannelBySquad: Record<string, string>,
+): string {
+  const last = remapObsoleteHubChannelId(lastChannelBySquad[squadId]) ?? null;
+  if (last && isSquadGovernanceChromeChannelId(last)) return last;
+  return defaultGovernanceStackChannelId(hasLivePactoGov(squadId));
 }
 
 /** Resolved channel for the open squad — used for hub routing before store sync catches up. */
@@ -136,7 +144,10 @@ export function resolveEffectiveHubChannel(
   }
   const resolved = resolveHubChannelForSquad(squad, lastChannelBySquad, lastHubChannelNameBySquad);
   if (!resolved.channelId) {
-    return { channelId: SQUAD_DASHBOARD_CHANNEL_ID, hubChannelName: null };
+    return {
+      channelId: defaultGovernanceStackChannelId(hasLivePactoGov(squad.id)),
+      hubChannelName: null,
+    };
   }
   return resolved;
 }

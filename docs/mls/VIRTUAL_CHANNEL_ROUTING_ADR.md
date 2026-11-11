@@ -116,7 +116,7 @@ Apply **first matching rule** (implementations walk top-to-bottom):
 
 **Rationale for default `announcements`:** safest UX default for unknown content (human-readable traffic); automation paths should **always** set tag or field once virtual routing lands.
 
-**Single MLS stream:** default squad/network traffic uses **one** physical `group_id`. Sidebar UI rows are `#governance`, `#announcements`, `#tools`, and `#settings` (governance/settings are virtual; announcements/tools share the MLS stream). `#tools` switches Polls / Events / Docs in-panel. Buckets `inbox` and `join_requests` remain for transport and are surfaced inside `#settings` (You → Alerts / Access → Pending), not as dedicated channels.
+**Single MLS stream:** default squad/network traffic uses **one** physical `group_id`. Sidebar UI rows are `#governance`, `#announcements`, `#tools`, and `#settings` (governance/settings are virtual; announcements/tools share the MLS stream). `#tools` switches Polls / Events / Docs in-panel. Buckets `inbox` and `join_requests` remain for transport and are surfaced inside `#settings` (You → Alerts / About → Pending), not as dedicated channels.
 
 ---
 
@@ -142,7 +142,7 @@ Squad-wide records ride the announcements group as **Kind 30078** rumors selecte
 
 | `d` tag | Status | Content schema |
 |---------|--------|----------------|
-| `pacto_squad_content_policy` | Active | `pacto.squad_content_policy.v1` — admin-only add restrictions (`restrict_event_create`, `restrict_doc_add`), each with its own `*_updated_at_ms`; per-flag last timestamp wins |
+| `pacto_squad_content_policy` | Dropped | Ignored on ingest. Create/add uses SquadAdmin `createEvent` / `addDoc` |
 | `pacto_squad_event` | Active | `pacto.squad_event.v1` — squad events and RSVPs (see below) |
 | `pacto_squad_doc` | Active | `pacto.squad_doc.v1` — squad docs shelf links (see below) |
 
@@ -152,7 +152,7 @@ Squad-wide records ride the announcements group as **Kind 30078** rumors selecte
 
 Feature shelves (polls, events, docs) live under `#tools` modes that read their SQLite replica through Tauri. They are not virtual buckets of the MLS stream.
 
-**Admin gate:** policy writes are accepted only from members in the group's MLS `admin_pubkeys`; non-admin policy rumors are dropped on ingest. Turning `restrict_event_create` on deletes every non-admin event of the parent, whatever its timestamp; turning it off restores nothing. Rationale and rejected alternatives: [`../communities/SQUAD_CONTENT_POLICY.md`](../communities/SQUAD_CONTENT_POLICY.md).
+**Create/add gate:** when SquadAdmin is active, `create` / `series_card` and doc `add` are stored only if the signer’s roster binding (or certified squad EVM share) has `createEvent` or `addDoc` (or FULL). Paused or missing flag drops the rumor; an RPC failure or a signer with no binding yet parks it in `squad_record_privilege_pending` until a re-check decides. Inactive SquadAdmin allows any member. Update and remove of another member’s row stay author-or-MLS-admin. `pacto_squad_content_policy` rumors are dropped.
 
 ### Squad events (`pacto_squad_event`)
 
@@ -164,7 +164,7 @@ Feature shelves (polls, events, docs) live under `#tools` modes that read their 
 ### Squad docs (`pacto_squad_doc`)
 
 - **Wire:** `{"schema":"pacto.squad_doc.v1","op":…,"id":…,"parent_id":…,"updated_at_ms":…}` with `op` one of `add`, `update`, `remove`. `add` and `update` also carry `url` (raw, fragment included), `title`, `provider` (`cryptpad`, `google`, `zoho`, `notion`, `etherpad`, `other`; the sender derives it from the hostname, unknown values ingest as `other`), `channel_id`, and `note`; `add` carries `added_by` (the sender's npub). `remove` carries only the five base fields.
-- **Authority:** the author is the MLS signer of the add. An op whose `added_by` differs from its signer is dropped. While `restrict_doc_add` is on, only admins add. Update and remove are accepted from the author or a current admin. A second `add` for a stored id is a no-op from anyone. Only `http` and `https` URLs are accepted. Stamps further than 24 hours ahead of the local clock are dropped.
+- **Authority:** the author is the MLS signer of the add. An op whose `added_by` differs from its signer is dropped. `add` requires `addDoc` when SquadAdmin is active. Update and remove are accepted from the author or a current MLS admin. A second `add` for a stored id is a no-op from anyone. Only `http` and `https` URLs are accepted. Stamps further than 24 hours ahead of the local clock are dropped.
 - **Replica:** stores the raw URL. Last `updated_at_ms` wins (equal keeps the stored row). `remove` sets a sticky hidden flag; the row stays so a late add or update cannot revive it. Updates and removes that arrive before their add wait in a pending-ops table.
 - **Card:** `add` becomes an `announcements` message `{"type":"squad_doc_added","payload":{"id","parent_id","title","provider","channel_id","display_url"}}`. `display_url` masks a non-empty fragment as `#••••` and secret or tracker query values as `••••`; the card never carries the raw URL or the note.
 - **Logs:** doc id and counts only.
