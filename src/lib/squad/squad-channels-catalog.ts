@@ -2,11 +2,7 @@
  * Open-channel catalog announce on #announcements (late-joiner catch-up).
  */
 
-import {
-  acceptMlsWelcome,
-  listPendingMlsWelcomes,
-  sendDmMessage,
-} from '../api/nostr';
+import { sendDmMessage } from '../api/nostr';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { catalogChannelsForAnnounce, type ChannelAccess } from '../parent/channel-access';
 import { persistSquadPatch } from './squad-catalog';
@@ -20,8 +16,8 @@ import {
   POLLS_CHANNEL_NAME,
 } from './hub-channel-names';
 import { requireMySquadPrivilege } from '../governance/squad-privilege-enforce';
-import { dmError } from '../utils/dm-debug';
-import { markMlsHistoryWelcome } from '../../stores/mls-history-welcome';
+import { upsertPendingOpenChannelJoin } from './pending-open-channel-joins';
+import { tryCompleteOpenChannelJoins } from './open-channel-join';
 
 export const SQUAD_CHANNELS_CATALOG_TYPE = 'squad_channels_catalog';
 
@@ -94,62 +90,7 @@ function sameGroupId(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-/** Accept pending MLS welcomes that match open-channel catalog rows. */
-async function acceptPendingWelcomesForCatalog(
-  parentId: string,
-  channels: SquadChannelsCatalogPayload['channels'],
-): Promise<void> {
-  let welcomes;
-  try {
-    welcomes = await listPendingMlsWelcomes();
-  } catch (e) {
-    dmError('listPendingMlsWelcomes after channels catalog', e);
-    return;
-  }
-  for (const row of channels) {
-    if (row.access === 'closed') continue;
-    const welcome = welcomes.find((w) => sameGroupId(w.nostr_group_id, row.groupId));
-    if (!welcome) continue;
-    try {
-      await acceptMlsWelcome(welcome.id);
-      markMlsHistoryWelcome(row.groupId);
-    } catch (e) {
-      dmError('acceptMlsWelcome after channels catalog', e);
-    }
-  }
-  // Ensure sidebar rows exist even if welcome accept is still in flight.
-  void persistSquadPatch(parentId, (squad) => {
-    let changed = false;
-    const next: Channel[] = [...squad.channels];
-    for (const row of channels) {
-      if (row.access === 'closed') continue;
-      const existing = next.find((c) => sameGroupId(c.groupId, row.groupId));
-      if (existing) {
-        if (existing.access !== row.access || existing.name !== row.name) {
-          Object.assign(existing, {
-            name: row.name,
-            access: row.access,
-            order: row.order,
-            groupId: existing.groupId || row.groupId,
-          });
-          changed = true;
-        }
-        continue;
-      }
-      next.push({
-        name: row.name,
-        groupId: row.groupId,
-        order: row.order,
-        access: row.access,
-      });
-      changed = true;
-    }
-    if (!changed) return squad;
-    return { ...squad, channels: next };
-  });
-}
-
-/** Merge open-channel catalog rows into local squad (does not remove closed-only local rows). */
+/** Merge open-channel catalog metadata; new rows join only after Welcome accept. */
 export function applySquadChannelsCatalog(content: string, groupId: string): void {
   const parsed = parseSquadChannelsCatalog(content);
   if (!parsed) return;
@@ -166,24 +107,24 @@ export function applySquadChannelsCatalog(content: string, groupId: string): voi
       for (const row of parsed.channels) {
         if (row.access === 'closed') continue;
         const existing = next.find((c) => sameGroupId(c.groupId, row.groupId));
-        if (existing) {
-          if (existing.access !== row.access || existing.name !== row.name) {
-            Object.assign(existing, { name: row.name, access: row.access, order: row.order });
-            changed = true;
-          }
-          continue;
+        if (!existing) continue;
+        if (existing.access !== row.access || existing.name !== row.name) {
+          Object.assign(existing, { name: row.name, access: row.access, order: row.order });
+          changed = true;
         }
-        next.push({
-          name: row.name,
-          groupId: row.groupId,
-          order: row.order,
-          access: row.access,
-        });
-        changed = true;
       }
       if (!changed) return squad;
       return { ...squad, channels: next };
     });
-    await acceptPendingWelcomesForCatalog(parent.id, parsed.channels);
+    for (const row of parsed.channels) {
+      if (row.access === 'closed') continue;
+      upsertPendingOpenChannelJoin({
+        parentId: parent.id,
+        groupId: row.groupId,
+        name: row.name,
+        access: row.access,
+      });
+    }
+    await tryCompleteOpenChannelJoins();
   })();
 }

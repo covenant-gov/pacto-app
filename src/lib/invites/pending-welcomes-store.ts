@@ -9,6 +9,8 @@ import { squads } from '../../stores/squads';
 import { blockedDmNpubs } from '../../stores/dm';
 import { declinedWelcomeGroupIds } from '../../stores/invite-decisions';
 import { pendingSquadAdmissions } from '../../stores/pending-squad-admission';
+import { pendingOpenChannelJoins } from '../squad/pending-open-channel-joins';
+import { isHubChannelRow } from '../parent/channel-access';
 import {
   clearPendingWelcomeFinalizationByGroupId,
   pendingWelcomeFinalizations,
@@ -38,13 +40,22 @@ export const offeredWelcomeList = derived(
     pendingSquadAdmissions,
     blockedDmNpubs,
     pendingWelcomeFinalizations,
+    pendingOpenChannelJoins,
   ] as const,
-  ([$welcomes, $squads, $declined, $admissions, $blocked, $finalizations]): OfferedWelcome[] =>
+  ([$welcomes, $squads, $declined, $admissions, $blocked, $finalizations, $wanted]): OfferedWelcome[] =>
     offeredWelcomes({
       welcomes: $welcomes,
       squadIds: $squads.map((s) => s.id),
       declinedGroupIds: $declined,
       pendingAdmissionGroupIds: $admissions.map((p) => p.groupId),
+      channelGroupIds: [
+        ...$wanted.map((row) => row.groupId),
+        ...$squads.flatMap((squad) =>
+          squad.channels
+            .filter((ch) => !isHubChannelRow(ch))
+            .map((ch) => ch.groupId),
+        ),
+      ],
       blockedNpubs: $blocked,
       unmaterialized: $finalizations.map(offeredWelcomeFromFinalization),
     })

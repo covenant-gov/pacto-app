@@ -31,6 +31,10 @@ vi.mock('../squad/squad-state-sync', () => ({
   maybeAutoRequestSquadStateSyncAfterJoin: vi.fn(),
 }));
 
+vi.mock('../squad/open-channel-join', () => ({
+  tryCompleteOpenChannelJoins: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../squad/squad-outbound-invite', () => ({
   publishInviteAcceptedClaims: vi.fn().mockResolvedValue(undefined),
 }));

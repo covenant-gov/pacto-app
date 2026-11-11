@@ -25,6 +25,10 @@ import {
   loadPendingApprovedJoins,
   tryCompletePendingApprovedJoins,
 } from '../lib/squad/join-request-finalize';
+import {
+  loadPendingOpenChannelJoins,
+} from '../lib/squad/pending-open-channel-joins';
+import { tryCompleteOpenChannelJoins } from '../lib/squad/open-channel-join';
 import { loadBackupVerified } from './backup-verification';
 import { loadTorRoutingEnabled } from './tor';
 import {
@@ -89,11 +93,13 @@ export function loadAccountState(npub: string): void {
   loadPendingWelcomeFinalizations(npub);
   loadPendingAdmitQueue();
   loadPendingApprovedJoins();
+  loadPendingOpenChannelJoins();
   startPendingAdmitDrain();
   startJoinInboxHolderSync();
   void tryCompleteAllPendingSquadAdmissions();
   void tryCompleteAllPendingWelcomeFinalizations();
   void tryCompletePendingApprovedJoins();
+  void tryCompleteOpenChannelJoins();
   // Nav order must load before hydrate reconciles / seeds the rail.
   if (typeof localStorage !== 'undefined') {
     try {

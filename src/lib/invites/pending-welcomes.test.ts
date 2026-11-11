@@ -156,6 +156,11 @@ describe('offeredWelcomes', () => {
     expect(result).toEqual([]);
   });
 
+  it('filters out a welcome whose group is a local or wanted channel', () => {
+    const w = welcome({ nostr_group_id: 'g-c1' });
+    expect(offeredWelcomes(inputs({ welcomes: [w], channelGroupIds: ['G-C1'] }))).toEqual([]);
+  });
+
   it('filters out a welcome whose group was already declined', () => {
     const w = welcome({ nostr_group_id: 'group-1' });
     const result = offeredWelcomes(inputs({ welcomes: [w], declinedGroupIds: ['group-1'] }));
