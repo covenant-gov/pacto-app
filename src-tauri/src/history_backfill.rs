@@ -1,9 +1,11 @@
 //! Export the last window of human chat for one MLS group.
 //! Wire rules: `docs/mls/CHANNEL_HISTORY_BACKFILL.md`.
 
-use crate::crypto::decrypt_with_key;
+use crate::crypto::{decrypt_with_key, encrypt_with_key};
+use crate::message::Message;
 use crate::stored_event::event_kind;
 use rusqlite::{params, Connection};
+use tauri::Emitter;
 
 const MENTION_ENVELOPE_KIND: &str = "pacto.mentions.envelope.v1";
 
@@ -156,6 +158,166 @@ fn decode_row(row: RawEvent, key: &[u8; 32]) -> Option<HistoryExportMessage> {
         tags,
         reference_id,
     })
+}
+
+/// Rows written by a history import. `inserted_ids` omits ids that already existed.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryImportResult {
+    pub inserted_ids: Vec<String>,
+}
+
+/// Write accepted chunk rows. Rejects the whole batch when any row is not human chat.
+/// Does not call `apply_mls_virtual_bucket_side_effects`.
+#[allow(dead_code)]
+pub fn import_channel_history(
+    conn: &mut Connection,
+    group_id: &str,
+    bucket: HistoryExportBucket,
+    local_npub: &str,
+    messages: &[HistoryExportMessage],
+    received_at_ms: u64,
+    key: &[u8; 32],
+) -> Result<HistoryImportResult, String> {
+    for message in messages {
+        validate_import_message(message)?;
+    }
+    let (inserted_ids, stored_group_id, timeline) = write_imported_rows(
+        conn,
+        group_id,
+        bucket,
+        local_npub,
+        messages,
+        received_at_ms,
+        key,
+    )?;
+    emit_imported_timeline(&stored_group_id, &timeline);
+    Ok(HistoryImportResult { inserted_ids })
+}
+
+fn validate_import_message(message: &HistoryExportMessage) -> Result<(), String> {
+    if message.id.trim().is_empty() || message.author_npub.trim().is_empty() {
+        return Err("invalid history message".to_string());
+    }
+    let human_kind = matches!(
+        message.kind,
+        event_kind::PRIVATE_DIRECT_MESSAGE
+            | event_kind::FILE_ATTACHMENT
+            | event_kind::MESSAGE_EDIT
+            | event_kind::REACTION
+    );
+    if !human_kind {
+        return Err("invalid history message".to_string());
+    }
+    if is_structured_product_content(&message.content) {
+        return Err("structured product in history chunk".to_string());
+    }
+    Ok(())
+}
+
+/// Insert rows without the human-chat check. Callers reject a bad chunk first.
+fn write_imported_rows(
+    conn: &mut Connection,
+    group_id: &str,
+    bucket: HistoryExportBucket,
+    local_npub: &str,
+    messages: &[HistoryExportMessage],
+    received_at_ms: u64,
+    key: &[u8; 32],
+) -> Result<(Vec<String>, String, Vec<Message>), String> {
+    let group_key = group_id.trim().to_lowercase();
+    if group_key.is_empty() {
+        return Err("history import missing group".to_string());
+    }
+    let received_at = i64::try_from(received_at_ms).map_err(|_| "received_at is out of range")?;
+    let local_npub = local_npub.trim();
+    let bucket_value = match bucket {
+        HistoryExportBucket::Announcements => Some("announcements"),
+        HistoryExportBucket::Unfiltered => None,
+    };
+
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let (chat_id, stored_group_id): (i64, String) = tx
+        .query_row(
+            "SELECT id, chat_identifier FROM chats WHERE lower(chat_identifier) = ?1",
+            [&group_key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| "history import chat not found".to_string())?;
+
+    let mut inserted_ids = Vec::new();
+    let mut timeline = Vec::new();
+    for message in messages {
+        let created_at =
+            i64::try_from(message.created_at).map_err(|_| "created_at is out of range")?;
+        let stored_content = if message.kind == event_kind::REACTION {
+            message.content.clone()
+        } else {
+            encrypt_with_key(&message.content, key)
+        };
+        let tags = serde_json::to_string(&message.tags).map_err(|e| e.to_string())?;
+        let mine = !local_npub.is_empty() && message.author_npub.trim() == local_npub;
+        let inserted = tx
+            .execute(
+                "INSERT OR IGNORE INTO events (
+                    id, kind, chat_id, content, tags, reference_id,
+                    created_at, received_at, mine, pending, failed, npub, virtual_bucket, history_import
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, 0, ?10, ?11, 1)",
+                params![
+                    message.id,
+                    message.kind,
+                    chat_id,
+                    stored_content,
+                    tags,
+                    message.reference_id,
+                    created_at,
+                    received_at,
+                    mine as i32,
+                    message.author_npub,
+                    bucket_value,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        if inserted == 1 {
+            inserted_ids.push(message.id.clone());
+            if message.kind == event_kind::PRIVATE_DIRECT_MESSAGE
+                || message.kind == event_kind::FILE_ATTACHMENT
+            {
+                timeline.push(timeline_message(message, mine, bucket_value));
+            }
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok((inserted_ids, stored_group_id, timeline))
+}
+
+fn timeline_message(message: &HistoryExportMessage, mine: bool, bucket: Option<&str>) -> Message {
+    Message {
+        id: message.id.clone(),
+        content: message.content.clone(),
+        replied_to: message.reference_id.clone().unwrap_or_default(),
+        at: message.created_at.saturating_mul(1000),
+        mine,
+        npub: Some(message.author_npub.clone()),
+        virtual_bucket: bucket.map(str::to_string),
+        ..Default::default()
+    }
+}
+
+/// Timeline notify only. Squad state stays on the MLS ingest path.
+fn emit_imported_timeline(group_id: &str, messages: &[Message]) {
+    let Some(handle) = crate::TAURI_APP.get() else {
+        return;
+    };
+    for message in messages {
+        let _ = handle.emit(
+            "mls_message_new",
+            serde_json::json!({
+                "group_id": group_id,
+                "message": message,
+            }),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -547,5 +709,167 @@ mod tests {
         }
         let rows = export(&conn, HistoryExportBucket::Announcements);
         assert_eq!(ids(&rows), vec!["early", "a", "b"]);
+    }
+
+    fn row(id: &str, content: &str) -> HistoryExportMessage {
+        HistoryExportMessage {
+            id: id.to_string(),
+            kind: event_kind::PRIVATE_DIRECT_MESSAGE,
+            created_at: 1_700_000_100,
+            author_npub: "npub1alice".to_string(),
+            content: content.to_string(),
+            tags: Vec::new(),
+            reference_id: None,
+        }
+    }
+
+    fn table_count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn smuggled_chunk_does_not_change_squad_tables() {
+        let mut conn = conn();
+        insert_chat(&conn, "groupabc");
+        for content in [
+            r#"{"type":"governance_updated"}"#,
+            r#"{"type":"squad_member_evm_share"}"#,
+        ] {
+            let err = import_channel_history(
+                &mut conn,
+                "groupabc",
+                HistoryExportBucket::Announcements,
+                "npub1joiner",
+                &[row("bad", content)],
+                1_700_000_000_000,
+                &KEY,
+            )
+            .unwrap_err();
+            assert!(err.contains("structured product"));
+        }
+        assert_eq!(table_count(&conn, "events"), 0);
+        assert_eq!(table_count(&conn, "squad_infra"), 0);
+        assert_eq!(table_count(&conn, "squad_member_evm"), 0);
+
+        let mixed = import_channel_history(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1joiner",
+            &[
+                row("ok", "hello"),
+                row("gov", r#"{"type":"governance_updated"}"#),
+            ],
+            1_700_000_000_000,
+            &KEY,
+        );
+        assert!(mixed.is_err());
+        assert_eq!(table_count(&conn, "events"), 0);
+    }
+
+    #[test]
+    fn stored_smuggled_row_still_skips_squad_side_effects() {
+        let mut conn = conn();
+        insert_chat(&conn, "groupabc");
+        let (ids, _, _) = write_imported_rows(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1joiner",
+            &[row("gov", r#"{"type":"governance_updated"}"#)],
+            1_700_000_000_000,
+            &KEY,
+        )
+        .unwrap();
+        assert_eq!(ids, vec!["gov".to_string()]);
+        assert_eq!(table_count(&conn, "squad_infra"), 0);
+        assert_eq!(table_count(&conn, "squad_member_evm"), 0);
+        let flag: i64 = conn
+            .query_row(
+                "SELECT history_import FROM events WHERE id = 'gov'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(flag, 1);
+    }
+
+    #[test]
+    fn import_dedupes_and_does_not_overwrite_an_mls_row() {
+        let mut conn = conn();
+        let chat = insert_chat(&conn, "GroupABC");
+        insert_event(
+            &conn,
+            chat,
+            "keep",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "original",
+            "[]",
+            None,
+            1_700_000_100,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        let before: String = conn
+            .query_row("SELECT content FROM events WHERE id = 'keep'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+
+        let first = import_channel_history(
+            &mut conn,
+            "GroupABC",
+            HistoryExportBucket::Announcements,
+            "npub1alice",
+            &[row("copy", "hello"), row("keep", "replaced")],
+            1_700_000_500_000,
+            &KEY,
+        )
+        .unwrap();
+        assert_eq!(first.inserted_ids, vec!["copy".to_string()]);
+
+        let again = import_channel_history(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1alice",
+            &[row("copy", "hello again")],
+            1_700_000_500_000,
+            &KEY,
+        )
+        .unwrap();
+        assert!(again.inserted_ids.is_empty());
+        assert_eq!(table_count(&conn, "events"), 2);
+
+        let after: String = conn
+            .query_row("SELECT content FROM events WHERE id = 'keep'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(before, after);
+        let keep_flag: i64 = conn
+            .query_row(
+                "SELECT history_import FROM events WHERE id = 'keep'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(keep_flag, 0);
+        let copy_flag: (i64, i64, i64) = conn
+            .query_row(
+                "SELECT history_import, mine, received_at FROM events WHERE id = 'copy'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(copy_flag, (1, 1, 1_700_000_500_000));
+        let plain = export(&conn, HistoryExportBucket::Announcements);
+        assert_eq!(
+            plain.iter().find(|r| r.id == "copy").unwrap().content,
+            "hello"
+        );
     }
 }

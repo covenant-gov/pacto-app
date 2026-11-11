@@ -1619,6 +1619,7 @@ fn authorized_edits_from_sql() -> String {
         JOIN chats c ON c.id = m.chat_id
         WHERE e.kind = {edit_kind}
           AND m.kind IN ({text_kind}, {file_kind})
+          AND m.history_import = 0
           AND NOT EXISTS (SELECT 1 FROM messages legacy WHERE legacy.id = m.id)
           AND e.chat_id = m.chat_id
           AND CASE
@@ -1720,6 +1721,17 @@ fn edit_is_authorized_before_save_conn(
     let Some(reference_id) = edit.reference_id.as_deref() else {
         return Ok(false);
     };
+    let imported = conn
+        .query_row(
+            "SELECT history_import FROM events WHERE id = ?1",
+            [reference_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read history import flag: {e}"))?;
+    if imported == Some(1) {
+        return Ok(false);
+    }
     let original = conn.query_row(
         "SELECT id, kind, chat_id, user_id, content, tags, reference_id,
                 created_at, received_at, mine, pending, failed, wrapper_event_id, npub, virtual_bucket
@@ -1965,6 +1977,60 @@ mod edit_authorization_sql_tests {
             file_rows,
             vec![("file-msg".to_string(), "testing text edited".to_string())]
         );
+    }
+
+    #[test]
+    fn imported_history_rejects_an_in_window_edit() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES ('group', 1, '[]', 0)",
+            [],
+        )
+        .expect("chat");
+        let text = event_kind::PRIVATE_DIRECT_MESSAGE;
+        let edit_kind = event_kind::MESSAGE_EDIT;
+        insert(
+            &conn,
+            "copied",
+            text,
+            1,
+            None,
+            "hello",
+            T,
+            true,
+            Some("npub1alice"),
+        );
+        conn.execute(
+            "UPDATE events SET history_import = 1 WHERE id = 'copied'",
+            [],
+        )
+        .unwrap();
+        insert(
+            &conn,
+            "copied-edit",
+            edit_kind,
+            1,
+            Some("copied"),
+            "changed",
+            T + 10,
+            true,
+            Some("npub1alice"),
+        );
+        assert!(latest_edits(&conn, &["copied"]).is_empty());
+        let edit = StoredEventBuilder::new()
+            .id("copied-edit".to_string())
+            .kind(edit_kind)
+            .content("changed".to_string())
+            .reference_id(Some("copied".to_string()))
+            .created_at((T + 10) as u64)
+            .mine(true)
+            .npub(Some("npub1alice".to_string()))
+            .build();
+        let mut edit = edit;
+        edit.chat_id = 1;
+        edit.received_at = (T as u64) * 1000 + 10_000;
+        assert!(!edit_is_authorized_before_save_conn(&conn, &edit).unwrap());
     }
 
     #[test]
