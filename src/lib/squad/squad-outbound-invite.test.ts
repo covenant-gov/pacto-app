@@ -393,16 +393,31 @@ describe('squad-outbound-invite flows', () => {
   });
 
   it('publishInviteDeclinedClaims DMs distinct admitters', async () => {
-    await publishInviteDeclinedClaims({
-      parentId: 'g-ann',
-      inviteId: 'inv-1',
-      inviteeNpub: 'npub-bob',
-      squadName: 'Alpha',
-      admitterNpubs: ['npub-me', 'npub-me', ' npub-other ', 'npub-bob', ''],
-    });
+    await expect(
+      publishInviteDeclinedClaims({
+        parentId: 'g-ann',
+        inviteId: 'inv-1',
+        inviteeNpub: 'npub-bob',
+        squadName: 'Alpha',
+        admitterNpubs: ['npub-me', 'npub-me', ' npub-other ', 'npub-bob', ''],
+      }),
+    ).resolves.toBe(true);
     expect(sendDmMessage).toHaveBeenCalledTimes(2);
     expect(sendDmMessage).toHaveBeenCalledWith('npub-me', expect.stringContaining(SQUAD_INVITE_DECLINED_TYPE));
     expect(sendDmMessage).toHaveBeenCalledWith('npub-other', expect.stringContaining(SQUAD_INVITE_DECLINED_TYPE));
+  });
+
+  it('publishInviteDeclinedClaims reports failure when every DM send fails', async () => {
+    vi.mocked(sendDmMessage).mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    await expect(
+      publishInviteDeclinedClaims({
+        parentId: 'g-ann',
+        inviteId: 'inv-1',
+        inviteeNpub: 'npub-bob',
+        squadName: 'Alpha',
+        admitterNpubs: ['npub-me', 'npub-other'],
+      }),
+    ).resolves.toBe(false);
   });
 
   it('publishInviteAcceptedClaims DMs distinct admitters', async () => {
@@ -728,6 +743,21 @@ describe('squad-outbound-invite flows', () => {
     expect(admitMemberToSquad).toHaveBeenCalledTimes(1);
     await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
     expect(sendDmMessage).not.toHaveBeenCalled();
+  });
+
+  it('handleInviteeDeclineForAnnounce leaves the invite open when the announce send fails', async () => {
+    rememberOutboundInvite(validOutbound);
+    vi.mocked(sendDmMessage).mockResolvedValueOnce(false);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(false);
+
+    vi.mocked(sendDmMessage).mockResolvedValue(true);
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+    const mlsSends = vi
+      .mocked(sendDmMessage)
+      .mock.calls.filter(([target]) => target === 'g-ann');
+    expect(mlsSends).toHaveLength(2);
   });
 
   it('handleInviteeDeclineForAnnounce publishes once for concurrent claims', async () => {

@@ -87,11 +87,15 @@ function pruneHandled(): void {
   }
 }
 
+/** Decline announces in flight on this client, so a second claim does not double-send. */
+const declineAnnounceInFlight = new Set<string>();
+
 export function resetOutboundInviteState(): void {
   pendingOutboundInvites.clear();
   revokedOutboundInviteKeys.clear();
   admittedSuccessKeys.clear();
   attemptedAdmitKeys.clear();
+  declineAnnounceInFlight.clear();
 }
 
 export function formatSquadOutboundInvite(payload: SquadOutboundInvitePayload): string {
@@ -441,23 +445,27 @@ export async function revokeOutboundInviteAnnounce(
   return ok;
 }
 
+/** True when at least one claim DM was accepted by the send path. */
 async function publishInviteClaimDms(
   body: string,
   opts: { inviteeNpub: string; admitterNpubs: string[] },
   warnLabel: string,
-): Promise<void> {
-  const targets = [...new Set(opts.admitterNpubs.map((n) => n.trim()).filter(Boolean))];
-  await Promise.allSettled(
-    targets
-      .filter((npub) => npub !== opts.inviteeNpub)
-      .map(async (npub) => {
-        try {
-          await sendDmMessage(npub, body);
-        } catch (e) {
-          console.warn(`[outbound-invite] ${warnLabel} claim DM failed`, npub.slice(0, 16), e);
-        }
-      }),
+): Promise<boolean> {
+  const targets = [...new Set(opts.admitterNpubs.map((n) => n.trim()).filter(Boolean))].filter(
+    (npub) => npub !== opts.inviteeNpub,
   );
+  if (targets.length === 0) return false;
+  const results = await Promise.all(
+    targets.map(async (npub) => {
+      try {
+        return await sendDmMessage(npub, body);
+      } catch (e) {
+        console.warn(`[outbound-invite] ${warnLabel} claim DM failed`, npub.slice(0, 16), e);
+        return false;
+      }
+    }),
+  );
+  return results.some(Boolean);
 }
 
 export async function publishInviteAcceptedClaims(opts: {
@@ -485,8 +493,8 @@ export async function publishInviteDeclinedClaims(opts: {
   inviteeNpub: string;
   squadName: string;
   admitterNpubs: string[];
-}): Promise<void> {
-  await publishInviteClaimDms(
+}): Promise<boolean> {
+  return publishInviteClaimDms(
     formatSquadInviteDeclined({
       parent_id: opts.parentId,
       invite_id: opts.inviteId,
@@ -512,15 +520,14 @@ export async function publishOutboundInviteDeclinedAnnounce(
     invite_id: inviteId.trim(),
     invitee_npub: inviteeNpub.trim(),
   };
-  rememberOutboundInviteRevoked(payload);
   const json = formatSquadOutboundInviteDeclined(payload);
   const ok = await sendDmMessage(gid, json, '', { virtualBucket: 'announcements' });
-  if (ok) {
-    void import('../../stores/squad-outbound-invites').then(({ removePendingOutboundInvite }) => {
-      removePendingOutboundInvite(gid, inviteId);
-    });
-  }
-  return ok;
+  if (!ok) return false;
+  rememberOutboundInviteRevoked(payload);
+  void import('../../stores/squad-outbound-invites').then(({ removePendingOutboundInvite }) => {
+    removePendingOutboundInvite(gid, inviteId);
+  });
+  return true;
 }
 
 const PARENT_SQUAD_WAIT_MS = 10_000;
@@ -576,23 +583,30 @@ export async function handleInviteeDeclineForAnnounce(
   if (isOutboundInviteRevoked(payload.parent_id, payload.invite_id)) return;
   if (admittedSuccessKeys.has(acceptHandleKey(payload.invite_id, payload.invitee_npub))) return;
 
-  const parent = await waitForParentSquad(payload.parent_id);
-  if (!parent) return;
+  const flightKey = inviteMemoryKey(payload.parent_id, payload.invite_id);
+  if (declineAnnounceInFlight.has(flightKey)) return;
+  declineAnnounceInFlight.add(flightKey);
+  try {
+    const parent = await waitForParentSquad(payload.parent_id);
+    if (!parent) return;
 
-  const { requireMySquadPrivilege } = await loadPrivilegeEnforce();
-  const privilege = await requireMySquadPrivilege(payload.parent_id, 'inviteAccept');
-  if (!privilege.ok) return;
+    const { requireMySquadPrivilege } = await loadPrivilegeEnforce();
+    const privilege = await requireMySquadPrivilege(payload.parent_id, 'inviteAccept');
+    if (!privilege.ok) return;
 
-  const known = await ensureOutboundInviteKnown(payload);
-  if (!known) {
-    console.warn('[outbound-invite] ignoring unvalidated decline claim', payload.invite_id);
-    return;
+    const known = await ensureOutboundInviteKnown(payload);
+    if (!known) {
+      console.warn('[outbound-invite] ignoring unvalidated decline claim', payload.invite_id);
+      return;
+    }
+
+    // Another admitter may have announced while awaiting above.
+    if (isOutboundInviteRevoked(payload.parent_id, payload.invite_id)) return;
+
+    await publishOutboundInviteDeclinedAnnounce(parent, payload.invite_id, payload.invitee_npub);
+  } finally {
+    declineAnnounceInFlight.delete(flightKey);
   }
-
-  // Another admitter may have announced while awaiting above.
-  if (isOutboundInviteRevoked(payload.parent_id, payload.invite_id)) return;
-
-  await publishOutboundInviteDeclinedAnnounce(parent, payload.invite_id, payload.invitee_npub);
 }
 
 function acceptHandleKey(inviteId: string, inviteeNpub: string): string {

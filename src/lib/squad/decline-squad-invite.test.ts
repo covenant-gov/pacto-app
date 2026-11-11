@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 vi.mock('./squad-outbound-invite', () => ({
-  publishInviteDeclinedClaims: vi.fn().mockResolvedValue(undefined),
+  publishInviteDeclinedClaims: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('../../stores/toast', () => ({
+  showToast: vi.fn(),
 }));
 
 vi.mock('../invites/pending-welcomes-store', () => ({
@@ -22,6 +26,7 @@ import { declineWelcomeForGroup } from '../invites/pending-welcomes-store';
 import { resolveOneCatchUpEntry } from '../../stores/catch-up';
 import { currentUser } from '../../stores/auth-session';
 import { declinedSquadInviteIds } from '../../stores/invite-decisions';
+import { showToast } from '../../stores/toast';
 import { publishInviteDeclinedClaims } from './squad-outbound-invite';
 import { declineConsentFirstSquadInvite } from './decline-squad-invite';
 import type { DmMessage } from '../../stores/dm';
@@ -50,9 +55,10 @@ describe('declineConsentFirstSquadInvite', () => {
   beforeEach(() => {
     declinedSquadInviteIds.set([]);
     currentUser.set({ npub: 'npub1invitee' } as never);
-    vi.mocked(publishInviteDeclinedClaims).mockClear();
+    vi.mocked(publishInviteDeclinedClaims).mockClear().mockResolvedValue(true);
     vi.mocked(declineWelcomeForGroup).mockClear();
     vi.mocked(resolveOneCatchUpEntry).mockClear();
+    vi.mocked(showToast).mockClear();
   });
 
   it('records local decline and DMs admitters', async () => {
@@ -69,24 +75,49 @@ describe('declineConsentFirstSquadInvite', () => {
     expect(resolveOneCatchUpEntry).toHaveBeenCalledWith('dm-1');
   });
 
-  it('resolves the catch-up entry before claims finish publishing', async () => {
-    let release: () => void = () => {};
+  it('records local decline only after a claim is delivered', async () => {
+    let release: (ok: boolean) => void = () => {};
     vi.mocked(publishInviteDeclinedClaims).mockReturnValueOnce(
-      new Promise<void>((resolve) => {
+      new Promise<boolean>((resolve) => {
         release = resolve;
       }),
     );
     const pending = declineConsentFirstSquadInvite(msg());
-    expect(resolveOneCatchUpEntry).toHaveBeenCalledWith('dm-1');
-    release();
+    expect(get(declinedSquadInviteIds)).toEqual([]);
+    expect(resolveOneCatchUpEntry).not.toHaveBeenCalled();
+    release(true);
     await pending;
-  });
-
-  it('resolves the catch-up entry even when claims fail', async () => {
-    vi.mocked(publishInviteDeclinedClaims).mockRejectedValueOnce(new Error('relay down'));
-    await expect(declineConsentFirstSquadInvite(msg())).rejects.toThrow('relay down');
     expect(get(declinedSquadInviteIds)).toEqual(['dm-1']);
     expect(resolveOneCatchUpEntry).toHaveBeenCalledWith('dm-1');
+  });
+
+  it('leaves the card pending when no claim is delivered', async () => {
+    vi.mocked(publishInviteDeclinedClaims).mockResolvedValueOnce(false);
+    await declineConsentFirstSquadInvite(msg());
+    expect(get(declinedSquadInviteIds)).toEqual([]);
+    expect(resolveOneCatchUpEntry).not.toHaveBeenCalled();
+    expect(declineWelcomeForGroup).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(
+      'Could not decline the invite. Try again.',
+      undefined,
+      undefined,
+      { error: true },
+    );
+  });
+
+  it('ignores a second decline while the first claim is in flight', async () => {
+    let release: (ok: boolean) => void = () => {};
+    vi.mocked(publishInviteDeclinedClaims).mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const first = declineConsentFirstSquadInvite(msg());
+    await declineConsentFirstSquadInvite(msg());
+    expect(publishInviteDeclinedClaims).toHaveBeenCalledTimes(1);
+    release(true);
+    await first;
+    expect(get(declinedSquadInviteIds)).toEqual(['dm-1']);
   });
 
   it('skips claims when inviteId is missing', async () => {
@@ -102,6 +133,7 @@ describe('declineConsentFirstSquadInvite', () => {
     );
     expect(publishInviteDeclinedClaims).not.toHaveBeenCalled();
     expect(declineWelcomeForGroup).toHaveBeenCalledWith('g-ann');
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('still records local decline for non-invite content', async () => {
@@ -109,5 +141,6 @@ describe('declineConsentFirstSquadInvite', () => {
     expect(get(declinedSquadInviteIds)).toEqual(['dm-1']);
     expect(publishInviteDeclinedClaims).not.toHaveBeenCalled();
     expect(declineWelcomeForGroup).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
   });
 });

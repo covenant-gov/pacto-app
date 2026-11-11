@@ -195,6 +195,7 @@
 	"messaging.inviteCard.channelInviteYou": "You added {inviterName} to #{channelName}.",
 	"messaging.inviteCard.decline": "Decline",
 	"messaging.inviteCard.declined": "Declined",
+	"messaging.inviteCard.declineFailed": "Could not decline the invite. Try again.",
 	"messaging.inviteCard.partnerSquad": "Partner squad",
 	"messaging.inviteCard.partnerSquadInviteThem": "{inviterName} invited you to join this partner squad.",
 	"messaging.inviteCard.partnerSquadInviteYou": "You invited {inviterName} to this partner squad.",
