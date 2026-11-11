@@ -60,10 +60,10 @@ function nonce(): number {
   return get(squadPrivilegeNonceByParentId)[PARENT] ?? 0;
 }
 
-async function renderReady() {
+async function renderReady(props: Record<string, unknown> = {}) {
   const onPrivilegesChanged = vi.fn();
   const view = render(CrewPrivilegesSection, {
-    props: { parentId: PARENT, squadAdminProxy: PROXY, onPrivilegesChanged },
+    props: { parentId: PARENT, squadAdminProxy: PROXY, onPrivilegesChanged, ...props },
   });
   const newRole = await screen.findByRole('button', { name: 'New role' });
   await waitFor(() => expect((newRole as HTMLButtonElement).disabled).toBe(false));
@@ -92,7 +92,23 @@ describe('CrewPrivilegesSection privilege refresh', () => {
     cleanup();
   });
 
+  it('opens Create on an empty catalog and hides Assign / Revoke', async () => {
+    await renderReady();
+    expect(screen.getByRole('heading', { name: 'Create role' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create role' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Assign' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
+  });
+
   it('creates a role with the event and doc bits and bumps the nonce once on success', async () => {
+    const createdId = encodePrivilegeRoleId({
+      name: 'Ed',
+      flags: FLAG_CREATE_EVENT | FLAG_ADD_DOC,
+    });
+    api.getSquadAdminRoleCatalog
+      .mockResolvedValueOnce({ roles: [] })
+      .mockResolvedValue({ roles: [createdId] });
+
     const { view, newRole, onPrivilegesChanged } = await renderReady();
     expect(nonce()).toBe(0);
 
@@ -104,13 +120,55 @@ describe('CrewPrivilegesSection privilege refresh', () => {
       expect.objectContaining({
         parentId: PARENT,
         squadAdminProxy: PROXY,
-        roleId: encodePrivilegeRoleId({ name: 'Ed', flags: FLAG_CREATE_EVENT | FLAG_ADD_DOC }),
+        roleId: createdId,
       }),
     );
     expect(onPrivilegesChanged).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Assign members' })).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create role' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ed' })).toBeTruthy();
+    expect(view.container.querySelector('.summary-name')?.textContent).toBe('Ed');
+  });
+
+  it('shows Assign only when selecting a catalog role', async () => {
+    const roleId = encodePrivilegeRoleId({
+      name: 'Mod',
+      flags: FLAG_CREATE_EVENT,
+    });
+    api.getSquadAdminRoleCatalog.mockResolvedValue({ roles: [roleId] });
+
+    await renderReady();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Assign members' })).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Revoke' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create role' })).toBeNull();
+    expect(screen.getByText('Create events')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'New role' }));
+    expect(screen.getByRole('heading', { name: 'Create role' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create role' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Assign' })).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mod' }));
+    expect(screen.getByRole('heading', { name: 'Assign members' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create role' })).toBeNull();
   });
 
   it('refreshes the catalog before bumping the nonce', async () => {
+    const createdId = encodePrivilegeRoleId({
+      name: 'Ed',
+      flags: FLAG_CREATE_EVENT | FLAG_ADD_DOC,
+    });
+    api.getSquadAdminRoleCatalog
+      .mockResolvedValueOnce({ roles: [] })
+      .mockResolvedValue({ roles: [createdId] });
+
     const { view, newRole } = await renderReady();
     const catalogCallsBefore = api.getSquadAdminRoleCatalog.mock.calls.length;
 

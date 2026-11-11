@@ -17,13 +17,6 @@
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import {
-    FLAG_ADD_DOC,
-    FLAG_BROADCAST,
-    FLAG_CREATE_CHANNEL,
-    FLAG_CREATE_EVENT,
-    FLAG_FIRST_MATE,
-    FLAG_INVITE_ACCEPT,
-    FLAG_MANAGE_NETWORK,
     PRIVILEGE_FLAG_CHIPS,
     PRIVILEGE_ROLE_NAME_MAX_BYTES,
     describePrivilegeCatalogRole,
@@ -68,7 +61,8 @@
   let flagFirstMate = $state(false);
   let flagEvent = $state(false);
   let flagDoc = $state(false);
-  let drafting = $state(false);
+  /** Exclusive right-pane mode: create role vs assign members. */
+  let paneMode = $state<'create' | 'assign'>('assign');
 
   let selectedRoleId = $state('');
   let executorAddress = $state('');
@@ -81,6 +75,7 @@
   );
   const writesEnabled = $derived(saGate.enabled);
   const isCaptain = $derived(privilege?.wearsCaptain === true);
+  const isCreate = $derived(paneMode === 'create');
 
   const builderFlags = $derived(
     packPrivilegeFlags({
@@ -110,6 +105,10 @@
 
   const selectedRow = $derived(
     selectedRoleId ? describePrivilegeCatalogRole(selectedRoleId) : null,
+  );
+
+  const selectedFlagChips = $derived(
+    PRIVILEGE_FLAG_CHIPS.filter((chip) => ((selectedRow?.knownFlags ?? 0) & chip.flag) !== 0),
   );
 
   $effect(() => {
@@ -155,17 +154,20 @@
         parentId,
       });
       catalogIds = res.roles ?? [];
-      if (!drafting) {
-        if (selectedRoleId && !catalogIds.includes(selectedRoleId)) {
+      if (catalogIds.length === 0) {
+        paneMode = 'create';
+        selectedRoleId = '';
+      } else if (paneMode === 'assign') {
+        if (!selectedRoleId || !catalogIds.includes(selectedRoleId)) {
           selectedRoleId = catalogIds[0] ?? '';
-        } else if (!selectedRoleId && catalogIds.length > 0) {
-          selectedRoleId = catalogIds[0];
         }
       }
     } catch (e) {
       catalogError =
         e instanceof Error ? e.message : tFn('governance.privileges.error.loadCatalog');
       catalogIds = [];
+      paneMode = 'create';
+      selectedRoleId = '';
     } finally {
       catalogLoading = false;
     }
@@ -182,24 +184,22 @@
     flagDoc = false;
   }
 
-  function startDraft() {
-    drafting = true;
+  function startCreate() {
+    paneMode = 'create';
     selectedRoleId = '';
     resetBuilder();
   }
 
   function selectRole(roleId: string) {
-    drafting = false;
+    paneMode = 'assign';
     selectedRoleId = roleId;
   }
 
-  function flagChecked(flag: number, draft: boolean): boolean {
-    if (drafting) return draft;
-    return ((selectedRow?.knownFlags ?? 0) & flag) !== 0;
-  }
-
-  function setDraftFlag(flag: 'invite' | 'channel' | 'broadcast' | 'network' | 'firstMate' | 'event' | 'doc', on: boolean) {
-    if (!drafting) return;
+  function setDraftFlag(
+    flag: 'invite' | 'channel' | 'broadcast' | 'network' | 'firstMate' | 'event' | 'doc',
+    on: boolean,
+  ) {
+    if (!isCreate) return;
     if (flag === 'invite') flagInvite = on;
     else if (flag === 'channel') flagChannel = on;
     else if (flag === 'broadcast') flagBroadcast = on;
@@ -209,7 +209,11 @@
     else flagDoc = on;
   }
 
-  function runAction(fn: () => Promise<unknown>, successMessage: string) {
+  function runAction(
+    fn: () => Promise<unknown>,
+    successMessage: string,
+    afterSuccess?: () => void | Promise<void>,
+  ) {
     actionError = '';
     runOnChainInBackground({
       startedToast: tFn('governance.squadRoles.toast.submitted'),
@@ -218,9 +222,11 @@
       job: fn,
       onSuccess: async () => {
         showToast(successMessage);
-        drafting = false;
-        resetBuilder();
-        await loadCatalog();
+        if (afterSuccess) {
+          await afterSuccess();
+        } else {
+          await loadCatalog();
+        }
         bumpSquadPrivilegeNonce(parentId);
         onPrivilegesChanged();
       },
@@ -252,15 +258,22 @@
       return;
     }
     const label = previewDecoded.name;
+    const createdRoleId = previewRoleId;
     runAction(
       () =>
         squadAdminCreateRole({
           network,
           parentId,
           squadAdminProxy: proxy,
-          roleId: previewRoleId,
+          roleId: createdRoleId,
         }),
       tFn('governance.squadRoles.toast.roleCreated', { values: { label } }),
+      async () => {
+        resetBuilder();
+        selectedRoleId = createdRoleId;
+        paneMode = 'assign';
+        await loadCatalog();
+      },
     );
   }
 
@@ -385,7 +398,13 @@
 
     <div class="privileges-layout">
       <div class="role-list">
-        <button type="button" class="role-row" class:selected={drafting} disabled={!writesEnabled} onclick={startDraft}>
+        <button
+          type="button"
+          class="role-row"
+          class:selected={isCreate}
+          disabled={!writesEnabled}
+          onclick={startCreate}
+        >
           {$t('governance.privileges.newRole')}
         </button>
         {#if catalogLoading && catalogRows.length === 0}
@@ -397,111 +416,137 @@
             <button
               type="button"
               class="role-row"
-              class:selected={!drafting && row.roleId === selectedRoleId}
+              class:selected={!isCreate && row.roleId === selectedRoleId}
               onclick={() => selectRole(row.roleId)}
             >
-              <span class="catalog-name">{row.ok ? row.name : $t('governance.privileges.unknownEncoding')}</span>
+              <span class="catalog-name"
+                >{row.ok ? row.name : $t('governance.privileges.unknownEncoding')}</span
+              >
             </button>
           {/each}
         {/if}
       </div>
 
       <div class="role-editor">
-        <label class="field-label" for="crew-priv-role-name">{$t('governance.privileges.roleName')}</label>
-        <input
-          id="crew-priv-role-name"
-          type="text"
-          class="privileges-input"
-          maxlength={PRIVILEGE_ROLE_NAME_MAX_BYTES}
-          autocomplete="off"
-          spellcheck="false"
-          placeholder={$t('governance.privileges.roleNamePlaceholder')}
-          value={drafting ? roleName : (selectedRow?.name ?? '')}
-          disabled={!drafting || !writesEnabled}
-          oninput={(e) => {
-            if (drafting) roleName = e.currentTarget.value;
-          }}
-        />
+        {#if isCreate}
+          <h4 class="pane-title">{$t('governance.privileges.builderTitle')}</h4>
+          {#if catalogRows.length === 0}
+            <p class="muted pane-hint">{$t('governance.privileges.emptyCatalog')}</p>
+          {/if}
 
-        <fieldset class="flag-set" disabled={!writesEnabled || !drafting}>
-          <legend class="field-label">{$t('governance.privileges.group.members')}</legend>
-          <label class="flag-check">
-            <input
-              type="checkbox"
-              checked={flagChecked(FLAG_INVITE_ACCEPT, flagInvite)}
-              onchange={(e) => setDraftFlag('invite', e.currentTarget.checked)}
-            />
-            {flagLabel('inviteAccept')}
-          </label>
-          {#if isCaptain || (!drafting && (selectedRow?.hasFirstMate ?? false))}
+          <label class="field-label" for="crew-priv-role-name">{$t('governance.privileges.roleName')}</label>
+          <input
+            id="crew-priv-role-name"
+            type="text"
+            class="privileges-input"
+            maxlength={PRIVILEGE_ROLE_NAME_MAX_BYTES}
+            autocomplete="off"
+            spellcheck="false"
+            placeholder={$t('governance.privileges.roleNamePlaceholder')}
+            value={roleName}
+            disabled={!writesEnabled}
+            oninput={(e) => {
+              roleName = e.currentTarget.value;
+            }}
+          />
+
+          <fieldset class="flag-set" disabled={!writesEnabled}>
+            <legend class="field-label">{$t('governance.privileges.group.members')}</legend>
             <label class="flag-check">
               <input
                 type="checkbox"
-                checked={flagChecked(FLAG_FIRST_MATE, flagFirstMate)}
-                onchange={(e) => setDraftFlag('firstMate', e.currentTarget.checked)}
+                checked={flagInvite}
+                onchange={(e) => setDraftFlag('invite', e.currentTarget.checked)}
               />
-              {flagLabel('firstMate')}
+              {flagLabel('inviteAccept')}
             </label>
-          {/if}
-        </fieldset>
+            {#if isCaptain}
+              <label class="flag-check">
+                <input
+                  type="checkbox"
+                  checked={flagFirstMate}
+                  onchange={(e) => setDraftFlag('firstMate', e.currentTarget.checked)}
+                />
+                {flagLabel('firstMate')}
+              </label>
+            {/if}
+          </fieldset>
 
-        <fieldset class="flag-set" disabled={!writesEnabled || !drafting}>
-          <legend class="field-label">{$t('governance.privileges.group.channels')}</legend>
-          <label class="flag-check">
-            <input
-              type="checkbox"
-              checked={flagChecked(FLAG_CREATE_CHANNEL, flagChannel)}
-              onchange={(e) => setDraftFlag('channel', e.currentTarget.checked)}
-            />
-            {flagLabel('createChannel')}
-          </label>
-        </fieldset>
+          <fieldset class="flag-set" disabled={!writesEnabled}>
+            <legend class="field-label">{$t('governance.privileges.group.channels')}</legend>
+            <label class="flag-check">
+              <input
+                type="checkbox"
+                checked={flagChannel}
+                onchange={(e) => setDraftFlag('channel', e.currentTarget.checked)}
+              />
+              {flagLabel('createChannel')}
+            </label>
+          </fieldset>
 
-        <fieldset class="flag-set" disabled={!writesEnabled || !drafting}>
-          <legend class="field-label">{$t('governance.privileges.group.content')}</legend>
-          <label class="flag-check">
-            <input
-              type="checkbox"
-              checked={flagChecked(FLAG_CREATE_EVENT, flagEvent)}
-              onchange={(e) => setDraftFlag('event', e.currentTarget.checked)}
-            />
-            {flagLabel('createEvent')}
-          </label>
-          <label class="flag-check">
-            <input
-              type="checkbox"
-              checked={flagChecked(FLAG_ADD_DOC, flagDoc)}
-              onchange={(e) => setDraftFlag('doc', e.currentTarget.checked)}
-            />
-            {flagLabel('addDoc')}
-          </label>
-          <label class="flag-check">
-            <input
-              type="checkbox"
-              checked={flagChecked(FLAG_BROADCAST, flagBroadcast)}
-              onchange={(e) => setDraftFlag('broadcast', e.currentTarget.checked)}
-            />
-            {flagLabel('broadcast')}
-          </label>
-        </fieldset>
+          <fieldset class="flag-set" disabled={!writesEnabled}>
+            <legend class="field-label">{$t('governance.privileges.group.content')}</legend>
+            <label class="flag-check">
+              <input
+                type="checkbox"
+                checked={flagEvent}
+                onchange={(e) => setDraftFlag('event', e.currentTarget.checked)}
+              />
+              {flagLabel('createEvent')}
+            </label>
+            <label class="flag-check">
+              <input
+                type="checkbox"
+                checked={flagDoc}
+                onchange={(e) => setDraftFlag('doc', e.currentTarget.checked)}
+              />
+              {flagLabel('addDoc')}
+            </label>
+            <label class="flag-check">
+              <input
+                type="checkbox"
+                checked={flagBroadcast}
+                onchange={(e) => setDraftFlag('broadcast', e.currentTarget.checked)}
+              />
+              {flagLabel('broadcast')}
+            </label>
+          </fieldset>
 
-        <fieldset class="flag-set" disabled={!writesEnabled || !drafting}>
-          <legend class="field-label">{$t('governance.privileges.group.network')}</legend>
-          <label class="flag-check">
-            <input
-              type="checkbox"
-              checked={flagChecked(FLAG_MANAGE_NETWORK, flagNetwork)}
-              onchange={(e) => setDraftFlag('network', e.currentTarget.checked)}
-            />
-            {flagLabel('manageNetwork')}
-          </label>
-        </fieldset>
+          <fieldset class="flag-set" disabled={!writesEnabled}>
+            <legend class="field-label">{$t('governance.privileges.group.network')}</legend>
+            <label class="flag-check">
+              <input
+                type="checkbox"
+                checked={flagNetwork}
+                onchange={(e) => setDraftFlag('network', e.currentTarget.checked)}
+              />
+              {flagLabel('manageNetwork')}
+            </label>
+          </fieldset>
 
-        {#if drafting}
           <button type="button" class="btn-secondary" disabled={!writesEnabled} onclick={createRole}>
             {$t('governance.squadRoles.action.createRole')}
           </button>
         {:else}
+          <h4 class="pane-title">{$t('governance.privileges.catalogTitle')}</h4>
+
+          <div class="role-summary" aria-live="polite">
+            <p class="summary-name">
+              {selectedRow?.ok
+                ? selectedRow.name
+                : $t('governance.privileges.unknownEncoding')}
+            </p>
+            {#if selectedFlagChips.length === 0}
+              <p class="muted">{$t('governance.privileges.noFlags')}</p>
+            {:else}
+              <ul class="flag-chips">
+                {#each selectedFlagChips as chip (chip.key)}
+                  <li class="flag-chip">{flagLabel(chip.key)}</li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+
           <GovMemberPicker
             bind:value={executorAddress}
             options={memberEvmOptions}
@@ -512,10 +557,20 @@
             disabled={!writesEnabled || !selectedRoleId}
           />
           <div class="assign-actions">
-            <button type="button" class="btn-secondary" disabled={!writesEnabled || !selectedRoleId} onclick={enableExecutor}>
+            <button
+              type="button"
+              class="btn-secondary"
+              disabled={!writesEnabled || !selectedRoleId}
+              onclick={enableExecutor}
+            >
               {$t('governance.privileges.action.assign')}
             </button>
-            <button type="button" class="btn-secondary" disabled={!writesEnabled || !selectedRoleId} onclick={disableExecutor}>
+            <button
+              type="button"
+              class="btn-secondary"
+              disabled={!writesEnabled || !selectedRoleId}
+              onclick={disableExecutor}
+            >
               {$t('governance.privileges.action.revoke')}
             </button>
           </div>
@@ -557,6 +612,15 @@
     font-weight: 600;
     color: var(--text-secondary);
     margin: 0;
+  }
+  .pane-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 8px;
+  }
+  .pane-hint {
+    margin: 0 0 12px;
   }
   .privileges-layout {
     display: grid;
@@ -625,6 +689,31 @@
     gap: 8px;
     min-height: 24px;
     font-size: 0.875rem;
+  }
+  .role-summary {
+    margin-bottom: 12px;
+  }
+  .summary-name {
+    margin: 0 0 8px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .flag-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .flag-chip {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    padding: 4px 8px;
   }
   .assign-actions,
   .full-row {
