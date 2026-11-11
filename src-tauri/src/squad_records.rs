@@ -9,7 +9,6 @@ use tauri::{AppHandle, Emitter, Runtime};
 use crate::message::Message;
 use crate::stored_event::event_kind;
 
-pub const SQUAD_CONTENT_POLICY_D_TAG: &str = "pacto_squad_content_policy";
 pub const SQUAD_EVENT_D_TAG: &str = "pacto_squad_event";
 pub const SQUAD_DOC_D_TAG: &str = "pacto_squad_doc";
 

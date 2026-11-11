@@ -180,7 +180,6 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_last_hub_channel_name_by_squad',
   'pacto_squad_nav_order',
   'pacto_squad_governance_mode',
-  'pacto_squad_dashboard_mode', // superseded prefix; wipe on logout
   'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
   'pacto_wallet_summary_cache_v1',

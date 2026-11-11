@@ -169,8 +169,8 @@ export function loadAccountState(npub: string): void {
       }
     }
     // reconcileStaleInviteDecisions already runs after hydrateSquadsFromDb() completes
-    const rawSquadDashboardMode = localStorage.getItem(`${SQUAD_GOVERNANCE_MODE_PREFIX}_${npub}`);
-    squadGovernanceChannelMode.set(parseSquadGovernanceChannelMode(rawSquadDashboardMode));
+    const rawSquadGovernanceMode = localStorage.getItem(`${SQUAD_GOVERNANCE_MODE_PREFIX}_${npub}`);
+    squadGovernanceChannelMode.set(parseSquadGovernanceChannelMode(rawSquadGovernanceMode));
     const rawSettingsChannelMode = localStorage.getItem(`${SETTINGS_CHANNEL_MODE_PREFIX}_${npub}`);
     settingsChannelMode.set(parseSettingsChannelMode(rawSettingsChannelMode));
     const rawBoardChannelMode = localStorage.getItem(`${TOOLS_CHANNEL_MODE_PREFIX}_${npub}`);

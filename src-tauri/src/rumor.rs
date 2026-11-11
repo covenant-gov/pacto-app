@@ -531,9 +531,6 @@ async fn process_app_specific(
     context: RumorContext,
 ) -> Result<RumorProcessingResult, String> {
     let d_tag = nostr_tags::d_content(&rumor.tags);
-    if d_tag == Some(crate::squad_records::SQUAD_CONTENT_POLICY_D_TAG) {
-        return Ok(RumorProcessingResult::SquadRecordSilent);
-    }
     if d_tag == Some(crate::squad_records::SQUAD_EVENT_D_TAG) {
         return crate::squad_event::process_rumor(rumor, context).await;
     }
