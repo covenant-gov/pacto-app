@@ -1,23 +1,42 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
+
+const windowApi = vi.hoisted(() => ({
+  setBackgroundColor: vi.fn(async () => {}),
+  setTheme: vi.fn(async () => {}),
+  onResized: vi.fn(async () => () => {}),
+}));
+
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: () => windowApi,
+}));
+
 import {
   theme,
   setTheme,
   getStoredTheme,
   THEME_OPTIONS,
   DEFAULT_THEME,
+  DEFAULT_WINDOW_BG,
   DARK_THEME_IDS,
   isDarkTheme,
+  readElevatedBackground,
+  syncWindowChrome,
 } from './theme';
 
 describe('theme', () => {
   let storage: Map<string, string>;
   let documentAttribute: string | null;
+  let elevatedToken: string;
 
   beforeEach(() => {
     storage = new Map();
     documentAttribute = null;
+    elevatedToken = '';
     theme.set(DEFAULT_THEME);
+    windowApi.setBackgroundColor.mockClear();
+    windowApi.setTheme.mockClear();
+    windowApi.onResized.mockClear();
 
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => storage.get(k) ?? null,
@@ -38,6 +57,10 @@ describe('theme', () => {
         getAttribute: (_name: string) => documentAttribute,
       },
     });
+
+    vi.stubGlobal('getComputedStyle', () => ({
+      getPropertyValue: (name: string) => (name === '--bg-elevated' ? elevatedToken : ''),
+    }));
   });
 
   afterEach(() => {
@@ -94,5 +117,29 @@ describe('theme', () => {
   it('returns null for missing or invalid stored themes', () => {
     storage.set('pacto_theme', 'invalid');
     expect(getStoredTheme()).toBeNull();
+  });
+
+  it('reads --bg-elevated for window chrome, falling back to the default', () => {
+    expect(readElevatedBackground()).toBe(DEFAULT_WINDOW_BG);
+    elevatedToken = '  #152238  ';
+    expect(readElevatedBackground()).toBe('#152238');
+  });
+
+  it('skips window chrome sync outside Tauri', async () => {
+    await syncWindowChrome('dark-techno');
+    expect(windowApi.setBackgroundColor).not.toHaveBeenCalled();
+    expect(windowApi.setTheme).not.toHaveBeenCalled();
+  });
+
+  it('syncs window background and theme under Tauri', async () => {
+    vi.stubGlobal('window', { __TAURI__: {} });
+    elevatedToken = '#152238';
+
+    await syncWindowChrome('union');
+    expect(windowApi.setBackgroundColor).toHaveBeenCalledWith('#152238');
+    expect(windowApi.setTheme).toHaveBeenCalledWith('dark');
+
+    await syncWindowChrome('techno');
+    expect(windowApi.setTheme).toHaveBeenCalledWith('light');
   });
 });
