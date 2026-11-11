@@ -31,6 +31,12 @@ vi.mock('../squad/squad-state-sync', () => ({
   maybeAutoRequestSquadStateSyncAfterJoin: vi.fn(),
 }));
 
+vi.mock('../squad/open-channel-join', () => ({
+  tryCompleteOpenChannelJoins: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { tryCompleteOpenChannelJoins } from '../squad/open-channel-join';
+
 vi.mock('../squad/squad-outbound-invite', () => ({
   publishInviteAcceptedClaims: vi.fn().mockResolvedValue(undefined),
 }));
@@ -57,6 +63,7 @@ import {
   resetInviteAcceptState,
   acceptAnnouncementsInvite,
   acceptChannelInSquadInvite,
+  acceptStagedChannelWelcome,
   tryCompletePendingSquadAdmission,
   ACCEPT_WELCOME_FAST_PATH_MS,
 } from './accept-invite';
@@ -148,6 +155,35 @@ describe('accept-invite channel persistence', () => {
     const patch = persistSquadPatchMock.mock.calls[0]![1] as (s: Squad) => Squad;
     const patched = patch(get(squads)[0]!);
     expect(patched.channels).toHaveLength(2);
+  });
+
+  it('treats channel group ids case-insensitively when attaching', () => {
+    squads.set([
+      { ...parent, channels: [...parent.channels, { name: 'general', groupId: 'chan-new', order: 1 }] },
+    ]);
+    handleChannelAddedToSquad('parent-1', 'CHAN-NEW', 'general');
+    const patch = persistSquadPatchMock.mock.calls[0]![1] as (s: Squad) => Squad;
+    expect(patch(get(squads)[0]!).channels).toHaveLength(2);
+  });
+
+  it('attaches a channel welcome to the finalized squad, not a new squad', async () => {
+    await acceptAnnouncementsInvite({ groupId: 'new-squad', name: 'Joined' }, 'msg-join');
+    await vi.waitFor(() => {
+      expect(tryCompleteOpenChannelJoins).toHaveBeenCalled();
+    });
+    persistSquadPatchMock.mockClear();
+
+    await acceptStagedChannelWelcome({
+      welcomeId: 'w-c1',
+      channelGroupId: 'g-c1',
+      parentId: 'new-squad',
+      channelName: 'c1',
+      access: 'open',
+    });
+    handleMlsWelcomeAccepted('g-c1');
+
+    expect(persistSquadPatchMock).toHaveBeenCalledWith('new-squad', expect.any(Function));
+    expect(get(squads).some((s) => s.id === 'g-c1' || s.name === 'c1')).toBe(false);
   });
 
   it('does not attach unattributed welcome to a single-channel squad', () => {

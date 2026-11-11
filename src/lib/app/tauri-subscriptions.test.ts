@@ -142,6 +142,10 @@ vi.mock('../squad/join-request-finalize', () => ({
   tryCompletePendingApprovedJoins: vi.fn(),
 }));
 
+vi.mock('../squad/open-channel-join', () => ({
+  tryCompleteOpenChannelJoins: vi.fn(),
+}));
+
 vi.mock('../squad/squad-outbound-invite', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../squad/squad-outbound-invite')>();
   return {

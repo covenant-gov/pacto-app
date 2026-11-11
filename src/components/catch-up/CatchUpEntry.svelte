@@ -19,8 +19,10 @@
   import { pendingMlsWelcomes } from '../../stores/mls-chat';
   import { resolveWelcomeEntry } from './resolve-welcome-entry';
   import { SETTINGS_CHANNEL_ID, SETTINGS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
-  import { sameMlsGroupId } from '../../lib/invites/accept-invite';
+  import { acceptStagedChannelWelcome, sameMlsGroupId } from '../../lib/invites/accept-invite';
   import { acceptOfferedWelcome, offeredWelcomeFromPendingMls } from '../../lib/invites/pending-welcomes';
+  import { openChannelJoinTarget } from '../../lib/squad/open-channel-join';
+  import { forgetPendingOpenChannelJoin } from '../../lib/squad/pending-open-channel-joins';
 
   let { entry }: { entry: CatchUpEntry } = $props();
 
@@ -104,7 +106,19 @@
     }
     accepting = true;
     try {
-      await acceptOfferedWelcome(offeredWelcomeFromPendingMls(matchingWelcome));
+      const channelTarget = openChannelJoinTarget(matchingWelcome.nostr_group_id);
+      if (channelTarget) {
+        await acceptStagedChannelWelcome({
+          welcomeId: matchingWelcome.id,
+          channelGroupId: matchingWelcome.nostr_group_id,
+          parentId: channelTarget.parentId,
+          channelName: channelTarget.name,
+          access: channelTarget.access,
+        });
+        forgetPendingOpenChannelJoin(matchingWelcome.nostr_group_id);
+      } else {
+        await acceptOfferedWelcome(offeredWelcomeFromPendingMls(matchingWelcome));
+      }
       await resolve();
     } catch (e) {
       showToast(e instanceof Error ? e.message : $t('messaging.inviteCard.acceptFailed'));

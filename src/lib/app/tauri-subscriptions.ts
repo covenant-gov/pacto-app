@@ -29,6 +29,7 @@ import {
   handleJoinInboxResponseDm,
   tryCompletePendingApprovedJoins,
 } from '../squad/join-request-finalize';
+import { tryCompleteOpenChannelJoins } from '../squad/open-channel-join';
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { enrichRecoveredSquadNamesFromInvites } from '../squad/squad-catalog-recover';
 import { dmLog, dmError } from '../utils/dm-debug';
@@ -373,6 +374,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     notifyPendingInviteWelcome(groupId || null);
     void tryCompletePendingApprovedJoins(groupId || null);
     void tryAcceptRememberedRejoinWelcomes(groupId || null);
+    void tryCompleteOpenChannelJoins(groupId || null);
   });
 
   register(unsubs, 'mls_store_reset', (event) => {

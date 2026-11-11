@@ -14,10 +14,17 @@ vi.mock('../governance/squad-privilege-enforce', () => ({
     requireMySquadPrivilege(parentId, action),
 }));
 
+const tryCompleteOpenChannelJoins = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
 vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn(),
   listPendingMlsWelcomes: vi.fn(),
   acceptMlsWelcome: vi.fn(),
+  listMlsGroups: vi.fn(),
+}));
+
+vi.mock('./open-channel-join', () => ({
+  tryCompleteOpenChannelJoins: (...args: unknown[]) => tryCompleteOpenChannelJoins(...args),
 }));
 
 vi.mock('../parent-navbar', () => ({
@@ -55,14 +62,16 @@ vi.mock('../../stores/squads', async () => {
   return { squads: writable([parent]) };
 });
 
-import { sendDmMessage, listPendingMlsWelcomes, acceptMlsWelcome } from '../api/nostr';
+import { sendDmMessage } from '../api/nostr';
 import { persistSquadPatch } from './squad-catalog';
 import { squads, type Squad } from '../../stores/squads';
-import {
-  resetMlsHistoryWelcomeForTests,
-  shouldShowMlsHistoryWelcome,
-} from '../../stores/mls-history-welcome';
+import { resetMlsHistoryWelcomeForTests } from '../../stores/mls-history-welcome';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
+import {
+  pendingOpenChannelJoins,
+  resetPendingOpenChannelJoins,
+  upsertPendingOpenChannelJoin,
+} from './pending-open-channel-joins';
 import {
   applySquadChannelsCatalog,
   formatSquadChannelsCatalog,
@@ -77,8 +86,8 @@ describe('squad-channels-catalog', () => {
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
     requireMySquadPrivilege.mockReset();
     requireMySquadPrivilege.mockResolvedValue({ ok: true, active: false, flags: null });
-    vi.mocked(listPendingMlsWelcomes).mockReset().mockResolvedValue([]);
-    vi.mocked(acceptMlsWelcome).mockReset().mockResolvedValue(true);
+    tryCompleteOpenChannelJoins.mockReset().mockResolvedValue(undefined);
+    resetPendingOpenChannelJoins();
     vi.mocked(persistSquadPatch).mockClear();
     squads.set([
       {
@@ -97,6 +106,7 @@ describe('squad-channels-catalog', () => {
 
   afterEach(() => {
     resetMlsHistoryWelcomeForTests();
+    resetPendingOpenChannelJoins();
     setCurrentNpubForPersistence(null);
   });
 
@@ -112,11 +122,12 @@ describe('squad-channels-catalog', () => {
 
     applySquadChannelsCatalog(raw, 'ann-gid');
     await vi.waitFor(() => {
-      expect(get(squads)[0]?.channels.some((c) => c.name === 'x')).toBe(true);
+      expect(get(pendingOpenChannelJoins).map((row) => row.groupId)).toEqual(
+        expect.arrayContaining(['g-x', 'g-y']),
+      );
     });
-    expect(get(squads)[0]?.channels.map((c) => c.name)).toEqual(
-      expect.arrayContaining(['announcements', 'polls', 'x', 'y']),
-    );
+    expect(get(squads)[0]?.channels.map((c) => c.name)).toEqual(['announcements', 'polls']);
+    expect(tryCompleteOpenChannelJoins).toHaveBeenCalled();
   });
 
   it('publish includes legacy channels without access as open', async () => {
@@ -187,7 +198,7 @@ describe('squad-channels-catalog', () => {
     });
   });
 
-  it('apply ignores mismatched parent and accepts matching welcomes', async () => {
+  it('apply ignores mismatched parent and drains matching catalog rows', async () => {
     const raw = formatSquadChannelsCatalog({
       parent_id: 'ann-gid',
       channels: [{ name: 'ops', groupId: 'g-ops', order: 2, access: 'open' }],
@@ -195,23 +206,66 @@ describe('squad-channels-catalog', () => {
     applySquadChannelsCatalog(raw, 'other');
     expect(persistSquadPatch).not.toHaveBeenCalled();
 
-    vi.mocked(listPendingMlsWelcomes).mockResolvedValue([
-      {
-        id: 'w1',
-        wrapper_event_id: 'e1',
-        nostr_group_id: 'G-OPS',
-        group_name: 'ops',
-        group_description: null,
-        group_admin_pubkeys: [],
-        group_relays: [],
-        welcomer: 'npub1x',
-        member_count: 1,
-      },
-    ]);
     applySquadChannelsCatalog(raw, 'ann-gid');
     await vi.waitFor(() => {
-      expect(acceptMlsWelcome).toHaveBeenCalledWith('w1');
+      expect(tryCompleteOpenChannelJoins).toHaveBeenCalled();
     });
-    expect(shouldShowMlsHistoryWelcome('g-ops')).toBe(true);
+    expect(get(pendingOpenChannelJoins)[0]?.groupId).toBe('g-ops');
+    expect(get(squads)[0]?.channels.some((c) => c.name === 'ops')).toBe(false);
+  });
+
+  it('apply stores no wanted row for a channel already on the parent', async () => {
+    squads.set([
+      {
+        id: 'ann-gid',
+        name: 'h2',
+        channels: [
+          { name: 'announcements', groupId: 'ann-gid', order: 0 },
+          { name: 'ops', groupId: 'G-OPS', order: 2, access: 'open' },
+        ],
+        kind: 'squad',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    const raw = formatSquadChannelsCatalog({
+      parent_id: 'ann-gid',
+      channels: [
+        { name: 'ops', groupId: 'g-ops', order: 2, access: 'open' },
+        { name: 'new', groupId: 'g-new', order: 3, access: 'open' },
+      ],
+    });
+    applySquadChannelsCatalog(raw, 'ann-gid');
+    await vi.waitFor(() => {
+      expect(tryCompleteOpenChannelJoins).toHaveBeenCalled();
+    });
+    expect(get(pendingOpenChannelJoins).map((row) => row.groupId)).toEqual(['g-new']);
+  });
+
+  it('apply forgets wanted rows the catalog no longer lists', async () => {
+    upsertPendingOpenChannelJoin({
+      parentId: 'ann-gid',
+      groupId: 'g-gone',
+      name: 'gone',
+      access: 'open',
+    });
+    upsertPendingOpenChannelJoin({
+      parentId: 'other-parent',
+      groupId: 'g-other',
+      name: 'other',
+      access: 'open',
+    });
+    const raw = formatSquadChannelsCatalog({
+      parent_id: 'ann-gid',
+      channels: [{ name: 'ops', groupId: 'g-ops', order: 2, access: 'open' }],
+    });
+    applySquadChannelsCatalog(raw, 'ann-gid');
+    await vi.waitFor(() => {
+      expect(tryCompleteOpenChannelJoins).toHaveBeenCalled();
+    });
+    expect(get(pendingOpenChannelJoins).map((row) => row.groupId).sort()).toEqual([
+      'g-ops',
+      'g-other',
+    ]);
   });
 });
