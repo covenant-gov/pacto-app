@@ -144,6 +144,7 @@ Reject the whole chunk, and import nothing from it, when any of these are true:
 - The gift-wrap sender is not the current `designatedNpub`.
 - `index` or `total` is out of range.
 - Any inner message has a kind other than 14, 15, 16, or 7, is missing `id` or `authorNpub`, or is structured product JSON under the rule above.
+- `messages` is empty. An empty chunk must not count as the first valid chunk that ends failover.
 
 Other chunks of the same request are judged on their own. The joiner does not re-apply the 30-day window.
 

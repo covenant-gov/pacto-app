@@ -136,6 +136,9 @@ mod sandbox_handle;
 // Backend-mediated clipboard export for sensitive secrets.
 mod export;
 
+// 30-day human-chat rows for a channel history copy. No Tauri command until send is wired.
+mod history_backfill;
+
 // Debug-only headless login used by agents and the e2e harness.
 #[cfg(debug_assertions)]
 mod dev_login;
