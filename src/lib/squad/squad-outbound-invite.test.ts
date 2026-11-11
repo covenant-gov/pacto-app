@@ -570,7 +570,7 @@ describe('squad-outbound-invite flows', () => {
     expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
   });
 
-  it('mergePendingOutboundInvitesFromMlsMessages keeps invite dropped when decline is later', () => {
+  it('mergePendingOutboundInvitesFromMlsMessages sorts by at before applying a decline listed first', () => {
     const pending = mergePendingOutboundInvitesFromMlsMessages([
       {
         content: formatSquadOutboundInviteDeclined({

@@ -64,6 +64,14 @@ A resend skips the store-reset KeyPackage-freshness gate (`resolve_fresh_keypack
 
 **About → Pending:** Settings About shows a unified pending list under Invite: outbound `squad_outbound_invite` rows (**Invited**) and Commons join requests (**Requested**). Cancel publishes `squad_outbound_invite_revoked` on announcements; admitters ignore later Accept for that `invite_id`. Invitee decline DMs `squad_invite_declined` to admitter npubs; an online admitter with `inviteAccept` publishes `squad_outbound_invite_declined` on announcements (same closed set as revoke). The invitee cannot post to announcements MLS before admit. If no admitter is online, the Invited row stays until one receives the decline DM. Rows also clear when the invitee is already on the roster or after a successful admit.
 
+**Decline handling rules:**
+
+- The decline DM sender must equal `invitee_npub`, and the claim must match a known outbound invite. A claim for an already-admitted invite is ignored.
+- An admitter without `inviteAccept` does not publish. When the squad is not yet loaded locally (right after login), the handler waits up to 10 seconds for it, then drops the claim.
+- Several online admitters may each publish a decline; duplicates are idempotent. Within one client, a second claim is skipped once the invite is closed.
+- The announcements payload carries `invitee_npub`, so every squad member sees who declined. The Invited row was already squad-visible.
+- History replay (cold start) honors invite, revoke, and decline rows only from authors who hold `inviteAccept`, same gate as live events. Privilege is read at replay time, not at message time; a row from an author who has since lost the privilege is dropped, and one from an author who gained it later is accepted. With no SquadAdmin configured, the gate allows everyone.
+
 **Resend:** After admit, if Welcome delivery fails, Members shows a pending badge. **Resend invite** remove-then-re-adds (Restore) and sends a fresh consent-first DM so Accept still works if the Welcome is late. Channel create still sends the under-the-hood `channel_in_squad` notify to selected members.
 
 **Partial-failure state:** if a resend's remove commits but the re-add fails, the member ends up outside the group while still flagged pending in `pending_welcomes`; the panel keeps them visible so the admin can retry rather than silently dropping them.

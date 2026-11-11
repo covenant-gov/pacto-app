@@ -102,11 +102,15 @@ export function formatSquadOutboundInvite(payload: SquadOutboundInvitePayload): 
   });
 }
 
-export function parseSquadOutboundInvite(content: string | null | undefined): SquadOutboundInvitePayload | null {
+/** Parse a `{ type, payload }` envelope whose payload names an invite; `squad_name` defaults to ''. */
+function parseInviteEnvelope(
+  content: string | null | undefined,
+  type: string
+): SquadOutboundInvitePayload | null {
   if (!content?.trim().startsWith('{')) return null;
   try {
     const root = JSON.parse(content) as Record<string, unknown>;
-    if (root.type !== SQUAD_OUTBOUND_INVITE_TYPE) return null;
+    if (root.type !== type) return null;
     const p = root.payload as Record<string, unknown> | undefined;
     if (!p || typeof p !== 'object') return null;
     const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
@@ -118,6 +122,20 @@ export function parseSquadOutboundInvite(content: string | null | undefined): Sq
   } catch {
     return null;
   }
+}
+
+/** Same as `parseInviteEnvelope`, without `squad_name`. */
+function parseInviteIdentityEnvelope(
+  content: string | null | undefined,
+  type: string
+): SquadOutboundInviteRevokedPayload | null {
+  const parsed = parseInviteEnvelope(content, type);
+  if (!parsed) return null;
+  return { parent_id: parsed.parent_id, invite_id: parsed.invite_id, invitee_npub: parsed.invitee_npub };
+}
+
+export function parseSquadOutboundInvite(content: string | null | undefined): SquadOutboundInvitePayload | null {
+  return parseInviteEnvelope(content, SQUAD_OUTBOUND_INVITE_TYPE);
 }
 
 export function formatSquadOutboundInviteRevoked(payload: SquadOutboundInviteRevokedPayload): string {
@@ -131,20 +149,7 @@ export function formatSquadOutboundInviteRevoked(payload: SquadOutboundInviteRev
 export function parseSquadOutboundInviteRevoked(
   content: string | null | undefined
 ): SquadOutboundInviteRevokedPayload | null {
-  if (!content?.trim().startsWith('{')) return null;
-  try {
-    const root = JSON.parse(content) as Record<string, unknown>;
-    if (root.type !== SQUAD_OUTBOUND_INVITE_REVOKED_TYPE) return null;
-    const p = root.payload as Record<string, unknown> | undefined;
-    if (!p || typeof p !== 'object') return null;
-    const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
-    const invite_id = typeof p.invite_id === 'string' ? p.invite_id.trim() : '';
-    const invitee_npub = typeof p.invitee_npub === 'string' ? p.invitee_npub.trim() : '';
-    if (!parent_id || !invite_id || !invitee_npub) return null;
-    return { parent_id, invite_id, invitee_npub };
-  } catch {
-    return null;
-  }
+  return parseInviteIdentityEnvelope(content, SQUAD_OUTBOUND_INVITE_REVOKED_TYPE);
 }
 
 export function formatSquadOutboundInviteDeclined(payload: SquadOutboundInviteDeclinedPayload): string {
@@ -158,20 +163,7 @@ export function formatSquadOutboundInviteDeclined(payload: SquadOutboundInviteDe
 export function parseSquadOutboundInviteDeclined(
   content: string | null | undefined
 ): SquadOutboundInviteDeclinedPayload | null {
-  if (!content?.trim().startsWith('{')) return null;
-  try {
-    const root = JSON.parse(content) as Record<string, unknown>;
-    if (root.type !== SQUAD_OUTBOUND_INVITE_DECLINED_TYPE) return null;
-    const p = root.payload as Record<string, unknown> | undefined;
-    if (!p || typeof p !== 'object') return null;
-    const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
-    const invite_id = typeof p.invite_id === 'string' ? p.invite_id.trim() : '';
-    const invitee_npub = typeof p.invitee_npub === 'string' ? p.invitee_npub.trim() : '';
-    if (!parent_id || !invite_id || !invitee_npub) return null;
-    return { parent_id, invite_id, invitee_npub };
-  } catch {
-    return null;
-  }
+  return parseInviteIdentityEnvelope(content, SQUAD_OUTBOUND_INVITE_DECLINED_TYPE);
 }
 
 export function formatSquadInviteAccepted(payload: SquadInviteAcceptedPayload): string {
@@ -183,39 +175,11 @@ export function formatSquadInviteDeclined(payload: SquadInviteDeclinedPayload): 
 }
 
 export function parseSquadInviteDeclined(content: string | null | undefined): SquadInviteDeclinedPayload | null {
-  if (!content?.trim().startsWith('{')) return null;
-  try {
-    const root = JSON.parse(content) as Record<string, unknown>;
-    if (root.type !== SQUAD_INVITE_DECLINED_TYPE) return null;
-    const p = root.payload as Record<string, unknown> | undefined;
-    if (!p || typeof p !== 'object') return null;
-    const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
-    const invite_id = typeof p.invite_id === 'string' ? p.invite_id.trim() : '';
-    const invitee_npub = typeof p.invitee_npub === 'string' ? p.invitee_npub.trim() : '';
-    const squad_name = typeof p.squad_name === 'string' ? p.squad_name.trim() : '';
-    if (!parent_id || !invite_id || !invitee_npub) return null;
-    return { parent_id, invite_id, invitee_npub, squad_name };
-  } catch {
-    return null;
-  }
+  return parseInviteEnvelope(content, SQUAD_INVITE_DECLINED_TYPE);
 }
 
 export function parseSquadInviteAccepted(content: string | null | undefined): SquadInviteAcceptedPayload | null {
-  if (!content?.trim().startsWith('{')) return null;
-  try {
-    const root = JSON.parse(content) as Record<string, unknown>;
-    if (root.type !== SQUAD_INVITE_ACCEPTED_TYPE) return null;
-    const p = root.payload as Record<string, unknown> | undefined;
-    if (!p || typeof p !== 'object') return null;
-    const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
-    const invite_id = typeof p.invite_id === 'string' ? p.invite_id.trim() : '';
-    const invitee_npub = typeof p.invitee_npub === 'string' ? p.invitee_npub.trim() : '';
-    const squad_name = typeof p.squad_name === 'string' ? p.squad_name.trim() : '';
-    if (!parent_id || !invite_id || !invitee_npub) return null;
-    return { parent_id, invite_id, invitee_npub, squad_name };
-  } catch {
-    return null;
-  }
+  return parseInviteEnvelope(content, SQUAD_INVITE_ACCEPTED_TYPE);
 }
 
 export function formatSquadAdmitNeeded(payload: SquadAdmitNeededPayload): string {
@@ -227,20 +191,7 @@ export function formatSquadAdmitNeeded(payload: SquadAdmitNeededPayload): string
 }
 
 export function parseSquadAdmitNeeded(content: string | null | undefined): SquadAdmitNeededPayload | null {
-  if (!content?.trim().startsWith('{')) return null;
-  try {
-    const root = JSON.parse(content) as Record<string, unknown>;
-    if (root.type !== SQUAD_ADMIT_NEEDED_TYPE) return null;
-    const p = root.payload as Record<string, unknown> | undefined;
-    if (!p || typeof p !== 'object') return null;
-    const parent_id = typeof p.parent_id === 'string' ? p.parent_id.trim() : '';
-    const invite_id = typeof p.invite_id === 'string' ? p.invite_id.trim() : '';
-    const invitee_npub = typeof p.invitee_npub === 'string' ? p.invitee_npub.trim() : '';
-    if (!parent_id || !invite_id || !invitee_npub) return null;
-    return { parent_id, invite_id, invitee_npub };
-  } catch {
-    return null;
-  }
+  return parseInviteIdentityEnvelope(content, SQUAD_ADMIT_NEEDED_TYPE);
 }
 
 export function rememberOutboundInvite(payload: SquadOutboundInvitePayload): void {
