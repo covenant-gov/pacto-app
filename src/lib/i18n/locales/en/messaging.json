@@ -3,6 +3,7 @@
 	"messaging.attachment.audio": "Audio",
 	"messaging.attachment.document": "Document",
 	"messaging.attachment.download": "Download {name}",
+	"messaging.attachment.downloadFailed": "Could not download the file.",
 	"messaging.attachment.downloading": "Downloading…",
 	"messaging.attachment.file": "File",
 	"messaging.attachment.gifUnavailable": "GIF unavailable",

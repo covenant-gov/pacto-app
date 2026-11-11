@@ -487,22 +487,24 @@
       </div>
     {/if}
     <div class="message-body">
-      <div class="message-text">
-        {#if editing}
-          <MessageEditForm
-            initialBody={displayContent}
-            onSave={saveEdit}
-            onCancel={closeEditor}
-          />
-        {:else if structuredNotice}
-          <span class="structured-notice">{structuredNotice}</span>
-        {:else}
-          <FormattedMessageBody content={displayContent} {mentions} {profiles} {rosterNpubs} />
-        {/if}
-        {#if edited && !editing}
-          <MessageEditedLabel messageId={id} {editHistory} />
-        {/if}
-      </div>
+      {#if editing || structuredNotice || displayContent.trim()}
+        <div class="message-text">
+          {#if editing}
+            <MessageEditForm
+              initialBody={displayContent}
+              onSave={saveEdit}
+              onCancel={closeEditor}
+            />
+          {:else if structuredNotice}
+            <span class="structured-notice">{structuredNotice}</span>
+          {:else}
+            <FormattedMessageBody content={displayContent} {mentions} {profiles} {rosterNpubs} />
+          {/if}
+          {#if edited && !editing}
+            <MessageEditedLabel messageId={id} {editHistory} />
+          {/if}
+        </div>
+      {/if}
       {#if previewMetadata && $webPreviewsEnabled}
         <LinkPreview metadata={previewMetadata} />
       {/if}

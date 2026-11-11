@@ -1,6 +1,7 @@
 <script lang="ts">
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { downloadAttachment, decodeBlurhash, saveAttachmentAs } from '../../lib/api/nostr';
+  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
   import { t } from 'svelte-i18n';
   import { onDestroy, untrack } from 'svelte';
@@ -176,6 +177,13 @@
     try {
       // Success arrives as a `message_update` carrying the decrypted local path.
       await downloadAttachment(chatId, messageId, attachment.id);
+    } catch (err) {
+      showToast(
+        getInvokeErrorMessage(err, $t('messaging.attachment.downloadFailed')),
+        undefined,
+        undefined,
+        { error: true },
+      );
     } finally {
       downloading = false;
     }

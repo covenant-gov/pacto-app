@@ -374,20 +374,19 @@ export async function sendFileBytes(
   return ok;
 }
 
-/** Download an attachment for a message. Backend: download_attachment. */
+/** Download an attachment for a message; rejects with a user-facing reason. Success arrives as
+ * `message_update`. Backend: download_attachment. */
 export async function downloadAttachment(
   npub: string,
   msgId: string,
   attachmentId: string
-): Promise<boolean> {
+): Promise<void> {
   dmLog('download_attachment', {
     npub: npub.slice(0, 20) + '…',
     msgId: msgId.slice(0, 20) + '…',
     attachmentId,
   });
-  const ok = (await invoke('download_attachment', { npub, msgId, attachmentId })) as boolean;
-  dmLog('download_attachment result', { ok });
-  return ok;
+  await invoke('download_attachment', { npub, msgId, attachmentId });
 }
 
 /** Save an attachment's decrypted file via a native save dialog. Backend: save_attachment_as.

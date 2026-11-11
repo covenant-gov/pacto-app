@@ -460,3 +460,30 @@ describe('Message editing', () => {
     expect(screen.queryByText(/\(edited/)).toBeNull();
   });
 });
+
+describe('Message caption body', () => {
+  it('does not reserve a blank text line when the body is empty', () => {
+    render(Message, { props: { id: 'msg-file', authorName: 'Alice', content: '' } });
+    expect(screen.queryByRole('document')).toBeNull();
+  });
+
+  it('does not reserve a text line for a whitespace-only body', () => {
+    render(Message, { props: { id: 'msg-file', authorName: 'Alice', content: '  \n ' } });
+    expect(screen.queryByRole('document')).toBeNull();
+  });
+
+  it('still offers the editor on an empty body', async () => {
+    render(Message, {
+      props: { id: 'msg-file', content: '', editableUntil: Date.now() + 30_000, onEdit: vi.fn() },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Message options' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    expect(screen.getByRole('textbox', { name: 'Edit message' })).toBeTruthy();
+  });
+
+  it('renders caption text above the rest of the message', () => {
+    render(Message, { props: { id: 'msg-file', authorName: 'Alice', content: 'caption probe one' } });
+    expect(screen.getByRole('document')).toBeTruthy();
+    expect(screen.getByText('caption probe one')).toBeTruthy();
+  });
+});
