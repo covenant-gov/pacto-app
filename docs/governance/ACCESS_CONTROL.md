@@ -96,6 +96,8 @@ Custom catalog roles pack a short name + action flags into `bytes32` (pacto-gov 
 
 **Inactive SquadAdmin** (no resolvable proxy in local infra): all of the above allow. **Active SquadAdmin**: require roster binding + FULL or the flag; unbound / RPC failure / pause / missing flag → deny. Receive paths ignore event `created_at` and fail closed when the author npub is missing while SquadAdmin is active. Join-inbox holder FULL gate is unchanged (separate path). Event and doc **update / remove of someone else’s row** stay author-or-MLS-admin; they are not packed flags.
 
+**Timing of the create/add check:** `createEvent` and `addDoc` are checked once, when a client first processes the rumor, against current chain state. Stored rows are not re-checked, so revoking a flag later does not remove existing events or docs. Sender timestamps are not trusted for this. Edge case: a client that processes a rumor only after the author's flag was revoked (for example, one that was offline) drops it, while clients that saw it earlier keep it.
+
 ## Enforceability (on-chain recognition vs MLS)
 
 Alpha bar for **on-chain-enforceable** packed privileges: when SquadAdmin is active, honest Pacto clients refuse to **recognize / merge / surface** the action as valid squad product state if the author’s roster-bound EVM lacks the flag. Force is **publish preflight + Rust ingest**, not frontend-only. A forked client may still emit MLS ciphertext; peers simply do not adopt the side effect.
