@@ -69,6 +69,26 @@ describe('declineConsentFirstSquadInvite', () => {
     expect(resolveOneCatchUpEntry).toHaveBeenCalledWith('dm-1');
   });
 
+  it('resolves the catch-up entry before claims finish publishing', async () => {
+    let release: () => void = () => {};
+    vi.mocked(publishInviteDeclinedClaims).mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const pending = declineConsentFirstSquadInvite(msg());
+    expect(resolveOneCatchUpEntry).toHaveBeenCalledWith('dm-1');
+    release();
+    await pending;
+  });
+
+  it('resolves the catch-up entry even when claims fail', async () => {
+    vi.mocked(publishInviteDeclinedClaims).mockRejectedValueOnce(new Error('relay down'));
+    await expect(declineConsentFirstSquadInvite(msg())).rejects.toThrow('relay down');
+    expect(get(declinedSquadInviteIds)).toEqual(['dm-1']);
+    expect(resolveOneCatchUpEntry).toHaveBeenCalledWith('dm-1');
+  });
+
   it('skips claims when inviteId is missing', async () => {
     await declineConsentFirstSquadInvite(
       msg({

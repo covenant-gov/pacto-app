@@ -962,7 +962,9 @@
                 onAcceptSquadInvite={(msg) => acceptSquadOrPairInvite(msg)}
                 onAcceptChannelInSquad={acceptChannelInSquadInvite}
                 onDeclineSquad={(msg: DmMessage) => {
-                  void declineConsentFirstSquadInvite(msg);
+                  void declineConsentFirstSquadInvite(msg).catch((e) =>
+                    dmError('declineConsentFirstSquadInvite', e)
+                  );
                 }}
                 onDeclineChannelInSquad={(msg: DmMessage) => {
                   declinedChannelInviteMessageIds.update((ids: string[]) =>

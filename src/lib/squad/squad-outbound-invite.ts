@@ -283,6 +283,71 @@ export function matchesKnownOutboundInvite(payload: {
   );
 }
 
+let privilegeEnforceModule: Promise<typeof import('../governance/squad-privilege-enforce')> | undefined;
+
+function loadPrivilegeEnforce() {
+  privilegeEnforceModule ??= import('../governance/squad-privilege-enforce');
+  return privilegeEnforceModule;
+}
+
+type AuthoredAnnouncementMessage = { content: string; at: number; author?: string };
+
+function isOutboundInviteLifecycleContent(content: string): boolean {
+  return Boolean(
+    parseSquadOutboundInvite(content) ||
+      parseSquadOutboundInviteRevoked(content) ||
+      parseSquadOutboundInviteDeclined(content)
+  );
+}
+
+/** Drop invite/revoke/decline rows whose author lacks `inviteAccept` (same gate as live MLS events). */
+async function filterAuthorizedOutboundInviteMessages(
+  parentId: string,
+  msgs: AuthoredAnnouncementMessage[]
+): Promise<{ content: string; at: number }[]> {
+  const { decideSquadPrivilege } = await loadPrivilegeEnforce();
+  const verdicts = new Map<string, Promise<boolean>>();
+  const authorAllowed = (author: string): Promise<boolean> => {
+    let verdict = verdicts.get(author);
+    if (!verdict) {
+      verdict = decideSquadPrivilege({
+        parentId,
+        memberNpub: author || '__missing__',
+        action: 'inviteAccept',
+      }).then((d) => d.ok);
+      verdicts.set(author, verdict);
+    }
+    return verdict;
+  };
+  const out: { content: string; at: number }[] = [];
+  for (const m of msgs) {
+    if (isOutboundInviteLifecycleContent(m.content) && !(await authorAllowed(m.author?.trim() ?? ''))) {
+      continue;
+    }
+    out.push({ content: m.content, at: m.at });
+  }
+  return out;
+}
+
+/** Announcements history for a squad, with lifecycle rows filtered by author privilege. */
+async function loadAuthorizedAnnouncementMessages(
+  gid: string
+): Promise<{ content: string; at: number }[]> {
+  const me = get(currentUser)?.npub?.trim();
+  const collected: AuthoredAnnouncementMessage[] = [];
+  const pageSize = 200;
+  for (let offset = 0; ; offset += pageSize) {
+    const msgs = await getDmMessages(gid, pageSize, offset, {
+      virtualBucketFilter: 'announcements',
+    });
+    for (const m of msgs) {
+      collected.push({ content: m.content, at: m.at, author: m.mine ? me : m.npub });
+    }
+    if (msgs.length < pageSize) break;
+  }
+  return filterAuthorizedOutboundInviteMessages(gid, collected);
+}
+
 /** Load outbound announce from MLS history when memory is cold. */
 export async function ensureOutboundInviteKnown(payload: {
   parent_id: string;
@@ -294,19 +359,8 @@ export async function ensureOutboundInviteKnown(payload: {
   const gid = payload.parent_id.trim();
   if (!gid) return false;
   try {
-    const collected: { content: string; at: number }[] = [];
-    const pageSize = 200;
-    for (let offset = 0; ; offset += pageSize) {
-      const msgs = await getDmMessages(gid, pageSize, offset, {
-        virtualBucketFilter: 'announcements',
-      });
-      for (const m of msgs) {
-        collected.push({ content: m.content, at: m.at });
-      }
-      if (msgs.length < pageSize) break;
-    }
     // Side-effect: remember invites/revokes with latest-wins.
-    mergePendingOutboundInvitesFromMlsMessages(collected);
+    mergePendingOutboundInvitesFromMlsMessages(await loadAuthorizedAnnouncementMessages(gid));
   } catch (e) {
     console.warn('[outbound-invite] history lookup failed', e);
   }
@@ -366,18 +420,9 @@ export async function loadPendingOutboundInvitesFromMls(
   const gid = parentId.trim();
   if (!gid) return [];
 
-  const collected: { content: string; at: number }[] = [];
-  const pageSize = 200;
+  let collected: { content: string; at: number }[];
   try {
-    for (let offset = 0; ; offset += pageSize) {
-      const msgs = await getDmMessages(gid, pageSize, offset, {
-        virtualBucketFilter: 'announcements',
-      });
-      for (const m of msgs) {
-        collected.push({ content: m.content, at: m.at });
-      }
-      if (msgs.length < pageSize) break;
-    }
+    collected = await loadAuthorizedAnnouncementMessages(gid);
   } catch (e) {
     console.warn('[outbound-invite] pending load failed', e);
     throw e;
@@ -527,9 +572,43 @@ export async function publishOutboundInviteDeclinedAnnounce(
   return ok;
 }
 
+const PARENT_SQUAD_WAIT_MS = 10_000;
+
+function findParentSquad(parentId: string): Squad | undefined {
+  return (
+    get(squads).find((s) => s.id === parentId) ??
+    get(squads).find((s) => getAnnouncementsChannel(s).groupId === parentId)
+  );
+}
+
+/** Resolve the squad, waiting briefly for store hydration after login. */
+function waitForParentSquad(parentId: string): Promise<Squad | undefined> {
+  const found = findParentSquad(parentId);
+  if (found) return Promise.resolve(found);
+  return new Promise((resolve) => {
+    let ready = false;
+    let done = false;
+    const finish = (squad?: Squad) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      unsub();
+      resolve(squad);
+    };
+    const timer = setTimeout(() => finish(undefined), PARENT_SQUAD_WAIT_MS);
+    const unsub = squads.subscribe(() => {
+      if (!ready) return;
+      const squad = findParentSquad(parentId);
+      if (squad) finish(squad);
+    });
+    ready = true;
+  });
+}
+
 /**
  * Admitter received invitee decline claim (DM): close the invite on announcements.
- * Sender must be the invitee; claim requires a matching outbound invite announcement.
+ * Sender must be the invitee, local user needs `inviteAccept`, and the claim needs a
+ * matching outbound invite announcement.
  */
 export async function handleInviteeDeclineForAnnounce(
   payload: { parent_id: string; invite_id: string; invitee_npub: string },
@@ -544,17 +623,23 @@ export async function handleInviteeDeclineForAnnounce(
   if (payload.invitee_npub.trim().toLowerCase() === me.toLowerCase()) return;
 
   if (isOutboundInviteRevoked(payload.parent_id, payload.invite_id)) return;
+  if (admittedSuccessKeys.has(acceptHandleKey(payload.invite_id, payload.invitee_npub))) return;
 
-  const parent =
-    get(squads).find((s) => s.id === payload.parent_id) ??
-    get(squads).find((s) => getAnnouncementsChannel(s).groupId === payload.parent_id);
+  const parent = await waitForParentSquad(payload.parent_id);
   if (!parent) return;
+
+  const { requireMySquadPrivilege } = await loadPrivilegeEnforce();
+  const privilege = await requireMySquadPrivilege(payload.parent_id, 'inviteAccept');
+  if (!privilege.ok) return;
 
   const known = await ensureOutboundInviteKnown(payload);
   if (!known) {
     console.warn('[outbound-invite] ignoring unvalidated decline claim', payload.invite_id);
     return;
   }
+
+  // Another admitter may have announced while awaiting above.
+  if (isOutboundInviteRevoked(payload.parent_id, payload.invite_id)) return;
 
   await publishOutboundInviteDeclinedAnnounce(parent, payload.invite_id, payload.invitee_npub);
 }
