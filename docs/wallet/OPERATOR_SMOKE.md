@@ -67,6 +67,7 @@ See [PACTO_GOV.md](./PACTO_GOV.md) and [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SP
 - [ ] **Deploy** → Advanced → **Deploy Squad Admin** standalone for executor AC without Nave Pirata.
 - [ ] After that tx confirms, **Status** shows a **Squad Admin** card: Deployed badge, variant copy, truncated proxy with copy, network, and **Manage privileges in Crew**.
 - [ ] That CTA lands on `#governance` → Crew; **Privileges** shows the role builder / catalog on the same proxy.
+- [ ] 0 ETH roster that wears the username NFT, standalone Squad Admin with no squad sponsor, funded global pool: **Create role** succeeds as a global sponsored UserOp (`funded_by: global_sponsored`). `moduleToTopHat(proxy)` on `SponsorPolicyRegistry` is non-zero and the topHat is sponsored; otherwise the write fails with `SPONSOR_PATH_UNAVAILABLE`.
 - [ ] Re-open the Launchpad: **Deploy Squad Admin (Ext)** shows the deployed address and the *already deployed* reason, and cannot be selected.
 - [ ] **Treasury** → **Deploy Sponsor** opens **Deploy Governance** launchpad (pick Ext or combined hats path from there).
 - [ ] When gov exists and sponsor missing: primary card **Deploy squad sponsor** (hats path via the same wizard).

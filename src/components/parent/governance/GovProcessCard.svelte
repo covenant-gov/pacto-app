@@ -12,7 +12,11 @@
   import { scheduleDeadlineTimeout } from '../../../lib/utils/deadline-timeout';
   import ProposalActionSummary from './ProposalActionSummary.svelte';
   import GovCtaButton from './GovCtaButton.svelte';
-  import { hideCtaInlineReason, type CtaGate } from '../../../lib/governance/governance-privilege';
+  import {
+    hideCtaInlineReason,
+    isHatRequiredReason,
+    type CtaGate,
+  } from '../../../lib/governance/governance-privilege';
 
   interface Props {
     card: GovProcessCard;
@@ -93,6 +97,21 @@
     }
     if (offboardHasVoted) return { enabled: false, reason: 'governance.gate.alreadyVotedOffboard' };
     return crewVoteGate;
+  });
+  let voteHatNoteKey = $derived.by((): string => {
+    if (showCrewVotes && !crewVoteGate.enabled && isHatRequiredReason(crewVoteGate.reason)) {
+      return crewVoteGate.reason;
+    }
+    if (showMutinyVote && !mutinyVoteGate.enabled && isHatRequiredReason(mutinyVoteGate.reason)) {
+      return mutinyVoteGate.reason;
+    }
+    if (showOffboardVotes && !offboardVoteGate.enabled && isHatRequiredReason(offboardVoteGate.reason)) {
+      return offboardVoteGate.reason;
+    }
+    if (showCaptainVotes && !captainVoteGate.enabled && isHatRequiredReason(captainVoteGate.reason)) {
+      return captainVoteGate.reason;
+    }
+    return '';
   });
 
   let tool = $derived($t(govProcessToolLabel(card)));
@@ -205,6 +224,9 @@
     <span class="proposal-card-status" class:proposal-card-status-active={isActive && !isPast}>
       {statusLabel}
     </span>
+    {#if voteHatNoteKey}
+      <span class="proposal-card-hat-note" role="status">{$t(voteHatNoteKey)}</span>
+    {/if}
   </div>
   <p class="proposal-card-title">{title}</p>
   {#if outcome && isPast}
@@ -440,6 +462,14 @@
   .proposal-card-status-active {
     color: var(--brand);
     font-weight: 600;
+  }
+  .proposal-card-hat-note {
+    margin-left: auto;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--danger);
+    line-height: 1.2;
+    text-align: right;
   }
   .proposal-card-title {
     margin: 0 0 6px 0;

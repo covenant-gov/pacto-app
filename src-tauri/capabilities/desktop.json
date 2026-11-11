@@ -8,6 +8,9 @@
   "permissions": [
     "core:window:allow-show",
     "core:window:allow-set-focus",
+    "core:window:allow-set-background-color",
+    "core:window:allow-set-theme",
+    "core:window:allow-set-title",
     "updater:default",
     "window-state:default"
   ],

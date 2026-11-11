@@ -75,6 +75,13 @@ export function profileNeedsRelayHydration(
   return !hasData;
 }
 
+/** Settings header / app window title: display_name, else name; null when both empty. */
+export function getOwnProfileTitleName(profile: NostrProfile | null | undefined): string | null {
+  if (!profile) return null;
+  const name = profile.display_name?.trim() || profile.name?.trim();
+  return name || null;
+}
+
 /**
  * Get the display name for a profile.
  * Prefer Vector nickname, then Nostr name/display_name, then short npub.

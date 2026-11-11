@@ -51,7 +51,7 @@ Tauri IPC is not a security boundary if only the UI gates.
 |-------|------|
 | Module | `src-tauri/src/evm/access_control/` |
 | Shared gov send | `gov_module_write::send_gov_module_call` (capability + write lock + `chain_id`) |
-| Squad Admin writes | `squad_admin_write.rs` (parent from infra / payload; no personal-signer fallback) |
+| Squad Admin writes | `squad_admin_write.rs` → `send_gov_module_call` (parent from infra / payload; same sponsored routing as other gov modules) |
 | Packed role encode/decode | `privilege_role_id` (TS + Rust); Crew UI `CrewPrivilegesSection` |
 | MLS/Commons privilege enforce | `squad-privilege-enforce.ts` + Rust `squad_privilege_enforce` (optional `privilegeParentId` on invite) |
 | Tracked tokens | `db::upsert_squad_tracked_token` / `remove_squad_tracked_token` |
@@ -83,7 +83,7 @@ Squad Admin executor flags (`FULL`, `PAUSE`, custom tags) appear on the capabili
 
 ### Packed privilege roles (Crew → Privileges)
 
-Custom catalog roles pack a short name + action flags into `bytes32` (pacto-gov SquadAdmin encoding v1). Decode/encode lives in `privilege-role-id` (TS + Rust). Effective flags OR across enabled catalog roles; `FULL` grants all known actions; `PAUSE` overrides. Privilege decisions (publish and MLS arrival) read executor roles on the trusted RPC. Crew catalog and dashboard role labels keep the squad RPC list.
+Custom catalog roles pack a short name + action flags into `bytes32` (pacto-gov SquadAdmin encoding v1). Decode/encode lives in `privilege-role-id` (TS + Rust). Effective flags OR across enabled catalog roles; `FULL` grants all known actions; `PAUSE` overrides. Privilege decisions (publish and MLS arrival) read executor roles on the trusted RPC. Crew catalog and dashboard role labels keep the squad RPC list. Crew → Privileges is catalog-driven: create role (`createRole`) and assign/revoke executor (`enableExecutor` / `disableExecutor`) are separate panes and txs; an empty catalog opens Create, and a successful create selects that role for Assign.
 
 | Action flag | Publish / UI preflight | Receive (arrival-time) |
 |-------------|------------------------|-------------------------|

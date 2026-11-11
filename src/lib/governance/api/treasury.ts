@@ -80,8 +80,8 @@ export interface GovernanceWriteResultDto {
   treasuryAuthority?: string;
   mutinyModule?: string;
   quartermaster?: string;
-  /** Path Rust actually took: sponsored UserOp vs roster-key EOA. */
-  fundedBy?: 'sponsored' | 'self_funded';
+  /** Path Rust actually took: squad UserOp, global UserOp, or roster-key EOA. */
+  fundedBy?: 'sponsored' | 'self_funded' | 'global_sponsored';
 }
 
 export async function treasuryAuthorityPropose(params: {

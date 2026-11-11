@@ -3,13 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import GovProposalsBoard from './GovProposalsBoard.svelte';
 import type { GovernancePrivilege } from '../../../lib/governance/governance-privilege';
-import type { TreasuryProposalDto } from '../../../lib/governance/api';
+import type { MutinyStatusDto, TreasuryProposalDto } from '../../../lib/governance/api';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
 afterEach(() => cleanup());
 
 const CAPTAIN = '0xcaptain0000000000000000000000000000001';
+const CREW = '0xcrew00000000000000000000000000000000001';
 
 const captainOnly: GovernancePrivilege = {
   myAddress: CAPTAIN,
@@ -17,6 +18,14 @@ const captainOnly: GovernancePrivilege = {
   wearsCrew: false,
   captainIsSafe: false,
   roleLabel: 'Captain',
+};
+
+const crewOnly: GovernancePrivilege = {
+  myAddress: CREW,
+  wearsCaptain: false,
+  wearsCrew: true,
+  captainIsSafe: false,
+  roleLabel: 'Crew',
 };
 
 function treasuryProposal(overrides: Partial<TreasuryProposalDto> = {}): TreasuryProposalDto {
@@ -39,8 +48,23 @@ function treasuryProposal(overrides: Partial<TreasuryProposalDto> = {}): Treasur
   };
 }
 
+function mutinyStatus(overrides: Partial<MutinyStatusDto> = {}): MutinyStatusDto {
+  return {
+    activeMutinyId: '1',
+    proposedNewCaptain: CREW,
+    fromCaptain: CAPTAIN,
+    startedAt: 1,
+    deadline: 1_800_000_000,
+    snapshot: 3,
+    yeas: 1,
+    executed: false,
+    captain: CAPTAIN,
+    ...overrides,
+  };
+}
+
 describe('GovProposalsBoard gate banners', () => {
-  it('shows one crew-hat alert instead of per-card vote copy', () => {
+  it('shows a per-card crew-hat note instead of a board alert', () => {
     render(GovProposalsBoard, {
       props: {
         network: 'sepolia',
@@ -52,8 +76,8 @@ describe('GovProposalsBoard gate banners', () => {
       },
     });
 
-    expect(screen.getByRole('alert').textContent).toBe('Crew hat required');
-    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('Crew hat required');
     expect(screen.queryAllByText('Crew hat required')).toHaveLength(1);
     expect(document.querySelectorAll('.gov-cta-reason')).toHaveLength(0);
 
@@ -61,6 +85,40 @@ describe('GovProposalsBoard gate banners', () => {
     const voteNay = screen.getByRole('button', { name: 'Vote nay' }) as HTMLButtonElement;
     expect(voteYea.disabled).toBe(true);
     expect(voteNay.disabled).toBe(true);
+  });
+
+  it('shows no hat note when there are no open proposals', () => {
+    render(GovProposalsBoard, {
+      props: {
+        network: 'sepolia',
+        parentId: 'parent1',
+        treasuryAuthority: '0xta00000000000000000000000000000000001',
+        privilege: captainOnly,
+        proposals: [],
+      },
+    });
+
+    expect(screen.queryByText('Crew hat required')).toBeNull();
+    expect(screen.queryByText('Captain hat required')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('No open proposals.')).toBeTruthy();
+  });
+
+  it('does not show captain hat note for a crew wearer on an open mutiny', () => {
+    render(GovProposalsBoard, {
+      props: {
+        network: 'sepolia',
+        parentId: 'parent1',
+        treasuryAuthority: '0xta00000000000000000000000000000000001',
+        privilege: crewOnly,
+        proposals: [],
+        mutinyStatus: mutinyStatus(),
+      },
+    });
+
+    expect(screen.queryByText('Captain hat required')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByText(/Mutiny #1/)).toBeTruthy();
   });
 
   it('defaults to open proposals and shows executed ones on that filter', async () => {

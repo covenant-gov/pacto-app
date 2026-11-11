@@ -74,6 +74,9 @@ mod tests {
         executeAddCrewCall, executeOffboardCall, executeRemoveCrewCall, expireOffboardCall,
         proposeOffboardCall, requestAddCrewCall, requestRemoveCrewCall,
     };
+    use crate::evm::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
+        createRoleCall, disableExecutorCall, enableExecutorCall, enableFullPermissionCall,
+    };
     use crate::evm::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
         captainVoteCall, crewVoteCall, executeCall, proposeCall,
     };
@@ -153,6 +156,10 @@ mod tests {
                 deploySquadAdminStandaloneCaptainHatCall::SELECTOR,
             ),
             ("createSafeProxy", createProxyWithNonceCall::SELECTOR),
+            ("createRole", createRoleCall::SELECTOR),
+            ("enableExecutor", enableExecutorCall::SELECTOR),
+            ("disableExecutor", disableExecutorCall::SELECTOR),
+            ("enableFullPermission", enableFullPermissionCall::SELECTOR),
         ]
     }
 

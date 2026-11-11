@@ -3,7 +3,7 @@
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 
-export type GovWriteFundingMode = 'sponsored' | 'self_funded';
+export type GovWriteFundingMode = 'sponsored' | 'global_sponsored' | 'self_funded';
 
 function tFn(key: string, values?: Record<string, string>): string {
   return get(t)(key, values ? { values } : undefined);
@@ -13,6 +13,9 @@ function tFn(key: string, values?: Record<string, string>): string {
 export function govWriteFundingHint(mode: GovWriteFundingMode): string {
   if (mode === 'sponsored') {
     return tFn('governance.funding.sponsored');
+  }
+  if (mode === 'global_sponsored') {
+    return tFn('governance.funding.globalSponsored');
   }
   return tFn('governance.funding.selfFunded');
 }
@@ -79,7 +82,7 @@ export function displayGovWriteFundingHint(input: {
 export function fundedByFromWriteResult(result: unknown): GovWriteFundingMode | null {
   if (!result || typeof result !== 'object') return null;
   const raw = (result as { fundedBy?: unknown }).fundedBy;
-  if (raw === 'sponsored' || raw === 'self_funded') return raw;
+  if (raw === 'sponsored' || raw === 'global_sponsored' || raw === 'self_funded') return raw;
   return null;
 }
 
@@ -90,6 +93,9 @@ export function govWriteSubmittedToast(
 ): string {
   if (mode === 'sponsored') {
     return tFn('governance.toast.submittedSponsored', { label });
+  }
+  if (mode === 'global_sponsored') {
+    return tFn('governance.toast.submittedGlobalSponsored', { label });
   }
   if (mode === 'self_funded') {
     return tFn('governance.toast.submittedSelfFunded', { label });
@@ -104,6 +110,9 @@ export function govWriteConfirmedToast(
 ): string {
   if (mode === 'sponsored') {
     return tFn('governance.toast.confirmedSponsored', { label });
+  }
+  if (mode === 'global_sponsored') {
+    return tFn('governance.toast.confirmedGlobalSponsored', { label });
   }
   if (mode === 'self_funded') {
     return tFn('governance.toast.confirmedSelfFunded', { label });

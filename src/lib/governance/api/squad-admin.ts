@@ -108,6 +108,8 @@ export interface SquadAdminWriteResultDto {
   chain: string;
   chainId: number;
   squadAdminProxy: string;
+  /** Path Rust actually took: squad UserOp, global UserOp, or roster-key EOA. */
+  fundedBy?: 'sponsored' | 'self_funded' | 'global_sponsored';
 }
 
 export async function squadAdminCreateRole(params: {

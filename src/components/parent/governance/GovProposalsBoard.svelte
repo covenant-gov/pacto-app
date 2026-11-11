@@ -25,7 +25,6 @@
     gateQuartermasterExecute,
     gateRequiresCaptain,
     gateRequiresCrew,
-    isHatRequiredReason,
     LINK_EVM_BANNER_KEY,
     MUTINY_ACTIVE_BANNER_KEY,
     OFFBOARD_ACTIVE_BANNER_KEY,
@@ -368,12 +367,6 @@
 
   {#if needsLinkEvm}
     <GovGateBanner reason={LINK_EVM_BANNER_KEY} />
-  {/if}
-  {#if !crewVoteGate.enabled && isHatRequiredReason(crewVoteGate.reason)}
-    <GovGateBanner reason={crewVoteGate.reason} />
-  {/if}
-  {#if !captainVoteGate.enabled && isHatRequiredReason(captainVoteGate.reason)}
-    <GovGateBanner reason={captainVoteGate.reason} />
   {/if}
   {#if mutinyActive}
     <GovGateBanner reason={MUTINY_ACTIVE_BANNER_KEY} />

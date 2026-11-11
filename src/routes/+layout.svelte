@@ -19,6 +19,8 @@
     crossedDesignBoundary,
     isDesignPath,
   } from '$lib/ui/design-route';
+  import { syncAppWindowTitle } from '../lib/app/window-title';
+  import { profiles } from '../stores/profiles';
 
   let { children }: { children: Snippet } = $props();
 
@@ -36,6 +38,13 @@
       document.documentElement.lang = $locale;
       document.documentElement.dir = 'ltr';
     }
+  });
+
+  $effect(() => {
+    if (isDesignRoute) return;
+    const npub = $currentUser?.npub;
+    const profile = npub ? $profiles[npub] : null;
+    void syncAppWindowTitle(profile);
   });
 
   const startProductionSession = createOnce(() => {

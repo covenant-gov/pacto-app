@@ -12,22 +12,24 @@ const api = vi.hoisted(() => ({
   squadAdminEnableFullPermission: vi.fn(),
 }));
 
+const writeFailed = vi.hoisted(() => vi.fn());
+
 vi.mock('../../../lib/governance/api', () => api);
-vi.mock('../../../lib/evm/on-chain-background', () => ({
-  runOnChainInBackground: vi.fn(
+vi.mock('../../../lib/governance/gov-write-background', () => ({
+  runGovWriteInBackground: vi.fn(
     (opts: {
       job: () => Promise<unknown>;
-      onSuccess?: (r: unknown) => unknown;
-      onError?: (message: string, e: unknown) => void;
+      onSettled?: () => void | Promise<void>;
     }) => {
       void (async () => {
         try {
-          const result = await opts.job();
-          await opts.onSuccess?.(result);
+          await opts.job();
+          await opts.onSettled?.();
         } catch (e) {
-          opts.onError?.(e instanceof Error ? e.message : String(e), e);
+          writeFailed(e);
         }
       })();
+      return true;
     },
   ),
 }));
@@ -60,10 +62,10 @@ function nonce(): number {
   return get(squadPrivilegeNonceByParentId)[PARENT] ?? 0;
 }
 
-async function renderReady() {
+async function renderReady(props: Record<string, unknown> = {}) {
   const onPrivilegesChanged = vi.fn();
   const view = render(CrewPrivilegesSection, {
-    props: { parentId: PARENT, squadAdminProxy: PROXY, onPrivilegesChanged },
+    props: { parentId: PARENT, squadAdminProxy: PROXY, onPrivilegesChanged, ...props },
   });
   const newRole = await screen.findByRole('button', { name: 'New role' });
   await waitFor(() => expect((newRole as HTMLButtonElement).disabled).toBe(false));
@@ -83,6 +85,7 @@ describe('CrewPrivilegesSection privilege refresh', () => {
   beforeEach(() => {
     squadPrivilegeNonceByParentId.set({});
     for (const fn of Object.values(api)) fn.mockReset();
+    writeFailed.mockReset();
     api.getSquadCapabilities.mockResolvedValue(captainSnapshot());
     api.getSquadAdminRoleCatalog.mockResolvedValue({ roles: [] });
     api.squadAdminCreateRole.mockResolvedValue({ txHash: '0xabc' });
@@ -92,7 +95,23 @@ describe('CrewPrivilegesSection privilege refresh', () => {
     cleanup();
   });
 
+  it('opens Create on an empty catalog and hides Assign / Revoke', async () => {
+    await renderReady();
+    expect(screen.getByRole('heading', { name: 'Create role' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create role' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Assign' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
+  });
+
   it('creates a role with the event and doc bits and bumps the nonce once on success', async () => {
+    const createdId = encodePrivilegeRoleId({
+      name: 'Ed',
+      flags: FLAG_CREATE_EVENT | FLAG_ADD_DOC,
+    });
+    api.getSquadAdminRoleCatalog
+      .mockResolvedValueOnce({ roles: [] })
+      .mockResolvedValue({ roles: [createdId] });
+
     const { view, newRole, onPrivilegesChanged } = await renderReady();
     expect(nonce()).toBe(0);
 
@@ -104,13 +123,55 @@ describe('CrewPrivilegesSection privilege refresh', () => {
       expect.objectContaining({
         parentId: PARENT,
         squadAdminProxy: PROXY,
-        roleId: encodePrivilegeRoleId({ name: 'Ed', flags: FLAG_CREATE_EVENT | FLAG_ADD_DOC }),
+        roleId: createdId,
       }),
     );
     expect(onPrivilegesChanged).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Assign members' })).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create role' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ed' })).toBeTruthy();
+    expect(view.container.querySelector('.summary-name')?.textContent).toBe('Ed');
+  });
+
+  it('shows Assign only when selecting a catalog role', async () => {
+    const roleId = encodePrivilegeRoleId({
+      name: 'Mod',
+      flags: FLAG_CREATE_EVENT,
+    });
+    api.getSquadAdminRoleCatalog.mockResolvedValue({ roles: [roleId] });
+
+    await renderReady();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Assign members' })).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Revoke' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create role' })).toBeNull();
+    expect(screen.getByText('Create events')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'New role' }));
+    expect(screen.getByRole('heading', { name: 'Create role' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create role' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Assign' })).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mod' }));
+    expect(screen.getByRole('heading', { name: 'Assign members' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create role' })).toBeNull();
   });
 
   it('refreshes the catalog before bumping the nonce', async () => {
+    const createdId = encodePrivilegeRoleId({
+      name: 'Ed',
+      flags: FLAG_CREATE_EVENT | FLAG_ADD_DOC,
+    });
+    api.getSquadAdminRoleCatalog
+      .mockResolvedValueOnce({ roles: [] })
+      .mockResolvedValue({ roles: [createdId] });
+
     const { view, newRole } = await renderReady();
     const catalogCallsBefore = api.getSquadAdminRoleCatalog.mock.calls.length;
 
@@ -120,16 +181,19 @@ describe('CrewPrivilegesSection privilege refresh', () => {
     expect(api.getSquadAdminRoleCatalog.mock.calls.length).toBeGreaterThan(catalogCallsBefore);
   });
 
-  it('does not bump the nonce or notify when the write fails', async () => {
+  it('does not bump the nonce or notify when the write fails, and keeps the draft', async () => {
     api.squadAdminCreateRole.mockRejectedValue(new Error('rpc exploded'));
     const { view, newRole, onPrivilegesChanged } = await renderReady();
 
     await draftEventDocRole(view.container, newRole);
 
-    await screen.findByRole('alert');
+    await waitFor(() => expect(writeFailed).toHaveBeenCalledTimes(1));
     expect(api.squadAdminCreateRole).toHaveBeenCalledTimes(1);
     expect(nonce()).toBe(0);
     expect(onPrivilegesChanged).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Create role' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Assign' })).toBeNull();
+    expect(view.container.querySelector<HTMLInputElement>('#crew-priv-role-name')?.value).toBe('Ed');
   });
 
   it('does not submit or bump when the role name is empty', async () => {
