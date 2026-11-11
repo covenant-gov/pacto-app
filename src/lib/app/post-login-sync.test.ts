@@ -61,8 +61,11 @@ vi.mock('../api/nostr', () => ({
   syncMlsGroupsNow: (...args: unknown[]) => syncMlsGroupsNow(...args),
 }));
 
+const reloadOpenChannelHistoryIfVisible = vi.fn();
+
 vi.mock('../mls/open-channel-history', () => ({
-  reloadOpenChannelHistoryIfVisible: vi.fn(),
+  reloadOpenChannelHistoryIfVisible: (...args: unknown[]) =>
+    reloadOpenChannelHistoryIfVisible(...args),
 }));
 
 vi.mock('../utils/dm-debug', () => ({
@@ -331,6 +334,25 @@ describe('runPostLoginNetworkSync', () => {
     await flushAsync();
 
     expect(console.error).toHaveBeenCalledWith('Auto profile refresh failed:', err);
+  });
+
+  it('reloads the open channel history after syncMlsGroupsNow settles', async () => {
+    apiConnect.mockResolvedValue(undefined);
+    fetchMessages.mockResolvedValue(undefined);
+    refreshProfileNow.mockResolvedValue(undefined);
+    const mlsDeferred = Promise.withResolvers<undefined>();
+    syncMlsGroupsNow.mockReturnValue(mlsDeferred.promise);
+
+    runPostLoginNetworkSync('npub1test');
+    await flushAsync();
+
+    expect(syncMlsGroupsNow).toHaveBeenCalledWith(null);
+    expect(reloadOpenChannelHistoryIfVisible).not.toHaveBeenCalled();
+
+    mlsDeferred.resolve(undefined);
+    await flushAsync();
+
+    expect(reloadOpenChannelHistoryIfVisible).toHaveBeenCalledTimes(1);
   });
 
   it('logs syncMlsGroupsNow rejection', async () => {

@@ -67,19 +67,16 @@ export function loadOpenChannelHistory(groupId: string): void {
         count: loaded.length,
       });
 
-      let ignoredEmpty = false;
-      backendGroupMessages.update((byGroup) => {
-        const existing = byGroup[groupId] ?? [];
-        if (loaded.length === 0 && existing.length > 0) {
-          ignoredEmpty = true;
-          return byGroup;
-        }
-        return { ...byGroup, [groupId]: mergeOpenChannelPage(existing, loaded) };
-      });
+      const existing = get(backendGroupMessages)[groupId] ?? [];
+      const merged = mergeOpenChannelPage(existing, loaded);
+      if (merged === existing) return;
 
-      if (ignoredEmpty) return;
+      backendGroupMessages.update((byGroup) => ({ ...byGroup, [groupId]: merged }));
       if (loaded.length > 0) {
-        loadedOffsetByChat.update((by) => ({ ...by, [groupId]: PAGE_SIZE }));
+        loadedOffsetByChat.update((by) => ({
+          ...by,
+          [groupId]: Math.max(by[groupId] ?? 0, PAGE_SIZE),
+        }));
       }
       const parentId = parentIdForChannelGroup(get(squads), groupId) ?? parentIdAtOpen;
       ensureMlsAutomationReplayed(groupId, parentId);
