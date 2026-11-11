@@ -151,7 +151,7 @@ describe('clearAccountState', () => {
     activeView.set('profile');
     activeTopNavTab.set('dms');
     squadDashboardChannelMode.set('treasury');
-    settingsChannelMode.set('access');
+    settingsChannelMode.set('network');
     squadToolsChannelMode.set('docs');
     showMembersPanel.set(true);
     squadNavOrder.set(['squad-1', 'squad-2']);

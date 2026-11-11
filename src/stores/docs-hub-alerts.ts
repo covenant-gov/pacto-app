@@ -1,11 +1,7 @@
 import { get, writable } from 'svelte/store';
+import { requireMySquadPrivilege } from '../lib/governance/squad-privilege-enforce';
 import { currentUser } from './auth-session';
 import { persistenceKey, setCurrentNpubForPersistence } from './persistence-context';
-import {
-  canAddSquadDoc,
-  getSquadContentPolicy,
-  type SquadContentPolicyView,
-} from '../lib/api/squad-content-policy';
 
 export const LAST_SEEN_DOC_CARD_AT_PREFIX = 'pacto_last_seen_doc_card_at_v1';
 
@@ -19,10 +15,10 @@ export const unseenDocCardCountByParentId = writable<Record<string, number>>({})
 export const squadDocReplicaNonceByParentId = writable<Record<string, number>>({});
 
 /**
- * Content policy per parent for the Save to Docs gate. Absent = not loaded yet; `null` = load failed
- * (the item stays offered and the backend still enforces the restriction).
+ * Add-doc privilege per parent. Absent = not loaded; `null` = read failed (offer stays; backend enforces);
+ * `false` = denied.
  */
-export const squadDocAddPolicyByParentId = writable<Record<string, SquadContentPolicyView | null>>({});
+export const squadDocAddPolicyByParentId = writable<Record<string, boolean | null>>({});
 
 const policyGroupByParentId = new Map<string, string>();
 const policyGenByParentId = new Map<string, number>();
@@ -52,13 +48,13 @@ export function bumpSquadDocReplicaNonce(parentId: string): void {
   squadDocReplicaNonceByParentId.update((m) => ({ ...m, [pid]: (m[pid] ?? 0) + 1 }));
 }
 
-/** Save to Docs is offered once the policy allows the caller to add, or when the policy could not be read. */
-export function canOfferSaveToDocs(policy: SquadContentPolicyView | null | undefined): boolean {
-  if (policy === undefined) return false;
-  return policy === null || canAddSquadDoc(policy);
+/** Save to Docs is offered when the caller may add, or when the privilege read failed. */
+export function canOfferSaveToDocs(allowed: boolean | null | undefined): boolean {
+  if (allowed === undefined) return false;
+  return allowed !== false;
 }
 
-/** Load (or reload) the add policy for a parent's announcements group. */
+/** Load (or reload) the add privilege for a parent. */
 export async function loadSquadDocAddPolicy(mlsGroupId: string, parentId: string): Promise<void> {
   const gid = mlsGroupId.trim();
   const pid = parentId.trim();
@@ -66,14 +62,14 @@ export async function loadSquadDocAddPolicy(mlsGroupId: string, parentId: string
   policyGroupByParentId.set(pid, gid);
   const gen = (policyGenByParentId.get(pid) ?? 0) + 1;
   policyGenByParentId.set(pid, gen);
-  let view: SquadContentPolicyView | null;
+  let allowed: boolean | null;
   try {
-    view = await getSquadContentPolicy(gid, pid);
+    allowed = (await requireMySquadPrivilege(pid, 'addDoc')).ok;
   } catch {
-    view = null;
+    allowed = null;
   }
   if (policyGenByParentId.get(pid) !== gen) return;
-  squadDocAddPolicyByParentId.update((m) => ({ ...m, [pid]: view }));
+  squadDocAddPolicyByParentId.update((m) => ({ ...m, [pid]: allowed }));
 }
 
 /** Loads once per parent and group, and again whenever the group's membership version changes. */
@@ -90,7 +86,7 @@ export function ensureSquadDocAddPolicy(
   void loadSquadDocAddPolicy(gid, pid);
 }
 
-/** `squad_content_policy_updated`: refresh parents that were already loaded. */
+/** Refresh parents that were already loaded. */
 export function reloadSquadDocAddPolicy(parentId: string): void {
   const pid = parentId.trim();
   const gid = policyGroupByParentId.get(pid);

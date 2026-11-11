@@ -4,13 +4,8 @@
   import { tick } from 'svelte';
   import AddDocModal from './AddDocModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
-  import { listen } from '../../lib/api';
   import { listSquadDocs, sendSquadDocRemove, type SquadDocDto } from '../../lib/api/squad-docs';
-  import {
-    canAddSquadDoc,
-    getSquadContentPolicy,
-    type SquadContentPolicyView,
-  } from '../../lib/api/squad-content-policy';
+  import { requireMySquadPrivilege } from '../../lib/governance/squad-privilege-enforce';
   import { maskDocUrl } from '../../lib/docs/mask-url';
   import { filterDocs, sortDocsNewestFirst, type DocsFilter } from '../../lib/docs/shelf';
   import { formatEventTimestampMs, memberDisplayLabel } from '../../lib/squad/squad-event-display';
@@ -38,7 +33,8 @@
   let loaded = $state(false);
   /** Last load failure, shown only while nothing is listed. */
   let loadError = $state('');
-  let policy = $state<SquadContentPolicyView | null>(null);
+  /** `null` while unknown or after a failed read (add stays offered). */
+  let canAdd = $state<boolean | null>(null);
   let policySettled = $state(false);
   let filter = $state<DocsFilter>({ kind: 'all' });
   let revealedIds = $state<Record<string, boolean>>({});
@@ -58,10 +54,7 @@
   const timeOpts = $derived({ locale: $locale ?? undefined });
   const selfNpub = $derived($currentUser?.npub);
   const youLabel = $derived($t('docs.card.you'));
-  /** Missing policy (load failed) falls back to the default: anyone can add; the backend still enforces. */
-  const addControl = $derived(
-    !policy || canAddSquadDoc(policy) ? 'add' : policy.adminIsMember ? 'adminOnly' : 'lockedOut'
-  );
+  const addControl = $derived(canAdd === false ? 'denied' : 'add');
   const filterValue = $derived(
     filter.kind === 'channel' ? `channel:${filter.channelId}` : filter.kind
   );
@@ -74,7 +67,7 @@
     docs = [];
     loaded = false;
     loadError = '';
-    policy = null;
+    canAdd = null;
     policySettled = false;
     filter = { kind: 'all' };
     revealedIds = {};
@@ -110,13 +103,13 @@
   }
 
   let policyGen = 0;
-  async function loadPolicy(group: string, id: string): Promise<void> {
+  async function loadPrivilege(id: string): Promise<void> {
     const gen = ++policyGen;
     try {
-      const view = await getSquadContentPolicy(group, id);
-      if (gen === policyGen) policy = view;
+      const decision = await requireMySquadPrivilege(id, 'addDoc');
+      if (gen === policyGen) canAdd = decision.ok;
     } catch {
-      if (gen === policyGen) policy = null;
+      if (gen === policyGen) canAdd = null;
     } finally {
       if (gen === policyGen) policySettled = true;
     }
@@ -128,23 +121,7 @@
   });
 
   $effect(() => {
-    if (pid && gid) void loadPolicy(gid, pid);
-  });
-
-  $effect(() => {
-    if (!pid || !gid) return;
-    let unlisten: (() => void) | null = null;
-    let disposed = false;
-    void listen<{ parentId?: string }>('squad_content_policy_updated', (e) => {
-      if (e.payload?.parentId === pid) void loadPolicy(gid, pid);
-    }).then((fn) => {
-      if (disposed) fn();
-      else unlisten = fn;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
+    if (pid) void loadPrivilege(pid);
   });
 
   // Deep links: pre-select a channel filter, or show one row, then consume the request.
@@ -230,7 +207,7 @@
           {$t('docs.panel.add')}
         </button>
       {:else}
-        <p class="docs-msg muted docs-toolbar-policy">{$t(`governance.contentPolicy.docs.${addControl}`)}</p>
+        <p class="docs-msg muted docs-toolbar-policy">{$t('docs.panel.denied')}</p>
       {/if}
     {/if}
   </div>

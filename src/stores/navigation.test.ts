@@ -137,7 +137,7 @@ describe('navigation', () => {
     expect(parseSettingsChannelMode('you')).toBe('you');
     expect(parseSettingsChannelMode('about')).toBe('about');
     expect(parseSettingsChannelMode('us')).toBe('about');
-    expect(parseSettingsChannelMode('access')).toBe('access');
+    expect(parseSettingsChannelMode('access')).toBe('you');
     expect(parseSettingsChannelMode('network')).toBe('network');
     expect(parseSettingsChannelMode('personal')).toBe('you');
     expect(parseSettingsChannelMode('squad')).toBe('you');
@@ -148,8 +148,8 @@ describe('navigation', () => {
 
   it('persists settings channel mode under an npub-scoped key', () => {
     setCurrentNpubForPersistence('npub1abc');
-    settingsChannelMode.set('access');
-    expect(storage.get(`${SETTINGS_CHANNEL_MODE_PREFIX}_npub1abc`)).toBe('access');
+    settingsChannelMode.set('network');
+    expect(storage.get(`${SETTINGS_CHANNEL_MODE_PREFIX}_npub1abc`)).toBe('network');
   });
 
   it('parses known board channel modes and resets unknown values to polls', () => {

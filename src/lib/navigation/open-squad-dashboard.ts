@@ -113,7 +113,7 @@ export function openSquadTools(parentId: string, mode: SquadToolsChannelMode = '
 }
 
 /** Open a squad's #settings channel. */
-export function openSquadSettings(parentId: string, mode: SettingsChannelMode = 'access'): void {
+export function openSquadSettings(parentId: string, mode: SettingsChannelMode = 'you'): void {
   const id = parentId.trim();
   if (!id) return;
   navigateToTarget({

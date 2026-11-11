@@ -22,6 +22,8 @@ describe('resolveEffectivePrivilegeFlags', () => {
     expect(f.broadcast).toBe(true);
     expect(f.manageNetwork).toBe(true);
     expect(f.firstMate).toBe(true);
+    expect(f.createEvent).toBe(true);
+    expect(f.addDoc).toBe(true);
     expect(f.fullPermission).toBe(true);
     expect(hasPrivilegeAction(f, 'broadcast')).toBe(true);
   });
@@ -68,14 +70,16 @@ describe('resolveEffectivePrivilegeFlags', () => {
     expect(f.inviteAccept).toBe(false);
   });
 
-  it('bit 5 does not grant unknown powers', () => {
-    const withBit5 = '0x5800000000000000000000000000000000000000000000000000000000010021';
+  it('bit 7 does not grant unknown powers', () => {
+    const withBit7 = '0x5800000000000000000000000000000000000000000000000000000000010081';
     const f = resolveEffectivePrivilegeFlags({
       fullPermission: false,
       paused: false,
-      enabledRoleIds: [withBit5],
+      enabledRoleIds: [withBit7],
     });
     expect(f.inviteAccept).toBe(true);
+    expect(f.createEvent).toBe(false);
+    expect(f.addDoc).toBe(false);
     expect(f.knownFlags).toBe(FLAG_INVITE_ACCEPT);
   });
 });

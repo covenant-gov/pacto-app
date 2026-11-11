@@ -387,14 +387,8 @@ impl Applied {
     }
 }
 
-fn may_add(conn: &Connection, parent_id: &str, role: SquadGroupRole) -> Result<bool, String> {
-    if !role.is_member {
-        return Ok(false);
-    }
-    if role.is_admin {
-        return Ok(true);
-    }
-    Ok(!crate::squad_content_policy::load_policy(conn, parent_id)?.restrict_doc_add)
+fn may_add(role: SquadGroupRole) -> bool {
+    role.is_member
 }
 
 /// Applies one op from `meta.signer_npub` whose role in `meta.mls_group_id` is `role`.
@@ -453,7 +447,7 @@ fn insert_add(
     meta: &OpMeta<'_>,
     role: SquadGroupRole,
 ) -> Result<Applied, String> {
-    if !may_add(conn, &w.parent_id, role)? {
+    if !may_add(role) {
         return Ok(Applied::Ignored);
     }
     conn.execute(
@@ -779,6 +773,13 @@ pub async fn process_rumor(
         .to_bech32()
         .map_err(|e| format!("pubkey bech32: {}", e))?;
     let role = squad_records::group_role(handle, group_id, &signer).await;
+    if w.op == Op::Add
+        && ensure_add_privilege(handle, &w.parent_id, &signer)
+            .await
+            .is_err()
+    {
+        return Ok(RumorProcessingResult::SquadRecordSilent);
+    }
     let rumor_id = rumor.id.to_hex();
     let meta = OpMeta {
         rumor_id: &rumor_id,
@@ -815,14 +816,31 @@ fn ensure_announcements_group(mls_group_id: &str, parent_id: &str) -> Result<(),
     }
 }
 
-fn ensure_may_add(conn: &Connection, parent_id: &str, role: SquadGroupRole) -> Result<(), String> {
-    if !role.is_member {
-        return Err(err::NOT_MEMBER.into());
+fn ensure_may_add(role: SquadGroupRole) -> Result<(), String> {
+    if may_add(role) {
+        Ok(())
+    } else {
+        Err(err::NOT_MEMBER.into())
     }
-    if !may_add(conn, parent_id, role)? {
-        return Err(err::ADD_RESTRICTED.into());
+}
+
+async fn ensure_add_privilege<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    npub: &str,
+) -> Result<(), String> {
+    let allowed = crate::evm::squad_privilege_enforce::member_has_squad_privilege(
+        handle,
+        parent_id,
+        npub,
+        crate::evm::squad_privilege_enforce::SquadPrivilegeAction::AddDoc,
+    )
+    .await?;
+    if allowed {
+        Ok(())
+    } else {
+        Err(err::ADD_RESTRICTED.into())
     }
-    Ok(())
 }
 
 /// Visible stored row of this parent that the caller may edit or remove.
@@ -912,10 +930,9 @@ pub async fn send_squad_doc_add<R: Runtime>(
     let fields = fields_from_input(&doc)?;
     let (pk, npub) = signer_identity().await?;
     let role = squad_records::group_role(&handle, &mls_group_id, &npub).await;
-    let existing = with_conn(&handle, |c| {
-        ensure_may_add(c, &parent_id, role)?;
-        load_row(c, &doc_id)
-    })?;
+    ensure_may_add(role)?;
+    ensure_add_privilege(&handle, &parent_id, &npub).await?;
+    let existing = with_conn(&handle, |c| load_row(c, &doc_id))?;
     if let Some(row) = existing {
         // Retry after a send that already landed.
         if row.author_npub == npub && row.parent_id == parent_id && !row.hidden {
@@ -1093,15 +1110,6 @@ mod tests {
         load_docs(conn, PARENT, caller).expect("list")
     }
 
-    fn set_restrict_doc_add(conn: &Connection, on: bool) {
-        conn.execute(
-            "INSERT INTO squad_content_policy (parent_id, restrict_doc_add, restrict_doc_add_updated_at_ms)
-             VALUES (?1, ?2, 1)",
-            params![PARENT, on],
-        )
-        .expect("policy");
-    }
-
     #[test]
     fn add_stores_raw_url_and_card_masks_it() {
         let conn = conn();
@@ -1227,29 +1235,12 @@ mod tests {
     }
 
     #[test]
-    fn restriction_on_ignores_member_add_and_stores_admin_add() {
-        let conn = conn();
-        set_restrict_doc_add(&conn, true);
-        let (applied, card) = ingest(&conn, &add("d1", CRYPTPAD, ALICE, 100), "r1", ALICE);
-        assert_eq!(applied, Applied::Ignored);
-        assert!(card.is_none());
-        assert!(load_row(&conn, "d1").expect("load").is_none());
-        let (applied, card) = ingest(&conn, &add("d2", CRYPTPAD, ADMIN, 100), "r2", ADMIN);
-        assert_eq!(applied, Applied::Changed { inserted: true });
-        assert!(card.is_some());
+    fn members_may_add_and_outsiders_may_not() {
+        assert!(ensure_may_add(role_of(ALICE)).is_ok());
         assert_eq!(
-            ensure_may_add(&conn, PARENT, role_of(ALICE)),
-            Err(err::ADD_RESTRICTED.to_string())
+            ensure_may_add(role_of(OUTSIDER)),
+            Err(err::NOT_MEMBER.to_string())
         );
-        assert!(ensure_may_add(&conn, PARENT, role_of(ADMIN)).is_ok());
-    }
-
-    #[test]
-    fn restriction_off_lets_members_add() {
-        let conn = conn();
-        set_restrict_doc_add(&conn, false);
-        let (applied, _) = ingest(&conn, &add("d1", CRYPTPAD, ALICE, 100), "r1", ALICE);
-        assert_eq!(applied, Applied::Changed { inserted: true });
     }
 
     #[test]

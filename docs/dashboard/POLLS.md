@@ -12,7 +12,7 @@ Polls for a squad/network parent are **replicated across members** via the paren
 - **`create`:** visible row in **#announcements** (poll-created card); upserts poll definition in replica. **First create wins** for metadata if the same `poll_id` conflicts.
 - **`vote`:** tally only — **no** announcement timeline row. **Last vote wins** per `(poll_id, rumor author npub)`.
 
-Squad group records (content policy, events, docs) reuse this pattern with their own `d` tags: silent ops behave like a vote (replica only, no timeline row, no new bucket) and their shelves read SQLite like `#polls`. See [Squad group records in the routing ADR](../mls/VIRTUAL_CHANNEL_ROUTING_ADR.md#squad-group-records-d-tagged-kind-30078).
+Squad group records (events, docs) reuse this pattern with their own `d` tags: silent ops behave like a vote (replica only, no timeline row, no new bucket) and their shelves read SQLite like `#polls`. See [Squad group records in the routing ADR](../mls/VIRTUAL_CHANNEL_ROUTING_ADR.md#squad-group-records-d-tagged-kind-30078).
 
 ## Code touchpoints
 

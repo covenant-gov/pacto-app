@@ -5,9 +5,8 @@
   import CreateEventModal from './CreateEventModal.svelte';
   import EventTimeFormatSelect from './EventTimeFormatSelect.svelte';
   import EventDetail from './EventDetail.svelte';
-  import { listen } from '../../lib/api';
   import { listSquadEvents, type SquadEventDto } from '../../lib/api/squad-events';
-  import { getSquadContentPolicy, type SquadContentPolicyView } from '../../lib/api/squad-content-policy';
+  import { requireMySquadPrivilege } from '../../lib/governance/squad-privilege-enforce';
   import {
     eventZoneDiffers,
     formatEventDuration,
@@ -38,7 +37,8 @@
   let loaded = $state(false);
   /** Last load failure, shown only while nothing is listed. */
   let loadError = $state('');
-  let policy = $state<SquadContentPolicyView | null>(null);
+  /** `null` while unknown or after a failed read (create stays offered). */
+  let canCreate = $state<boolean | null>(null);
   let policySettled = $state(false);
   let openEventId = $state<string | null>(null);
   let seriesFilter = $state<string | null>(null);
@@ -52,7 +52,7 @@
   const timeOpts = $derived({ locale: $locale ?? undefined, clockFormat: $eventTimeFormat, viewerZone });
   const ordered = $derived(orderShelfEvents(events, { nowMs, viewerZone, seriesId: seriesFilter }));
   const openEvent = $derived(shelfOpenEvent(events, openEventId));
-  const createControl = $derived(shelfCreateControl(policy));
+  const createControl = $derived(shelfCreateControl(canCreate));
 
   let loadGen = 0;
   async function loadEvents(id: string): Promise<void> {
@@ -75,13 +75,13 @@
   }
 
   let policyGen = 0;
-  async function loadPolicy(group: string, id: string): Promise<void> {
+  async function loadPrivilege(id: string): Promise<void> {
     const gen = ++policyGen;
     try {
-      const view = await getSquadContentPolicy(group, id);
-      if (gen === policyGen) policy = view;
+      const decision = await requireMySquadPrivilege(id, 'createEvent');
+      if (gen === policyGen) canCreate = decision.ok;
     } catch {
-      if (gen === policyGen) policy = null;
+      if (gen === policyGen) canCreate = null;
     } finally {
       if (gen === policyGen) policySettled = true;
     }
@@ -93,23 +93,7 @@
   });
 
   $effect(() => {
-    if (pid && gid) void loadPolicy(gid, pid);
-  });
-
-  $effect(() => {
-    if (!pid || !gid) return;
-    let unlisten: (() => void) | null = null;
-    let disposed = false;
-    void listen<{ parentId?: string }>('squad_content_policy_updated', (e) => {
-      if (e.payload?.parentId === pid) void loadPolicy(gid, pid);
-    }).then((fn) => {
-      if (disposed) fn();
-      else unlisten = fn;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
+    if (pid) void loadPrivilege(pid);
   });
 
   $effect(() => {
@@ -126,7 +110,7 @@
     eventsFocus.set(null);
   });
 
-  // An open detail whose event left the replica (e.g. removed by a restriction) closes.
+  // An open detail whose event left the replica closes.
   $effect(() => {
     if (loaded && openEventId && !openEvent) openEventId = null;
   });

@@ -1,6 +1,8 @@
 import {
+  FLAG_ADD_DOC,
   FLAG_BROADCAST,
   FLAG_CREATE_CHANNEL,
+  FLAG_CREATE_EVENT,
   FLAG_FIRST_MATE,
   FLAG_INVITE_ACCEPT,
   FLAG_MANAGE_NETWORK,
@@ -14,6 +16,8 @@ export type EffectivePrivilegeFlags = {
   broadcast: boolean;
   manageNetwork: boolean;
   firstMate: boolean;
+  createEvent: boolean;
+  addDoc: boolean;
   /** Known action bits OR'd (0 when paused). */
   knownFlags: number;
   fullPermission: boolean;
@@ -26,6 +30,8 @@ const ALL_KNOWN: EffectivePrivilegeFlags = {
   broadcast: true,
   manageNetwork: true,
   firstMate: true,
+  createEvent: true,
+  addDoc: true,
   knownFlags: PRIVILEGE_KNOWN_ACTION_MASK,
   fullPermission: true,
   paused: false,
@@ -42,6 +48,8 @@ function fromKnownFlags(
     broadcast: (knownFlags & FLAG_BROADCAST) !== 0,
     manageNetwork: (knownFlags & FLAG_MANAGE_NETWORK) !== 0,
     firstMate: (knownFlags & FLAG_FIRST_MATE) !== 0,
+    createEvent: (knownFlags & FLAG_CREATE_EVENT) !== 0,
+    addDoc: (knownFlags & FLAG_ADD_DOC) !== 0,
     knownFlags,
     fullPermission,
     paused,
@@ -80,7 +88,9 @@ export function hasPrivilegeAction(
     | 'createChannel'
     | 'broadcast'
     | 'manageNetwork'
-    | 'firstMate',
+    | 'firstMate'
+    | 'createEvent'
+    | 'addDoc',
 ): boolean {
   if (flags.paused) return false;
   return flags[action];

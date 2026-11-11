@@ -36,7 +36,7 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
 export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
 
 /** #settings segmented mode; unknown persisted values reset to `you`. */
-export const SETTINGS_CHANNEL_MODES = ['you', 'about', 'access', 'network'] as const;
+export const SETTINGS_CHANNEL_MODES = ['you', 'about', 'network'] as const;
 export type SettingsChannelMode = (typeof SETTINGS_CHANNEL_MODES)[number];
 
 export const SETTINGS_CHANNEL_MODE_PREFIX = 'pacto_settings_channel_mode';
@@ -45,7 +45,7 @@ export function parseSettingsChannelMode(raw: string | null): SettingsChannelMod
   const v = raw?.trim();
   if (v === 'personal' || v === 'you') return 'you';
   if (v === 'us') return 'about';
-  if (v === 'about' || v === 'access' || v === 'network') return v;
+  if (v === 'about' || v === 'network') return v;
   return 'you';
 }
 

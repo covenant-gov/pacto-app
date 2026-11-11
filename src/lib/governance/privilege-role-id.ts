@@ -8,14 +8,18 @@ export const FLAG_CREATE_CHANNEL = 1 << 1;
 export const FLAG_BROADCAST = 1 << 2;
 export const FLAG_MANAGE_NETWORK = 1 << 3;
 export const FLAG_FIRST_MATE = 1 << 4;
+export const FLAG_CREATE_EVENT = 1 << 5;
+export const FLAG_ADD_DOC = 1 << 6;
 
-/** Known action bits in v1 (0..4). Reserved bits 5..15 grant nothing. */
+/** Known action bits in v1 (0..6). Reserved bits 7..15 grant nothing. */
 export const PRIVILEGE_KNOWN_ACTION_MASK =
   FLAG_INVITE_ACCEPT |
   FLAG_CREATE_CHANNEL |
   FLAG_BROADCAST |
   FLAG_MANAGE_NETWORK |
-  FLAG_FIRST_MATE;
+  FLAG_FIRST_MATE |
+  FLAG_CREATE_EVENT |
+  FLAG_ADD_DOC;
 
 export const FULL_PERMISSION_ROLE_ID =
   '0x46554c4c00000000000000000000000000000000000000000000000000000000';
@@ -68,7 +72,7 @@ function nameFromBytes(bytes: Uint8Array): string {
 
 /**
  * Pack flags + display name into a v1 role id.
- * `flags` may only set known bits 0..4; reserved bits must be 0.
+ * `flags` may only set known bits 0..6; reserved bits must be 0.
  */
 export function encodePrivilegeRoleId(params: { name: string; flags: number }): string {
   const flags = params.flags >>> 0;
@@ -124,7 +128,9 @@ export type PrivilegeFlagChip = {
     | 'createChannel'
     | 'broadcast'
     | 'manageNetwork'
-    | 'firstMate';
+    | 'firstMate'
+    | 'createEvent'
+    | 'addDoc';
 };
 
 export const PRIVILEGE_FLAG_CHIPS: PrivilegeFlagChip[] = [
@@ -133,6 +139,8 @@ export const PRIVILEGE_FLAG_CHIPS: PrivilegeFlagChip[] = [
   { bit: 2, flag: FLAG_BROADCAST, key: 'broadcast' },
   { bit: 3, flag: FLAG_MANAGE_NETWORK, key: 'manageNetwork' },
   { bit: 4, flag: FLAG_FIRST_MATE, key: 'firstMate' },
+  { bit: 5, flag: FLAG_CREATE_EVENT, key: 'createEvent' },
+  { bit: 6, flag: FLAG_ADD_DOC, key: 'addDoc' },
 ];
 
 /** Catalog row summary for UI lists. */

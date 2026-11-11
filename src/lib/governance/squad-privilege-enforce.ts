@@ -24,7 +24,9 @@ export type SquadPrivilegeAction =
   | 'inviteAccept'
   | 'createChannel'
   | 'broadcast'
-  | 'manageNetwork';
+  | 'manageNetwork'
+  | 'createEvent'
+  | 'addDoc';
 
 export type SquadPrivilegeDecision =
   | { ok: true; active: boolean; flags: EffectivePrivilegeFlags | null }

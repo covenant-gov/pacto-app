@@ -72,7 +72,6 @@ mod join_inbox;
 
 mod sticker_pack;
 
-mod squad_content_policy;
 mod squad_doc;
 mod squad_event;
 mod squad_event_reminders;
@@ -1434,8 +1433,6 @@ pub fn run() {
             squad_doc::send_squad_doc_add,
             squad_doc::send_squad_doc_update,
             squad_doc::send_squad_doc_remove,
-            squad_content_policy::get_squad_content_policy,
-            squad_content_policy::set_squad_content_policy,
             catch_up::list_catch_up_entries,
             catch_up::catch_up_count,
             catch_up::resolve_catch_up_entry,

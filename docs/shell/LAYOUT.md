@@ -11,7 +11,7 @@ src/routes/+page.svelte                    thin lazy loader → AuthenticatedApp
 src/components/app/AuthenticatedApp.svelte layout, tab routing, DM send/typing; mounts app event bridge
 src/components/layout/ParentNavbar.svelte   sidebar + modals → lib/parent/* flows
 src/components/parent/ParentDashboard.svelte   #governance tab shell (Live|Wargame × Status→Governance→Treasury→Crew)
-src/components/parent/SquadSettingsView.svelte #settings virtual channel (You | About | Access | Network)
+src/components/parent/SquadSettingsView.svelte #settings virtual channel (You | About | Network)
 src/components/parent/SquadToolsView.svelte    #tools shelf (Polls | Events | Docs | Stickers); mounted from SquadHubMain, not ChatView
 src/components/parent/HubViewShell.svelte      shared hub chrome: header + mode switcher + members rail
 src/components/parent/HubChannelHeader.svelte  shared `#name` hub header
@@ -32,7 +32,7 @@ Pinned system channels stay **above** a thin gray divider; member-created MLS ch
 
 Wargame is **not** a sidebar row. It is the **Live | Wargame** context switch in the `#governance` header. Internal channel ids `__governance__` / `__gov_practice__` still select the stack for keep-alive and `lastChannelBySquadId`; the sidebar `#governance` row highlights for either id and restores the last stack on click. With no remembered stack and no live `pacto_gov`, open Wargame (practice first).
 
-`personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **`#settings` → You → Alerts** and **`#settings` → Access → Pending** (outbound invites + Commons join requests). Persisted `__my_dashboard__` remaps to `#settings`.
+`personal-alerts` and `join-requests` are **not** sidebar channels. MLS buckets `inbox` and `join_requests` still exist for transport; UI surfaces them under **`#settings` → You → Alerts** and **`#settings` → About → Pending** (outbound invites + Commons join requests). Persisted `__my_dashboard__` remaps to `#settings`.
 
 ---
 
@@ -75,7 +75,6 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/parent/dashboard/DashboardStatusTab.svelte` | Checklist + Proposals board (Open \| Executed \| Failed); Squad Admin card when the squad has a standalone `squad_admin` row and no Pacto Gov |
 | `components/parent/dashboard/SquadAdminStatusCard.svelte` | Admin-only deployed state: variant copy, proxy (copy), network, CTA to Governance → Crew → Privileges |
 | `components/parent/dashboard/DashboardSettingsAboutTab.svelte` | Squad photo, Commons broadcast, Invite + Pending, Join-inbox holders — `#settings` About |
-| `components/parent/dashboard/DashboardSettingsAccessTab.svelte` | Privileges pointer to Crew + content policy — `#settings` Access |
 | `components/parent/dashboard/CrewPrivilegesSection.svelte` | Role builder + catalog assign/revoke under `#governance` Crew |
 | `components/parent/SquadToolsView.svelte` | `#tools` mode panes: polls, events, docs, stickers |
 | `components/parent/dashboard/DashboardSettingsNetworkTab.svelte` | Primary/Practice networks, Chain RPC / Pimlico — `#settings` Network |
@@ -88,9 +87,9 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/parent/dashboard/ParentDashboardModals.svelte` | Deploy/import Safe + privilege modals |
 | `components/parent/dashboard/ParentDashboardMembersPanel.svelte` | Members aside |
 
-`#governance` stack: Live (`__governance__`) vs Wargame (`__gov_practice__`) via header switcher — not a fifth domain segment. Domain modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `crew`), shared across stacks. Crew hosts the member roster and the **Privileges** role builder (packed SquadAdmin `bytes32` roles). `#settings` uses `settingsChannelMode` (`you` \| `about` \| `access` \| `network`): You is checklist, Alerts, roster EVM, then squad sync; About is photo / broadcast / invite+pending / join-inbox holders; Access is a Privileges pointer to Crew plus content policy; Network is primary/practice chains, RPC, Pimlico. Leftover `personal` remaps to `you`; leftover `us` remaps to `about`. Unknown persisted settings modes (including `squad`) reset to `you`. `#tools` uses `squadToolsChannelMode` (`polls` \| `events` \| `docs` \| `stickers`); legacy sidebar names `polls` / `events` / `docs` and the superseded `board` slug restore as `#tools` (plus shelf mode when applicable). Unknown tools modes reset to `polls`.
+`#governance` stack: Live (`__governance__`) vs Wargame (`__gov_practice__`) via header switcher — not a fifth domain segment. Domain modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `crew`), shared across stacks. Crew hosts the member roster and the **Privileges** role builder (packed SquadAdmin `bytes32` roles). `#settings` uses `settingsChannelMode` (`you` \| `about` \| `network`): You is checklist, Alerts, roster EVM, then squad sync; About is photo / broadcast / invite+pending / join-inbox holders; Network is primary/practice chains, RPC, Pimlico. Leftover `personal` remaps to `you`; leftover `us` remaps to `about`. Unknown persisted settings modes (including `squad` and `access`) reset to `you`. `#tools` uses `squadToolsChannelMode` (`polls` \| `events` \| `docs` \| `stickers`); legacy sidebar names `polls` / `events` / `docs` and the superseded `board` slug restore as `#tools` (plus shelf mode when applicable). Unknown tools modes reset to `polls`.
 
-**Status vs Settings.** Status is for frequently needed operational info: Checklist, live Proposals. Settings is for one-time or occasional config, split across You / About / Access / Network. Privilege role manage lives on **Crew** (not Settings). Network retargeting for future deploys lives in Settings → Network ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` and `roles` slugs) reset to `status`. Arbitrary contract allowlist / call UI is not on Settings.
+**Status vs Settings.** Status is for frequently needed operational info: Checklist, live Proposals. Settings is for one-time or occasional config, split across You / About / Network. Privilege role manage lives on **Crew** (not Settings). Network retargeting for future deploys lives in Settings → Network ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` and `roles` slugs) reset to `status`. Arbitrary contract allowlist / call UI is not on Settings.
 
 **Invariant:** do not add a new `#governance` segmented mode for a single feature (including Wargame). Occasional config goes in a Settings **section**. A new tab is only for a frequently used operational domain with its own data (Governance, Treasury, Crew). Hats tree lives under Governance, not its own tab. Stickers must not be a sidebar channel or a `#governance` mode — pack authoring lives under `#tools` Stickers with polls / events / docs.
 

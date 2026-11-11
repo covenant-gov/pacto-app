@@ -16,12 +16,12 @@ Private Commons join: requesters **DM the squad Join inbox** (shared Nostr ident
 
 ## Channel backing
 
-`join_requests` is a **virtual bucket** on the **announcements MLS group** (same physical `groupId` as `#announcements` / `#personal-alerts` / `#polls`). UI surfaces pending requests under **`#settings` → Access → Pending** (same list as outbound invites).
+`join_requests` is a **virtual bucket** on the **announcements MLS group** (same physical `groupId` as `#announcements` / `#personal-alerts` / `#polls`). UI surfaces pending requests under **`#settings` → About → Pending** (same list as outbound invites).
 
 | UI / wire | Bucket | Notes |
 |---------|--------|--------|
 | `#announcements` | `announcements` | Includes Join inbox meta + key-rotated notices |
-| Pending (Settings Access) | `join_requests` | Pending join requests + accept/reject state |
+| Pending (Settings About) | `join_requests` | Pending join requests + accept/reject state |
 | Alerts (Settings) | `inbox` | Rotate-key prompts for holders |
 | `#polls` | `polls` | Unchanged |
 

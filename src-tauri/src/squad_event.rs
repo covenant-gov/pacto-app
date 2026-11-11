@@ -718,14 +718,8 @@ impl Applied {
     }
 }
 
-fn may_create(conn: &Connection, parent_id: &str, role: SquadGroupRole) -> Result<bool, String> {
-    if !role.is_member {
-        return Ok(false);
-    }
-    if role.is_admin {
-        return Ok(true);
-    }
-    Ok(!crate::squad_content_policy::load_policy(conn, parent_id)?.restrict_event_create)
+fn may_create(role: SquadGroupRole) -> bool {
+    role.is_member
 }
 
 /// Author or admin, and still a member.
@@ -749,7 +743,7 @@ pub fn apply_op(
         return Ok(Applied::Ignored);
     }
     if w.op == Op::SeriesCard {
-        let ok = series_card_content(w).is_some() && may_create(conn, &w.parent_id, role)?;
+        let ok = series_card_content(w).is_some() && may_create(role);
         return Ok(if ok {
             Applied::SeriesCard
         } else {
@@ -818,7 +812,7 @@ fn insert_create(
     meta: &OpMeta<'_>,
     role: SquadGroupRole,
 ) -> Result<Applied, String> {
-    if !may_create(conn, &w.parent_id, role)? {
+    if !may_create(role) {
         return Ok(Applied::Ignored);
     }
     let tx = conn
@@ -1274,6 +1268,13 @@ pub async fn process_rumor(
         .to_bech32()
         .map_err(|e| format!("pubkey bech32: {}", e))?;
     let role = squad_records::group_role(handle, group_id, &signer).await;
+    if matches!(w.op, Op::Create | Op::SeriesCard)
+        && ensure_create_privilege(handle, &w.parent_id, &signer)
+            .await
+            .is_err()
+    {
+        return Ok(RumorProcessingResult::SquadRecordSilent);
+    }
     let rumor_id = rumor.id.to_hex();
     let meta = OpMeta {
         rumor_id: &rumor_id,
@@ -1317,18 +1318,31 @@ fn ensure_announcements_group(mls_group_id: &str, parent_id: &str) -> Result<(),
     }
 }
 
-fn ensure_may_create(
-    conn: &Connection,
+fn ensure_may_create(role: SquadGroupRole) -> Result<(), String> {
+    if may_create(role) {
+        Ok(())
+    } else {
+        Err(err::NOT_MEMBER.into())
+    }
+}
+
+async fn ensure_create_privilege<R: Runtime>(
+    handle: &AppHandle<R>,
     parent_id: &str,
-    role: SquadGroupRole,
+    npub: &str,
 ) -> Result<(), String> {
-    if !role.is_member {
-        return Err(err::NOT_MEMBER.into());
+    let allowed = crate::evm::squad_privilege_enforce::member_has_squad_privilege(
+        handle,
+        parent_id,
+        npub,
+        crate::evm::squad_privilege_enforce::SquadPrivilegeAction::CreateEvent,
+    )
+    .await?;
+    if allowed {
+        Ok(())
+    } else {
+        Err(err::CREATE_RESTRICTED.into())
     }
-    if !may_create(conn, parent_id, role)? {
-        return Err(err::CREATE_RESTRICTED.into());
-    }
-    Ok(())
 }
 
 /// Stored row of this parent (`squad_event_not_found` otherwise).
@@ -1624,10 +1638,9 @@ pub async fn send_squad_event_create<R: Runtime>(
     let fields = fields_for_schedule(&event)?;
     let (pk, npub) = signer_identity().await?;
     let role = squad_records::group_role(&handle, &mls_group_id, &npub).await;
-    let existing = with_conn(&handle, |c| {
-        ensure_may_create(c, &parent_id, role)?;
-        load_row(c, &event_id)
-    })?;
+    ensure_may_create(role)?;
+    ensure_create_privilege(&handle, &parent_id, &npub).await?;
+    let existing = with_conn(&handle, |c| load_row(c, &event_id))?;
     if let Some(row) = existing {
         // Retry after a send that already landed.
         if row.author_npub == npub && row.series_id.is_none() && row.parent_id == parent_id {
@@ -1672,8 +1685,9 @@ pub async fn send_squad_event_series<R: Runtime>(
     let occurrences = selected_occurrences(&event, &week_offsets)?;
     let (pk, npub) = signer_identity().await?;
     let role = squad_records::group_role(&handle, &mls_group_id, &npub).await;
+    ensure_may_create(role)?;
+    ensure_create_privilege(&handle, &parent_id, &npub).await?;
     let existing = with_conn(&handle, |c| {
-        ensure_may_create(c, &parent_id, role)?;
         event_ids
             .iter()
             .map(|id| load_row(c, id))
@@ -1942,15 +1956,6 @@ mod tests {
             .expect("count")
     }
 
-    fn restrict_create(conn: &Connection) {
-        conn.execute(
-            "INSERT INTO squad_content_policy (parent_id, restrict_event_create, restrict_event_create_updated_at_ms, restrict_event_create_by_npub)
-             VALUES (?1, 1, 1, ?2)",
-            params![PARENT, ADMIN],
-        )
-        .expect("policy");
-    }
-
     /// Mirrors the series send: eight silent creates plus one card wire.
     fn series(series_id: &str, ids: &[String]) -> (Vec<EventWire>, EventWire) {
         let occ = occurrences(
@@ -2201,73 +2206,6 @@ mod tests {
         let stored = row(&conn, "ev-1");
         assert_eq!(stored.fields.start_unix, moved.start_unix);
         assert_eq!(stored.updated_at_ms, 3_000);
-    }
-
-    #[test]
-    fn restriction_ignores_member_create_and_stores_admin_create() {
-        let conn = conn();
-        restrict_create(&conn);
-        let (member, card) = ingest(
-            &conn,
-            &create("ev-1", &fields("2026-01-15T09:00"), 1_000),
-            "r1",
-            ALICE,
-        );
-        assert_eq!(member, Applied::Ignored);
-        assert!(card.is_none());
-        assert!(load_row(&conn, "ev-1").unwrap().is_none());
-
-        let (admin, card) = ingest(
-            &conn,
-            &create("ev-2", &fields("2026-01-15T09:00"), 1_000),
-            "r2",
-            ADMIN,
-        );
-        assert_eq!(admin, Applied::Changed { inserted: true });
-        assert!(card.is_some());
-        assert_eq!(row(&conn, "ev-2").author_npub, ADMIN);
-
-        let (_, card) = ingest(&conn, &series("s-1", &series_ids()).1, "r3", ALICE);
-        assert!(card.is_none());
-    }
-
-    #[test]
-    fn backdated_member_create_and_restrict_on_converge_in_either_order() {
-        use crate::squad_content_policy::{apply_policy, build_set_wire, PolicyFlag};
-        let restrict = build_set_wire(
-            &Default::default(),
-            PARENT,
-            PolicyFlag::RestrictEventCreate,
-            true,
-            5_000,
-        );
-        let f = fields("2026-01-15T09:00");
-        let backdated = create("ev-member", &f, 0);
-        let admin_event = create("ev-admin", &f, 6_000);
-        for policy_first in [true, false] {
-            let conn = conn();
-            let apply_restrict = |c: &Connection| {
-                apply_policy(c, &restrict, ADMIN, true, &[ADMIN.to_string()]).expect("policy");
-            };
-            if policy_first {
-                apply_restrict(&conn);
-            }
-            ingest(&conn, &backdated, "r-member", ALICE);
-            ingest(&conn, &admin_event, "r-admin", ADMIN);
-            if !policy_first {
-                apply_restrict(&conn);
-            }
-            let ids: Vec<String> = load_events(&conn, PARENT, ADMIN)
-                .unwrap()
-                .into_iter()
-                .map(|e| e.id)
-                .collect();
-            assert_eq!(
-                ids,
-                vec!["ev-admin".to_string()],
-                "policy_first={policy_first}"
-            );
-        }
     }
 
     #[test]
@@ -2832,16 +2770,9 @@ mod tests {
             code(err::NOT_FOUND)
         );
 
-        assert_eq!(
-            ensure_may_create(&conn, PARENT, role_of(OUTSIDER)),
-            code(err::NOT_MEMBER)
-        );
-        restrict_create(&conn);
-        assert_eq!(
-            ensure_may_create(&conn, PARENT, role_of(BOB)),
-            code(err::CREATE_RESTRICTED)
-        );
-        assert!(ensure_may_create(&conn, PARENT, role_of(ADMIN)).is_ok());
+        assert_eq!(ensure_may_create(role_of(OUTSIDER)), code(err::NOT_MEMBER));
+        assert!(ensure_may_create(role_of(BOB)).is_ok());
+        assert!(ensure_may_create(role_of(ADMIN)).is_ok());
     }
 
     #[test]

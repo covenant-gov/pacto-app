@@ -45,7 +45,7 @@ describe('CreateEventModal', () => {
 
     const first = render(CreateEventModal, { props });
     await fillAndSubmit();
-    await screen.findByText('Only squad admins can add events in this squad.');
+    await screen.findByText('You cannot add events in this squad.');
     first.unmount();
 
     render(CreateEventModal, { props });

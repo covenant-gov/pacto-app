@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { SquadEventDto } from '../api/squad-events';
-import type { SquadContentPolicyView } from '../api/squad-content-policy';
 import { orderShelfEvents, shelfCreateControl, shelfOpenEvent } from './squad-events-shelf';
 
 function ev(id: string, fields: Partial<SquadEventDto>): SquadEventDto {
@@ -35,18 +34,6 @@ function ev(id: string, fields: Partial<SquadEventDto>): SquadEventDto {
 const NOW = Date.UTC(2026, 11, 10, 12, 0);
 const unix = (y: number, m: number, d: number, h = 0) => Date.UTC(y, m - 1, d, h) / 1000;
 
-function policy(overrides: Partial<SquadContentPolicyView>): SquadContentPolicyView {
-  return {
-    restrictEventCreate: false,
-    restrictEventCreateUpdatedAtMs: 0,
-    restrictDocAdd: false,
-    restrictDocAddUpdatedAtMs: 0,
-    callerIsAdmin: false,
-    adminIsMember: true,
-    ...overrides,
-  };
-}
-
 describe('orderShelfEvents', () => {
   const events = [
     ev('later', { startUnix: unix(2026, 12, 20, 9) }),
@@ -80,14 +67,12 @@ describe('shelfOpenEvent', () => {
 });
 
 describe('shelfCreateControl', () => {
-  it('hides create when restricted and the caller is not an admin', () => {
-    expect(shelfCreateControl(policy({ restrictEventCreate: true }))).toBe('adminOnly');
-    expect(shelfCreateControl(policy({ restrictEventCreate: true, adminIsMember: false }))).toBe('lockedOut');
+  it('hides create when the privilege is denied', () => {
+    expect(shelfCreateControl(false)).toBe('denied');
   });
 
-  it('shows create when open, for admins, or when the policy could not load', () => {
-    expect(shelfCreateControl(policy({}))).toBe('create');
-    expect(shelfCreateControl(policy({ restrictEventCreate: true, callerIsAdmin: true }))).toBe('create');
+  it('shows create when allowed or when the privilege read failed', () => {
+    expect(shelfCreateControl(true)).toBe('create');
     expect(shelfCreateControl(null)).toBe('create');
   });
 });

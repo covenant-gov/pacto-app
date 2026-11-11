@@ -1,6 +1,7 @@
 {
 	"docs.panel.ariaLabel": "Documentos del escuadrón",
 	"docs.panel.add": "Añadir documento",
+	"docs.panel.denied": "No puedes añadir documentos.",
 	"docs.panel.loading": "Cargando documentos…",
 	"docs.panel.empty": "Todavía no hay documentos. Los enlaces guardados antes de que te unieras a este escuadrón no aparecen aquí.",
 	"docs.panel.emptyFiltered": "Ningún documento coincide con este filtro.",

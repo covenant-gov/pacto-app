@@ -91,8 +91,10 @@ Custom catalog roles pack a short name + action flags into `bytes32` (pacto-gov 
 | `createChannel` | Create-channel flow and catalog send, including state-sync republish | Channels catalog MLS apply |
 | `broadcast` | Commons broadcast + `resolveCanBroadcastSquad` | Publish-gated today; Alpha target: honest ingest/display filter (see Enforceability) |
 | `manageNetwork` | Network + RPC share publish | Network / RPC MLS apply |
+| `createEvent` | Event create and series send | Rust `process_rumor` drops unauthorized `create` / `series_card` (`SquadRecordSilent`) |
+| `addDoc` | Doc add send | Rust `process_rumor` drops unauthorized `add` (`SquadRecordSilent`) |
 
-**Inactive SquadAdmin** (no resolvable proxy in local infra): all of the above allow. **Active SquadAdmin**: require roster binding + FULL or the flag; unbound / RPC failure / pause / missing flag → deny. Receive paths ignore event `created_at` and fail closed when the author npub is missing while SquadAdmin is active. Join-inbox holder FULL gate is unchanged (separate path).
+**Inactive SquadAdmin** (no resolvable proxy in local infra): all of the above allow. **Active SquadAdmin**: require roster binding + FULL or the flag; unbound / RPC failure / pause / missing flag → deny. Receive paths ignore event `created_at` and fail closed when the author npub is missing while SquadAdmin is active. Join-inbox holder FULL gate is unchanged (separate path). Event and doc **update / remove of someone else’s row** stay author-or-MLS-admin; they are not packed flags.
 
 ## Enforceability (on-chain recognition vs MLS)
 
@@ -122,6 +124,8 @@ Hats / `require_capability` (treasury, mutiny, SquadAdmin **role management**) s
 | `manageNetwork` | Network/RPC share only affects local squad config if merged | TS publish + TS receive | Rust ingest parity |
 | `inviteAccept` (consent invite, admit, join **response**, structured admit signals) | Honest clients skip applying those structured side effects without the flag | TS + Rust invite when `privilegeParentId` is set; receive FE-only | Chain class for structured admit/invite product state; Rust ingest for those payloads |
 | `broadcast` | Commons rows can be ignored by honest clients if author lacks flag | Publish UI only; Rust/Commons ingest ungated | Filter publish **and** honest ingest/display; not MLS crypto |
+| `createEvent` | Event rows only appear if honest clients store the rumor | Send + Rust ingest (`create` / `series_card`); sync `may_create` is membership-only | Shipped for send and ingest |
+| `addDoc` | Doc rows only appear if honest clients store the rumor | Send + Rust ingest (`add`); sync `may_add` is membership-only | Shipped for send and ingest |
 
 ### MLS-only (cannot meaningfully force on-chain)
 
@@ -140,11 +144,11 @@ Hats / `require_capability` (treasury, mutiny, SquadAdmin **role management**) s
 | `createChannel` | Chain (catalog / open-channel recognition) |
 | `broadcast` | Chain (Commons publish + honest ingest/display) |
 | `manageNetwork` | Chain (network/RPC share merge) |
+| `createEvent` | Chain (event create / series card recognition) |
+| `addDoc` | Chain (doc add recognition) |
 | `firstMate` | Catalog / deferred signing — not MLS force; no recognition gate until 1st Mate signing ships |
 
-### Non-normative leftover
-
-`squad_content_policy` / Settings Access “only admins add events/docs” uses MLS `admin_pubkeys` booleans, not SquadAdmin packed roles. It is **not** the long-term privilege model. Do not expand it; later work may delete or replace it. Event/doc add gates, if any, belong under the recognition model above as a separate product decision.
+Settings has no Access mode. Event and doc create/add use the packed flags above. Incoming `pacto_squad_content_policy` rumors are dropped. Update and remove of another member’s event or doc stay MLS-admin (or the author).
 
 Pre-gov privilege source and inherit/override when SquadAdmin deploys are out of scope for this section.
 

@@ -12,10 +12,11 @@ use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
 };
 use super::gov_read::connect_gov_read_provider;
 use super::privilege_role_id::{
-    decode_privilege_role_id, FLAG_BROADCAST, FLAG_CREATE_CHANNEL, FLAG_INVITE_ACCEPT,
-    FLAG_MANAGE_NETWORK, PRIVILEGE_KNOWN_ACTION_MASK,
+    decode_privilege_role_id, FLAG_ADD_DOC, FLAG_BROADCAST, FLAG_CREATE_CHANNEL, FLAG_CREATE_EVENT,
+    FLAG_INVITE_ACCEPT, FLAG_MANAGE_NETWORK, PRIVILEGE_KNOWN_ACTION_MASK,
 };
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
+use crate::account_manager;
 use crate::db;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +29,8 @@ pub enum SquadPrivilegeAction {
     Broadcast,
     #[allow(dead_code)]
     ManageNetwork,
+    CreateEvent,
+    AddDoc,
 }
 
 impl SquadPrivilegeAction {
@@ -37,8 +40,16 @@ impl SquadPrivilegeAction {
             Self::CreateChannel => FLAG_CREATE_CHANNEL,
             Self::Broadcast => FLAG_BROADCAST,
             Self::ManageNetwork => FLAG_MANAGE_NETWORK,
+            Self::CreateEvent => FLAG_CREATE_EVENT,
+            Self::AddDoc => FLAG_ADD_DOC,
         }
     }
+}
+
+enum ExecDecision {
+    Allow,
+    Paused,
+    Deny,
 }
 
 struct ResolvedAdmin {
@@ -130,6 +141,110 @@ async fn read_catalog_role_ids<P: Provider>(
     Ok(roles)
 }
 
+async fn executor_decision<P: Provider>(
+    provider: &P,
+    admin: Address,
+    exec: Address,
+    needed: u16,
+) -> Result<ExecDecision, String> {
+    let paused: bool = eth_call_decode(provider, admin, &isExecutorPausedCall { _executor: exec })
+        .await
+        .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
+    if paused {
+        return Ok(ExecDecision::Paused);
+    }
+    let full: bool = eth_call_decode(
+        provider,
+        admin,
+        &isExecutorFullPermissionCall { _executor: exec },
+    )
+    .await
+    .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
+    if full {
+        return Ok(ExecDecision::Allow);
+    }
+    let catalog = read_catalog_role_ids(provider, admin).await?;
+    let mut known = 0u16;
+    for role in catalog {
+        let enabled: bool = eth_call_decode(
+            provider,
+            admin,
+            &hasExecutorRoleCall {
+                _executor: exec,
+                _role: role,
+            },
+        )
+        .await
+        .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
+        if !enabled {
+            continue;
+        }
+        if let Ok(decoded) = decode_privilege_role_id(role) {
+            known |= decoded.known_flags & PRIVILEGE_KNOWN_ACTION_MASK;
+        }
+    }
+    if known & needed == 0 {
+        Ok(ExecDecision::Deny)
+    } else {
+        Ok(ExecDecision::Allow)
+    }
+}
+
+/// Roster address for `member_npub`: current account uses the squad binding, peers use the certified share.
+fn executor_address_for_member<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    member_npub: &str,
+) -> Result<Option<Address>, String> {
+    let npub = member_npub.trim();
+    if npub.is_empty() {
+        return Ok(None);
+    }
+    if account_manager::get_current_account().ok().as_deref() == Some(npub) {
+        if let Ok(addr) = resolve_acl_roster_address(app, parent_id) {
+            return Ok(Some(addr));
+        }
+    }
+    let rows = db::list_squad_member_evm(app.clone(), parent_id.to_string(), None)?;
+    let Some(row) = rows.into_iter().find(|r| r.member_npub.trim() == npub) else {
+        return Ok(None);
+    };
+    let raw = row.evm_address.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    parse_address(raw)
+        .map(Some)
+        .map_err(|e| wallet_err_json("INVALID_EXECUTOR", e, None))
+}
+
+/// `Ok(true)` when SquadAdmin is inactive or the member holds the flag.
+/// `Ok(false)` when active and unbound, paused, or missing the flag. RPC errors are `Err`.
+pub async fn member_has_squad_privilege<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    member_npub: &str,
+    action: SquadPrivilegeAction,
+) -> Result<bool, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(false);
+    }
+    let Some(admin) = resolve_squad_admin_proxy_from_infra(app, pid)? else {
+        return Ok(true);
+    };
+    let Some(exec) = executor_address_for_member(app, pid, member_npub)? else {
+        return Ok(false);
+    };
+    let (provider, _ctx) = connect_gov_read_provider(admin.chain.as_str(), None).await?;
+    Ok(
+        match executor_decision(&provider, admin.proxy, exec, action.flag_bit()).await? {
+            ExecDecision::Allow => true,
+            ExecDecision::Paused | ExecDecision::Deny => false,
+        },
+    )
+}
+
 /// Require current user's packed privilege for `action` on `parent_id`.
 /// No SquadAdmin infra → allow. Unbound / RPC / pause / missing flag → deny.
 pub async fn require_current_user_squad_privilege<R: Runtime>(
@@ -148,63 +263,19 @@ pub async fn require_current_user_squad_privilege<R: Runtime>(
     let Some(admin) = resolve_squad_admin_proxy_from_infra(app, pid)? else {
         return Ok(());
     };
-
     let exec = resolve_acl_roster_address(app, pid)?;
     let (provider, _ctx) = connect_gov_read_provider(admin.chain.as_str(), None).await?;
-
-    let paused: bool = eth_call_decode(
-        &provider,
-        admin.proxy,
-        &isExecutorPausedCall { _executor: exec },
-    )
-    .await
-    .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
-    if paused {
-        return Err(wallet_err_json(
+    match executor_decision(&provider, admin.proxy, exec, action.flag_bit()).await? {
+        ExecDecision::Allow => Ok(()),
+        ExecDecision::Paused => Err(wallet_err_json(
             "PRIVILEGE_PAUSED",
             "Squad Admin executor is paused",
             None,
-        ));
-    }
-
-    let full: bool = eth_call_decode(
-        &provider,
-        admin.proxy,
-        &isExecutorFullPermissionCall { _executor: exec },
-    )
-    .await
-    .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
-    if full {
-        return Ok(());
-    }
-
-    let catalog = read_catalog_role_ids(&provider, admin.proxy).await?;
-    let needed = action.flag_bit();
-    let mut known = 0u16;
-    for role in catalog {
-        let enabled: bool = eth_call_decode(
-            &provider,
-            admin.proxy,
-            &hasExecutorRoleCall {
-                _executor: exec,
-                _role: role,
-            },
-        )
-        .await
-        .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
-        if !enabled {
-            continue;
-        }
-        if let Ok(decoded) = decode_privilege_role_id(role) {
-            known |= decoded.known_flags & PRIVILEGE_KNOWN_ACTION_MASK;
-        }
-    }
-    if known & needed == 0 {
-        return Err(wallet_err_json(
+        )),
+        ExecDecision::Deny => Err(wallet_err_json(
             "PRIVILEGE_DENIED",
             "Missing Squad Admin privilege for this action",
             None,
-        ));
+        )),
     }
-    Ok(())
 }

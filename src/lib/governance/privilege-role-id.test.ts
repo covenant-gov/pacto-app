@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FLAG_ADD_DOC,
   FLAG_BROADCAST,
   FLAG_CREATE_CHANNEL,
+  FLAG_CREATE_EVENT,
   FLAG_FIRST_MATE,
   FLAG_INVITE_ACCEPT,
   FLAG_MANAGE_NETWORK,
@@ -70,6 +72,12 @@ const ROUND_TRIPS: Array<{
     name: 'Beta',
     hex: '0x4265746100000000000000000000000000000000000000000000000000010004',
   },
+  {
+    label: 'Create event + add doc',
+    flags: FLAG_CREATE_EVENT | FLAG_ADD_DOC,
+    name: 'Ed',
+    hex: '0x4564000000000000000000000000000000000000000000000000000000010060',
+  },
 ];
 
 describe('privilege-role-id encode/decode (gov PR #58 vectors)', () => {
@@ -107,18 +115,18 @@ describe('privilege-role-id encode/decode (gov PR #58 vectors)', () => {
     expect(decodePrivilegeRoleId(hex)).toEqual({ ok: false, reason: 'reserved_nonzero' });
   });
 
-  it('bit 5 set: grants known bit 0 only', () => {
-    const hex = '0x5800000000000000000000000000000000000000000000000000000000010021';
+  it('bit 7 set: grants known bit 0 only', () => {
+    const hex = '0x5800000000000000000000000000000000000000000000000000000000010081';
     const decoded = decodePrivilegeRoleId(hex);
     expect(decoded.ok).toBe(true);
     if (!decoded.ok) return;
-    expect(decoded.flags).toBe(0x0021);
+    expect(decoded.flags).toBe(0x0081);
     expect(decoded.knownFlags).toBe(FLAG_INVITE_ACCEPT);
     expect(decoded.name).toBe('X');
   });
 
   it('encode rejects reserved flag bits', () => {
-    expect(() => encodePrivilegeRoleId({ name: 'X', flags: 1 << 5 })).toThrow(/reserved/i);
+    expect(() => encodePrivilegeRoleId({ name: 'X', flags: 1 << 7 })).toThrow(/reserved/i);
   });
 
   it('encode rejects overlong name', () => {

@@ -10,12 +10,16 @@ pub const FLAG_CREATE_CHANNEL: u16 = 1 << 1;
 pub const FLAG_BROADCAST: u16 = 1 << 2;
 pub const FLAG_MANAGE_NETWORK: u16 = 1 << 3;
 pub const FLAG_FIRST_MATE: u16 = 1 << 4;
+pub const FLAG_CREATE_EVENT: u16 = 1 << 5;
+pub const FLAG_ADD_DOC: u16 = 1 << 6;
 
 pub const PRIVILEGE_KNOWN_ACTION_MASK: u16 = FLAG_INVITE_ACCEPT
     | FLAG_CREATE_CHANNEL
     | FLAG_BROADCAST
     | FLAG_MANAGE_NETWORK
-    | FLAG_FIRST_MATE;
+    | FLAG_FIRST_MATE
+    | FLAG_CREATE_EVENT
+    | FLAG_ADD_DOC;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedPrivilegeRoleId {
@@ -131,8 +135,17 @@ mod tests {
             ),
             (
                 "0x4f7073000000000000000000000000000000000000000000000000000001001f",
-                PRIVILEGE_KNOWN_ACTION_MASK,
+                FLAG_INVITE_ACCEPT
+                    | FLAG_CREATE_CHANNEL
+                    | FLAG_BROADCAST
+                    | FLAG_MANAGE_NETWORK
+                    | FLAG_FIRST_MATE,
                 "Ops",
+            ),
+            (
+                "0x4564000000000000000000000000000000000000000000000000000000010060",
+                FLAG_CREATE_EVENT | FLAG_ADD_DOC,
+                "Ed",
             ),
             (
                 "0x416c706861000000000000000000000000000000000000000000000000010004",
@@ -179,19 +192,19 @@ mod tests {
     }
 
     #[test]
-    fn bit5_grants_known_bit0_only() {
+    fn bit7_grants_known_bit0_only() {
         let decoded = decode_privilege_role_id(hex_role(
-            "0x5800000000000000000000000000000000000000000000000000000000010021",
+            "0x5800000000000000000000000000000000000000000000000000000000010081",
         ))
         .expect("decode");
-        assert_eq!(decoded.flags, 0x0021);
+        assert_eq!(decoded.flags, 0x0081);
         assert_eq!(decoded.known_flags, FLAG_INVITE_ACCEPT);
         assert_eq!(decoded.name, "X");
     }
 
     #[test]
     fn encode_rejects_reserved_bits_and_overlong_name() {
-        assert!(encode_privilege_role_id("X", 1 << 5).is_err());
+        assert!(encode_privilege_role_id("X", 1 << 7).is_err());
         assert!(encode_privilege_role_id("ABCDEFGHIJKLMNOPQRSTUVWXYZ123", 0).is_err());
     }
 }

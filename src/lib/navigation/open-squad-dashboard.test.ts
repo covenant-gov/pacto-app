@@ -136,12 +136,12 @@ describe('openSquadSettings', () => {
     squads.set([]);
   });
 
-  it('opens #settings in access mode', () => {
+  it('opens #settings on You', () => {
     openSquadSettings('squad-123');
     expect(get(activeTopNavTab)).toBe('squads');
     expect(get(activeSquadId)).toBe('squad-123');
     expect(get(activeChannelId)).toBe(SETTINGS_CHANNEL_ID);
-    expect(get(settingsChannelMode)).toBe('access');
+    expect(get(settingsChannelMode)).toBe('you');
     expect(get(activeView)).toBe('hub');
   });
 
