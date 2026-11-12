@@ -69,6 +69,14 @@ impl Profile {
         !self.name.is_empty() || !self.display_name.is_empty() || !self.avatar.is_empty()
     }
 
+    /// Apply a fetched Kind 0. Empty / about-only events do not clear a named profile.
+    pub(crate) fn apply_fetched_kind0(&mut self, meta: &Metadata) -> bool {
+        if self.has_public_metadata() && !metadata_has_public_fields(meta) {
+            return false;
+        }
+        self.apply_kind0_replacement(meta)
+    }
+
     /// Merge Nostr Metadata with this Vector Profile
     ///
     /// Returns `true` if any fields were updated, `false`` otherwise
@@ -413,6 +421,12 @@ pub(crate) fn required_kind0_acks(connected_write_count: usize) -> usize {
     }
 }
 
+pub(crate) fn metadata_has_public_fields(meta: &Metadata) -> bool {
+    meta.name.as_deref().is_some_and(|s| !s.is_empty())
+        || meta.display_name.as_deref().is_some_and(|s| !s.is_empty())
+        || meta.picture.as_deref().is_some_and(|s| !s.is_empty())
+}
+
 fn kind0_echoes_local(meta: &Metadata, name: &str, avatar: &str) -> bool {
     let name_ok = name.is_empty() || meta.name.as_deref() == Some(name);
     let avatar_ok = avatar.is_empty() || meta.picture.as_deref() == Some(avatar);
@@ -464,10 +478,15 @@ pub(crate) fn decide_kind0_repair(
         return Kind0RepairDecision::Skip;
     }
     if let Some(hit) = winner {
-        if !kind0_echoes_local(&hit.metadata, local_name, local_avatar) {
-            return Kind0RepairDecision::Reconcile;
+        let local_named = !local_name.is_empty() || !local_avatar.is_empty();
+        let empty_winner = !metadata_has_public_fields(&hit.metadata);
+        if !(local_named && empty_winner) {
+            if !kind0_echoes_local(&hit.metadata, local_name, local_avatar) {
+                return Kind0RepairDecision::Reconcile;
+            }
+            return Kind0RepairDecision::Skip;
         }
-        return Kind0RepairDecision::Skip;
+        // Empty/about-only winner over a named local profile: fall through to Publish.
     }
     if receipt_event_id.is_none() {
         return Kind0RepairDecision::Skip;
@@ -667,7 +686,7 @@ async fn load_profile_metadata(
                 let profile_mutable = state.get_profile_mut(npub).unwrap();
                 profile_mutable.mine = my_public_key == profile_pubkey;
 
-                let metadata_changed = profile_mutable.apply_kind0_replacement(&meta);
+                let metadata_changed = profile_mutable.apply_fetched_kind0(&meta);
 
                 profile_mutable.last_updated = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -1369,8 +1388,9 @@ pub async fn get_profile(npub: String) -> Result<Profile, String> {
 #[cfg(test)]
 mod kind0_relay_proof_tests {
     use super::{
-        decide_kind0_repair, kind0_echoes_local, kind0_verified_quorum_met, nip01_kind0_winner,
-        required_kind0_acks, Kind0RepairDecision, Kind0ScanHit, Profile,
+        decide_kind0_repair, kind0_echoes_local, kind0_verified_quorum_met,
+        metadata_has_public_fields, nip01_kind0_winner, required_kind0_acks, Kind0RepairDecision,
+        Kind0ScanHit, Profile,
     };
     use nostr_sdk::prelude::*;
 
@@ -1441,6 +1461,45 @@ mod kind0_relay_proof_tests {
     }
 
     #[test]
+    fn public_fields_ignore_about_only() {
+        assert!(!metadata_has_public_fields(&Metadata::new()));
+        assert!(!metadata_has_public_fields(&Metadata::new().about("only")));
+        assert!(metadata_has_public_fields(&Metadata::new().name("Iso")));
+        assert!(metadata_has_public_fields(
+            &Metadata::new().display_name("Iso")
+        ));
+        assert!(metadata_has_public_fields(
+            &Metadata::new().picture(Url::parse("https://example.com/a.png").unwrap())
+        ));
+    }
+
+    #[test]
+    fn fetched_kind0_skips_empty_over_named_profile() {
+        let mut profile = Profile::new();
+        profile.name = "Iso".into();
+        profile.avatar = "https://example.com/a.png".into();
+        profile.about = "old".into();
+        profile.nickname = "local".into();
+        assert!(!profile.apply_fetched_kind0(&Metadata::new()));
+        assert!(!profile.apply_fetched_kind0(&Metadata::new().about("only")));
+        assert_eq!(profile.name, "Iso");
+        assert_eq!(profile.avatar, "https://example.com/a.png");
+        assert_eq!(profile.about, "old");
+        assert_eq!(profile.nickname, "local");
+    }
+
+    #[test]
+    fn fetched_kind0_named_event_still_replaces_and_clears_omitted_avatar() {
+        let mut profile = Profile::new();
+        profile.name = "Iso".into();
+        profile.avatar = "https://example.com/a.png".into();
+        let changed = profile.apply_fetched_kind0(&Metadata::new().name("Ada"));
+        assert!(changed);
+        assert_eq!(profile.name, "Ada");
+        assert!(profile.avatar.is_empty());
+    }
+
+    #[test]
     fn echo_requires_local_name_and_avatar() {
         let meta = Metadata::new()
             .name("Iso")
@@ -1502,6 +1561,35 @@ mod kind0_relay_proof_tests {
             None,
         );
         assert_eq!(decision, Kind0RepairDecision::Reconcile);
+    }
+
+    #[test]
+    fn repair_publishes_empty_winner_instead_of_reconciling_named_local() {
+        let empty = hit(50, "empty", Metadata::new());
+        let decision = decide_kind0_repair(
+            true,
+            Some("old-receipt"),
+            Some(&empty),
+            "Iso",
+            "https://example.com/a.png",
+            1_000,
+            None,
+            None,
+        );
+        assert_eq!(decision, Kind0RepairDecision::Publish);
+
+        let about_only = hit(50, "about", Metadata::new().about("bio"));
+        let decision = decide_kind0_repair(
+            true,
+            Some("old-receipt"),
+            Some(&about_only),
+            "Iso",
+            "https://example.com/a.png",
+            1_000,
+            None,
+            None,
+        );
+        assert_eq!(decision, Kind0RepairDecision::Publish);
     }
 
     #[test]
