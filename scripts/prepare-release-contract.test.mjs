@@ -79,7 +79,7 @@ describe('prepare-release stays a bump PR opener', () => {
   it('bumps with the CI fast path and still opens a signed release PR', () => {
     assert.match(
       job,
-      /run: \.\/scripts\/bump-version\.sh "\$\{\{ inputs\.bump \}\}" --no-commit --skip-checks\n/,
+      /run: \.\/scripts\/bump-version\.sh "\$\{\{ steps\.next\.outputs\.version \}\}" --no-commit --skip-checks\n/,
     );
     assert.match(prepare, /options: \[patch, minor, major\]/);
     assert.match(job, /Ensure release notes labels exist/);

@@ -16,7 +16,7 @@ That URL is configured in `src-tauri/tauri.conf.json` under `plugins.updater.end
 
 The usual path needs no manual tag:
 
-1. Run **Prepare Release** (Actions → Prepare Release) and choose `patch`, `minor`, or `major`. That job runs on `ubuntu-24.04` with a digest-pinned `pacto-ci` image, marks the exact checkout path as a git `safe.directory` in the container HOME, bumps versions, regenerates `CHANGELOG.md`, and opens the release PR. It does not rerun typecheck, lint, or the frontend/Rust suites; those stay the `pull_request` CI gate on the PR. After a `ci-image.yaml` rebuild, update the digest in `.github/workflows/prepare-release.yaml` on purpose — do not retarget `:latest`.
+1. Run **Prepare Release** (Actions → Prepare Release) and choose `patch`, `minor`, or `major`, and leave **prerelease** at `none` for a stable cut (see **Beta prereleases** below for `-beta.N`). That job runs on `ubuntu-24.04` with a digest-pinned `pacto-ci` image, marks the exact checkout path as a git `safe.directory` in the container HOME, bumps versions, regenerates `CHANGELOG.md`, and opens the release PR. It does not rerun typecheck, lint, or the frontend/Rust suites; those stay the `pull_request` CI gate on the PR. After a `ci-image.yaml` rebuild, update the digest in `.github/workflows/prepare-release.yaml` on purpose — do not retarget `:latest`.
 2. Use the rendered **What's New handoff prompt** in its description to prepare
    `whats-new/<version>.json`; review both locales in the release PR and add
    `whats-new-ready`. Then merge the pull request (see below).
@@ -42,6 +42,32 @@ The usual path needs no manual tag:
      - `deploy-landing` — refreshes the public download page (see below).
 
 Pushing a `v*` tag yourself still starts publish through the `push` trigger. The automatic push cannot: Tag Release authenticates with `GITHUB_TOKEN`, and GitHub does not start `push` workflows from that token. Re-running Tag Release after the tag exists does not dispatch a second publish.
+
+### Beta prereleases
+
+Prepare Release accepts **prerelease** = `beta` to cut `X.Y.Z-beta.N`:
+
+| Current on `main` | bump | prerelease | Next version |
+| --- | --- | --- | --- |
+| `0.7.5` | patch | beta | `0.7.6-beta.1` |
+| `0.7.6-beta.1` | patch | beta | `0.7.6-beta.2` |
+| `0.7.6-beta.2` | minor | beta | `0.8.0-beta.1` |
+| `0.7.6-beta.3` | patch | none | `0.7.6` (promote) |
+
+Version math lives in `scripts/compute-next-version.mjs`. On an existing
+`-beta.N` train, **patch** increments `N`; **minor** / **major** open a new
+train. With **prerelease** = `none` while on a beta, the suffix is stripped
+(promote to final); bump is ignored for that case.
+
+Betas still get a CHANGELOG section under their own heading. Label the release
+PR `whats-new-skip` — in-app What's New is stable-only.
+
+After merge, Tag Release pushes `vX.Y.Z-beta.N` and publish marks the GitHub
+release as a **prerelease** (`prerelease: true` when the tag contains `-`).
+GitHub's `releases/latest` (and therefore the in-app updater endpoint in
+`tauri.conf.json`) skips prereleases, so stable installs keep the last stable
+`latest.json`. `update-homebrew-tap` and `deploy-landing` are skipped for
+hyphenated tags; Homebrew and the public download page stay on stable.
 
 ### User-facing What's New notes
 

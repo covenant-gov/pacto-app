@@ -6,7 +6,7 @@ Automated version prep for `v{{VERSION}}`, opened by the "Prepare Release" workf
 
 No tag is created by this PR. Merging to `main` triggers `tag-release.yaml`, which pushes tag `v{{VERSION}}` and dispatches `release.yaml` on that tag.
 
-Review the user-facing notes in this PR before merging. `Release notes / whats-new` requires valid notes plus `whats-new-ready`, or an explicit `whats-new-skip` decision for a release with no user-visible changes. No AI runs in CI and no AI API secret is required.
+Review the user-facing notes in this PR before merging. `Release notes / whats-new` requires valid notes plus `whats-new-ready`, or an explicit `whats-new-skip` decision for a release with no user-visible changes (required for `-beta.N` prereleases). No AI runs in CI and no AI API secret is required.
 
 <details>
 <summary>🤖 What's New handoff prompt (paste into your AI)</summary>
