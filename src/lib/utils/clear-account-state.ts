@@ -168,8 +168,10 @@ import { backupVerified } from '../../stores/backup-verification';
 import { profiles } from '../../stores/profiles';
 import {
   MLS_HISTORY_WELCOME_PREFIX,
-  mlsHistoryWelcomeGroupIds,
+  clearMlsHistoryWelcome,
 } from '../../stores/mls-history-welcome';
+import { HISTORY_BACKFILL_DONE_PREFIX } from '../mls/channel-history-backfill';
+import { clearChannelHistorySession } from '../mls/channel-history-session';
 import { clearPendingReactions } from '../messaging/reactions';
 import { clearPendingAttachment } from '../messaging/attachment-composer';
 import { clearLinkPreviewRequests } from '../messaging/link-preview';
@@ -220,6 +222,8 @@ const SCOPED_KEY_PREFIXES = [
   BIOMETRIC_UNLOCK_PREFIX,
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
+  'mls_history_welcome_v1',
+  HISTORY_BACKFILL_DONE_PREFIX,
   MUTINY_PROCESS_TX_PREFIX,
   LAST_SEEN_POLL_CREATED_AT_PREFIX,
   LAST_SEEN_EVENT_CARD_AT_PREFIX,
@@ -327,7 +331,8 @@ export function clearAccountState(npub?: string): void {
   declinedWalletPeerInfoRequestMessageIds.set([]);
   reciprocatedWalletPeerInfoRequestIds.set([]);
   declinedWelcomeGroupIds.set([]);
-  mlsHistoryWelcomeGroupIds.set([]);
+  clearMlsHistoryWelcome();
+  clearChannelHistorySession();
   dmWalletPeerExchangeTick.set(0);
   backendGroupMessages.set({});
   groupSendError.set(null);

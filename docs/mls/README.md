@@ -9,6 +9,7 @@ Group messaging uses **nostr-mls** / **MDK** with **SQLite-backed** engine state
 | **[ARCHITECTURE.md](./ARCHITECTURE.md)** | Engine path, tables, subscriptions, Tauri commands, threading model |
 | **[VIRTUAL_CHANNEL_ROUTING_ADR.md](./VIRTUAL_CHANNEL_ROUTING_ADR.md)** | Normative virtual buckets (`announcements` / `inbox` / `polls` / `join_requests`): rumor tag + JSON field + derivation (single-group refactor) |
 | **[INVITES_AND_MEMBERSHIP.md](./INVITES_AND_MEMBERSHIP.md)** | Welcomes, Gift Wraps, `accept_mls_welcome`, commands |
+| **[CHANNEL_HISTORY_BACKFILL.md](./CHANNEL_HISTORY_BACKFILL.md)** | 30-day human-chat copy for a device that just accepted a welcome |
 | **[EVICTION_AND_LEAVE.md](./EVICTION_AND_LEAVE.md)** | Kick, leave, eviction cleanup, pending proposals |
 | **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** | Missing member KeyPackages, `create_group_chat` skip behavior, logs |
 

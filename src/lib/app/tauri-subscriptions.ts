@@ -11,6 +11,8 @@ import { listRelays, type RelayStatus } from '../api/relays';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
 import { applyLiveCommonsChange } from '../commons/commons-prefetch';
 import { onMlsStructuredMessage } from './mls-structured-refresh';
+import { isHistoryRequestContent } from '../mls/channel-history-backfill';
+import { handleHistoryGift, handleIncomingHistoryRequest } from '../mls/channel-history-session';
 import { handleChannelAddedToSquad, handleMlsWelcomeAccepted, notifyPendingInviteWelcome } from '../invites/accept-invite';
 import {
   handleInviteeConsentForAdmit,
@@ -337,6 +339,10 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       group_name?: string;
     };
     const m = normalizeDmPayload(message);
+    if (isHistoryRequestContent(m.content ?? '')) {
+      void handleIncomingHistoryRequest(m.content ?? '', m.npub ?? '', group_id, m.at);
+      return;
+    }
     backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => {
       const list = byGroup[group_id] ?? [];
       if (list.some((x) => x.id === m.id)) return byGroup;
@@ -352,6 +358,12 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     });
     onMlsStructuredMessage(m.content, group_id, handlers, m.npub);
     if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
+  });
+
+  register(unsubs, 'history_backfill_gift', (event) => {
+    const { sender_npub, content } = event.payload as { sender_npub?: string; content?: string };
+    if (!sender_npub || !content) return;
+    void handleHistoryGift(sender_npub, content);
   });
 
   register(unsubs, 'unread_counts_changed', (event) => {

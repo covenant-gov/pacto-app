@@ -2353,6 +2353,10 @@ async fn reconcile_existing_dm(
     if !contact.starts_with("npub1") {
         return false;
     }
+    if crate::history_backfill::is_history_backfill_gift(&msg.content) {
+        swallow_history_gift(&msg.content, contact, is_mine, wrapper_event_id).await;
+        return false;
+    }
     if dm_intake_suppression(&msg, contact, is_mine, groups)
         .await
         .is_some()
@@ -2543,6 +2547,26 @@ mod reconcile_existing_dm_from_db_tests {
     }
 
     #[tokio::test]
+    async fn history_gift_is_not_surfaced() {
+        let contact = "npub1historygift00000000000000000000000000000000000000";
+        remove_dm_chat(contact).await;
+        let msg = Message {
+            content: r#"{"type":"history_chunk","messages":[]}"#.to_string(),
+            ..test_msg("history-gift-1")
+        };
+        assert!(
+            !reconcile_existing_dm(msg, contact, false, "wrap-history-gift", &[]).await,
+            "a history gift must not become a DM"
+        );
+        assert!(!state_has_message(
+            &*STATE.lock().await,
+            contact,
+            "history-gift-1"
+        ));
+        remove_dm_chat(contact).await;
+    }
+
+    #[tokio::test]
     async fn already_in_state_returns_false() {
         let contact = "npub1reconcilealreadypresent000000000000000000000000";
         remove_dm_chat(contact).await;
@@ -2560,6 +2584,22 @@ mod reconcile_existing_dm_from_db_tests {
 }
 
 /// Handle a processed text message
+async fn swallow_history_gift(content: &str, contact: &str, is_mine: bool, wrapper_event_id: &str) {
+    if !is_mine {
+        if let Some(handle) = TAURI_APP.get() {
+            let _ = handle.emit(
+                "history_backfill_gift",
+                serde_json::json!({
+                    "sender_npub": contact,
+                    "content": content,
+                }),
+            );
+        }
+    }
+    let mut cache = WRAPPER_ID_CACHE.lock().await;
+    cache.insert(wrapper_event_id.to_string());
+}
+
 pub(crate) async fn handle_text_message(
     mut msg: Message,
     contact: &str,
@@ -2567,6 +2607,11 @@ pub(crate) async fn handle_text_message(
     is_new: bool,
     wrapper_event_id: &str,
 ) -> bool {
+    if crate::history_backfill::is_history_backfill_gift(&msg.content) {
+        swallow_history_gift(&msg.content, contact, is_mine, wrapper_event_id).await;
+        return true;
+    }
+
     // Check if message already exists in database (important for sync with partial message loading)
     if let Some(handle) = TAURI_APP.get() {
         if let Ok(exists) = db::message_exists_in_db(&handle, &msg.id).await {

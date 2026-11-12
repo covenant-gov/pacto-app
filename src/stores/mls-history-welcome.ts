@@ -1,65 +1,86 @@
 /**
- * Local-only “MLS history begins here” notice for channels joined via welcome.
+ * Local-only welcome note. Key is group id → accept time. A v1 id list loads empty.
  */
 
-import { get, writable } from 'svelte/store';
+import { derived, get, writable } from 'svelte/store';
 import { persistenceKey } from './persistence-context';
 
-export const MLS_HISTORY_WELCOME_PREFIX = 'mls_history_welcome_v1';
+export const MLS_HISTORY_WELCOME_PREFIX = 'mls_history_welcome_v2';
 
-export const mlsHistoryWelcomeGroupIds = writable<string[]>([]);
+/** Lowercase group id → Unix ms when the welcome was marked. */
+export const mlsHistoryWelcomeAcceptedAt = writable<Record<string, number>>({});
+
+/** Group ids that should show the welcome note. */
+export const mlsHistoryWelcomeGroupIds = derived(mlsHistoryWelcomeAcceptedAt, (acceptedAt) =>
+  Object.keys(acceptedAt)
+);
 
 function normalizeGroupId(groupId: string): string {
   return groupId.trim().toLowerCase();
 }
 
-function persist(ids: string[]): void {
+function persist(acceptedAt: Record<string, number>): void {
   if (typeof localStorage === 'undefined') return;
   const key = persistenceKey(MLS_HISTORY_WELCOME_PREFIX);
   if (!key) return;
   try {
-    localStorage.setItem(key, JSON.stringify(ids));
+    localStorage.setItem(key, JSON.stringify(acceptedAt));
   } catch {
-    // ignore
+    /* ignore quota */
   }
 }
 
-mlsHistoryWelcomeGroupIds.subscribe((ids) => {
-  persist(ids);
-});
-
-/** Idempotent: remember that this device joined the group via MLS welcome. */
-export function markMlsHistoryWelcome(groupId: string): void {
-  const id = normalizeGroupId(groupId);
-  if (!id) return;
-  mlsHistoryWelcomeGroupIds.update((ids) => (ids.includes(id) ? ids : [...ids, id]));
-}
-
-export function shouldShowMlsHistoryWelcome(groupId: string | null | undefined): boolean {
-  const id = typeof groupId === 'string' ? normalizeGroupId(groupId) : '';
-  if (!id) return false;
-  return get(mlsHistoryWelcomeGroupIds).includes(id);
+function publish(acceptedAt: Record<string, number>): void {
+  mlsHistoryWelcomeAcceptedAt.set(acceptedAt);
+  persist(acceptedAt);
 }
 
 export function loadMlsHistoryWelcome(npub: string): void {
-  if (typeof localStorage === 'undefined') {
-    mlsHistoryWelcomeGroupIds.set([]);
+  if (typeof localStorage === 'undefined' || !npub) {
+    publish({});
     return;
   }
   try {
     const raw = localStorage.getItem(`${MLS_HISTORY_WELCOME_PREFIX}_${npub}`);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    const ids = Array.isArray(parsed)
-      ? (parsed as string[])
-          .filter((x) => typeof x === 'string' && x.trim())
-          .map((x) => normalizeGroupId(x))
-      : [];
-    mlsHistoryWelcomeGroupIds.set([...new Set(ids)]);
+    if (!raw) {
+      publish({});
+      return;
+    }
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      publish({});
+      return;
+    }
+    const acceptedAt: Record<string, number> = {};
+    for (const [groupId, at] of Object.entries(parsed)) {
+      const id = normalizeGroupId(groupId);
+      if (!id || typeof at !== 'number' || !Number.isFinite(at)) continue;
+      acceptedAt[id] = at;
+    }
+    publish(acceptedAt);
   } catch {
-    mlsHistoryWelcomeGroupIds.set([]);
+    publish({});
   }
 }
 
+/** Record the first accept time for this group. Later marks keep that time. */
+export function markMlsHistoryWelcome(groupId: string, acceptedAtMs = Date.now()): void {
+  const id = normalizeGroupId(groupId);
+  if (!id) return;
+  const current = get(mlsHistoryWelcomeAcceptedAt);
+  if (current[id] != null) return;
+  publish({ ...current, [id]: acceptedAtMs });
+}
+
+export function clearMlsHistoryWelcome(): void {
+  publish({});
+}
+
 export function resetMlsHistoryWelcomeForTests(): void {
-  mlsHistoryWelcomeGroupIds.set([]);
+  clearMlsHistoryWelcome();
+}
+
+export function shouldShowMlsHistoryWelcome(groupId: string): boolean {
+  const id = normalizeGroupId(groupId);
+  return id !== '' && get(mlsHistoryWelcomeGroupIds).includes(id);
 }
