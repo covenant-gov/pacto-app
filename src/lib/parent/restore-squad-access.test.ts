@@ -27,7 +27,6 @@ import {
   planSquadMemberRestore,
   resetRestoreSquadAccessState,
   restoreMemberToSquad,
-  mlsMemberPanelAction,
   squadForAnnouncementsGroup,
   type GroupMembershipSnapshot,
 } from './restore-squad-access';
@@ -113,51 +112,6 @@ describe('planSquadMemberRestore', () => {
     });
     expect(plan.restoreGroupIds).toEqual([]);
     expect(plan.admitOpen).toEqual([]);
-  });
-});
-
-describe('mlsMemberPanelAction', () => {
-  it('restores on announcements, resends pending welcomes, and hides restore on a custom channel', () => {
-    expect(
-      mlsMemberPanelAction({
-        isPending: false,
-        canRestore: true,
-        isAnnouncements: true,
-        isSelf: false,
-      }),
-    ).toBe('restore');
-    expect(
-      mlsMemberPanelAction({
-        isPending: true,
-        canRestore: true,
-        isAnnouncements: false,
-        isSelf: false,
-      }),
-    ).toBe('resend');
-    expect(
-      mlsMemberPanelAction({
-        isPending: false,
-        canRestore: true,
-        isAnnouncements: false,
-        isSelf: false,
-      }),
-    ).toBe('none');
-    expect(
-      mlsMemberPanelAction({
-        isPending: false,
-        canRestore: true,
-        isAnnouncements: true,
-        isSelf: true,
-      }),
-    ).toBe('none');
-    expect(
-      mlsMemberPanelAction({
-        isPending: false,
-        canRestore: false,
-        isAnnouncements: true,
-        isSelf: false,
-      }),
-    ).toBe('none');
   });
 });
 

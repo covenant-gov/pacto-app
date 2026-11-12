@@ -481,16 +481,13 @@ export interface GroupChatCreated {
  */
 export async function createGroupChat(
   groupName: string,
-  memberIds: string[],
-  seedAdminGroupId?: string,
+  memberIds: string[]
 ): Promise<GroupChatCreated> {
   dmLog('create_group_chat', { groupName: groupName.slice(0, 20), memberCount: memberIds.length });
-  const args: { groupName: string; memberIds: string[]; seedAdminGroupId?: string } = {
+  const result = (await invoke('create_group_chat', {
     groupName,
     memberIds,
-  };
-  if (seedAdminGroupId) args.seedAdminGroupId = seedAdminGroupId;
-  const result = (await invoke('create_group_chat', args)) as { groupId: string; skippedMembers?: SkippedMember[]; pendingInvites?: UndeliveredInvite[] };
+  })) as { groupId: string; skippedMembers?: SkippedMember[]; pendingInvites?: UndeliveredInvite[] };
   dmLog('create_group_chat result', { groupId: result.groupId?.slice(0, 16) + '…' });
   return {
     groupId: result.groupId,

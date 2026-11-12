@@ -191,7 +191,7 @@ describe('runCreateChannelInParent', () => {
     });
 
     await vi.waitFor(() => {
-      expect(createGroupChat).toHaveBeenCalledWith('new-channel', ['npub-a', 'npub-b'], 'parent-1');
+      expect(createGroupChat).toHaveBeenCalledWith('new-channel', ['npub-a', 'npub-b']);
     });
 
     await vi.waitFor(() => {

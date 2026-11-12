@@ -79,11 +79,7 @@ export function runCreateChannelInParent(opts: {
         onErrorBanner(squadPrivilegeDeniedMessage(priv, get(t)));
         return;
       }
-      const { groupId, skippedMembers, pendingInvites } = await createGroupChat(
-        name,
-        selectedNpubs,
-        squadId,
-      );
+      const { groupId, skippedMembers, pendingInvites } = await createGroupChat(name, selectedNpubs);
       await persistSquadPatch(squadId, (s) => ({
         ...s,
         channels: s.channels.map((ch) =>

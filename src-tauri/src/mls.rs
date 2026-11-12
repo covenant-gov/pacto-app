@@ -427,91 +427,6 @@ fn welcomed_keypackage_ref(index: &[KeyPackageIndexEntry], owner: &str) -> Optio
         .map(|entry| entry.keypackage_ref.clone())
 }
 
-/// Members to invite and MLS admins for a new channel.
-/// An empty `admins` list means creator-only, the announcements-group default.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChannelCreateRoster {
-    pub members: Vec<String>,
-    pub admins: Vec<String>,
-}
-
-/// When `announcements_admins` is set, those keys join the new channel's admin set.
-/// Every admin except the creator is also a member: MDK rejects a non-member admin.
-pub(crate) fn union_channel_create_roster(
-    creator_npub: &str,
-    selected: &[String],
-    announcements_admins: &[String],
-) -> ChannelCreateRoster {
-    if announcements_admins.is_empty() {
-        return ChannelCreateRoster {
-            members: selected.to_vec(),
-            admins: Vec::new(),
-        };
-    }
-    let mut members = Vec::new();
-    for npub in selected {
-        let npub = npub.trim();
-        if npub.is_empty() || npub == creator_npub || members.iter().any(|m| m == npub) {
-            continue;
-        }
-        members.push(npub.to_string());
-    }
-    let mut admins = vec![creator_npub.to_string()];
-    for npub in announcements_admins {
-        let npub = npub.trim();
-        if npub.is_empty() || npub == creator_npub || admins.iter().any(|a| a == npub) {
-            continue;
-        }
-        admins.push(npub.to_string());
-        if !members.iter().any(|m| m == npub) {
-            members.push(npub.to_string());
-        }
-    }
-    ChannelCreateRoster { members, admins }
-}
-
-pub(crate) fn seeded_admins_missing_keypackage(
-    creator_npub: &str,
-    admin_npubs: &[String],
-    resolved_member_npubs: &[String],
-) -> Vec<String> {
-    admin_npubs
-        .iter()
-        .filter(|npub| {
-            npub.as_str() != creator_npub
-                && !resolved_member_npubs.iter().any(|member| member == *npub)
-        })
-        .cloned()
-        .collect()
-}
-
-pub(crate) fn announcements_admin_keypackage_error(missing_npubs: &[String]) -> String {
-    format!(
-        "Announcements admin has no usable KeyPackage ({}); channel was not created",
-        missing_npubs.join(", ")
-    )
-}
-
-fn channel_admin_keys(
-    creator: &PublicKey,
-    admin_npubs: &[String],
-) -> Result<Vec<PublicKey>, MlsError> {
-    use nostr_sdk::FromBech32;
-    let mut admins = vec![*creator];
-    for npub in admin_npubs {
-        let npub = npub.trim();
-        if npub.is_empty() {
-            continue;
-        }
-        let pk = PublicKey::from_bech32(npub)
-            .map_err(|e| MlsError::CryptoError(format!("Invalid admin npub: {}", e)))?;
-        if !admins.contains(&pk) {
-            admins.push(pk);
-        }
-    }
-    Ok(admins)
-}
-
 /// Marker the frontend matches to localize this failure; keep it and the message shape in sync
 /// with `friendlyMessage` in `src/lib/utils/tauri-errors.ts`.
 pub(crate) const RELAY_KEYPACKAGE_UNREACHABLE: &str =
@@ -929,7 +844,7 @@ impl MlsService {
          otherwise abort the whole group; validating up front turns that into one more skipped
          member instead. If every candidate is rejected while at least one member was
          requested, the call fails instead of silently creating a solo group.
-         • engine.create_group(my_pubkey, valid_kp_events, admins=creator plus any seeded announcements admins, group_config)
+         • engine.create_group(my_pubkey, valid_kp_events, admins=[my_pubkey], group_config)
          • Capture:
            - engine_group_id (internal engine id, hex) for local operations and send path.
            - wire group id used on relays (h tag). We derive a canonical 64-hex when possible; fallback to engine id.
@@ -967,7 +882,6 @@ impl MlsService {
         name: &str,
         avatar_ref: Option<&str>,
         initial_member_devices: &[(String, String)], // (member_pubkey, device_id) pairs
-        admin_npubs: &[String],
     ) -> Result<GroupCreateOutcome, MlsError> {
         // Persistent group creation using sqlite-backed engine.
         // - Resolve signer and relay config
@@ -988,9 +902,8 @@ impl MlsService {
         let creator_pubkey_b32 = my_pubkey
             .to_bech32()
             .map_err(|e| MlsError::CryptoError(e.to_string()))?;
-        let admin_keys = channel_admin_keys(&my_pubkey, admin_npubs)?;
 
-        // Build group config (relay-scoped). Empty `admin_npubs` is creator-only.
+        // Build group config (relay-scoped)
         let relay_urls: Vec<RelayUrl> = crate::trusted_relays::trusted_relays().to_vec();
         let description = format!("Vector group: {}", name);
         let group_config = NostrGroupConfigData::new(
@@ -1000,7 +913,7 @@ impl MlsService {
             None, // image_key
             None, // image_nonce
             relay_urls,
-            admin_keys.clone(),
+            vec![my_pubkey], // admins - moved from create_group call
         );
 
         // Resolve member KeyPackage events before engine usage (awaits allowed here)
@@ -1189,17 +1102,6 @@ impl MlsService {
 
             if valid_events.is_empty() && !initial_member_devices.is_empty() {
                 return Err(MlsError::NostrMlsError(format_all_skipped_error(&skipped)));
-            }
-
-            let missing_admins: Vec<String> = admin_keys
-                .iter()
-                .filter(|pk| *pk != &my_pubkey && !valid_recipients.contains(pk))
-                .filter_map(|pk| pk.to_bech32().ok())
-                .collect();
-            if !missing_admins.is_empty() {
-                return Err(MlsError::NostrMlsError(
-                    announcements_admin_keypackage_error(&missing_admins),
-                ));
             }
 
             let create_out = engine
@@ -4088,50 +3990,6 @@ mod mls_restore_tests {
             !index.iter().any(|entry| entry.device_id == "event-a"),
             "refresh still replaces the event-id row it just fetched"
         );
-    }
-
-    #[test]
-    fn channel_roster_seeds_announcements_admins_as_members_and_admins() {
-        let roster = union_channel_create_roster(
-            "npub1creator",
-            &["npub1bob".to_string(), "npub1creator".to_string()],
-            &[
-                "npub1creator".to_string(),
-                "npub1carol".to_string(),
-                "npub1carol".to_string(),
-            ],
-        );
-        assert_eq!(
-            roster.members,
-            vec!["npub1bob".to_string(), "npub1carol".to_string()]
-        );
-        assert_eq!(
-            roster.admins,
-            vec!["npub1creator".to_string(), "npub1carol".to_string()]
-        );
-
-        let solo = union_channel_create_roster("npub1creator", &["npub1bob".to_string()], &[]);
-        assert_eq!(solo.members, vec!["npub1bob".to_string()]);
-        assert!(solo.admins.is_empty());
-    }
-
-    #[test]
-    fn seeded_admin_without_keypackage_aborts_channel_create() {
-        let missing = seeded_admins_missing_keypackage(
-            "npub1creator",
-            &["npub1creator".to_string(), "npub1carol".to_string()],
-            &["npub1bob".to_string()],
-        );
-        assert_eq!(missing, vec!["npub1carol".to_string()]);
-        let err = announcements_admin_keypackage_error(&missing);
-        assert!(err.contains("npub1carol"));
-        assert!(err.contains("channel was not created"));
-        assert!(seeded_admins_missing_keypackage(
-            "npub1creator",
-            &["npub1creator".to_string(), "npub1carol".to_string()],
-            &["npub1carol".to_string()],
-        )
-        .is_empty());
     }
 
     // The exact scenario #1 (pacto-app-7xq.1) targets: only the pre-reset KeyPackage is ever
