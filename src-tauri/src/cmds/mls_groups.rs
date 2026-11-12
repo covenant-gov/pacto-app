@@ -1483,7 +1483,7 @@ pub(crate) async fn refresh_keypackages_for_contact(
     // Load existing index
     let mut index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
 
-    // Remove any existing entries for this owner+device_id to avoid duplicates
+    // Remove refreshed event-id rows. The welcomed sentinel is not an event id and stays.
     for new_entry in &new_entries {
         let owner = new_entry
             .get("owner_pubkey")
@@ -1494,9 +1494,15 @@ pub(crate) async fn refresh_keypackages_for_contact(
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         index.retain(|entry| {
-            let same_owner = entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner);
-            let same_device = entry.get("device_id").and_then(|v| v.as_str()) == Some(device);
-            !(same_owner && same_device)
+            let existing_owner = entry
+                .get("owner_pubkey")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let existing_device = entry
+                .get("device_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            mls::refresh_keeps_index_row(existing_device, existing_owner == owner, device)
         });
     }
 

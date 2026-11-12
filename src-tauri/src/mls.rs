@@ -291,14 +291,12 @@ const RESTORE_KEYPACKAGE_RETRY_ATTEMPTS: u32 = 4;
 const RESTORE_KEYPACKAGE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Whether `candidate_id` is acceptable evidence of a post-reset republish, given the
-/// KeyPackage event id this admin last recorded for the same member+device (populated in
-/// `mls_keypackage_index` — see `MlsService::record_keypackage_reference`). A candidate
-/// identical to the recorded id has not rotated since, so it cannot be trusted to hold a
-/// private key outside an archived store. This is the generation marker: not a wire tag on the
-/// KeyPackage event itself, but a value derived from what this admin has already observed — no
-/// cooperation from the publisher required. When there is no recorded ref (admin never resolved
-/// this member+device), require `candidate_created_at >= reset_at_secs` so a pre-reset KeyPackage
-/// still on the relay is not welcomed into the fresh store.
+/// KeyPackage event id this admin last welcomed for that owner (the `welcomed` index row —
+/// see `MlsService::record_keypackage_reference`). A candidate identical to that id has not
+/// rotated since the last welcome. Refresh rows are not a floor: they store the event id
+/// they just fetched. When there is no welcomed ref, require `candidate_created_at >=
+/// reset_at_secs` so a pre-reset KeyPackage still on the relay is not welcomed into a fresh
+/// store. No floor and no reset time accepts the candidate.
 fn keypackage_generation_advanced(
     recorded_ref: Option<&str>,
     candidate_id: &str,
@@ -398,6 +396,35 @@ fn sanitize_skip_reason(reason: &str) -> String {
     }
     let truncated: String = redacted.chars().take(SKIP_REASON_MAX_CHARS).collect();
     format!("{}…", truncated)
+}
+
+/// Device id of the per-owner index row that stores the last KeyPackage this admin welcomed.
+/// Refresh writes event ids as device ids and must not replace this row.
+pub(crate) const WELCOMED_KEYPACKAGE_DEVICE_ID: &str = "welcomed";
+
+pub(crate) fn is_welcomed_keypackage_device(device_id: &str) -> bool {
+    device_id == WELCOMED_KEYPACKAGE_DEVICE_ID
+}
+
+/// Keep a keypackage index row when refresh rewrites `refreshed_device_id` for the same owner.
+pub(crate) fn refresh_keeps_index_row(
+    existing_device_id: &str,
+    same_owner: bool,
+    refreshed_device_id: &str,
+) -> bool {
+    if is_welcomed_keypackage_device(existing_device_id) {
+        return true;
+    }
+    !(same_owner && existing_device_id == refreshed_device_id)
+}
+
+fn welcomed_keypackage_ref(index: &[KeyPackageIndexEntry], owner: &str) -> Option<String> {
+    index
+        .iter()
+        .find(|entry| {
+            entry.owner_pubkey == owner && is_welcomed_keypackage_device(&entry.device_id)
+        })
+        .map(|entry| entry.keypackage_ref.clone())
 }
 
 /// Marker the frontend matches to localize this failure; keep it and the message shape in sync
@@ -1412,34 +1439,32 @@ impl MlsService {
             authorize_membership_action(action, &admin_pubkeys, &my_pk)?;
         }
 
-        // The keypackage reference this admin last recorded for this exact member+device (see
-        // `record_keypackage_reference`) — the generation-marker floor a Restore's fetch must
-        // diverge from before it can be trusted.
-        let recorded_ref = self
-            .read_keypackage_index()
-            .await
-            .unwrap_or_default()
-            .into_iter()
+        // Per-device ref pins Invite to the device the caller asked for. Restore's floor is
+        // the welcomed sentinel only — a refresh row's event id is not a prior generation.
+        let keypackage_index = self.read_keypackage_index().await.unwrap_or_default();
+        let device_recorded_ref = keypackage_index
+            .iter()
             .find(|entry| entry.owner_pubkey == member_pubkey && entry.device_id == device_id)
-            .map(|entry| entry.keypackage_ref);
+            .map(|entry| entry.keypackage_ref.clone());
+        let welcomed_ref = welcomed_keypackage_ref(&keypackage_index, member_pubkey);
 
-        // Fresh-resolve only for a genuine restore: a store-reset member's recorded KeyPackage's
+        // Fresh-resolve only for a genuine restore: a store-reset member's welcomed KeyPackage's
         // private init key lives only in their archived store. A resend targets a member who
         // never reset, so gating it on rotation would reject it forever — but the KeyPackage
         // recorded at create may already have been consumed, so resend always fetches latest.
         let kp_event = if action == MembershipAction::Restore && !is_resend {
             // Retry rather than trust the first response: the member's own post-reset
             // republish (triggered elsewhere, on their next decrypt/login, out of this call's
-            // control) races this restore. A candidate identical to `recorded_ref` has not
-            // rotated since we last saw them, so keep polling instead of proceeding on it.
-            // With no recorded ref, `mls_store_reset_at` is the time floor.
+            // control) races this restore. A candidate identical to the welcomed ref has not
+            // rotated since the last welcome. With no welcomed ref, `mls_store_reset_at` is
+            // the time floor.
             let reset_at_secs = TAURI_APP
                 .get()
                 .and_then(|h| crate::mls_store_reset_state::store_reset_at_secs(h).ok())
                 .flatten();
             let retry_client = client.clone();
             resolve_fresh_keypackage(
-                recorded_ref.as_deref(),
+                welcomed_ref.as_deref(),
                 reset_at_secs,
                 RESTORE_KEYPACKAGE_RETRY_ATTEMPTS,
                 move || {
@@ -1457,7 +1482,7 @@ impl MlsService {
             // Try the recorded reference first: it pins the exact device_id the caller asked
             // for, since `fetch_latest_keypackage` (author-only filter) cannot distinguish
             // between a member's devices.
-            if let Some(ref_hex) = recorded_ref.as_deref() {
+            if let Some(ref_hex) = device_recorded_ref.as_deref() {
                 let id = EventId::from_hex(ref_hex)
                     .map_err(|e| MlsError::CryptoError(format!("Invalid keypackage ref: {}", e)))?;
                 let filter = Filter::new().id(id).limit(1);
@@ -1484,7 +1509,7 @@ impl MlsService {
         let kp_event = kp_event.ok_or_else(|| {
             if action == MembershipAction::Restore && !is_resend {
                 MlsError::NetworkError(format!(
-                    "No post-reset keypackage observed yet for {}:{}; ask them to reopen the app so it republishes, then retry the restore",
+                    "No newer KeyPackage is on the relay yet for {}:{}. The member must unlock the app so a fresh KeyPackage publishes, then retry the restore",
                     member_pubkey, device_id
                 ))
             } else {
@@ -3108,12 +3133,10 @@ impl MlsService {
             .map_err(|e| MlsError::StorageError(e))
     }
 
-    /// Record the KeyPackage this admin most recently resolved for `owner_pubkey`/`device_id`
-    /// (a Restore's generation-checked fetch, or an ordinary Invite resolution). This becomes
-    /// the staleness floor `keypackage_generation_advanced` compares the next fetch against —
-    /// critical after a restoration whose remove commits but whose re-add fails: the retry
-    /// re-enters through the Invite branch (no current leaf left to signal a Restore), and must
-    /// not resolve the pre-reset reference this call replaces.
+    /// Record the KeyPackage this admin just resolved for `owner_pubkey`/`device_id`, and the
+    /// per-owner welcomed sentinel Restore compares against. The per-device row still pins a
+    /// later Invite retry to this package. The sentinel is the generation floor — refresh must
+    /// not write it.
     async fn record_keypackage_reference(
         &self,
         owner_pubkey: &str,
@@ -3121,6 +3144,10 @@ impl MlsService {
         keypackage_ref: &str,
     ) -> Result<(), MlsError> {
         let mut index = self.read_keypackage_index().await.unwrap_or_default();
+        let fetched_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         index.retain(|entry| entry.owner_pubkey != owner_pubkey || entry.device_id != device_id);
         index.push(KeyPackageIndexEntry {
             owner_pubkey: owner_pubkey.to_string(),
@@ -3128,12 +3155,24 @@ impl MlsService {
             keypackage_ref: keypackage_ref.to_string(),
             keypackage_ref_secondary: None,
             keypackage_d_tag: None,
-            fetched_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            fetched_at,
             expires_at: 0,
         });
+        if !is_welcomed_keypackage_device(device_id) {
+            index.retain(|entry| {
+                entry.owner_pubkey != owner_pubkey
+                    || !is_welcomed_keypackage_device(&entry.device_id)
+            });
+            index.push(KeyPackageIndexEntry {
+                owner_pubkey: owner_pubkey.to_string(),
+                device_id: WELCOMED_KEYPACKAGE_DEVICE_ID.to_string(),
+                keypackage_ref: keypackage_ref.to_string(),
+                keypackage_ref_secondary: None,
+                keypackage_d_tag: None,
+                fetched_at,
+                expires_at: 0,
+            });
+        }
         self.write_keypackage_index(&index).await
     }
 
@@ -3913,6 +3952,44 @@ mod mls_restore_tests {
             Some(100),
             50
         ));
+    }
+
+    fn kp_row(owner: &str, device: &str, keypackage_ref: &str) -> KeyPackageIndexEntry {
+        KeyPackageIndexEntry {
+            owner_pubkey: owner.to_string(),
+            device_id: device.to_string(),
+            keypackage_ref: keypackage_ref.to_string(),
+            keypackage_ref_secondary: None,
+            keypackage_d_tag: None,
+            fetched_at: 1,
+            expires_at: 0,
+        }
+    }
+
+    #[test]
+    fn refresh_replace_keeps_welcomed_floor_and_missing_sentinel_has_no_floor() {
+        let mut index = vec![
+            kp_row("alice", WELCOMED_KEYPACKAGE_DEVICE_ID, "used-kp"),
+            kp_row("alice", "event-a", "event-a"),
+            kp_row("bob", "event-b", "event-b"),
+        ];
+        index.retain(|entry| {
+            refresh_keeps_index_row(&entry.device_id, entry.owner_pubkey == "alice", "event-a")
+        });
+        index.push(kp_row("alice", "event-b", "event-b"));
+
+        assert_eq!(
+            welcomed_keypackage_ref(&index, "alice").as_deref(),
+            Some("used-kp")
+        );
+        assert!(index
+            .iter()
+            .any(|entry| { entry.owner_pubkey == "bob" && entry.device_id == "event-b" }));
+        assert!(welcomed_keypackage_ref(&index, "carol").is_none());
+        assert!(
+            !index.iter().any(|entry| entry.device_id == "event-a"),
+            "refresh still replaces the event-id row it just fetched"
+        );
     }
 
     // The exact scenario #1 (pacto-app-7xq.1) targets: only the pre-reset KeyPackage is ever
