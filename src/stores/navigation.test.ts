@@ -98,7 +98,7 @@ describe('navigation', () => {
   });
 
   it('has expected initial values', () => {
-    expect(get(activeTopNavTab)).toBe('commons');
+    expect(get(activeTopNavTab)).toBe('squads');
     expect(get(activeSquadId)).toBeNull();
     expect(get(activeChannelId)).toBeNull();
     expect(get(activeHubChannelName)).toBeNull();

@@ -3,5 +3,6 @@
 	"app.loading.channel": "Cargando canal…",
 	"app.loading.squad": "Cargando escuad…",
 	"app.squadOpenFailed": "No se pudo abrir este escuad. Selecciónalo en la barra lateral izquierda.",
-	"app.selectSquadChannel": "Selecciona un canal del escuad"
+	"app.selectSquadChannel": "Selecciona un canal del escuad",
+	"app.squads.exploreCommons": "Explorar los Commons"
 }

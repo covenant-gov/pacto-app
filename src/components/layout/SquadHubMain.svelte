@@ -24,6 +24,7 @@
     activeChannelId,
     activeHubChannelName,
     activeTopNavTab,
+    activeView,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
   } from '../../stores/navigation';
@@ -221,6 +222,11 @@
     if (!openHubParent || !onConfirmImportSafe) return;
     await onConfirmImportSafe(openHubParent, params);
   }
+
+  function exploreCommons() {
+    activeTopNavTab.set('commons');
+    activeView.set('hub');
+  }
 </script>
 
 <div class="parent-main">
@@ -265,6 +271,12 @@
     <p class="surface-loading muted" role="status">{$t('app.loading.squad')}</p>
   {:else if showOpenFailed}
     <p class="surface-loading muted" role="status">{$t('app.squadOpenFailed')}</p>
+  {:else if $squads.length === 0}
+    <div class="squads-empty">
+      <button type="button" class="explore-commons-btn" onclick={exploreCommons}>
+        {$t('app.squads.exploreCommons')}
+      </button>
+    </div>
   {:else if !showSquadGovernance}
     <p class="surface-loading muted" role="status">{$t('app.selectSquadChannel')}</p>
   {/if}
@@ -300,5 +312,33 @@
     margin: 0;
     font-size: 0.875rem;
     color: var(--text-muted);
+  }
+
+  .squads-empty {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .explore-commons-btn {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--on-brand);
+    background: var(--brand);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .explore-commons-btn:hover {
+    filter: brightness(1.05);
+  }
+
+  .explore-commons-btn:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
   }
 </style>

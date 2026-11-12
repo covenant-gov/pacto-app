@@ -1,6 +1,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import Bell from '@lucide/svelte/icons/bell';
   import {
     activeTopNavTab,
     activeView,
@@ -20,7 +21,7 @@
   import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
   import TorStatusIndicator from './TorStatusIndicator.svelte';
 
-  const tabs: TopNavTab[] = ['commons', 'dms', 'squads'];
+  const tabs: TopNavTab[] = ['squads', 'dms', 'commons'];
 
   const DEBUG = false;
   function selectTab(id: TopNavTab) {
@@ -82,13 +83,16 @@
       <button
         type="button"
         role="tab"
-        class="mode-segment"
+        class="mode-segment mode-segment-icon"
         class:active={$activeTopNavTab === 'catchup'}
         onclick={() => selectTab('catchup')}
         aria-selected={$activeTopNavTab === 'catchup'}
         aria-label={catchUpLabel}
+        title={$t('nav.topNavbar.tabs.catchup')}
       >
-        {$t('nav.topNavbar.tabs.catchup')}
+        <span class="catch-up-icon" aria-hidden="true">
+          <Bell />
+        </span>
         {#if $catchUpCount > 0}
           <span class="mode-segment-badge">{formatUnreadBadgeCount($catchUpCount)}</span>
         {/if}
@@ -147,6 +151,31 @@
     cursor: pointer;
     transition: color 0.15s, background-color 0.15s;
     outline: none;
+  }
+
+  .mode-segment-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 12px;
+    min-height: 32px;
+  }
+
+  .catch-up-icon {
+    display: inline-flex;
+    width: 1.125rem;
+    height: 1.125rem;
+    flex-shrink: 0;
+  }
+
+  .catch-up-icon :global(svg) {
+    width: 100%;
+    height: 100%;
+  }
+
+  .mode-segment-icon .mode-segment-badge {
+    margin-left: 0;
   }
 
   .mode-segment:hover:not(.active) {
