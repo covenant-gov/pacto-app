@@ -16,6 +16,8 @@ import {
   setNickname,
   toggleDmBlock,
   queueProfileSync,
+  queueProfileSyncForOpenDm,
+  queueChatProfilesSync,
   startTyping,
   markAsRead,
   sendDmMessage,
@@ -265,6 +267,27 @@ describe('queueProfileSync', () => {
       npub: 'npub1',
       priority: 'critical',
       force_refresh: true,
+    });
+  });
+
+  it('opening a DM force-refreshes Kind 0 at high priority', async () => {
+    mockedInvoke.mockResolvedValueOnce(undefined);
+    await queueProfileSyncForOpenDm('npub1');
+    expect(mockedInvoke).toHaveBeenCalledWith('queue_profile_sync', {
+      npub: 'npub1',
+      priority: 'high',
+      force_refresh: true,
+    });
+  });
+});
+
+describe('queueChatProfilesSync', () => {
+  it('invokes queue_chat_profiles_sync as an opening refresh', async () => {
+    mockedInvoke.mockResolvedValueOnce(undefined);
+    await queueChatProfilesSync('group-1');
+    expect(mockedInvoke).toHaveBeenCalledWith('queue_chat_profiles_sync', {
+      chatId: 'group-1',
+      isOpening: true,
     });
   });
 });

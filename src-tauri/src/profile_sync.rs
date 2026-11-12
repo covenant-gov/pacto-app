@@ -329,7 +329,7 @@ pub async fn queue_chat_profiles(chat_id: String, is_opening: bool) {
     let mut queue = PROFILE_SYNC_QUEUE.lock().await;
 
     for (npub, priority) in profiles_to_queue {
-        queue.add(npub.to_string(), priority, false);
+        queue.add(npub.to_string(), priority, is_opening);
     }
 }
 
@@ -350,7 +350,7 @@ pub async fn sync_all_profiles() {
         let priority = if !profile.has_public_metadata() {
             SyncPriority::Critical
         } else {
-            SyncPriority::Low // Passive refresh for profiles that already have data
+            SyncPriority::Medium
         };
 
         profiles_to_queue.push((profile.id.clone(), priority));
@@ -362,6 +362,22 @@ pub async fn sync_all_profiles() {
     let mut queue = PROFILE_SYNC_QUEUE.lock().await;
 
     for (npub, priority) in profiles_to_queue {
-        queue.add(npub, priority, false);
+        queue.add(npub, priority, true);
+    }
+}
+
+#[cfg(test)]
+mod queue_add_tests {
+    use super::*;
+
+    #[test]
+    fn force_refresh_bypasses_cache_window() {
+        let mut q = ProfileSyncQueue::new();
+        q.last_fetched
+            .insert("npub1a".into(), Instant::now());
+        q.add("npub1a".into(), SyncPriority::Low, false);
+        assert!(q.low_queue.is_empty());
+        q.add("npub1a".into(), SyncPriority::Medium, true);
+        assert_eq!(q.medium_queue.len(), 1);
     }
 }

@@ -254,6 +254,20 @@ export async function queueProfileSync(
   });
 }
 
+/** Opening a DM always re-fetches Kind 0 even when a name/avatar is already cached. */
+export async function queueProfileSyncForOpenDm(npub: string): Promise<void> {
+  return queueProfileSync(npub, 'high', true);
+}
+
+/** Opening an MLS channel queues Kind 0 for every participant. */
+export async function queueChatProfilesSync(
+  chatId: string,
+  isOpening = true
+): Promise<void> {
+  dmLog('queue_chat_profiles_sync', { chatId: chatId.slice(0, 20) + '…', isOpening });
+  return await invoke('queue_chat_profiles_sync', { chatId, isOpening });
+}
+
 /**
  * Notify the other party that we are typing (backend: start_typing).
  */

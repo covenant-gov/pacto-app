@@ -24,7 +24,7 @@
     getChatMessageCount,
     sendDmMessage,
     sendFileBytes,
-    queueProfileSync,
+    queueProfileSyncForOpenDm,
     fetchMessages,
     startNotifs,
     markAsRead,
@@ -537,7 +537,7 @@
     const stillOpen = () =>
       shouldApplyDmOpenLoad(npub, get(activeDmId), get(dmChatsByNpub), get(deletingDmNpubs));
     dmLog('open conversation', { npub: npub.slice(0, 20) + '…', tab: 'dms' });
-    queueProfileSync(npub).catch(() => {});
+    queueProfileSyncForOpenDm(npub).catch(() => {});
     getChatMessageCount(npub)
       .then((count) => {
         if (!stillOpen()) return;
@@ -783,7 +783,7 @@
 
   function openInviterDm(inviterNpub: string) {
     if (!inviterNpub.startsWith('npub1')) return;
-    queueProfileSync(inviterNpub).catch(() => {});
+    queueProfileSyncForOpenDm(inviterNpub).catch(() => {});
     activeDmId.set(inviterNpub);
     const tab = dmSidebarCategoryForNpub(inviterNpub, get(dmChatsByNpub), get(pinnedDmNpubs)) as DmTab;
     if (tab !== 'search') {

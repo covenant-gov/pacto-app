@@ -99,6 +99,7 @@ export const profileFixtures: Record<string, MockCommandHandler> = {
   set_nickname: () => true,
   toggle_blocked: () => false,
   queue_profile_sync: () => undefined,
+  queue_chat_profiles_sync: () => undefined,
   upload_avatar: () => 'https://example.com/avatar.png',
   get_image_preview_base64: () =>
     'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==',

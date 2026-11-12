@@ -58,7 +58,6 @@ load_mls_device_id
 load_mls_keypackages
 paste_message
 preview_notification_sound
-queue_chat_profiles_sync
 refresh_keypackages_for_contact
 regenerate_device_keypackage
 remove_mls_member_device

@@ -4,11 +4,13 @@ import type { DmMessage } from '../../stores/dm';
 
 const getChatMessageCount = vi.fn();
 const getDmMessages = vi.fn();
+const queueChatProfilesSync = vi.fn();
 const ensureMlsAutomationReplayed = vi.fn();
 
 vi.mock('../api/nostr', () => ({
   getChatMessageCount: (...args: unknown[]) => getChatMessageCount(...args),
   getDmMessages: (...args: unknown[]) => getDmMessages(...args),
+  queueChatProfilesSync: (...args: unknown[]) => queueChatProfilesSync(...args),
 }));
 
 vi.mock('../app/hub-prefetch', () => ({
@@ -99,6 +101,14 @@ describe('loadOpenChannelHistory', () => {
     activeChannelId.set(groupId);
     activeTopNavTab.set('squads');
     getChatMessageCount.mockResolvedValue(0);
+    queueChatProfilesSync.mockResolvedValue(undefined);
+  });
+
+  it('queues participant Kind 0 refresh when opening a channel', async () => {
+    getDmMessages.mockResolvedValue([]);
+    loadOpenChannelHistory(groupId);
+    await flush();
+    expect(queueChatProfilesSync).toHaveBeenCalledWith(groupId, true);
   });
 
   it('leaves live rows, offset, and replay untouched when the page is empty', async () => {

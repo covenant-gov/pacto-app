@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { getChatMessageCount, getDmMessages } from '../api/nostr';
+import { getChatMessageCount, getDmMessages, queueChatProfilesSync } from '../api/nostr';
 import { ensureMlsAutomationReplayed } from '../app/hub-prefetch';
 import { parentIdForChannelGroup } from '../squad-hub-nav';
 import { isVirtualHubChannelId } from '../squad/hub-channel-names';
@@ -47,6 +47,10 @@ export function loadOpenChannelHistory(groupId: string): void {
   const requestGen = ++openChannelHistoryGen;
   const parentIdAtOpen = parentIdForChannelGroup(get(squads), groupId);
   dmLog('open channel', { groupId: groupId.slice(0, 20) + '…' });
+
+  queueChatProfilesSync(groupId, true).catch((err) => {
+    dmError('open channel: queueChatProfilesSync failed', err);
+  });
 
   getChatMessageCount(groupId)
     .then((count) => {

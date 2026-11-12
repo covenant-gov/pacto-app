@@ -3,13 +3,13 @@
 use crate::{
     current_login_generation, db, evm, extract_mention_notification_body,
     get_blossom_media_servers, get_file_type_description, get_nostr_client, handle_event_guarded,
-    net_transport, nostr_sign, nostr_tags, notification, relay_cert, wait_for_populated_relay_pool,
-    MlsService, STATE, TAURI_APP,
+    net_transport, nostr_sign, nostr_tags, notification, profile, relay_cert,
+    wait_for_populated_relay_pool, MlsService, STATE, TAURI_APP,
 };
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, VecDeque};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use lazy_static::lazy_static;
 use tauri::{AppHandle, Emitter, Runtime};
@@ -137,6 +137,24 @@ pub(crate) async fn notifs() -> Result<bool, String> {
             return Err(e.to_string());
         }
     };
+
+    let kind0_sub_id = profile::subscribe_kind0_live(&client, pubkey, None).await;
+    let kind0_sub_slot: Arc<Mutex<Option<SubscriptionId>>> = Arc::new(Mutex::new(kind0_sub_id));
+    let kind0_sub_for_handler = kind0_sub_slot.clone();
+    let kind0_sub_for_refresh = kind0_sub_slot.clone();
+    let kind0_client = client.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            if current_login_generation() != generation {
+                break;
+            }
+            let previous = kind0_sub_for_refresh.lock().await.clone();
+            let next =
+                profile::subscribe_kind0_live(&kind0_client, pubkey, previous.as_ref()).await;
+            *kind0_sub_for_refresh.lock().await = next;
+        }
+    });
 
     // Begin watching for notifications from our subscriptions
     match client
@@ -827,6 +845,13 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                     }
                 } else if subscription_id == commons_sub_id {
                     crate::commons::ingest_live_broadcast_event(&event).await;
+                } else if kind0_sub_for_handler
+                    .lock()
+                    .await
+                    .as_ref()
+                    .is_some_and(|id| *id == subscription_id)
+                {
+                    profile::apply_live_kind0_event(&event).await;
                 }
             }
             Ok(false)
