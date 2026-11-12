@@ -5,7 +5,7 @@ import type { SquadNetworkSlot } from '../lib/squad/squad-network';
 import { persistenceKey } from './persistence-context';
 
 export type TopNavTab = 'commons' | 'dms' | 'squads' | 'catchup';
-export const DEFAULT_TOP_NAV_TAB: TopNavTab = 'commons';
+export const DEFAULT_TOP_NAV_TAB: TopNavTab = 'squads';
 export const activeTopNavTab = writable<TopNavTab>(DEFAULT_TOP_NAV_TAB);
 
 export const activeSquadId = writable<string | null>(null);
