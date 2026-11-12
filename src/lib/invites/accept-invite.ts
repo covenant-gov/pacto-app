@@ -34,6 +34,7 @@ import { publishInviteAcceptedClaims } from '../squad/squad-outbound-invite';
 import { requireBackupVerified } from '../../stores/backup-verification';
 import { currentUser } from '../../stores/auth-session';
 import { markMlsHistoryWelcome } from '../../stores/mls-history-welcome';
+import { beginChannelHistoryBackfill } from '../mls/channel-history-session';
 import { resolveOneCatchUpEntry } from '../../stores/catch-up';
 import {
   clearPendingSquadAdmissionByGroupId,
@@ -297,6 +298,7 @@ function addChannelToParent(
   access?: 'open' | 'closed'
 ): void {
   markMlsHistoryWelcome(channelGroupId);
+  beginChannelHistoryBackfill(channelName, channelGroupId);
   void persistSquadPatch(parentId, (squad) => {
     if (squad.channels.some((ch) => sameMlsGroupId(ch.groupId, channelGroupId))) return squad;
     return {
@@ -455,6 +457,7 @@ export async function finalizeSquadAfterAnnouncementsWelcome(
     );
   }
   markMlsHistoryWelcome(payload.groupId);
+  beginChannelHistoryBackfill(ANNOUNCEMENTS_CHANNEL_NAME, payload.groupId);
   void syncMlsGroupsNow(payload.groupId).catch((e) =>
     dmError('syncMlsGroupsNow after accept invite', e)
   );
@@ -587,6 +590,7 @@ export async function acceptStagedChannelWelcome(opts: {
   try {
     await acceptMlsWelcome(opts.welcomeId);
     markMlsHistoryWelcome(opts.channelGroupId);
+    beginChannelHistoryBackfill(opts.channelName, opts.channelGroupId);
   } catch (e) {
     channelInvitePendingAccept.delete(opts.channelGroupId);
     acceptedSquadInviteGroupIds.delete(opts.channelGroupId);

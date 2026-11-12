@@ -2,8 +2,10 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { setCurrentNpubForPersistence } from './persistence-context';
 import {
+  clearMlsHistoryWelcome,
   loadMlsHistoryWelcome,
   markMlsHistoryWelcome,
+  mlsHistoryWelcomeAcceptedAt,
   mlsHistoryWelcomeGroupIds,
   resetMlsHistoryWelcomeForTests,
   shouldShowMlsHistoryWelcome,
@@ -40,29 +42,35 @@ describe('mls-history-welcome', () => {
   });
 
   it('mark is idempotent and case-normalizes', () => {
-    markMlsHistoryWelcome('G-OPS');
-    markMlsHistoryWelcome('g-ops');
+    markMlsHistoryWelcome('G-OPS', 1_700_000_000_000);
+    markMlsHistoryWelcome('g-ops', 1_800_000_000_000);
     markMlsHistoryWelcome('  G-OPS  ');
     expect(get(mlsHistoryWelcomeGroupIds)).toEqual(['g-ops']);
+    expect(get(mlsHistoryWelcomeAcceptedAt)['g-ops']).toBe(1_700_000_000_000);
     expect(shouldShowMlsHistoryWelcome('G-OPS')).toBe(true);
     expect(shouldShowMlsHistoryWelcome('other')).toBe(false);
     expect(shouldShowMlsHistoryWelcome('')).toBe(false);
   });
 
-  it('persists and reloads for npub', () => {
-    markMlsHistoryWelcome('ann-1');
-    markMlsHistoryWelcome('chan-2');
+  it('persists accept times and ignores a v1 id list', () => {
+    markMlsHistoryWelcome('ann-1', 10);
+    markMlsHistoryWelcome('chan-2', 20);
     const key = `${MLS_HISTORY_WELCOME_PREFIX}_npub1test`;
-    expect(JSON.parse(localStorage.getItem(key) ?? '[]')).toEqual(['ann-1', 'chan-2']);
+    expect(JSON.parse(localStorage.getItem(key) ?? '{}')).toEqual({ 'ann-1': 10, 'chan-2': 20 });
+    localStorage.setItem('mls_history_welcome_v1_npub1test', JSON.stringify(['old-group']));
 
-    // Clear in-memory only (no npub → subscribe must not wipe localStorage).
     setCurrentNpubForPersistence(null);
-    mlsHistoryWelcomeGroupIds.set([]);
+    clearMlsHistoryWelcome();
+    expect(JSON.parse(localStorage.getItem(key) ?? '{}')).toEqual({ 'ann-1': 10, 'chan-2': 20 });
     expect(shouldShowMlsHistoryWelcome('ann-1')).toBe(false);
 
     setCurrentNpubForPersistence('npub1test');
     loadMlsHistoryWelcome('npub1test');
     expect(get(mlsHistoryWelcomeGroupIds)).toEqual(['ann-1', 'chan-2']);
     expect(shouldShowMlsHistoryWelcome('ANN-1')).toBe(true);
+
+    localStorage.setItem(key, JSON.stringify(['v1-shaped']));
+    loadMlsHistoryWelcome('npub1test');
+    expect(get(mlsHistoryWelcomeGroupIds)).toEqual([]);
   });
 });
