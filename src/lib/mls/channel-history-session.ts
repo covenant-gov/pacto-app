@@ -29,7 +29,9 @@ import {
   giftMatchesAttempt,
   historyBackfillRequest,
   historyRequestForSelf,
+  claimHistoryServeSlot,
   isHistoryBackfillFinished,
+  isStaleHistoryRequest,
   markHistoryBackfillFinished,
   noteHistoryBackfillRunning,
   noteHistoryBackfillStopped,
@@ -154,13 +156,10 @@ async function runSequence(groupId: string, bucket: HistoryBucket): Promise<void
     await new Promise((resolve) => setTimeout(resolve, retryMs));
     members = await loadMembers(groupId);
   }
-  if (!members) {
-    markHistoryBackfillFinished(id);
-    return;
-  }
   const self = selfNpub();
+  if (!members || !self) return;
   const candidates = designatedCandidates(members, self);
-  if (candidates.length === 0 || !self) {
+  if (candidates.length === 0) {
     markHistoryBackfillFinished(id);
     return;
   }
@@ -188,7 +187,7 @@ async function runSequence(groupId: string, bucket: HistoryBucket): Promise<void
       designatedNpub,
     };
     const posted = await postHistoryRequest(groupId, request);
-    if (!posted) continue;
+    if (!posted) return;
     const live: LiveAttempt = {
       groupId: id,
       bucket,
@@ -219,15 +218,26 @@ export function beginChannelHistoryBackfill(channelName: string, groupId: string
   void runSequence(groupId, scope.bucket).finally(() => noteHistoryBackfillStopped(id));
 }
 
-export async function handleIncomingHistoryRequest(content: string, senderNpub: string): Promise<void> {
+/** Answer only a fresh request that arrived in the group it names, from a member of that group. */
+export async function handleIncomingHistoryRequest(
+  content: string,
+  senderNpub: string,
+  arrivalGroupId: string,
+  sentAtMs: number | undefined
+): Promise<void> {
   const request = historyRequestForSelf(content, selfNpub());
   const requester = senderNpub.trim();
-  if (!request || !requester || servedRequestIds.has(request.requestId)) return;
+  const groupId = wireGroupId(arrivalGroupId);
+  if (!request || !requester || !groupId || request.groupId !== groupId) return;
+  if (isStaleHistoryRequest(sentAtMs, Date.now()) || servedRequestIds.has(request.requestId)) return;
   servedRequestIds.add(request.requestId);
+  const members = await loadMembers(groupId);
+  if (!members?.some((member) => member.trim() === requester)) return;
+  if (!claimHistoryServeSlot(requester, groupId, Date.now())) return;
   try {
-    const messages = await exportChannelHistory(request.groupId, request.bucket);
+    const messages = await exportChannelHistory(groupId, request.bucket);
     const built = buildHistoryChunks(
-      { requestId: request.requestId, groupId: request.groupId, bucket: request.bucket },
+      { requestId: request.requestId, groupId, bucket: request.bucket },
       messages
     );
     if (!built.ok) {
@@ -235,7 +245,7 @@ export async function handleIncomingHistoryRequest(content: string, senderNpub: 
         type: 'history_unavailable',
         version: 1,
         requestId: request.requestId,
-        groupId: request.groupId,
+        groupId,
         reason: built.reason === 'over_cap' ? 'over_cap' : 'empty',
       };
       await sendHistoryGiftWrap(requester, JSON.stringify(unavailable));

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  HISTORY_REQUEST_MAX_AGE_MS,
+  HISTORY_SERVE_COOLDOWN_MS,
+  claimHistoryServeSlot,
+  clearHistoryBackfillSession,
   designatedCandidates,
   designatedForAttempt,
   giftMatchesAttempt,
@@ -7,6 +11,7 @@ import {
   historyRequestForSelf,
   isHistoryGiftWrapContent,
   isHistoryRequestContent,
+  isStaleHistoryRequest,
 } from './channel-history-backfill';
 
 const REQUEST_ID = 'a'.repeat(32);
@@ -93,5 +98,28 @@ describe('history protocol hide', () => {
     expect(giftMatchesAttempt(JSON.stringify(chunk), expected, 'npub1a')).toBe('chunk');
     expect(giftMatchesAttempt(JSON.stringify(unavailable), expected, 'npub1a')).toBe('unavailable');
     expect(giftMatchesAttempt(JSON.stringify(chunk), expected, 'npub1c')).toBeNull();
+  });
+});
+
+describe('isStaleHistoryRequest', () => {
+  it('rejects old, missing, and non-positive send times', () => {
+    const now = 1_700_000_000_000;
+    expect(isStaleHistoryRequest(now - 1000, now)).toBe(false);
+    expect(isStaleHistoryRequest(now - HISTORY_REQUEST_MAX_AGE_MS - 1, now)).toBe(true);
+    expect(isStaleHistoryRequest(undefined, now)).toBe(true);
+    expect(isStaleHistoryRequest(0, now)).toBe(true);
+    expect(isStaleHistoryRequest(Number.NaN, now)).toBe(true);
+  });
+});
+
+describe('claimHistoryServeSlot', () => {
+  it('allows one claim per requester and group inside the cooldown', () => {
+    clearHistoryBackfillSession();
+    const now = 1_700_000_000_000;
+    expect(claimHistoryServeSlot('npub1a', GROUP, now)).toBe(true);
+    expect(claimHistoryServeSlot('npub1a', GROUP.toUpperCase(), now + 1)).toBe(false);
+    expect(claimHistoryServeSlot('npub1b', GROUP, now + 1)).toBe(true);
+    expect(claimHistoryServeSlot('npub1a', 'other', now + 1)).toBe(true);
+    expect(claimHistoryServeSlot('npub1a', GROUP, now + HISTORY_SERVE_COOLDOWN_MS)).toBe(true);
   });
 });

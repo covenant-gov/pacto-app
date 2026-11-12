@@ -8,6 +8,10 @@ import { persistenceKey } from '../../stores/persistence-context';
 
 export const HISTORY_ATTEMPT_TIMEOUT_MS = 20_000;
 export const HISTORY_ATTEMPT_LIMIT = 3;
+/** A request older than a full sequence is not answered. */
+export const HISTORY_REQUEST_MAX_AGE_MS = HISTORY_ATTEMPT_LIMIT * HISTORY_ATTEMPT_TIMEOUT_MS;
+/** One answered request per requester and group inside this window. */
+export const HISTORY_SERVE_COOLDOWN_MS = 60_000;
 export const HISTORY_BACKFILL_DONE_PREFIX = 'mls_history_backfill_done_v1';
 
 const SKIP_CHANNEL_NAMES = new Set([
@@ -119,6 +123,23 @@ export function giftMatchesAttempt(
   return null;
 }
 
+/** Unknown or non-positive send times count as stale. */
+export function isStaleHistoryRequest(sentAtMs: number | undefined, nowMs: number): boolean {
+  if (typeof sentAtMs !== 'number' || !Number.isFinite(sentAtMs) || sentAtMs <= 0) return true;
+  return nowMs - sentAtMs > HISTORY_REQUEST_MAX_AGE_MS;
+}
+
+const lastServedAt = new Map<string, number>();
+
+/** True and records the slot when this requester has not been answered for this group within the cooldown. */
+export function claimHistoryServeSlot(requesterNpub: string, groupId: string, nowMs: number): boolean {
+  const key = `${requesterNpub.trim()}|${groupId.trim().toLowerCase()}`;
+  const last = lastServedAt.get(key);
+  if (last !== undefined && nowMs - last < HISTORY_SERVE_COOLDOWN_MS) return false;
+  lastServedAt.set(key, nowMs);
+  return true;
+}
+
 /** Read a request only when this device is the one named. */
 export function historyRequestForSelf(content: string, selfNpub: string): HistoryRequest | null {
   const parsed = parseHistoryRequest(content);
@@ -153,4 +174,5 @@ export function noteHistoryBackfillStopped(groupId: string): void {
 
 export function clearHistoryBackfillSession(): void {
   runningGroups.clear();
+  lastServedAt.clear();
 }

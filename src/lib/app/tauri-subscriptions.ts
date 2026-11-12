@@ -340,7 +340,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     };
     const m = normalizeDmPayload(message);
     if (isHistoryRequestContent(m.content ?? '')) {
-      void handleIncomingHistoryRequest(m.content ?? '', m.npub ?? '');
+      void handleIncomingHistoryRequest(m.content ?? '', m.npub ?? '', group_id, m.at);
       return;
     }
     backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => {

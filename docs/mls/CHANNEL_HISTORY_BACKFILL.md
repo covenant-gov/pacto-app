@@ -103,12 +103,20 @@ Roster is the group's `membersByGroupId` npubs, sorted ascending by the npub str
 
 Other members ignore the request. The joiner accepts a chunk or an unavailable reply only when the gift-wrap sender is the `designatedNpub` of the current attempt.
 
+The designated member answers only when all of these hold:
+
+- The request arrived in the MLS group it names (`groupId` equals the group the message was received in). The export reads that group id, never the payload value, and only MLS group chats: a DM chat is never exported or imported into.
+- The sender is in that group's roster.
+- The request is at most 60 seconds old (`HISTORY_ATTEMPT_LIMIT` × the attempt timeout). A missing send time counts as stale, so replayed Kind 444 backfill does not re-serve old requests.
+- No request from the same sender for the same group was answered in the last 60 seconds, regardless of `requestId`.
+
 The designated member exports with its own clock: `since = now - 30 days`, where 30 days is `30 * 24 * 60 * 60` seconds and `created_at >= since`. It does not trust a window sent by the joiner.
 
 Timeout is 20 seconds from the post of that attempt.
 
 - A `history_unavailable` for this `requestId`, with no chunk yet accepted, advances to the next attempt.
 - A timeout with no chunk yet accepted advances the same way.
+- Only those two outcomes consume an attempt. A failed post of the request, or a failed roster load, ends the run without a finished mark so a later view or launch retries.
 - The first valid chunk completes the sequence. Do not ask the next member. Later chunks for that `requestId` still import. A missing index stays missing.
 
 ## Export filter

@@ -1,6 +1,7 @@
 //! Export the last window of human chat for one MLS group.
 //! Wire rules: `docs/mls/CHANNEL_HISTORY_BACKFILL.md`.
 
+use crate::chat::ChatType;
 use crate::crypto::{decrypt_with_key, encrypt_with_key};
 use crate::message::Message;
 use crate::stored_event::event_kind;
@@ -74,6 +75,7 @@ pub fn export_channel_history(
         FROM events e
         JOIN chats c ON c.id = e.chat_id
         WHERE lower(c.chat_identifier) = ?1
+          AND c.chat_type = ?7
           AND e.kind IN (?2, ?3, ?4, ?5)
           AND e.pending = 0
           AND e.failed = 0
@@ -93,6 +95,7 @@ pub fn export_channel_history(
                 event_kind::MESSAGE_EDIT,
                 event_kind::REACTION,
                 since,
+                ChatType::MlsGroup.to_i32(),
             ],
             |row| {
                 Ok(RawEvent {
@@ -236,8 +239,8 @@ fn write_imported_rows(
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let (chat_id, stored_group_id): (i64, String) = tx
         .query_row(
-            "SELECT id, chat_identifier FROM chats WHERE lower(chat_identifier) = ?1",
-            [&group_key],
+            "SELECT id, chat_identifier FROM chats WHERE lower(chat_identifier) = ?1 AND chat_type = ?2",
+            params![group_key, ChatType::MlsGroup.to_i32()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|_| "history import chat not found".to_string())?;
@@ -434,12 +437,15 @@ pub mod commands {
                 .prepare(
                     "SELECT e.id FROM events e
                      JOIN chats c ON c.id = e.chat_id
-                     WHERE lower(c.chat_identifier) = ?1 AND e.history_import = 1
+                     WHERE lower(c.chat_identifier) = ?1 AND c.chat_type = ?2 AND e.history_import = 1
                      ORDER BY e.created_at ASC, e.id ASC",
                 )
                 .map_err(|e| e.to_string())?;
             let ids = stmt
-                .query_map([&group_id], |row| row.get(0))
+                .query_map(
+                    rusqlite::params![group_id, crate::chat::ChatType::MlsGroup.to_i32()],
+                    |row| row.get(0),
+                )
                 .map_err(|e| e.to_string())?
                 .collect::<Result<Vec<String>, _>>()
                 .map_err(|e| e.to_string())?;
@@ -1035,5 +1041,52 @@ mod tests {
             plain.iter().find(|r| r.id == "copy").unwrap().content,
             "hello"
         );
+    }
+
+    #[test]
+    fn dm_chat_is_not_exported_or_imported_into() {
+        let mut conn = conn();
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at)
+             VALUES ('npub1peer', 0, '[]', 1)",
+            [],
+        )
+        .unwrap();
+        let dm_chat = conn.last_insert_rowid();
+        insert_event(
+            &conn,
+            dm_chat,
+            "dm-line",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "private hello",
+            "[]",
+            None,
+            1_700_000_100,
+            Some("npub1peer"),
+            0,
+            0,
+            None,
+        );
+        let rows = export_channel_history(
+            &conn,
+            "npub1peer",
+            HistoryExportBucket::Unfiltered,
+            1_700_000_000,
+            &KEY,
+        )
+        .unwrap();
+        assert!(rows.is_empty());
+
+        let err = import_channel_history(
+            &mut conn,
+            "npub1peer",
+            HistoryExportBucket::Unfiltered,
+            "npub1alice",
+            &[row("forged", "hi")],
+            1_700_000_500_000,
+            &KEY,
+        );
+        assert!(err.is_err());
+        assert_eq!(table_count(&conn, "events"), 1);
     }
 }

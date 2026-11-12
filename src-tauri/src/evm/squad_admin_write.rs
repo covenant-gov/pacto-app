@@ -82,8 +82,16 @@ async fn squad_admin_write<R: Runtime>(
     )
     .await?;
 
-    let (tx_hash, chain, chain_id, funded_by) =
-        send_gov_module_call(app, network, parent, admin, calldata, capability, rpc_urls).await?;
+    let (tx_hash, chain, chain_id, funded_by) = send_gov_module_call(
+        app,
+        network,
+        parent,
+        admin,
+        calldata,
+        capability,
+        rpc_urls,
+    )
+    .await?;
     super::squad_privilege_enforce::invalidate_exec_state_cache(chain.as_str(), admin);
 
     Ok(SquadAdminWriteResult {

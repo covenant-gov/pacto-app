@@ -2,16 +2,18 @@
  * Local-only welcome note. Key is group id → accept time. A v1 id list loads empty.
  */
 
-import { get, writable } from 'svelte/store';
+import { derived, get, writable } from 'svelte/store';
 import { persistenceKey } from './persistence-context';
 
 export const MLS_HISTORY_WELCOME_PREFIX = 'mls_history_welcome_v2';
 
-/** Group ids that should show the welcome note. */
-export const mlsHistoryWelcomeGroupIds = writable<string[]>([]);
-
 /** Lowercase group id → Unix ms when the welcome was marked. */
 export const mlsHistoryWelcomeAcceptedAt = writable<Record<string, number>>({});
+
+/** Group ids that should show the welcome note. */
+export const mlsHistoryWelcomeGroupIds = derived(mlsHistoryWelcomeAcceptedAt, (acceptedAt) =>
+  Object.keys(acceptedAt)
+);
 
 function normalizeGroupId(groupId: string): string {
   return groupId.trim().toLowerCase();
@@ -30,7 +32,6 @@ function persist(acceptedAt: Record<string, number>): void {
 
 function publish(acceptedAt: Record<string, number>): void {
   mlsHistoryWelcomeAcceptedAt.set(acceptedAt);
-  mlsHistoryWelcomeGroupIds.set(Object.keys(acceptedAt));
   persist(acceptedAt);
 }
 
