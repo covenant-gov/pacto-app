@@ -42,15 +42,19 @@ function stillCurrent(requestGen: number, groupId: string): boolean {
   );
 }
 
+/** Opening an MLS channel refreshes participant Kind 0, then loads the first page. */
+export function openMlsChannel(groupId: string): void {
+  queueChatProfilesSync(groupId, true).catch((err) => {
+    dmError('open channel: queueChatProfilesSync failed', err);
+  });
+  loadOpenChannelHistory(groupId);
+}
+
 /** Load the first page for an MLS channel; drop stale responses and do not wipe live rows. */
 export function loadOpenChannelHistory(groupId: string): void {
   const requestGen = ++openChannelHistoryGen;
   const parentIdAtOpen = parentIdForChannelGroup(get(squads), groupId);
   dmLog('open channel', { groupId: groupId.slice(0, 20) + '…' });
-
-  queueChatProfilesSync(groupId, true).catch((err) => {
-    dmError('open channel: queueChatProfilesSync failed', err);
-  });
 
   getChatMessageCount(groupId)
     .then((count) => {

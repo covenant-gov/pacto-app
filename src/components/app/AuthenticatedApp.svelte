@@ -132,7 +132,7 @@
   import { resolveAutomatedAnnounceGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
   import {
-    loadOpenChannelHistory,
+    openMlsChannel,
     reloadOpenChannelHistoryIfVisible,
   } from '../../lib/mls/open-channel-history';
   import { syncSquadsHubSelection } from '../../lib/squad-hub-nav';
@@ -577,7 +577,7 @@
     !$activeChannelId.startsWith('creating-') &&
     $activeTopNavTab === 'squads'
   ) {
-    loadOpenChannelHistory($activeChannelId);
+    openMlsChannel($activeChannelId);
   }
 
   async function loadOlder() {

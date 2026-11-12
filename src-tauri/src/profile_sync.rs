@@ -127,41 +127,85 @@ impl ProfileSyncQueue {
         self.low_queue.retain(|e| e.npub != npub);
     }
 
-    /// Get the next batch of profiles to process
-    pub fn get_next_batch(&mut self) -> Vec<QueueEntry> {
-        let mut batch = Vec::new();
+    fn queue_mut(&mut self, priority: SyncPriority) -> &mut VecDeque<QueueEntry> {
+        match priority {
+            SyncPriority::Critical => &mut self.critical_queue,
+            SyncPriority::High => &mut self.high_queue,
+            SyncPriority::Medium => &mut self.medium_queue,
+            SyncPriority::Low => &mut self.low_queue,
+        }
+    }
 
-        // Process in priority order: Critical > High > Medium > Low
-        let (queue, priority) = if !self.critical_queue.is_empty() {
-            (&mut self.critical_queue, SyncPriority::Critical)
+    fn queue(&self, priority: SyncPriority) -> &VecDeque<QueueEntry> {
+        match priority {
+            SyncPriority::Critical => &self.critical_queue,
+            SyncPriority::High => &self.high_queue,
+            SyncPriority::Medium => &self.medium_queue,
+            SyncPriority::Low => &self.low_queue,
+        }
+    }
+
+    /// Ready work above `current` should run before the rest of a lower batch.
+    pub(crate) fn has_ready_higher_priority(&self, current: SyncPriority) -> bool {
+        let above: &[SyncPriority] = match current {
+            SyncPriority::Critical => &[],
+            SyncPriority::High => &[SyncPriority::Critical],
+            SyncPriority::Medium => &[SyncPriority::Critical, SyncPriority::High],
+            SyncPriority::Low => &[
+                SyncPriority::Critical,
+                SyncPriority::High,
+                SyncPriority::Medium,
+            ],
+        };
+        above.iter().any(|priority| {
+            let delay = priority.processing_delay();
+            self.queue(*priority)
+                .iter()
+                .any(|entry| entry.added_at.elapsed() >= delay)
+        })
+    }
+
+    /// Put an unprocessed entry back at the front of its queue.
+    pub(crate) fn requeue_front(&mut self, entry: QueueEntry, priority: SyncPriority) {
+        self.processing.remove(&entry.npub);
+        self.queue_mut(priority).push_front(entry);
+    }
+
+    /// Get the next batch of profiles to process.
+    pub fn take_next_batch(&mut self) -> Option<(Vec<QueueEntry>, SyncPriority)> {
+        let priority = if !self.critical_queue.is_empty() {
+            SyncPriority::Critical
         } else if !self.high_queue.is_empty() {
-            (&mut self.high_queue, SyncPriority::High)
+            SyncPriority::High
         } else if !self.medium_queue.is_empty() {
-            (&mut self.medium_queue, SyncPriority::Medium)
+            SyncPriority::Medium
         } else if !self.low_queue.is_empty() {
-            (&mut self.low_queue, SyncPriority::Low)
+            SyncPriority::Low
         } else {
-            return batch; // All queues empty
+            return None;
         };
 
         let batch_size = priority.batch_size();
         let processing_delay = priority.processing_delay();
+        let mut batch = Vec::new();
+        let queue = self.queue_mut(priority);
 
-        // Get entries that are ready to process
-        while batch.len() < batch_size && !queue.is_empty() {
-            if let Some(entry) = queue.front() {
-                // Check if enough time has passed since adding
-                if entry.added_at.elapsed() >= processing_delay {
-                    let entry = queue.pop_front().unwrap();
-                    batch.push(entry);
-                } else {
-                    // Not ready yet, stop processing this queue
-                    break;
-                }
+        while batch.len() < batch_size {
+            let ready = queue
+                .front()
+                .is_some_and(|entry| entry.added_at.elapsed() >= processing_delay);
+            if !ready {
+                break;
             }
+            let entry = queue.pop_front().unwrap();
+            batch.push(entry);
         }
 
-        batch
+        if batch.is_empty() {
+            None
+        } else {
+            Some((batch, priority))
+        }
     }
 
     /// Mark a profile as currently being processed
@@ -234,38 +278,47 @@ pub async fn start_profile_sync_processor() {
             }
 
             queue.is_processing = true;
-            let batch = queue.get_next_batch();
+            let batch = queue.take_next_batch();
 
-            // Mark all as processing
-            for entry in &batch {
-                queue.mark_processing(&entry.npub);
+            if let Some((ref entries, _)) = batch {
+                for entry in entries {
+                    queue.mark_processing(&entry.npub);
+                }
             }
 
             batch
         };
 
-        if batch.is_empty() {
-            // No work to do, release lock and sleep
+        let Some((mut entries, priority)) = batch else {
             {
                 let mut queue = PROFILE_SYNC_QUEUE.lock().await;
                 queue.is_processing = false;
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
             continue;
-        }
+        };
 
-        // Process the batch
-        for entry in &batch {
-            // Fetch the profile
+        while !entries.is_empty() {
+            let preempt = {
+                let queue = PROFILE_SYNC_QUEUE.lock().await;
+                queue.has_ready_higher_priority(priority)
+            };
+            if preempt {
+                let mut queue = PROFILE_SYNC_QUEUE.lock().await;
+                for entry in entries.drain(..) {
+                    queue.requeue_front(entry, priority);
+                }
+                break;
+            }
+
+            let entry = entries.remove(0);
             profile::load_profile_and_status(entry.npub.clone()).await;
 
-            // Mark as done
             {
                 let mut queue = PROFILE_SYNC_QUEUE.lock().await;
                 queue.mark_done(&entry.npub);
             }
 
-            // Small delay between profiles to avoid overwhelming relays
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
@@ -373,11 +426,47 @@ mod queue_add_tests {
     #[test]
     fn force_refresh_bypasses_cache_window() {
         let mut q = ProfileSyncQueue::new();
-        q.last_fetched
-            .insert("npub1a".into(), Instant::now());
+        q.last_fetched.insert("npub1a".into(), Instant::now());
         q.add("npub1a".into(), SyncPriority::Low, false);
         assert!(q.low_queue.is_empty());
         q.add("npub1a".into(), SyncPriority::Medium, true);
         assert_eq!(q.medium_queue.len(), 1);
+    }
+
+    fn push_ready(q: &mut ProfileSyncQueue, npub: &str, priority: SyncPriority) {
+        let entry = QueueEntry {
+            npub: npub.into(),
+            added_at: Instant::now()
+                .checked_sub(priority.processing_delay() + Duration::from_secs(1))
+                .expect("ready instant"),
+        };
+        match priority {
+            SyncPriority::Critical => q.critical_queue.push_back(entry),
+            SyncPriority::High => q.high_queue.push_back(entry),
+            SyncPriority::Medium => q.medium_queue.push_back(entry),
+            SyncPriority::Low => q.low_queue.push_back(entry),
+        }
+    }
+
+    #[test]
+    fn medium_batch_yields_when_high_is_ready() {
+        let mut q = ProfileSyncQueue::new();
+        push_ready(&mut q, "m1", SyncPriority::Medium);
+        push_ready(&mut q, "m2", SyncPriority::Medium);
+        let (batch, priority) = q.take_next_batch().expect("medium batch");
+        assert_eq!(priority, SyncPriority::Medium);
+        assert_eq!(batch.len(), 2);
+        for entry in &batch {
+            q.mark_processing(&entry.npub);
+        }
+        assert!(!q.has_ready_higher_priority(SyncPriority::Medium));
+        push_ready(&mut q, "h1", SyncPriority::High);
+        assert!(q.has_ready_higher_priority(SyncPriority::Medium));
+        q.requeue_front(batch[1].clone(), SyncPriority::Medium);
+        assert!(!q.processing.contains("m2"));
+        let (next, next_priority) = q.take_next_batch().expect("high batch");
+        assert_eq!(next_priority, SyncPriority::High);
+        assert_eq!(next[0].npub, "h1");
+        assert_eq!(q.medium_queue.front().map(|e| e.npub.as_str()), Some("m2"));
     }
 }

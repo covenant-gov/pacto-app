@@ -1,0 +1,26 @@
+---
+description: When executing a plan, mark each finished todo completed in the plan file
+alwaysApply: true
+---
+
+# Plan todos checked off
+
+When executing a **Plan → Build**, **implement the plan**, **execute the plan**, or equivalent, update that plan's todo checkboxes in the same turn as the work.
+
+## Where
+
+The plan file's YAML frontmatter. Each todo has `status: pending` or `status: completed`. That status is the checkbox.
+
+## Do
+
+- As soon as a todo's work is finished, set that todo to `status: completed`.
+- Before the handoff that says the plan (or this pause) is done, re-read the frontmatter and confirm every finished todo is `completed`.
+- Leave a todo `pending` only when its work was not done. Say so in the handoff.
+- Per-todo pauses: check off only the todos finished in that pause.
+
+## Do not
+
+- Leave finished todos at `pending` until the user asks.
+- Mark a todo completed when its work is still open.
+
+Related: [plan-build-commit-subject.mdc](plan-build-commit-subject.mdc).

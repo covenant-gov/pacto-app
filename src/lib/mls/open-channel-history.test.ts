@@ -29,6 +29,7 @@ vi.mock('../utils/dm-debug', () => ({
 import {
   loadOpenChannelHistory,
   mergeOpenChannelPage,
+  openMlsChannel,
   reloadOpenChannelHistoryIfVisible,
   shouldApplyChannelOpenLoad,
 } from './open-channel-history';
@@ -104,9 +105,16 @@ describe('loadOpenChannelHistory', () => {
     queueChatProfilesSync.mockResolvedValue(undefined);
   });
 
-  it('queues participant Kind 0 refresh when opening a channel', async () => {
+  it('does not refresh Kind 0 when reloading history', async () => {
     getDmMessages.mockResolvedValue([]);
     loadOpenChannelHistory(groupId);
+    await flush();
+    expect(queueChatProfilesSync).not.toHaveBeenCalled();
+  });
+
+  it('queues participant Kind 0 refresh when opening a channel', async () => {
+    getDmMessages.mockResolvedValue([]);
+    openMlsChannel(groupId);
     await flush();
     expect(queueChatProfilesSync).toHaveBeenCalledWith(groupId, true);
   });
