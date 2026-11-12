@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use nostr_sdk::prelude::*;
 use tauri::Emitter;
 
@@ -67,6 +69,14 @@ impl Profile {
     /// True when Kind 0 name, display_name, or avatar is present.
     pub fn has_public_metadata(&self) -> bool {
         !self.name.is_empty() || !self.display_name.is_empty() || !self.avatar.is_empty()
+    }
+
+    /// Apply a fetched Kind 0. Empty / about-only events do not clear a named profile.
+    pub(crate) fn apply_fetched_kind0(&mut self, meta: &Metadata) -> bool {
+        if self.has_public_metadata() && !metadata_has_public_fields(meta) {
+            return false;
+        }
+        self.apply_kind0_replacement(meta)
     }
 
     /// Merge Nostr Metadata with this Vector Profile
@@ -413,6 +423,12 @@ pub(crate) fn required_kind0_acks(connected_write_count: usize) -> usize {
     }
 }
 
+pub(crate) fn metadata_has_public_fields(meta: &Metadata) -> bool {
+    meta.name.as_deref().is_some_and(|s| !s.is_empty())
+        || meta.display_name.as_deref().is_some_and(|s| !s.is_empty())
+        || meta.picture.as_deref().is_some_and(|s| !s.is_empty())
+}
+
 fn kind0_echoes_local(meta: &Metadata, name: &str, avatar: &str) -> bool {
     let name_ok = name.is_empty() || meta.name.as_deref() == Some(name);
     let avatar_ok = avatar.is_empty() || meta.picture.as_deref() == Some(avatar);
@@ -455,6 +471,7 @@ pub(crate) fn decide_kind0_repair(
     receipt_event_id: Option<&str>,
     winner: Option<&Kind0ScanHit>,
     local_name: &str,
+    local_display_name: &str,
     local_avatar: &str,
     now_secs: u64,
     last_success_at: Option<u64>,
@@ -464,10 +481,16 @@ pub(crate) fn decide_kind0_repair(
         return Kind0RepairDecision::Skip;
     }
     if let Some(hit) = winner {
-        if !kind0_echoes_local(&hit.metadata, local_name, local_avatar) {
-            return Kind0RepairDecision::Reconcile;
+        let local_named =
+            !local_name.is_empty() || !local_display_name.is_empty() || !local_avatar.is_empty();
+        let empty_winner = !metadata_has_public_fields(&hit.metadata);
+        if !(local_named && empty_winner) {
+            if !kind0_echoes_local(&hit.metadata, local_name, local_avatar) {
+                return Kind0RepairDecision::Reconcile;
+            }
+            return Kind0RepairDecision::Skip;
         }
-        return Kind0RepairDecision::Skip;
+        // Empty/about-only winner over a named local profile: fall through to Publish.
     }
     if receipt_event_id.is_none() {
         return Kind0RepairDecision::Skip;
@@ -551,6 +574,115 @@ pub(crate) async fn fetch_kind0_per_relay(client: &Client, pubkey: PublicKey) ->
     hits
 }
 
+pub(crate) async fn fetch_latest_kind0(client: &Client, pubkey: PublicKey) -> Option<Metadata> {
+    let hits = fetch_kind0_per_relay(client, pubkey).await;
+    nip01_kind0_winner(&hits).map(|hit| hit.metadata.clone())
+}
+
+pub(crate) fn kind0_live_filter(authors: Vec<PublicKey>) -> Filter {
+    Filter::new().authors(authors).kind(Kind::Metadata).limit(0)
+}
+
+pub(crate) fn same_kind0_authors(left: &[PublicKey], right: &[PublicKey]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut left = left.to_vec();
+    let mut right = right.to_vec();
+    left.sort_unstable();
+    right.sort_unstable();
+    left == right
+}
+
+pub(crate) async fn kind0_live_author_keys(own: PublicKey) -> Vec<PublicKey> {
+    let mut keys = Vec::new();
+    let mut seen = HashSet::new();
+    keys.push(own);
+    seen.insert(own);
+    let state = STATE.lock().await;
+    for profile in &state.profiles {
+        if let Ok(pk) = PublicKey::from_bech32(&profile.id) {
+            if seen.insert(pk) {
+                keys.push(pk);
+            }
+        }
+    }
+    keys
+}
+
+pub(crate) struct Kind0LiveSub {
+    pub id: SubscriptionId,
+    pub authors: Vec<PublicKey>,
+}
+
+pub(crate) async fn open_kind0_live(client: &Client, own: PublicKey) -> Option<Kind0LiveSub> {
+    let authors = kind0_live_author_keys(own).await;
+    open_kind0_live_for_authors(client, authors).await
+}
+
+pub(crate) async fn open_kind0_live_for_authors(
+    client: &Client,
+    authors: Vec<PublicKey>,
+) -> Option<Kind0LiveSub> {
+    let filter = kind0_live_filter(authors.clone());
+    match client.subscribe(filter, None).await {
+        Ok(output) => Some(Kind0LiveSub {
+            id: output.val,
+            authors,
+        }),
+        Err(e) => {
+            eprintln!("[kind0] live subscribe failed: {e}");
+            None
+        }
+    }
+}
+
+/// Apply a live Kind 0 event using the same wipe guard as fetch.
+/// `own` is the logged-in pubkey already resolved by the notification loop.
+pub(crate) async fn apply_live_kind0_event(event: &Event, own: PublicKey) {
+    if event.kind != Kind::Metadata {
+        return;
+    }
+    let Ok(meta) = Metadata::from_json(&event.content) else {
+        return;
+    };
+    let Ok(npub) = event.pubkey.to_bech32();
+    let is_mine = event.pubkey == own;
+
+    let saved = {
+        let mut state = STATE.lock().await;
+        if state.get_profile(&npub).is_none() {
+            let mut new_profile = Profile::new();
+            new_profile.id = npub.clone();
+            state.profiles.push(new_profile);
+        }
+        state.get_profile_mut(&npub).and_then(|profile| {
+            if !profile.apply_fetched_kind0(&meta) {
+                return None;
+            }
+            profile.mine = is_mine;
+            profile.last_updated = unix_now_secs();
+            Some((
+                profile.clone(),
+                profile.avatar.clone(),
+                profile.banner.clone(),
+            ))
+        })
+    };
+    let Some((profile_clone, avatar_url, banner_url)) = saved else {
+        return;
+    };
+    let Some(handle) = TAURI_APP.get() else {
+        return;
+    };
+    let _ = handle.emit("profile_update", &profile_clone);
+    let _ = db::set_profile(handle.clone(), profile_clone).await;
+    let npub_clone = npub;
+    tokio::spawn(async move {
+        cache_profile_images(&npub_clone, &avatar_url, &banner_url).await;
+    });
+}
+
 /// `connect()` only starts handshakes. Kind 0 REQ against an empty pool returns none.
 async fn wait_for_connected_relay(client: &Client) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -615,20 +747,12 @@ async fn load_profile_metadata(
         Err(_) => return (false, None),
     };
 
-    // Check whether we already hold metadata (or, quickly generate a new profile to pass to the fetching logic)
-    let lacks_metadata: bool;
     {
         let mut state = STATE.lock().await;
-        match state.get_profile(npub) {
-            Some(p) => {
-                lacks_metadata = !p.has_public_metadata();
-            }
-            None => {
-                let mut new_profile = Profile::new();
-                new_profile.id = npub.to_string();
-                state.profiles.push(new_profile);
-                lacks_metadata = true;
-            }
+        if state.get_profile(npub).is_none() {
+            let mut new_profile = Profile::new();
+            new_profile.id = npub.to_string();
+            state.profiles.push(new_profile);
         }
     }
 
@@ -648,26 +772,14 @@ async fn load_profile_metadata(
             .and_then(|events| events.first().map(status_from_event))
     });
 
-    // Empty profiles get a per-relay Kind 0 scan. Profiles that already have
-    // a name or avatar keep the single pooled refresh.
-    let fetch_result = if lacks_metadata {
-        let hits = fetch_kind0_per_relay(&client, profile_pubkey).await;
-        Ok(nip01_kind0_winner(&hits).map(|hit| hit.metadata.clone()))
-    } else {
-        client
-            .fetch_metadata(profile_pubkey, std::time::Duration::from_secs(15))
-            .await
-            .map_err(|e| e.to_string())
-    };
-
-    let loaded = match fetch_result {
-        Ok(Some(meta)) => {
+    let loaded = match fetch_latest_kind0(&client, profile_pubkey).await {
+        Some(meta) => {
             let (metadata_changed, profile_clone, avatar_url, banner_url) = {
                 let mut state = STATE.lock().await;
                 let profile_mutable = state.get_profile_mut(npub).unwrap();
                 profile_mutable.mine = my_public_key == profile_pubkey;
 
-                let metadata_changed = profile_mutable.apply_kind0_replacement(&meta);
+                let metadata_changed = profile_mutable.apply_fetched_kind0(&meta);
 
                 profile_mutable.last_updated = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -697,7 +809,7 @@ async fn load_profile_metadata(
             }
             true
         }
-        Ok(None) => {
+        None => {
             // No Kind 0 on relays this attempt. Do not stamp last_updated while
             // the profile is still empty — that would demote Critical retries
             // (e.g. own profile after reinstall before metadata is visible).
@@ -712,8 +824,6 @@ async fn load_profile_metadata(
             }
             true
         }
-        // Network/relay error - this is a genuine failure
-        Err(_) => false,
     };
 
     (loaded, Some(status_fetch))
@@ -1065,7 +1175,7 @@ pub(crate) async fn maybe_republish_own_kind0(
         return;
     };
 
-    let (name, avatar, banner, about) = {
+    let (name, display_name, avatar, banner, about) = {
         let state = STATE.lock().await;
         match state
             .profiles
@@ -1074,6 +1184,7 @@ pub(crate) async fn maybe_republish_own_kind0(
         {
             Some(p) if p.has_public_metadata() => (
                 p.name.clone(),
+                p.display_name.clone(),
                 p.avatar.clone(),
                 p.banner.clone(),
                 p.about.clone(),
@@ -1097,6 +1208,7 @@ pub(crate) async fn maybe_republish_own_kind0(
         receipt.as_ref().map(|r| r.event_id.as_str()),
         winner,
         &name,
+        &display_name,
         &avatar,
         unix_now_secs(),
         last_success_at,
@@ -1113,7 +1225,9 @@ pub(crate) async fn maybe_republish_own_kind0(
                         return;
                     };
                     let mut profile = profile.clone();
-                    profile.apply_kind0_replacement(&hit.metadata);
+                    if !profile.apply_fetched_kind0(&hit.metadata) {
+                        return;
+                    }
                     profile.last_updated = unix_now_secs();
                     profile
                 };
@@ -1369,8 +1483,9 @@ pub async fn get_profile(npub: String) -> Result<Profile, String> {
 #[cfg(test)]
 mod kind0_relay_proof_tests {
     use super::{
-        decide_kind0_repair, kind0_echoes_local, kind0_verified_quorum_met, nip01_kind0_winner,
-        required_kind0_acks, Kind0RepairDecision, Kind0ScanHit, Profile,
+        decide_kind0_repair, kind0_echoes_local, kind0_live_filter, kind0_verified_quorum_met,
+        metadata_has_public_fields, nip01_kind0_winner, required_kind0_acks, same_kind0_authors,
+        Kind0RepairDecision, Kind0ScanHit, Profile,
     };
     use nostr_sdk::prelude::*;
 
@@ -1380,6 +1495,27 @@ mod kind0_relay_proof_tests {
             event_id: event_id.to_string(),
             metadata,
         }
+    }
+
+    #[test]
+    fn live_filter_is_kind0_for_authors() {
+        let pk = Keys::generate().public_key();
+        let filter = kind0_live_filter(vec![pk]);
+        assert!(filter
+            .kinds
+            .as_ref()
+            .is_some_and(|k| k.contains(&Kind::Metadata)));
+        assert!(filter.authors.as_ref().is_some_and(|a| a.contains(&pk)));
+        assert_eq!(filter.limit, Some(0));
+    }
+
+    #[test]
+    fn same_authors_ignores_order() {
+        let a = Keys::generate().public_key();
+        let b = Keys::generate().public_key();
+        assert!(same_kind0_authors(&[a, b], &[b, a]));
+        assert!(same_kind0_authors(&[a], &[a]));
+        assert!(!same_kind0_authors(&[a], &[a, b]));
     }
 
     #[test]
@@ -1441,6 +1577,45 @@ mod kind0_relay_proof_tests {
     }
 
     #[test]
+    fn public_fields_ignore_about_only() {
+        assert!(!metadata_has_public_fields(&Metadata::new()));
+        assert!(!metadata_has_public_fields(&Metadata::new().about("only")));
+        assert!(metadata_has_public_fields(&Metadata::new().name("Iso")));
+        assert!(metadata_has_public_fields(
+            &Metadata::new().display_name("Iso")
+        ));
+        assert!(metadata_has_public_fields(
+            &Metadata::new().picture(Url::parse("https://example.com/a.png").unwrap())
+        ));
+    }
+
+    #[test]
+    fn fetched_kind0_skips_empty_over_named_profile() {
+        let mut profile = Profile::new();
+        profile.name = "Iso".into();
+        profile.avatar = "https://example.com/a.png".into();
+        profile.about = "old".into();
+        profile.nickname = "local".into();
+        assert!(!profile.apply_fetched_kind0(&Metadata::new()));
+        assert!(!profile.apply_fetched_kind0(&Metadata::new().about("only")));
+        assert_eq!(profile.name, "Iso");
+        assert_eq!(profile.avatar, "https://example.com/a.png");
+        assert_eq!(profile.about, "old");
+        assert_eq!(profile.nickname, "local");
+    }
+
+    #[test]
+    fn fetched_kind0_named_event_still_replaces_and_clears_omitted_avatar() {
+        let mut profile = Profile::new();
+        profile.name = "Iso".into();
+        profile.avatar = "https://example.com/a.png".into();
+        let changed = profile.apply_fetched_kind0(&Metadata::new().name("Ada"));
+        assert!(changed);
+        assert_eq!(profile.name, "Ada");
+        assert!(profile.avatar.is_empty());
+    }
+
+    #[test]
     fn echo_requires_local_name_and_avatar() {
         let meta = Metadata::new()
             .name("Iso")
@@ -1465,6 +1640,7 @@ mod kind0_relay_proof_tests {
             Some("evt"),
             None,
             "Iso",
+            "",
             "https://example.com/a.png",
             1_000,
             None,
@@ -1480,6 +1656,7 @@ mod kind0_relay_proof_tests {
             None,
             None,
             "Iso",
+            "",
             "https://example.com/a.png",
             1_000,
             None,
@@ -1496,6 +1673,7 @@ mod kind0_relay_proof_tests {
             Some("old-receipt"),
             Some(&remote),
             "Iso",
+            "",
             "https://example.com/a.png",
             1_000,
             None,
@@ -1505,12 +1683,61 @@ mod kind0_relay_proof_tests {
     }
 
     #[test]
+    fn repair_publishes_empty_winner_instead_of_reconciling_named_local() {
+        let empty = hit(50, "empty", Metadata::new());
+        let decision = decide_kind0_repair(
+            true,
+            Some("old-receipt"),
+            Some(&empty),
+            "Iso",
+            "",
+            "https://example.com/a.png",
+            1_000,
+            None,
+            None,
+        );
+        assert_eq!(decision, Kind0RepairDecision::Publish);
+
+        let about_only = hit(50, "about", Metadata::new().about("bio"));
+        let decision = decide_kind0_repair(
+            true,
+            Some("old-receipt"),
+            Some(&about_only),
+            "Iso",
+            "",
+            "https://example.com/a.png",
+            1_000,
+            None,
+            None,
+        );
+        assert_eq!(decision, Kind0RepairDecision::Publish);
+    }
+
+    #[test]
+    fn repair_publishes_empty_winner_over_display_name_only() {
+        let empty = hit(50, "empty", Metadata::new());
+        let decision = decide_kind0_repair(
+            true,
+            Some("old-receipt"),
+            Some(&empty),
+            "",
+            "Iso",
+            "",
+            1_000,
+            None,
+            None,
+        );
+        assert_eq!(decision, Kind0RepairDecision::Publish);
+    }
+
+    #[test]
     fn repair_publishes_when_receipt_event_is_gone() {
         let decision = decide_kind0_repair(
             true,
             Some("evt"),
             None,
             "Iso",
+            "",
             "https://example.com/a.png",
             1_000,
             None,
@@ -1526,6 +1753,7 @@ mod kind0_relay_proof_tests {
             Some("evt"),
             None,
             "Iso",
+            "",
             "https://example.com/a.png",
             1_800,
             Some(1_000),
@@ -1541,6 +1769,7 @@ mod kind0_relay_proof_tests {
             Some("evt"),
             None,
             "Iso",
+            "",
             "https://example.com/a.png",
             1_200,
             None,
@@ -1552,6 +1781,7 @@ mod kind0_relay_proof_tests {
             Some("evt"),
             None,
             "Iso",
+            "",
             "https://example.com/a.png",
             1_000 + 5 * 60,
             None,

@@ -3,17 +3,17 @@
 use crate::{
     current_login_generation, db, evm, extract_mention_notification_body,
     get_blossom_media_servers, get_file_type_description, get_nostr_client, handle_event_guarded,
-    net_transport, nostr_sign, nostr_tags, notification, relay_cert, wait_for_populated_relay_pool,
-    MlsService, STATE, TAURI_APP,
+    net_transport, nostr_sign, nostr_tags, notification, profile, relay_cert,
+    wait_for_populated_relay_pool, MlsService, STATE, TAURI_APP,
 };
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
-use std::collections::{HashMap, VecDeque};
-use std::sync::RwLock;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{Arc, RwLock};
 
 use lazy_static::lazy_static;
 use tauri::{AppHandle, Emitter, Runtime};
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 
 /// Login generation whose live-subscription loop is running; `u64::MAX` means none.
 static NOTIFS_LOOP_GENERATION: std::sync::atomic::AtomicU64 =
@@ -137,6 +137,53 @@ pub(crate) async fn notifs() -> Result<bool, String> {
             return Err(e.to_string());
         }
     };
+
+    let initial_kind0 = profile::open_kind0_live(&client, pubkey).await;
+    let mut initial_ids = HashSet::new();
+    if let Some(sub) = &initial_kind0 {
+        initial_ids.insert(sub.id.clone());
+    }
+    let kind0_ids = Arc::new(Mutex::new(initial_ids));
+    let kind0_ids_for_handler = kind0_ids.clone();
+    let kind0_ids_for_refresh = kind0_ids.clone();
+    let (kind0_stop_tx, mut kind0_stop_rx) = watch::channel(false);
+    let kind0_client = client.clone();
+    let refresh_pubkey = pubkey;
+    let mut current_kind0 = initial_kind0;
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = kind0_stop_rx.changed() => break,
+                _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {
+                    if current_login_generation() != generation {
+                        break;
+                    }
+                    let authors = profile::kind0_live_author_keys(refresh_pubkey).await;
+                    if current_kind0.as_ref().is_some_and(|sub| {
+                        profile::same_kind0_authors(&sub.authors, &authors)
+                    }) {
+                        continue;
+                    }
+                    let Some(next) =
+                        profile::open_kind0_live_for_authors(&kind0_client, authors).await
+                    else {
+                        continue;
+                    };
+                    // Accept the new id before dropping the old one.
+                    kind0_ids_for_refresh.lock().await.insert(next.id.clone());
+                    if let Some(previous) = current_kind0.take() {
+                        let _ = kind0_client.unsubscribe(&previous.id).await;
+                        kind0_ids_for_refresh.lock().await.remove(&previous.id);
+                    }
+                    current_kind0 = Some(next);
+                }
+            }
+        }
+        if let Some(previous) = current_kind0.take() {
+            let _ = kind0_client.unsubscribe(&previous.id).await;
+            kind0_ids_for_refresh.lock().await.remove(&previous.id);
+        }
+    });
 
     // Begin watching for notifications from our subscriptions
     match client
@@ -827,6 +874,8 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                     }
                 } else if subscription_id == commons_sub_id {
                     crate::commons::ingest_live_broadcast_event(&event).await;
+                } else if kind0_ids_for_handler.lock().await.contains(&subscription_id) {
+                    profile::apply_live_kind0_event(&event, pubkey).await;
                 }
             }
             Ok(false)
@@ -834,10 +883,12 @@ pub(crate) async fn notifs() -> Result<bool, String> {
         .await
     {
         Ok(_) => {
+            let _ = kind0_stop_tx.send(true);
             release_notifs_loop(generation);
             Ok(true)
         }
         Err(e) => {
+            let _ = kind0_stop_tx.send(true);
             release_notifs_loop(generation);
             Err(e.to_string())
         }

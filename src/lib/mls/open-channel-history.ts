@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { getChatMessageCount, getDmMessages } from '../api/nostr';
+import { getChatMessageCount, getDmMessages, queueChatProfilesSync } from '../api/nostr';
 import { ensureMlsAutomationReplayed } from '../app/hub-prefetch';
 import { parentIdForChannelGroup } from '../squad-hub-nav';
 import { isVirtualHubChannelId } from '../squad/hub-channel-names';
@@ -40,6 +40,14 @@ function stillCurrent(requestGen: number, groupId: string): boolean {
     get(activeChannelId),
     get(activeTopNavTab)
   );
+}
+
+/** Opening an MLS channel refreshes participant Kind 0, then loads the first page. */
+export function openMlsChannel(groupId: string): void {
+  queueChatProfilesSync(groupId, true).catch((err) => {
+    dmError('open channel: queueChatProfilesSync failed', err);
+  });
+  loadOpenChannelHistory(groupId);
 }
 
 /** Load the first page for an MLS channel; drop stale responses and do not wipe live rows. */

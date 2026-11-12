@@ -24,7 +24,7 @@
     getChatMessageCount,
     sendDmMessage,
     sendFileBytes,
-    queueProfileSync,
+    queueProfileSyncForOpenDm,
     fetchMessages,
     startNotifs,
     markAsRead,
@@ -132,7 +132,7 @@
   import { resolveAutomatedAnnounceGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
   import {
-    loadOpenChannelHistory,
+    openMlsChannel,
     reloadOpenChannelHistoryIfVisible,
   } from '../../lib/mls/open-channel-history';
   import { syncSquadsHubSelection } from '../../lib/squad-hub-nav';
@@ -537,7 +537,7 @@
     const stillOpen = () =>
       shouldApplyDmOpenLoad(npub, get(activeDmId), get(dmChatsByNpub), get(deletingDmNpubs));
     dmLog('open conversation', { npub: npub.slice(0, 20) + '…', tab: 'dms' });
-    queueProfileSync(npub).catch(() => {});
+    queueProfileSyncForOpenDm(npub).catch(() => {});
     getChatMessageCount(npub)
       .then((count) => {
         if (!stillOpen()) return;
@@ -577,7 +577,7 @@
     !$activeChannelId.startsWith('creating-') &&
     $activeTopNavTab === 'squads'
   ) {
-    loadOpenChannelHistory($activeChannelId);
+    openMlsChannel($activeChannelId);
   }
 
   async function loadOlder() {
@@ -783,7 +783,7 @@
 
   function openInviterDm(inviterNpub: string) {
     if (!inviterNpub.startsWith('npub1')) return;
-    queueProfileSync(inviterNpub).catch(() => {});
+    queueProfileSyncForOpenDm(inviterNpub).catch(() => {});
     activeDmId.set(inviterNpub);
     const tab = dmSidebarCategoryForNpub(inviterNpub, get(dmChatsByNpub), get(pinnedDmNpubs)) as DmTab;
     if (tab !== 'search') {
