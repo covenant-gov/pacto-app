@@ -582,7 +582,8 @@ export async function handleInviteeDeclineForAnnounce(
   if (payload.invitee_npub.trim().toLowerCase() === me.toLowerCase()) return;
 
   if (isOutboundInviteRevoked(payload.parent_id, payload.invite_id)) return;
-  if (admittedSuccessKeys.has(acceptHandleKey(payload.invite_id, payload.invitee_npub))) return;
+  const key = acceptHandleKey(payload.invite_id, payload.invitee_npub);
+  if (admittedSuccessKeys.has(key) || attemptedAdmitKeys.has(key)) return;
 
   const flightKey = inviteMemoryKey(payload.parent_id, payload.invite_id);
   if (declineAnnounceInFlight.has(flightKey)) return;

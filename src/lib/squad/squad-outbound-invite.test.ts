@@ -63,7 +63,7 @@ vi.mock('../../stores/squads', async () => {
 import { getDmMessages, getMlsGroupMembers, sendDmMessage } from '../api/nostr';
 import { decideSquadPrivilege, requireMySquadPrivilege } from '../governance/squad-privilege-enforce';
 import { getAnnouncementsChannel } from '../parent-navbar';
-import { admitMemberToSquad } from '../parent/admit-member';
+import { admitMemberToSquad, type AdmitMemberResult } from '../parent/admit-member';
 import { enqueuePendingAdmit } from '../parent/pending-admit';
 import { currentUser } from '../../stores/auth-session';
 import { squads } from '../../stores/squads';
@@ -745,6 +745,26 @@ describe('squad-outbound-invite flows', () => {
     expect(admitMemberToSquad).toHaveBeenCalledTimes(1);
     await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
     expect(sendDmMessage).not.toHaveBeenCalled();
+  });
+
+  it('handleInviteeDeclineForAnnounce skips invites while admit is in flight', async () => {
+    rememberOutboundInvite(validOutbound);
+    let resolveAdmit: (value: AdmitMemberResult) => void = () => {};
+    const admitPending = new Promise<AdmitMemberResult>((resolve) => {
+      resolveAdmit = resolve;
+    });
+    vi.mocked(admitMemberToSquad).mockReturnValue(admitPending);
+
+    const admit = handleInviteeConsentForAdmit(validOutbound);
+    await vi.waitFor(() => {
+      expect(admitMemberToSquad).toHaveBeenCalledTimes(1);
+    });
+
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(sendDmMessage).not.toHaveBeenCalled();
+
+    resolveAdmit({ ok: true, announcementsOk: true, openChannelsInvited: 0 });
+    await admit;
   });
 
   it('handleInviteeDeclineForAnnounce leaves the invite open when the announce send fails', async () => {
