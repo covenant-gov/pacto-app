@@ -247,15 +247,13 @@ function loadPrivilegeEnforce() {
 
 type AuthoredAnnouncementMessage = { content: string; at: number; author?: string };
 
-function isOutboundInviteLifecycleContent(content: string): boolean {
+function isOutboundInviteCloseContent(content: string): boolean {
   return Boolean(
-    parseSquadOutboundInvite(content) ||
-      parseSquadOutboundInviteRevoked(content) ||
-      parseSquadOutboundInviteDeclined(content)
+    parseSquadOutboundInviteRevoked(content) || parseSquadOutboundInviteDeclined(content)
   );
 }
 
-/** Drop invite/revoke/decline rows whose author lacks `inviteAccept` (same gate as live MLS events). */
+/** Drop invite announces whose author lacks `inviteAccept`. Authored closes stay. */
 async function filterAuthorizedOutboundInviteMessages(
   parentId: string,
   msgs: AuthoredAnnouncementMessage[]
@@ -276,7 +274,10 @@ async function filterAuthorizedOutboundInviteMessages(
   };
   const out: { content: string; at: number }[] = [];
   for (const m of msgs) {
-    if (isOutboundInviteLifecycleContent(m.content) && !(await authorAllowed(m.author?.trim() ?? ''))) {
+    const author = m.author?.trim() ?? '';
+    if (parseSquadOutboundInvite(m.content)) {
+      if (!(await authorAllowed(author))) continue;
+    } else if (isOutboundInviteCloseContent(m.content) && !author) {
       continue;
     }
     out.push({ content: m.content, at: m.at });
@@ -284,7 +285,7 @@ async function filterAuthorizedOutboundInviteMessages(
   return out;
 }
 
-/** Announcements history for a squad, with lifecycle rows filtered by author privilege. */
+/** Announcements history; invite announces are filtered by author privilege. */
 async function loadAuthorizedAnnouncementMessages(
   gid: string
 ): Promise<{ content: string; at: number }[]> {
