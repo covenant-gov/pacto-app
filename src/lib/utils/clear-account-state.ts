@@ -82,6 +82,7 @@ import {
 } from '../../stores/mls-chat';
 import { safeStateByTreasuryId } from '../../stores/safe';
 import { clearWalletSummaryCacheStore } from '../wallet/wallet-summary-cache';
+import { clearEvmDashGasCache } from '../wallet/evm-dash-gas-cache';
 import { clearDashboardFetchMetaStores } from '../dashboard/dashboard-fetch-meta';
 import { clearGovernanceSnapshotCacheStore } from '../dashboard/governance-snapshot-cache';
 import { clearSettingsChainCacheStore, SETTINGS_CHAIN_CACHE_PREFIX } from '../dashboard/settings-chain-cache';
@@ -290,6 +291,7 @@ export function clearAccountState(npub?: string): void {
   clearLinkPreviewRequests();
   clearSquadEventCardRowsCache();
   clearWalletSummaryCacheStore();
+  clearEvmDashGasCache();
   clearDashboardFetchMetaStores();
   clearGovernanceSnapshotCacheStore();
   clearSettingsChainCacheStore();

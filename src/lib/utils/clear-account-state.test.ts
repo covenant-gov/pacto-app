@@ -64,6 +64,13 @@ import { unreadCountsByChat } from '../../stores/unread';
 import { profiles } from '../../stores/profiles';
 import { requestLinkPreview } from '../messaging/link-preview';
 import { squadEventRowsForCards } from '../squad/squad-event-card-replica';
+import {
+  evmDashGasCacheKey,
+  fetchEvmDashGasCached,
+  getCachedEvmDashGas,
+  setCachedEvmDashGas,
+  type EvmDashGasSnapshot,
+} from '../wallet/evm-dash-gas-cache';
 
 describe('clearAccountState', () => {
   let storage: Map<string, string>;
@@ -299,5 +306,26 @@ describe('clearAccountState', () => {
 
     await squadEventRowsForCards('parent-1', 0);
     expect(mockListSquadEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops cached EVM dash gas so the next account fetches its own rows', async () => {
+    const key = evmDashGasCacheKey('sepolia');
+    const snapshot: EvmDashGasSnapshot = {
+      rows: [],
+      poolWei: '1000000000000000000',
+      poolError: '',
+    };
+    setCachedEvmDashGas(key, snapshot);
+    expect(getCachedEvmDashGas(key)).toEqual(snapshot);
+
+    const fetcher = vi.fn(async () => snapshot);
+    await fetchEvmDashGasCached(key, fetcher);
+    expect(fetcher).not.toHaveBeenCalled();
+
+    clearAccountState('npub1abcdef');
+
+    expect(getCachedEvmDashGas(key)).toBeNull();
+    await fetchEvmDashGasCached(key, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

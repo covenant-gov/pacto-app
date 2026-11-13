@@ -37,7 +37,7 @@ export function isEvmDashGasCacheStale(key: string): boolean {
   return Date.now() - sessionEntry.fetchedAtMs > EVM_DASH_GAS_TTL_MS;
 }
 
-/** Test helper. */
+/** Drop the session slot and in-flight fetches. Called from `clearAccountState()` on logout/account switch. */
 export function clearEvmDashGasCache(): void {
   sessionEntry = null;
   inflight.clear();
