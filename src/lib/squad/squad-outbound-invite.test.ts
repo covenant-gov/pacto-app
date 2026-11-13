@@ -63,7 +63,7 @@ vi.mock('../../stores/squads', async () => {
 import { getDmMessages, getMlsGroupMembers, sendDmMessage } from '../api/nostr';
 import { decideSquadPrivilege, requireMySquadPrivilege } from '../governance/squad-privilege-enforce';
 import { getAnnouncementsChannel } from '../parent-navbar';
-import { admitMemberToSquad } from '../parent/admit-member';
+import { admitMemberToSquad, type AdmitMemberResult } from '../parent/admit-member';
 import { enqueuePendingAdmit } from '../parent/pending-admit';
 import { currentUser } from '../../stores/auth-session';
 import { squads } from '../../stores/squads';
@@ -105,6 +105,8 @@ import {
 
 const ALLOWED = { ok: true, active: true, flags: null } as const;
 const DENIED = { ok: false, reason: 'denied', active: true } as const;
+const UNBOUND = { ok: false, reason: 'unbound', active: true } as const;
+const RPC_FAILED = { ok: false, reason: 'rpc', active: true } as const;
 
 const validOutbound = {
   parent_id: 'g-ann',
@@ -745,6 +747,26 @@ describe('squad-outbound-invite flows', () => {
     expect(sendDmMessage).not.toHaveBeenCalled();
   });
 
+  it('handleInviteeDeclineForAnnounce skips invites while admit is in flight', async () => {
+    rememberOutboundInvite(validOutbound);
+    let resolveAdmit: (value: AdmitMemberResult) => void = () => {};
+    const admitPending = new Promise<AdmitMemberResult>((resolve) => {
+      resolveAdmit = resolve;
+    });
+    vi.mocked(admitMemberToSquad).mockReturnValue(admitPending);
+
+    const admit = handleInviteeConsentForAdmit(validOutbound);
+    await vi.waitFor(() => {
+      expect(admitMemberToSquad).toHaveBeenCalledTimes(1);
+    });
+
+    await handleInviteeDeclineForAnnounce(validOutbound, 'npub-bob');
+    expect(sendDmMessage).not.toHaveBeenCalled();
+
+    resolveAdmit({ ok: true, announcementsOk: true, openChannelsInvited: 0 });
+    await admit;
+  });
+
   it('handleInviteeDeclineForAnnounce leaves the invite open when the announce send fails', async () => {
     rememberOutboundInvite(validOutbound);
     vi.mocked(sendDmMessage).mockResolvedValueOnce(false);
@@ -803,11 +825,13 @@ describe('squad-outbound-invite flows', () => {
 });
 
 describe('squad-outbound-invite history author gate', () => {
-  const declinedRow = formatSquadOutboundInviteDeclined({
+  const closePayload = {
     parent_id: 'g-ann',
     invite_id: 'inv-1',
     invitee_npub: 'npub-bob',
-  });
+  };
+  const declinedRow = formatSquadOutboundInviteDeclined(closePayload);
+  const revokedRow = formatSquadOutboundInviteRevoked(closePayload);
 
   beforeEach(() => {
     resetOutboundInviteState();
@@ -839,15 +863,36 @@ describe('squad-outbound-invite history author gate', () => {
     ]);
   });
 
-  it('ignores a decline authored by a member without inviteAccept', async () => {
-    vi.mocked(getDmMessages).mockResolvedValue([
-      { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: false, npub: 'npub-admin' },
-      { content: declinedRow, at: 20, mine: false, npub: 'npub-mallory' },
-    ] as never);
-    const pending = await loadPendingOutboundInvitesFromMls('g-ann');
-    expect(pending).toEqual([expect.objectContaining({ inviteId: 'inv-1' })]);
-    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(false);
-  });
+  it.each([
+    ['decline', 'denied', declinedRow, DENIED],
+    ['decline', 'unbound', declinedRow, UNBOUND],
+    ['decline', 'rpc', declinedRow, RPC_FAILED],
+    ['revoke', 'denied', revokedRow, DENIED],
+    ['revoke', 'unbound', revokedRow, UNBOUND],
+    ['revoke', 'rpc', revokedRow, RPC_FAILED],
+  ] as const)(
+    'keeps a %s when the close author is %s',
+    async (_kind, _reason, closeRow, closeVerdict) => {
+      vi.mocked(decideSquadPrivilege).mockImplementation(async ({ memberNpub }) =>
+        memberNpub === 'npub-admin' ? ALLOWED : closeVerdict,
+      );
+      vi.mocked(getDmMessages).mockResolvedValue([
+        { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: false, npub: 'npub-admin' },
+        { content: closeRow, at: 20, mine: false, npub: 'npub-former' },
+      ] as never);
+      await expect(loadPendingOutboundInvitesFromMls('g-ann')).resolves.toEqual([]);
+      expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+
+      resetOutboundInviteState();
+      await handleInviteeConsentForAdmit(validOutbound);
+      expect(admitMemberToSquad).not.toHaveBeenCalled();
+      expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
+      expect(vi.mocked(decideSquadPrivilege).mock.calls.map(([p]) => p.memberNpub)).toEqual([
+        'npub-admin',
+        'npub-admin',
+      ]);
+    },
+  );
 
   it('applies a decline authored by a privileged member', async () => {
     vi.mocked(getDmMessages).mockResolvedValue([
@@ -866,17 +911,35 @@ describe('squad-outbound-invite history author gate', () => {
     expect(admitMemberToSquad).not.toHaveBeenCalled();
   });
 
-  it('attributes own messages to the local user and unattributed rows to a missing author', async () => {
+  it('attributes own invites to the local user and unattributed invites to a missing author', async () => {
     vi.mocked(getDmMessages).mockResolvedValue([
       { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: true },
-      { content: declinedRow, at: 20, mine: false },
+      {
+        content: formatSquadOutboundInvite({ ...validOutbound, invite_id: 'inv-2' }),
+        at: 11,
+        mine: false,
+      },
     ] as never);
     await loadPendingOutboundInvitesFromMls('g-ann');
     const authors = vi.mocked(decideSquadPrivilege).mock.calls.map(([p]) => p.memberNpub);
     expect(authors).toEqual(['npub-me', '__missing__']);
   });
 
-  it('checks each distinct author once and skips non-lifecycle rows', async () => {
+  it('does not apply an unattributed close', async () => {
+    vi.mocked(getDmMessages).mockResolvedValue([
+      { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: false, npub: 'npub-admin' },
+      { content: declinedRow, at: 20, mine: false },
+    ] as never);
+    const pending = await loadPendingOutboundInvitesFromMls('g-ann');
+    expect(pending).toEqual([expect.objectContaining({ inviteId: 'inv-1' })]);
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(false);
+    expect(vi.mocked(decideSquadPrivilege).mock.calls.map(([p]) => p.memberNpub)).toEqual([
+      'npub-admin',
+    ]);
+  });
+
+  // Replay applies Mallory's close without inviteAccept; live ingest would drop it (see INVITES_AND_MEMBERSHIP.md).
+  it('checks each distinct invite author once and skips closes and other rows', async () => {
     vi.mocked(getDmMessages).mockResolvedValue([
       { content: 'hello', at: 5, mine: false, npub: 'npub-mallory' },
       { content: formatSquadOutboundInvite(validOutbound), at: 10, mine: false, npub: 'npub-admin' },
@@ -886,8 +949,11 @@ describe('squad-outbound-invite history author gate', () => {
         mine: false,
         npub: 'npub-admin',
       },
+      { content: declinedRow, at: 20, mine: false, npub: 'npub-mallory' },
     ] as never);
-    await loadPendingOutboundInvitesFromMls('g-ann');
+    const pending = await loadPendingOutboundInvitesFromMls('g-ann');
+    expect(pending).toEqual([expect.objectContaining({ inviteId: 'inv-2' })]);
+    expect(isOutboundInviteRevoked('g-ann', 'inv-1')).toBe(true);
     expect(decideSquadPrivilege).toHaveBeenCalledTimes(1);
   });
 });
