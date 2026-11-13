@@ -918,6 +918,7 @@ describe('squad-outbound-invite history author gate', () => {
     ]);
   });
 
+  // Replay applies Mallory's close without inviteAccept; live ingest would drop it (see INVITES_AND_MEMBERSHIP.md).
   it('checks each distinct invite author once and skips closes and other rows', async () => {
     vi.mocked(getDmMessages).mockResolvedValue([
       { content: 'hello', at: 5, mine: false, npub: 'npub-mallory' },
