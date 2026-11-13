@@ -1,8 +1,6 @@
 <script lang="ts">
-  import Message from '../dm/Message.svelte';
-  import AnnounceCard from '../announcements/AnnounceCard.svelte';
-  import JoinInboxAnnounceCard from '../announcements/JoinInboxAnnounceCard.svelte';
   import MessageShortcutComposer from '../dm/MessageShortcutComposer.svelte';
+  import ChannelHistoryTimeline from './ChannelHistoryTimeline.svelte';
   import MlsResetNotice from './MlsResetNotice.svelte';
   import MlsMembersPanel from './MlsMembersPanel.svelte';
   import Modal from '../ui/Modal.svelte';
@@ -16,7 +14,6 @@
     resolveVirtualBucketForTimelineMessage,
     type VirtualBucket,
   } from '../../lib/mls/virtual-channel-bucket';
-  import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
   import DocsChannelButton from '../parent/DocsChannelButton.svelte';
   import SaveToDocsDialog from '../parent/SaveToDocsDialog.svelte';
   import { TOOLS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
@@ -892,96 +889,22 @@
               </button>
             </div>
           {/if}
-          {#each historyAbove as message, i (`${messagesTimelineKey}:copy:${message.id}`)}
-            {@const props = toMessageProps(message)}
-            {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
-            {@const joinInboxAnnounce =
-              channelParsesStructuredAnnounces ? parseJoinInboxAnnounceMessage(message.content) : null}
-            {@const announceForCard =
-              parsed && announceCardAllowedForTimelineBucket(parsed, message) ? parsed : null}
-            {#if announceForCard}
-              <AnnounceCard
-                id={message.id}
-                announce={announceForCard}
-                authorName={props.authorName}
-                authorNpub={message.npub}
-                timestamp={props.timestamp}
-              />
-            {:else if joinInboxAnnounce}
-              <JoinInboxAnnounceCard
-                id={message.id}
-                announce={joinInboxAnnounce}
-                authorName={props.authorName}
-                authorNpub={message.npub}
-                timestamp={props.timestamp}
-              />
-            {:else}
-              <Message
-                {...props}
-                editRequest={editRequest?.scope === messagesTimelineKey && editRequest.messageId === message.id ? editRequest : null}
-                chatId={$activeChannelId ?? ''}
-                {onReact}
-                {onCopy}
-                {onReply}
-                onEdit={(_id, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
-                onSaveToDocs={saveToDocsHandler}
-                compact={shouldStackChannelWithPrevious(
-                  historyAbove[i - 1],
-                  message,
-                  channelMessageIsCard
-                )}
-              />
-            {/if}
-          {/each}
-          {#if showMlsHistoryWelcome}
-            <div class="mls-history-welcome" role="note">
-              <p class="mls-history-welcome-title">{$t('messaging.channel.mlsWelcomeTitle')}</p>
-              <p class="mls-history-welcome-body">
-                {$t('messaging.channel.mlsWelcomeBody')}
-              </p>
-            </div>
-          {/if}
-          {#each historyBelow as message, i (`${messagesTimelineKey}:${message.id}`)}
-            {@const props = toMessageProps(message)}
-            {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
-            {@const joinInboxAnnounce =
-              channelParsesStructuredAnnounces ? parseJoinInboxAnnounceMessage(message.content) : null}
-            {@const announceForCard =
-              parsed && announceCardAllowedForTimelineBucket(parsed, message) ? parsed : null}
-            {#if announceForCard}
-              <AnnounceCard
-                id={message.id}
-                announce={announceForCard}
-                authorName={props.authorName}
-                authorNpub={message.npub}
-                timestamp={props.timestamp}
-              />
-            {:else if joinInboxAnnounce}
-              <JoinInboxAnnounceCard
-                id={message.id}
-                announce={joinInboxAnnounce}
-                authorName={props.authorName}
-                authorNpub={message.npub}
-                timestamp={props.timestamp}
-              />
-            {:else}
-              <Message
-                {...props}
-                editRequest={editRequest?.scope === messagesTimelineKey && editRequest.messageId === message.id ? editRequest : null}
-                chatId={$activeChannelId ?? ''}
-                {onReact}
-                {onCopy}
-                {onReply}
-                onEdit={(_id, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
-                onSaveToDocs={saveToDocsHandler}
-                compact={shouldStackChannelWithPrevious(
-                  historyBelow[i - 1],
-                  message,
-                  channelMessageIsCard
-                )}
-              />
-            {/if}
-          {/each}
+          <ChannelHistoryTimeline
+            {historyAbove}
+            {historyBelow}
+            timelineKey={messagesTimelineKey}
+            {showMlsHistoryWelcome}
+            {channelParsesStructuredAnnounces}
+            {toMessageProps}
+            {channelMessageIsCard}
+            {editRequest}
+            chatId={$activeChannelId ?? ''}
+            {onReact}
+            {onCopy}
+            {onReply}
+            onEdit={(message, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
+            onSaveToDocs={saveToDocsHandler}
+          />
         {/if}
       </div>
     </div>
@@ -1365,28 +1288,6 @@
     padding: 24px 16px;
     color: var(--text-muted);
     font-size: 0.9375rem;
-  }
-
-  .mls-history-welcome {
-    margin: 16px 16px 8px;
-    padding: 14px 16px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--bg-elevated);
-  }
-
-  .mls-history-welcome-title {
-    margin: 0 0 6px;
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-    font-weight: 600;
-  }
-
-  .mls-history-welcome-body {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.875rem;
-    line-height: 1.45;
   }
 
   .channel-send-error {

@@ -3,10 +3,10 @@
 
 use crate::chat::ChatType;
 use crate::crypto::{decrypt_with_key, encrypt_with_key};
-use crate::message::Message;
+use crate::message::{Attachment, ImageMetadata, Message, Reaction};
 use crate::stored_event::event_kind;
 use rusqlite::{params, Connection};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 const MENTION_ENVELOPE_KIND: &str = "pacto.mentions.envelope.v1";
 
@@ -50,7 +50,8 @@ pub(crate) fn is_structured_product_content(content: &str) -> bool {
 
 /// Rows for `group_id` with `created_at >= since_unix_secs`, ordered by time then id.
 ///
-/// Kinds 14, 15, and 16 are decrypted with `key` before the human-chat check.
+/// Kinds 14 and 15 are decrypted with `key` before the human-chat check.
+/// The latest authorized edit is folded into that row. Kind 16 is omitted.
 /// A row that fails decryption is skipped.
 pub fn export_channel_history(
     conn: &Connection,
@@ -118,7 +119,84 @@ pub fn export_channel_history(
             out.push(message);
         }
     }
+    fold_latest_authorized_edits(conn, &mut out, key)?;
+    out.retain(|message| message.kind != event_kind::MESSAGE_EDIT);
     Ok(out)
+}
+
+/// One winner per original id: `created_at DESC, rowid DESC`, same predicate as live edits.
+fn fold_latest_authorized_edits(
+    conn: &Connection,
+    messages: &mut [HistoryExportMessage],
+    key: &[u8; 32],
+) -> Result<(), String> {
+    let original_ids: Vec<&str> = messages
+        .iter()
+        .filter(|message| {
+            message.kind == event_kind::PRIVATE_DIRECT_MESSAGE
+                || message.kind == event_kind::FILE_ATTACHMENT
+        })
+        .map(|message| message.id.as_str())
+        .collect();
+    if original_ids.is_empty() {
+        return Ok(());
+    }
+    let placeholders = (1..=original_ids.len())
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT e.reference_id, e.content {} AND e.reference_id IN ({placeholders}) ORDER BY e.created_at DESC, e.rowid DESC",
+        crate::db::authorized_edits_from_sql(),
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(original_ids.iter()), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut winners = std::collections::HashMap::<String, Option<String>>::new();
+    for row in rows {
+        let (reference_id, stored) = row.map_err(|e| e.to_string())?;
+        if winners.contains_key(&reference_id) {
+            continue;
+        }
+        // Latest row consumes the id; an unusable body applies nothing.
+        let body = match decrypt_with_key(&stored, key) {
+            Ok(body) if !is_structured_product_content(&body) => Some(body),
+            _ => None,
+        };
+        winners.insert(reference_id, body);
+    }
+    drop(stmt);
+
+    for message in messages.iter_mut() {
+        let Some(body) = winners.remove(&message.id).flatten() else {
+            continue;
+        };
+        match message.kind {
+            event_kind::FILE_ATTACHMENT => write_caption_tag(&mut message.tags, body),
+            event_kind::PRIVATE_DIRECT_MESSAGE => message.content = body,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn write_caption_tag(tags: &mut Vec<Vec<String>>, caption: String) {
+    if let Some(tag) = tags
+        .iter_mut()
+        .find(|tag| tag.first().is_some_and(|name| name == "caption"))
+    {
+        if tag.len() >= 2 {
+            tag[1] = caption;
+        } else {
+            tag.push(caption);
+        }
+        return;
+    }
+    tags.push(vec!["caption".to_string(), caption]);
 }
 
 struct RawEvent {
@@ -163,9 +241,12 @@ fn decode_row(row: RawEvent, key: &[u8; 32]) -> Option<HistoryExportMessage> {
 }
 
 /// Rows written by a history import. `inserted_ids` omits ids that already existed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HistoryImportResult {
     pub inserted_ids: Vec<String>,
+    pub group_id: String,
+    pub timeline: Vec<Message>,
+    pub reactions: Vec<Reaction>,
 }
 
 /// Write accepted chunk rows. Rejects the whole batch when any row is not human chat.
@@ -182,7 +263,7 @@ pub fn import_channel_history(
     for message in messages {
         validate_import_message(message)?;
     }
-    let (inserted_ids, stored_group_id, timeline) = write_imported_rows(
+    write_imported_rows(
         conn,
         group_id,
         bucket,
@@ -190,9 +271,7 @@ pub fn import_channel_history(
         messages,
         received_at_ms,
         key,
-    )?;
-    emit_imported_timeline(&stored_group_id, &timeline);
-    Ok(HistoryImportResult { inserted_ids })
+    )
 }
 
 fn validate_import_message(message: &HistoryExportMessage) -> Result<(), String> {
@@ -201,10 +280,7 @@ fn validate_import_message(message: &HistoryExportMessage) -> Result<(), String>
     }
     let human_kind = matches!(
         message.kind,
-        event_kind::PRIVATE_DIRECT_MESSAGE
-            | event_kind::FILE_ATTACHMENT
-            | event_kind::MESSAGE_EDIT
-            | event_kind::REACTION
+        event_kind::PRIVATE_DIRECT_MESSAGE | event_kind::FILE_ATTACHMENT | event_kind::REACTION
     );
     if !human_kind {
         return Err("invalid history message".to_string());
@@ -224,7 +300,7 @@ fn write_imported_rows(
     messages: &[HistoryExportMessage],
     received_at_ms: u64,
     key: &[u8; 32],
-) -> Result<(Vec<String>, String, Vec<Message>), String> {
+) -> Result<HistoryImportResult, String> {
     let group_key = group_id.trim().to_lowercase();
     if group_key.is_empty() {
         return Err("history import missing group".to_string());
@@ -247,6 +323,7 @@ fn write_imported_rows(
 
     let mut inserted_ids = Vec::new();
     let mut timeline = Vec::new();
+    let mut reactions = Vec::new();
     for message in messages {
         let created_at =
             i64::try_from(message.created_at).map_err(|_| "created_at is out of range")?;
@@ -280,28 +357,250 @@ fn write_imported_rows(
             .map_err(|e| e.to_string())?;
         if inserted == 1 {
             inserted_ids.push(message.id.clone());
-            if message.kind == event_kind::PRIVATE_DIRECT_MESSAGE
-                || message.kind == event_kind::FILE_ATTACHMENT
-            {
-                timeline.push(timeline_message(message, mine, bucket_value));
+            match message.kind {
+                event_kind::PRIVATE_DIRECT_MESSAGE | event_kind::FILE_ATTACHMENT => {
+                    timeline.push(timeline_message(message, mine, bucket_value));
+                }
+                event_kind::REACTION => {
+                    if let Some(reaction) = reaction_from_import(message) {
+                        reactions.push(reaction);
+                    }
+                }
+                _ => {}
             }
         }
     }
     tx.commit().map_err(|e| e.to_string())?;
-    Ok((inserted_ids, stored_group_id, timeline))
+    Ok(HistoryImportResult {
+        inserted_ids,
+        group_id: stored_group_id,
+        timeline,
+        reactions,
+    })
+}
+
+fn tag_value<'a>(tags: &'a [Vec<String>], name: &str) -> Option<&'a str> {
+    tags.iter().find_map(|tag| match tag.as_slice() {
+        [tag_name, value, ..] if tag_name == name && !value.is_empty() => Some(value.as_str()),
+        _ => None,
+    })
+}
+
+fn history_caption(tags: &[Vec<String>]) -> String {
+    tag_value(tags, "caption")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn image_metadata_from_tags(tags: &[Vec<String>]) -> Option<ImageMetadata> {
+    let blurhash = tag_value(tags, "blurhash")?.to_string();
+    let dim = tag_value(tags, "dim")?;
+    let mut parts = dim.split('x');
+    let width = parts.next()?.parse().ok()?;
+    let height = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(ImageMetadata {
+        blurhash,
+        width,
+        height,
+    })
+}
+
+fn local_attachment_file(file_id: &str, extension: &str) -> (String, bool) {
+    let Some(handle) = crate::TAURI_APP.get() else {
+        return (String::new(), false);
+    };
+    let base = if cfg!(target_os = "ios") {
+        tauri::path::BaseDirectory::Document
+    } else {
+        tauri::path::BaseDirectory::Download
+    };
+    let Ok(dir) = handle.path().resolve("pacto", base) else {
+        return (String::new(), false);
+    };
+    let path = dir.join(format!("{file_id}.{extension}"));
+    let downloaded = path.exists();
+    (path.to_string_lossy().to_string(), downloaded)
+}
+
+fn attachment_from_history(message: &HistoryExportMessage) -> Option<Attachment> {
+    let mime = tag_value(&message.tags, "file-type")?;
+    let key = tag_value(&message.tags, "decryption-key")?.to_string();
+    let nonce = tag_value(&message.tags, "decryption-nonce")?.to_string();
+    let id = tag_value(&message.tags, "ox")
+        .map(str::to_string)
+        .unwrap_or_else(|| nonce.clone());
+    let extension = crate::util::extension_from_mime(mime);
+    let file_name =
+        tag_value(&message.tags, "filename").and_then(crate::message::sanitize_incoming_file_name);
+    let size = tag_value(&message.tags, "size")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    let (path, downloaded) = local_attachment_file(&id, &extension);
+    Some(Attachment {
+        id,
+        key,
+        nonce,
+        extension,
+        url: message.content.clone(),
+        path,
+        size,
+        img_meta: image_metadata_from_tags(&message.tags),
+        downloading: false,
+        downloaded,
+        webxdc_topic: None,
+        file_name,
+    })
+}
+
+fn reaction_from_import(message: &HistoryExportMessage) -> Option<Reaction> {
+    let reference_id = message.reference_id.as_deref()?.trim();
+    if reference_id.is_empty() {
+        return None;
+    }
+    Some(Reaction {
+        id: message.id.clone(),
+        reference_id: reference_id.to_string(),
+        author_id: message.author_npub.clone(),
+        emoji: message.content.clone(),
+    })
 }
 
 fn timeline_message(message: &HistoryExportMessage, mine: bool, bucket: Option<&str>) -> Message {
+    let (content, attachments) = if message.kind == event_kind::FILE_ATTACHMENT {
+        (
+            history_caption(&message.tags),
+            attachment_from_history(message).into_iter().collect(),
+        )
+    } else {
+        (message.content.clone(), Vec::new())
+    };
     Message {
         id: message.id.clone(),
-        content: message.content.clone(),
+        content,
         replied_to: message.reference_id.clone().unwrap_or_default(),
         at: message.created_at.saturating_mul(1000),
         mine,
         npub: Some(message.author_npub.clone()),
         virtual_bucket: bucket.map(str::to_string),
+        attachments,
         ..Default::default()
     }
+}
+
+fn message_is_newer(candidate: &Message, newest: &Message) -> bool {
+    candidate.at > newest.at || (candidate.at == newest.at && candidate.id > newest.id)
+}
+
+struct AppliedImport {
+    to_emit: Vec<Message>,
+    chat: Option<crate::Chat>,
+    chat_existed: bool,
+}
+
+fn apply_imported_timeline(
+    state: &mut crate::ChatState,
+    chat_id: &str,
+    timeline: &[Message],
+    reactions: &[Reaction],
+) -> AppliedImport {
+    let chat_existed = state.get_chat(chat_id).is_some();
+    for message in timeline {
+        state.add_message_to_chat(chat_id, message.clone());
+    }
+    if let Some(chat) = state.get_chat_mut(chat_id) {
+        for reaction in reactions {
+            if let Some(message) = chat.get_message_mut(&reaction.reference_id) {
+                message.add_reaction(reaction.clone(), None);
+            }
+        }
+    }
+    let to_emit = state
+        .get_chat(chat_id)
+        .map(|chat| {
+            timeline
+                .iter()
+                .filter_map(|message| {
+                    chat.messages
+                        .iter()
+                        .find(|stored| stored.id == message.id)
+                        .cloned()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let chat = advance_imported_last_read(state, chat_id, timeline);
+    AppliedImport {
+        to_emit,
+        chat,
+        chat_existed,
+    }
+}
+
+fn advance_imported_last_read(
+    state: &mut crate::ChatState,
+    chat_id: &str,
+    imported: &[Message],
+) -> Option<crate::Chat> {
+    let newest = imported
+        .iter()
+        .max_by(|left, right| left.at.cmp(&right.at).then_with(|| left.id.cmp(&right.id)))?;
+    let chat = state.get_chat_mut(chat_id)?;
+    let present = chat.messages.iter().any(|message| message.id == newest.id);
+    let newer = chat
+        .messages
+        .iter()
+        .any(|message| message_is_newer(message, newest));
+    if !present || newer || chat.last_read == newest.id {
+        return None;
+    }
+    chat.last_read = newest.id.clone();
+    Some(chat.clone())
+}
+
+async fn publish_imported_timeline(imported: &HistoryImportResult) {
+    if imported.timeline.is_empty() && imported.reactions.is_empty() {
+        return;
+    }
+    let applied = {
+        let mut state = crate::STATE.lock().await;
+        apply_imported_timeline(
+            &mut state,
+            &imported.group_id,
+            &imported.timeline,
+            &imported.reactions,
+        )
+    };
+    if let Some(chat) = applied.chat {
+        persist_imported_last_read(&chat, applied.chat_existed).await;
+    }
+    emit_imported_timeline(&imported.group_id, &applied.to_emit);
+}
+
+async fn persist_imported_last_read(chat: &crate::Chat, chat_existed: bool) {
+    let Some(handle) = crate::TAURI_APP.get() else {
+        return;
+    };
+    crate::cmds::chat::update_unread_counter(handle.clone()).await;
+    if chat_existed {
+        let _ = crate::db::save_chat(handle.clone(), chat).await;
+        return;
+    }
+    // A chat created only for this import has empty participants; save_chat would replace the row.
+    let id = chat.id.clone();
+    let last_read = chat.last_read.clone();
+    let _ = with_account_conn(|conn| {
+        conn.execute(
+            "UPDATE chats SET last_read = ?1 WHERE chat_identifier = ?2",
+            params![last_read, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    });
 }
 
 /// Kind-14 gift wrap that must not become a DM.
@@ -402,7 +701,7 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub fn import_channel_history(
+    pub async fn import_channel_history(
         group_id: String,
         bucket: Option<String>,
         messages: Vec<HistoryWireMessage>,
@@ -412,7 +711,7 @@ pub mod commands {
         let local_npub = crate::account_manager::get_current_account()?;
         let (_, received_at_ms) = now_unix()?;
         let rows: Vec<HistoryExportMessage> = messages.into_iter().map(to_export_message).collect();
-        with_account_conn(|conn| {
+        let imported = with_account_conn(|conn| {
             super::import_channel_history(
                 conn,
                 &group_id,
@@ -422,8 +721,9 @@ pub mod commands {
                 received_at_ms,
                 &key,
             )
-            .map(|result| result.inserted_ids)
-        })
+        })?;
+        super::publish_imported_timeline(&imported).await;
+        Ok(imported.inserted_ids)
     }
 
     #[tauri::command]
@@ -629,12 +929,40 @@ mod tests {
         insert_event(
             &conn,
             chat,
+            "edit-older",
+            event_kind::MESSAGE_EDIT,
+            "hello older",
+            tags,
+            Some("text"),
+            1_700_000_110,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
             "edit",
             event_kind::MESSAGE_EDIT,
             "hello edited",
             tags,
             Some("text"),
             1_700_000_140,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
+            "file-edit",
+            event_kind::MESSAGE_EDIT,
+            "pic edited",
+            tags,
+            Some("file"),
+            1_700_000_170,
             Some("npub1alice"),
             0,
             0,
@@ -813,8 +1141,13 @@ mod tests {
         let rows = export(&conn, HistoryExportBucket::Announcements);
         assert_eq!(
             ids(&rows),
-            vec!["text", "mention", "reply", "file", "edit", "react"]
+            vec!["text", "mention", "reply", "file", "react"]
         );
+        assert!(rows.iter().all(|row| row.kind != event_kind::MESSAGE_EDIT));
+
+        let text = rows.iter().find(|row| row.id == "text").unwrap();
+        assert_eq!(text.kind, event_kind::PRIVATE_DIRECT_MESSAGE);
+        assert_eq!(text.content, "hello edited");
 
         let reply = rows.iter().find(|row| row.id == "reply").unwrap();
         assert_eq!(reply.reference_id.as_deref(), Some("text"));
@@ -830,14 +1163,9 @@ mod tests {
                 vec!["decryption-nonce".to_string(), "nn".to_string()],
                 vec!["ox".to_string(), "hh".to_string()],
                 vec!["filename".to_string(), "a.png".to_string()],
-                vec!["caption".to_string(), "pic".to_string()],
+                vec!["caption".to_string(), "pic edited".to_string()],
             ]
         );
-
-        let edit = rows.iter().find(|row| row.id == "edit").unwrap();
-        assert_eq!(edit.kind, event_kind::MESSAGE_EDIT);
-        assert_eq!(edit.reference_id.as_deref(), Some("text"));
-        assert_eq!(edit.content, "hello edited");
 
         let reaction = rows.iter().find(|row| row.id == "react").unwrap();
         assert_eq!(reaction.kind, event_kind::REACTION);
@@ -851,6 +1179,165 @@ mod tests {
         assert!(ids(&custom).contains(&"inbox-plain"));
         assert!(!ids(&custom).contains(&"gov"));
         assert!(!ids(&custom).contains(&"poll"));
+    }
+
+    #[test]
+    fn unauthorized_edits_are_not_applied() {
+        let conn = conn();
+        let chat = insert_chat(&conn, "groupabc");
+        let tags = "[]";
+        let base = 1_700_000_300_i64;
+
+        insert_event(
+            &conn,
+            chat,
+            "author-line",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "stay author",
+            tags,
+            None,
+            base,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
+            "author-edit",
+            event_kind::MESSAGE_EDIT,
+            "pwned",
+            tags,
+            Some("author-line"),
+            base + 40,
+            Some("npub1mallory"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
+            "late-line",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "stay late",
+            tags,
+            None,
+            base + 200,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
+            "late-edit",
+            event_kind::MESSAGE_EDIT,
+            "too late",
+            tags,
+            Some("late-line"),
+            base + 200 + 61,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
+            "imported-line",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "stay imported",
+            tags,
+            None,
+            base + 400,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        conn.execute(
+            "UPDATE events SET history_import = 1 WHERE id = 'imported-line'",
+            [],
+        )
+        .unwrap();
+        insert_event(
+            &conn,
+            chat,
+            "imported-edit",
+            event_kind::MESSAGE_EDIT,
+            "changed",
+            tags,
+            Some("imported-line"),
+            base + 440,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+
+        let rows = export(&conn, HistoryExportBucket::Announcements);
+        assert_eq!(
+            ids(&rows),
+            vec!["author-line", "late-line", "imported-line"]
+        );
+        assert!(rows.iter().all(|row| row.kind != event_kind::MESSAGE_EDIT));
+        let body = |id: &str| {
+            rows.iter()
+                .find(|row| row.id == id)
+                .unwrap()
+                .content
+                .as_str()
+        };
+        assert_eq!(body("author-line"), "stay author");
+        assert_eq!(body("late-line"), "stay late");
+        assert_eq!(body("imported-line"), "stay imported");
+    }
+
+    #[test]
+    fn authorized_file_edit_appends_caption_and_keeps_url() {
+        let conn = conn();
+        let chat = insert_chat(&conn, "groupabc");
+        insert_event(
+            &conn,
+            chat,
+            "bare",
+            event_kind::FILE_ATTACHMENT,
+            "https://blob.example/bare",
+            r#"[["file-type","image/png"]]"#,
+            None,
+            1_700_000_100,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
+            "bare-edit",
+            event_kind::MESSAGE_EDIT,
+            "added caption",
+            "[]",
+            Some("bare"),
+            1_700_000_140,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        let rows = export(&conn, HistoryExportBucket::Announcements);
+        assert_eq!(ids(&rows), vec!["bare"]);
+        assert_eq!(rows[0].content, "https://blob.example/bare");
+        assert_eq!(
+            rows[0].tags,
+            vec![
+                vec!["file-type".to_string(), "image/png".to_string()],
+                vec!["caption".to_string(), "added caption".to_string()],
+            ]
+        );
     }
 
     #[test]
@@ -942,7 +1429,7 @@ mod tests {
     fn stored_smuggled_row_still_skips_squad_side_effects() {
         let mut conn = conn();
         insert_chat(&conn, "groupabc");
-        let (ids, _, _) = write_imported_rows(
+        let imported = write_imported_rows(
             &mut conn,
             "groupabc",
             HistoryExportBucket::Announcements,
@@ -952,7 +1439,7 @@ mod tests {
             &KEY,
         )
         .unwrap();
-        assert_eq!(ids, vec!["gov".to_string()]);
+        assert_eq!(imported.inserted_ids, vec!["gov".to_string()]);
         assert_eq!(table_count(&conn, "squad_infra"), 0);
         assert_eq!(table_count(&conn, "squad_member_evm"), 0);
         let flag: i64 = conn
@@ -1088,5 +1575,405 @@ mod tests {
         );
         assert!(err.is_err());
         assert_eq!(table_count(&conn, "events"), 1);
+    }
+
+    #[test]
+    fn import_rejects_kind_16() {
+        let mut conn = conn();
+        insert_chat(&conn, "groupabc");
+        let mut edit = row("edit", "hello edited");
+        edit.kind = event_kind::MESSAGE_EDIT;
+        edit.reference_id = Some("text".to_string());
+        let err = import_channel_history(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1joiner",
+            &[edit],
+            1_700_000_000_000,
+            &KEY,
+        )
+        .unwrap_err();
+        assert!(err.contains("invalid history message"));
+        assert_eq!(table_count(&conn, "events"), 0);
+    }
+
+    fn insert_stored_content(
+        conn: &Connection,
+        chat_id: i64,
+        id: &str,
+        kind: u16,
+        stored_content: &str,
+        reference_id: &str,
+        created_at: i64,
+        npub: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO events (
+                id, kind, chat_id, content, tags, reference_id, created_at, received_at,
+                mine, pending, failed, npub, virtual_bucket
+             ) VALUES (?1, ?2, ?3, ?4, '[]', ?5, ?6, ?6, 0, 0, 0, ?7, 'announcements')",
+            params![
+                id,
+                kind,
+                chat_id,
+                stored_content,
+                reference_id,
+                created_at,
+                npub
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn newer_undecryptable_edit_does_not_change_the_original() {
+        let conn = conn();
+        let chat = insert_chat(&conn, "groupabc");
+        let base = 1_700_000_500_i64;
+        insert_event(
+            &conn,
+            chat,
+            "sealed",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "stay sealed",
+            "[]",
+            None,
+            base,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
+            "sealed-older",
+            event_kind::MESSAGE_EDIT,
+            "older body",
+            "[]",
+            Some("sealed"),
+            base + 10,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_stored_content(
+            &conn,
+            chat,
+            "sealed-newer",
+            event_kind::MESSAGE_EDIT,
+            &encrypt_with_key("should not apply", &[3u8; 32]),
+            "sealed",
+            base + 20,
+            "npub1alice",
+        );
+
+        insert_event(
+            &conn,
+            chat,
+            "product",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "stay product",
+            "[]",
+            None,
+            base + 200,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
+            "product-older",
+            event_kind::MESSAGE_EDIT,
+            "older product",
+            "[]",
+            Some("product"),
+            base + 210,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_event(
+            &conn,
+            chat,
+            "product-newer",
+            event_kind::MESSAGE_EDIT,
+            r#"{"type":"governance_updated"}"#,
+            "[]",
+            Some("product"),
+            base + 220,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+
+        let rows = export(&conn, HistoryExportBucket::Announcements);
+        let body = |id: &str| {
+            rows.iter()
+                .find(|row| row.id == id)
+                .unwrap()
+                .content
+                .clone()
+        };
+        assert_eq!(body("sealed"), "stay sealed");
+        assert_eq!(body("product"), "stay product");
+    }
+
+    fn file_row(id: &str, at: u64, url: &str, tags: Vec<Vec<String>>) -> HistoryExportMessage {
+        HistoryExportMessage {
+            id: id.to_string(),
+            kind: event_kind::FILE_ATTACHMENT,
+            created_at: at,
+            author_npub: "npub1alice".to_string(),
+            content: url.to_string(),
+            tags,
+            reference_id: None,
+        }
+    }
+
+    fn reaction_row(id: &str, target: &str, emoji: &str, at: u64) -> HistoryExportMessage {
+        HistoryExportMessage {
+            id: id.to_string(),
+            kind: event_kind::REACTION,
+            created_at: at,
+            author_npub: "npub1bob".to_string(),
+            content: emoji.to_string(),
+            tags: vec![vec!["e".to_string(), target.to_string()]],
+            reference_id: Some(target.to_string()),
+        }
+    }
+
+    fn live_message(id: &str, at: u64) -> Message {
+        Message {
+            id: id.to_string(),
+            at,
+            content: "live".to_string(),
+            mine: false,
+            npub: Some("npub1bob".to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn imported_kind15_emits_caption_attachment_and_batch_reaction() {
+        let mut conn = conn();
+        insert_chat(&conn, "GroupABC");
+        let url = "https://blob.example/abc";
+        let imported = import_channel_history(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1joiner",
+            &[
+                file_row(
+                    "file",
+                    1_700_000_100,
+                    url,
+                    vec![
+                        vec!["file-type".to_string(), "image/png".to_string()],
+                        vec!["decryption-key".to_string(), "kk".to_string()],
+                        vec!["decryption-nonce".to_string(), "nn".to_string()],
+                        vec!["ox".to_string(), "hh".to_string()],
+                        vec!["filename".to_string(), "../a.png".to_string()],
+                        vec!["caption".to_string(), "pic".to_string()],
+                        vec!["size".to_string(), "12".to_string()],
+                        vec!["blurhash".to_string(), "LEHV6n".to_string()],
+                        vec!["dim".to_string(), "32x16".to_string()],
+                    ],
+                ),
+                file_row(
+                    "nonce-file",
+                    1_700_000_110,
+                    "https://blob.example/nonce",
+                    vec![
+                        vec!["file-type".to_string(), "image/png".to_string()],
+                        vec!["decryption-key".to_string(), "kk".to_string()],
+                        vec!["decryption-nonce".to_string(), "only-nonce".to_string()],
+                        vec!["caption".to_string(), "nonce pic".to_string()],
+                    ],
+                ),
+                file_row(
+                    "bare",
+                    1_700_000_120,
+                    url,
+                    vec![vec!["caption".to_string(), "just words".to_string()]],
+                ),
+                reaction_row("react", "file", "👍", 1_700_000_130),
+                reaction_row("react-live", "already", "🔥", 1_700_000_140),
+                reaction_row("react-miss", "missing", "👀", 1_700_000_150),
+            ],
+            1_700_000_500_000,
+            &KEY,
+        )
+        .unwrap();
+
+        assert_eq!(imported.group_id, "GroupABC");
+        assert_eq!(imported.timeline.len(), 3);
+        assert!(imported
+            .reactions
+            .iter()
+            .any(|reaction| reaction.id == "react"));
+        let stored: i64 = conn
+            .query_row("SELECT COUNT(*) FROM events WHERE kind = 15", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(stored, 3);
+
+        let file = imported
+            .timeline
+            .iter()
+            .find(|message| message.id == "file")
+            .unwrap();
+        assert_eq!(file.content, "pic");
+        assert_ne!(file.content, url);
+        let attachment = &file.attachments[0];
+        assert_eq!(attachment.url, url);
+        assert_eq!(attachment.id, "hh");
+        assert_eq!(attachment.key, "kk");
+        assert_eq!(attachment.nonce, "nn");
+        assert_eq!(attachment.extension, "png");
+        assert_eq!(attachment.file_name.as_deref(), Some("a.png"));
+        assert_eq!(attachment.size, 12);
+        assert!(!attachment.downloaded);
+        assert!(!attachment.downloading);
+        assert!(attachment.path.is_empty());
+        let meta = attachment.img_meta.as_ref().unwrap();
+        assert_eq!(meta.blurhash, "LEHV6n");
+        assert_eq!((meta.width, meta.height), (32, 16));
+
+        let nonce_file = imported
+            .timeline
+            .iter()
+            .find(|message| message.id == "nonce-file")
+            .unwrap();
+        assert_eq!(nonce_file.attachments[0].id, "only-nonce");
+        assert_eq!(nonce_file.content, "nonce pic");
+
+        let bare = imported
+            .timeline
+            .iter()
+            .find(|message| message.id == "bare")
+            .unwrap();
+        assert!(bare.attachments.is_empty());
+        assert_eq!(bare.content, "just words");
+        assert_ne!(bare.content, url);
+
+        let mut state = crate::ChatState::new();
+        state.add_message_to_chat(&imported.group_id, live_message("already", 1));
+        let applied = apply_imported_timeline(
+            &mut state,
+            &imported.group_id,
+            &imported.timeline,
+            &imported.reactions,
+        );
+        assert!(applied
+            .to_emit
+            .iter()
+            .all(|message| message.id != "react" && message.id != "react-live"));
+        let emitted = applied
+            .to_emit
+            .iter()
+            .find(|message| message.id == "file")
+            .unwrap();
+        assert_eq!(emitted.reactions.len(), 1);
+        assert_eq!(emitted.reactions[0].emoji, "👍");
+        assert_eq!(emitted.reactions[0].author_id, "npub1bob");
+        assert_eq!(emitted.reactions[0].reference_id, "file");
+        assert_eq!(emitted.reactions[0].id, "react");
+        let already = state
+            .get_chat(&imported.group_id)
+            .unwrap()
+            .messages
+            .iter()
+            .find(|message| message.id == "already")
+            .unwrap();
+        assert_eq!(already.reactions.len(), 1);
+        assert_eq!(already.reactions[0].emoji, "🔥");
+        assert!(state
+            .get_chat(&imported.group_id)
+            .unwrap()
+            .messages
+            .iter()
+            .all(|message| message.id != "missing"));
+        let order: Vec<_> = state
+            .get_chat(&imported.group_id)
+            .unwrap()
+            .messages
+            .iter()
+            .map(|message| message.id.as_str())
+            .collect();
+        assert_eq!(order, vec!["already", "file", "nonce-file", "bare"]);
+        assert_eq!(
+            state.get_chat(&imported.group_id).unwrap().last_read,
+            "bare"
+        );
+        assert!(state
+            .unread_counts_by_chat()
+            .get(&imported.group_id)
+            .is_none());
+        assert!(applied.chat.is_some());
+    }
+
+    #[test]
+    fn last_read_tracks_the_newest_imported_message() {
+        let mut state = crate::ChatState::new();
+        let early = live_message("early", 1_000);
+        let low = live_message("m", 2_000);
+        let high = live_message("z", 2_000);
+        let applied = apply_imported_timeline(&mut state, "group", &[early, low, high], &[]);
+        assert_eq!(state.get_chat("group").unwrap().last_read, "z");
+        assert_eq!(applied.chat.unwrap().last_read, "z");
+        assert!(state.unread_counts_by_chat().get("group").is_none());
+        let order: Vec<_> = state
+            .get_chat("group")
+            .unwrap()
+            .messages
+            .iter()
+            .map(|message| message.id.as_str())
+            .collect();
+        assert_eq!(order, vec!["early", "m", "z"]);
+
+        let mut newer = crate::ChatState::new();
+        newer.add_message_to_chat("group", live_message("live", 9_000));
+        let applied =
+            apply_imported_timeline(&mut newer, "group", &[live_message("old", 1_000)], &[]);
+        assert!(applied.chat.is_none());
+        assert!(newer.get_chat("group").unwrap().last_read.is_empty());
+        assert_eq!(newer.unread_counts_by_chat().get("group"), Some(&2));
+
+        let mut tied = crate::ChatState::new();
+        tied.add_message_to_chat("group", live_message("z", 2_000));
+        let tied_import =
+            apply_imported_timeline(&mut tied, "group", &[live_message("m", 2_000)], &[]);
+        assert!(tied_import.chat.is_none());
+        assert!(tied.get_chat("group").unwrap().last_read.is_empty());
+
+        let mut older_live = crate::ChatState::new();
+        older_live.add_message_to_chat("group", live_message("a", 2_000));
+        let older_import =
+            apply_imported_timeline(&mut older_live, "group", &[live_message("m", 2_000)], &[]);
+        assert_eq!(older_import.chat.unwrap().last_read, "m");
+        assert_eq!(older_live.get_chat("group").unwrap().last_read, "m");
+        assert!(older_live.unread_counts_by_chat().get("group").is_none());
+    }
+
+    #[test]
+    fn import_does_not_call_virtual_bucket_side_effects() {
+        let needle = concat!("apply_mls_virtual_bucket_", "side_effects");
+        let called = include_str!("history_backfill.rs").lines().any(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") {
+                return false;
+            }
+            trimmed.contains(needle)
+        });
+        assert!(!called, "import must not call {needle}");
     }
 }

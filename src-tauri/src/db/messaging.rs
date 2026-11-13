@@ -1611,7 +1611,7 @@ struct ReplyContext {
 
 /// Shared persisted author/chat/signed-time/first-receipt checks for live edits
 /// and reply previews. Keep aligned with `stored_edit_is_authorized`.
-fn authorized_edits_from_sql() -> String {
+pub(crate) fn authorized_edits_from_sql() -> String {
     format!(
         r#"
         FROM events e

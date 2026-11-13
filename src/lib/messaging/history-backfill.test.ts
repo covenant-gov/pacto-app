@@ -84,7 +84,6 @@ describe('buildHistoryChunks', () => {
           ['decryption-nonce', 'nn'],
         ],
       }),
-      message({ id: 'edit', kind: 16, createdAt: 40, content: 'edited', referenceId: 'b' }),
       message({ id: 'react', kind: 7, createdAt: 50, content: '👍', tags: [['e', 'b']], referenceId: 'b' }),
     ]);
     expect(built.ok).toBe(true);
@@ -95,14 +94,13 @@ describe('buildHistoryChunks', () => {
       'a',
       'b',
       'file',
-      'edit',
       'react',
     ]);
     const parsed = parseHistoryChunk(JSON.stringify(built.chunks[0]), EXPECTED);
     expect(parsed.ok).toBe(true);
   });
 
-  it('drops a single message that cannot fit and refuses more than 32 chunks', () => {
+  it('drops a single message that cannot fit in one rumor', () => {
     const huge = buildHistoryChunks(EXPECTED, [message({ content: 'x'.repeat(20_000) })]);
     expect(huge).toEqual({ ok: false, reason: 'empty' });
 
@@ -113,18 +111,55 @@ describe('buildHistoryChunks', () => {
     expect(kept.ok).toBe(true);
     if (!kept.ok) return;
     expect(kept.chunks[0].messages.map((row) => row.id)).toEqual(['small']);
+  });
 
-    const wide = buildHistoryChunks(
-      EXPECTED,
-      Array.from({ length: HISTORY_CHUNK_MAX_COUNT + 1 }, (_, index) =>
+  it('keeps the newest 32 chunks and drops reactions whose target was cut', () => {
+    const count = HISTORY_CHUNK_MAX_COUNT + 1;
+    const newestAt = count;
+    const rows: HistoryMessage[] = [
+      ...Array.from({ length: count }, (_, index) =>
         message({
-          id: `m${index}`,
-          createdAt: index,
+          id: index === 0 ? 'oldest' : index === count - 1 ? 'newest' : `m${index}`,
+          createdAt: index + 1,
           content: 'y'.repeat(11_000),
         })
-      )
-    );
-    expect(wide).toEqual({ ok: false, reason: 'over_cap' });
+      ),
+      message({
+        id: 'kept-react',
+        kind: 7,
+        createdAt: newestAt,
+        content: '+',
+        tags: [['e', 'newest']],
+        referenceId: 'newest',
+      }),
+      message({
+        id: 'orphan-react',
+        kind: 7,
+        createdAt: newestAt,
+        content: '+',
+        tags: [['e', 'oldest']],
+        referenceId: 'oldest',
+      }),
+    ];
+
+    const built = buildHistoryChunks(EXPECTED, rows);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.chunks.length).toBeLessThanOrEqual(HISTORY_CHUNK_MAX_COUNT);
+    expect(built.chunks.length).toBeGreaterThan(0);
+
+    const ids = built.chunks.flatMap((chunk) => chunk.messages.map((row) => row.id));
+    expect(ids).toContain('newest');
+    expect(ids).toContain('kept-react');
+    expect(ids).not.toContain('oldest');
+    expect(ids).not.toContain('orphan-react');
+
+    expect(built.chunks.map((chunk) => chunk.index)).toEqual(built.chunks.map((_, index) => index));
+    for (const chunk of built.chunks) {
+      expect(chunk.messages.length).toBeGreaterThanOrEqual(1);
+      expect(chunk.index).toBeLessThan(chunk.total);
+      expect(chunk.total).toBe(built.chunks.length);
+    }
   });
 
   it('splits under the rumor cap', () => {
@@ -194,6 +229,13 @@ describe('parseHistoryChunk', () => {
     const empty = JSON.parse(GOLDEN) as { messages: unknown[] };
     empty.messages = [];
     expect(parseHistoryChunk(JSON.stringify(empty), EXPECTED)).toEqual({
+      ok: false,
+      reason: 'message',
+    });
+
+    const edit = JSON.parse(GOLDEN) as { messages: Array<{ kind: number }> };
+    edit.messages[0].kind = 16;
+    expect(parseHistoryChunk(JSON.stringify(edit), EXPECTED)).toEqual({
       ok: false,
       reason: 'message',
     });
