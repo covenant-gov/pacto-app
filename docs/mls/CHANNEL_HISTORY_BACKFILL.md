@@ -95,7 +95,7 @@ Kind 15 copies the descriptor only: content URL plus tags `file-type`, `size`, `
 }
 ```
 
-`reason` is `"empty"` (no exportable row; send no chunks) or `"over_cap"`. More than 32 chunks sends the newest that fit, not nothing. `over_cap` remains a reason the joiner understands, because an older peer may still send it.
+`reason` is only `"empty"` (no exportable row; send no chunks). A joiner rejects any other value as malformed. Channels over the chunk cap are truncated, not refused; see the large-channel decision below.
 
 ## Who answers
 
@@ -140,7 +140,7 @@ Human chat is the same rule as `isStructuredProductContent` in `src/lib/messagin
 
 That exclusion covers governance, roster shares, catalog, join inbox, polls, inbox automation, squad events, squad docs, and these three protocol messages. Kind 30078 (typing and other app data) is outside the kind allowlist.
 
-A single inner record that cannot fit in one chunk under the 12KB cap is dropped, not split. If the remaining records need more than **32** chunks, the peer sends the newest that fit, not nothing. `over_cap` remains a reason the joiner understands, because an older peer may still send it.
+A single inner record that cannot fit in one chunk under the 12KB cap is dropped, not split. If the remaining records need more than **32** chunks, the peer sends the newest that fit, not nothing.
 
 **Decision (large channels).** A joiner in a busy channel gets the newest history instead of none. The exporter packs records into chunks in `createdAt`, `id` order and keeps the last 32 whole chunks; the oldest chunks are dropped, never split. A reaction row is exported only when its target is a kind 14 or 15 row in the exported chunks, with or without truncation, so a reaction to a cut or out-of-window message is dropped. A reply to a cut message still imports and renders without its preview. The joiner is told the copy may be partial by the welcome note, not by a flag on the wire.
 
@@ -169,7 +169,7 @@ On insert:
 - Set `received_at` to local receipt time.
 - Set `history_import` to 1.
 
-After that insert, kind 14 and 15 rows are added to in-memory chat state, ordered by timestamp. Kind 15 content shown is the caption; the blob URL stays on the attachment, parsed by the same rules as a live kind 15 (empty key and nonce mean a remote-plaintext attachment; an `ox` that is not a single path segment falls back to the nonce id). Reactions from the same batch are applied onto those messages. `last_read` moves to the last imported message in chat order unless it already sits at or after it, so the copy is never unread and live messages after it stay unread. A forged `mine` on an imported row ends the unread walk like any own message; that stays inside the serving-member trust model. This still does not call `apply_mls_virtual_bucket_side_effects`.
+After that insert, kind 14 and 15 rows are added to in-memory chat state, ordered by timestamp. Kind 15 content shown is the caption; the blob URL stays on the attachment, parsed by the same rules as a live kind 15 (empty key and nonce mean a remote-plaintext attachment; an `ox` that is not a single path segment falls back to the nonce id). A reaction is stored and applied only when its target is a kind 14 or 15 row that an import wrote in this chat, from this batch or an earlier one. A reaction aimed at a live MLS row or an unknown id is skipped, so a copy cannot add reactions to live messages, in chat state or after a reload. `last_read` moves to the last imported message in chat order unless it already sits at or after it, so the copy is never unread and live messages after it stay unread. A forged `mine` on an imported row ends the unread walk like any own message; that stays inside the serving-member trust model. This still does not call `apply_mls_virtual_bucket_side_effects`.
 
 `history_import` is an `INTEGER NOT NULL DEFAULT 0` column on `events`, added by a timestamped migration. Existing rows stay 0.
 
@@ -185,7 +185,7 @@ A smuggled `governance_updated` or `squad_member_evm_share` never reaches this i
 
 Every row with `history_import = 1` renders above the welcome note, including a forged `created_at` later than the accept time. Live MLS rows render below the note. Imported rows order by `created_at`, then id. The note is not a stored event.
 
-The note's copy says the lines above are a member copy and may be only the most recent that fit, and that this device still cannot decrypt the pre-join transcript. English and Spanish catalogs carry that claim. The client does not check the copy against Kind 444.
+The note's copy says the lines above are a member copy and may show only the most recent messages, and that this device still cannot decrypt the pre-join MLS transcript. It is shown for every copy, complete or not. English and Spanish catalogs carry that claim. The client does not check the copy against Kind 444.
 
 ## Out of scope
 

@@ -246,7 +246,7 @@ export async function handleIncomingHistoryRequest(
         version: 1,
         requestId: request.requestId,
         groupId,
-        reason: built.reason === 'over_cap' ? 'over_cap' : 'empty',
+        reason: 'empty',
       };
       await sendHistoryGiftWrap(requester, JSON.stringify(unavailable));
       return;

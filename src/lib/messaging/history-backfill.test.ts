@@ -295,20 +295,16 @@ describe('parseHistoryRequest', () => {
 });
 
 describe('parseHistoryUnavailable', () => {
-  it('accepts empty and over_cap for the matching request', () => {
-    for (const reason of ['empty', 'over_cap'] as const) {
-      const raw = JSON.stringify({
-        type: 'history_unavailable',
-        version: 1,
-        requestId: REQUEST,
-        groupId: GROUP,
-        reason,
-      });
-      expect(parseHistoryUnavailable(raw, EXPECTED)).toEqual({
-        ok: true,
-        unavailable: { type: 'history_unavailable', version: 1, requestId: REQUEST, groupId: GROUP, reason },
-      });
-    }
+  it('accepts empty for the matching request and rejects any other reason', () => {
+    const base = { type: 'history_unavailable', version: 1, requestId: REQUEST, groupId: GROUP };
+    expect(parseHistoryUnavailable(JSON.stringify({ ...base, reason: 'empty' }), EXPECTED)).toEqual({
+      ok: true,
+      unavailable: { ...base, reason: 'empty' },
+    });
+    expect(parseHistoryUnavailable(JSON.stringify({ ...base, reason: 'over_cap' }), EXPECTED)).toEqual({
+      ok: false,
+      reason: 'malformed',
+    });
     const raw = JSON.stringify({
       type: 'history_unavailable',
       version: 1,

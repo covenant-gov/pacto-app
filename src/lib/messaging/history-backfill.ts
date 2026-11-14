@@ -49,7 +49,7 @@ export interface HistoryUnavailable {
   version: 1;
   requestId: string;
   groupId: string;
-  reason: 'empty' | 'over_cap';
+  reason: 'empty';
 }
 
 export interface HistoryRequestContext {
@@ -70,7 +70,7 @@ export type HistoryChunkFailure =
 
 export type HistoryBuildResult =
   | { ok: true; chunks: HistoryChunk[] }
-  | { ok: false; reason: 'empty' | 'over_cap' | 'malformed' };
+  | { ok: false; reason: 'empty' | 'malformed' };
 
 export function buildHistoryChunks(
   header: HistoryRequestContext,
@@ -214,7 +214,7 @@ export function parseHistoryUnavailable(
   if (!requestId || !groupId) return { ok: false, reason: 'malformed' };
   if (requestId !== expected.requestId.trim().toLowerCase()) return { ok: false, reason: 'request' };
   if (groupId !== expected.groupId.trim().toLowerCase()) return { ok: false, reason: 'group' };
-  if (obj.reason !== 'empty' && obj.reason !== 'over_cap') return { ok: false, reason: 'malformed' };
+  if (obj.reason !== 'empty') return { ok: false, reason: 'malformed' };
   return {
     ok: true,
     unavailable: {

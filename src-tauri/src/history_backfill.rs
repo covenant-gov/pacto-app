@@ -320,7 +320,16 @@ fn write_imported_rows(
     let mut inserted_ids = Vec::new();
     let mut timeline = Vec::new();
     let mut reactions = Vec::new();
-    for message in messages {
+    // Reactions go last so a target in this batch is already stored.
+    let (reaction_rows, content_rows): (Vec<_>, Vec<_>) = messages
+        .iter()
+        .partition(|message| message.kind == event_kind::REACTION);
+    for message in content_rows.into_iter().chain(reaction_rows) {
+        if message.kind == event_kind::REACTION
+            && !reaction_targets_imported_row(&tx, chat_id, message)?
+        {
+            continue;
+        }
         let created_at =
             i64::try_from(message.created_at).map_err(|_| "created_at is out of range")?;
         let stored_content = if message.kind == event_kind::REACTION {
@@ -373,6 +382,29 @@ fn write_imported_rows(
         timeline,
         reactions,
     })
+}
+
+/// A copied reaction may only land on a kind 14 or 15 row that an import wrote in this chat.
+fn reaction_targets_imported_row(
+    conn: &Connection,
+    chat_id: i64,
+    message: &HistoryExportMessage,
+) -> Result<bool, String> {
+    let Some(target) = message.reference_id.as_deref().map(str::trim) else {
+        return Ok(false);
+    };
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events
+         WHERE id = ?1 AND chat_id = ?2 AND history_import = 1 AND kind IN (?3, ?4))",
+        params![
+            target,
+            chat_id,
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            event_kind::FILE_ATTACHMENT
+        ],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn tag_value<'a>(tags: &'a [Vec<String>], name: &str) -> Option<&'a str> {
@@ -1905,10 +1937,14 @@ mod tests {
             reaction_row("react-live", "already", "🔥", 1_700_000_140),
             reaction_row("react-miss", "missing", "👀", 1_700_000_150),
         ]);
-        assert!(imported
+        let reaction_ids: Vec<_> = imported
             .reactions
             .iter()
-            .any(|reaction| reaction.id == "react"));
+            .map(|reaction| reaction.id.as_str())
+            .collect();
+        assert_eq!(reaction_ids, vec!["react"]);
+        assert!(!imported.inserted_ids.contains(&"react-live".to_string()));
+        assert!(!imported.inserted_ids.contains(&"react-miss".to_string()));
 
         let mut state = crate::ChatState::new();
         state.add_message_to_chat(&imported.group_id, live_message("already", 1));
@@ -1939,9 +1975,68 @@ mod tests {
             .iter()
             .find(|message| message.id == "already")
             .unwrap();
-        assert_eq!(already.reactions.len(), 1);
-        assert_eq!(already.reactions[0].emoji, "🔥");
+        assert!(already.reactions.is_empty());
         assert!(chat.messages.iter().all(|message| message.id != "missing"));
+    }
+
+    #[test]
+    fn reaction_may_target_a_row_from_an_earlier_import() {
+        let (mut conn, _) = import_rows(&[file_row(
+            "file",
+            1_700_000_100,
+            BLOB_URL,
+            file_tags(vec![tag("ox", "hh")]),
+        )]);
+        let later = import_channel_history(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1joiner",
+            &[reaction_row("react", "file", "👍", 1_700_000_130)],
+            1_700_000_500_000,
+            &KEY,
+        )
+        .unwrap();
+        assert_eq!(later.reactions.len(), 1);
+        assert_eq!(later.reactions[0].reference_id, "file");
+    }
+
+    #[test]
+    fn reaction_to_a_live_row_is_not_stored() {
+        let mut conn = conn();
+        let chat = insert_chat(&conn, "groupabc");
+        insert_event(
+            &conn,
+            chat,
+            "live",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "hello",
+            "[]",
+            None,
+            1_700_000_100,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        let imported = import_channel_history(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1joiner",
+            &[reaction_row("forged", "live", "🔥", 1_700_000_130)],
+            1_700_000_500_000,
+            &KEY,
+        )
+        .unwrap();
+        assert!(imported.inserted_ids.is_empty());
+        assert!(imported.reactions.is_empty());
+        let stored: i64 = conn
+            .query_row("SELECT COUNT(*) FROM events WHERE kind = 7", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(stored, 0);
     }
 
     #[test]
