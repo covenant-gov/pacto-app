@@ -10,9 +10,9 @@ The DM **WalletBar** stays peer-context send. It is not this page.
 
 | Block | Contents |
 |--------|----------|
-| Identity | Kind 0 edit, npub copy, username claim (`ProfileUsernameBlock`, `#settings-profile-username`) |
-| Pacto NFT strip | Known Pacto contracts only (catalog from `pacto-protocol-addresses.json`). v1: Username NFT when claimed with a non-zero token id; otherwise an empty slot |
-| Wallet hero | Account picker (viewing only), balances for the viewed `0x`, Send (any `0x`), Receive (share address; no QR) |
+| Identity | Kind 0 edit, npub copy, username claim / verified (`ProfileUsernameBlock`, `#settings-profile-username`). No bound-EVM rotate form here; compact claim/cancel only when an address rotation is already pending |
+| Pacto NFT strip | Known Pacto contracts only (catalog from `pacto-protocol-addresses.json`). v1: Username NFT when claimed with a non-zero token id (bound EVM + rotate ownership modal); otherwise an empty slot |
+| Wallet hero | Account picker (viewing only), balances for the viewed `0x`, Send (any `0x`), Receive (share address; no QR). Token send only — not Username NFT address rotation |
 | Squad EVM | Default signer/receiver (`DefaultWalletConfig`) and squad account rows (add/edit/label/export key) |
 | Sponsored gas | Disclosure (`EvmDashGasSection`) when `showEvmDashGas` — personal `global_sponsored_fee_usage` plus Sepolia global pool spendable |
 

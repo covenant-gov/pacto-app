@@ -47,11 +47,13 @@
 	"profile.username.unverified": "Claimed on-chain; relay link missing on this device",
 	"profile.username.retryLinkRestore": "Retry username link restore",
 	"profile.username.boundEvm": "Bound EVM",
+	"profile.username.rotateTitle": "Rotate bound address",
+	"profile.username.rotateDesc": "Move Username NFT ownership to another EVM address you control. This is not a wallet Send.",
 	"profile.username.pendingTransfer": "Address transfer pending",
 	"profile.username.pendingTo": "Pending to {address}",
-	"profile.username.newAddressLabel": "New EVM address",
+	"profile.username.newAddressLabel": "New bound EVM address",
 	"profile.username.newAddressPlaceholder": "0x…",
-	"profile.username.initiateTransfer": "Initiate transfer",
+	"profile.username.initiateTransfer": "Start rotation",
 	"profile.username.claimTransfer": "Claim transfer",
 	"profile.username.cancelTransfer": "Cancel transfer",
 	"profile.username.working": "Working…",
@@ -83,5 +85,8 @@
 	"profile.nfts.empty": "No Pacto NFTs yet. Claim a username to mint the first one.",
 	"profile.nfts.username": "Username",
 	"profile.nfts.tokenId": "Token {id}",
-	"profile.nfts.unclaimedSlot": "Username NFT"
+	"profile.nfts.unclaimedSlot": "Username NFT",
+	"profile.nfts.copyBoundEvm": "Copy bound EVM address",
+	"profile.nfts.rotateBoundAddress": "Rotate bound address",
+	"profile.nfts.managePendingTransfer": "Manage pending transfer"
 }

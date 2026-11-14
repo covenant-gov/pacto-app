@@ -81,6 +81,10 @@ SQLite cache: `username_claims` (username, npubHash, tokenId, link event id, pol
 
 Requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` with `evmAddress` equal to the active roster EVM. Holder sync fills a missing `linkEventId` from trusted relays that are currently in the pool (kind 31337, `#d` = npub hash) when the author and `evm` / `name` / `npub-hash` tags match `recordOf`. Publish uses the same in-pool set. Failed restore fetches are skipped for 5 minutes (process-local); an explicit refresh on claimed-unverified (missing link) forces a new fetch. Overlapping restores return the live cache row so a skipped UPDATE cannot clobber a restored `linkEventId`. A relay that dropped the event cannot be rebuilt from the chain.
 
+## Profile UX (address rotation)
+
+Claim and verified badge live under Profile → Username. **Bound EVM** display and **address rotation** (`initiate` / `claim` / `cancel`) live on the Profile **Pacto NFT** card (`PactoNftStrip` → `UsernameAddressRotateModal`), not under the username field and not in wallet Send. Mid-rotation accounts also keep compact claim/cancel under Username so pending transfers stay recoverable. See [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md).
+
 ## Operator smoke (Sepolia)
 
 Runnable checklist: **[OPERATOR_SMOKE.md §10](./OPERATOR_SMOKE.md#10-username-nft-global--bootstrap-sponsor)** (fund both pools + global paymaster → Commons CTA → bootstrap claim → badge → global member rotation → regressions). Ops funding commands and path-divergence notes live there.

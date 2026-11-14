@@ -78,10 +78,6 @@
     box-sizing: border-box;
   }
 
-  .settings-section--evm .settings-section-panel {
-    padding: 0;
-  }
-
   .settings-section-toggle {
     display: flex;
     align-items: center;

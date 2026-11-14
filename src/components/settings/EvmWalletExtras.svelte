@@ -168,7 +168,7 @@
   }
 </script>
 
-<section class="evm-extras-section evm-extras-section--first" aria-labelledby="wallet-preferred-network-heading">
+<section class="evm-extras-section" aria-labelledby="wallet-preferred-network-heading">
   <h2 id="wallet-preferred-network-heading" class="evm-extras-h2">{$t('wallet.preferredNetworkLabel')}</h2>
   <p class="evm-extras-hint">{$t('wallet.preferredNetworkHint')}</p>
   <label class="evm-extras-filter-label" for="wallet-preferred-network-select">{$t('wallet.preferredNetworkLabel')}</label>
@@ -369,10 +369,6 @@
     margin-bottom: 28px;
     padding-bottom: 24px;
     border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .evm-extras-section--first {
-    padding-top: 24px;
   }
 
   .evm-extras-section--last {
