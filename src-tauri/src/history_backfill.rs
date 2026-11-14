@@ -3,7 +3,7 @@
 
 use crate::chat::ChatType;
 use crate::crypto::{decrypt_with_key, encrypt_with_key};
-use crate::message::{Attachment, Message, Reaction};
+use crate::message::{Attachment, Message};
 use crate::stored_event::event_kind;
 use rusqlite::{params, Connection};
 use tauri::Emitter;
@@ -51,7 +51,7 @@ pub(crate) fn is_structured_product_content(content: &str) -> bool {
 /// Rows for `group_id` with `created_at >= since_unix_secs`, ordered by time then id.
 ///
 /// Kinds 14 and 15 are decrypted with `key` before the human-chat check.
-/// The latest authorized edit is folded into that row. Kind 16 is omitted.
+/// The latest authorized edit is folded into that row. Kinds 7 and 16 are omitted.
 /// A row that fails decryption is skipped.
 pub fn export_channel_history(
     conn: &Connection,
@@ -76,11 +76,11 @@ pub fn export_channel_history(
         FROM events e
         JOIN chats c ON c.id = e.chat_id
         WHERE lower(c.chat_identifier) = ?1
-          AND c.chat_type = ?6
-          AND e.kind IN (?2, ?3, ?4)
+          AND c.chat_type = ?5
+          AND e.kind IN (?2, ?3)
           AND e.pending = 0
           AND e.failed = 0
-          AND e.created_at >= ?5
+          AND e.created_at >= ?4
           {bucket_clause}
         ORDER BY e.created_at ASC, e.id ASC
         "#
@@ -93,7 +93,6 @@ pub fn export_channel_history(
                 group_id,
                 event_kind::PRIVATE_DIRECT_MESSAGE,
                 event_kind::FILE_ATTACHMENT,
-                event_kind::REACTION,
                 since,
                 ChatType::MlsGroup.to_i32(),
             ],
@@ -211,11 +210,7 @@ fn decode_row(row: RawEvent, key: &[u8; 32]) -> Option<HistoryExportMessage> {
     if author_npub.is_empty() || row.id.is_empty() {
         return None;
     }
-    let content = if kind == event_kind::REACTION {
-        row.content
-    } else {
-        decrypt_with_key(&row.content, key).ok()?
-    };
+    let content = decrypt_with_key(&row.content, key).ok()?;
     if is_structured_product_content(&content) {
         return None;
     }
@@ -242,7 +237,6 @@ pub struct HistoryImportResult {
     pub inserted_ids: Vec<String>,
     pub group_id: String,
     pub timeline: Vec<Message>,
-    pub reactions: Vec<Reaction>,
 }
 
 /// Write accepted chunk rows. Rejects the whole batch when any row is not human chat.
@@ -276,7 +270,7 @@ fn validate_import_message(message: &HistoryExportMessage) -> Result<(), String>
     }
     let human_kind = matches!(
         message.kind,
-        event_kind::PRIVATE_DIRECT_MESSAGE | event_kind::FILE_ATTACHMENT | event_kind::REACTION
+        event_kind::PRIVATE_DIRECT_MESSAGE | event_kind::FILE_ATTACHMENT
     );
     if !human_kind {
         return Err("invalid history message".to_string());
@@ -319,24 +313,10 @@ fn write_imported_rows(
 
     let mut inserted_ids = Vec::new();
     let mut timeline = Vec::new();
-    let mut reactions = Vec::new();
-    // Reactions go last so a target in this batch is already stored.
-    let (reaction_rows, content_rows): (Vec<_>, Vec<_>) = messages
-        .iter()
-        .partition(|message| message.kind == event_kind::REACTION);
-    for message in content_rows.into_iter().chain(reaction_rows) {
-        if message.kind == event_kind::REACTION
-            && !reaction_targets_imported_row(&tx, chat_id, message)?
-        {
-            continue;
-        }
+    for message in messages {
         let created_at =
             i64::try_from(message.created_at).map_err(|_| "created_at is out of range")?;
-        let stored_content = if message.kind == event_kind::REACTION {
-            message.content.clone()
-        } else {
-            encrypt_with_key(&message.content, key)
-        };
+        let stored_content = encrypt_with_key(&message.content, key);
         let tags = serde_json::to_string(&message.tags).map_err(|e| e.to_string())?;
         let mine = !local_npub.is_empty() && message.author_npub.trim() == local_npub;
         let inserted = tx
@@ -362,16 +342,10 @@ fn write_imported_rows(
             .map_err(|e| e.to_string())?;
         if inserted == 1 {
             inserted_ids.push(message.id.clone());
-            match message.kind {
-                event_kind::PRIVATE_DIRECT_MESSAGE | event_kind::FILE_ATTACHMENT => {
-                    timeline.push(timeline_message(message, mine, bucket_value));
-                }
-                event_kind::REACTION => {
-                    if let Some(reaction) = reaction_from_import(message) {
-                        reactions.push(reaction);
-                    }
-                }
-                _ => {}
+            if message.kind == event_kind::PRIVATE_DIRECT_MESSAGE
+                || message.kind == event_kind::FILE_ATTACHMENT
+            {
+                timeline.push(timeline_message(message, mine, bucket_value));
             }
         }
     }
@@ -380,31 +354,7 @@ fn write_imported_rows(
         inserted_ids,
         group_id: stored_group_id,
         timeline,
-        reactions,
     })
-}
-
-/// A copied reaction may only land on a kind 14 or 15 row that an import wrote in this chat.
-fn reaction_targets_imported_row(
-    conn: &Connection,
-    chat_id: i64,
-    message: &HistoryExportMessage,
-) -> Result<bool, String> {
-    let Some(target) = message.reference_id.as_deref().map(str::trim) else {
-        return Ok(false);
-    };
-    conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM events
-         WHERE id = ?1 AND chat_id = ?2 AND history_import = 1 AND kind IN (?3, ?4))",
-        params![
-            target,
-            chat_id,
-            event_kind::PRIVATE_DIRECT_MESSAGE,
-            event_kind::FILE_ATTACHMENT
-        ],
-        |row| row.get(0),
-    )
-    .map_err(|e| e.to_string())
 }
 
 fn tag_value<'a>(tags: &'a [Vec<String>], name: &str) -> Option<&'a str> {
@@ -462,19 +412,6 @@ fn attachment_from_history(message: &HistoryExportMessage) -> Option<Attachment>
     })
 }
 
-fn reaction_from_import(message: &HistoryExportMessage) -> Option<Reaction> {
-    let reference_id = message.reference_id.as_deref()?.trim();
-    if reference_id.is_empty() {
-        return None;
-    }
-    Some(Reaction {
-        id: message.id.clone(),
-        reference_id: reference_id.to_string(),
-        author_id: message.author_npub.clone(),
-        emoji: message.content.clone(),
-    })
-}
-
 fn timeline_message(message: &HistoryExportMessage, mine: bool, bucket: Option<&str>) -> Message {
     let (content, attachments) = if message.kind == event_kind::FILE_ATTACHMENT {
         (
@@ -507,17 +444,9 @@ fn apply_imported_timeline(
     state: &mut crate::ChatState,
     chat_id: &str,
     timeline: &[Message],
-    reactions: &[Reaction],
 ) -> AppliedImport {
     for message in timeline {
         state.add_message_to_chat(chat_id, message.clone());
-    }
-    if let Some(chat) = state.get_chat_mut(chat_id) {
-        for reaction in reactions {
-            if let Some(message) = chat.get_message_mut(&reaction.reference_id) {
-                message.add_reaction(reaction.clone(), None);
-            }
-        }
     }
     let to_emit = state
         .get_chat(chat_id)
@@ -561,17 +490,12 @@ fn advance_imported_last_read(
 }
 
 async fn publish_imported_timeline(imported: &HistoryImportResult) {
-    if imported.timeline.is_empty() && imported.reactions.is_empty() {
+    if imported.timeline.is_empty() {
         return;
     }
     let applied = {
         let mut state = crate::STATE.lock().await;
-        apply_imported_timeline(
-            &mut state,
-            &imported.group_id,
-            &imported.timeline,
-            &imported.reactions,
-        )
+        apply_imported_timeline(&mut state, &imported.group_id, &imported.timeline)
     };
     if let Some(last_read) = &applied.last_read {
         persist_imported_last_read(&imported.group_id, last_read).await;
@@ -822,11 +746,7 @@ mod tests {
         failed: i64,
         bucket: Option<&str>,
     ) {
-        let stored = if kind == event_kind::REACTION {
-            content.to_string()
-        } else {
-            encrypt_with_key(content, &KEY)
-        };
+        let stored = encrypt_with_key(content, &KEY);
         conn.execute(
             "INSERT INTO events (
                 id, kind, chat_id, content, tags, reference_id, created_at, received_at,
@@ -1134,11 +1054,9 @@ mod tests {
         );
 
         let rows = export(&conn, HistoryExportBucket::Announcements);
-        assert_eq!(
-            ids(&rows),
-            vec!["text", "mention", "reply", "file", "react"]
-        );
+        assert_eq!(ids(&rows), vec!["text", "mention", "reply", "file"]);
         assert!(rows.iter().all(|row| row.kind != event_kind::MESSAGE_EDIT));
+        assert!(rows.iter().all(|row| row.kind != event_kind::REACTION));
 
         let text = rows.iter().find(|row| row.id == "text").unwrap();
         assert_eq!(text.kind, event_kind::PRIVATE_DIRECT_MESSAGE);
@@ -1161,11 +1079,6 @@ mod tests {
                 vec!["caption".to_string(), "pic edited".to_string()],
             ]
         );
-
-        let reaction = rows.iter().find(|row| row.id == "react").unwrap();
-        assert_eq!(reaction.kind, event_kind::REACTION);
-        assert_eq!(reaction.content, "👍");
-        assert_eq!(reaction.reference_id.as_deref(), Some("text"));
 
         let mention = rows.iter().find(|row| row.id == "mention").unwrap();
         assert!(mention.content.contains("pacto.mentions.envelope.v1"));
@@ -1593,6 +1506,27 @@ mod tests {
         assert_eq!(table_count(&conn, "events"), 0);
     }
 
+    #[test]
+    fn import_rejects_kind_7() {
+        let mut conn = conn();
+        insert_chat(&conn, "groupabc");
+        let mut react = row("react", "👍");
+        react.kind = event_kind::REACTION;
+        react.reference_id = Some("text".to_string());
+        let err = import_channel_history(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1joiner",
+            &[react],
+            1_700_000_000_000,
+            &KEY,
+        )
+        .unwrap_err();
+        assert!(err.contains("invalid history message"));
+        assert_eq!(table_count(&conn, "events"), 0);
+    }
+
     fn insert_stored_content(
         conn: &Connection,
         chat_id: i64,
@@ -1758,18 +1692,6 @@ mod tests {
         }
     }
 
-    fn reaction_row(id: &str, target: &str, emoji: &str, at: u64) -> HistoryExportMessage {
-        HistoryExportMessage {
-            id: id.to_string(),
-            kind: event_kind::REACTION,
-            created_at: at,
-            author_npub: "npub1bob".to_string(),
-            content: emoji.to_string(),
-            tags: vec![vec!["e".to_string(), target.to_string()]],
-            reference_id: Some(target.to_string()),
-        }
-    }
-
     fn live_message(id: &str, at: u64) -> Message {
         Message {
             id: id.to_string(),
@@ -1919,127 +1841,6 @@ mod tests {
     }
 
     #[test]
-    fn batch_reactions_apply_in_chat_state_and_skip_missing_targets() {
-        let (_, imported) = import_rows(&[
-            file_row(
-                "file",
-                1_700_000_100,
-                BLOB_URL,
-                file_tags(vec![tag("ox", "hh")]),
-            ),
-            file_row(
-                "bare",
-                1_700_000_120,
-                BLOB_URL,
-                vec![tag("caption", "just words")],
-            ),
-            reaction_row("react", "file", "👍", 1_700_000_130),
-            reaction_row("react-live", "already", "🔥", 1_700_000_140),
-            reaction_row("react-miss", "missing", "👀", 1_700_000_150),
-        ]);
-        let reaction_ids: Vec<_> = imported
-            .reactions
-            .iter()
-            .map(|reaction| reaction.id.as_str())
-            .collect();
-        assert_eq!(reaction_ids, vec!["react"]);
-        assert!(!imported.inserted_ids.contains(&"react-live".to_string()));
-        assert!(!imported.inserted_ids.contains(&"react-miss".to_string()));
-
-        let mut state = crate::ChatState::new();
-        state.add_message_to_chat(&imported.group_id, live_message("already", 1));
-        let applied = apply_imported_timeline(
-            &mut state,
-            &imported.group_id,
-            &imported.timeline,
-            &imported.reactions,
-        );
-        assert!(applied
-            .to_emit
-            .iter()
-            .all(|message| message.id != "react" && message.id != "react-live"));
-        let emitted = applied
-            .to_emit
-            .iter()
-            .find(|message| message.id == "file")
-            .unwrap();
-        assert_eq!(emitted.reactions.len(), 1);
-        assert_eq!(emitted.reactions[0].emoji, "👍");
-        assert_eq!(emitted.reactions[0].author_id, "npub1bob");
-        assert_eq!(emitted.reactions[0].reference_id, "file");
-        assert_eq!(emitted.reactions[0].id, "react");
-
-        let chat = state.get_chat(&imported.group_id).unwrap();
-        let already = chat
-            .messages
-            .iter()
-            .find(|message| message.id == "already")
-            .unwrap();
-        assert!(already.reactions.is_empty());
-        assert!(chat.messages.iter().all(|message| message.id != "missing"));
-    }
-
-    #[test]
-    fn reaction_may_target_a_row_from_an_earlier_import() {
-        let (mut conn, _) = import_rows(&[file_row(
-            "file",
-            1_700_000_100,
-            BLOB_URL,
-            file_tags(vec![tag("ox", "hh")]),
-        )]);
-        let later = import_channel_history(
-            &mut conn,
-            "groupabc",
-            HistoryExportBucket::Announcements,
-            "npub1joiner",
-            &[reaction_row("react", "file", "👍", 1_700_000_130)],
-            1_700_000_500_000,
-            &KEY,
-        )
-        .unwrap();
-        assert_eq!(later.reactions.len(), 1);
-        assert_eq!(later.reactions[0].reference_id, "file");
-    }
-
-    #[test]
-    fn reaction_to_a_live_row_is_not_stored() {
-        let mut conn = conn();
-        let chat = insert_chat(&conn, "groupabc");
-        insert_event(
-            &conn,
-            chat,
-            "live",
-            event_kind::PRIVATE_DIRECT_MESSAGE,
-            "hello",
-            "[]",
-            None,
-            1_700_000_100,
-            Some("npub1alice"),
-            0,
-            0,
-            Some("announcements"),
-        );
-        let imported = import_channel_history(
-            &mut conn,
-            "groupabc",
-            HistoryExportBucket::Announcements,
-            "npub1joiner",
-            &[reaction_row("forged", "live", "🔥", 1_700_000_130)],
-            1_700_000_500_000,
-            &KEY,
-        )
-        .unwrap();
-        assert!(imported.inserted_ids.is_empty());
-        assert!(imported.reactions.is_empty());
-        let stored: i64 = conn
-            .query_row("SELECT COUNT(*) FROM events WHERE kind = 7", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(stored, 0);
-    }
-
-    #[test]
     fn imported_rows_join_chat_state_in_time_order_and_read() {
         let (_, imported) = import_rows(&[
             file_row(
@@ -2057,12 +1858,7 @@ mod tests {
         ]);
         let mut state = crate::ChatState::new();
         state.add_message_to_chat(&imported.group_id, live_message("already", 1));
-        let applied = apply_imported_timeline(
-            &mut state,
-            &imported.group_id,
-            &imported.timeline,
-            &imported.reactions,
-        );
+        let applied = apply_imported_timeline(&mut state, &imported.group_id, &imported.timeline);
         let order: Vec<_> = state
             .get_chat(&imported.group_id)
             .unwrap()
@@ -2088,7 +1884,7 @@ mod tests {
         let early = live_message("early", 1_000);
         let low = live_message("m", 2_000);
         let high = live_message("z", 2_000);
-        let applied = apply_imported_timeline(&mut state, "group", &[early, low, high], &[]);
+        let applied = apply_imported_timeline(&mut state, "group", &[early, low, high]);
         assert_eq!(state.get_chat("group").unwrap().last_read, "z");
         assert_eq!(applied.last_read.as_deref(), Some("z"));
         assert!(state.unread_counts_by_chat().get("group").is_none());
@@ -2107,7 +1903,7 @@ mod tests {
         let mut newer = crate::ChatState::new();
         newer.add_message_to_chat("group", live_message("live", 9_000));
         let applied =
-            apply_imported_timeline(&mut newer, "group", &[live_message("old", 1_000)], &[]);
+            apply_imported_timeline(&mut newer, "group", &[live_message("old", 1_000)]);
         assert_eq!(applied.last_read.as_deref(), Some("old"));
         assert_eq!(newer.get_chat("group").unwrap().last_read, "old");
         assert_eq!(newer.unread_counts_by_chat().get("group"), Some(&1));
@@ -2119,7 +1915,7 @@ mod tests {
         read.add_message_to_chat("group", live_message("live", 9_000));
         read.get_chat_mut("group").unwrap().last_read = "live".to_string();
         let applied =
-            apply_imported_timeline(&mut read, "group", &[live_message("old", 1_000)], &[]);
+            apply_imported_timeline(&mut read, "group", &[live_message("old", 1_000)]);
         assert!(applied.last_read.is_none());
         assert_eq!(read.get_chat("group").unwrap().last_read, "live");
 
@@ -2127,14 +1923,14 @@ mod tests {
         behind.add_message_to_chat("group", live_message("a", 500));
         behind.get_chat_mut("group").unwrap().last_read = "a".to_string();
         let applied =
-            apply_imported_timeline(&mut behind, "group", &[live_message("m", 2_000)], &[]);
+            apply_imported_timeline(&mut behind, "group", &[live_message("m", 2_000)]);
         assert_eq!(applied.last_read.as_deref(), Some("m"));
 
         let mut dangling = crate::ChatState::new();
         dangling.add_message_to_chat("group", live_message("a", 500));
         dangling.get_chat_mut("group").unwrap().last_read = "gone".to_string();
         let applied =
-            apply_imported_timeline(&mut dangling, "group", &[live_message("m", 2_000)], &[]);
+            apply_imported_timeline(&mut dangling, "group", &[live_message("m", 2_000)]);
         assert_eq!(applied.last_read.as_deref(), Some("m"));
     }
 

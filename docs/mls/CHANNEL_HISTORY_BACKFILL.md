@@ -72,12 +72,12 @@ The exported kind 14 or 15 row already contains the latest usable authorized edi
 | Field | Meaning |
 |-------|---------|
 | `id` | Original event id |
-| `kind` | 14 (text), 15 (file), or 7 (reaction). Kind 16 is not on the wire. |
+| `kind` | 14 (text) or 15 (file). Kind 7 and kind 16 are not on the wire. |
 | `createdAt` | Original `created_at`, Unix seconds |
 | `authorNpub` | Sender npub |
 | `content` | Latest authorized text for kind 14. Kind 15 content stays the blob URL; that text is the `caption` tag. |
 | `tags` | Stored Nostr tags (`string[][]`), including kind-15 file tags |
-| `referenceId` | Reply or reaction target, or `null` |
+| `referenceId` | Reply target, or `null` |
 
 Do not copy `mine`, `pending`, `failed`, `received_at`, `wrapper_event_id`, local `chat_id`, or local `user_id`. Order entries by `createdAt`, then `id`.
 
@@ -127,7 +127,7 @@ Include an `events` row when all of the following hold:
 
 1. It belongs to the requested group.
 2. When `bucket` is `"announcements"`, `virtual_bucket` is `announcements`. When `bucket` is `null`, do not filter on bucket.
-3. `kind` is 14, 15, or 7. Kind 16 is not exported; the latest authorized edit is already in the kind 14 or 15 row.
+3. `kind` is 14 or 15. Kind 7 and kind 16 are not exported; the latest authorized edit is already in the kind 14 or 15 row. Chunk capacity is for text and files.
 4. The row is not pending and not failed.
 5. `created_at` is inside the window above.
 6. The content is human chat, by the rule below.
@@ -142,7 +142,7 @@ That exclusion covers governance, roster shares, catalog, join inbox, polls, inb
 
 A single inner record that cannot fit in one chunk under the 12KB cap is dropped, not split. If the remaining records need more than **32** chunks, the peer sends the newest that fit, not nothing.
 
-**Decision (large channels).** A joiner in a busy channel gets the newest history instead of none. The exporter packs records into chunks in `createdAt`, `id` order and keeps the last 32 whole chunks; the oldest chunks are dropped, never split. A reaction row is exported only when its target is a kind 14 or 15 row in the exported chunks, with or without truncation, so a reaction to a cut or out-of-window message is dropped. A reply to a cut message still imports and renders without its preview. The joiner is told the copy may be partial by the welcome note, not by a flag on the wire.
+**Decision (large channels).** A joiner in a busy channel gets the newest history instead of none. The exporter packs records into chunks in `createdAt`, `id` order and keeps the last 32 whole chunks; the oldest chunks are dropped, never split. A reply to a cut message still imports and renders without its preview. The joiner is told the copy may be partial by the welcome note, not by a flag on the wire.
 
 ## Chunk acceptance
 
@@ -153,7 +153,7 @@ Reject the whole chunk, and import nothing from it, when any of these are true:
 - `groupId`, `requestId`, or `bucket` does not match the outstanding request.
 - The gift-wrap sender is not the current `designatedNpub`.
 - `index` or `total` is out of range.
-- Any inner message has a kind other than 14, 15, or 7, is missing `id` or `authorNpub`, or is structured product JSON under the rule above.
+- Any inner message has a kind other than 14 or 15, is missing `id` or `authorNpub`, or is structured product JSON under the rule above. Kind 7 is rejected like kind 16.
 - `messages` is empty. An empty chunk must not count as the first valid chunk that ends failover.
 
 Other chunks of the same request are judged on their own. The joiner does not re-apply the 30-day window.
@@ -169,7 +169,7 @@ On insert:
 - Set `received_at` to local receipt time.
 - Set `history_import` to 1.
 
-After that insert, kind 14 and 15 rows are added to in-memory chat state, ordered by timestamp. Kind 15 content shown is the caption; the blob URL stays on the attachment, parsed by the same rules as a live kind 15 (empty key and nonce mean a remote-plaintext attachment; an `ox` that is not a single path segment falls back to the nonce id). A reaction is stored and applied only when its target is a kind 14 or 15 row that an import wrote in this chat, from this batch or an earlier one. A reaction aimed at a live MLS row or an unknown id is skipped, so a copy cannot add reactions to live messages, in chat state or after a reload. `last_read` moves to the last imported message in chat order unless it already sits at or after it, so the copy is never unread and live messages after it stay unread. A forged `mine` on an imported row ends the unread walk like any own message; that stays inside the serving-member trust model. This still does not call `apply_mls_virtual_bucket_side_effects`.
+After that insert, kind 14 and 15 rows are added to in-memory chat state, ordered by timestamp. Kind 15 content shown is the caption; the blob URL stays on the attachment, parsed by the same rules as a live kind 15 (empty key and nonce mean a remote-plaintext attachment; an `ox` that is not a single path segment falls back to the nonce id). Copied bubbles have no reaction counts until someone reacts live over MLS. `last_read` moves to the last imported message in chat order unless it already sits at or after it, so the copy is never unread and live messages after it stay unread. A forged `mine` on an imported row ends the unread walk like any own message; that stays inside the serving-member trust model. This still does not call `apply_mls_virtual_bucket_side_effects`.
 
 `history_import` is an `INTEGER NOT NULL DEFAULT 0` column on `events`, added by a timestamped migration. Existing rows stay 0.
 

@@ -9,13 +9,13 @@ export const HISTORY_RUMOR_JSON_MAX_BYTES = 12_288;
 export const HISTORY_CHUNK_MAX_COUNT = 32;
 
 const REQUEST_ID_RE = /^[0-9a-f]{32}$/;
-const HUMAN_KINDS = new Set([14, 15, 7]);
+const HUMAN_KINDS = new Set([14, 15]);
 
 export type HistoryBucket = 'announcements' | null;
 
 export interface HistoryMessage {
   id: string;
-  kind: 14 | 15 | 7;
+  kind: 14 | 15;
   createdAt: number;
   authorNpub: string;
   content: string;
@@ -112,13 +112,12 @@ export function buildHistoryChunks(
     groups.length > HISTORY_CHUNK_MAX_COUNT
       ? groups.slice(groups.length - HISTORY_CHUNK_MAX_COUNT)
       : groups;
-  const nonempty = dropUnanchored(keptGroups);
-  if (nonempty.length === 0) return { ok: false, reason: 'empty' };
+  if (keptGroups.length === 0) return { ok: false, reason: 'empty' };
 
-  const total = nonempty.length;
+  const total = keptGroups.length;
   return {
     ok: true,
-    chunks: nonempty.map((group, index) => chunkOf(canonical, group, index, total)),
+    chunks: keptGroups.map((group, index) => chunkOf(canonical, group, index, total)),
   };
 }
 
@@ -243,27 +242,6 @@ function chunkOf(
     total,
     messages,
   };
-}
-
-/** Drop non-14/15 rows whose target is not a 14/15 id still in these groups. */
-function dropUnanchored(groups: HistoryMessage[][]): HistoryMessage[][] {
-  const anchorIds = new Set<string>();
-  for (const group of groups) {
-    for (const message of group) {
-      if (message.kind === 14 || message.kind === 15) anchorIds.add(message.id);
-    }
-  }
-  const kept: HistoryMessage[][] = [];
-  for (const group of groups) {
-    const messages = group.filter(
-      (message) =>
-        message.kind === 14 ||
-        message.kind === 15 ||
-        (message.referenceId !== null && anchorIds.has(message.referenceId))
-    );
-    if (messages.length > 0) kept.push(messages);
-  }
-  return kept;
 }
 
 function compareMessages(a: HistoryMessage, b: HistoryMessage): number {

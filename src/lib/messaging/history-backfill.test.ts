@@ -84,7 +84,6 @@ describe('buildHistoryChunks', () => {
           ['decryption-nonce', 'nn'],
         ],
       }),
-      message({ id: 'react', kind: 7, createdAt: 50, content: '👍', tags: [['e', 'b']], referenceId: 'b' }),
     ]);
     expect(built.ok).toBe(true);
     if (!built.ok) return;
@@ -94,7 +93,6 @@ describe('buildHistoryChunks', () => {
       'a',
       'b',
       'file',
-      'react',
     ]);
     const parsed = parseHistoryChunk(JSON.stringify(built.chunks[0]), EXPECTED);
     expect(parsed.ok).toBe(true);
@@ -113,46 +111,25 @@ describe('buildHistoryChunks', () => {
     expect(kept.chunks[0].messages.map((row) => row.id)).toEqual(['small']);
   });
 
-  it('keeps the newest 32 chunks and drops reactions whose target was cut', () => {
+  it('keeps the newest 32 chunks of text and files', () => {
     const count = HISTORY_CHUNK_MAX_COUNT + 1;
-    const newestAt = count;
-    const rows: HistoryMessage[] = [
-      ...Array.from({ length: count }, (_, index) =>
-        message({
-          id: index === 0 ? 'oldest' : index === count - 1 ? 'newest' : `m${index}`,
-          createdAt: index + 1,
-          content: 'y'.repeat(11_000),
-        })
-      ),
+    const rows: HistoryMessage[] = Array.from({ length: count }, (_, index) =>
       message({
-        id: 'kept-react',
-        kind: 7,
-        createdAt: newestAt,
-        content: '+',
-        tags: [['e', 'newest']],
-        referenceId: 'newest',
-      }),
-      message({
-        id: 'orphan-react',
-        kind: 7,
-        createdAt: newestAt,
-        content: '+',
-        tags: [['e', 'oldest']],
-        referenceId: 'oldest',
-      }),
-    ];
+        id: index === 0 ? 'oldest' : index === count - 1 ? 'newest' : `m${index}`,
+        createdAt: index + 1,
+        content: 'y'.repeat(11_000),
+      })
+    );
 
     const built = buildHistoryChunks(EXPECTED, rows);
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    expect(built.chunks.length).toBeLessThanOrEqual(HISTORY_CHUNK_MAX_COUNT);
+    expect(built.chunks.length).toBe(HISTORY_CHUNK_MAX_COUNT);
     expect(built.chunks.length).toBeGreaterThan(0);
 
     const ids = built.chunks.flatMap((chunk) => chunk.messages.map((row) => row.id));
     expect(ids).toContain('newest');
-    expect(ids).toContain('kept-react');
     expect(ids).not.toContain('oldest');
-    expect(ids).not.toContain('orphan-react');
 
     expect(built.chunks.map((chunk) => chunk.index)).toEqual(built.chunks.map((_, index) => index));
     for (const chunk of built.chunks) {
@@ -263,6 +240,13 @@ describe('parseHistoryChunk', () => {
     const edit = JSON.parse(GOLDEN) as { messages: Array<{ kind: number }> };
     edit.messages[0].kind = 16;
     expect(parseHistoryChunk(JSON.stringify(edit), EXPECTED)).toEqual({
+      ok: false,
+      reason: 'message',
+    });
+
+    const reaction = JSON.parse(GOLDEN) as { messages: Array<{ kind: number }> };
+    reaction.messages[0].kind = 7;
+    expect(parseHistoryChunk(JSON.stringify(reaction), EXPECTED)).toEqual({
       ok: false,
       reason: 'message',
     });
