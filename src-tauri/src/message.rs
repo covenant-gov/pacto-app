@@ -4237,6 +4237,7 @@ pub async fn react_to_message(
 
             Ok(false)
         }
+        ChatType::PublicChannel => Err("This channel does not support reactions".to_string()),
         ChatType::MlsGroup => {
             // For group chats, send reaction through MLS
             let reference_event = EventId::from_hex(&reference_id).map_err(|e| e.to_string())?;
@@ -4718,6 +4719,9 @@ pub async fn edit_message(
 
             // Self-wrap for recovery (best-effort)
             let _ = gift_wrap_dm_to_trusted(&client, &my_public_key, rumor).await;
+        }
+        ChatType::PublicChannel => {
+            return Err("This channel does not support edits".to_string());
         }
         ChatType::MlsGroup => {
             // For group chats, send edit through MLS

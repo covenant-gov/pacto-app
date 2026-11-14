@@ -599,6 +599,7 @@ pub(crate) async fn is_scanning() -> bool {
 
 #[tauri::command]
 pub(crate) async fn logout<R: Runtime>(handle: AppHandle<R>) {
+    crate::public_channel::clear_watched();
     // Lock the state while we wipe disk and session so nothing races with stale in-memory chats.
     let mut state = STATE.lock().await;
     state.clear_session();

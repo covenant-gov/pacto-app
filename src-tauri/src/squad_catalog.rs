@@ -15,7 +15,7 @@ pub struct SquadChannelRow {
     pub name: String,
     pub group_id: String,
     pub order: i32,
-    /// Custom channels: "open" | "closed". Omitted on hub rows / legacy rows.
+    /// Custom channels: "open" | "closed" | "public". Omitted on hub rows / legacy rows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub access: Option<String>,
 }

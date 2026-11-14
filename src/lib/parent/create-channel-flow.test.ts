@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 
 vi.mock('../api/nostr', () => ({
   createGroupChat: vi.fn(),
+  createPublicChannel: vi.fn(),
   formatChannelInSquadMessage: vi.fn(),
   sendDmMessage: vi.fn(),
 }));
@@ -43,6 +44,10 @@ vi.mock('../squad/squad-channels-catalog', () => ({
   publishSquadChannelsCatalog: vi.fn(),
 }));
 
+vi.mock('../squad/public-channel', () => ({
+  watchKnownPublicChannels: vi.fn(),
+}));
+
 vi.mock('../../stores/toast', () => ({
   showToast: vi.fn(),
 }));
@@ -61,7 +66,7 @@ vi.mock('../../stores/navigation', () => ({
   lastHubChannelNameBySquadId: createMockWritable<Record<string, string>>({}),
 }));
 
-import { createGroupChat, formatChannelInSquadMessage, sendDmMessage } from '../api/nostr';
+import { createGroupChat, createPublicChannel, formatChannelInSquadMessage, sendDmMessage } from '../api/nostr';
 import { warnSkippedMembers, warnPendingInvites } from '../squad/skipped-members';
 import { showToast } from '../../stores/toast';
 import { getAnnouncementsChannel, loadMembersForParent } from '../parent-navbar';
@@ -132,6 +137,7 @@ describe('runCreateChannelInParent', () => {
     lastHubChannelNameBySquadId.set({});
 
     vi.mocked(createGroupChat).mockReset().mockResolvedValue({ groupId: 'g-new-channel', skippedMembers: [], pendingInvites: [] });
+    vi.mocked(createPublicChannel).mockReset().mockResolvedValue('ab'.repeat(32));
     vi.mocked(warnSkippedMembers).mockReset();
     vi.mocked(warnPendingInvites).mockReset();
     vi.mocked(showToast).mockReset();
@@ -203,6 +209,30 @@ describe('runCreateChannelInParent', () => {
       true
     );
     expect(onErrorBanner).not.toHaveBeenCalled();
+  });
+
+  it('creates a public channel without an MLS group or member notify', async () => {
+    runCreateChannelInParent({
+      parent,
+      squadId: 'parent-1',
+      name: 'lobby',
+      selectedNpubs: [],
+      access: 'public',
+      onErrorBanner: vi.fn(),
+    });
+
+    await vi.waitFor(() => {
+      expect(createPublicChannel).toHaveBeenCalledWith('lobby');
+    });
+    expect(createGroupChat).not.toHaveBeenCalled();
+    expect(sendDmMessage).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(publishSquadChannelsCatalog).toHaveBeenCalled();
+    });
+    const state = get(squads);
+    expect(state[0]?.channels.some((c) => c.groupId === 'ab'.repeat(32) && c.access === 'public')).toBe(
+      true,
+    );
   });
 
   it('does not publish catalog for closed channels', async () => {

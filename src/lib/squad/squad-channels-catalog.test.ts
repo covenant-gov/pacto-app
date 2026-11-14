@@ -18,6 +18,7 @@ const tryCompleteOpenChannelJoins = vi.hoisted(() => vi.fn().mockResolvedValue(u
 
 vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn(),
+  watchPublicChannels: vi.fn(),
   listPendingMlsWelcomes: vi.fn(),
   acceptMlsWelcome: vi.fn(),
   listMlsGroups: vi.fn(),
@@ -196,6 +197,21 @@ describe('squad-channels-catalog', () => {
         { name: 'open-row', groupId: 'g-o', order: 1, access: 'open' },
       ],
     });
+  });
+
+  it('apply attaches a public channel without an MLS join', async () => {
+    const raw = formatSquadChannelsCatalog({
+      parent_id: 'ann-gid',
+      channels: [{ name: 'lobby', groupId: 'ab'.repeat(32), order: 4, access: 'public' }],
+    });
+    expect(parseSquadChannelsCatalog(raw)?.channels[0]?.access).toBe('public');
+    applySquadChannelsCatalog(raw, 'ann-gid');
+    await vi.waitFor(() => {
+      expect(get(squads)[0]?.channels.some((c) => c.name === 'lobby' && c.access === 'public')).toBe(
+        true,
+      );
+    });
+    expect(get(pendingOpenChannelJoins)).toEqual([]);
   });
 
   it('apply ignores mismatched parent and drains matching catalog rows', async () => {

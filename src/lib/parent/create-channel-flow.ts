@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import {
   createGroupChat,
+  createPublicChannel,
   formatChannelInSquadMessage,
   sendDmMessage,
 } from '../api/nostr';
@@ -9,6 +10,7 @@ import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-b
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
 import { persistSquadPatch } from '../squad/squad-catalog';
 import { publishSquadChannelsCatalog } from '../squad/squad-channels-catalog';
+import { watchKnownPublicChannels } from '../squad/public-channel';
 import { warnSkippedMembers, skippedMembersNotice, warnPendingInvites, pendingInvitesNotice } from '../squad/skipped-members';
 import { showToast } from '../../stores/toast';
 import type { ChannelAccess } from './channel-access';
@@ -77,6 +79,23 @@ export function runCreateChannelInParent(opts: {
           activeHubChannelName.set(null);
         }
         onErrorBanner(squadPrivilegeDeniedMessage(priv, get(t)));
+        return;
+      }
+      if (access === 'public') {
+        const groupId = await createPublicChannel(name);
+        await persistSquadPatch(squadId, (s) => ({
+          ...s,
+          channels: s.channels.map((ch) =>
+            ch.groupId === placeholderId ? { name, groupId, order: ch.order, access } : ch,
+          ),
+        }));
+        if (get(activeChannelId) === placeholderId) {
+          activeChannelId.set(groupId);
+          activeHubChannelName.set(name);
+        }
+        const live = get(squads).find((s) => s.id === squadId);
+        if (live) void publishSquadChannelsCatalog(live);
+        void watchKnownPublicChannels();
         return;
       }
       const { groupId, skippedMembers, pendingInvites } = await createGroupChat(name, selectedNpubs);

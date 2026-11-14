@@ -65,7 +65,8 @@
   import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
-  import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
+  import { sendDmMessage, sendPublicChannelMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
+  import { publicChannelRoster, visiblePublicChannelMessages } from '../../lib/squad/public-channel';
   import { sendGifMessage } from '../../lib/api/klipy';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
@@ -123,9 +124,10 @@
     activeParent?.channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ??
     activeParent?.channels[0]?.groupId ??
     null;
+  $: isPublicChannel = activeChannel?.access === 'public';
   $: effectiveMembersGroupId = (() => {
     if (!$activeChannelId) return null;
-    if (isVirtualHubChannelId($activeChannelId)) {
+    if (isVirtualHubChannelId($activeChannelId) || isPublicChannel) {
       return announcementsGroupIdForMembers;
     }
     return $activeChannelId;
@@ -135,7 +137,7 @@
   $: currentUserNpub = $currentUser?.npub;
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
-  $: hideChannelOverflowMenu = isAnnouncementsChannel;
+  $: hideChannelOverflowMenu = isAnnouncementsChannel || isPublicChannel;
   /** Squad chat timeline (announcements or a custom channel): offers Save to Docs and the channel docs shortcut. */
   $: isSquadChatChannel =
     !!activeParent &&
@@ -162,7 +164,7 @@
     !isChannelCreating &&
     !!activeChannel?.groupId &&
     $mlsHistoryWelcomeGroupIds.includes(activeChannel.groupId.trim().toLowerCase());
-  $: activeMlsReset = effectiveMembersGroupId
+  $: activeMlsReset = !isPublicChannel && effectiveMembersGroupId
     ? ($mlsResetByGroupId[effectiveMembersGroupId] ??
       $mlsResetByGroupId[effectiveMembersGroupId.toLowerCase()] ??
       null)
@@ -179,10 +181,15 @@
   let leavingChannel = false;
   let leaveChannelError = '';
 
+  $: publicRoster = publicChannelRoster(
+    announcementsGroupIdForMembers ? ($membersByGroupId[announcementsGroupIdForMembers] ?? []) : [],
+    currentUserNpub,
+  );
   $: currentMessages = (() => {
     if (!$activeChannelId) return [];
     const list = [...($backendGroupMessages[$activeChannelId] ?? [])];
     list.sort((a, b) => a.at - b.at);
+    if (isPublicChannel) return visiblePublicChannelMessages(list, publicRoster);
     return list;
   })();
 
@@ -358,9 +365,11 @@
     if (!groupId) return;
     groupSendError.set(null);
     const virtualBucket = squadVirtualBucket();
-    const content = squadOutgoingContent(body, mentions);
+    const content = isPublicChannel ? body : squadOutgoingContent(body, mentions);
     try {
-      const ok = await sendDmMessage(groupId, content, repliedTo ?? '', { virtualBucket });
+      const ok = isPublicChannel
+        ? await sendPublicChannelMessage(groupId, content, repliedTo ?? '')
+        : await sendDmMessage(groupId, content, repliedTo ?? '', { virtualBucket });
       setTimeout(scrollMessagesToBottom, 0);
       setTimeout(scrollMessagesToBottom, 200);
       if (ok) cancelReply();
@@ -602,6 +611,7 @@
     const seen = new Set<string>();
     for (const ch of activeSquad.channels) {
       const gid = ch.groupId.trim();
+      if (ch.access === 'public') continue;
       if (gid && !gid.startsWith('creating-') && !seen.has(gid) && !isMlsGroupMembersHydrated(gid)) {
         seen.add(gid);
         void ensureMlsGroupMembers(gid);
@@ -687,7 +697,19 @@
     cancelReply();
   }
 
+  function onEditMessage(message: DmMessage, body: string): Promise<boolean> {
+    if (isPublicChannel) {
+      showToast(tFn('messaging.channel.publicTextOnly'));
+      return Promise.resolve(false);
+    }
+    return submitMessageEdit($activeChannelId ?? '', message, body);
+  }
+
   function onReact(messageId: string, emoji: string) {
+    if (isPublicChannel) {
+      showToast(tFn('messaging.channel.publicTextOnly'));
+      return;
+    }
     const chatId = $activeChannelId;
     if (!chatId) return;
     reactToMessage(messageId, chatId, emoji).catch((e: unknown) => {
@@ -751,6 +773,10 @@
   ): Promise<void> {
     const groupId = $activeChannelId;
     if (!groupId) return;
+    if (isPublicChannel) {
+      groupSendError.set(tFn('messaging.channel.publicTextOnly'));
+      return;
+    }
     groupSendError.set(null);
     try {
       const ok = await sendFileBytes(
@@ -778,6 +804,10 @@
   ): Promise<void> {
     const groupId = $activeChannelId;
     if (!groupId) return;
+    if (isPublicChannel) {
+      groupSendError.set(tFn('messaging.channel.publicTextOnly'));
+      return;
+    }
     groupSendError.set(null);
     try {
       const ok = await sendGifMessage(
@@ -923,7 +953,7 @@
                 {onReact}
                 {onCopy}
                 {onReply}
-                onEdit={(_id, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
+                onEdit={(_id, body) => onEditMessage(message, body)}
                 onSaveToDocs={saveToDocsHandler}
                 compact={shouldStackChannelWithPrevious(
                   historyAbove[i - 1],
@@ -972,7 +1002,7 @@
                 {onReact}
                 {onCopy}
                 {onReply}
-                onEdit={(_id, body) => submitMessageEdit($activeChannelId ?? '', message, body)}
+                onEdit={(_id, body) => onEditMessage(message, body)}
                 onSaveToDocs={saveToDocsHandler}
                 compact={shouldStackChannelWithPrevious(
                   historyBelow[i - 1],

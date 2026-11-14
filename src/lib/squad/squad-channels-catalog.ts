@@ -21,6 +21,7 @@ import {
   upsertPendingOpenChannelJoin,
 } from './pending-open-channel-joins';
 import { tryCompleteOpenChannelJoins } from './open-channel-join';
+import { watchKnownPublicChannels } from './public-channel';
 
 export const SQUAD_CHANNELS_CATALOG_TYPE = 'squad_channels_catalog';
 
@@ -55,7 +56,8 @@ export function parseSquadChannelsCatalog(
       const name = typeof c.name === 'string' ? c.name.trim() : '';
       const groupId = typeof c.groupId === 'string' ? c.groupId.trim() : '';
       const order = typeof c.order === 'number' ? c.order : channels.length;
-      const access = c.access === 'closed' ? 'closed' : 'open';
+      const access =
+        c.access === 'closed' ? 'closed' : c.access === 'public' ? 'public' : 'open';
       if (!name || !groupId) continue;
       if (
         name === ANNOUNCEMENTS_CHANNEL_NAME ||
@@ -104,12 +106,26 @@ export function applySquadChannelsCatalog(content: string, groupId: string): voi
   if (!parent) return;
 
   void (async () => {
+    let sawPublic = false;
     await persistSquadPatch(parent.id, (squad) => {
       let changed = false;
       const next: Channel[] = [...squad.channels];
       for (const row of parsed.channels) {
         if (row.access === 'closed') continue;
         const existing = next.find((c) => sameGroupId(c.groupId, row.groupId));
+        if (row.access === 'public') {
+          sawPublic = true;
+          if (!existing) {
+            next.push({
+              name: row.name,
+              groupId: row.groupId,
+              order: row.order,
+              access: 'public',
+            });
+            changed = true;
+            continue;
+          }
+        }
         if (!existing) continue;
         if (existing.access !== row.access || existing.name !== row.name) {
           Object.assign(existing, { name: row.name, access: row.access, order: row.order });
@@ -119,7 +135,8 @@ export function applySquadChannelsCatalog(content: string, groupId: string): voi
       if (!changed) return squad;
       return { ...squad, channels: next };
     });
-    const listed = parsed.channels.filter((row) => row.access !== 'closed');
+    const listed = parsed.channels.filter((row) => row.access === 'open');
+    if (sawPublic) void watchKnownPublicChannels();
     forgetPendingOpenChannelJoinsNotListed(
       parent.id,
       listed.map((row) => row.groupId),
