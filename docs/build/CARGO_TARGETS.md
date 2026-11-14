@@ -50,6 +50,8 @@ prints the path, size, and reclaim hints, then exits non-zero.
 Bare `pnpm tauri:dev` and IDE/rust-analyzer Cargo builds do **not** run this
 gate.
 
+Regression checks for `check` / `cap`: `node --test scripts/cargo-target-clean.test.mjs`.
+
 ## Reclaiming space
 
 | Command | Effect |
