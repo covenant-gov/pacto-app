@@ -1,4 +1,4 @@
-.PHONY: help install relay-free-harness-seed dev dev-isolated dev-sandbox dev-sandbox-fresh dev-sandbox-pair dev-sandbox-seeded dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean clean-cargo sweep-cargo distclean tauri-info signer-key
+.PHONY: help install relay-free-harness-seed check-cargo-cap cap-cargo dev dev-isolated dev-sandbox dev-sandbox-fresh dev-sandbox-pair dev-sandbox-seeded dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean clean-cargo sweep-cargo distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
@@ -14,6 +14,7 @@ help:
 	@echo "  dev-buddy    run the desktop app against the persistent, reusable secondary test account"
 	@echo "  dev-world          populate this worktree's sandbox with a joined squad via the sibling pacto-dev-env orchestrator"
 	@echo "  dev-world-reclaim  remove this worktree's sandbox via the sibling pacto-dev-env orchestrator"
+	@echo "  (dev / dev-isolated / sandbox / account / buddy / world auto-refuse when src-tauri/target exceeds CARGO_TARGET_CAP_GB)"
 	@echo ""
 	@echo "  build        build production frontend + Tauri app"
 	@echo "  preview      serve the built static frontend (no Tauri shell)"
@@ -39,6 +40,8 @@ help:
 	@echo "  clean        remove build artifacts and caches"
 	@echo "  clean-cargo  remove only the Rust target dir (keeps sandboxes and node_modules)"
 	@echo "  sweep-cargo  drop Rust artifacts unused for CARGO_SWEEP_DAYS days (default 7; needs cargo-sweep)"
+	@echo "  check-cargo-cap  refuse if cargo target exceeds CARGO_TARGET_CAP_GB (default 25)"
+	@echo "  cap-cargo    drop LRU cargo artifacts until under CARGO_TARGET_CAP_GB (needs cargo-sweep)"
 	@echo "  distclean    deep clean, including node_modules and Cargo targets"
 	@echo "  tauri-info   print Tauri environment diagnostics"
 	@echo "  signer-key   generate a new Tauri updater signing key"
@@ -60,7 +63,18 @@ install:
 # validates against the compiled-in Mozilla roots only and refuses a
 # locally-issued `wss://` relay with `UnknownIssuer`, whatever the OS trust
 # store says. Deliberately not a default feature: see src-tauri/Cargo.toml.
-dev:
+#
+# Desktop-dev entrypoints refuse when the cargo target exceeds
+# CARGO_TARGET_CAP_GB (see docs/build/CARGO_TARGETS.md).
+CARGO_TARGET_CAP_GB ?= 25
+
+check-cargo-cap:
+	CARGO_TARGET_CAP_GB=$(CARGO_TARGET_CAP_GB) ./scripts/cargo-target-clean.sh check
+
+cap-cargo:
+	CARGO_TARGET_CAP_GB=$(CARGO_TARGET_CAP_GB) ./scripts/cargo-target-clean.sh cap
+
+dev: check-cargo-cap
 	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
 	if [ "$$branch" = "main" ]; then \
 		pnpm tauri dev -f local-relay-tls; \
@@ -70,7 +84,7 @@ dev:
 
 # Always-isolated desktop dev (every branch including main). Used by pnpm tauri:dev:iso.
 # Same per-branch test_fixtures root and port hashing as non-main make dev.
-dev-isolated:
+dev-isolated: check-cargo-cap
 	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
 	slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
 	eval "$$(node scripts/dev-ports.mjs --export --branch "$$branch")"; \
@@ -97,7 +111,7 @@ dev-isolated:
 # relaunching returns to the same identity. Wipe one with `dev-sandbox-fresh`,
 # all of them with `make clean`.
 PERSONA ?= solo
-dev-sandbox:
+dev-sandbox: check-cargo-cap
 	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
 	slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
 	root="$(CURDIR)/test_sandbox/$$slug/$(PERSONA)"; \
@@ -122,7 +136,7 @@ dev-sandbox-fresh:
 # mnemonics (not the Anvil/relay-free-harness fixture) so Host and Guest
 # never collapse onto one identity. Waits until both sandbox-handle.json
 # files carry an npub, then stays in the foreground.
-dev-sandbox-pair:
+dev-sandbox-pair: check-cargo-cap
 	@./scripts/dev-sandbox-pair.sh
 
 # Seed a populated per-account sandbox with zero network / no docker, through
@@ -158,7 +172,7 @@ dev-sandbox-seeded: relay-free-harness-seed
 # dev-sandbox, these keep the same PIN-protected account, DM history, and
 # squad membership across relaunches. Not swept by `make clean`; delete
 # test_fixtures/ manually to reset.
-dev-account:
+dev-account: check-cargo-cap
 	@mkdir -p test_fixtures
 	@eval "$$(node scripts/dev-ports.mjs --export --branch dev-account)"; \
 	echo "make dev-account: port index $$PACTO_DEV_PORT_INDEX -> devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
@@ -171,7 +185,7 @@ dev-account:
 # over port 1420. Start one of those first, then run this in another terminal.
 # Side-by-side instances work because a PACTO_TEST_SANDBOX_ROOT run skips the
 # single-instance plugin.
-dev-buddy:
+dev-buddy: check-cargo-cap
 	@mkdir -p test_fixtures
 	@eval "$$(node scripts/dev-ports.mjs --export --branch dev-buddy)"; \
 	echo "make dev-buddy: port index $$PACTO_DEV_PORT_INDEX -> devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
@@ -184,7 +198,7 @@ dev-buddy:
 # moment this target grows a gate, it belongs upstream instead.
 PACTO_DEV_ENV_DIR ?= $(CURDIR)/../pacto-dev-env
 
-dev-world:
+dev-world: check-cargo-cap
 	@if [ ! -d "$(PACTO_DEV_ENV_DIR)" ] || [ ! -f "$(PACTO_DEV_ENV_DIR)/Makefile" ]; then \
 		echo "dev-world: sibling pacto-dev-env checkout not found at $(PACTO_DEV_ENV_DIR)" >&2; \
 		echo "  Set PACTO_DEV_ENV_DIR to its location, or clone pacto-dev-env alongside this repo." >&2; \

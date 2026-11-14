@@ -1714,6 +1714,14 @@ fn latest_authorized_edits_sql(placeholders: &str) -> String {
     )
 }
 
+/// Delivered authorized edits for originals in chat `?1` created at or after `?2`, newest first.
+pub(crate) fn latest_authorized_edits_for_export_sql() -> String {
+    format!(
+        "SELECT e.reference_id, e.content {} AND e.pending = 0 AND e.failed = 0 AND m.chat_id = ?1 AND m.created_at >= ?2 ORDER BY e.created_at DESC, e.rowid DESC",
+        authorized_edits_from_sql(),
+    )
+}
+
 fn saved_edit_is_authorized_conn(
     conn: &rusqlite::Connection,
     edit_id: &str,

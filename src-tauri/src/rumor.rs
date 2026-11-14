@@ -25,12 +25,9 @@
 //! - **Reactions**: `Kind::Reaction` - Emoji reactions to messages
 //! - **Typing Indicators**: `Kind::ApplicationSpecificData` - Real-time typing status
 
-use crate::message::ImageMetadata;
 use crate::nostr_tags;
 use crate::{Attachment, Message, Reaction, StoredEvent, StoredEventBuilder, TAURI_APP};
 use nostr_sdk::prelude::*;
-use tauri::Manager;
-
 /// Protocol-agnostic rumor event representation
 ///
 /// This is the unified format for all decrypted events, regardless of whether
@@ -253,11 +250,9 @@ async fn process_text_message(
 /// - File extensions and mime types
 /// Kind-15 `caption` tag. Message text, not a filename: no path sanitizing.
 pub(crate) fn attachment_caption(tags: &Tags) -> String {
-    nostr_tags::find_custom(tags, "caption")
-        .and_then(|tag| tag.content())
-        .map(|s| s.to_string())
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_default()
+    crate::attachment_tags::caption_body(
+        nostr_tags::find_custom(tags, "caption").and_then(|tag| tag.content()),
+    )
 }
 
 async fn process_file_attachment(
@@ -284,9 +279,7 @@ async fn process_file_attachment(
     let content_url = rumor.content.clone();
 
     // Skip attachments with empty file hash - these are corrupted uploads
-    const EMPTY_FILE_HASH: &str =
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-    if content_url.contains(EMPTY_FILE_HASH) {
+    if content_url.contains(crate::attachment_tags::EMPTY_FILE_HASH) {
         eprintln!(
             "Skipping attachment with empty file hash in URL: {}",
             content_url
@@ -294,36 +287,10 @@ async fn process_file_attachment(
         return Err("Attachment contains empty file hash - skipping".to_string());
     }
 
-    // Extract image metadata if provided
-    let img_meta: Option<ImageMetadata> = {
-        let blurhash_opt = nostr_tags::find_custom(&rumor.tags, "blurhash")
-            .and_then(|tag| tag.content())
-            .map(|s| s.to_string());
-
-        let dimensions_opt = nostr_tags::find_custom(&rumor.tags, "dim")
-            .and_then(|tag| tag.content())
-            .and_then(|s| {
-                // Parse "widthxheight" format
-                let parts: Vec<&str> = s.split('x').collect();
-                if parts.len() == 2 {
-                    let width = parts[0].parse::<u32>().ok()?;
-                    let height = parts[1].parse::<u32>().ok()?;
-                    Some((width, height))
-                } else {
-                    None
-                }
-            });
-
-        // Only create ImageMetadata if we have all required fields
-        match (blurhash_opt, dimensions_opt) {
-            (Some(blurhash), Some((width, height))) => Some(ImageMetadata {
-                blurhash,
-                width,
-                height,
-            }),
-            _ => None,
-        }
-    };
+    let img_meta = crate::attachment_tags::image_metadata(
+        nostr_tags::find_custom(&rumor.tags, "blurhash").and_then(|tag| tag.content()),
+        nostr_tags::find_custom(&rumor.tags, "dim").and_then(|tag| tag.content()),
+    );
 
     // Figure out the file extension from the mime-type
     let mime_type = nostr_tags::find_custom(&rumor.tags, "file-type")
@@ -344,19 +311,7 @@ async fn process_file_attachment(
 
     // Get the handle for path resolution
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
-
-    // Choose the appropriate base directory based on platform
-    let base_directory = if cfg!(target_os = "ios") {
-        tauri::path::BaseDirectory::Document
-    } else {
-        tauri::path::BaseDirectory::Download
-    };
-
-    // Resolve the directory path
-    let dir = handle
-        .path()
-        .resolve("pacto", base_directory)
-        .map_err(|e| format!("Failed to resolve directory: {}", e))?;
+    let dir = crate::cmds::media::attachments_dir(handle)?;
 
     // Grab the reported file size
     let reported_size = nostr_tags::find_custom(&rumor.tags, "size")
@@ -364,26 +319,17 @@ async fn process_file_attachment(
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
 
-    // Determine file path and download status
-    let (file_hash, file_path, downloaded) = if let Some(ox_hash) = original_file_hash {
-        // We have an original hash - check if file exists locally
-        let hash_file_path = dir.join(format!("{}.{}", ox_hash, extension));
-        if hash_file_path.exists() {
-            // File already exists locally
-            (ox_hash, hash_file_path.to_string_lossy().to_string(), true)
-        } else {
-            // File doesn't exist yet - will need to be downloaded
-            (ox_hash, hash_file_path.to_string_lossy().to_string(), false)
-        }
-    } else {
-        // No original hash - use nonce as placeholder ID
-        let nonce_file_path = dir.join(format!("{}.{}", decryption_nonce, extension));
-        (
-            decryption_nonce.clone(),
-            nonce_file_path.to_string_lossy().to_string(),
-            false,
-        )
-    };
+    let crate::attachment_tags::ResolvedFile {
+        id: file_hash,
+        path: file_path,
+        downloaded,
+    } = crate::attachment_tags::resolve_file(
+        Some(&dir),
+        original_file_hash.as_deref(),
+        &decryption_nonce,
+        &extension,
+    )
+    .ok_or("Attachment has no usable file id")?;
 
     // Extract reply reference if present
     let replied_to = extract_reply_reference(&rumor);

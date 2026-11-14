@@ -31,7 +31,7 @@ fn is_decryption_failure(error: &str) -> bool {
     error.contains("aead") || error.contains("decrypt")
 }
 
-fn attachments_dir<R: tauri::Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
+pub(crate) fn attachments_dir<R: tauri::Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
     let base_directory = if cfg!(target_os = "ios") {
         tauri::path::BaseDirectory::Document
     } else {

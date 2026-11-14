@@ -9,13 +9,13 @@ export const HISTORY_RUMOR_JSON_MAX_BYTES = 12_288;
 export const HISTORY_CHUNK_MAX_COUNT = 32;
 
 const REQUEST_ID_RE = /^[0-9a-f]{32}$/;
-const HUMAN_KINDS = new Set([14, 15, 16, 7]);
+const HUMAN_KINDS = new Set([14, 15]);
 
 export type HistoryBucket = 'announcements' | null;
 
 export interface HistoryMessage {
   id: string;
-  kind: 14 | 15 | 16 | 7;
+  kind: 14 | 15;
   createdAt: number;
   authorNpub: string;
   content: string;
@@ -49,7 +49,7 @@ export interface HistoryUnavailable {
   version: 1;
   requestId: string;
   groupId: string;
-  reason: 'empty' | 'over_cap';
+  reason: 'empty';
 }
 
 export interface HistoryRequestContext {
@@ -70,7 +70,7 @@ export type HistoryChunkFailure =
 
 export type HistoryBuildResult =
   | { ok: true; chunks: HistoryChunk[] }
-  | { ok: false; reason: 'empty' | 'over_cap' | 'malformed' };
+  | { ok: false; reason: 'empty' | 'malformed' };
 
 export function buildHistoryChunks(
   header: HistoryRequestContext,
@@ -107,12 +107,15 @@ export function buildHistoryChunks(
     }
   }
   if (current.length > 0) groups.push(current);
-  if (groups.length > HISTORY_CHUNK_MAX_COUNT) return { ok: false, reason: 'over_cap' };
 
-  const total = groups.length;
+  const keptGroups =
+    groups.length > HISTORY_CHUNK_MAX_COUNT
+      ? groups.slice(groups.length - HISTORY_CHUNK_MAX_COUNT)
+      : groups;
+  const total = keptGroups.length;
   return {
     ok: true,
-    chunks: groups.map((group, index) => chunkOf(canonical, group, index, total)),
+    chunks: keptGroups.map((group, index) => chunkOf(canonical, group, index, total)),
   };
 }
 
@@ -208,7 +211,7 @@ export function parseHistoryUnavailable(
   if (!requestId || !groupId) return { ok: false, reason: 'malformed' };
   if (requestId !== expected.requestId.trim().toLowerCase()) return { ok: false, reason: 'request' };
   if (groupId !== expected.groupId.trim().toLowerCase()) return { ok: false, reason: 'group' };
-  if (obj.reason !== 'empty' && obj.reason !== 'over_cap') return { ok: false, reason: 'malformed' };
+  if (obj.reason !== 'empty') return { ok: false, reason: 'malformed' };
   return {
     ok: true,
     unavailable: {

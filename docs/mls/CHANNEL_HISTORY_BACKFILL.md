@@ -67,21 +67,21 @@ Rumor content is this object. UTF-8 JSON byte length is at most **12288** (12KB)
 
 `index` is zero-based, `total` is at least 1, and `index` is less than `total`. `bucket` matches the request (`"announcements"` or `null`).
 
-Each entry in `messages` is one `events` row, not a denormalized bubble with edits folded in:
+The exported kind 14 or 15 row already contains the latest usable authorized edit, and kind 16 is not copied. An edit is usable when it is not pending or failed, its body decrypts, and it is not structured product content. If the newest authorized edit is not usable, the next newest usable one applies; with none, the original text stays.
 
 | Field | Meaning |
 |-------|---------|
 | `id` | Original event id |
-| `kind` | 14 (text), 15 (file), 16 (edit), or 7 (reaction) |
+| `kind` | 14 (text) or 15 (file). Kind 7 and kind 16 are not on the wire. |
 | `createdAt` | Original `created_at`, Unix seconds |
 | `authorNpub` | Sender npub |
-| `content` | Stored content. Kind 15 content is the blob URL. |
+| `content` | Latest authorized text for kind 14. Kind 15 content stays the blob URL; that text is the `caption` tag. |
 | `tags` | Stored Nostr tags (`string[][]`), including kind-15 file tags |
-| `referenceId` | Reply, reaction, or edit target, or `null` |
+| `referenceId` | Reply target, or `null` |
 
 Do not copy `mine`, `pending`, `failed`, `received_at`, `wrapper_event_id`, local `chat_id`, or local `user_id`. Order entries by `createdAt`, then `id`.
 
-Kind 15 copies the descriptor only: content URL plus tags `file-type`, `size`, `encryption-algorithm`, `decryption-key`, `decryption-nonce`, `ox`, and optional `filename` and `caption`. Do not copy blob bytes. A dead URL stays a dead attachment. See [`../messaging/ATTACHMENTS.md`](../messaging/ATTACHMENTS.md).
+Kind 15 copies the descriptor only: content URL plus tags `file-type`, `size`, `encryption-algorithm`, `decryption-key`, `decryption-nonce`, `ox`, and optional `filename` and `caption`. The `caption` tag is the latest authorized text. Do not copy blob bytes. A dead URL stays a dead attachment. See [`../messaging/ATTACHMENTS.md`](../messaging/ATTACHMENTS.md).
 
 ### `history_unavailable`
 
@@ -95,7 +95,7 @@ Kind 15 copies the descriptor only: content URL plus tags `file-type`, `size`, `
 }
 ```
 
-`reason` is `"empty"` (no exportable row) or `"over_cap"` (the export would exceed 32 chunks). Send no chunks in either case.
+`reason` is only `"empty"` (no exportable row; send no chunks). A joiner rejects any other value as malformed. Channels over the chunk cap are truncated, not refused; see the large-channel decision below.
 
 ## Who answers
 
@@ -127,7 +127,7 @@ Include an `events` row when all of the following hold:
 
 1. It belongs to the requested group.
 2. When `bucket` is `"announcements"`, `virtual_bucket` is `announcements`. When `bucket` is `null`, do not filter on bucket.
-3. `kind` is 14, 15, 16, or 7.
+3. `kind` is 14 or 15. Kind 7 and kind 16 are not exported; the latest authorized edit is already in the kind 14 or 15 row. Chunk capacity is for text and files.
 4. The row is not pending and not failed.
 5. `created_at` is inside the window above.
 6. The content is human chat, by the rule below.
@@ -140,7 +140,9 @@ Human chat is the same rule as `isStructuredProductContent` in `src/lib/messagin
 
 That exclusion covers governance, roster shares, catalog, join inbox, polls, inbox automation, squad events, squad docs, and these three protocol messages. Kind 30078 (typing and other app data) is outside the kind allowlist.
 
-A single inner record that cannot fit in one chunk under the 12KB cap is dropped, not split. If the remaining records need more than **32** chunks, the peer sends `history_unavailable` with `reason` `"over_cap"` and sends nothing.
+A single inner record that cannot fit in one chunk under the 12KB cap is dropped, not split. If the remaining records need more than **32** chunks, the peer sends the newest that fit, not nothing.
+
+**Decision (large channels).** A joiner in a busy channel gets the newest history instead of none. The exporter packs records into chunks in `createdAt`, `id` order and keeps the last 32 whole chunks; the oldest chunks are dropped, never split. A reply to a cut message still imports and renders without its preview. The joiner is told the copy may be partial by the welcome note, not by a flag on the wire.
 
 ## Chunk acceptance
 
@@ -151,8 +153,9 @@ Reject the whole chunk, and import nothing from it, when any of these are true:
 - `groupId`, `requestId`, or `bucket` does not match the outstanding request.
 - The gift-wrap sender is not the current `designatedNpub`.
 - `index` or `total` is out of range.
-- Any inner message has a kind other than 14, 15, 16, or 7, is missing `id` or `authorNpub`, or is structured product JSON under the rule above.
+- Any inner message has a kind other than 14 or 15, is missing `id` or `authorNpub`, or is structured product JSON under the rule above. Kind 7 is rejected like kind 16.
 - `messages` is empty. An empty chunk must not count as the first valid chunk that ends failover.
+- Any inner message has a `createdAt` more than 60 seconds after local receipt time. An honest copy is never newer than the request it answers.
 
 Other chunks of the same request are judged on their own. The joiner does not re-apply the 30-day window.
 
@@ -166,6 +169,8 @@ On insert:
 - Set `mine` from whether `authorNpub` is the local npub.
 - Set `received_at` to local receipt time.
 - Set `history_import` to 1.
+
+After that insert, kind 14 and 15 rows are added to in-memory chat state, ordered by timestamp. Kind 15 content shown is the caption; the blob URL stays on the attachment, parsed by the same rules as a live kind 15 (empty key and nonce mean a remote-plaintext attachment; an `ox` that is not a single path segment falls back to the nonce id). Copied bubbles have no reaction counts until someone reacts live over MLS. `last_read` moves across the unbroken run of just-imported messages directly after it (from the start of the chat when it is empty or missing) and stops at the first live message. The copy reads as seen, but a copied row sorted after live mail never marks that live mail read. A forged `mine` on an imported row ends the unread walk like any own message; that stays inside the serving-member trust model. This still does not call `apply_mls_virtual_bucket_side_effects`.
 
 `history_import` is an `INTEGER NOT NULL DEFAULT 0` column on `events`, added by a timestamped migration. Existing rows stay 0.
 
@@ -181,7 +186,7 @@ A smuggled `governance_updated` or `squad_member_evm_share` never reaches this i
 
 Every row with `history_import = 1` renders above the welcome note, including a forged `created_at` later than the accept time. Live MLS rows render below the note. Imported rows order by `created_at`, then id. The note is not a stored event.
 
-The note's copy says the lines above it are a copy from a member, and that this device still cannot decrypt the pre-join MLS transcript. English and Spanish catalogs carry that claim. The client does not check the copy against Kind 444.
+The note's copy says the lines above are a member copy and may show only the most recent messages, and that this device still cannot decrypt the pre-join MLS transcript. It is shown for every copy, complete or not. English and Spanish catalogs carry that claim. The client does not check the copy against Kind 444.
 
 ## Out of scope
 
