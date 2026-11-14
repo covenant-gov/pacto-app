@@ -245,43 +245,70 @@ async fn roster_for_channel<R: Runtime>(
     Ok(roster)
 }
 
+struct IngestCandidate {
+    channel_id: String,
+    author: String,
+    mine: bool,
+}
+
+/// Kind 42 for a watched channel. `None` when the kind is wrong, there is no root tag, or the channel is not watched.
+fn ingest_candidate(
+    event: &Event,
+    me: Option<&str>,
+    is_watched: impl Fn(&str) -> bool,
+) -> Result<Option<IngestCandidate>, String> {
+    if event.kind != Kind::from_u16(KIND_CHANNEL_MESSAGE) {
+        return Ok(None);
+    }
+    let Some(channel_id) = root_channel_id(event) else {
+        return Ok(None);
+    };
+    if !is_watched(&channel_id) {
+        return Ok(None);
+    }
+    let author = event.pubkey.to_bech32().map_err(|e| e.to_string())?;
+    let mine = me == Some(author.as_str());
+    Ok(Some(IngestCandidate {
+        channel_id,
+        author,
+        mine,
+    }))
+}
+
+fn candidate_message(event: &Event, candidate: &IngestCandidate) -> Message {
+    Message {
+        id: event.id.to_hex(),
+        content: event.content.clone(),
+        replied_to: reply_to_id(event),
+        at: event.created_at.as_secs().saturating_mul(1000),
+        mine: candidate.mine,
+        npub: Some(candidate.author.clone()),
+        ..Message::default()
+    }
+}
+
 /// Stores and emits a roster-authored kind 42 for a watched channel. `Ok(false)` when dropped or already stored.
 pub async fn ingest_message_event<R: Runtime>(
     handle: &AppHandle<R>,
     event: &Event,
 ) -> Result<bool, String> {
-    if event.kind != Kind::from_u16(KIND_CHANNEL_MESSAGE) {
-        return Ok(false);
-    }
-    let Some(channel_id) = root_channel_id(event) else {
+    let me = crate::account_manager::get_current_account().ok();
+    let Some(candidate) = ingest_candidate(event, me.as_deref(), is_watched)? else {
         return Ok(false);
     };
-    if !is_watched(&channel_id) {
-        return Ok(false);
-    }
-    let author = event.pubkey.to_bech32().map_err(|e| e.to_string())?;
-    let me = crate::account_manager::get_current_account().ok();
-    let mine = me.as_deref() == Some(author.as_str());
-    if !mine {
-        let roster = roster_for_channel(handle, &channel_id).await?;
-        if !author_allowed(&author, me.as_deref(), &roster) {
+    let channel_id = candidate.channel_id.as_str();
+    if !candidate.mine {
+        let roster = roster_for_channel(handle, channel_id).await?;
+        if !author_allowed(&candidate.author, me.as_deref(), &roster) {
             return Ok(false);
         }
     }
     if crate::db::event_exists(handle, &event.id.to_hex())? {
         return Ok(false);
     }
-    let mut message = Message {
-        id: event.id.to_hex(),
-        content: event.content.clone(),
-        replied_to: reply_to_id(event),
-        at: event.created_at.as_secs().saturating_mul(1000),
-        mine,
-        npub: Some(author),
-        ..Message::default()
-    };
-    crate::db::ensure_public_channel_chat(handle, &channel_id)?;
-    crate::db::save_message(handle.clone(), &channel_id, &message).await?;
+    let mut message = candidate_message(event, &candidate);
+    crate::db::ensure_public_channel_chat(handle, channel_id)?;
+    crate::db::save_message(handle.clone(), channel_id, &message).await?;
     let _ = crate::db::populate_reply_context(handle, &mut message).await;
     let _ = handle.emit(
         "public_channel_message_new",
@@ -520,6 +547,84 @@ mod tests {
         );
         assert_eq!(squad_id_for_channel(&[row(Some("open"))], &channel), None);
         assert_eq!(squad_id_for_channel(&[row(Some("public"))], "other"), None);
+    }
+
+    fn watching(id: &str) -> impl Fn(&str) -> bool + '_ {
+        move |candidate| candidate == id
+    }
+
+    #[test]
+    fn ingest_candidate_rejects_wrong_kind_missing_root_and_unwatched() {
+        let channel_id = "ab".repeat(32);
+        let created = signed(channel_create_builder("general", &[]).unwrap());
+        assert!(ingest_candidate(&created, None, watching(&channel_id))
+            .unwrap()
+            .is_none());
+
+        let no_root = signed(EventBuilder::new(Kind::from_u16(KIND_CHANNEL_MESSAGE), "hi"));
+        assert!(ingest_candidate(&no_root, None, |_| true).unwrap().is_none());
+
+        let message = signed(channel_message_builder(&channel_id, "", "hi", "").unwrap());
+        assert!(ingest_candidate(&message, None, watching(&"cd".repeat(32)))
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn ingest_candidate_returns_channel_and_author_for_watched_channel() {
+        let channel_id = "ab".repeat(32);
+        let event = signed(channel_message_builder(&channel_id, "", "hi", "").unwrap());
+        let candidate = ingest_candidate(&event, None, watching(&channel_id))
+            .unwrap()
+            .expect("candidate");
+        assert_eq!(candidate.channel_id, channel_id);
+        assert_eq!(candidate.author, event.pubkey.to_bech32().unwrap());
+    }
+
+    #[test]
+    fn ingest_candidate_mine_only_when_me_is_the_author() {
+        let channel_id = "ab".repeat(32);
+        let event = signed(channel_message_builder(&channel_id, "", "hi", "").unwrap());
+        let author = event.pubkey.to_bech32().unwrap();
+        let mine = |me: Option<&str>| {
+            ingest_candidate(&event, me, watching(&channel_id))
+                .unwrap()
+                .expect("candidate")
+                .mine
+        };
+        assert!(mine(Some(author.as_str())));
+        assert!(!mine(Some("npub-other")));
+        assert!(!mine(None));
+    }
+
+    #[test]
+    fn candidate_message_carries_event_fields() {
+        let channel_id = "ab".repeat(32);
+        let reply_id = "ef".repeat(32);
+        let event = signed(channel_message_builder(&channel_id, "", "hello", &reply_id).unwrap());
+        let candidate = ingest_candidate(&event, None, watching(&channel_id))
+            .unwrap()
+            .expect("candidate");
+        let message = candidate_message(&event, &candidate);
+        assert_eq!(message.id, event.id.to_hex());
+        assert_eq!(message.content, "hello");
+        assert_eq!(message.npub.as_deref(), Some(candidate.author.as_str()));
+        assert!(!message.mine);
+        assert_eq!(message.at, event.created_at.as_secs() * 1000);
+        assert_eq!(message.replied_to, reply_id);
+    }
+
+    #[test]
+    fn candidate_message_plain_event_has_no_reply_and_keeps_mine() {
+        let channel_id = "ab".repeat(32);
+        let event = signed(channel_message_builder(&channel_id, "", "hi", "").unwrap());
+        let author = event.pubkey.to_bech32().unwrap();
+        let candidate = ingest_candidate(&event, Some(author.as_str()), watching(&channel_id))
+            .unwrap()
+            .expect("candidate");
+        let message = candidate_message(&event, &candidate);
+        assert!(message.mine);
+        assert_eq!(message.replied_to, "");
     }
 
     #[test]
