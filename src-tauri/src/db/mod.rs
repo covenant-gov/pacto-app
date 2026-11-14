@@ -150,7 +150,7 @@ pub use messaging::{
 #[allow(unused_imports)]
 pub(crate) use messaging::{
     delete_chat_conn, get_authorized_message_edits, get_dm_deletion_cutoff_conn,
-    latest_authorized_edits_sql, upsert_dm_deletion_cutoff_conn,
+    latest_authorized_edits_for_export_sql, upsert_dm_deletion_cutoff_conn,
 };
 
 #[cfg(test)]

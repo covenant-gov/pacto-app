@@ -67,7 +67,7 @@ Rumor content is this object. UTF-8 JSON byte length is at most **12288** (12KB)
 
 `index` is zero-based, `total` is at least 1, and `index` is less than `total`. `bucket` matches the request (`"announcements"` or `null`).
 
-The exported kind 14 or 15 row already contains the latest usable authorized edit, and kind 16 is not copied. An edit is usable when its body decrypts and is not structured product content. If the newest authorized edit is not usable, the next newest usable one applies; with none, the original text stays.
+The exported kind 14 or 15 row already contains the latest usable authorized edit, and kind 16 is not copied. An edit is usable when it is not pending or failed, its body decrypts, and it is not structured product content. If the newest authorized edit is not usable, the next newest usable one applies; with none, the original text stays.
 
 | Field | Meaning |
 |-------|---------|
@@ -155,6 +155,7 @@ Reject the whole chunk, and import nothing from it, when any of these are true:
 - `index` or `total` is out of range.
 - Any inner message has a kind other than 14 or 15, is missing `id` or `authorNpub`, or is structured product JSON under the rule above. Kind 7 is rejected like kind 16.
 - `messages` is empty. An empty chunk must not count as the first valid chunk that ends failover.
+- Any inner message has a `createdAt` more than 60 seconds after local receipt time. An honest copy is never newer than the request it answers.
 
 Other chunks of the same request are judged on their own. The joiner does not re-apply the 30-day window.
 
@@ -169,7 +170,7 @@ On insert:
 - Set `received_at` to local receipt time.
 - Set `history_import` to 1.
 
-After that insert, kind 14 and 15 rows are added to in-memory chat state, ordered by timestamp. Kind 15 content shown is the caption; the blob URL stays on the attachment, parsed by the same rules as a live kind 15 (empty key and nonce mean a remote-plaintext attachment; an `ox` that is not a single path segment falls back to the nonce id). Copied bubbles have no reaction counts until someone reacts live over MLS. `last_read` moves to the last imported message in chat order unless it already sits at or after it, so the copy is never unread and live messages after it stay unread. A forged `mine` on an imported row ends the unread walk like any own message; that stays inside the serving-member trust model. This still does not call `apply_mls_virtual_bucket_side_effects`.
+After that insert, kind 14 and 15 rows are added to in-memory chat state, ordered by timestamp. Kind 15 content shown is the caption; the blob URL stays on the attachment, parsed by the same rules as a live kind 15 (empty key and nonce mean a remote-plaintext attachment; an `ox` that is not a single path segment falls back to the nonce id). Copied bubbles have no reaction counts until someone reacts live over MLS. `last_read` moves across the unbroken run of just-imported messages directly after it (from the start of the chat when it is empty or missing) and stops at the first live message. The copy reads as seen, but a copied row sorted after live mail never marks that live mail read. A forged `mine` on an imported row ends the unread walk like any own message; that stays inside the serving-member trust model. This still does not call `apply_mls_virtual_bucket_side_effects`.
 
 `history_import` is an `INTEGER NOT NULL DEFAULT 0` column on `events`, added by a timestamped migration. Existing rows stay 0.
 

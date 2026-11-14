@@ -1642,9 +1642,17 @@ fn authorized_edits_from_sql() -> String {
     )
 }
 
-pub(crate) fn latest_authorized_edits_sql(placeholders: &str) -> String {
+fn latest_authorized_edits_sql(placeholders: &str) -> String {
     format!(
         "SELECT e.reference_id, e.content, e.created_at, e.tags {} AND e.reference_id IN ({placeholders}) ORDER BY e.created_at DESC, e.rowid DESC",
+        authorized_edits_from_sql(),
+    )
+}
+
+/// Delivered authorized edits for originals in chat `?1` created at or after `?2`, newest first.
+pub(crate) fn latest_authorized_edits_for_export_sql() -> String {
+    format!(
+        "SELECT e.reference_id, e.content {} AND e.pending = 0 AND e.failed = 0 AND m.chat_id = ?1 AND m.created_at >= ?2 ORDER BY e.created_at DESC, e.rowid DESC",
         authorized_edits_from_sql(),
     )
 }

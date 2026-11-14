@@ -324,6 +324,7 @@ describe('subscribeAppEvents', () => {
       'commons_broadcasts_changed',
       'migration_complete',
       'session_locked',
+      'history_import_ids',
     ];
     for (const e of expected) {
       expect(mocks.registered[e], `missing listener for ${e}`).toBeDefined();
@@ -739,6 +740,19 @@ describe('subscribeAppEvents', () => {
       emit('typing-update', { conversation_id: 'npub1chat', typers: ['t1'] });
       vi.advanceTimersByTime(15_000);
       expect(mocks.mockStores.typingByChat.get()['npub1chat']).toEqual([]);
+    });
+  });
+
+  describe('history_import_ids', () => {
+    it('files imported ids under the lowercase group before their messages arrive', async () => {
+      const { importedHistoryIdsByGroup } = await import('../mls/channel-history-session');
+      const { get } = await import('svelte/store');
+      importedHistoryIdsByGroup.set({});
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('history_import_ids', { group_id: 'GroupABC', ids: ['a', 'b'] });
+      expect(get(importedHistoryIdsByGroup)).toEqual({ groupabc: ['a', 'b'] });
+      emit('history_import_ids', { group_id: 'groupabc' });
+      expect(get(importedHistoryIdsByGroup)).toEqual({ groupabc: ['a', 'b'] });
     });
   });
 

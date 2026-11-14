@@ -72,7 +72,7 @@ pub fn export_channel_history(
     };
     let sql = format!(
         r#"
-        SELECT e.id, e.kind, e.content, e.tags, e.reference_id, e.created_at, e.npub
+        SELECT e.id, e.kind, e.content, e.tags, e.reference_id, e.created_at, e.npub, e.chat_id
         FROM events e
         JOIN chats c ON c.id = e.chat_id
         WHERE lower(c.chat_identifier) = ?1
@@ -105,49 +105,41 @@ pub fn export_channel_history(
                     reference_id: row.get(4)?,
                     created_at: row.get(5)?,
                     npub: row.get(6)?,
+                    chat_id: row.get(7)?,
                 })
             },
         )
         .map_err(|e| e.to_string())?;
 
     let mut out = Vec::new();
+    let mut chat_ids = std::collections::BTreeSet::new();
     for row in rows {
         let row = row.map_err(|e| e.to_string())?;
+        chat_ids.insert(row.chat_id);
         if let Some(message) = decode_row(row, key) {
             out.push(message);
         }
     }
-    fold_latest_authorized_edits(conn, &mut out, key)?;
+    drop(stmt);
+    for chat_id in chat_ids {
+        fold_latest_authorized_edits(conn, chat_id, since, &mut out, key)?;
+    }
     Ok(out)
 }
 
-/// Per original id, the newest authorized edit with a usable body wins; same predicate as live edits.
+/// Per original id, the newest delivered authorized edit with a usable body wins; same predicate as live edits.
 fn fold_latest_authorized_edits(
     conn: &Connection,
+    chat_id: i64,
+    since: i64,
     messages: &mut [HistoryExportMessage],
     key: &[u8; 32],
 ) -> Result<(), String> {
-    let original_ids: Vec<&str> = messages
-        .iter()
-        .filter(|message| {
-            message.kind == event_kind::PRIVATE_DIRECT_MESSAGE
-                || message.kind == event_kind::FILE_ATTACHMENT
-        })
-        .map(|message| message.id.as_str())
-        .collect();
-    if original_ids.is_empty() {
-        return Ok(());
-    }
-    // Bound by SQLite's variable limit (32766 in the bundled build).
-    let placeholders = (1..=original_ids.len())
-        .map(|index| format!("?{index}"))
-        .collect::<Vec<_>>()
-        .join(",");
     let mut stmt = conn
-        .prepare(&crate::db::latest_authorized_edits_sql(&placeholders))
+        .prepare(&crate::db::latest_authorized_edits_for_export_sql())
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(rusqlite::params_from_iter(original_ids.iter()), |row| {
+        .query_map(params![chat_id, since], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|e| e.to_string())?;
@@ -202,6 +194,7 @@ struct RawEvent {
     reference_id: Option<String>,
     created_at: i64,
     npub: Option<String>,
+    chat_id: i64,
 }
 
 fn decode_row(row: RawEvent, key: &[u8; 32]) -> Option<HistoryExportMessage> {
@@ -251,7 +244,7 @@ pub fn import_channel_history(
     key: &[u8; 32],
 ) -> Result<HistoryImportResult, String> {
     for message in messages {
-        validate_import_message(message)?;
+        validate_import_message(message, received_at_ms)?;
     }
     write_imported_rows(
         conn,
@@ -264,9 +257,15 @@ pub fn import_channel_history(
     )
 }
 
-fn validate_import_message(message: &HistoryExportMessage) -> Result<(), String> {
+/// Clock skew allowed between a copied row's `created_at` and local receipt.
+const HISTORY_FUTURE_SKEW_MS: u64 = 60_000;
+
+fn validate_import_message(message: &HistoryExportMessage, received_at_ms: u64) -> Result<(), String> {
     if message.id.trim().is_empty() || message.author_npub.trim().is_empty() {
         return Err("invalid history message".to_string());
+    }
+    if message.created_at.saturating_mul(1000) > received_at_ms.saturating_add(HISTORY_FUTURE_SKEW_MS) {
+        return Err("history message is from the future".to_string());
     }
     let human_kind = matches!(
         message.kind,
@@ -466,26 +465,27 @@ fn apply_imported_timeline(
     AppliedImport { to_emit, last_read }
 }
 
-/// Moves `last_read` onto the last imported message in chat order unless it already sits at or
-/// after it, so the copy is never unread and live messages behind it stay unread.
+/// Moves `last_read` across the unbroken run of imported messages just after it, so the copy is
+/// read but a live message, and anything after it, never is.
 fn advance_imported_last_read(
     state: &mut crate::ChatState,
     chat_id: &str,
     imported: &[Message],
 ) -> Option<String> {
     let chat = state.get_chat_mut(chat_id)?;
-    let newest = chat
+    let start = chat
         .messages
         .iter()
-        .rposition(|message| imported.iter().any(|copy| copy.id == message.id))?;
-    let read = chat
-        .messages
+        .position(|message| message.id == chat.last_read)
+        .map_or(0, |read| read + 1);
+    let run = chat.messages[start..]
         .iter()
-        .position(|message| message.id == chat.last_read);
-    if read.is_some_and(|read| read >= newest) {
+        .take_while(|message| imported.iter().any(|copy| copy.id == message.id))
+        .count();
+    if run == 0 {
         return None;
     }
-    chat.last_read = chat.messages[newest].id.clone();
+    chat.last_read = chat.messages[start + run - 1].id.clone();
     Some(chat.last_read.clone())
 }
 
@@ -500,7 +500,7 @@ async fn publish_imported_timeline(imported: &HistoryImportResult) {
     if let Some(last_read) = &applied.last_read {
         persist_imported_last_read(&imported.group_id, last_read).await;
     }
-    emit_imported_timeline(&imported.group_id, &applied.to_emit);
+    emit_imported_timeline(&imported.group_id, &imported.inserted_ids, &applied.to_emit);
 }
 
 /// Targeted update: the in-memory chat snapshot must not overwrite participants or metadata.
@@ -694,10 +694,18 @@ pub mod commands {
 }
 
 /// Timeline notify only. Squad state stays on the MLS ingest path.
-fn emit_imported_timeline(group_id: &str, messages: &[Message]) {
+/// Ids go first so the UI files the rows above the welcome note before they render.
+fn emit_imported_timeline(group_id: &str, ids: &[String], messages: &[Message]) {
     let Some(handle) = crate::TAURI_APP.get() else {
         return;
     };
+    let _ = handle.emit(
+        "history_import_ids",
+        serde_json::json!({
+            "group_id": group_id,
+            "ids": ids,
+        }),
+    );
     for message in messages {
         let _ = handle.emit(
             "mls_message_new",
@@ -1249,6 +1257,58 @@ mod tests {
     }
 
     #[test]
+    fn undelivered_edits_are_not_applied() {
+        let conn = conn();
+        let chat = insert_chat(&conn, "groupabc");
+        let base = 1_700_000_600_i64;
+        for (line, edit, pending, failed) in [
+            ("pending-line", "pending-edit", 1, 0),
+            ("failed-line", "failed-edit", 0, 1),
+        ] {
+            insert_event(
+                &conn,
+                chat,
+                line,
+                event_kind::PRIVATE_DIRECT_MESSAGE,
+                "original",
+                "[]",
+                None,
+                base,
+                Some("npub1alice"),
+                0,
+                0,
+                Some("announcements"),
+            );
+            insert_event(
+                &conn,
+                chat,
+                edit,
+                event_kind::MESSAGE_EDIT,
+                "never sent",
+                "[]",
+                Some(line),
+                base + 10,
+                Some("npub1alice"),
+                pending,
+                failed,
+                Some("announcements"),
+            );
+        }
+        let rows = export(&conn, HistoryExportBucket::Announcements);
+        assert_eq!(ids(&rows), vec!["failed-line", "pending-line"]);
+        assert!(rows.iter().all(|row| row.content == "original"));
+    }
+
+    #[test]
+    fn export_edit_lookup_binds_chat_and_window_only() {
+        let conn = conn();
+        let stmt = conn
+            .prepare(&crate::db::latest_authorized_edits_for_export_sql())
+            .unwrap();
+        assert_eq!(stmt.parameter_count(), 2);
+    }
+
+    #[test]
     fn orders_by_created_at_then_id() {
         let conn = conn();
         let chat = insert_chat(&conn, "groupabc");
@@ -1307,7 +1367,7 @@ mod tests {
                 HistoryExportBucket::Announcements,
                 "npub1joiner",
                 &[row("bad", content)],
-                1_700_000_000_000,
+                1_700_000_500_000,
                 &KEY,
             )
             .unwrap_err();
@@ -1326,7 +1386,7 @@ mod tests {
                 row("ok", "hello"),
                 row("gov", r#"{"type":"governance_updated"}"#),
             ],
-            1_700_000_000_000,
+            1_700_000_500_000,
             &KEY,
         );
         assert!(mixed.is_err());
@@ -1343,7 +1403,7 @@ mod tests {
             HistoryExportBucket::Announcements,
             "npub1joiner",
             &[row("gov", r#"{"type":"governance_updated"}"#)],
-            1_700_000_000_000,
+            1_700_000_500_000,
             &KEY,
         )
         .unwrap();
@@ -1498,7 +1558,7 @@ mod tests {
             HistoryExportBucket::Announcements,
             "npub1joiner",
             &[edit],
-            1_700_000_000_000,
+            1_700_000_500_000,
             &KEY,
         )
         .unwrap_err();
@@ -1519,7 +1579,7 @@ mod tests {
             HistoryExportBucket::Announcements,
             "npub1joiner",
             &[react],
-            1_700_000_000_000,
+            1_700_000_500_000,
             &KEY,
         )
         .unwrap_err();
@@ -1858,6 +1918,7 @@ mod tests {
         ]);
         let mut state = crate::ChatState::new();
         state.add_message_to_chat(&imported.group_id, live_message("already", 1));
+        state.get_chat_mut(&imported.group_id).unwrap().last_read = "already".to_string();
         let applied = apply_imported_timeline(&mut state, &imported.group_id, &imported.timeline);
         let order: Vec<_> = state
             .get_chat(&imported.group_id)
@@ -1931,7 +1992,56 @@ mod tests {
         dangling.get_chat_mut("group").unwrap().last_read = "gone".to_string();
         let applied =
             apply_imported_timeline(&mut dangling, "group", &[live_message("m", 2_000)]);
-        assert_eq!(applied.last_read.as_deref(), Some("m"));
+        assert!(applied.last_read.is_none());
+        assert_eq!(dangling.unread_counts_by_chat().get("group"), Some(&2));
+    }
+
+    #[test]
+    fn a_copy_sorted_after_live_mail_does_not_mark_it_read() {
+        let mut state = crate::ChatState::new();
+        state.add_message_to_chat("group", live_message("live", 5_000));
+        let applied = apply_imported_timeline(
+            &mut state,
+            "group",
+            &[live_message("old", 1_000), live_message("forged", 9_000)],
+        );
+        assert_eq!(applied.last_read.as_deref(), Some("old"));
+        assert_eq!(state.unread_counts_by_chat().get("group"), Some(&2));
+    }
+
+    #[test]
+    fn import_rejects_rows_from_the_future() {
+        let received_at_ms = 1_700_000_500_000;
+        let mut late = row("late", "hello");
+        late.created_at = 1_700_000_500 + 61;
+        let mut conn = conn();
+        insert_chat(&conn, "groupabc");
+        let err = import_channel_history(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1joiner",
+            &[row("ok", "fine"), late],
+            received_at_ms,
+            &KEY,
+        )
+        .unwrap_err();
+        assert!(err.contains("future"));
+        assert_eq!(table_count(&conn, "events"), 0);
+
+        let mut skewed = row("skewed", "hello");
+        skewed.created_at = 1_700_000_500 + 59;
+        let imported = import_channel_history(
+            &mut conn,
+            "groupabc",
+            HistoryExportBucket::Announcements,
+            "npub1joiner",
+            &[skewed],
+            received_at_ms,
+            &KEY,
+        )
+        .unwrap();
+        assert_eq!(imported.inserted_ids, vec!["skewed".to_string()]);
     }
 
     #[test]

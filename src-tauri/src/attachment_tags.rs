@@ -25,9 +25,9 @@ pub(crate) fn image_metadata(blurhash: Option<&str>, dim: Option<&str>) -> Optio
     })
 }
 
-/// A peer-supplied id or extension must stay one path segment.
+/// A peer-supplied id or extension must stay one path segment; `:` blocks Windows drive prefixes.
 fn is_safe_path_segment(segment: &str) -> bool {
-    !segment.is_empty() && !segment.contains(['/', '\\', '\0']) && !segment.contains("..")
+    !segment.is_empty() && !segment.contains(['/', '\\', '\0', ':']) && !segment.contains("..")
 }
 
 pub(crate) struct ResolvedFile {
@@ -124,6 +124,10 @@ mod tests {
         assert!(resolve_file(Some(dir), Some(""), "", "png").is_none());
         let bin = resolve_file(Some(dir), Some("hash"), "nonce", "../x").unwrap();
         assert!(bin.path.ends_with("hash.bin"));
+        let drive = resolve_file(Some(dir), Some("C:x"), "nonce", "C:x").unwrap();
+        assert_eq!(drive.id, "nonce");
+        assert_eq!(Path::new(&drive.path), dir.join("nonce.bin"));
+        assert!(resolve_file(Some(dir), None, "C:x", "png").is_none());
         let no_dir = resolve_file(None, Some("hash"), "nonce", "png").unwrap();
         assert_eq!(
             (no_dir.id.as_str(), no_dir.path.as_str(), no_dir.downloaded),
