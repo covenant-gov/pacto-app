@@ -31,7 +31,7 @@ Separate from the **username claim** path above. Applies when the roster EOA is 
 
 Zero-ETH onboarding smoke: [OPERATOR_SMOKE.md §11](./OPERATOR_SMOKE.md#11-zero-eth-username-onboarding-global-tophat). Squad pool precedence after deploy: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). UserOp transport: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
 
-**Spend ledger:** successful global UserOps write to `global_sponsored_fee_usage` (`list_global_sponsored_fee_usage`, account-scoped). Squad pool spend stays in `squad_sponsored_fee_usage` — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md#sponsored-fee-ledger). Member-facing list (temporary): Settings → **EVM — gas** (`#settings-evm-dash-gas`) when `recordOf` shows this account holds the NFT — not an operator pool view; see [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md).
+**Spend ledger:** successful global UserOps write to `global_sponsored_fee_usage` (`list_global_sponsored_fee_usage`, account-scoped). Squad pool spend stays in `squad_sponsored_fee_usage` — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md#sponsored-fee-ledger). Member-facing list: Profile → **Sponsored gas** disclosure when `recordOf` shows this account holds the NFT — not an operator pool view; see [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md). The Profile NFT strip shows the Username NFT from the tracked catalog (`pacto-protocol-addresses.json`); it does not crawl `tokenURI`.
 
 ## Dual attestation (claim)
 

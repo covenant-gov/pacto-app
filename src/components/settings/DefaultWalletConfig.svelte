@@ -4,21 +4,12 @@
 
   const tFn = get(t);
   import {
-    listPreferredNetworkOptions,
-    loadPreferredNetwork,
-    savePreferredNetwork,
-    getPreferredNetworkDisplayName,
-    walletPreferredNetworkTick,
-    type PreferredNetworkId,
-  } from '../../lib/wallet/preferred-network';
-  import {
     setActiveEvmAccount,
     setDefaultSharedEvmAccount,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { portal } from '../../lib/utils/portal';
-  import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
   import { showToast } from '../../stores/toast';
   import EditIconButton from '../ui/EditIconButton.svelte';
   import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
@@ -32,38 +23,16 @@
 
   let { accountNpub, squadAccounts = [], accountsLoading = false, onSaved = () => {} }: Props = $props();
 
-  let preferredNetwork: PreferredNetworkId = $state('arbitrum');
   let editOpen = $state(false);
   let saving = $state(false);
 
-  let editNetwork: PreferredNetworkId = $state('arbitrum');
   let editSignerId = $state('');
   let editReceiverId = $state('');
-
-  const networkOptions = listPreferredNetworkOptions();
 
   let activeSigner = $derived(squadAccounts.find((a) => a.isActive) ?? null);
   let activeReceiver = $derived(squadAccounts.find((a) => a.isDefaultShared) ?? null);
   let signerAddress = $derived(activeSigner?.address?.trim() || null);
   let receiverAddress = $derived(activeReceiver?.address?.trim() || signerAddress || null);
-  let preferredNetworkLabel = $derived(getPreferredNetworkDisplayName(preferredNetwork));
-
-  $effect(() => {
-    void accountNpub;
-    void $walletPreferredNetworkTick;
-    syncPreferredNetwork();
-  });
-
-  $effect(() => {
-    if (($settingsSectionCollapsed['settings-evm'] ?? true) && editOpen && !saving) {
-      editOpen = false;
-    }
-  });
-
-  function syncPreferredNetwork() {
-    if (!accountNpub) return;
-    preferredNetwork = loadPreferredNetwork(accountNpub);
-  }
 
   function shortAddr(a: string | null): string {
     if (!a) return tFn('wallet.notSet');
@@ -71,7 +40,6 @@
   }
 
   function openEdit() {
-    editNetwork = preferredNetwork;
     editSignerId = activeSigner?.id ?? squadAccounts[0]?.id ?? '';
     editReceiverId = activeReceiver?.id ?? activeSigner?.id ?? squadAccounts[0]?.id ?? '';
     editOpen = true;
@@ -92,10 +60,6 @@
     saving = true;
     let receiverChanged = false;
     try {
-      if (editNetwork !== preferredNetwork) {
-        savePreferredNetwork(accountNpub, editNetwork);
-        preferredNetwork = editNetwork;
-      }
       if (editSignerId !== activeSigner?.id) {
         await setActiveEvmAccount(editSignerId);
       }
@@ -135,10 +99,6 @@
   <div class="dwc-summary">
     <dl class="dwc-summary-list">
       <div class="dwc-summary-row">
-        <dt>{$t('wallet.preferredNetworkLabel')}</dt>
-        <dd>{preferredNetworkLabel}</dd>
-      </div>
-      <div class="dwc-summary-row">
         <dt>{$t('wallet.signerLabel')}</dt>
         <dd><code>{shortAddr(signerAddress)}</code></dd>
       </div>
@@ -167,18 +127,6 @@
   <div class="dwc-modal" role="dialog" aria-labelledby="wallet-default-evm-edit-title" aria-modal="true">
     <h2 id="wallet-default-evm-edit-title" class="dwc-title">{$t('wallet.editDefaultEvmAccountTitle')}</h2>
     <p class="dwc-hint">{$t('wallet.onlyDerivedSquadAccounts')}</p>
-
-    <label class="dwc-label" for="wallet-default-network">{$t('wallet.preferredNetworkLabel')}</label>
-    <select
-      id="wallet-default-network"
-      class="dwc-input"
-      bind:value={editNetwork}
-      disabled={saving}
-    >
-      {#each networkOptions as opt (opt.id)}
-        <option value={opt.id}>{opt.label}</option>
-      {/each}
-    </select>
 
     <label class="dwc-label" for="wallet-default-signer">{$t('wallet.signerLabel')}</label>
     <select
@@ -263,7 +211,7 @@
 
   :global(.dwc-summary-edit) {
     grid-column: 3;
-    grid-row: 1 / span 3;
+    grid-row: 1 / span 2;
     align-self: start;
     justify-self: end;
     width: 2rem;

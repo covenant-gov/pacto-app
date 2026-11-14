@@ -1,6 +1,7 @@
 {
 	"wallet.defaultEvmAccountTitle": "Cuenta EVM predeterminada",
-	"wallet.defaultEvmAccountHint": "Red preferida, dirección de firma predeterminada y dirección de recepción publicada para mensajes directos, perfil y operaciones del escuad.",
+	"wallet.defaultEvmAccountHint": "Dirección de firma predeterminada y dirección de recepción publicada para mensajes directos, perfil y operaciones del escuad.",
+	"wallet.preferredNetworkHint": "Red predeterminada para los filtros de la billetera.",
 	"wallet.preferredNetworkLabel": "Red preferida",
 	"wallet.signerLabel": "Firmante",
 	"wallet.receiverLabel": "Receptor",
@@ -211,6 +212,9 @@
 	"wallet.evmWalletLead": "Tu billetera EVM integrada: envía a cualquier dirección, recibe compartiendo tu dirección, y administra redes y tokens. Las solicitudes de pago con contactos se quedan en {dms} (panel de billetera en el chat). Perfil Nostr, respaldo y cerrar sesión: {settings}.",
 	"wallet.walletActions": "Acciones de billetera",
 	"wallet.receive": "Recibir",
+	"wallet.selectAccount": "Cuenta",
+	"wallet.viewingAccount": "Viendo",
+	"wallet.couldNotSwitchBeforeSend": "No se pudo cambiar a la cuenta seleccionada antes de enviar.",
 	"wallet.unlockWalletHint": "Desbloquea o espera a que tu dirección de billetera cargue para usar Enviar y Recibir.",
 	"wallet.alphaSoftware": "Software alfa. El manejo de billetera y claves no ha sido revisado por una auditoría de seguridad independiente. Usa solo fondos que puedas permitirte perder. Consulta {docsPath} en el repositorio.",
 	"wallet.editAdvancedAccount": "Editar cuenta avanzada",

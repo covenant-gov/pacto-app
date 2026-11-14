@@ -8,13 +8,9 @@
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
-  import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
-  import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
-  import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
   import AvatarPicker from '../ui/AvatarPicker.svelte';
   import ProfileUsernameBlock from './ProfileUsernameBlock.svelte';
-  import { requireBackupVerified } from '../../stores/backup-verification';
 
   let userNpub = $derived($currentUser?.npub || '');
   let profile = $derived(userNpub ? $profiles[userNpub] : null);
@@ -37,8 +33,6 @@
   let savingProfile = $state(false);
 
   let copiedNpub = $state(false);
-  let exportSeedModalOpen = $state(false);
-  let exportAllModalOpen = $state(false);
 
   // Load profile whenever the logged-in user's npub changes
   $effect(() => {
@@ -109,7 +103,9 @@
 
 </script>
 
-<SettingsCollapsibleSection sectionId="settings-profile" title={$t('profile.title')}>
+<section class="profile-identity" aria-labelledby="profile-identity-heading">
+  <h2 id="profile-identity-heading" class="visually-hidden">{$t('profile.title')}</h2>
+
 
       {#if loading}
         <div class="loading-state">
@@ -271,30 +267,6 @@
                 </button>
               </div>
             </div>
-
-            <!-- Actions -->
-            <div class="profile-actions">
-              <div class="profile-actions-exports">
-                <button
-                  type="button"
-                  class="btn-export-seed"
-                  onclick={() => {
-                    if (requireBackupVerified()) {
-                      exportSeedModalOpen = true;
-                    }
-                  }}
-                >
-                  {$t('profile.exportSeedPhrase')}
-                </button>
-                <button
-                  type="button"
-                  class="btn-export-all"
-                  onclick={() => (exportAllModalOpen = true)}
-                >
-                  {$t('profile.exportAll')}
-                </button>
-              </div>
-            </div>
           {/if}
         </div>
       </div>
@@ -303,22 +275,28 @@
           <p>{$t('profile.noProfileLoaded')}</p>
         </div>
       {/if}
-</SettingsCollapsibleSection>
-
-<EvmAccountKeyExportModal
-  variant="seed"
-  open={exportSeedModalOpen}
-  npub={userNpub}
-  onClose={() => (exportSeedModalOpen = false)}
-/>
-
-<ExportAllSecretsModal
-  open={exportAllModalOpen}
-  onClose={() => (exportAllModalOpen = false)}
-/>
+</section>
 
 
 <style>
+  .profile-identity {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .loading-state, .error-state, .empty-state {
     display: flex;
     flex-direction: column;
@@ -496,24 +474,6 @@
     color: var(--text-primary);
   }
 
-  .profile-actions {
-    margin-top: 24px;
-    padding-top: 24px;
-    border-top: 1px solid var(--border-subtle);
-  }
-
-  .profile-actions-exports {
-    display: flex;
-    gap: 12px;
-  }
-
-  .profile-actions-exports .btn-export-seed,
-  .profile-actions-exports .btn-export-all {
-    flex: 1;
-    width: auto;
-    min-width: 0;
-  }
-
   .edit-error {
     color: var(--danger);
     font-size: 0.875rem;
@@ -607,31 +567,5 @@
   .btn-save-edit:disabled {
     opacity: 0.85;
     cursor: wait;
-  }
-
-  .btn-export-seed,
-  .btn-export-all {
-    width: 100%;
-    min-height: 48px;
-    padding: 0 16px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    transition: border-color 0.2s;
-    outline: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-
-  .btn-export-seed:hover,
-  .btn-export-all:hover {
-    border-color: var(--brand);
   }
 </style>

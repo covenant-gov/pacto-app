@@ -13,7 +13,7 @@
 	"commons.duration.hoursLeft": "{hours}h left",
 	"commons.duration.daysLeft": "{days}d left",
 	"commons.personal.ariaLabel": "Your broadcast",
-	"commons.personal.profileSettings": "Profile settings",
+	"commons.personal.profileSettings": "Profile",
 	"commons.personal.checking": "Checking…",
 	"commons.personal.activeBroadcast": "Active broadcast",
 	"commons.personal.terminating": "Terminating broadcast…",

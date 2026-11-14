@@ -247,20 +247,40 @@ async fn fetch_network_snapshot(
     })
 }
 
+fn require_squad_summary_address(purpose: Option<&str>) -> Result<(), String> {
+    match purpose {
+        Some(p) if p.eq_ignore_ascii_case(evm_accounts::PURPOSE_SQUAD) => Ok(()),
+        _ => Err("Address is not a squad EVM key on this account.".to_string()),
+    }
+}
+
 /// Tauri command: per-network native balance plus any watched ERC-20 rows; USD total uses Chainlink for ETH/USDC/USDT only.
 /// Only `enabled_chains` are queried; an unreachable network becomes a per-network `error` row instead of failing the summary.
+/// Optional `address` must be a squad-purpose key on this account; omitted uses the active signer.
 #[tauri::command]
 pub async fn get_wallet_summary<R: Runtime>(
     app: AppHandle<R>,
     watched_erc20s: Vec<WatchedErc20Input>,
     enabled_chains: Vec<String>,
+    address: Option<String>,
 ) -> Result<WalletSummary, String> {
     let _ = evm_accounts::ensure_ready(app.clone()).await;
     let _ = db::repair_evm_address_if_needed(&app).await;
-    let addr_str = db::read_stored_evm_address(app.clone())?.ok_or_else(|| {
-        "No EVM address for this account. Log in again or set your wallet address.".to_string()
-    })?;
-    let owner = parse_address(&addr_str)?;
+    let owner = match address.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(req) => {
+            let parsed = parse_address(req)?;
+            let purpose = evm_accounts::address_purpose(&app, req)?;
+            require_squad_summary_address(purpose.as_deref())?;
+            parsed
+        }
+        None => {
+            let addr_str = db::read_stored_evm_address(app.clone())?.ok_or_else(|| {
+                "No EVM address for this account. Log in again or set your wallet address."
+                    .to_string()
+            })?;
+            parse_address(&addr_str)?
+        }
+    };
 
     let enabled: HashSet<String> = enabled_chains.iter().map(|c| c.to_lowercase()).collect();
 
@@ -888,5 +908,23 @@ mod usd_pricing_status_tests {
             usd_pricing_status_from_feeds(&map),
             WalletUsdPricingStatus::Partial
         );
+    }
+}
+
+#[cfg(test)]
+mod summary_address_gate_tests {
+    use super::require_squad_summary_address;
+
+    #[test]
+    fn squad_purpose_is_allowed() {
+        assert!(require_squad_summary_address(Some("squad")).is_ok());
+        assert!(require_squad_summary_address(Some("Squad")).is_ok());
+    }
+
+    #[test]
+    fn missing_or_advanced_purpose_is_rejected() {
+        assert!(require_squad_summary_address(None).is_err());
+        assert!(require_squad_summary_address(Some("advanced")).is_err());
+        assert!(require_squad_summary_address(Some("")).is_err());
     }
 }

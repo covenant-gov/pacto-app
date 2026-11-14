@@ -20,7 +20,6 @@
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import { showToast } from '../../stores/toast';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
-  import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
   import EditIconButton from '../ui/EditIconButton.svelte';
   import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
   import { featureEnabled } from '../../stores/feature-flags';
@@ -29,6 +28,8 @@
     accountNpub?: string | null;
     evmAddress?: string | null;
     embeddedInSettings?: boolean;
+    showSquadList?: boolean;
+    showAdvancedBlock?: boolean;
     evmAccountList?: EvmAccountRow[];
     accountsLoading?: boolean;
     onSetActiveAccount?: (id: string) => void;
@@ -43,6 +44,8 @@
     accountNpub = null,
     evmAddress = null,
     embeddedInSettings = false,
+    showSquadList = true,
+    showAdvancedBlock = false,
     evmAccountList = [],
     accountsLoading = false,
     onSetActiveAccount = () => {},
@@ -64,7 +67,9 @@
   let squadList = $derived(squadEvmAccounts(evmAccountList));
   let advancedList = $derived(advancedEvmAccounts(evmAccountList));
   let bindingMap = $derived(bindingsByAccountId(bindings));
-  let displayRows = $derived(embeddedInSettings ? squadList : [...squadList, ...advancedList]);
+  let displayRows = $derived(
+    showSquadList ? (embeddedInSettings || !showAdvancedBlock ? squadList : [...squadList, ...advancedList]) : [],
+  );
 
   $effect(() => {
     void accountNpub;
@@ -72,11 +77,6 @@
     void loadBindings();
   });
 
-  $effect(() => {
-    if (embeddedInSettings && ($settingsSectionCollapsed['settings-evm'] ?? true) && exportModalOpen) {
-      closeExportModal();
-    }
-  });
 
   async function loadBindings() {
     if (!accountNpub) {
@@ -139,8 +139,13 @@
 
 <section
   class="evm-section wallet-view-section"
-  aria-labelledby={embeddedInSettings ? 'wallet-squad-evm-heading' : 'wallet-evm-accounts-heading'}
+  aria-labelledby={showSquadList
+    ? embeddedInSettings
+      ? 'wallet-squad-evm-heading'
+      : 'wallet-evm-accounts-heading'
+    : 'wallet-advanced-evm-heading'}
 >
+  {#if showSquadList}
   <div class="wallet-view-section-head">
     <h2
       id={embeddedInSettings ? 'wallet-squad-evm-heading' : 'wallet-evm-accounts-heading'}
@@ -351,10 +356,11 @@
       {/each}
     </ul>
   {/if}
+  {/if}
 
-  {#if embeddedInSettings && ($advancedAccountsEnabled || advancedList.length > 0)}
+  {#if showAdvancedBlock && ($advancedAccountsEnabled || advancedList.length > 0)}
     <div class="evm-advanced-actions">
-      <h3 class="evm-advanced-actions-title">{$t('wallet.advancedEvmAccountsTitle')}</h3>
+      <h3 id="wallet-advanced-evm-heading" class="evm-advanced-actions-title">{$t('wallet.advancedEvmAccountsTitle')}</h3>
       <p class="wallet-view-hint evm-advanced-actions-hint">
         {$t('wallet.advancedEvmAccountsHint')}
       </p>

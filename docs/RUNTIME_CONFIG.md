@@ -69,7 +69,7 @@ User-toggleable experiments ride on the same snapshot as `featureFlags`, sourced
 
 | Key | Default | Gates |
 |---|---|---|
-| `advanced_evm_accounts` | off | "Add advanced account" / "Import private key" and the "Advanced contract call" panel (`EvmAccountsSection`, `WalletView`). Users who already hold advanced accounts keep the list and the panel. |
+| `advanced_evm_accounts` | off | "Add advanced account" / "Import private key" and the "Advanced contract call" panel (`EvmAccountsSection`, `SettingsEvmSection`). Users who already hold advanced accounts keep the list and the panel. |
 
 ## Non-goals
 

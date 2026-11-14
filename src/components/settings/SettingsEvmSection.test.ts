@@ -9,7 +9,7 @@ import { featureFlagOverrides, setFeatureFlagEnabled } from '../../stores/featur
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
 import type { EvmAccountRow } from '../../lib/wallet/evm-accounts';
-import WalletView from './WalletView.svelte';
+import SettingsEvmSection from './SettingsEvmSection.svelte';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
@@ -71,15 +71,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe.each([
-  { mode: 'settings', embeddedInSettings: true },
-  { mode: 'standalone wallet', embeddedInSettings: false },
-])('existing advanced accounts in $mode', ({ embeddedInSettings }) => {
+describe('existing advanced accounts in settings', () => {
   it.each(['default off', 'toggled off'] as const)(
     'preserves the account and usable contract panel when the flag is %s',
     async (flagState) => {
       if (flagState === 'toggled off') setFeatureFlagEnabled('advanced_evm_accounts', true);
-      render(WalletView, { props: { embeddedInSettings } });
+      render(SettingsEvmSection);
 
       await screen.findByTitle(advancedAccount.address);
       await screen.findByLabelText('Contract address (to)');
@@ -104,23 +101,21 @@ describe.each([
       expect((screen.getByRole('button', { name: 'Simulate (eth_call)' }) as HTMLButtonElement).disabled).toBe(false);
       expect((screen.getByRole('button', { name: 'Review & send' }) as HTMLButtonElement).disabled).toBe(false);
 
-      if (embeddedInSettings) {
-        const row = screen.getByTitle(advancedAccount.address).closest('li');
-        expect(row).not.toBeNull();
-        const exportButton = within(row!).getByRole('button', { name: 'Export key' });
-        expect((exportButton as HTMLButtonElement).disabled).toBe(false);
-        await fireEvent.click(exportButton);
-        const dialog = await screen.findByRole('dialog', { name: 'Export private key' });
-        expect(within(dialog).getByText(/Existing advanced account/)).toBeTruthy();
-        expect(within(dialog).getByLabelText('PIN digit 1')).toBeTruthy();
-      }
+      const row = screen.getByTitle(advancedAccount.address).closest('li');
+      expect(row).not.toBeNull();
+      const exportButton = within(row!).getByRole('button', { name: 'Export key' });
+      expect((exportButton as HTMLButtonElement).disabled).toBe(false);
+      await fireEvent.click(exportButton);
+      const dialog = await screen.findByRole('dialog', { name: 'Export private key' });
+      expect(within(dialog).getByText(/Existing advanced account/)).toBeTruthy();
+      expect(within(dialog).getByLabelText('PIN digit 1')).toBeTruthy();
     },
   );
 });
 
 it('hides the advanced panel after opting out when no advanced account exists', async () => {
   accounts = [];
-  render(WalletView, { props: { embeddedInSettings: true } });
+  render(SettingsEvmSection);
   await waitFor(() => expect(invoke).toHaveBeenCalledWith('list_evm_accounts'));
   expect(screen.queryByRole('heading', { name: 'Advanced contract call' })).toBeNull();
 

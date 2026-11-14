@@ -5,7 +5,6 @@ import { tick } from 'svelte';
 import EvmDashGasSection from './EvmDashGasSection.svelte';
 import { loadGlobalSponsoredFeeUsage } from '../../lib/wallet/global-sponsored-fee-usage';
 import { usernameGlobalSpendablePoolWei } from '../../lib/api/username';
-import { setSettingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
 import { clearEvmDashGasCache } from '../../lib/wallet/evm-dash-gas-cache';
 
 vi.mock('../../lib/wallet/global-sponsored-fee-usage', async () => {
@@ -25,9 +24,13 @@ vi.mock('../../lib/api/username', () => ({
 const mockLoad = vi.mocked(loadGlobalSponsoredFeeUsage);
 const mockPool = vi.mocked(usernameGlobalSpendablePoolWei);
 
+async function openDisclosure() {
+  await fireEvent.click(screen.getByText('Sponsored gas'));
+  await tick();
+}
+
 beforeEach(() => {
   clearEvmDashGasCache();
-  setSettingsSectionCollapsed('settings-evm-dash-gas', false);
   mockLoad.mockReset();
   mockPool.mockReset();
   mockLoad.mockResolvedValue([]);
@@ -37,16 +40,17 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   clearEvmDashGasCache();
-  setSettingsSectionCollapsed('settings-evm-dash-gas', true);
 });
 
 describe('EvmDashGasSection', () => {
-  it('loads 50 rows and shows the ETH amount row', async () => {
+  it('loads 50 rows after the disclosure is opened and shows the ETH amount row', async () => {
     render(EvmDashGasSection);
+    expect(mockLoad).not.toHaveBeenCalled();
+    await openDisclosure();
     await waitFor(() => {
+      expect(mockLoad).toHaveBeenCalledWith({ limit: 50 });
       expect(screen.getByText('No global sponsored fees yet')).toBeTruthy();
     });
-    expect(mockLoad).toHaveBeenCalledWith({ limit: 50 });
     expect(screen.getByText('Global pool (Sepolia)')).toBeTruthy();
     expect(screen.getByText('ETH')).toBeTruthy();
     expect(screen.getByText('1.000000000000000000')).toBeTruthy();
@@ -56,6 +60,7 @@ describe('EvmDashGasSection', () => {
   it('shows the load error copy when the fee list fails', async () => {
     mockLoad.mockRejectedValueOnce(null);
     render(EvmDashGasSection);
+    await openDisclosure();
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toBe(
         'Could not load global sponsored fee usage',
@@ -63,17 +68,18 @@ describe('EvmDashGasSection', () => {
     });
   });
 
-  it('does not refetch when the section is collapsed and opened again', async () => {
+  it('does not refetch when the disclosure is closed and opened again', async () => {
     render(EvmDashGasSection);
+    await openDisclosure();
     await waitFor(() => {
       expect(screen.getByText('1.000000000000000000')).toBeTruthy();
     });
     expect(mockLoad).toHaveBeenCalledTimes(1);
     expect(mockPool).toHaveBeenCalledTimes(1);
 
-    setSettingsSectionCollapsed('settings-evm-dash-gas', true);
+    await openDisclosure();
     await tick();
-    setSettingsSectionCollapsed('settings-evm-dash-gas', false);
+    await openDisclosure();
     await tick();
 
     expect(mockLoad).toHaveBeenCalledTimes(1);
@@ -83,6 +89,7 @@ describe('EvmDashGasSection', () => {
 
   it('refetches when the refresh control is clicked', async () => {
     render(EvmDashGasSection);
+    await openDisclosure();
     await waitFor(() => {
       expect(screen.getByText('1.000000000000000000')).toBeTruthy();
     });

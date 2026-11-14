@@ -117,6 +117,34 @@ describe('backend-wallet', () => {
       });
     });
 
+    it('passes a viewed squad address when provided', async () => {
+      vi.stubGlobal('window', { __TAURI__: {} });
+      const summary = { networks: [], totalUsdApprox: 0, usdPricingStatus: 'unavailable' as const };
+      mockedInvoke.mockResolvedValueOnce(summary);
+      const address = '0x1234567890123456789012345678901234567890';
+      const result = await getWalletSummary([], ['sepolia'], address);
+      expect(result.ok).toBe(true);
+      expect(mockedInvoke).toHaveBeenCalledWith('get_wallet_summary', {
+        watchedErc20s: [],
+        enabledChains: ['sepolia'],
+        address,
+      });
+    });
+
+    it('omits a blank address so WalletBar keeps the active-signer summary', async () => {
+      vi.stubGlobal('window', { __TAURI__: {} });
+      mockedInvoke.mockResolvedValueOnce({
+        networks: [],
+        totalUsdApprox: 0,
+        usdPricingStatus: 'unavailable' as const,
+      });
+      await getWalletSummary([], ['sepolia'], '   ');
+      expect(mockedInvoke).toHaveBeenCalledWith('get_wallet_summary', {
+        watchedErc20s: [],
+        enabledChains: ['sepolia'],
+      });
+    });
+
     it('returns the error message from a rejected invoke', async () => {
       vi.stubGlobal('window', { __TAURI__: {} });
       mockedInvoke.mockRejectedValueOnce(new Error('summary failed'));
