@@ -136,6 +136,8 @@ mod sandbox_handle;
 // Backend-mediated clipboard export for sensitive secrets.
 mod export;
 
+mod attachment_tags;
+
 // 30-day human-chat copy for a device that just accepted a welcome.
 mod history_backfill;
 

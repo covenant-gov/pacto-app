@@ -84,8 +84,6 @@ describe('buildHistoryChunks', () => {
           ['decryption-nonce', 'nn'],
         ],
       }),
-      message({ id: 'edit', kind: 16, createdAt: 40, content: 'edited', referenceId: 'b' }),
-      message({ id: 'react', kind: 7, createdAt: 50, content: '👍', tags: [['e', 'b']], referenceId: 'b' }),
     ]);
     expect(built.ok).toBe(true);
     if (!built.ok) return;
@@ -95,14 +93,12 @@ describe('buildHistoryChunks', () => {
       'a',
       'b',
       'file',
-      'edit',
-      'react',
     ]);
     const parsed = parseHistoryChunk(JSON.stringify(built.chunks[0]), EXPECTED);
     expect(parsed.ok).toBe(true);
   });
 
-  it('drops a single message that cannot fit and refuses more than 32 chunks', () => {
+  it('drops a single message that cannot fit in one rumor', () => {
     const huge = buildHistoryChunks(EXPECTED, [message({ content: 'x'.repeat(20_000) })]);
     expect(huge).toEqual({ ok: false, reason: 'empty' });
 
@@ -113,18 +109,60 @@ describe('buildHistoryChunks', () => {
     expect(kept.ok).toBe(true);
     if (!kept.ok) return;
     expect(kept.chunks[0].messages.map((row) => row.id)).toEqual(['small']);
+  });
 
-    const wide = buildHistoryChunks(
-      EXPECTED,
-      Array.from({ length: HISTORY_CHUNK_MAX_COUNT + 1 }, (_, index) =>
+  it('keeps the newest 32 chunks of text and files', () => {
+    const count = HISTORY_CHUNK_MAX_COUNT + 1;
+    const rows: HistoryMessage[] = Array.from({ length: count }, (_, index) =>
+      message({
+        id: index === 0 ? 'oldest' : index === count - 1 ? 'newest' : `m${index}`,
+        createdAt: index + 1,
+        content: 'y'.repeat(11_000),
+      })
+    );
+
+    const built = buildHistoryChunks(EXPECTED, rows);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.chunks.length).toBe(HISTORY_CHUNK_MAX_COUNT);
+
+    const ids = built.chunks.flatMap((chunk) => chunk.messages.map((row) => row.id));
+    expect(ids).toContain('newest');
+    expect(ids).not.toContain('oldest');
+
+    expect(built.chunks.map((chunk) => chunk.index)).toEqual(built.chunks.map((_, index) => index));
+    for (const chunk of built.chunks) {
+      expect(chunk.messages.length).toBeGreaterThanOrEqual(1);
+      expect(chunk.index).toBeLessThan(chunk.total);
+      expect(chunk.total).toBe(built.chunks.length);
+    }
+  });
+
+  it('keeps a reply whose target was cut by the chunk cap', () => {
+    const count = HISTORY_CHUNK_MAX_COUNT + 1;
+    const rows: HistoryMessage[] = [
+      ...Array.from({ length: count }, (_, index) =>
         message({
-          id: `m${index}`,
-          createdAt: index,
+          id: index === 0 ? 'oldest' : `m${index}`,
+          createdAt: index + 1,
           content: 'y'.repeat(11_000),
         })
-      )
-    );
-    expect(wide).toEqual({ ok: false, reason: 'over_cap' });
+      ),
+      message({
+        id: 'reply',
+        createdAt: count + 1,
+        content: 'answer',
+        tags: [['e', 'oldest', '', 'reply']],
+        referenceId: 'oldest',
+      }),
+    ];
+
+    const built = buildHistoryChunks(EXPECTED, rows);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const ids = built.chunks.flatMap((chunk) => chunk.messages.map((row) => row.id));
+    expect(ids).not.toContain('oldest');
+    expect(ids).toContain('reply');
   });
 
   it('splits under the rumor cap', () => {
@@ -197,6 +235,20 @@ describe('parseHistoryChunk', () => {
       ok: false,
       reason: 'message',
     });
+
+    const edit = JSON.parse(GOLDEN) as { messages: Array<{ kind: number }> };
+    edit.messages[0].kind = 16;
+    expect(parseHistoryChunk(JSON.stringify(edit), EXPECTED)).toEqual({
+      ok: false,
+      reason: 'message',
+    });
+
+    const reaction = JSON.parse(GOLDEN) as { messages: Array<{ kind: number }> };
+    reaction.messages[0].kind = 7;
+    expect(parseHistoryChunk(JSON.stringify(reaction), EXPECTED)).toEqual({
+      ok: false,
+      reason: 'message',
+    });
   });
 });
 
@@ -226,20 +278,16 @@ describe('parseHistoryRequest', () => {
 });
 
 describe('parseHistoryUnavailable', () => {
-  it('accepts empty and over_cap for the matching request', () => {
-    for (const reason of ['empty', 'over_cap'] as const) {
-      const raw = JSON.stringify({
-        type: 'history_unavailable',
-        version: 1,
-        requestId: REQUEST,
-        groupId: GROUP,
-        reason,
-      });
-      expect(parseHistoryUnavailable(raw, EXPECTED)).toEqual({
-        ok: true,
-        unavailable: { type: 'history_unavailable', version: 1, requestId: REQUEST, groupId: GROUP, reason },
-      });
-    }
+  it('accepts empty for the matching request and rejects any other reason', () => {
+    const base = { type: 'history_unavailable', version: 1, requestId: REQUEST, groupId: GROUP };
+    expect(parseHistoryUnavailable(JSON.stringify({ ...base, reason: 'empty' }), EXPECTED)).toEqual({
+      ok: true,
+      unavailable: { ...base, reason: 'empty' },
+    });
+    expect(parseHistoryUnavailable(JSON.stringify({ ...base, reason: 'over_cap' }), EXPECTED)).toEqual({
+      ok: false,
+      reason: 'malformed',
+    });
     const raw = JSON.stringify({
       type: 'history_unavailable',
       version: 1,

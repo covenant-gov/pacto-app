@@ -12,7 +12,11 @@ import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/d
 import { applyLiveCommonsChange } from '../commons/commons-prefetch';
 import { onMlsStructuredMessage } from './mls-structured-refresh';
 import { isHistoryRequestContent } from '../mls/channel-history-backfill';
-import { handleHistoryGift, handleIncomingHistoryRequest } from '../mls/channel-history-session';
+import {
+  handleHistoryGift,
+  handleIncomingHistoryRequest,
+  rememberImportedHistoryIds,
+} from '../mls/channel-history-session';
 import { handleChannelAddedToSquad, handleMlsWelcomeAccepted, notifyPendingInviteWelcome } from '../invites/accept-invite';
 import {
   handleInviteeConsentForAdmit,
@@ -358,6 +362,12 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     });
     onMlsStructuredMessage(m.content, group_id, handlers, m.npub);
     if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
+  });
+
+  register(unsubs, 'history_import_ids', (event) => {
+    const { group_id, ids } = event.payload as { group_id?: string; ids?: string[] };
+    if (!group_id || !Array.isArray(ids)) return;
+    rememberImportedHistoryIds(group_id, ids);
   });
 
   register(unsubs, 'history_backfill_gift', (event) => {
