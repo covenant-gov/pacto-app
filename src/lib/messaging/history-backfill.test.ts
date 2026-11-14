@@ -162,6 +162,33 @@ describe('buildHistoryChunks', () => {
     }
   });
 
+  it('keeps a reply whose target was cut by the chunk cap', () => {
+    const count = HISTORY_CHUNK_MAX_COUNT + 1;
+    const rows: HistoryMessage[] = [
+      ...Array.from({ length: count }, (_, index) =>
+        message({
+          id: index === 0 ? 'oldest' : `m${index}`,
+          createdAt: index + 1,
+          content: 'y'.repeat(11_000),
+        })
+      ),
+      message({
+        id: 'reply',
+        createdAt: count + 1,
+        content: 'answer',
+        tags: [['e', 'oldest', '', 'reply']],
+        referenceId: 'oldest',
+      }),
+    ];
+
+    const built = buildHistoryChunks(EXPECTED, rows);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const ids = built.chunks.flatMap((chunk) => chunk.messages.map((row) => row.id));
+    expect(ids).not.toContain('oldest');
+    expect(ids).toContain('reply');
+  });
+
   it('splits under the rumor cap', () => {
     const built = buildHistoryChunks(EXPECTED, [
       message({ id: 'a', content: 'y'.repeat(8_000) }),

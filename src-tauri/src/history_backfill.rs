@@ -3,10 +3,10 @@
 
 use crate::chat::ChatType;
 use crate::crypto::{decrypt_with_key, encrypt_with_key};
-use crate::message::{Attachment, ImageMetadata, Message, Reaction};
+use crate::message::{Attachment, Message, Reaction};
 use crate::stored_event::event_kind;
 use rusqlite::{params, Connection};
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 const MENTION_ENVELOPE_KIND: &str = "pacto.mentions.envelope.v1";
 
@@ -76,11 +76,11 @@ pub fn export_channel_history(
         FROM events e
         JOIN chats c ON c.id = e.chat_id
         WHERE lower(c.chat_identifier) = ?1
-          AND c.chat_type = ?7
-          AND e.kind IN (?2, ?3, ?4, ?5)
+          AND c.chat_type = ?6
+          AND e.kind IN (?2, ?3, ?4)
           AND e.pending = 0
           AND e.failed = 0
-          AND e.created_at >= ?6
+          AND e.created_at >= ?5
           {bucket_clause}
         ORDER BY e.created_at ASC, e.id ASC
         "#
@@ -93,7 +93,6 @@ pub fn export_channel_history(
                 group_id,
                 event_kind::PRIVATE_DIRECT_MESSAGE,
                 event_kind::FILE_ATTACHMENT,
-                event_kind::MESSAGE_EDIT,
                 event_kind::REACTION,
                 since,
                 ChatType::MlsGroup.to_i32(),
@@ -120,11 +119,10 @@ pub fn export_channel_history(
         }
     }
     fold_latest_authorized_edits(conn, &mut out, key)?;
-    out.retain(|message| message.kind != event_kind::MESSAGE_EDIT);
     Ok(out)
 }
 
-/// One winner per original id: `created_at DESC, rowid DESC`, same predicate as live edits.
+/// Per original id, the newest authorized edit with a usable body wins; same predicate as live edits.
 fn fold_latest_authorized_edits(
     conn: &Connection,
     messages: &mut [HistoryExportMessage],
@@ -141,38 +139,36 @@ fn fold_latest_authorized_edits(
     if original_ids.is_empty() {
         return Ok(());
     }
+    // Bound by SQLite's variable limit (32766 in the bundled build).
     let placeholders = (1..=original_ids.len())
         .map(|index| format!("?{index}"))
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!(
-        "SELECT e.reference_id, e.content {} AND e.reference_id IN ({placeholders}) ORDER BY e.created_at DESC, e.rowid DESC",
-        crate::db::authorized_edits_from_sql(),
-    );
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(&crate::db::latest_authorized_edits_sql(&placeholders))
+        .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map(rusqlite::params_from_iter(original_ids.iter()), |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|e| e.to_string())?;
 
-    let mut winners = std::collections::HashMap::<String, Option<String>>::new();
+    let mut winners = std::collections::HashMap::<String, String>::new();
     for row in rows {
         let (reference_id, stored) = row.map_err(|e| e.to_string())?;
         if winners.contains_key(&reference_id) {
             continue;
         }
-        // Latest row consumes the id; an unusable body applies nothing.
-        let body = match decrypt_with_key(&stored, key) {
-            Ok(body) if !is_structured_product_content(&body) => Some(body),
-            _ => None,
-        };
-        winners.insert(reference_id, body);
+        if let Ok(body) = decrypt_with_key(&stored, key) {
+            if !is_structured_product_content(&body) {
+                winners.insert(reference_id, body);
+            }
+        }
     }
     drop(stmt);
 
     for message in messages.iter_mut() {
-        let Some(body) = winners.remove(&message.id).flatten() else {
+        let Some(body) = winners.remove(&message.id) else {
             continue;
         };
         match message.kind {
@@ -381,79 +377,56 @@ fn write_imported_rows(
 
 fn tag_value<'a>(tags: &'a [Vec<String>], name: &str) -> Option<&'a str> {
     tags.iter().find_map(|tag| match tag.as_slice() {
-        [tag_name, value, ..] if tag_name == name && !value.is_empty() => Some(value.as_str()),
+        [tag_name, value, ..] if tag_name == name => Some(value.as_str()),
         _ => None,
     })
 }
 
 fn history_caption(tags: &[Vec<String>]) -> String {
-    tag_value(tags, "caption")
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_default()
-        .to_string()
+    crate::attachment_tags::caption_body(tag_value(tags, "caption"))
 }
 
-fn image_metadata_from_tags(tags: &[Vec<String>]) -> Option<ImageMetadata> {
-    let blurhash = tag_value(tags, "blurhash")?.to_string();
-    let dim = tag_value(tags, "dim")?;
-    let mut parts = dim.split('x');
-    let width = parts.next()?.parse().ok()?;
-    let height = parts.next()?.parse().ok()?;
-    if parts.next().is_some() {
+/// Same rules as the live kind-15 path. Empty key and nonce mark a remote-plaintext attachment.
+fn attachment_from_history(message: &HistoryExportMessage) -> Option<Attachment> {
+    let tags = &message.tags;
+    let mime = tag_value(tags, "file-type")?;
+    let key = tag_value(tags, "decryption-key")?.to_string();
+    let nonce = tag_value(tags, "decryption-nonce")?.to_string();
+    if message
+        .content
+        .contains(crate::attachment_tags::EMPTY_FILE_HASH)
+    {
         return None;
     }
-    Some(ImageMetadata {
-        blurhash,
-        width,
-        height,
-    })
-}
-
-fn local_attachment_file(file_id: &str, extension: &str) -> (String, bool) {
-    let Some(handle) = crate::TAURI_APP.get() else {
-        return (String::new(), false);
-    };
-    let base = if cfg!(target_os = "ios") {
-        tauri::path::BaseDirectory::Document
-    } else {
-        tauri::path::BaseDirectory::Download
-    };
-    let Ok(dir) = handle.path().resolve("pacto", base) else {
-        return (String::new(), false);
-    };
-    let path = dir.join(format!("{file_id}.{extension}"));
-    let downloaded = path.exists();
-    (path.to_string_lossy().to_string(), downloaded)
-}
-
-fn attachment_from_history(message: &HistoryExportMessage) -> Option<Attachment> {
-    let mime = tag_value(&message.tags, "file-type")?;
-    let key = tag_value(&message.tags, "decryption-key")?.to_string();
-    let nonce = tag_value(&message.tags, "decryption-nonce")?.to_string();
-    let id = tag_value(&message.tags, "ox")
-        .map(str::to_string)
-        .unwrap_or_else(|| nonce.clone());
     let extension = crate::util::extension_from_mime(mime);
-    let file_name =
-        tag_value(&message.tags, "filename").and_then(crate::message::sanitize_incoming_file_name);
-    let size = tag_value(&message.tags, "size")
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0);
-    let (path, downloaded) = local_attachment_file(&id, &extension);
+    let dir = crate::TAURI_APP
+        .get()
+        .and_then(|handle| crate::cmds::media::attachments_dir(handle).ok());
+    let file = crate::attachment_tags::resolve_file(
+        dir.as_deref(),
+        tag_value(tags, "ox"),
+        &nonce,
+        &extension,
+    )?;
     Some(Attachment {
-        id,
+        id: file.id,
         key,
         nonce,
         extension,
         url: message.content.clone(),
-        path,
-        size,
-        img_meta: image_metadata_from_tags(&message.tags),
+        path: file.path,
+        size: tag_value(tags, "size")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0),
+        img_meta: crate::attachment_tags::image_metadata(
+            tag_value(tags, "blurhash"),
+            tag_value(tags, "dim"),
+        ),
         downloading: false,
-        downloaded,
+        downloaded: file.downloaded,
         webxdc_topic: None,
-        file_name,
+        file_name: tag_value(tags, "filename")
+            .and_then(crate::message::sanitize_incoming_file_name),
     })
 }
 
@@ -492,14 +465,10 @@ fn timeline_message(message: &HistoryExportMessage, mine: bool, bucket: Option<&
     }
 }
 
-fn message_is_newer(candidate: &Message, newest: &Message) -> bool {
-    candidate.at > newest.at || (candidate.at == newest.at && candidate.id > newest.id)
-}
-
 struct AppliedImport {
     to_emit: Vec<Message>,
-    chat: Option<crate::Chat>,
-    chat_existed: bool,
+    /// New `last_read` id when the import moved it.
+    last_read: Option<String>,
 }
 
 fn apply_imported_timeline(
@@ -508,7 +477,6 @@ fn apply_imported_timeline(
     timeline: &[Message],
     reactions: &[Reaction],
 ) -> AppliedImport {
-    let chat_existed = state.get_chat(chat_id).is_some();
     for message in timeline {
         state.add_message_to_chat(chat_id, message.clone());
     }
@@ -533,33 +501,31 @@ fn apply_imported_timeline(
                 .collect()
         })
         .unwrap_or_default();
-    let chat = advance_imported_last_read(state, chat_id, timeline);
-    AppliedImport {
-        to_emit,
-        chat,
-        chat_existed,
-    }
+    let last_read = advance_imported_last_read(state, chat_id, timeline);
+    AppliedImport { to_emit, last_read }
 }
 
+/// Moves `last_read` onto the last imported message in chat order unless it already sits at or
+/// after it, so the copy is never unread and live messages behind it stay unread.
 fn advance_imported_last_read(
     state: &mut crate::ChatState,
     chat_id: &str,
     imported: &[Message],
-) -> Option<crate::Chat> {
-    let newest = imported
-        .iter()
-        .max_by(|left, right| left.at.cmp(&right.at).then_with(|| left.id.cmp(&right.id)))?;
+) -> Option<String> {
     let chat = state.get_chat_mut(chat_id)?;
-    let present = chat.messages.iter().any(|message| message.id == newest.id);
-    let newer = chat
+    let newest = chat
         .messages
         .iter()
-        .any(|message| message_is_newer(message, newest));
-    if !present || newer || chat.last_read == newest.id {
+        .rposition(|message| imported.iter().any(|copy| copy.id == message.id))?;
+    let read = chat
+        .messages
+        .iter()
+        .position(|message| message.id == chat.last_read);
+    if read.is_some_and(|read| read >= newest) {
         return None;
     }
-    chat.last_read = newest.id.clone();
-    Some(chat.clone())
+    chat.last_read = chat.messages[newest].id.clone();
+    Some(chat.last_read.clone())
 }
 
 async fn publish_imported_timeline(imported: &HistoryImportResult) {
@@ -575,32 +541,29 @@ async fn publish_imported_timeline(imported: &HistoryImportResult) {
             &imported.reactions,
         )
     };
-    if let Some(chat) = applied.chat {
-        persist_imported_last_read(&chat, applied.chat_existed).await;
+    if let Some(last_read) = &applied.last_read {
+        persist_imported_last_read(&imported.group_id, last_read).await;
     }
     emit_imported_timeline(&imported.group_id, &applied.to_emit);
 }
 
-async fn persist_imported_last_read(chat: &crate::Chat, chat_existed: bool) {
+/// Targeted update: the in-memory chat snapshot must not overwrite participants or metadata.
+fn write_last_read(conn: &Connection, chat_id: &str, last_read: &str) -> Result<usize, String> {
+    conn.execute(
+        "UPDATE chats SET last_read = ?1 WHERE chat_identifier = ?2",
+        params![last_read, chat_id],
+    )
+    .map_err(|e| e.to_string())
+}
+
+async fn persist_imported_last_read(chat_id: &str, last_read: &str) {
     let Some(handle) = crate::TAURI_APP.get() else {
         return;
     };
-    crate::cmds::chat::update_unread_counter(handle.clone()).await;
-    if chat_existed {
-        let _ = crate::db::save_chat(handle.clone(), chat).await;
-        return;
+    if let Err(err) = with_account_conn(|conn| write_last_read(conn, chat_id, last_read)) {
+        eprintln!("history import: persist last_read failed: {err}");
     }
-    // A chat created only for this import has empty participants; save_chat would replace the row.
-    let id = chat.id.clone();
-    let last_read = chat.last_read.clone();
-    let _ = with_account_conn(|conn| {
-        conn.execute(
-            "UPDATE chats SET last_read = ?1 WHERE chat_identifier = ?2",
-            params![last_read, id],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    });
+    crate::cmds::chat::update_unread_counter(handle.clone()).await;
 }
 
 /// Kind-14 gift wrap that must not become a DM.
@@ -1627,7 +1590,7 @@ mod tests {
     }
 
     #[test]
-    fn newer_undecryptable_edit_does_not_change_the_original() {
+    fn newest_unusable_edit_falls_back_to_the_next_usable_one() {
         let conn = conn();
         let chat = insert_chat(&conn, "groupabc");
         let base = 1_700_000_500_i64;
@@ -1713,6 +1676,31 @@ mod tests {
             Some("announcements"),
         );
 
+        insert_event(
+            &conn,
+            chat,
+            "lonely",
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "stay lonely",
+            "[]",
+            None,
+            base + 400,
+            Some("npub1alice"),
+            0,
+            0,
+            Some("announcements"),
+        );
+        insert_stored_content(
+            &conn,
+            chat,
+            "lonely-edit",
+            event_kind::MESSAGE_EDIT,
+            &encrypt_with_key("should not apply", &[3u8; 32]),
+            "lonely",
+            base + 410,
+            "npub1alice",
+        );
+
         let rows = export(&conn, HistoryExportBucket::Announcements);
         let body = |id: &str| {
             rows.iter()
@@ -1721,8 +1709,9 @@ mod tests {
                 .content
                 .clone()
         };
-        assert_eq!(body("sealed"), "stay sealed");
-        assert_eq!(body("product"), "stay product");
+        assert_eq!(body("sealed"), "older body");
+        assert_eq!(body("product"), "older product");
+        assert_eq!(body("lonely"), "stay lonely");
     }
 
     fn file_row(id: &str, at: u64, url: &str, tags: Vec<Vec<String>>) -> HistoryExportMessage {
@@ -1760,81 +1749,68 @@ mod tests {
         }
     }
 
-    #[test]
-    fn imported_kind15_emits_caption_attachment_and_batch_reaction() {
+    fn tag(name: &str, value: &str) -> Vec<String> {
+        vec![name.to_string(), value.to_string()]
+    }
+
+    const BLOB_URL: &str = "https://blob.example/abc";
+
+    fn file_tags(extra: Vec<Vec<String>>) -> Vec<Vec<String>> {
+        let mut tags = vec![
+            tag("file-type", "image/png"),
+            tag("decryption-key", "kk"),
+            tag("decryption-nonce", "nn"),
+        ];
+        tags.extend(extra);
+        tags
+    }
+
+    fn import_rows(rows: &[HistoryExportMessage]) -> (Connection, HistoryImportResult) {
         let mut conn = conn();
         insert_chat(&conn, "GroupABC");
-        let url = "https://blob.example/abc";
         let imported = import_channel_history(
             &mut conn,
             "groupabc",
             HistoryExportBucket::Announcements,
             "npub1joiner",
-            &[
-                file_row(
-                    "file",
-                    1_700_000_100,
-                    url,
-                    vec![
-                        vec!["file-type".to_string(), "image/png".to_string()],
-                        vec!["decryption-key".to_string(), "kk".to_string()],
-                        vec!["decryption-nonce".to_string(), "nn".to_string()],
-                        vec!["ox".to_string(), "hh".to_string()],
-                        vec!["filename".to_string(), "../a.png".to_string()],
-                        vec!["caption".to_string(), "pic".to_string()],
-                        vec!["size".to_string(), "12".to_string()],
-                        vec!["blurhash".to_string(), "LEHV6n".to_string()],
-                        vec!["dim".to_string(), "32x16".to_string()],
-                    ],
-                ),
-                file_row(
-                    "nonce-file",
-                    1_700_000_110,
-                    "https://blob.example/nonce",
-                    vec![
-                        vec!["file-type".to_string(), "image/png".to_string()],
-                        vec!["decryption-key".to_string(), "kk".to_string()],
-                        vec!["decryption-nonce".to_string(), "only-nonce".to_string()],
-                        vec!["caption".to_string(), "nonce pic".to_string()],
-                    ],
-                ),
-                file_row(
-                    "bare",
-                    1_700_000_120,
-                    url,
-                    vec![vec!["caption".to_string(), "just words".to_string()]],
-                ),
-                reaction_row("react", "file", "👍", 1_700_000_130),
-                reaction_row("react-live", "already", "🔥", 1_700_000_140),
-                reaction_row("react-miss", "missing", "👀", 1_700_000_150),
-            ],
+            rows,
             1_700_000_500_000,
             &KEY,
         )
         .unwrap();
+        (conn, imported)
+    }
 
-        assert_eq!(imported.group_id, "GroupABC");
-        assert_eq!(imported.timeline.len(), 3);
-        assert!(imported
-            .reactions
-            .iter()
-            .any(|reaction| reaction.id == "react"));
-        let stored: i64 = conn
-            .query_row("SELECT COUNT(*) FROM events WHERE kind = 15", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(stored, 3);
-
-        let file = imported
+    fn timeline_by_id<'a>(imported: &'a HistoryImportResult, id: &str) -> &'a Message {
+        imported
             .timeline
             .iter()
-            .find(|message| message.id == "file")
-            .unwrap();
+            .find(|message| message.id == id)
+            .unwrap()
+    }
+
+    #[test]
+    fn imported_file_carries_caption_and_attachment_fields() {
+        let (conn, imported) = import_rows(&[file_row(
+            "file",
+            1_700_000_100,
+            BLOB_URL,
+            file_tags(vec![
+                tag("ox", "hh"),
+                tag("filename", "../a.png"),
+                tag("caption", "pic"),
+                tag("size", "12"),
+                tag("blurhash", "LEHV6n"),
+                tag("dim", "32x16"),
+            ]),
+        )]);
+        assert_eq!(imported.group_id, "GroupABC");
+        assert_eq!(table_count(&conn, "events"), 1);
+
+        let file = timeline_by_id(&imported, "file");
         assert_eq!(file.content, "pic");
-        assert_ne!(file.content, url);
         let attachment = &file.attachments[0];
-        assert_eq!(attachment.url, url);
+        assert_eq!(attachment.url, BLOB_URL);
         assert_eq!(attachment.id, "hh");
         assert_eq!(attachment.key, "kk");
         assert_eq!(attachment.nonce, "nn");
@@ -1847,23 +1823,92 @@ mod tests {
         let meta = attachment.img_meta.as_ref().unwrap();
         assert_eq!(meta.blurhash, "LEHV6n");
         assert_eq!((meta.width, meta.height), (32, 16));
+    }
 
-        let nonce_file = imported
-            .timeline
-            .iter()
-            .find(|message| message.id == "nonce-file")
-            .unwrap();
-        assert_eq!(nonce_file.attachments[0].id, "only-nonce");
-        assert_eq!(nonce_file.content, "nonce pic");
+    #[test]
+    fn imported_file_without_ox_uses_the_nonce_id() {
+        let (_, imported) = import_rows(&[file_row(
+            "nonce-file",
+            1_700_000_110,
+            BLOB_URL,
+            file_tags(vec![tag("caption", "nonce pic")]),
+        )]);
+        let message = timeline_by_id(&imported, "nonce-file");
+        assert_eq!(message.attachments[0].id, "nn");
+        assert_eq!(message.content, "nonce pic");
+    }
 
-        let bare = imported
-            .timeline
-            .iter()
-            .find(|message| message.id == "bare")
-            .unwrap();
+    #[test]
+    fn imported_traversal_ox_falls_back_to_the_nonce_id() {
+        let (_, imported) = import_rows(&[file_row(
+            "evil",
+            1_700_000_110,
+            BLOB_URL,
+            file_tags(vec![tag("ox", "../../secret")]),
+        )]);
+        assert_eq!(timeline_by_id(&imported, "evil").attachments[0].id, "nn");
+    }
+
+    #[test]
+    fn imported_remote_plaintext_file_keeps_its_attachment() {
+        let (_, imported) = import_rows(&[file_row(
+            "gif",
+            1_700_000_110,
+            "https://media.example/slug.gif",
+            vec![
+                tag("file-type", "image/gif"),
+                tag("size", "0"),
+                tag("decryption-key", ""),
+                tag("decryption-nonce", ""),
+                tag("ox", "slug"),
+                tag("caption", "party"),
+            ],
+        )]);
+        let message = timeline_by_id(&imported, "gif");
+        assert_eq!(message.content, "party");
+        let attachment = &message.attachments[0];
+        assert_eq!(attachment.id, "slug");
+        assert!(attachment.key.is_empty() && attachment.nonce.is_empty());
+        assert_eq!(attachment.url, "https://media.example/slug.gif");
+        assert_eq!(attachment.extension, "gif");
+    }
+
+    #[test]
+    fn imported_file_without_descriptor_shows_the_caption_only() {
+        let (_, imported) = import_rows(&[file_row(
+            "bare",
+            1_700_000_120,
+            BLOB_URL,
+            vec![tag("caption", "just words")],
+        )]);
+        let bare = timeline_by_id(&imported, "bare");
         assert!(bare.attachments.is_empty());
         assert_eq!(bare.content, "just words");
-        assert_ne!(bare.content, url);
+    }
+
+    #[test]
+    fn batch_reactions_apply_in_chat_state_and_skip_missing_targets() {
+        let (_, imported) = import_rows(&[
+            file_row(
+                "file",
+                1_700_000_100,
+                BLOB_URL,
+                file_tags(vec![tag("ox", "hh")]),
+            ),
+            file_row(
+                "bare",
+                1_700_000_120,
+                BLOB_URL,
+                vec![tag("caption", "just words")],
+            ),
+            reaction_row("react", "file", "👍", 1_700_000_130),
+            reaction_row("react-live", "already", "🔥", 1_700_000_140),
+            reaction_row("react-miss", "missing", "👀", 1_700_000_150),
+        ]);
+        assert!(imported
+            .reactions
+            .iter()
+            .any(|reaction| reaction.id == "react"));
 
         let mut state = crate::ChatState::new();
         state.add_message_to_chat(&imported.group_id, live_message("already", 1));
@@ -1887,21 +1932,42 @@ mod tests {
         assert_eq!(emitted.reactions[0].author_id, "npub1bob");
         assert_eq!(emitted.reactions[0].reference_id, "file");
         assert_eq!(emitted.reactions[0].id, "react");
-        let already = state
-            .get_chat(&imported.group_id)
-            .unwrap()
+
+        let chat = state.get_chat(&imported.group_id).unwrap();
+        let already = chat
             .messages
             .iter()
             .find(|message| message.id == "already")
             .unwrap();
         assert_eq!(already.reactions.len(), 1);
         assert_eq!(already.reactions[0].emoji, "🔥");
-        assert!(state
-            .get_chat(&imported.group_id)
-            .unwrap()
-            .messages
-            .iter()
-            .all(|message| message.id != "missing"));
+        assert!(chat.messages.iter().all(|message| message.id != "missing"));
+    }
+
+    #[test]
+    fn imported_rows_join_chat_state_in_time_order_and_read() {
+        let (_, imported) = import_rows(&[
+            file_row(
+                "file",
+                1_700_000_100,
+                BLOB_URL,
+                file_tags(vec![tag("ox", "hh")]),
+            ),
+            file_row(
+                "bare",
+                1_700_000_120,
+                BLOB_URL,
+                vec![tag("caption", "just words")],
+            ),
+        ]);
+        let mut state = crate::ChatState::new();
+        state.add_message_to_chat(&imported.group_id, live_message("already", 1));
+        let applied = apply_imported_timeline(
+            &mut state,
+            &imported.group_id,
+            &imported.timeline,
+            &imported.reactions,
+        );
         let order: Vec<_> = state
             .get_chat(&imported.group_id)
             .unwrap()
@@ -1909,16 +1975,16 @@ mod tests {
             .iter()
             .map(|message| message.id.as_str())
             .collect();
-        assert_eq!(order, vec!["already", "file", "nonce-file", "bare"]);
+        assert_eq!(order, vec!["already", "file", "bare"]);
         assert_eq!(
             state.get_chat(&imported.group_id).unwrap().last_read,
             "bare"
         );
+        assert_eq!(applied.last_read.as_deref(), Some("bare"));
         assert!(state
             .unread_counts_by_chat()
             .get(&imported.group_id)
             .is_none());
-        assert!(applied.chat.is_some());
     }
 
     #[test]
@@ -1929,7 +1995,7 @@ mod tests {
         let high = live_message("z", 2_000);
         let applied = apply_imported_timeline(&mut state, "group", &[early, low, high], &[]);
         assert_eq!(state.get_chat("group").unwrap().last_read, "z");
-        assert_eq!(applied.chat.unwrap().last_read, "z");
+        assert_eq!(applied.last_read.as_deref(), Some("z"));
         assert!(state.unread_counts_by_chat().get("group").is_none());
         let order: Vec<_> = state
             .get_chat("group")
@@ -1939,41 +2005,63 @@ mod tests {
             .map(|message| message.id.as_str())
             .collect();
         assert_eq!(order, vec!["early", "m", "z"]);
+    }
 
+    #[test]
+    fn earlier_live_messages_stay_unread_after_the_copy_is_marked_read() {
         let mut newer = crate::ChatState::new();
         newer.add_message_to_chat("group", live_message("live", 9_000));
         let applied =
             apply_imported_timeline(&mut newer, "group", &[live_message("old", 1_000)], &[]);
-        assert!(applied.chat.is_none());
-        assert!(newer.get_chat("group").unwrap().last_read.is_empty());
-        assert_eq!(newer.unread_counts_by_chat().get("group"), Some(&2));
-
-        let mut tied = crate::ChatState::new();
-        tied.add_message_to_chat("group", live_message("z", 2_000));
-        let tied_import =
-            apply_imported_timeline(&mut tied, "group", &[live_message("m", 2_000)], &[]);
-        assert!(tied_import.chat.is_none());
-        assert!(tied.get_chat("group").unwrap().last_read.is_empty());
-
-        let mut older_live = crate::ChatState::new();
-        older_live.add_message_to_chat("group", live_message("a", 2_000));
-        let older_import =
-            apply_imported_timeline(&mut older_live, "group", &[live_message("m", 2_000)], &[]);
-        assert_eq!(older_import.chat.unwrap().last_read, "m");
-        assert_eq!(older_live.get_chat("group").unwrap().last_read, "m");
-        assert!(older_live.unread_counts_by_chat().get("group").is_none());
+        assert_eq!(applied.last_read.as_deref(), Some("old"));
+        assert_eq!(newer.get_chat("group").unwrap().last_read, "old");
+        assert_eq!(newer.unread_counts_by_chat().get("group"), Some(&1));
     }
 
     #[test]
-    fn import_does_not_call_virtual_bucket_side_effects() {
-        let needle = concat!("apply_mls_virtual_bucket_", "side_effects");
-        let called = include_str!("history_backfill.rs").lines().any(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("//") {
-                return false;
-            }
-            trimmed.contains(needle)
-        });
-        assert!(!called, "import must not call {needle}");
+    fn last_read_never_moves_back_past_newer_read_content() {
+        let mut read = crate::ChatState::new();
+        read.add_message_to_chat("group", live_message("live", 9_000));
+        read.get_chat_mut("group").unwrap().last_read = "live".to_string();
+        let applied =
+            apply_imported_timeline(&mut read, "group", &[live_message("old", 1_000)], &[]);
+        assert!(applied.last_read.is_none());
+        assert_eq!(read.get_chat("group").unwrap().last_read, "live");
+
+        let mut behind = crate::ChatState::new();
+        behind.add_message_to_chat("group", live_message("a", 500));
+        behind.get_chat_mut("group").unwrap().last_read = "a".to_string();
+        let applied =
+            apply_imported_timeline(&mut behind, "group", &[live_message("m", 2_000)], &[]);
+        assert_eq!(applied.last_read.as_deref(), Some("m"));
+
+        let mut dangling = crate::ChatState::new();
+        dangling.add_message_to_chat("group", live_message("a", 500));
+        dangling.get_chat_mut("group").unwrap().last_read = "gone".to_string();
+        let applied =
+            apply_imported_timeline(&mut dangling, "group", &[live_message("m", 2_000)], &[]);
+        assert_eq!(applied.last_read.as_deref(), Some("m"));
+    }
+
+    #[test]
+    fn write_last_read_leaves_the_rest_of_the_chat_row() {
+        let conn = conn();
+        insert_chat(&conn, "GroupABC");
+        conn.execute(
+            "UPDATE chats SET participants = '[\"npub1alice\"]' WHERE chat_identifier = 'GroupABC'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(write_last_read(&conn, "GroupABC", "m1").unwrap(), 1);
+        let (last_read, participants): (String, String) = conn
+            .query_row(
+                "SELECT last_read, participants FROM chats WHERE chat_identifier = 'GroupABC'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(last_read, "m1");
+        assert_eq!(participants, "[\"npub1alice\"]");
+        assert_eq!(write_last_read(&conn, "missing", "m1").unwrap(), 0);
     }
 }

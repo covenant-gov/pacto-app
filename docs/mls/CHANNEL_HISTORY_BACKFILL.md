@@ -67,7 +67,7 @@ Rumor content is this object. UTF-8 JSON byte length is at most **12288** (12KB)
 
 `index` is zero-based, `total` is at least 1, and `index` is less than `total`. `bucket` matches the request (`"announcements"` or `null`).
 
-The exported kind 14 or 15 row already contains the latest authorized edit, and kind 16 is not copied:
+The exported kind 14 or 15 row already contains the latest usable authorized edit, and kind 16 is not copied. An edit is usable when its body decrypts and is not structured product content. If the newest authorized edit is not usable, the next newest usable one applies; with none, the original text stays.
 
 | Field | Meaning |
 |-------|---------|
@@ -142,6 +142,8 @@ That exclusion covers governance, roster shares, catalog, join inbox, polls, inb
 
 A single inner record that cannot fit in one chunk under the 12KB cap is dropped, not split. If the remaining records need more than **32** chunks, the peer sends the newest that fit, not nothing. `over_cap` remains a reason the joiner understands, because an older peer may still send it.
 
+**Decision (large channels).** A joiner in a busy channel gets the newest history instead of none. The exporter packs records into chunks in `createdAt`, `id` order and keeps the last 32 whole chunks; the oldest chunks are dropped, never split. A reaction row is exported only when its target is a kind 14 or 15 row in the exported chunks, with or without truncation, so a reaction to a cut or out-of-window message is dropped. A reply to a cut message still imports and renders without its preview. The joiner is told the copy may be partial by the welcome note, not by a flag on the wire.
+
 ## Chunk acceptance
 
 Reject the whole chunk, and import nothing from it, when any of these are true:
@@ -167,7 +169,7 @@ On insert:
 - Set `received_at` to local receipt time.
 - Set `history_import` to 1.
 
-After that insert, kind 14 and 15 rows are added to in-memory chat state, ordered by timestamp. Kind 15 content shown is the caption; the blob URL stays on the attachment. Reactions from the same batch are applied onto those messages. When the chat has no newer live message, `last_read` advances to the newest imported id so the copy is not unread. This still does not call `apply_mls_virtual_bucket_side_effects`.
+After that insert, kind 14 and 15 rows are added to in-memory chat state, ordered by timestamp. Kind 15 content shown is the caption; the blob URL stays on the attachment, parsed by the same rules as a live kind 15 (empty key and nonce mean a remote-plaintext attachment; an `ox` that is not a single path segment falls back to the nonce id). Reactions from the same batch are applied onto those messages. `last_read` moves to the last imported message in chat order unless it already sits at or after it, so the copy is never unread and live messages after it stay unread. A forged `mine` on an imported row ends the unread walk like any own message; that stays inside the serving-member trust model. This still does not call `apply_mls_virtual_bucket_side_effects`.
 
 `history_import` is an `INTEGER NOT NULL DEFAULT 0` column on `events`, added by a timestamped migration. Existing rows stay 0.
 

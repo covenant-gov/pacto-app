@@ -74,7 +74,7 @@
 	"messaging.channel.mlsRestoreSquadSuccess": "Restauración del escuad iniciada para {name}. Debería ver el escuad cuando su app acepte la bienvenida.",
 	"messaging.channel.mlsRestoreWorking": "Restaurando…",
 	"messaging.channel.mlsRejoinRestoring": "Restaurando el acceso al escuad…",
-	"messaging.channel.mlsWelcomeBody": "Las líneas anteriores son una copia de un miembro y pueden ser solo las más recientes que caben. Este dispositivo sigue sin poder descifrar la transcripción anterior a tu ingreso. Los mensajes nuevos de este grupo aparecen abajo.",
+	"messaging.channel.mlsWelcomeBody": "Las líneas anteriores son una copia de un miembro y pueden mostrar solo los mensajes más recientes. Este dispositivo sigue sin poder descifrar la transcripción MLS anterior a tu ingreso. Los mensajes nuevos de este grupo aparecen abajo.",
 	"messaging.channel.mlsWelcomeTitle": "Bienvenido a este canal",
 	"messaging.channel.nameCharCount": "{count}/{max} caracteres",
 	"messaging.channel.nameLabel": "Nombre del canal",

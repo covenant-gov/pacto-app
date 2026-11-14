@@ -1611,7 +1611,7 @@ struct ReplyContext {
 
 /// Shared persisted author/chat/signed-time/first-receipt checks for live edits
 /// and reply previews. Keep aligned with `stored_edit_is_authorized`.
-pub(crate) fn authorized_edits_from_sql() -> String {
+fn authorized_edits_from_sql() -> String {
     format!(
         r#"
         FROM events e
@@ -1642,7 +1642,7 @@ pub(crate) fn authorized_edits_from_sql() -> String {
     )
 }
 
-fn latest_authorized_edits_sql(placeholders: &str) -> String {
+pub(crate) fn latest_authorized_edits_sql(placeholders: &str) -> String {
     format!(
         "SELECT e.reference_id, e.content, e.created_at, e.tags {} AND e.reference_id IN ({placeholders}) ORDER BY e.created_at DESC, e.rowid DESC",
         authorized_edits_from_sql(),
