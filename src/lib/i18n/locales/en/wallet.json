@@ -1,6 +1,7 @@
 {
 	"wallet.defaultEvmAccountTitle": "Default EVM account",
-	"wallet.defaultEvmAccountHint": "Preferred network, default signing address, and published receiving address for DMs, profile, and squad operations.",
+	"wallet.defaultEvmAccountHint": "Default signing address and published receiving address for DMs, profile, and squad operations.",
+	"wallet.preferredNetworkHint": "Default network for wallet filters.",
 	"wallet.preferredNetworkLabel": "Preferred network",
 	"wallet.signerLabel": "Signer",
 	"wallet.receiverLabel": "Receiver",
@@ -222,6 +223,9 @@
 	"wallet.evmWalletLead": "Your embedded EVM wallet: send to any address, receive by sharing your address, and manage networks and tokens. Payment requests with contacts stay in {dms} (in-chat wallet panel). Nostr profile, backup, and logout: {settings}.",
 	"wallet.walletActions": "Wallet actions",
 	"wallet.receive": "Receive",
+	"wallet.selectAccount": "Account",
+	"wallet.viewingAccount": "Viewing",
+	"wallet.couldNotSwitchBeforeSend": "Could not switch to the selected account before sending.",
 	"wallet.unlockWalletHint": "Unlock or wait for your wallet address to load to use Send and Receive.",
 	"wallet.alphaSoftware": "Alpha software. Wallet and key handling have not been reviewed by an independent security audit. Use only funds you can afford to lose. See {docsPath} in the repository.",
 	"wallet.editAdvancedAccount": "Edit advanced account",

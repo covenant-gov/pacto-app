@@ -145,7 +145,7 @@ Payload shape tests: `src/lib/governance/governance-announce-payload.test.ts`, `
 
 ## 6. Advanced contract call
 
-Settings → Profile → Wallet → **Advanced contract call**. Requires **advanced-purpose** signer (import or **Add advanced account**).
+Settings → EVM → **Advanced contract call**. Requires **advanced-purpose** signer (import or **Add advanced account**).
 
 - [ ] `readContract` via `src/lib/evm/read-plane.ts` + `erc20-minimal` ABI — no key.
 - [ ] Advanced send: simulate → review → tx mines; banner shows **not linked to any squad**.
@@ -260,7 +260,7 @@ Also: Pimlico / bundler (shared prerequisites above); backup verified in-app bef
 - [ ] `globalUsernameSponsor` pinned in `pacto-protocol-addresses.json` (`pactoUsernameNft`, `sponsorPolicyRegistry`, `allowed7702Implementation`); Tauri restarted if the JSON changed.
 - [ ] Bootstrap + global pools funded; global paymaster EntryPoint deposit OK; bundler curl passes.
 - [ ] Smoke identity: roster/primary EVM with **0 ETH** (sponsored paths); logged in, wallet unlocked, backup verified.
-- [ ] **Commons** → **Pacto Early Adopter** CTA → deep-links to Profile `#settings-profile-username` (no mint UI on Commons).
+- [ ] **Commons** → **Pacto Early Adopter** CTA → opens Profile and scrolls to `#settings-profile-username` (no mint UI on Commons).
 - [ ] **Claim** any non-empty name (≤64 UTF-8 bytes, case-sensitive) with 0 ETH → path **`bootstrap`**; UserOp on explorer; bootstrap pool spendable decreases.
 - [ ] **Badge:** Profile / Commons show `@username` with verified check when kind **31337** link is cached **and** on-chain `recordOf` EVM matches the active roster address.
 - [ ] **Seed restore:** new database (chain `recordOf` present, `link_event_id` null) with the kind **31337** event still on trusted relays → refresh shows the verified badge when the roster EVM matches `recordOf`.

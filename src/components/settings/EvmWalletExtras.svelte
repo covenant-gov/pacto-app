@@ -5,7 +5,9 @@
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import {
     DEFAULT_PREFERRED_NETWORK,
+    listPreferredNetworkOptions,
     loadPreferredNetwork,
+    savePreferredNetwork,
     walletPreferredNetworkTick,
     type PreferredNetworkId,
   } from '../../lib/wallet/preferred-network';
@@ -156,9 +158,34 @@
     removePersonalRpc(accountNpub, rpcNetworkFilter, url);
     showToast(tFn('settings.toast.personalRpcRemoved'));
   }
+
+  const preferredNetworkOptions = listPreferredNetworkOptions();
+
+  function onPreferredNetworkChange(event: Event) {
+    if (!accountNpub) return;
+    const next = (event.currentTarget as HTMLSelectElement).value as PreferredNetworkId;
+    savePreferredNetwork(accountNpub, next);
+  }
 </script>
 
-<section class="evm-extras-section evm-extras-section--first" aria-labelledby="wallet-networks-heading">
+<section class="evm-extras-section evm-extras-section--first" aria-labelledby="wallet-preferred-network-heading">
+  <h2 id="wallet-preferred-network-heading" class="evm-extras-h2">{$t('wallet.preferredNetworkLabel')}</h2>
+  <p class="evm-extras-hint">{$t('wallet.preferredNetworkHint')}</p>
+  <label class="evm-extras-filter-label" for="wallet-preferred-network-select">{$t('wallet.preferredNetworkLabel')}</label>
+  <select
+    id="wallet-preferred-network-select"
+    class="evm-extras-select"
+    value={preferredNetwork}
+    disabled={!accountNpub}
+    onchange={onPreferredNetworkChange}
+  >
+    {#each preferredNetworkOptions as opt (opt.id)}
+      <option value={opt.id}>{opt.label}</option>
+    {/each}
+  </select>
+</section>
+
+<section class="evm-extras-section" aria-labelledby="wallet-networks-heading">
   <h2 id="wallet-networks-heading" class="evm-extras-h2">{$t('settings.enabledChainsTitle')}</h2>
   <p class="evm-extras-hint">
     {$t('settings.enabledChainsHint')}

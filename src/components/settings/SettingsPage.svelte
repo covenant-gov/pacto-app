@@ -7,30 +7,24 @@
     settingsSectionCollapsed,
     type SettingsSectionId,
   } from '../../lib/settings/settings-section-collapse';
-  import { showEvmDashGas, usernameState } from '../../stores/username';
 
   let { onBack, children }: { onBack: () => void; children: Snippet } = $props();
 
   const SECTION_LINKS = [
-    { id: 'settings-profile', labelKey: 'nav.settings.sections.profile' },
     { id: 'settings-nostr', labelKey: 'nav.settings.sections.nostr' },
     { id: 'settings-evm', labelKey: 'nav.settings.sections.evm' },
-    { id: 'settings-evm-dash-gas', labelKey: 'nav.settings.sections.evmDashGas' },
     { id: 'settings-app', labelKey: 'nav.settings.sections.app' },
     { id: 'settings-notifications', labelKey: 'nav.settings.sections.notifications' },
     { id: 'settings-commons', labelKey: 'nav.settings.sections.commons' },
     { id: 'settings-experimental', labelKey: 'nav.settings.sections.experimental' },
+    { id: 'settings-backup', labelKey: 'nav.settings.sections.backup' },
     { id: 'settings-dangerzone', labelKey: 'nav.settings.sections.dangerzone' },
   ] as const satisfies ReadonlyArray<{ id: SettingsSectionId; labelKey: string }>;
 
   const SCROLL_MARKER_OFFSET_PX = 48;
   const SCROLL_BOTTOM_TOLERANCE_PX = 8;
 
-  let visibleSectionLinks = $derived(
-    SECTION_LINKS.filter(
-      (link) => link.id !== 'settings-evm-dash-gas' || showEvmDashGas($usernameState),
-    ),
-  );
+  let visibleSectionLinks = $derived(SECTION_LINKS);
 
   let activeSectionId: SettingsSectionId = $state(SECTION_LINKS[0].id);
   let settingsMainEl: HTMLElement | undefined;

@@ -120,8 +120,10 @@
 	"settings.biometricUnlockEnrollReason": "Enable biometric unlock for Pacto",
 
 	"settings.evmSettingsTitle": "EVM settings",
-	"settings.evmDashGas.title": "EVM — gas",
-	"settings.evmDashGas.disclaimer": "Temporary testing surface for your Username NFT global sponsorship spend. Will move into the full wallet later.",
+	"settings.backupTitle": "Backup",
+	"settings.backupLead": "Seed and key export live here so they stay out of everyday profile use. Open only when you need a backup.",
+	"settings.evmDashGas.title": "Sponsored gas",
+	"settings.evmDashGas.disclaimer": "Global Username NFT sponsorship spend on this account, with links to the billed transactions.",
 	"settings.evmDashGas.poolLabel": "Global pool ({network})",
 	"settings.evmDashGas.poolError": "Could not load global pool balance",
 	"settings.evmDashGas.loading": "Loading sponsored fee usage…",

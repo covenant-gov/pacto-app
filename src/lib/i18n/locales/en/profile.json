@@ -78,5 +78,10 @@
 	"profile.username.errors.poolLow": "Bootstrap sponsor pool is low. Try again later or contact the operator.",
 	"profile.username.errors.pubkeyGotNpub": "Pubkey must be 32 bytes hex (got npub).",
 	"profile.username.errors.pubkeyNotHex": "Pubkey must be 32 bytes hex.",
-	"profile.unknownName": "Unknown"
+	"profile.unknownName": "Unknown",
+	"profile.nfts.title": "Pacto NFTs",
+	"profile.nfts.empty": "No Pacto NFTs yet. Claim a username to mint the first one.",
+	"profile.nfts.username": "Username",
+	"profile.nfts.tokenId": "Token {id}",
+	"profile.nfts.unclaimedSlot": "Username NFT"
 }

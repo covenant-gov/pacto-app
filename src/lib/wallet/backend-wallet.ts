@@ -92,7 +92,8 @@ export async function getEvmNativeBalance(
  */
 export async function getWalletSummary(
   watchedErc20s: WatchedErc20Wire[],
-  enabledChains: SupportedChainId[]
+  enabledChains: SupportedChainId[],
+  address?: string | null,
 ): Promise<WalletSummaryResult> {
   if (!isTauri()) {
     return { ok: false, message: 'Wallet summary is only available in the desktop app.' };
@@ -101,6 +102,7 @@ export async function getWalletSummary(
     const summary = await invoke<WalletSummary>('get_wallet_summary', {
       watchedErc20s,
       enabledChains,
+      ...(address?.trim() ? { address: address.trim() } : {}),
     });
     return { ok: true, summary };
   } catch (e) {

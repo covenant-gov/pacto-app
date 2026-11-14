@@ -1,14 +1,13 @@
 import { writable } from 'svelte/store';
 
 export const SETTINGS_SECTION_IDS = [
-  'settings-profile',
   'settings-nostr',
   'settings-evm',
-  'settings-evm-dash-gas',
   'settings-app',
   'settings-notifications',
   'settings-commons',
   'settings-experimental',
+  'settings-backup',
   'settings-dangerzone',
 ] as const;
 

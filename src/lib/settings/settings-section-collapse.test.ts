@@ -34,7 +34,8 @@ describe('settings-section-collapse', () => {
   });
 
   it('defaults sections to collapsed', () => {
-    expect(isSettingsSectionCollapsed('settings-profile')).toBe(true);
+    expect(isSettingsSectionCollapsed('settings-nostr')).toBe(true);
+    expect(isSettingsSectionCollapsed('settings-backup')).toBe(true);
     expect(isSettingsSectionCollapsed('settings-evm', get(settingsSectionCollapsed))).toBe(true);
   });
 
