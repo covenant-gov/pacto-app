@@ -874,6 +874,8 @@ pub(crate) async fn notifs() -> Result<bool, String> {
                     }
                 } else if subscription_id == commons_sub_id {
                     crate::commons::ingest_live_broadcast_event(&event).await;
+                } else if crate::public_channel::is_live_subscription(&subscription_id) {
+                    crate::public_channel::ingest_live_message(&event).await;
                 } else if kind0_ids_for_handler.lock().await.contains(&subscription_id) {
                     profile::apply_live_kind0_event(&event, pubkey).await;
                 }

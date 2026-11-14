@@ -44,7 +44,7 @@ export {
   normalizeHubChannelName,
 };
 
-export type ChannelAccess = 'open' | 'closed';
+export type ChannelAccess = 'open' | 'closed' | 'public';
 
 export interface Channel {
   name: string;
@@ -68,7 +68,8 @@ export function normalizeStoredChannel(ch: {
   access?: ChannelAccess;
 }): Channel {
   const name = normalizeHubChannelName(ch.name) ?? ch.name;
-  const access = ch.access === 'open' || ch.access === 'closed' ? ch.access : undefined;
+  const access =
+    ch.access === 'open' || ch.access === 'closed' || ch.access === 'public' ? ch.access : undefined;
   return access ? { name, groupId: ch.groupId, order: ch.order, access } : { name, groupId: ch.groupId, order: ch.order };
 }
 

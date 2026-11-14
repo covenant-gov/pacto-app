@@ -489,6 +489,29 @@ export interface GroupChatCreated {
   pendingInvites: UndeliveredInvite[];
 }
 
+/** NIP-28 kind 40. Returns the event id used as the channel id. */
+export async function createPublicChannel(name: string): Promise<string> {
+  return (await invoke('create_public_channel', { name })) as string;
+}
+
+/** NIP-28 kind 42 on a public channel. */
+export async function sendPublicChannelMessage(
+  channelId: string,
+  content: string,
+  repliedTo = '',
+): Promise<boolean> {
+  return (await invoke('send_public_channel_message', {
+    channelId,
+    content,
+    repliedTo,
+  })) as boolean;
+}
+
+/** Replace the set of public channel ids the backend stores kind 42s for. */
+export async function watchPublicChannels(channelIds: string[]): Promise<void> {
+  await invoke('watch_public_channels', { channelIds });
+}
+
 /**
  * Create a new MLS group (channel). Backend: create_group_chat.
  * Returns group_id (hex) plus members skipped for unusable key packages. Emits mls_group_initial_sync.

@@ -42,11 +42,21 @@ function stillCurrent(requestGen: number, groupId: string): boolean {
   );
 }
 
+function channelAccess(groupId: string): string | undefined {
+  for (const squad of get(squads)) {
+    const channel = squad.channels.find((ch) => ch.groupId === groupId);
+    if (channel) return channel.access;
+  }
+  return undefined;
+}
+
 /** Opening an MLS channel refreshes participant Kind 0, then loads the first page. */
 export function openMlsChannel(groupId: string): void {
-  queueChatProfilesSync(groupId, true).catch((err) => {
-    dmError('open channel: queueChatProfilesSync failed', err);
-  });
+  if (channelAccess(groupId) !== 'public') {
+    queueChatProfilesSync(groupId, true).catch((err) => {
+      dmError('open channel: queueChatProfilesSync failed', err);
+    });
+  }
   loadOpenChannelHistory(groupId);
 }
 
@@ -87,7 +97,9 @@ export function loadOpenChannelHistory(groupId: string): void {
         }));
       }
       const parentId = parentIdForChannelGroup(get(squads), groupId) ?? parentIdAtOpen;
-      ensureMlsAutomationReplayed(groupId, parentId);
+      if (channelAccess(groupId) !== 'public') {
+        ensureMlsAutomationReplayed(groupId, parentId);
+      }
     })
     .catch((err) => {
       if (!stillCurrent(requestGen, groupId)) return;

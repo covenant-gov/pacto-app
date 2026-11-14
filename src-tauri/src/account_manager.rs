@@ -641,6 +641,7 @@ pub async fn switch_account<R: Runtime>(handle: AppHandle<R>, npub: String) -> R
         return Err(format!("Invalid npub format: {}", npub));
     }
 
+    crate::public_channel::clear_watched();
     println!("[Account Manager] Switching to account: {}", npub);
 
     // Initialize database for this profile

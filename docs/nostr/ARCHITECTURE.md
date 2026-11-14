@@ -15,13 +15,14 @@ Construction and inspection of Nostr tags go through `src-tauri/src/nostr_tags.r
 | **DM** | **Kind 1059** — Gift Wrap (NIP-59), addressed to the recipient | Rumors: **14** (text), **15** (files), **7** (reactions), **30078** (typing), etc. |
 | **MLS invite** | **Kind 443** (`MlsWelcome`) **inside** a Gift Wrap | Handed to the MLS engine; not processed as a normal DM rumor |
 | **MLS group traffic** | **Kind 444** (`MlsGroupMessage`), **`h` tag** = wire group id | Same rumor kinds as DMs once decrypted by MDK |
+| **Public squad channel** | **Kind 40** create, **Kind 42** message, NIP-10 `e` root = kind 40 id | Plaintext. Ingest drops authors who are not on the local squad roster; stored messages reach the UI on `public_channel_message_new`, not the MLS dispatcher. No member-list event. |
 
 Conversation identity:
 
 - **DM:** `chat_identifier` / UI `chat_id` is the other user’s **npub** (`npub1…`).
 - **MLS group:** `chat_id` is the **group id** (hex string from the `h` tag); it does **not** start with `npub1`.
 
-`ChatType` in `src-tauri/src/chat.rs` distinguishes `DirectMessage` vs `MlsGroup`.
+`ChatType` in `src-tauri/src/chat.rs` distinguishes `DirectMessage`, `MlsGroup`, and `PublicChannel` (kind 40 event id).
 
 ## Backend flow
 

@@ -68,6 +68,7 @@ pub use chat::{Chat, ChatMetadata, ChatType, NotificationLevel};
 mod dashboard_poll;
 
 mod commons;
+mod public_channel;
 mod join_inbox;
 
 mod sticker_pack;
@@ -1452,6 +1453,9 @@ pub fn run() {
             commons::commons_fetch_broadcasts,
             commons::commons_get_local_active,
             commons::commons_cancel_broadcast,
+            public_channel::create_public_channel,
+            public_channel::send_public_channel_message,
+            public_channel::watch_public_channels,
             join_inbox::join_inbox_init,
             join_inbox::join_inbox_get_state,
             join_inbox::join_inbox_reclaim_if_split,

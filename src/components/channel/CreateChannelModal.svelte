@@ -14,11 +14,12 @@
     emptyMessage?: string;
     error?: string;
     creating?: boolean;
-    /** When true, show closed-channel member picker. */
+    /** When true, show private-channel member picker. */
     showMemberPicker?: boolean;
     canCreateClosed?: boolean;
     inputId?: string;
     onClose?: () => void;
+    onPublicChannel?: () => void;
     onOpenChannel?: () => void;
     onChooseClosed?: () => void;
     onCreateClosed?: () => void;
@@ -42,6 +43,7 @@
     canCreateClosed = false,
     inputId,
     onClose = () => {},
+    onPublicChannel = () => {},
     onOpenChannel = () => {},
     onChooseClosed = () => {},
     onCreateClosed = () => {},
@@ -96,20 +98,29 @@
       </p>
 
       {#if !showMemberPicker}
-        <p class="create-channel-hint">
-          {$t('messaging.channel.openClosedHint')}
-        </p>
         {#if error}
           <p class="create-channel-error" role="alert">{error}</p>
         {/if}
         <div class="create-channel-path-actions">
           <button
             type="button"
+            class="create-channel-btn-secondary"
+            disabled={!nameReady || creating}
+            onclick={onPublicChannel}
+          >
+            <span class="create-channel-choice-title">{$t('messaging.channel.publicChannel')}</span>
+            <span class="create-channel-choice-hint">{$t('messaging.channel.publicChannelHint')}</span>
+          </button>
+          <button
+            type="button"
             class="create-channel-btn-create"
             disabled={!nameReady || creating}
             onclick={onOpenChannel}
           >
-            {creating ? $t('messaging.channel.creating') : $t('messaging.channel.openChannel')}
+            <span class="create-channel-choice-title">
+              {creating ? $t('messaging.channel.creating') : $t('messaging.channel.squadChannel')}
+            </span>
+            <span class="create-channel-choice-hint">{$t('messaging.channel.squadChannelHint')}</span>
           </button>
           <button
             type="button"
@@ -117,7 +128,8 @@
             disabled={!nameReady || creating}
             onclick={onChooseClosed}
           >
-            {$t('messaging.channel.closedChannel')}
+            <span class="create-channel-choice-title">{$t('messaging.channel.privateChannel')}</span>
+            <span class="create-channel-choice-hint">{$t('messaging.channel.privateChannelHint')}</span>
           </button>
         </div>
         <div class="create-channel-actions">
@@ -215,13 +227,6 @@
     color: var(--text-muted);
     font-size: 0.9375rem;
     margin: 0 0 24px 0;
-  }
-
-  .create-channel-hint {
-    color: var(--text-muted);
-    font-size: 0.875rem;
-    margin: 0 0 16px 0;
-    line-height: 1.4;
   }
 
   .create-channel-label {
@@ -336,6 +341,24 @@
     font-size: 0.9375rem;
     cursor: pointer;
     width: 100%;
+    text-align: left;
+  }
+
+  .create-channel-choice-title,
+  .create-channel-choice-hint {
+    display: block;
+  }
+
+  .create-channel-choice-hint {
+    margin-top: 2px;
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    color: var(--text-muted);
+  }
+
+  .create-channel-btn-create .create-channel-choice-hint {
+    color: var(--on-brand);
+    opacity: 0.85;
   }
 
   .create-channel-btn-create {

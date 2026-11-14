@@ -50,4 +50,17 @@ describe('channel-access', () => {
       { name: 'legacy', groupId: 'g-leg', order: 5, access: 'open' },
     ]);
   });
+
+  it('keeps public access and does not treat unknown values as public', () => {
+    const room: Channel = { name: 'room', groupId: 'g-pub', order: 8, access: 'public' };
+    expect(resolveChannelAccess(room)).toBe('public');
+    expect(isOpenCustomChannel(room)).toBe(false);
+    const unknown = { name: 'room', groupId: 'g-x', order: 9, access: undefined } as Channel;
+    expect(resolveChannelAccess(unknown)).toBe('open');
+    expect(
+      catalogChannelsForAnnounce([...channels, room]).some(
+        (row) => row.groupId === 'g-pub' && row.access === 'public',
+      ),
+    ).toBe(true);
+  });
 });

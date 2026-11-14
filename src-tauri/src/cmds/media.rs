@@ -17,7 +17,7 @@ const CORRUPTED_ATTACHMENT_REMOVED: &str = "Corrupted attachment removed. Please
 
 fn is_target_chat(chat: &Chat, npub: &str) -> bool {
     match &chat.chat_type {
-        ChatType::MlsGroup => chat.id == npub,
+        ChatType::MlsGroup | ChatType::PublicChannel => chat.id == npub,
         ChatType::DirectMessage => chat.has_participant(npub),
     }
 }
@@ -517,7 +517,7 @@ pub(crate) async fn generate_blurhash_preview(
         for chat in &state.chats {
             // Check if this is the target chat (works for both DMs and group chats)
             let is_target_chat = match &chat.chat_type {
-                ChatType::MlsGroup => chat.id == npub,
+                ChatType::MlsGroup | ChatType::PublicChannel => chat.id == npub,
                 ChatType::DirectMessage => chat.has_participant(&npub),
             };
 

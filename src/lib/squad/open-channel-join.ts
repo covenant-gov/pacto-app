@@ -29,7 +29,7 @@ export type OpenChannelJoinTarget = {
   parentId: string;
   groupId: string;
   name: string;
-  access: ChannelAccess;
+  access: 'open' | 'closed';
 };
 
 type PendingWelcomes = Awaited<ReturnType<typeof listPendingMlsWelcomes>>;
@@ -49,7 +49,7 @@ function wantedJoinForGroup(groupId: string): PendingOpenChannelJoin | undefined
 function localCustomChannelTarget(groupId: string): OpenChannelJoinTarget | null {
   for (const squad of get(squads)) {
     const channel = squad.channels.find((ch) => sameMlsGroupId(ch.groupId, groupId));
-    if (!channel || isHubChannelRow(channel)) continue;
+    if (!channel || isHubChannelRow(channel) || channel.access === 'public') continue;
     const access: ChannelAccess = channel.access === 'closed' ? 'closed' : 'open';
     return { parentId: squad.id, groupId: channel.groupId, name: channel.name, access };
   }

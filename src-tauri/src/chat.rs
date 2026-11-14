@@ -174,7 +174,7 @@ impl Chat {
     pub fn get_other_participant(&self, my_npub: &str) -> Option<String> {
         match self.chat_type {
             ChatType::DirectMessage => self.participants.iter().find(|&p| p != my_npub).cloned(),
-            ChatType::MlsGroup => None, // Groups don't have a single "other" participant
+            ChatType::MlsGroup | ChatType::PublicChannel => None,
         }
     }
 
@@ -257,16 +257,18 @@ impl Chat {
 pub enum ChatType {
     DirectMessage,
     MlsGroup,
-    // Future types can be added here
+    /// Plaintext NIP-28 channel. Chat id is the kind 40 event id.
+    PublicChannel,
 }
 
 impl ChatType {
-    /// Convert ChatType to integer for database storage
-    /// 0 = DirectMessage, 1 = MlsGroup
+    /// Convert ChatType to integer for database storage.
+    /// 0 = DirectMessage, 1 = MlsGroup, 2 = PublicChannel
     pub fn to_i32(&self) -> i32 {
         match self {
             ChatType::DirectMessage => 0,
             ChatType::MlsGroup => 1,
+            ChatType::PublicChannel => 2,
         }
     }
 
@@ -274,6 +276,7 @@ impl ChatType {
     pub fn from_i32(value: i32) -> Self {
         match value {
             1 => ChatType::MlsGroup,
+            2 => ChatType::PublicChannel,
             _ => ChatType::DirectMessage, // Default to DM for safety
         }
     }

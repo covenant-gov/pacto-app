@@ -18,6 +18,7 @@ const tryCompleteOpenChannelJoins = vi.hoisted(() => vi.fn().mockResolvedValue(u
 
 vi.mock('../api/nostr', () => ({
   sendDmMessage: vi.fn(),
+  watchPublicChannels: vi.fn(),
   listPendingMlsWelcomes: vi.fn(),
   acceptMlsWelcome: vi.fn(),
   listMlsGroups: vi.fn(),
@@ -196,6 +197,69 @@ describe('squad-channels-catalog', () => {
         { name: 'open-row', groupId: 'g-o', order: 1, access: 'open' },
       ],
     });
+  });
+
+  it('apply attaches a public channel without an MLS join', async () => {
+    const raw = formatSquadChannelsCatalog({
+      parent_id: 'ann-gid',
+      channels: [{ name: 'lobby', groupId: 'ab'.repeat(32), order: 4, access: 'public' }],
+    });
+    expect(parseSquadChannelsCatalog(raw)?.channels[0]?.access).toBe('public');
+    applySquadChannelsCatalog(raw, 'ann-gid');
+    await vi.waitFor(() => {
+      expect(get(squads)[0]?.channels.some((c) => c.name === 'lobby' && c.access === 'public')).toBe(
+        true,
+      );
+    });
+    expect(get(pendingOpenChannelJoins)).toEqual([]);
+  });
+
+  it('drops public rows whose id is not a kind 40 event id', () => {
+    const raw = formatSquadChannelsCatalog({
+      parent_id: 'ann-gid',
+      channels: [
+        { name: 'bad', groupId: 'g-not-hex', order: 4, access: 'public' },
+        { name: 'short', groupId: 'ab'.repeat(16), order: 5, access: 'public' },
+      ],
+    });
+    expect(parseSquadChannelsCatalog(raw)?.channels).toEqual([]);
+  });
+
+  it.each(['open', 'closed'] as const)(
+    'a public row never changes an existing %s channel',
+    async (existingAccess) => {
+      const gid = 'cd'.repeat(32);
+      squads.update((list) =>
+        list.map((s) => ({
+          ...s,
+          channels: [...s.channels, { name: 'ops', groupId: gid, order: 2, access: existingAccess }],
+        })),
+      );
+      const raw = formatSquadChannelsCatalog({
+        parent_id: 'ann-gid',
+        channels: [{ name: 'ops', groupId: gid, order: 2, access: 'public' }],
+      });
+      applySquadChannelsCatalog(raw, 'ann-gid');
+      await vi.waitFor(() => expect(tryCompleteOpenChannelJoins).toHaveBeenCalled());
+      expect(get(squads)[0]?.channels.find((c) => c.groupId === gid)?.access).toBe(existingAccess);
+    },
+  );
+
+  it('an open row never downgrades an existing public channel', async () => {
+    const gid = 'ef'.repeat(32);
+    squads.update((list) =>
+      list.map((s) => ({
+        ...s,
+        channels: [...s.channels, { name: 'room', groupId: gid, order: 2, access: 'public' }],
+      })),
+    );
+    const raw = formatSquadChannelsCatalog({
+      parent_id: 'ann-gid',
+      channels: [{ name: 'room', groupId: gid, order: 2, access: 'open' }],
+    });
+    applySquadChannelsCatalog(raw, 'ann-gid');
+    await vi.waitFor(() => expect(tryCompleteOpenChannelJoins).toHaveBeenCalled());
+    expect(get(squads)[0]?.channels.find((c) => c.groupId === gid)?.access).toBe('public');
   });
 
   it('apply ignores mismatched parent and drains matching catalog rows', async () => {

@@ -364,6 +364,24 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
   });
 
+  register(unsubs, 'public_channel_message_new', (event) => {
+    const { channel_id, message } = event.payload as { channel_id: string; message: DmMessage };
+    const m = normalizeDmPayload(message);
+    backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => {
+      const list = byGroup[channel_id] ?? [];
+      if (list.some((x) => x.id === m.id)) return byGroup;
+      const withoutOpt = list.filter(
+        (x) =>
+          !(
+            (x.id.startsWith('opt-') || x.id.startsWith('pending-')) &&
+            x.mine &&
+            x.content === m.content
+          )
+      );
+      return { ...byGroup, [channel_id]: [...withoutOpt, m] };
+    });
+  });
+
   register(unsubs, 'history_import_ids', (event) => {
     const { group_id, ids } = event.payload as { group_id?: string; ids?: string[] };
     if (!group_id || !Array.isArray(ids)) return;

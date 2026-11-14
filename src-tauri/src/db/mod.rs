@@ -137,7 +137,8 @@ pub(crate) use mls::{clear_discarded_giftwraps_conn, persist_legacy_group_admins
 #[allow(unused_imports)]
 pub use messaging::{
     build_file_hash_index, check_and_vacuum_if_needed, delete_chat,
-    dm_created_at_at_or_before_cutoff, edit_is_authorized_before_save, event_exists, get_all_chats,
+    dm_created_at_at_or_before_cutoff, edit_is_authorized_before_save, ensure_public_channel_chat,
+    event_exists, get_all_chats,
     get_chat_last_messages, get_chat_message_count, get_chat_messages_paginated,
     get_dm_deletion_cutoff, get_dm_sent_received, get_events, get_message_views,
     get_messages_around_id, get_related_events, load_recent_wrapper_ids, message_exists_in_db,

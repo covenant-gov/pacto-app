@@ -368,7 +368,7 @@
     createChannelName.trim().length > 0 && selectedNpubs.length > 0
   );
 
-  function startCreateChannel(access: 'open' | 'closed', members: string[]) {
+  function startCreateChannel(access: 'open' | 'closed' | 'public', members: string[]) {
     const name = createChannelName.trim();
     if (!name) return;
     if (name.length > maxChannelNameLength) {
@@ -404,6 +404,10 @@
         }, 8000);
       },
     });
+  }
+
+  function handlePublicChannel() {
+    startCreateChannel('public', []);
   }
 
   async function handleOpenChannel() {
@@ -485,6 +489,7 @@
   showMemberPicker={showClosedChannelPicker}
   canCreateClosed={canCreateClosedChannel}
   onClose={closeCreateChannelModal}
+  onPublicChannel={handlePublicChannel}
   onOpenChannel={handleOpenChannel}
   onChooseClosed={handleChooseClosed}
   onCreateClosed={handleCreateClosedChannel}

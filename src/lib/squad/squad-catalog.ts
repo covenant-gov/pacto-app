@@ -36,7 +36,7 @@ interface SquadChannelWire {
   name: string;
   groupId: string;
   order: number;
-  access?: 'open' | 'closed';
+  access?: 'open' | 'closed' | 'public';
 }
 
 interface PairedSquadRefWire {
@@ -94,7 +94,9 @@ function squadToUpsert(squad: Squad): SquadUpsertWire {
       name: c.name,
       groupId: c.groupId,
       order: c.order,
-      ...(c.access === 'open' || c.access === 'closed' ? { access: c.access } : {}),
+      ...(c.access === 'open' || c.access === 'closed' || c.access === 'public'
+        ? { access: c.access }
+        : {}),
     })),
     kind: squad.kind,
     pairedSquads: squad.pairedSquads ?? null,
@@ -168,6 +170,8 @@ export async function hydrateSquadsFromDb(): Promise<void> {
   await recoverMissingSquadCatalog();
   void enrichRecoveredSquadNamesFromInvites();
   restoreSquadsHubSelection();
+  const { watchKnownPublicChannels } = await import('./public-channel');
+  void watchKnownPublicChannels();
 }
 
 /** Persist one squad row and merge the normalized backend row into the store. */
