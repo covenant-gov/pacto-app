@@ -125,7 +125,6 @@ describe('buildHistoryChunks', () => {
     expect(built.ok).toBe(true);
     if (!built.ok) return;
     expect(built.chunks.length).toBe(HISTORY_CHUNK_MAX_COUNT);
-    expect(built.chunks.length).toBeGreaterThan(0);
 
     const ids = built.chunks.flatMap((chunk) => chunk.messages.map((row) => row.id));
     expect(ids).toContain('newest');

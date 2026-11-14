@@ -112,8 +112,6 @@ export function buildHistoryChunks(
     groups.length > HISTORY_CHUNK_MAX_COUNT
       ? groups.slice(groups.length - HISTORY_CHUNK_MAX_COUNT)
       : groups;
-  if (keptGroups.length === 0) return { ok: false, reason: 'empty' };
-
   const total = keptGroups.length;
   return {
     ok: true,

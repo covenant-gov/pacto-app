@@ -68,6 +68,30 @@ pub(crate) fn resolve_file(
 mod tests {
     use super::*;
 
+    /// Unique per test run; removed on drop.
+    struct ScratchDir(std::path::PathBuf);
+
+    impl ScratchDir {
+        fn new(label: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let dir = std::env::temp_dir().join(format!(
+                "pacto-attachment-tags-{label}-{}-{nanos}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     #[test]
     fn caption_body_keeps_text_and_blanks_blank() {
         assert_eq!(caption_body(Some("hi @alice")), "hi @alice");
@@ -91,26 +115,26 @@ mod tests {
 
     #[test]
     fn resolve_file_prefers_ox_and_marks_existing_downloads() {
-        let dir = std::env::temp_dir().join("pacto-attachment-tags-test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = ScratchDir::new("ox");
+        let dir = &scratch.0;
         std::fs::write(dir.join("hash.png"), b"x").unwrap();
 
-        let hit = resolve_file(Some(&dir), Some("hash"), "nonce", "png").unwrap();
+        let hit = resolve_file(Some(dir), Some("hash"), "nonce", "png").unwrap();
         assert_eq!(hit.id, "hash");
         assert!(hit.downloaded);
         assert_eq!(Path::new(&hit.path), dir.join("hash.png"));
 
-        let miss = resolve_file(Some(&dir), Some("other"), "nonce", "png").unwrap();
+        let miss = resolve_file(Some(dir), Some("other"), "nonce", "png").unwrap();
         assert!(!miss.downloaded);
     }
 
     #[test]
     fn resolve_file_falls_back_to_nonce_and_never_marks_it_downloaded() {
-        let dir = std::env::temp_dir().join("pacto-attachment-tags-nonce");
-        std::fs::create_dir_all(&dir).unwrap();
+        let scratch = ScratchDir::new("nonce");
+        let dir = &scratch.0;
         std::fs::write(dir.join("nonce.png"), b"x").unwrap();
 
-        let resolved = resolve_file(Some(&dir), None, "nonce", "png").unwrap();
+        let resolved = resolve_file(Some(dir), None, "nonce", "png").unwrap();
         assert_eq!(resolved.id, "nonce");
         assert!(!resolved.downloaded);
     }

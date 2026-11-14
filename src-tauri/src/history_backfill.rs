@@ -1960,7 +1960,7 @@ mod tests {
     }
 
     #[test]
-    fn earlier_live_messages_stay_unread_after_the_copy_is_marked_read() {
+    fn later_live_messages_stay_unread_after_the_copy_is_marked_read() {
         let mut newer = crate::ChatState::new();
         newer.add_message_to_chat("group", live_message("live", 9_000));
         let applied =
