@@ -1,26 +1,39 @@
 ---
-description: When executing a plan, mark each finished todo completed in the plan file
+description: When executing a plan, track each todo's status as work progresses (in_progress, then completed), even when told not to edit the plan file
 alwaysApply: true
 ---
 
 # Plan todos checked off
 
-When executing a **Plan → Build**, **implement the plan**, **execute the plan**, or equivalent, update that plan's todo checkboxes in the same turn as the work.
+When executing a **Plan → Build**, **implement the plan**, **execute the plan**, or equivalent, keep the plan's todo status current in the same turn as the work. Mark a todo `in_progress` when you start it and `completed` as soon as its work is done.
 
-## Where
+## Status is not plan content
 
-The plan file's YAML frontmatter. Each todo has `status: pending` or `status: completed`. That status is the checkbox.
+"Do NOT edit the plan file" (the Build prompt) forbids changing the plan's **content**: steps, scope, wording, todo text, ordering. It never forbids recording **progress**. Checking off a todo says "A is done"; it does not edit the plan. Never read that instruction as "leave todo status alone."
+
+## How
+
+1. **Plan file editable:** set `status: pending | in_progress | completed` in the YAML frontmatter.
+2. **Build prompt forbids editing the plan file:** use the `TodoWrite` tool (via `GetDynamicTools` / `CallDynamicTool`, namespace `cursor`) with `merge: true`, matching the plan's existing todo `id`s. Do not recreate todos with `merge: false`. The tool needs at least two items per call, so include the next todo with it.
+3. This overrides the `AGENTS.md` / Beads line "do NOT use TodoWrite". That line is for project task tracking in `bd`, not for plan todos.
+4. If neither route is available, say so in the handoff. Never leave status untouched silently.
 
 ## Do
 
-- As soon as a todo's work is finished, set that todo to `status: completed`.
-- Before the handoff that says the plan (or this pause) is done, re-read the frontmatter and confirm every finished todo is `completed`.
+- Start the first todo as `in_progress` before or with the first tool call of the build.
+- One todo `in_progress` at a time. Finish it, then move to the next.
+- As soon as a todo's work is finished, set it `completed`.
+- Before the handoff that says the plan (or this pause) is done, re-check every todo and fix any finished one still not `completed`.
 - Leave a todo `pending` only when its work was not done. Say so in the handoff.
+- If the plan already covers an item (for example the user committed that work), mark it `completed` and say why.
+- End the handoff with each todo's final status.
 - Per-todo pauses: check off only the todos finished in that pause.
 
 ## Do not
 
 - Leave finished todos at `pending` until the user asks.
+- Skip status updates because the prompt says not to edit the plan file.
 - Mark a todo completed when its work is still open.
+- Edit plan content (steps, text, ordering) when the prompt forbids it.
 
 Related: [plan-build-commit-subject.mdc](plan-build-commit-subject.mdc).
