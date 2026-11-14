@@ -66,7 +66,6 @@
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
   import { sendDmMessage, sendPublicChannelMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
-  import { publicChannelRoster, visiblePublicChannelMessages } from '../../lib/squad/public-channel';
   import { sendGifMessage } from '../../lib/api/klipy';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
@@ -181,15 +180,10 @@
   let leavingChannel = false;
   let leaveChannelError = '';
 
-  $: publicRoster = publicChannelRoster(
-    announcementsGroupIdForMembers ? ($membersByGroupId[announcementsGroupIdForMembers] ?? []) : [],
-    currentUserNpub,
-  );
   $: currentMessages = (() => {
     if (!$activeChannelId) return [];
     const list = [...($backendGroupMessages[$activeChannelId] ?? [])];
     list.sort((a, b) => a.at - b.at);
-    if (isPublicChannel) return visiblePublicChannelMessages(list, publicRoster);
     return list;
   })();
 

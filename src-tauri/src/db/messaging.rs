@@ -135,6 +135,40 @@ pub async fn save_chat<R: Runtime>(handle: AppHandle<R>, chat: &Chat) -> Result<
     Ok(())
 }
 
+/// Create the public channel chat row if missing; an existing row keeps `last_read`, mute level, and metadata.
+pub(crate) fn ensure_public_channel_chat_conn(
+    conn: &rusqlite::Connection,
+    channel_id: &str,
+) -> Result<(), String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    conn.execute(
+        "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level)
+         VALUES (?1, ?2, '[]', '', ?3, '{}', ?4)
+         ON CONFLICT(chat_identifier) DO NOTHING",
+        rusqlite::params![
+            channel_id,
+            ChatType::PublicChannel.to_i32(),
+            now,
+            NotificationLevel::default().as_db_str(),
+        ],
+    )
+    .map_err(|e| format!("Failed to ensure public channel chat: {}", e))?;
+    Ok(())
+}
+
+pub fn ensure_public_channel_chat<R: Runtime>(
+    handle: &AppHandle<R>,
+    channel_id: &str,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let out = ensure_public_channel_chat_conn(&conn, channel_id);
+    crate::account_manager::return_db_connection(conn);
+    out
+}
+
 /// Delete events (and legacy messages) then the chat row. FK CASCADE is not relied on
 /// because account connections do not enable `PRAGMA foreign_keys`.
 pub(crate) fn delete_chat_conn(
@@ -402,6 +436,37 @@ pub async fn save_chat_messages<R: Runtime>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod ensure_public_channel_chat_tests {
+    use super::*;
+
+    #[test]
+    fn existing_row_keeps_read_marker_and_mute_level() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        let channel = "ab".repeat(32);
+
+        ensure_public_channel_chat_conn(&conn, &channel).unwrap();
+        conn.execute(
+            "UPDATE chats SET last_read = 'evt-1', notification_level = 'nothing' WHERE chat_identifier = ?1",
+            rusqlite::params![channel],
+        )
+        .unwrap();
+        ensure_public_channel_chat_conn(&conn, &channel).unwrap();
+
+        let (kind, last_read, level): (i32, String, String) = conn
+            .query_row(
+                "SELECT chat_type, last_read, notification_level FROM chats WHERE chat_identifier = ?1",
+                rusqlite::params![channel],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, ChatType::PublicChannel.to_i32());
+        assert_eq!(last_read, "evt-1");
+        assert_eq!(level, "nothing");
+    }
 }
 
 #[cfg(test)]

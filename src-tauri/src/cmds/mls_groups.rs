@@ -1218,7 +1218,7 @@ pub(crate) fn get_mls_store_reset_state(
 #[derive(serde::Serialize, Clone)]
 pub(crate) struct GroupMembers {
     group_id: String,
-    members: Vec<String>, // npubs
+    pub(crate) members: Vec<String>, // npubs
     admins: Vec<String>,  // admin npubs
     pending_welcomes: Vec<String>,
 }

@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  publicChannelIds,
-  publicChannelRoster,
-  visiblePublicChannelMessages,
-} from './public-channel';
+import { publicChannelIds } from './public-channel';
 import type { Squad } from '../../stores/squads';
 
 const squad = {
@@ -20,26 +16,8 @@ const squad = {
   updatedAt: 1,
 } as Squad;
 
-describe('public channel roster filter', () => {
+describe('public channel ids', () => {
   it('collects real public channel ids only', () => {
     expect(publicChannelIds([squad])).toEqual(['aa'.repeat(32)]);
-  });
-
-  it('includes the current user in the roster', () => {
-    expect(publicChannelRoster(['npub-a'], 'npub-me')).toEqual(new Set(['npub-a', 'npub-me']));
-  });
-
-  it('shows members and hides outsiders', () => {
-    const roster = publicChannelRoster(['npub-a'], 'npub-me');
-    const visible = visiblePublicChannelMessages(
-      [
-        { id: '1', mine: false, npub: 'npub-a' },
-        { id: '2', mine: false, npub: 'npub-stranger' },
-        { id: '3', mine: true, npub: 'npub-me' },
-        { id: '4', mine: false, npub: null },
-      ],
-      roster,
-    );
-    expect(visible.map((message) => message.id)).toEqual(['1', '3']);
   });
 });

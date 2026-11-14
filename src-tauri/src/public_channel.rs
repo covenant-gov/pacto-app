@@ -1,9 +1,9 @@
 //! NIP-28 public channels. Kind 40 creates the room. Kind 42 is a plaintext message.
-//! Membership is not published. The client hides authors who are not on the local squad roster.
+//! Membership is not published. Ingest drops authors who are not on the local squad roster.
 
-use std::collections::HashSet;
-use std::sync::Mutex;
-use std::time::Duration;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
@@ -11,21 +11,26 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Runtime};
 
-use crate::chat::{Chat, ChatType};
 use crate::get_nostr_client;
-use crate::nostr_sign;
 use crate::nostr_tags::e_tag;
+use crate::squad_catalog::SquadRow;
 use crate::Message;
 
 const KIND_CHANNEL_CREATE: u16 = 40;
 const KIND_CHANNEL_MESSAGE: u16 = 42;
 const FETCH_LIMIT: usize = 100;
+const ROSTER_TTL: Duration = Duration::from_secs(30);
 
 static WATCHED: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+static ROSTERS: Lazy<Mutex<HashMap<String, (Instant, Arc<HashSet<String>>)>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub fn clear_watched() {
     if let Ok(mut watched) = WATCHED.lock() {
         watched.clear();
+    }
+    if let Ok(mut rosters) = ROSTERS.lock() {
+        rosters.clear();
     }
 }
 
@@ -156,6 +161,54 @@ async fn sign_with_client(builder: EventBuilder) -> Result<Event, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Own posts always pass. Anyone else must be on the squad roster.
+fn author_allowed(author: &str, me: Option<&str>, roster: &HashSet<String>) -> bool {
+    me == Some(author) || roster.contains(author)
+}
+
+fn squad_id_for_channel(rows: &[SquadRow], channel_id: &str) -> Option<String> {
+    rows.iter()
+        .find(|row| {
+            row.channels.iter().any(|ch| {
+                ch.access.as_deref() == Some("public")
+                    && ch.group_id.trim().eq_ignore_ascii_case(channel_id)
+            })
+        })
+        .map(|row| row.id.clone())
+}
+
+/// Squad members from the announcements MLS group. Empty means unknown; callers fail closed.
+async fn roster_for_channel<R: Runtime>(
+    handle: &AppHandle<R>,
+    channel_id: &str,
+) -> Result<Arc<HashSet<String>>, String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let rows = crate::squad_catalog::list_squads_inner(&conn);
+    crate::account_manager::return_db_connection(conn);
+    let Some(squad_id) = squad_id_for_channel(&rows?, channel_id) else {
+        return Ok(Arc::new(HashSet::new()));
+    };
+
+    if let Ok(cache) = ROSTERS.lock() {
+        if let Some((at, roster)) = cache.get(&squad_id) {
+            if at.elapsed() < ROSTER_TTL {
+                return Ok(roster.clone());
+            }
+        }
+    }
+    let members = crate::cmds::mls_groups::get_mls_group_members(squad_id.clone())
+        .await?
+        .members;
+    let roster: Arc<HashSet<String>> = Arc::new(members.into_iter().collect());
+    if !roster.is_empty() {
+        if let Ok(mut cache) = ROSTERS.lock() {
+            cache.insert(squad_id, (Instant::now(), roster.clone()));
+        }
+    }
+    Ok(roster)
+}
+
+/// Stores and emits a roster-authored kind 42 for a watched channel. `Ok(false)` when dropped or already stored.
 pub async fn ingest_message_event<R: Runtime>(
     handle: &AppHandle<R>,
     event: &Event,
@@ -170,7 +223,17 @@ pub async fn ingest_message_event<R: Runtime>(
         return Ok(false);
     }
     let author = event.pubkey.to_bech32().map_err(|e| e.to_string())?;
-    let mine = crate::account_manager::get_current_account().ok().as_deref() == Some(author.as_str());
+    let me = crate::account_manager::get_current_account().ok();
+    let mine = me.as_deref() == Some(author.as_str());
+    if !mine {
+        let roster = roster_for_channel(handle, &channel_id).await?;
+        if !author_allowed(&author, me.as_deref(), &roster) {
+            return Ok(false);
+        }
+    }
+    if crate::db::event_exists(handle, &event.id.to_hex())? {
+        return Ok(false);
+    }
     let message = Message {
         id: event.id.to_hex(),
         content: event.content.clone(),
@@ -179,13 +242,12 @@ pub async fn ingest_message_event<R: Runtime>(
         npub: Some(author),
         ..Message::default()
     };
-    let chat = Chat::new(channel_id.clone(), ChatType::PublicChannel, vec![]);
-    crate::db::save_chat(handle.clone(), &chat).await?;
+    crate::db::ensure_public_channel_chat(handle, &channel_id)?;
     crate::db::save_message(handle.clone(), &channel_id, &message).await?;
     let _ = handle.emit(
-        "mls_message_new",
+        "public_channel_message_new",
         json!({
-            "group_id": channel_id,
+            "channel_id": channel_id,
             "message": message,
         }),
     );
@@ -273,6 +335,7 @@ pub async fn watch_public_channels(channel_ids: Vec<String>) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::nostr_sign;
 
     fn signed(builder: EventBuilder) -> Event {
         let keys = Keys::generate();
@@ -311,6 +374,45 @@ mod tests {
             channel_message_builder(&channel_id, "", "reply", &reply_id).unwrap(),
         );
         assert_eq!(root_channel_id(&event).as_deref(), Some(channel_id.as_str()));
+    }
+
+    #[test]
+    fn author_allowed_covers_member_self_stranger_and_empty_roster() {
+        let roster: HashSet<String> = ["npub-a".to_string()].into_iter().collect();
+        assert!(author_allowed("npub-a", Some("npub-me"), &roster));
+        assert!(author_allowed("npub-me", Some("npub-me"), &roster));
+        assert!(!author_allowed("npub-stranger", Some("npub-me"), &roster));
+        assert!(!author_allowed("npub-a", Some("npub-me"), &HashSet::new()));
+        assert!(!author_allowed("npub-a", None, &HashSet::new()));
+    }
+
+    #[test]
+    fn squad_lookup_matches_public_channel_rows_only() {
+        use crate::squad_catalog::SquadChannelRow;
+        let channel = "ab".repeat(32);
+        let row = |access: Option<&str>| SquadRow {
+            id: "ann".to_string(),
+            name: "s".to_string(),
+            icon_url: None,
+            channels: vec![SquadChannelRow {
+                name: "room".to_string(),
+                group_id: channel.clone(),
+                order: 1,
+                access: access.map(str::to_string),
+            }],
+            kind: "squad".to_string(),
+            paired_squads: None,
+            visibility: "private".to_string(),
+            commons_tags: None,
+            created_at_ms: 0,
+            updated_at_ms: 0,
+        };
+        assert_eq!(
+            squad_id_for_channel(&[row(Some("public"))], &channel).as_deref(),
+            Some("ann")
+        );
+        assert_eq!(squad_id_for_channel(&[row(Some("open"))], &channel), None);
+        assert_eq!(squad_id_for_channel(&[row(Some("public"))], "other"), None);
     }
 
     #[test]

@@ -22,25 +22,6 @@ export function publicChannelIds(list: Squad[]): string[] {
   return ids;
 }
 
-export function publicChannelRoster(
-  members: readonly string[],
-  selfNpub: string | undefined,
-): Set<string> {
-  const roster = new Set(members.filter((npub) => npub.trim().length > 0));
-  if (selfNpub) roster.add(selfNpub);
-  return roster;
-}
-
-export function visiblePublicChannelMessages<T extends { mine?: boolean; npub?: string | null }>(
-  messages: T[],
-  roster: ReadonlySet<string>,
-): T[] {
-  return messages.filter((message) => {
-    if (message.mine) return true;
-    return !!message.npub && roster.has(message.npub);
-  });
-}
-
 /** Tell the backend which kind-40 ids to store. Empty clears the watch set. */
 export async function watchKnownPublicChannels(): Promise<void> {
   try {
