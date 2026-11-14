@@ -157,6 +157,17 @@ fn validate_channels(channels: &[SquadChannelRow]) -> Result<(), String> {
         if ch.group_id.trim().is_empty() {
             return Err("Channel groupId must be non-empty".to_string());
         }
+        match ch.access.as_deref() {
+            None | Some("open") | Some("closed") => {}
+            Some("public") => {
+                let id = ch.group_id.trim();
+                let event_id = id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit());
+                if !event_id && !id.starts_with("creating-") {
+                    return Err("Public channel groupId must be a 64-char hex event id".to_string());
+                }
+            }
+            Some(other) => return Err(format!("Invalid channel access: {other}")),
+        }
     }
     Ok(())
 }
@@ -895,6 +906,24 @@ mod tests {
         assert_eq!(listed.len(), 2);
         assert_eq!(listed[0].id, "s-a");
         assert_eq!(listed[1].id, "s-b");
+    }
+
+    #[test]
+    fn channel_access_and_public_id_are_validated() {
+        let with = |group_id: &str, access: &str| {
+            let mut input = sample_upsert("grp", "Squad");
+            input.channels.push(SquadChannelRow {
+                name: "room".to_string(),
+                group_id: group_id.to_string(),
+                order: 2,
+                access: Some(access.to_string()),
+            });
+            prepare_row(input)
+        };
+        assert!(with(&"ab".repeat(32), "public").is_ok());
+        assert!(with("g-not-hex", "public").is_err());
+        assert!(with("g-ops", "open").is_ok());
+        assert!(with("g-ops", "secret").is_err());
     }
 
     #[test]

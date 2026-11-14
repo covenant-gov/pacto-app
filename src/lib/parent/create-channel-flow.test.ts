@@ -235,6 +235,25 @@ describe('runCreateChannelInParent', () => {
     );
   });
 
+  it('removes the placeholder and reports an error when public channel creation fails', async () => {
+    vi.mocked(createPublicChannel).mockRejectedValueOnce(new Error('No trusted relay accepted the event'));
+    const onErrorBanner = vi.fn();
+    runCreateChannelInParent({
+      parent,
+      squadId: 'parent-1',
+      name: 'lobby',
+      selectedNpubs: [],
+      access: 'public',
+      onErrorBanner,
+    });
+
+    await vi.waitFor(() => {
+      expect(onErrorBanner).toHaveBeenCalled();
+    });
+    expect(get(squads)[0]?.channels.some((c) => c.name === 'lobby')).toBe(false);
+    expect(publishSquadChannelsCatalog).not.toHaveBeenCalled();
+  });
+
   it('does not publish catalog for closed channels', async () => {
     runCreateChannelInParent({
       parent,

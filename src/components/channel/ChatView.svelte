@@ -65,7 +65,8 @@
   import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
-  import { sendDmMessage, sendPublicChannelMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
+  import { blockedOnPublicChannel, isPublicChannelAccess, sendChannelText } from '../../lib/squad/public-channel-chat';
+  import { sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
   import { sendGifMessage } from '../../lib/api/klipy';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
@@ -123,7 +124,7 @@
     activeParent?.channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ??
     activeParent?.channels[0]?.groupId ??
     null;
-  $: isPublicChannel = activeChannel?.access === 'public';
+  $: isPublicChannel = isPublicChannelAccess(activeChannel?.access);
   $: effectiveMembersGroupId = (() => {
     if (!$activeChannelId) return null;
     if (isVirtualHubChannelId($activeChannelId) || isPublicChannel) {
@@ -359,11 +360,15 @@
     if (!groupId) return;
     groupSendError.set(null);
     const virtualBucket = squadVirtualBucket();
-    const content = isPublicChannel ? body : squadOutgoingContent(body, mentions);
     try {
-      const ok = isPublicChannel
-        ? await sendPublicChannelMessage(groupId, content, repliedTo ?? '')
-        : await sendDmMessage(groupId, content, repliedTo ?? '', { virtualBucket });
+      const ok = await sendChannelText({
+        isPublic: isPublicChannel,
+        groupId,
+        body,
+        mlsContent: squadOutgoingContent(body, mentions),
+        repliedTo: repliedTo ?? '',
+        virtualBucket,
+      });
       setTimeout(scrollMessagesToBottom, 0);
       setTimeout(scrollMessagesToBottom, 200);
       if (ok) cancelReply();
@@ -692,18 +697,12 @@
   }
 
   function onEditMessage(message: DmMessage, body: string): Promise<boolean> {
-    if (isPublicChannel) {
-      showToast(tFn('messaging.channel.publicTextOnly'));
-      return Promise.resolve(false);
-    }
+    if (blockedOnPublicChannel(isPublicChannel, (m) => showToast(m))) return Promise.resolve(false);
     return submitMessageEdit($activeChannelId ?? '', message, body);
   }
 
   function onReact(messageId: string, emoji: string) {
-    if (isPublicChannel) {
-      showToast(tFn('messaging.channel.publicTextOnly'));
-      return;
-    }
+    if (blockedOnPublicChannel(isPublicChannel, (m) => showToast(m))) return;
     const chatId = $activeChannelId;
     if (!chatId) return;
     reactToMessage(messageId, chatId, emoji).catch((e: unknown) => {
@@ -767,10 +766,7 @@
   ): Promise<void> {
     const groupId = $activeChannelId;
     if (!groupId) return;
-    if (isPublicChannel) {
-      groupSendError.set(tFn('messaging.channel.publicTextOnly'));
-      return;
-    }
+    if (blockedOnPublicChannel(isPublicChannel, (m) => groupSendError.set(m))) return;
     groupSendError.set(null);
     try {
       const ok = await sendFileBytes(
@@ -798,10 +794,7 @@
   ): Promise<void> {
     const groupId = $activeChannelId;
     if (!groupId) return;
-    if (isPublicChannel) {
-      groupSendError.set(tFn('messaging.channel.publicTextOnly'));
-      return;
-    }
+    if (blockedOnPublicChannel(isPublicChannel, (m) => groupSendError.set(m))) return;
     groupSendError.set(null);
     try {
       const ok = await sendGifMessage(

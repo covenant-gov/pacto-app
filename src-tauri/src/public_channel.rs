@@ -1,10 +1,11 @@
 //! NIP-28 public channels. Kind 40 creates the room. Kind 42 is a plaintext message.
 //! Membership is not published. Ingest drops authors who are not on the local squad roster.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use futures_util::{stream, StreamExt};
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -20,10 +21,20 @@ const KIND_CHANNEL_CREATE: u16 = 40;
 const KIND_CHANNEL_MESSAGE: u16 = 42;
 const FETCH_LIMIT: usize = 100;
 const ROSTER_TTL: Duration = Duration::from_secs(30);
+const BACKFILL_PAGES: usize = 3;
+const BACKFILL_CONCURRENCY: usize = 4;
+
+#[derive(Default)]
+struct LiveSubscription {
+    id: Option<SubscriptionId>,
+    channels: BTreeSet<String>,
+}
 
 static WATCHED: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 static ROSTERS: Lazy<Mutex<HashMap<String, (Instant, Arc<HashSet<String>>)>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+static LIVE: Lazy<Mutex<LiveSubscription>> = Lazy::new(|| Mutex::new(LiveSubscription::default()));
+static WATCH_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 
 pub fn clear_watched() {
     if let Ok(mut watched) = WATCHED.lock() {
@@ -32,6 +43,16 @@ pub fn clear_watched() {
     if let Ok(mut rosters) = ROSTERS.lock() {
         rosters.clear();
     }
+    if let Ok(mut live) = LIVE.lock() {
+        *live = LiveSubscription::default();
+    }
+}
+
+/// True for the `#e`-filtered kind 42 subscription opened by `watch_public_channels`.
+pub fn is_live_subscription(id: &SubscriptionId) -> bool {
+    LIVE.lock()
+        .map(|live| live.id.as_ref() == Some(id))
+        .unwrap_or(false)
 }
 
 fn watch_one(channel_id: &str) {
@@ -131,6 +152,22 @@ pub fn root_channel_id(event: &Event) -> Option<String> {
         }
     }
     fallback
+}
+
+/// Kind 42 reply target: the `reply` marked e tag, empty when absent.
+pub fn reply_to_id(event: &Event) -> String {
+    event
+        .tags
+        .iter()
+        .find_map(|tag| match tag.as_standardized() {
+            Some(TagStandard::Event {
+                event_id,
+                marker: Some(Marker::Reply),
+                ..
+            }) => Some(event_id.to_hex()),
+            _ => None,
+        })
+        .unwrap_or_default()
 }
 
 fn has_pubkey_list_tag(event: &Event) -> bool {
@@ -234,9 +271,10 @@ pub async fn ingest_message_event<R: Runtime>(
     if crate::db::event_exists(handle, &event.id.to_hex())? {
         return Ok(false);
     }
-    let message = Message {
+    let mut message = Message {
         id: event.id.to_hex(),
         content: event.content.clone(),
+        replied_to: reply_to_id(event),
         at: event.created_at.as_secs().saturating_mul(1000),
         mine,
         npub: Some(author),
@@ -244,6 +282,7 @@ pub async fn ingest_message_event<R: Runtime>(
     };
     crate::db::ensure_public_channel_chat(handle, &channel_id)?;
     crate::db::save_message(handle.clone(), &channel_id, &message).await?;
+    let _ = crate::db::populate_reply_context(handle, &mut message).await;
     let _ = handle.emit(
         "public_channel_message_new",
         json!({
@@ -315,21 +354,89 @@ pub async fn watch_public_channels(channel_ids: Vec<String>) -> Result<(), Strin
         return Ok(());
     };
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
-    for channel_id in ids {
+
+    let _serial = WATCH_LOCK.lock().await;
+    let wanted: BTreeSet<String> = ids.into_iter().collect();
+    let (previous_sub, previous_channels) = {
+        let live = LIVE.lock().map_err(|_| "Public channel state poisoned".to_string())?;
+        (live.id.clone(), live.channels.clone())
+    };
+    if wanted == previous_channels {
+        return Ok(());
+    }
+
+    let new_sub = if wanted.is_empty() {
+        None
+    } else {
+        let pool = client.relays().await;
+        let relays = crate::trusted_relays::trusted_relays_in_pool(&pool);
+        if relays.is_empty() {
+            return Err("No trusted relay connected".to_string());
+        }
         let filter = Filter::new()
             .kind(Kind::from_u16(KIND_CHANNEL_MESSAGE))
-            .custom_tag(SingleLetterTag::lowercase(Alphabet::E), &channel_id)
+            .custom_tags(SingleLetterTag::lowercase(Alphabet::E), wanted.iter().cloned())
+            .limit(0);
+        let output = client
+            .subscribe_to(relays, filter, None)
+            .await
+            .map_err(|e| e.to_string())?;
+        Some(output.val)
+    };
+    if let Some(previous) = previous_sub {
+        client.unsubscribe(&previous).await;
+    }
+    if let Ok(mut live) = LIVE.lock() {
+        live.id = new_sub;
+        live.channels = wanted.clone();
+    }
+
+    let added: Vec<String> = wanted.difference(&previous_channels).cloned().collect();
+    stream::iter(added)
+        .for_each_concurrent(BACKFILL_CONCURRENCY, |channel_id| {
+            let handle = handle.clone();
+            let client = client.clone();
+            async move { backfill_channel(&handle, &client, &channel_id).await }
+        })
+        .await;
+    Ok(())
+}
+
+/// Newest-first pages of kind 42s for one channel, trusted relays only.
+async fn backfill_channel<R: Runtime>(handle: &AppHandle<R>, client: &Client, channel_id: &str) {
+    let mut until: Option<Timestamp> = None;
+    for _ in 0..BACKFILL_PAGES {
+        let mut filter = Filter::new()
+            .kind(Kind::from_u16(KIND_CHANNEL_MESSAGE))
+            .custom_tag(SingleLetterTag::lowercase(Alphabet::E), channel_id)
             .limit(FETCH_LIMIT);
-        match client.fetch_events(filter, Duration::from_secs(15)).await {
-            Ok(events) => {
-                for event in events {
-                    let _ = ingest_message_event(&handle, &event).await;
-                }
+        if let Some(until) = until {
+            filter = filter.until(until);
+        }
+        let events = match client
+            .fetch_events_from(
+                crate::trusted_relays::trusted_relays().to_vec(),
+                filter,
+                Duration::from_secs(15),
+            )
+            .await
+        {
+            Ok(events) => events,
+            Err(e) => {
+                eprintln!("[public-channel] fetch {channel_id} failed: {e}");
+                return;
             }
-            Err(e) => eprintln!("[public-channel] fetch {channel_id} failed: {e}"),
+        };
+        let count = events.len();
+        let oldest = events.iter().map(|event| event.created_at).min();
+        for event in events {
+            let _ = ingest_message_event(handle, &event).await;
+        }
+        match oldest {
+            Some(oldest) if count >= FETCH_LIMIT => until = Some(oldest),
+            _ => return,
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -413,6 +520,16 @@ mod tests {
         );
         assert_eq!(squad_id_for_channel(&[row(Some("open"))], &channel), None);
         assert_eq!(squad_id_for_channel(&[row(Some("public"))], "other"), None);
+    }
+
+    #[test]
+    fn reply_to_id_reads_the_reply_marker_only() {
+        let channel_id = "cd".repeat(32);
+        let reply_id = "ef".repeat(32);
+        let replied = signed(channel_message_builder(&channel_id, "", "re", &reply_id).unwrap());
+        assert_eq!(reply_to_id(&replied), reply_id);
+        let plain = signed(channel_message_builder(&channel_id, "", "hi", "").unwrap());
+        assert_eq!(reply_to_id(&plain), "");
     }
 
     #[test]
