@@ -37,6 +37,7 @@
 	"wallet.squadsLabel": "Squads",
 	"wallet.accountScheme.derived": "Derived",
 	"wallet.accountScheme.imported": "Imported",
+	"wallet.importedAccountsSection": "Imported",
 	"wallet.accountPurpose.squad": "Squad",
 	"wallet.accountPurpose.advanced": "Advanced",
 	"wallet.loading": "Loading…",

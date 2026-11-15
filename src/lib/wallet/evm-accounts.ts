@@ -48,6 +48,11 @@ export function formatHdIndexLabel(hdIndex: number): string {
   return `#${displayHdIndex(hdIndex)}`;
 }
 
+/** Phrase-derived BIP44 account (not an imported private key). */
+export function isSeedDerivedEvmAccount(row: Pick<EvmAccountRow, 'scheme'>): boolean {
+  return row.scheme === 'bip44_v1';
+}
+
 /** Translation key for the account scheme shown in UI. */
 export function evmAccountSchemeLabel(scheme: string): string {
   if (scheme === 'bip44_v1') return 'wallet.accountScheme.derived';

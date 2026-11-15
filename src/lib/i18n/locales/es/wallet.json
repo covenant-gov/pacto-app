@@ -36,6 +36,7 @@
 	"wallet.squadsLabel": "Escuads",
 	"wallet.accountScheme.derived": "Derivada",
 	"wallet.accountScheme.imported": "Importada",
+	"wallet.importedAccountsSection": "Importadas",
 	"wallet.accountPurpose.squad": "Escuad",
 	"wallet.accountPurpose.advanced": "Avanzada",
 	"wallet.loading": "Cargando…",
