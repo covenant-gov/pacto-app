@@ -53,8 +53,8 @@ describe('EvmDashGasSection', () => {
     });
     expect(screen.getByText('Global pool (Sepolia)')).toBeTruthy();
     expect(screen.getByText('ETH')).toBeTruthy();
-    expect(screen.getByText('1.000000000000000000')).toBeTruthy();
-    expect(screen.queryByText('1.000000000000000000 ETH spendable')).toBeNull();
+    expect(screen.getByText('1.000000')).toBeTruthy();
+    expect(screen.queryByText('1.000000 ETH spendable')).toBeNull();
   });
 
   it('shows the load error copy when the fee list fails', async () => {
@@ -72,7 +72,7 @@ describe('EvmDashGasSection', () => {
     render(EvmDashGasSection);
     await openDisclosure();
     await waitFor(() => {
-      expect(screen.getByText('1.000000000000000000')).toBeTruthy();
+      expect(screen.getByText('1.000000')).toBeTruthy();
     });
     expect(mockLoad).toHaveBeenCalledTimes(1);
     expect(mockPool).toHaveBeenCalledTimes(1);
@@ -84,14 +84,14 @@ describe('EvmDashGasSection', () => {
 
     expect(mockLoad).toHaveBeenCalledTimes(1);
     expect(mockPool).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('1.000000000000000000')).toBeTruthy();
+    expect(screen.getByText('1.000000')).toBeTruthy();
   });
 
   it('refetches when the refresh control is clicked', async () => {
     render(EvmDashGasSection);
     await openDisclosure();
     await waitFor(() => {
-      expect(screen.getByText('1.000000000000000000')).toBeTruthy();
+      expect(screen.getByText('1.000000')).toBeTruthy();
     });
     expect(mockLoad).toHaveBeenCalledTimes(1);
 
