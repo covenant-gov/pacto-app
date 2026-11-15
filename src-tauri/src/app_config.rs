@@ -50,11 +50,8 @@ pub struct FeatureFlagDescriptor {
     pub default_enabled: bool,
 }
 
-/// Registry of feature flags. Defaults on so Advanced EVM stays available without a Settings toggle.
-pub const FEATURE_FLAGS: &[FeatureFlagDescriptor] = &[FeatureFlagDescriptor {
-    key: "advanced_evm_accounts",
-    default_enabled: true,
-}];
+/// Registry of feature flags shipped in `get_app_config`. Empty until a gated surface needs one.
+pub const FEATURE_FLAGS: &[FeatureFlagDescriptor] = &[];
 
 /// Compile-time guard: PIN must be at least 4 digits to prevent dangerously low entropy.
 /// If `PIN_DIGIT_COUNT` is ever changed from the v1 default of 6, this assertion must keep holding.

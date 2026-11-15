@@ -164,7 +164,6 @@
     {evmAddress}
     embeddedInSettings={true}
     showSquadList={true}
-    showAdvancedBlock={false}
     {evmAccountList}
     {accountsLoading}
     {onSetActiveAccount}

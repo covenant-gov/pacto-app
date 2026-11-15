@@ -14,7 +14,6 @@
   import {
     isSeedDerivedEvmAccount,
     squadEvmAccounts,
-    advancedEvmAccounts,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
@@ -22,22 +21,17 @@
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
   import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
-  import { featureEnabled } from '../../stores/feature-flags';
 
   interface Props {
     accountNpub?: string | null;
     evmAddress?: string | null;
     embeddedInSettings?: boolean;
     showSquadList?: boolean;
-    showAdvancedBlock?: boolean;
     evmAccountList?: EvmAccountRow[];
     accountsLoading?: boolean;
     onSetActiveAccount?: (id: string) => void;
-    onSetActiveAdvancedAccount?: (id: string) => void;
     onEditAccount?: (acc: EvmAccountRow) => void;
     onAddSquad?: () => void;
-    onAddAdvanced?: () => void;
-    onImportKey?: () => void;
   }
 
   let {
@@ -45,19 +39,12 @@
     evmAddress = null,
     embeddedInSettings = false,
     showSquadList = true,
-    showAdvancedBlock = false,
     evmAccountList = [],
     accountsLoading = false,
     onSetActiveAccount = () => {},
-    onSetActiveAdvancedAccount = () => {},
     onEditAccount = () => {},
     onAddSquad = () => {},
-    onAddAdvanced = () => {},
-    onImportKey = () => {},
   }: Props = $props();
-
-  // Creating advanced keys is opt-in; accounts that already exist are always listed.
-  const advancedAccountsEnabled = featureEnabled('advanced_evm_accounts');
 
   let bindings: EvmAccountSquadBinding[] = $state([]);
   let bindingsLoading = $state(false);
@@ -66,11 +53,8 @@
   let openAccountMenuId: string | null = $state(null);
 
   let squadList = $derived(squadEvmAccounts(evmAccountList));
-  let advancedList = $derived(advancedEvmAccounts(evmAccountList));
   let bindingMap = $derived(bindingsByAccountId(bindings));
-  let displayRows = $derived(
-    showSquadList ? (embeddedInSettings || !showAdvancedBlock ? squadList : [...squadList, ...advancedList]) : [],
-  );
+  let displayRows = $derived(showSquadList ? squadList : []);
   let derivedRows = $derived(displayRows.filter(isSeedDerivedEvmAccount));
   let importedRows = $derived(displayRows.filter((row) => !isSeedDerivedEvmAccount(row)));
 
@@ -142,10 +126,6 @@
     return bindingMap.get(acc.id) ?? [];
   }
 
-  function isAdvancedRow(acc: EvmAccountRow): boolean {
-    return acc.purpose === 'advanced';
-  }
-
   function accountName(acc: EvmAccountRow): string {
     return acc.label?.trim() || shortAddr(acc.address);
   }
@@ -168,11 +148,7 @@
 
 <section
   class="evm-section wallet-view-section"
-  aria-labelledby={showSquadList
-    ? embeddedInSettings
-      ? 'wallet-squad-evm-heading'
-      : 'wallet-evm-accounts-heading'
-    : 'wallet-advanced-evm-heading'}
+  aria-labelledby={embeddedInSettings ? 'wallet-squad-evm-heading' : 'wallet-evm-accounts-heading'}
 >
   {#if showSquadList}
   <div class="wallet-view-section-head">
@@ -191,24 +167,6 @@
       >
         {embeddedInSettings ? $t('wallet.addSquadAccount') : $t('wallet.addNewAccount')}
       </button>
-      {#if !embeddedInSettings && $advancedAccountsEnabled}
-        <button
-          type="button"
-          class="wallet-view-btn wallet-view-btn-secondary"
-          disabled={!evmAddress}
-          onclick={onAddAdvanced}
-        >
-          {$t('wallet.addAdvancedAccount')}
-        </button>
-        <button
-          type="button"
-          class="wallet-view-btn wallet-view-btn-secondary"
-          disabled={!evmAddress}
-          onclick={onImportKey}
-        >
-          {$t('wallet.importPrivateKey')}
-        </button>
-      {/if}
     </div>
   </div>
 
@@ -227,7 +185,7 @@
       {@const menuOpen = openAccountMenuId === acc.id}
       <li
         class="wallet-view-account-row evm-account-row"
-        class:wallet-view-account-active={!embeddedInSettings && (acc.isActive || acc.isActiveAdvanced)}
+        class:wallet-view-account-active={!embeddedInSettings && acc.isActive}
       >
         {#if embeddedInSettings}
           <div class="evm-account-primary">
@@ -327,11 +285,10 @@
           <label class="wallet-view-account-select">
             <input
               type="radio"
-              name={isAdvancedRow(acc) ? 'active_advanced_evm_account' : 'active_evm_account'}
-              checked={isAdvancedRow(acc) ? acc.isActiveAdvanced : acc.isActive}
+              name="active_evm_account"
+              checked={acc.isActive}
               disabled={accountsLoading}
-              onchange={() =>
-                isAdvancedRow(acc) ? onSetActiveAdvancedAccount(acc.id) : onSetActiveAccount(acc.id)}
+              onchange={() => onSetActiveAccount(acc.id)}
             />
             <span class="wallet-view-account-meta">
               <span class="wallet-view-account-name">{name}</span>
@@ -349,14 +306,11 @@
             <code class="wallet-view-account-addr">{shortAddr(acc.address)}</code>
           </button>
           <div class="wallet-view-account-tools">
-            {#if acc.isActive && !isAdvancedRow(acc)}
+            {#if acc.isActive}
               <span class="wallet-view-account-badge">{$t('wallet.signerBadge')}</span>
             {/if}
-            {#if acc.isDefaultShared && !isAdvancedRow(acc)}
+            {#if acc.isDefaultShared}
               <span class="wallet-view-account-badge">{$t('wallet.receiverBadge')}</span>
-            {/if}
-            {#if acc.isActiveAdvanced && isAdvancedRow(acc)}
-              <span class="wallet-view-account-badge">{$t('wallet.advancedSignerBadge')}</span>
             {/if}
             <EditIconButton
               disabled={accountsLoading}
@@ -387,68 +341,6 @@
       </ul>
     {/if}
   {/if}
-  {/if}
-
-  {#if showAdvancedBlock && ($advancedAccountsEnabled || advancedList.length > 0)}
-    <div class="evm-advanced-actions">
-      <h3 id="wallet-advanced-evm-heading" class="evm-advanced-actions-title">{$t('wallet.advancedEvmAccountsTitle')}</h3>
-      {#if $advancedAccountsEnabled}
-        <div class="wallet-view-account-actions">
-          <button
-            type="button"
-            class="wallet-view-btn wallet-view-btn-secondary"
-            disabled={!evmAddress}
-            onclick={onAddAdvanced}
-          >
-            {$t('wallet.addAdvancedAccount')}
-          </button>
-          <button
-            type="button"
-            class="wallet-view-btn wallet-view-btn-secondary"
-            disabled={!evmAddress}
-            onclick={onImportKey}
-          >
-            {$t('wallet.importPrivateKey')}
-          </button>
-        </div>
-      {/if}
-      {#if advancedList.length > 0}
-        <ul class="wallet-view-account-list evm-advanced-list">
-          {#each advancedList as acc (acc.id)}
-            <li class="wallet-view-account-row evm-account-row evm-advanced-row">
-              <code class="wallet-view-account-addr evm-account-addr-full" title={acc.address}>{acc.address}</code>
-              <div class="evm-account-meta-row">
-                <div class="evm-account-badges">
-                  {#if acc.isActiveAdvanced}
-                    <span class="wallet-view-account-badge">{$t('wallet.advancedSignerBadge')}</span>
-                  {/if}
-                  {#if acc.label?.trim()}
-                    <span class="wallet-view-account-name">{acc.label.trim()}</span>
-                  {/if}
-                </div>
-                <div class="wallet-view-account-tools evm-account-tools-inline">
-                <button
-                  type="button"
-                  class="wallet-view-btn-export-key"
-                  disabled={accountsLoading}
-                  onclick={() => openExportModal(acc)}
-                >
-                  {$t('wallet.exportKey')}
-                </button>
-                <EditIconButton
-                  disabled={accountsLoading}
-                  ariaLabel={$t('wallet.editAccountName')}
-                  title={$t('wallet.editDisplayName')}
-                  className="evm-account-edit-btn"
-                  onclick={() => onEditAccount(acc)}
-                />
-                </div>
-              </div>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </div>
   {/if}
 </section>
 
@@ -566,8 +458,7 @@
   }
 
   .evm-section :global(.evm-account-edit-btn),
-  .evm-section :global(.wallet-view-account-copy-icon-btn),
-  .evm-section :global(.wallet-view-btn-export-key) {
+  .evm-section :global(.wallet-view-account-copy-icon-btn) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -590,19 +481,6 @@
     width: 2rem;
     height: 2rem;
     padding: 0;
-  }
-
-  .evm-section :global(.wallet-view-btn-export-key) {
-    min-height: 2rem;
-    padding: 0 10px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    white-space: nowrap;
-    transition: border-color 0.2s;
-  }
-
-  .evm-section :global(.wallet-view-btn-export-key:hover) {
-    border-color: var(--brand);
   }
 
   .evm-section :global(.evm-account-edit-btn:hover:not(:disabled)) {
@@ -764,33 +642,6 @@
     border-radius: 4px;
   }
 
-  .evm-account-addr-full {
-    font-size: 0.8125rem;
-    word-break: break-all;
-    white-space: normal;
-  }
-
-  .evm-account-meta-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .evm-account-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    min-width: 0;
-  }
-
-  .evm-account-tools-inline {
-    flex-shrink: 0;
-    justify-content: flex-end;
-  }
-
   .evm-account-squad-block {
     display: flex;
     flex-direction: column;
@@ -854,26 +705,5 @@
     font-size: 0.75rem;
     color: var(--text-muted);
     font-family: ui-monospace, 'Courier New', monospace;
-  }
-
-  .evm-advanced-actions {
-    margin-top: 28px;
-    padding-top: 24px;
-    border-top: 1px solid var(--border-subtle);
-  }
-
-  .evm-advanced-actions-title {
-    margin: 0 0 6px;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .evm-advanced-list {
-    margin-top: 12px;
-  }
-
-  .evm-advanced-row {
-    gap: 8px;
   }
 </style>

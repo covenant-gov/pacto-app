@@ -107,7 +107,7 @@ Operator `ALCHEMY_RPC_KEY` does not override an explicit custom squad URL. Squad
 | Squad curated deploy / gov writes | Backend | Typed Alloy commands + squad-purpose gate (unchanged) |
 | USD spot display | Backend + TS | `wallet_get_usd_spot_prices` + `src/lib/wallet/pricing.ts` |
 | Wallet send “done” + DM card | Backend policy | Wait for **successful receipt** before return; see [TRANSACTION_LIFECYCLE.md](./TRANSACTION_LIFECYCLE.md) |
-| Advanced panel (Settings → EVM) | Frontend | **`WalletAdvancedPanel.svelte`** + `calldata-builder.ts`; simulate via viem `eth_call`, send via Tauri |
+| Advanced opaque call (no Settings UI) | Backend | **`evm_send_advanced_contract_call`**; calldata helpers in `calldata-builder.ts` remain for other callers |
 
 ---
 

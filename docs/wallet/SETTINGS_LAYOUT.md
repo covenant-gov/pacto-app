@@ -1,6 +1,6 @@
 # Profile vs Settings
 
-The left rail has two account destinations. **Profile** (`activeView === 'profile'`) is identity plus a light personal wallet. **Settings** (`activeView === 'settings'`) is infra: relays, chains, tokens, RPC, Advanced EVM, backup, and danger.
+The left rail has two account destinations. **Profile** (`activeView === 'profile'`) is identity plus a light personal wallet. **Settings** (`activeView === 'settings'`) is infra: relays, chains, tokens, RPC, backup, and danger.
 
 The DM **WalletBar** stays peer-context send. It is not this page.
 
@@ -27,7 +27,7 @@ Enabled chains, watched tokens, and RPC are **read-only** on Profile. Edit them 
 | Anchor | Section | Contents |
 |--------|---------|----------|
 | `#settings-nostr` | Nostr | Relay list, add/remove custom relays |
-| `#settings-evm` | EVM | Preferred network, enabled chains, tokens, RPC, Advanced EVM accounts + contract call |
+| `#settings-evm` | EVM | Preferred network, enabled chains, tokens, RPC |
 | `#settings-app` | App | Theme selector |
 | `#settings-notifications` | Notifications | App notification prefs |
 | `#settings-commons` | Commons | Hidden Commons tags |
@@ -41,7 +41,8 @@ Sections default to expanded. Unknown persisted collapse keys are ignored.
 - **Preferred network** — default filter network; lives with enabled chains in `EvmWalletExtras`.
 - **Enabled chains** — grouped L1 / L2 / testnet; at least one chain must stay on.
 - **RPC endpoints** — personal RPC URLs, default endpoint picker, provider signup links.
-- **Advanced EVM** — imported/derived advanced keys and **Advanced contract call**. Squad keys are managed on Profile.
+
+Squad keys are managed on Profile.
 
 ## Wallet summary address
 

@@ -68,9 +68,9 @@ Compile-time flags ride on the same `get_app_config` snapshot as other limits, s
 
 | Key | Default | Gates |
 |---|---|---|
-| `advanced_evm_accounts` | on | "Add advanced account" / "Import private key" and the "Advanced contract call" panel (`EvmAccountsSection`, `SettingsEvmSection`). |
+| *(none)* | — | `FEATURE_FLAGS` is empty until a gated surface needs a key. |
 
 ## Non-goals
 
-- Not a remote feature-flag service — values are compiled into the binary, fetched once at boot. The only per-account state is the experimental-flag choices above.
+- Not a remote feature-flag service — values are compiled into the binary, fetched once at boot. Optional per-account overrides may exist in `localStorage` when flags are registered.
 - `analyticsEnabled` is scaffolding for a future flag; nothing reads it yet.

@@ -22,7 +22,7 @@ Every client-originated on-chain write registers a job on `pendingOnChainJobs` (
 |---------|---------|--------|
 | `wallet_build_and_send_transaction` | `waitForConfirmation: false` | Returns `txHash` after broadcast; optional `blockNumber` when `waitForConfirmation: true`. |
 | `wallet_wait_for_transaction` | — | Poll receipt; same result shape as confirmed send. |
-| `evm_send_advanced_contract_call` | `waitForConfirmation: false` | Advanced Settings panel. |
+| `evm_send_advanced_contract_call` | `waitForConfirmation: false` | Advanced-purpose signer only (no Settings UI). |
 | `evm_send_squad_allowlisted_contract_call` | `waitForConfirmation: false` | Dashboard allowlist sends. |
 | Deploy / governance commands | still wait for receipt internally | UI closes immediately and runs the invoke in a background job (`runOnChainInBackground`). |
 

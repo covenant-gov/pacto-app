@@ -145,13 +145,10 @@ Payload shape tests: `src/lib/governance/governance-announce-payload.test.ts`, `
 
 ## 6. Advanced contract call
 
-Settings → EVM → **Advanced contract call**. Requires **advanced-purpose** signer (import or **Add advanced account**).
+Settings no longer exposes Advanced EVM accounts or the contract-call panel. Backend **`evm_send_advanced_contract_call`** remains for advanced-purpose signers only.
 
-- [ ] `readContract` via `src/lib/evm/read-plane.ts` + `erc20-minimal` ABI — no key.
-- [ ] Advanced send: simulate → review → tx mines; banner shows **not linked to any squad**.
 - [ ] Squad signer only → **`ADVANCED_SIGNER_REQUIRED`**.
 - [ ] Roster share rejects advanced-purpose address.
-- [ ] Reverting calldata → simulate shows revert.
 
 See [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md).
 
@@ -161,7 +158,7 @@ See [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md).
 
 Settings no longer exposes allowlist or contract-call UI. Backend list/upsert/send and MLS `squad_contract_allowlist_updated` ingest still exist.
 
-- [ ] Advanced panel still sends arbitrary `to`; squad command refuses advanced signer.
+- [ ] Squad allowlisted send refuses advanced signer.
 
 ---
 

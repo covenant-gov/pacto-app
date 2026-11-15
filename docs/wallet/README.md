@@ -39,7 +39,7 @@ Accepting a request opens the send form pre-filled and may attach **`request_id`
 ### Squad vs Advanced keys
 
 - **Squad accounts** (`purpose: squad`): DM WalletBar Send, squad roster shares, treasury deploy, and governance commands. Only squad-purpose keys may be the active signer or profile receiving address. Squad-scoped gov / Squad Admin / tracked-token writes require a **roster binding** for the parent and pass **ACL** (access control) preflight ([ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md)).
-- **Advanced accounts** (`purpose: advanced`): imported keys or derived advanced-only addresses. Used only from **Settings → Advanced** contract call (`WalletAdvancedPanel.svelte`). Backend command **`evm_send_advanced_contract_call`** refuses squad signers; squad paths refuse advanced addresses.
+- **Advanced accounts** (`purpose: advanced`): imported or derived advanced-only addresses. No Settings UI; backend **`evm_send_advanced_contract_call`** still refuses squad signers, and squad paths refuse advanced addresses.
 - **Generic reads** (token/module observation): viem via **`src/lib/evm/read-plane.ts`** — no private key. Does not replace curated pacto-gov dashboard reads in Rust.
 - **Squad allowlisted calls:** Backend + MLS ingest remain (`evm_send_squad_allowlisted_contract_call`, `squad_contract_allowlist_updated`). Settings no longer exposes allowlist or arbitrary contract-call UI.
 - Operator smoke: [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md).

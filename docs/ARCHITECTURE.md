@@ -86,7 +86,7 @@ flowchart LR
         B --> D[phrase-derived advanced key]
         E[imported key] --> D
         C -->|WalletBar / treasury / gov| F[Rust send: Alloy sign + broadcast]
-        D -->|Settings → Advanced| G[evm_send_advanced_contract_call]
+        D -->|advanced-purpose only| G[evm_send_advanced_contract_call]
         H[viem read-plane] --> I[frontend balances, Safe reads, receipt polling]
         F --> J[SQLite squad_infra]
     end
@@ -97,7 +97,7 @@ flowchart LR
 - **Curated governance reads** (e.g., pacto-gov dashboard and squad sponsor registry lookups) happen in Rust using Alloy, alongside all writes.
 - **Writes** (WalletBar sends, treasury deployments, governance transactions) happen in Rust using Alloy.
 - **Squad access control** resolves the current account’s roster EVM for a parent, then checks Hats / Squad Admin on-chain before signing (`require_capability`). UI disable reasons come from the same predicates via `get_squad_capabilities`. Normative detail: [`docs/governance/ACCESS_CONTROL.md`](./governance/ACCESS_CONTROL.md).
-- Signer purpose matters: `squad` keys can act on treasury and governance; `advanced` keys are restricted to the Advanced panel.
+- Signer purpose matters: `squad` keys can act on treasury and governance; `advanced` keys are refused on squad paths (no Settings Advanced UI).
 - Concurrent Pacto Gov / Squad Admin writes for a parent are serialized (write lock) and set an explicit `chain_id` on the transaction request.
 
 ### 3. Storage
