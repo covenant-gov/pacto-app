@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { parseEther } from 'viem';
 import {
   buildCalldataFromAbiForm,
   ethAmountToWeiString,
@@ -8,6 +9,7 @@ import {
   parseAbiArgsJson,
   simulateAdvancedTransaction,
   weiStringToEthDisplay,
+  weiToEthExactString,
 } from './calldata-builder';
 import { loadShippedAbi } from './abi-loader';
 
@@ -45,8 +47,23 @@ describe('calldata-builder', () => {
   });
 
   it('converts wei to eth display', () => {
-    expect(weiStringToEthDisplay('0')).toBe('0.000000000000000000');
-    expect(weiStringToEthDisplay('1000000000000000000')).toBe('1.000000000000000000');
+    expect(weiStringToEthDisplay('0')).toBe('0.000000');
+    expect(weiStringToEthDisplay('1000000000000000000')).toBe('1.000000');
+  });
+
+  it('keeps full precision when six decimals would hide wei', () => {
+    expect(weiStringToEthDisplay('1')).toBe('0.000000000000000001');
+    expect(weiStringToEthDisplay('1500000000000400000')).toBe('1.5000000000004');
+    expect(weiStringToEthDisplay('1500000000000000000')).toBe('1.500000');
+  });
+
+  it('round-trips send amounts through parseEther without loss', () => {
+    const amounts = [1n, 400_000_000_000n, parseEther('1.2345675'), parseEther('1'), 0n];
+    for (const wei of amounts) {
+      expect(parseEther(weiToEthExactString(wei))).toBe(wei);
+      expect(parseEther(weiToEthExactString(wei.toString()))).toBe(wei);
+    }
+    expect(weiToEthExactString(400_000_000_000n)).toBe('0.0000004');
   });
 
   it('returns the raw input when wei cannot be parsed', () => {

@@ -50,10 +50,19 @@ pub fn address_purpose<R: Runtime>(
     handle: &AppHandle<R>,
     address: &str,
 ) -> Result<Option<String>, String> {
+    let conn = account_manager::get_db_connection(handle)?;
+    let out = address_purpose_on_conn(&conn, address);
+    account_manager::return_db_connection(conn);
+    out
+}
+
+fn address_purpose_on_conn(
+    conn: &rusqlite::Connection,
+    address: &str,
+) -> Result<Option<String>, String> {
     let Some(norm) = normalize_hex_address(address.trim()) else {
         return Ok(None);
     };
-    let conn = account_manager::get_db_connection(handle)?;
     let purpose: Option<String> = conn
         .query_row(
             "SELECT purpose FROM evm_accounts WHERE lower(address) = lower(?1) LIMIT 1",
@@ -62,8 +71,7 @@ pub fn address_purpose<R: Runtime>(
         )
         .optional()
         .map_err(|e| format!("evm_accounts purpose lookup: {}", e))?;
-    account_manager::return_db_connection(conn);
-    Ok(purpose.map(|p| normalize_purpose(&p).unwrap_or(PURPOSE_SQUAD.to_string())))
+    purpose.map(|p| normalize_purpose(&p)).transpose()
 }
 
 /// Reject roster / shared-profile use of a local advanced-purpose address.
@@ -240,6 +248,17 @@ fn require_squad_purpose_account_id(
     Ok(())
 }
 
+/// Reject a send from an unknown or non-squad local account without touching the active signer.
+pub(crate) fn require_squad_purpose_for_account_id<R: Runtime>(
+    handle: &AppHandle<R>,
+    account_id: &str,
+) -> Result<(), String> {
+    let conn = account_manager::get_db_connection(handle)?;
+    let out = require_squad_purpose_account_id(&conn, account_id.trim());
+    account_manager::return_db_connection(conn);
+    out
+}
+
 fn sql_get_setting(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, String> {
     let v: Option<String> = conn
         .query_row(
@@ -282,13 +301,8 @@ fn count_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<i64, String> {
 
 pub(crate) async fn get_mnemonic_for_hd<R: Runtime>(
     handle: AppHandle<R>,
-) -> Result<String, String> {
-    if let Some(m) = crate::mnemonic_seed_get() {
-        return Ok(m);
-    }
-    db::get_seed(handle)
-        .await?
-        .ok_or_else(|| "Recovery phrase not loaded. Unlock the app again.".to_string())
+) -> Result<zeroize::Zeroizing<String>, String> {
+    crate::ensure_session_mnemonic(handle).await
 }
 
 pub(crate) async fn resolve_private_key_hex_for_account_id<R: Runtime>(
@@ -923,7 +937,62 @@ pub async fn set_active_advanced_evm_account<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_purpose, PURPOSE_ADVANCED, PURPOSE_SQUAD};
+    use super::{
+        address_purpose_on_conn, normalize_purpose, require_squad_purpose_account_id,
+        PURPOSE_ADVANCED, PURPOSE_SQUAD,
+    };
+
+    const SQUAD_ADDR: &str = "0x1111111111111111111111111111111111111111";
+    const ADVANCED_ADDR: &str = "0x2222222222222222222222222222222222222222";
+    const CORRUPT_ADDR: &str = "0x3333333333333333333333333333333333333333";
+    const UNKNOWN_ADDR: &str = "0x4444444444444444444444444444444444444444";
+
+    fn conn_with_accounts() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        for (id, addr, purpose) in [
+            ("a1", SQUAD_ADDR, "squad"),
+            ("a2", ADVANCED_ADDR, "advanced"),
+            ("a3", CORRUPT_ADDR, "bogus"),
+        ] {
+            conn.execute(
+                "INSERT INTO evm_accounts (id, scheme, hd_index, address, label, imported_enc, purpose) VALUES (?1, 'bip44_v1', NULL, ?2, '', NULL, ?3)",
+                rusqlite::params![id, addr, purpose],
+            )
+            .unwrap();
+        }
+        conn
+    }
+
+    #[test]
+    fn address_purpose_matrix() {
+        let conn = conn_with_accounts();
+        assert_eq!(
+            address_purpose_on_conn(&conn, SQUAD_ADDR).unwrap().as_deref(),
+            Some(PURPOSE_SQUAD)
+        );
+        assert_eq!(
+            address_purpose_on_conn(&conn, ADVANCED_ADDR).unwrap().as_deref(),
+            Some(PURPOSE_ADVANCED)
+        );
+        assert_eq!(address_purpose_on_conn(&conn, UNKNOWN_ADDR).unwrap(), None);
+        assert_eq!(address_purpose_on_conn(&conn, "not-an-address").unwrap(), None);
+    }
+
+    #[test]
+    fn squad_account_gate_accepts_squad_rejects_advanced_and_unknown() {
+        let conn = conn_with_accounts();
+        assert!(require_squad_purpose_account_id(&conn, "a1").is_ok());
+        assert!(require_squad_purpose_account_id(&conn, "a2").is_err());
+        assert!(require_squad_purpose_account_id(&conn, "missing").is_err());
+        assert!(require_squad_purpose_account_id(&conn, "a3").is_err());
+    }
+
+    #[test]
+    fn address_purpose_fails_closed_on_corrupt_purpose() {
+        let conn = conn_with_accounts();
+        assert!(address_purpose_on_conn(&conn, CORRUPT_ADDR).is_err());
+    }
 
     #[test]
     fn normalize_purpose_accepts_squad_and_advanced() {

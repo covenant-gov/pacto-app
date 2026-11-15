@@ -105,7 +105,7 @@ Which tool (CSS vs `svelte/motion` vs `svelte/transition`): [MOTION.md](./MOTION
 
 ## Content and accessibility
 
-- SHOULD: Inline help first; tooltips last resort.
+- SHOULD: Prefer self-explanatory labels. Required tips / disclaimers use `InfoTip` (`src/components/ui/InfoTip.svelte`), not always-visible hint paragraphs.
 - MUST: Skeletons mirror final content to limit layout shift.
 - MUST: Document / window title matches current context when the surface owns it.
 - MUST: No dead ends; always offer a next step or recovery.
@@ -121,7 +121,13 @@ Which tool (CSS vs `svelte/motion` vs `svelte/transition`): [MOTION.md](./MOTION
 - MUST: Token amounts on screen go through `formatAssetAmount` (`src/lib/evm/format-token-amount.ts`). ETH is 18 decimals; other tokens use their own decimals. Pad the fraction; do not trim trailing zeros.
 - MUST: Accurate `aria-label`; decorative elements `aria-hidden`.
 - MUST: Icon-only buttons have a descriptive `aria-label` (use shared Refresh/Edit icon buttons for those actions).
+- MUST: Overflow / secondary row actions in Settings and Profile use shared `MoreActionsMenu` (`src/components/ui/MoreActionsMenu.svelte`) — ⋮ kebab — including when there is only one item (e.g. Export key). Do not invent a second kebab or a one-off text Export button under identity rows.
+- MUST: Settings / Profile npub and `0x` displays use `CopyableKeyPill` (`src/components/ui/CopyableKeyPill.svelte`): name or label above, shortened key and copy control inside one pill. Do not show the full key in a row with a separate copy button.
 - MUST: Prefer native semantics (`button`, `a`, `label`, `table`) before ARIA.
+
+### Account chrome (Settings / Profile)
+
+Normative cookbook (where UI belongs, primitive table, modal exceptions, lint): [docs/wallet/SETTINGS_LAYOUT.md](../wallet/SETTINGS_LAYOUT.md#building-blocks-settings--profile). New Settings or Profile UI must follow that section; do not invent parallel form, tip, or overflow patterns.
 - SHOULD: Non-breaking spaces for glued units (`10 MB`, shortcut chords) in copy that must not wrap badly.
 
 ### Content handling

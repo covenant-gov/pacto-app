@@ -48,7 +48,7 @@ pub async fn username_claim<R: Runtime>(
     let addrs = username_addrs(&net.key)?;
     let nft = addrs.pacto_username_nft;
 
-    let keys = load_nostr_keys()?;
+    let keys = load_nostr_keys(app.clone()).await?;
     let pubkey = nostr_xonly_pubkey(&keys)?;
     let npub_hash = npub_hash_from_pubkey(pubkey);
     let _in_flight = InFlightGuard::acquire(npub_hash)?;

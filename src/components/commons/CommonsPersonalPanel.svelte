@@ -2,7 +2,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { currentUser } from '../../stores/auth-session';
-  import { activeView, activeChannelId, activeHubChannelName } from '../../stores/navigation';
+  import { openAccountProfile } from '../../stores/navigation';
   import { profiles } from '../../stores/profiles';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
@@ -73,10 +73,8 @@
     return tFn('commons.duration.daysLeft', { values: { days: Math.floor(hours / 24) } });
   }
 
-  function openSettings() {
-    activeChannelId.set(null);
-    activeHubChannelName.set(null);
-    activeView.set('profile');
+  function openProfile() {
+    openAccountProfile();
   }
 
   async function handleCancel() {
@@ -114,7 +112,7 @@
       style={avatarSrc ? '' : `background-image: ${commonsTagGradient(npub || displayName)}`}
       aria-label={$t('commons.personal.profileSettings')}
       title={$t('commons.personal.profileSettings')}
-      onclick={openSettings}
+      onclick={openProfile}
     >
       {#if avatarSrc}
         <img src={avatarSrc} alt="" loading="lazy" decoding="async" />

@@ -1,5 +1,4 @@
 import { get, writable } from 'svelte/store';
-import { setSettingsSectionCollapsed } from '../lib/settings/settings-section-collapse';
 import { SETTINGS_CHANNEL_ID } from '../lib/squad/hub-channel-names';
 import type { SquadNetworkSlot } from '../lib/squad/squad-network';
 import { persistenceKey } from './persistence-context';
@@ -13,8 +12,28 @@ export const activeChannelId = writable<string | null>(null);
 /** Disambiguates the selected hub row when multiple channels share one MLS group id. */
 export const activeHubChannelName = writable<string | null>(null);
 
-export type ViewType = 'hub' | 'profile';
+export type ViewType = 'hub' | 'profile' | 'settings';
 export const activeView = writable<ViewType>('hub');
+
+/** Left-rail account destinations (Profile and Settings) hide the DM/squad list. */
+export function isAccountChromeView(view: ViewType): boolean {
+  return view === 'profile' || view === 'settings';
+}
+
+function clearHubSelectionForAccountView() {
+  activeChannelId.set(null);
+  activeHubChannelName.set(null);
+}
+
+export function openAccountProfile() {
+  clearHubSelectionForAccountView();
+  activeView.set('profile');
+}
+
+export function openAccountSettings() {
+  clearHubSelectionForAccountView();
+  activeView.set('settings');
+}
 
 /** #governance segmented mode; unknown persisted values reset to `status`. */
 export type SquadGovernanceChannelMode =
@@ -118,10 +137,7 @@ export function resetProfileUsernameFocusConsumption(): void {
 }
 
 export function focusProfileUsername() {
-  activeChannelId.set(null);
-  activeHubChannelName.set(null);
-  activeView.set('profile');
-  setSettingsSectionCollapsed('settings-profile', false);
+  openAccountProfile();
   profileUsernameFocusNonce.update((n) => n + 1);
 }
 

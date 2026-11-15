@@ -28,6 +28,7 @@
     "lint": "eslint .",
     "check:tauri-commands": "node scripts/check-orphaned-tauri-commands.mjs",
     "check:i18n-toasts": "node scripts/check-hardcoded-toasts.mjs",
+    "check:settings-profile-ui": "node scripts/check-settings-profile-ui.mjs",
     "check:actions-pinned": "node scripts/check-actions-pinned.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -4,7 +4,6 @@ import {
   computeUsernameVerified,
   claimedUsernameFromState,
   needsForcedUsernameLinkRestore,
-  showEvmDashGas,
   resetUsernameState,
   refreshUsernameState,
   usernameState,
@@ -296,36 +295,6 @@ function syncState(overrides: Partial<UsernameAccountState> = {}): UsernameAccou
   };
 }
 
-describe('showEvmDashGas', () => {
-  it('uses the chain record when this pass read one', () => {
-    const cached = readyState().cached;
-    expect(
-      showEvmDashGas({
-        ...readyState(),
-        cached,
-        record: {
-          name: '',
-          evmAddress: ZERO,
-          pendingAddress: ZERO,
-          tokenId: '0',
-        },
-      }),
-    ).toBe(false);
-    expect(
-      showEvmDashGas({
-        ...readyState(),
-        cached: null,
-        record: readyState().record,
-      }),
-    ).toBe(true);
-  });
-
-  it('falls back to cache only when the chain record is absent', () => {
-    expect(showEvmDashGas({ ...readyState(), record: null })).toBe(true);
-    expect(showEvmDashGas({ ...readyState(), record: null, cached: null })).toBe(false);
-  });
-});
-
 describe('needsForcedUsernameLinkRestore', () => {
   it('is true for a holder with a missing linkEventId', () => {
     expect(
@@ -473,10 +442,9 @@ describe('refreshUsernameState', () => {
     expect(get(usernameState).cached?.username).toBe('alice');
     expect(get(usernameState).cached?.linkEventId).toBeNull();
     expect(get(usernameState).cached?.tokenId).toBe('7');
-    expect(showEvmDashGas(get(usernameState))).toBe(true);
   });
 
-  it('keeps an empty chain record instead of a stale cache for the dash', async () => {
+  it('keeps an empty chain record instead of a stale cache', async () => {
     mockSync.mockResolvedValue(
       syncState({
         cached: readyState().cached,
@@ -485,7 +453,6 @@ describe('refreshUsernameState', () => {
 
     await refreshUsernameState();
     expect(get(usernameState).record?.name).toBe('');
-    expect(showEvmDashGas(get(usernameState))).toBe(false);
   });
 
   it('applies an existing link id returned by sync', async () => {

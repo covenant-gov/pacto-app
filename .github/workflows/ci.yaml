@@ -78,6 +78,9 @@ jobs:
       - name: Check hardcoded i18n UI literals
         run: pnpm check:i18n-toasts
 
+      - name: Check Settings/Profile UI patterns
+        run: pnpm check:settings-profile-ui
+
   frontend-tests:
     runs-on: ubuntu-latest
     steps:

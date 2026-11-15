@@ -8,13 +8,10 @@
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
-  import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
-  import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
-  import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
+  import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import AvatarPicker from '../ui/AvatarPicker.svelte';
   import ProfileUsernameBlock from './ProfileUsernameBlock.svelte';
-  import { requireBackupVerified } from '../../stores/backup-verification';
 
   let userNpub = $derived($currentUser?.npub || '');
   let profile = $derived(userNpub ? $profiles[userNpub] : null);
@@ -35,10 +32,6 @@
   let editAvatarUrl = $state('');
   let saveError: string | null = $state(null);
   let savingProfile = $state(false);
-
-  let copiedNpub = $state(false);
-  let exportSeedModalOpen = $state(false);
-  let exportAllModalOpen = $state(false);
 
   // Load profile whenever the logged-in user's npub changes
   $effect(() => {
@@ -109,7 +102,9 @@
 
 </script>
 
-<SettingsCollapsibleSection sectionId="settings-profile" title={$t('profile.title')}>
+<section class="profile-identity" aria-labelledby="profile-identity-heading">
+  <h2 id="profile-identity-heading" class="visually-hidden">{$t('profile.title')}</h2>
+
 
       {#if loading}
         <div class="loading-state">
@@ -236,64 +231,7 @@
 
             <div class="profile-account-id">
               <span class="profile-account-id-label">{$t('profile.accountIdLabel')}</span>
-              <div class="profile-account-id-row">
-                <code class="profile-account-id-value">{profile.id}</code>
-                <button
-                  type="button"
-                  class="btn-copy-account-id"
-                  aria-label={copiedNpub ? $t('profile.copied') : $t('profile.copyAccountId')}
-                  title={copiedNpub ? $t('profile.copied') : $t('profile.copy')}
-                  onclick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(profile?.id ?? '');
-                      copiedNpub = true;
-                      setTimeout(() => (copiedNpub = false), 2000);
-                    } catch (_) {
-                      // clipboard write may fail silently
-                    }
-                  }}
-                >
-                  <svg
-                    class="btn-copy-account-id-icon"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.75"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <!-- Actions -->
-            <div class="profile-actions">
-              <div class="profile-actions-exports">
-                <button
-                  type="button"
-                  class="btn-export-seed"
-                  onclick={() => {
-                    if (requireBackupVerified()) {
-                      exportSeedModalOpen = true;
-                    }
-                  }}
-                >
-                  {$t('profile.exportSeedPhrase')}
-                </button>
-                <button
-                  type="button"
-                  class="btn-export-all"
-                  onclick={() => (exportAllModalOpen = true)}
-                >
-                  {$t('profile.exportAll')}
-                </button>
-              </div>
+              <CopyableKeyPill value={profile.id} ariaLabel={$t('profile.copyAccountId')} />
             </div>
           {/if}
         </div>
@@ -303,22 +241,28 @@
           <p>{$t('profile.noProfileLoaded')}</p>
         </div>
       {/if}
-</SettingsCollapsibleSection>
-
-<EvmAccountKeyExportModal
-  variant="seed"
-  open={exportSeedModalOpen}
-  npub={userNpub}
-  onClose={() => (exportSeedModalOpen = false)}
-/>
-
-<ExportAllSecretsModal
-  open={exportAllModalOpen}
-  onClose={() => (exportAllModalOpen = false)}
-/>
+</section>
 
 
 <style>
+  .profile-identity {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .loading-state, .error-state, .empty-state {
     display: flex;
     flex-direction: column;
@@ -443,75 +387,17 @@
   }
 
   .profile-account-id {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
     margin-top: 20px;
-    padding: 14px 16px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    background: var(--bg-panel);
   }
 
   .profile-account-id-label {
-    display: block;
-    margin-bottom: 8px;
     font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-primary);
-    letter-spacing: 0.02em;
-  }
-
-  .profile-account-id-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .profile-account-id-value {
-    flex: 1;
-    min-width: 0;
-    font-size: 0.875rem;
-    line-height: 1.45;
-    word-break: break-all;
-    color: var(--text-secondary);
-  }
-
-  .btn-copy-account-id {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    padding: 0;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: border-color 0.2s;
-  }
-
-  .btn-copy-account-id:hover {
-    border-color: var(--brand);
-    color: var(--text-primary);
-  }
-
-  .profile-actions {
-    margin-top: 24px;
-    padding-top: 24px;
-    border-top: 1px solid var(--border-subtle);
-  }
-
-  .profile-actions-exports {
-    display: flex;
-    gap: 12px;
-  }
-
-  .profile-actions-exports .btn-export-seed,
-  .profile-actions-exports .btn-export-all {
-    flex: 1;
-    width: auto;
-    min-width: 0;
   }
 
   .edit-error {
@@ -607,31 +493,5 @@
   .btn-save-edit:disabled {
     opacity: 0.85;
     cursor: wait;
-  }
-
-  .btn-export-seed,
-  .btn-export-all {
-    width: 100%;
-    min-height: 48px;
-    padding: 0 16px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    transition: border-color 0.2s;
-    outline: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-
-  .btn-export-seed:hover,
-  .btn-export-all:hover {
-    border-color: var(--brand);
   }
 </style>

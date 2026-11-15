@@ -20,8 +20,25 @@ vi.mock('../../lib/wallet/pricing', async (importOriginal) => {
   };
 });
 
+vi.mock('../../lib/wallet/evm-accounts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/wallet/evm-accounts')>();
+  return {
+    ...actual,
+    setActiveEvmAccount: vi.fn(async () => {}),
+  };
+});
+
+vi.mock('../../lib/evm/on-chain-background', () => ({
+  waitForOnChainConfirmationInBackground: vi.fn(),
+}));
+
 import WalletHomeSendModal from './WalletHomeSendModal.svelte';
 import type { WatchedErc20Row } from '../../lib/wallet/watched-tokens';
+import { getWalletSummary, walletBuildAndSendTransaction } from '../../lib/wallet';
+import { setActiveEvmAccount } from '../../lib/wallet/evm-accounts';
+import { backupVerified } from '../../stores/backup-verification';
+
+const VIEWED = '0x1111111111111111111111111111111111111111';
 
 afterEach(() => {
   cleanup();
@@ -69,5 +86,48 @@ describe('WalletHomeSendModal reset guard', () => {
 
     const addressInputAfterReopen = screen.getByLabelText('Recipient EVM address') as HTMLInputElement;
     expect(addressInputAfterReopen.value).toBe('');
+  });
+});
+
+describe('WalletHomeSendModal signing account', () => {
+  afterEach(() => {
+    vi.mocked(getWalletSummary).mockClear();
+    vi.mocked(setActiveEvmAccount).mockClear();
+    vi.mocked(walletBuildAndSendTransaction).mockReset();
+    backupVerified.set(null);
+  });
+
+  it('loads the viewed address and sends from that account without switching the active signer', async () => {
+    backupVerified.set(true);
+    vi.mocked(walletBuildAndSendTransaction).mockResolvedValue({
+      ok: true,
+      result: { txHash: '0xabc', network: 'sepolia', chainId: 11155111 },
+    });
+    const onClose = vi.fn();
+    render(WalletHomeSendModal, {
+      props: {
+        open: true,
+        onClose,
+        watchedAssetRows: [],
+        enabledChainIds: ['sepolia'],
+        fromAccount: { id: 'acct-2', address: VIEWED },
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(getWalletSummary).toHaveBeenCalledWith(expect.anything(), ['sepolia'], VIEWED);
+    });
+
+    await fireEvent.input(screen.getByLabelText('Recipient EVM address'), {
+      target: { value: '0x2222222222222222222222222222222222222222' },
+    });
+    await fireEvent.input(screen.getByLabelText('Amount'), { target: { value: '1' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await vi.waitFor(() => {
+      expect(walletBuildAndSendTransaction).toHaveBeenCalled();
+    });
+    expect(setActiveEvmAccount).not.toHaveBeenCalled();
+    expect(vi.mocked(walletBuildAndSendTransaction).mock.calls[0][7]).toBe('acct-2');
   });
 });

@@ -257,7 +257,7 @@ pub async fn username_sync_account_state<R: Runtime>(
     let net = require_network(&network)?;
     let urls = require_rpc_urls(net, rpc_urls)?;
     let addrs = username_addrs(&net.key)?;
-    let keys = load_nostr_keys()?;
+    let keys = load_nostr_keys(app.clone()).await?;
     let pubkey = nostr_xonly_pubkey(&keys)?;
     let npub_hash = npub_hash_from_pubkey(pubkey);
     let provider = match connect_read_provider(&urls).await {

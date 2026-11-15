@@ -7,7 +7,7 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import { clearClipboard, exportSensitiveToClipboard } from '../../lib/api/auth';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
-  import { evmAccountSchemeLabel, type EvmAccountRow } from '../../lib/wallet/evm-accounts';
+  import { evmAccountSchemeLabel, formatHdIndexLabel, type EvmAccountRow } from '../../lib/wallet/evm-accounts';
   import { showToast } from '../../stores/toast';
   import { appConfig } from '../../stores/app-config';
   import Modal from '../ui/Modal.svelte';
@@ -80,7 +80,7 @@
     if (!account) return '';
     const name = account.label?.trim() || formatExportAddress(account.address);
     const scheme = $t(evmAccountSchemeLabel(account.scheme));
-    const index = account.hdIndex != null ? `#${account.hdIndex}` : '';
+    const index = account.hdIndex != null ? formatHdIndexLabel(account.hdIndex) : '';
     return [name, scheme, index].filter(Boolean).join(' · ');
   });
 

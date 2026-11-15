@@ -31,24 +31,17 @@
   import { setRelayEnabledLocally } from '../../stores/dm';
   import { currentUser } from '../../stores/auth-session';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
+  import SettingsFormModal from './SettingsFormModal.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
+  import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
+  import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
+  import SettingsSubheading from './SettingsSubheading.svelte';
 
   let userNpub = $derived($currentUser?.npub ?? '');
 
-  let copiedNpub = $state(false);
   let exportModalOpen = $state(false);
-
-  async function copyNpub() {
-    if (!userNpub) return;
-    try {
-      await navigator.clipboard.writeText(userNpub);
-      copiedNpub = true;
-      setTimeout(() => (copiedNpub = false), 2000);
-    } catch (_) {
-      showToast($t('settings.toast.couldNotCopyNpub'));
-    }
-  }
+  let addRelayModalOpen = $state(false);
 
   let relays: RelayInfo[] = $state([]);
   let loading = $state(true);
@@ -175,6 +168,23 @@
     }
   }
 
+  function openAddRelayModal() {
+    newRelayUrl = '';
+    newRelayMode = 'both';
+    addError = null;
+    probeResult = null;
+    probedUrl = null;
+    addRelayModalOpen = true;
+  }
+
+  function closeAddRelayModal() {
+    if (adding || probing) return;
+    addRelayModalOpen = false;
+    addError = null;
+    probeResult = null;
+    probedUrl = null;
+  }
+
   async function handleAddRelay() {
     addError = validateRelayUrlInput(newRelayUrl);
     if (addError || adding) return;
@@ -184,6 +194,7 @@
       await addCustomRelay(newRelayUrl.trim(), newRelayMode);
       newRelayUrl = '';
       newRelayMode = 'both';
+      addRelayModalOpen = false;
       await refreshRelays();
       showToast($t('settings.toast.customRelayAdded'));
     } catch (e) {
@@ -273,113 +284,42 @@
 <SettingsCollapsibleSection sectionId="settings-nostr" title={$t('settings.nostrSettingsTitle')}>
 
   <div class="nostr-npub-block" aria-labelledby="nostr-npub-heading">
-    <h3 id="nostr-npub-heading" class="nostr-settings-subheading">{$t('settings.npubLabel')}</h3>
-    <p class="nostr-npub-note">
-      {$t('settings.npubNotePrefix')}
-      <strong>{$t('settings.accountId')}</strong>
-      {$t('settings.npubNoteSuffix')}
-    </p>
+    <SettingsSubheading id="nostr-npub-heading">{$t('settings.npubLabel')}</SettingsSubheading>
     {#if userNpub}
       <div class="nostr-npub-row">
-        <code class="nostr-npub-value">{userNpub}</code>
-        <button
-          type="button"
-          class="nostr-npub-copy-btn"
-          aria-label={copiedNpub ? $t('settings.copied') : $t('settings.copyNpub')}
-          title={copiedNpub ? $t('settings.copied') : $t('settings.copy')}
-          onclick={copyNpub}
-        >
-          <svg
-            class="nostr-npub-copy-icon"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.75"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-          </svg>
-        </button>
+        <CopyableKeyPill value={userNpub} ariaLabel={$t('settings.copyNpub')} />
+        <MoreActionsMenu
+          ariaLabel={$t('settings.npubActionsMenu')}
+          items={[
+            {
+              id: 'export-key',
+              label: $t('settings.exportKey'),
+              onSelect: () => {
+                exportModalOpen = true;
+              },
+            },
+          ]}
+        />
       </div>
-      <button type="button" class="nostr-export-key-btn" onclick={() => (exportModalOpen = true)}>
-        {$t('settings.exportKey')}
-      </button>
     {:else}
       <p class="nostr-settings-muted">{$t('settings.loginToSeeNpub')}</p>
     {/if}
   </div>
 
-  <p class="nostr-settings-lead">
-    {$t('settings.relaysLead', { values: { wss: 'wss://' } })}
-  </p>
-
-  <div class="nostr-add-relay" aria-labelledby="nostr-add-relay-heading">
-    <h3 id="nostr-add-relay-heading" class="nostr-settings-subheading">{$t('settings.addCustomRelayTitle')}</h3>
-    <div class="nostr-add-relay-row">
-      <label class="nostr-add-relay-field nostr-add-relay-field--grow">
-        <span class="nostr-add-relay-label">{$t('settings.relayUrlLabel')}</span>
-        <input
-          type="url"
-          class="nostr-add-relay-input"
-          placeholder={$t('settings.relayUrlPlaceholder')}
-          bind:value={newRelayUrl}
-          disabled={adding}
-          autocomplete="off"
-          spellcheck="false"
-          onkeydown={(e) => e.key === 'Enter' && handleAddRelay()}
-        />
-      </label>
-      <label class="nostr-add-relay-field">
-        <span class="nostr-add-relay-label">{$t('settings.relayModeLabel')}</span>
-        <select class="nostr-add-relay-select" bind:value={newRelayMode} disabled={adding}>
-          {#each MODE_OPTIONS as opt (opt.value)}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
-      </label>
-      <button type="button" class="nostr-add-relay-btn" disabled={adding} onclick={handleAddRelay}>
-        {adding ? $t('settings.adding') : $t('settings.add')}
-      </button>
-      <button
-        type="button"
-        class="nostr-probe-btn"
-        disabled={probing || !!validateRelayUrlInput(newRelayUrl)}
-        onclick={handleProbe}
-      >
-        {probing ? $t('settings.relayProbing') : $t('settings.relayProbeButton')}
-      </button>
-    </div>
-    {#if !probing && validateRelayUrlInput(newRelayUrl)}
-      <p class="nostr-probe-disabled-reason">{$t('settings.relayProbeDisabledReason')}</p>
-    {/if}
-    {#if probeResult && probedUrl === newRelayUrl.trim()}
-      <p
-        class="nostr-probe-result nostr-probe-result--{probeResult.outcome}"
-        role="status"
-        aria-live="polite"
-      >
-        {probeResultLabel(probeResult)}
-      </p>
-    {/if}
-    {#if addError}
-      <p class="nostr-settings-error" role="alert">{addError}</p>
-    {/if}
-  </div>
-
   <div class="nostr-relay-list-wrap" aria-labelledby="nostr-relay-list-heading">
     <div class="nostr-relay-list-head">
-      <h3 id="nostr-relay-list-heading" class="nostr-settings-subheading">{$t('settings.connectedRelaysTitle')}</h3>
-      <RefreshIconButton
-        disabled={loading}
-        spinning={loading}
-        ariaLabel={loading ? $t('settings.refreshingRelays') : $t('settings.refreshRelays')}
-        onclick={refreshRelays}
-      />
+      <SettingsSubheading id="nostr-relay-list-heading">{$t('settings.connectedRelaysTitle')}</SettingsSubheading>
+      <div class="nostr-relay-list-actions">
+        <button type="button" class="nostr-add-relay-open" onclick={openAddRelayModal}>
+          {$t('settings.addCustomRelayTitle')}
+        </button>
+        <RefreshIconButton
+          disabled={loading}
+          spinning={loading}
+          ariaLabel={loading ? $t('settings.refreshingRelays') : $t('settings.refreshRelays')}
+          onclick={refreshRelays}
+        />
+      </div>
     </div>
 
     {#if loading && relays.length === 0}
@@ -567,90 +507,81 @@
   onClose={() => (exportModalOpen = false)}
 />
 
+{#if addRelayModalOpen}
+  <SettingsFormModal
+    titleId="settings-add-relay-title"
+    title={$t('settings.addCustomRelayTitle')}
+    busy={adding}
+    primaryLabel={$t('settings.add')}
+    primaryBusyLabel={$t('settings.adding')}
+    primaryDisabled={!!validateRelayUrlInput(newRelayUrl)}
+    error={addError}
+    onClose={closeAddRelayModal}
+    onPrimary={handleAddRelay}
+  >
+    <div class="ui-field-row">
+      <label class="ui-field" for="settings-add-relay-url">
+        <span class="ui-field-label">{$t('settings.relayUrlLabel')}</span>
+        <input
+          id="settings-add-relay-url"
+          type="url"
+          class="ui-input"
+          placeholder={$t('settings.relayUrlPlaceholder')}
+          bind:value={newRelayUrl}
+          disabled={adding || probing}
+          autocomplete="off"
+          spellcheck="false"
+          onkeydown={(e) => e.key === 'Enter' && void handleAddRelay()}
+        />
+      </label>
+      <label class="ui-field ui-field--flush" for="settings-add-relay-mode">
+        <span class="ui-field-label">{$t('settings.relayModeLabel')}</span>
+        <select
+          id="settings-add-relay-mode"
+          class="ui-select"
+          bind:value={newRelayMode}
+          disabled={adding || probing}
+        >
+          {#each MODE_OPTIONS as opt (opt.value)}
+            <option value={opt.value}>{opt.label}</option>
+          {/each}
+        </select>
+      </label>
+    </div>
+    {#if probeResult && probedUrl === newRelayUrl.trim()}
+      <p
+        class="settings-form-status settings-form-status--{probeResult.outcome === 'reachable' ? 'ok' : 'bad'}"
+        role="status"
+        aria-live="polite"
+      >
+        {probeResultLabel(probeResult)}
+      </p>
+    {/if}
+    {#snippet footerStart()}
+      <button
+        type="button"
+        class="settings-form-btn-secondary"
+        disabled={probing || adding || !!validateRelayUrlInput(newRelayUrl)}
+        onclick={() => void handleProbe()}
+      >
+        {probing ? $t('settings.relayProbing') : $t('settings.relayProbeButton')}
+      </button>
+    {/snippet}
+  </SettingsFormModal>
+{/if}
+
 <style>
   .nostr-npub-block {
-    margin-bottom: 28px;
-    padding-bottom: 24px;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
     border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .nostr-npub-note {
-    margin: 0 0 12px 0;
-    color: var(--text-secondary);
-    font-size: 0.9375rem;
-    line-height: 1.45;
-  }
-
-  .nostr-npub-note strong {
-    color: var(--text-primary);
-    font-weight: 600;
   }
 
   .nostr-npub-row {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 12px 14px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--bg-panel);
-  }
-
-  .nostr-npub-value {
-    flex: 1;
-    min-width: 0;
-    font-size: 0.875rem;
-    line-height: 1.45;
-    word-break: break-all;
-    color: var(--text-primary);
-  }
-
-  .nostr-npub-copy-btn {
-    flex-shrink: 0;
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    padding: 0;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: border-color 0.2s;
-  }
-
-  .nostr-npub-copy-btn:hover {
-    border-color: var(--brand);
-    color: var(--text-primary);
-  }
-
-  .nostr-export-key-btn {
-    margin-top: 12px;
-    min-height: 2rem;
-    padding: 0 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    font-size: 0.8125rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-  }
-
-  .nostr-export-key-btn:hover {
-    border-color: var(--brand);
-    color: var(--text-primary);
-  }
-
-  .nostr-settings-lead {
-    margin: 0 0 24px 0;
-    color: var(--text-secondary);
-    font-size: 0.9375rem;
-    line-height: 1.5;
+    gap: 8px;
   }
 
   .nostr-settings-code {
@@ -659,13 +590,6 @@
     border-radius: 4px;
     background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
-  }
-
-  .nostr-settings-subheading {
-    margin: 0 0 12px 0;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
   }
 
   .nostr-settings-muted {
@@ -680,127 +604,35 @@
     font-size: 0.875rem;
   }
 
-  .nostr-add-relay {
-    margin-bottom: 32px;
-    padding-bottom: 24px;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .nostr-add-relay-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: flex-end;
-  }
-
-  .nostr-add-relay-field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 140px;
-  }
-
-  .nostr-add-relay-field--grow {
-    flex: 1;
-    min-width: 220px;
-  }
-
-  .nostr-add-relay-label {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-
-  .nostr-add-relay-input,
-  .nostr-add-relay-select {
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-    font-family: inherit;
-    outline: none;
-  }
-
-  .nostr-add-relay-input:focus,
-  .nostr-add-relay-select:focus {
-    border-color: var(--brand);
-  }
-
-  .nostr-add-relay-input:disabled,
-  .nostr-add-relay-select:disabled {
-    opacity: 0.65;
-  }
-
-  .nostr-add-relay-btn {
-    padding: 10px 18px;
-    border: none;
-    border-radius: 8px;
-    background: var(--brand);
-    color: var(--on-brand);
-    font-size: 0.9375rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .nostr-add-relay-btn:hover:not(:disabled) {
-    background: var(--brand-hover);
-  }
-
-  .nostr-add-relay-btn:disabled {
-    opacity: 0.65;
-    cursor: not-allowed;
-  }
-
-  .nostr-probe-btn {
-    padding: 10px 18px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .nostr-probe-btn:hover:not(:disabled) {
-    border-color: var(--brand);
-  }
-
-  .nostr-probe-btn:disabled {
-    opacity: 0.65;
-    cursor: not-allowed;
-  }
-
-  .nostr-probe-disabled-reason {
-    margin: 8px 0 0 0;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-  }
-
-  .nostr-probe-result {
-    margin: 8px 0 0 0;
-    font-size: 0.875rem;
-  }
-
-  .nostr-probe-result--reachable {
-    color: var(--success);
-  }
-
-  .nostr-probe-result--unreachable {
-    color: var(--text-secondary);
-  }
-
   .nostr-relay-list-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 12px;
+  }
+
+  .nostr-relay-list-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nostr-add-relay-open {
+    min-height: 2rem;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .nostr-add-relay-open:hover {
+    border-color: var(--brand);
   }
 
   .nostr-relay-list {

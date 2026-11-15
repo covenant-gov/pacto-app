@@ -12,7 +12,7 @@ use tauri::{AppHandle, Runtime};
 
 use super::contracts::erc20::IERC20;
 use super::evm_accounts;
-use super::rpc::signer::load_embedded_signer;
+use super::rpc::signer::{load_embedded_signer, load_embedded_signer_for_account_id};
 use super::wallet_chain_config;
 use super::wallet_prices;
 use super::wallet_security;
@@ -247,20 +247,46 @@ async fn fetch_network_snapshot(
     })
 }
 
+fn require_squad_summary_address(purpose: Option<&str>) -> Result<(), String> {
+    match purpose {
+        Some(p) if p.eq_ignore_ascii_case(evm_accounts::PURPOSE_SQUAD) => Ok(()),
+        _ => Err("Address is not a squad EVM key on this account.".to_string()),
+    }
+}
+
 /// Tauri command: per-network native balance plus any watched ERC-20 rows; USD total uses Chainlink for ETH/USDC/USDT only.
 /// Only `enabled_chains` are queried; an unreachable network becomes a per-network `error` row instead of failing the summary.
+/// Optional `address` must be a squad-purpose key on this account; omitted uses the active signer.
 #[tauri::command]
 pub async fn get_wallet_summary<R: Runtime>(
     app: AppHandle<R>,
     watched_erc20s: Vec<WatchedErc20Input>,
     enabled_chains: Vec<String>,
+    address: Option<String>,
 ) -> Result<WalletSummary, String> {
-    let _ = evm_accounts::ensure_ready(app.clone()).await;
-    let _ = db::repair_evm_address_if_needed(&app).await;
-    let addr_str = db::read_stored_evm_address(app.clone())?.ok_or_else(|| {
-        "No EVM address for this account. Log in again or set your wallet address.".to_string()
-    })?;
-    let owner = parse_address(&addr_str)?;
+    let requested = address.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    if requested.is_some() {
+        evm_accounts::ensure_ready(app.clone()).await?;
+        db::repair_evm_address_if_needed(&app).await?;
+    } else {
+        let _ = evm_accounts::ensure_ready(app.clone()).await;
+        let _ = db::repair_evm_address_if_needed(&app).await;
+    }
+    let owner = match requested {
+        Some(req) => {
+            let parsed = parse_address(req)?;
+            let purpose = evm_accounts::address_purpose(&app, req)?;
+            require_squad_summary_address(purpose.as_deref())?;
+            parsed
+        }
+        None => {
+            let addr_str = db::read_stored_evm_address(app.clone())?.ok_or_else(|| {
+                "No EVM address for this account. Log in again or set your wallet address."
+                    .to_string()
+            })?;
+            parse_address(&addr_str)?
+        }
+    };
 
     let enabled: HashSet<String> = enabled_chains.iter().map(|c| c.to_lowercase()).collect();
 
@@ -631,6 +657,7 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
     erc20_transfer: Option<Erc20TransferSpec>,
     to_address_evm: Option<String>,
     wait_for_confirmation: Option<bool>,
+    from_account_id: Option<String>,
 ) -> Result<WalletSendResult, String> {
     crate::session::heartbeat();
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
@@ -676,11 +703,23 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
     }
 
     let _ = evm_accounts::ensure_ready(app.clone()).await;
-    evm_accounts::require_squad_purpose_signer(app.clone())
-        .await
-        .map_err(|e| wallet_err_json("SQUAD_SIGNER_REQUIRED", e, None))?;
-
-    let (_signer, wallet) = load_embedded_signer(app.clone()).await?;
+    let from_account_id = from_account_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let (_signer, wallet) = match from_account_id {
+        Some(id) => {
+            evm_accounts::require_squad_purpose_for_account_id(&app, id)
+                .map_err(|e| wallet_err_json("SQUAD_SIGNER_REQUIRED", e, None))?;
+            load_embedded_signer_for_account_id(app.clone(), id).await?
+        }
+        None => {
+            evm_accounts::require_squad_purpose_signer(app.clone())
+                .await
+                .map_err(|e| wallet_err_json("SQUAD_SIGNER_REQUIRED", e, None))?;
+            load_embedded_signer(app.clone()).await?
+        }
+    };
     let provider = connect_signing_provider(&urls, wallet).await?;
 
     let tx = if asset_up == "ETH" && erc20_transfer.is_none() {
@@ -888,5 +927,23 @@ mod usd_pricing_status_tests {
             usd_pricing_status_from_feeds(&map),
             WalletUsdPricingStatus::Partial
         );
+    }
+}
+
+#[cfg(test)]
+mod summary_address_gate_tests {
+    use super::require_squad_summary_address;
+
+    #[test]
+    fn squad_purpose_is_allowed() {
+        assert!(require_squad_summary_address(Some("squad")).is_ok());
+        assert!(require_squad_summary_address(Some("Squad")).is_ok());
+    }
+
+    #[test]
+    fn missing_or_advanced_purpose_is_rejected() {
+        assert!(require_squad_summary_address(None).is_err());
+        assert!(require_squad_summary_address(Some("advanced")).is_err());
+        assert!(require_squad_summary_address(Some("")).is_err());
     }
 }

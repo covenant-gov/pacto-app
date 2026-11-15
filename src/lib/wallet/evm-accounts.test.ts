@@ -10,6 +10,9 @@ import {
   setActiveAdvancedEvmAccount,
   advancedEvmAccounts,
   evmAccountPurposeLabel,
+  displayHdIndex,
+  formatHdIndexLabel,
+  isSeedDerivedEvmAccount,
   evmAccountSchemeLabel,
   getActiveAdvancedEvmSignerAddress,
   getActiveEvmSignerAddress,
@@ -82,6 +85,18 @@ describe('evm account label helpers', () => {
   it('returns i18n keys for squad and advanced purposes', () => {
     expect(evmAccountPurposeLabel('squad')).toBe('wallet.accountPurpose.squad');
     expect(evmAccountPurposeLabel('advanced')).toBe('wallet.accountPurpose.advanced');
+  });
+
+  it('maps 0-based hdIndex to 1-based display ordinals', () => {
+    expect(displayHdIndex(0)).toBe(1);
+    expect(displayHdIndex(1)).toBe(2);
+    expect(formatHdIndexLabel(0)).toBe('#1');
+    expect(formatHdIndexLabel(1)).toBe('#2');
+  });
+
+  it('detects seed-derived vs imported schemes', () => {
+    expect(isSeedDerivedEvmAccount({ scheme: 'bip44_v1' })).toBe(true);
+    expect(isSeedDerivedEvmAccount({ scheme: 'imported_private_key' })).toBe(false);
   });
 });
 

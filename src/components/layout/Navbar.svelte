@@ -8,6 +8,7 @@
   import type { SquadVisibility } from '../../stores/squads';
   import settingsIcon from '../../icons/settings.svg';
   import plusCircleIcon from '../../icons/plus-circle.svg';
+  import profileIcon from '../../icons/user-circle.svg';
   import friendsIcon from '../../icons/friends.svg';
   import requestsIcon from '../../icons/requests.svg';
   import pendingIcon from '../../icons/pending.svg';
@@ -22,6 +23,9 @@
     activeChannelId,
     activeHubChannelName,
     activeView,
+    isAccountChromeView,
+    openAccountProfile,
+    openAccountSettings,
     activeTopNavTab,
     activeDmTab,
     activeDmId,
@@ -261,9 +265,11 @@
   }
 
   function openProfile() {
-    $activeView = 'profile';
-    $activeChannelId = null;
-    activeHubChannelName.set(null);
+    openAccountProfile();
+  }
+
+  function openSettings() {
+    openAccountSettings();
   }
 
   const addButtonLabelKeys: Record<TopNavTab, string> = {
@@ -527,7 +533,9 @@
   let requestsTabLabel = $derived($t('nav.navbar.dmTabs.requests'));
   let pendingTabLabel = $derived($t('nav.navbar.dmTabs.pending'));
   let searchTabLabel = $derived($t('nav.navbar.dmTabs.search'));
+  let profileTabLabel = $derived($t('nav.navbar.profile'));
   let settingsTabLabel = $derived($t('nav.navbar.settings'));
+  let accountChrome = $derived(isAccountChromeView($activeView));
 
   $effect(() => {
     if ($squadRecreateRequest) {
@@ -541,7 +549,7 @@
 </script>
 
 <div class="navbar">
-  {#if $activeView !== 'profile' && $activeTopNavTab !== 'commons'}
+  {#if !accountChrome && $activeTopNavTab !== 'commons'}
   <div
     class="tab-list"
     class:squad-rail-dragging={squadDragFromId != null}
@@ -618,7 +626,7 @@
     {/if}
   </div>
   {/if}
-  {#if $activeView === 'profile' || $activeTopNavTab === 'commons'}
+  {#if accountChrome || $activeTopNavTab === 'commons'}
   <div class="navbar-spacer" aria-hidden="true"></div>
   {/if}
   <div class="tab-list bottom">
@@ -642,7 +650,15 @@
       role="button"
       tabindex="0"
     >
-      <Tab label={settingsTabLabel} icon={settingsIcon} active={$activeView === 'profile'} />
+      <Tab label={profileTabLabel} icon={profileIcon} active={$activeView === 'profile'} />
+    </div>
+    <div
+      onclick={openSettings}
+      onkeydown={(e) => e.key === 'Enter' && openSettings()}
+      role="button"
+      tabindex="0"
+    >
+      <Tab label={settingsTabLabel} icon={settingsIcon} active={$activeView === 'settings'} />
     </div>
   </div>
 </div>

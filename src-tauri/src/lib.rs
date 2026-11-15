@@ -205,7 +205,7 @@ pub use session::{
     check_session, clear_encryption_key, current_encryption_key, heartbeat, session_heartbeat,
     set_encryption_key, set_timeout_ms, SESSION_MANAGER,
 };
-// In-memory recovery phrase until `encrypt` persists it via `set_seed`; cleared on logout; replaced on each successful import/create.
+// Recovery phrase set by create/import for this session. Cleared on lock and logout; never restored on unlock.
 lazy_static! {
     static ref MNEMONIC_SEED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 }
@@ -214,7 +214,7 @@ fn mnemonic_seed_set(phrase: String) {
     *MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned") = Some(phrase);
 }
 
-fn mnemonic_seed_clear() {
+pub(crate) fn mnemonic_seed_clear() {
     *MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned") = None;
 }
 
@@ -223,6 +223,22 @@ pub(crate) fn mnemonic_seed_get() -> Option<String> {
         .lock()
         .expect("mnemonic mutex poisoned")
         .clone()
+}
+
+/// Recovery phrase for this call: the in-session copy, else the encrypted `settings.seed` row. Requires an unlocked session and never caches a disk read.
+pub(crate) async fn ensure_session_mnemonic<R: tauri::Runtime>(
+    handle: AppHandle<R>,
+) -> Result<zeroize::Zeroizing<String>, String> {
+    if current_encryption_key().is_none() {
+        return Err("Session is locked".to_string());
+    }
+    if let Some(phrase) = mnemonic_seed_get() {
+        return Ok(zeroize::Zeroizing::new(phrase));
+    }
+    db::get_seed(handle)
+        .await?
+        .map(zeroize::Zeroizing::new)
+        .ok_or_else(|| "No recovery phrase is stored for this account".to_string())
 }
 
 // Replaceable Nostr client (cleared on logout so create_account/login can set a new one without restart).
@@ -1754,4 +1770,67 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod session_phrase_tests {
+    use super::{
+        clear_encryption_key, ensure_session_mnemonic, mnemonic_seed_clear, mnemonic_seed_get,
+        mnemonic_seed_set, set_encryption_key,
+    };
+    use crate::session::test_support::{close_test_account, open_test_account, GLOBAL_STATE_LOCK};
+
+    const PHRASE: &str =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn disk_read_is_not_cached_in_the_session() {
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        let npub = "npub1sessionphrasenocachetest";
+        let app = open_test_account(npub);
+        set_encryption_key([9u8; 32]);
+        mnemonic_seed_clear();
+        crate::db::set_seed(app.handle().clone(), PHRASE.to_string())
+            .await
+            .unwrap();
+
+        let phrase = ensure_session_mnemonic(app.handle().clone()).await.unwrap();
+
+        assert_eq!(phrase.as_str(), PHRASE);
+        assert_eq!(mnemonic_seed_get(), None);
+        close_test_account(&app, npub);
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn in_session_phrase_is_returned_while_unlocked() {
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        let npub = "npub1sessionphraseinmemorytest";
+        let app = open_test_account(npub);
+        set_encryption_key([9u8; 32]);
+        mnemonic_seed_set("in session phrase".to_string());
+
+        let phrase = ensure_session_mnemonic(app.handle().clone()).await.unwrap();
+
+        assert_eq!(phrase.as_str(), "in session phrase");
+        close_test_account(&app, npub);
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn locked_session_is_rejected_even_with_a_phrase_in_memory() {
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        let npub = "npub1sessionphraselockedtest";
+        let app = open_test_account(npub);
+        clear_encryption_key();
+        mnemonic_seed_set("in session phrase".to_string());
+
+        let err = ensure_session_mnemonic(app.handle().clone())
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("locked"), "{err}");
+        close_test_account(&app, npub);
+    }
 }

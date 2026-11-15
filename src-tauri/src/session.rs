@@ -145,10 +145,12 @@ impl SessionManager {
         state.reminder_scan.as_ref().map(|scan| scan.unlocked_at_ms)
     }
 
-    /// Zeroize the encryption key and cancel the idle timer and reminder
-    /// scan. The SecretBox zeroizes the bytes on drop. On Unix desktops,
-    /// best-effort `munlock` is attempted before the key is dropped.
+    /// Zeroize the encryption key, drop the in-session recovery phrase, and
+    /// cancel the idle timer and reminder scan. The SecretBox zeroizes the
+    /// bytes on drop. On Unix desktops, best-effort `munlock` is attempted
+    /// before the key is dropped.
     pub fn clear(&self) {
+        crate::mnemonic_seed_clear();
         let mut state = self.state.lock();
         if let Some(secret) = state.key.take() {
             #[cfg(all(desktop, unix))]
@@ -384,12 +386,70 @@ pub fn get_session_timeout() -> u64 {
         .unwrap_or(default_minutes)
 }
 
+/// Serializes tests that touch the global session key or recovery phrase, plus an account DB helper.
+#[cfg(test)]
+pub(crate) mod test_support {
+    pub(crate) static GLOBAL_STATE_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+    /// Fresh migrated profile DB for `npub`, set as the current account. Keep the returned app alive.
+    pub(crate) fn open_test_account(npub: &str) -> tauri::App<tauri::test::MockRuntime> {
+        crate::account_manager::set_current_account(npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+        let app = tauri::test::mock_app();
+        let dir = crate::account_manager::get_profile_directory(app.handle(), npub).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let db_path = crate::account_manager::get_database_path(app.handle(), npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+        app
+    }
+
+    pub(crate) fn close_test_account(app: &tauri::App<tauri::test::MockRuntime>, npub: &str) {
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+        if let Ok(dir) = crate::account_manager::get_profile_directory(app.handle(), npub) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::test_support::GLOBAL_STATE_LOCK;
     use super::*;
     use tauri::Listener;
 
     use tokio::time::{sleep, Duration as TokioDuration};
+
+    #[test]
+    fn clearing_the_session_drops_the_recovery_phrase() {
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        let manager = SessionManager::new();
+        manager.set_key([6u8; 32]);
+        crate::mnemonic_seed_set("test phrase".to_string());
+
+        manager.clear();
+
+        assert_eq!(crate::mnemonic_seed_get(), None);
+    }
+
+    #[tokio::test]
+    async fn idle_auto_lock_drops_the_recovery_phrase() {
+        let manager = SessionManager::new();
+        manager.set_timeout_ms(50);
+        manager.set_key([8u8; 32]);
+        {
+            let _guard = GLOBAL_STATE_LOCK.lock();
+            crate::mnemonic_seed_set("test phrase".to_string());
+        }
+
+        sleep(TokioDuration::from_millis(200)).await;
+
+        assert!(!manager.is_unlocked());
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        assert_eq!(crate::mnemonic_seed_get(), None);
+    }
 
     #[test]
     fn session_set_and_clear() {

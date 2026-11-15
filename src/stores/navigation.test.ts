@@ -25,6 +25,9 @@ import {
   focusProfileUsername,
   consumeProfileUsernameFocus,
   resetProfileUsernameFocusConsumption,
+  isAccountChromeView,
+  openAccountProfile,
+  openAccountSettings,
   showMembersPanel,
   lastOpenedSquadId,
   lastOpenedChannelId,
@@ -262,6 +265,28 @@ describe('navigation', () => {
     bumpGovernanceProcessNonce('');
     bumpGovernanceProcessNonce('   ');
     expect(get(governanceProcessNonceByParentId)).toEqual({ p1: 2 });
+  });
+
+  it('treats profile and settings as account chrome views', () => {
+    expect(isAccountChromeView('hub')).toBe(false);
+    expect(isAccountChromeView('profile')).toBe(true);
+    expect(isAccountChromeView('settings')).toBe(true);
+  });
+
+  it('openAccountProfile and openAccountSettings clear hub selection', () => {
+    activeView.set('hub');
+    activeChannelId.set('some-channel');
+    activeHubChannelName.set('general');
+    openAccountProfile();
+    expect(get(activeView)).toBe('profile');
+    expect(get(activeChannelId)).toBeNull();
+    expect(get(activeHubChannelName)).toBeNull();
+    activeChannelId.set('other');
+    activeHubChannelName.set('tools');
+    openAccountSettings();
+    expect(get(activeView)).toBe('settings');
+    expect(get(activeChannelId)).toBeNull();
+    expect(get(activeHubChannelName)).toBeNull();
   });
 
   it('focusProfileUsername opens profile and bumps the username focus nonce', () => {

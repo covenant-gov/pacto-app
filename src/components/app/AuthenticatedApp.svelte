@@ -10,7 +10,8 @@
   import UpdateAvailableModal from '../../components/updater/UpdateAvailableModal.svelte';
   import ParentNavbar from '../../components/layout/ParentNavbar.svelte';
   import SquadHubMain from '../../components/layout/SquadHubMain.svelte';
-  import Profile from '../../components/profile/Profile.svelte';
+  import AccountProfileView from '../../components/profile/AccountProfileView.svelte';
+  import AccountSettingsView from '../../components/settings/AccountSettingsView.svelte';
   import MessengerNavbar from '../../components/dm/MessengerNavbar.svelte';
   import MessengerChatView from '../../components/dm/MessengerChatView.svelte';
   import DmThread from '../../components/dm/DmThread.svelte';
@@ -167,6 +168,7 @@
     $commonsBroadcastModalOpen &&
     ($activeTopNavTab !== 'commons' ||
       $activeView === 'profile' ||
+      $activeView === 'settings' ||
       $commonsUserHasActiveBroadcast)
   ) {
     closeCommonsBroadcastModal();
@@ -919,7 +921,9 @@
     <Navbar />
     <div class="content-wrap">
       {#if $activeView === 'profile'}
-        <Profile />
+        <AccountProfileView />
+      {:else if $activeView === 'settings'}
+        <AccountSettingsView />
       {:else if $activeTopNavTab === 'commons'}
         <CommonsView />
       {:else if $activeTopNavTab === 'dms'}

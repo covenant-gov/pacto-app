@@ -18,7 +18,6 @@
     claimUsernameAddressTransfer,
     claimedUsername,
     hasPendingUsernameTransfer,
-    initiateUsernameAddressTransfer,
     isUsernameVerified,
     isValidUsernameFormat,
     needsForcedUsernameLinkRestore,
@@ -27,10 +26,11 @@
     usernameState,
   } from '../../stores/username';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
+  import InfoTip from '../ui/InfoTip.svelte';
+  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   let draftName = $state('');
   let availability: 'idle' | 'checking' | 'available' | 'taken' | 'invalid' = $state('idle');
-  let newAddress = $state('');
 
   const username = $derived($claimedUsername);
   const verified = $derived($isUsernameVerified);
@@ -90,16 +90,6 @@
     };
   });
 
-  function shortAddr(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 12) return a;
-    return `${a.slice(0, 6)}…${a.slice(-4)}`;
-  }
-
-  function isValidEvmAddress(value: string): boolean {
-    return /^0x[0-9a-fA-F]{40}$/.test(value.trim());
-  }
-
   async function onClaim() {
     if (!requireBackupVerified()) return;
     const name = normalizeUsernameInput(draftName);
@@ -113,23 +103,6 @@
       draftName = '';
     } catch (e) {
       showToast(usernameClaimErrorMessage(e), undefined, undefined, { error: true });
-    }
-  }
-
-  async function onInitiate() {
-    if (!requireBackupVerified()) return;
-    if (!isValidEvmAddress(newAddress)) {
-      showToast(get(t)('profile.username.invalidAddress'), undefined, undefined, { error: true });
-      return;
-    }
-    try {
-      const result = await initiateUsernameAddressTransfer(newAddress);
-      showToast(
-        get(t)('profile.username.transferSuccess', { values: { path: result.path } }),
-      );
-      newAddress = '';
-    } catch (e) {
-      showToast(getInvokeErrorMessage(e), undefined, undefined, { error: true });
     }
   }
 
@@ -200,19 +173,13 @@
         {/if}
       {/if}
     </p>
-    {#if record?.evmAddress}
-      <p class="profile-username-meta">
-        {$t('profile.username.boundEvm')}:
-        <code>{shortAddr(record.evmAddress)}</code>
-      </p>
-    {/if}
 
     {#if pending}
       <div class="profile-username-pending" role="status">
         <p class="profile-username-pending-title">{$t('profile.username.pendingTransfer')}</p>
         {#if pendingAddress}
           <p class="profile-username-meta">
-            {$t('profile.username.pendingTo', { values: { address: shortAddr(pendingAddress) } })}
+            {$t('profile.username.pendingTo', { values: { address: shortEvmAddress(pendingAddress) } })}
           </p>
         {/if}
         <div class="profile-username-actions">
@@ -224,30 +191,16 @@
           </button>
         </div>
       </div>
-    {:else}
-      <div class="profile-username-rotate">
-        <label class="profile-username-field" for="profile-username-new-evm">
-          <span>{$t('profile.username.newAddressLabel')}</span>
-          <input
-            id="profile-username-new-evm"
-            type="text"
-            spellcheck="false"
-            autocomplete="off"
-            placeholder={$t('profile.username.newAddressPlaceholder')}
-            bind:value={newAddress}
-            disabled={busy}
-          />
-        </label>
-        <div class="profile-username-actions">
-          <button type="button" class="btn-secondary" disabled={busy} onclick={() => void onInitiate()}>
-            {busy ? $t('profile.username.working') : $t('profile.username.initiateTransfer')}
-          </button>
-        </div>
-      </div>
     {/if}
   {:else}
-    <label class="profile-username-field" for="profile-username-input">
-      <span>{$t('profile.username.label')}</span>
+    <div class="profile-username-field">
+      <div class="profile-username-label-row">
+        <label for="profile-username-input">{$t('profile.username.label')}</label>
+        <InfoTip
+          text={$t('profile.username.hint')}
+          ariaLabel={$t('profile.username.hintAria')}
+        />
+      </div>
       <input
         id="profile-username-input"
         type="text"
@@ -258,8 +211,7 @@
         bind:value={draftName}
         disabled={busy}
       />
-    </label>
-    <p class="profile-username-hint">{$t('profile.username.hint')}</p>
+    </div>
     {#if availability === 'invalid'}
       <p class="profile-username-error" role="alert">{$t('profile.username.invalid')}</p>
     {:else if availability === 'checking'}
@@ -332,16 +284,18 @@
     color: var(--text-secondary);
   }
 
-  .profile-username-meta code {
-    font-size: 0.8125rem;
-  }
-
   .profile-username-field {
     display: flex;
     flex-direction: column;
     gap: 6px;
     font-size: 0.8125rem;
     color: var(--text-secondary);
+  }
+
+  .profile-username-label-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
 
   .profile-username-field input {
@@ -358,7 +312,6 @@
     outline-offset: 1px;
   }
 
-  .profile-username-hint,
   .profile-username-muted {
     margin: 0;
     font-size: 0.8125rem;
@@ -383,8 +336,7 @@
     gap: 8px;
   }
 
-  .profile-username-pending,
-  .profile-username-rotate {
+  .profile-username-pending {
     display: flex;
     flex-direction: column;
     gap: 8px;

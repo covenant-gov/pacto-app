@@ -24,6 +24,20 @@ src/stores/app.ts                 thin re-export barrel (navigation, dm, squads,
 
 ---
 
+## Left rail account views
+
+Bottom of the left rail: **Add** → **Profile** (user-circle) → **Settings**.
+
+| `activeView` | Page | Hides DM/squad rail |
+|--------------|------|---------------------|
+| `profile` | `AccountProfileView` — identity, username, Pacto NFT strip, light wallet | yes |
+| `settings` | `AccountSettingsView` — Nostr, EVM infra, backup, danger | yes |
+| `hub` | Commons / DMs / Squads as selected by the top tab | no |
+
+Openers: `openAccountProfile()`, `openAccountSettings()`, `focusProfileUsername()` (Profile → username block). See [`docs/wallet/SETTINGS_LAYOUT.md`](../wallet/SETTINGS_LAYOUT.md).
+
+---
+
 ## Hub sidebar (pinned vs custom)
 
 Pinned system channels stay **above** a thin gray divider; member-created MLS channels stay **below**.

@@ -40,23 +40,18 @@ pub const PIN_DIGIT_COUNT: u8 = 6;
 /// Currently disabled by default; included as a proof-of-concept feature flag.
 pub const ANALYTICS_ENABLED: bool = false;
 
-/// An experimental feature users can opt in to from Settings. Display copy lives in the
-/// i18n catalogs under `settings.experimental.flags.<key>.name` / `.description`.
+/// Compile-time feature flag shipped in `get_app_config` for the frontend gate.
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FeatureFlagDescriptor {
     /// Stable identifier; persisted user overrides are keyed by it, so never rename a live key.
     pub key: &'static str,
-    /// State used until the user toggles the flag.
+    /// Default until a stored override exists.
     pub default_enabled: bool,
 }
 
-/// Registry of user-toggleable experimental features, in Settings display order.
-/// Adding an entry here (plus its i18n copy) is all the Settings UI needs.
-pub const FEATURE_FLAGS: &[FeatureFlagDescriptor] = &[FeatureFlagDescriptor {
-    key: "advanced_evm_accounts",
-    default_enabled: false,
-}];
+/// Registry of feature flags shipped in `get_app_config`. Empty until a gated surface needs one.
+pub const FEATURE_FLAGS: &[FeatureFlagDescriptor] = &[];
 
 /// Compile-time guard: PIN must be at least 4 digits to prevent dangerously low entropy.
 /// If `PIN_DIGIT_COUNT` is ever changed from the v1 default of 6, this assertion must keep holding.
@@ -106,16 +101,7 @@ pub async fn get_app_config() -> AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{HashMap, HashSet};
-
-    fn locale_catalog(locale: &str) -> HashMap<String, String> {
-        let path = format!(
-            "{}/../src/lib/i18n/locales/{locale}/settings.json",
-            env!("CARGO_MANIFEST_DIR")
-        );
-        let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
-        serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {path}: {e}"))
-    }
+    use std::collections::HashSet;
 
     #[test]
     fn feature_flag_keys_are_unique_snake_case() {
@@ -135,22 +121,6 @@ mod tests {
                 "feature flag key {} must be snake_case",
                 flag.key
             );
-        }
-    }
-
-    #[test]
-    fn every_feature_flag_has_en_and_es_copy() {
-        for locale in ["en", "es"] {
-            let catalog = locale_catalog(locale);
-            for flag in FEATURE_FLAGS {
-                for field in ["name", "description"] {
-                    let key = format!("settings.experimental.flags.{}.{field}", flag.key);
-                    assert!(
-                        catalog.get(&key).is_some_and(|v| !v.trim().is_empty()),
-                        "missing {locale} i18n key {key}"
-                    );
-                }
-            }
         }
     }
 

@@ -15,7 +15,7 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 | **nsec** | Nostr secret key. Stored encrypted; never exposed to the frontend or network. |
 | **BIP-39 seed** | The same mnemonic seed that derives the Nostr keypair and the embedded EVM wallet. See `docs/wallet/HD_DERIVATION_V1.md`. |
 | **squad key** | A phrase-derived EVM account whose purpose is `squad`. Used for treasury, governance, and roster-bound actions. |
-| **advanced key** | A phrase-derived or imported EVM account whose purpose is `advanced`. Restricted to the Settings → Advanced contract-call panel. |
+| **advanced key** | A phrase-derived or imported EVM account whose purpose is `advanced`. Not exposed in Settings UI; squad paths refuse these addresses. |
 
 ## Messaging
 

@@ -42,6 +42,7 @@
   import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
   import { parseEther } from 'viem';
   import { formatAssetAmount } from '../../../lib/evm/format-token-amount';
+  import { weiToEthExactString } from '../../../lib/evm/calldata-builder';
   import {
     fetchUsernameNftDeployEligibility,
     type UsernameNftEligibility,
@@ -455,7 +456,7 @@
         '',
         squadNetwork,
         'ETH',
-        formatAssetAmount(transferWei, { symbol: 'ETH' }) ?? '0',
+        weiToEthExactString(transferWei),
         null,
         squadCanonical,
         false,

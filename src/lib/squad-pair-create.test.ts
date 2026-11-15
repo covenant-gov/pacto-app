@@ -63,7 +63,7 @@ vi.mock('../stores/navigation', () => ({
   activeSquadId: createMockWritable<string | null>(null),
   activeChannelId: createMockWritable<string | null>(null),
   activeHubChannelName: createMockWritable<string | null>(null),
-  activeView: createMockWritable<'hub' | 'profile'>('hub'),
+  activeView: createMockWritable<'hub' | 'profile' | 'settings'>('hub'),
   activeTopNavTab: createMockWritable<string>('squads'),
   lastChannelBySquadId: createMockWritable<Record<string, string>>({}),
   lastHubChannelNameBySquadId: createMockWritable<Record<string, string>>({}),

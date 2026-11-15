@@ -7,39 +7,24 @@
     settingsSectionCollapsed,
     type SettingsSectionId,
   } from '../../lib/settings/settings-section-collapse';
-  import { showEvmDashGas, usernameState } from '../../stores/username';
 
   let { onBack, children }: { onBack: () => void; children: Snippet } = $props();
 
   const SECTION_LINKS = [
-    { id: 'settings-profile', labelKey: 'nav.settings.sections.profile' },
     { id: 'settings-nostr', labelKey: 'nav.settings.sections.nostr' },
     { id: 'settings-evm', labelKey: 'nav.settings.sections.evm' },
-    { id: 'settings-evm-dash-gas', labelKey: 'nav.settings.sections.evmDashGas' },
     { id: 'settings-app', labelKey: 'nav.settings.sections.app' },
     { id: 'settings-notifications', labelKey: 'nav.settings.sections.notifications' },
     { id: 'settings-commons', labelKey: 'nav.settings.sections.commons' },
-    { id: 'settings-experimental', labelKey: 'nav.settings.sections.experimental' },
+    { id: 'settings-backup', labelKey: 'nav.settings.sections.backup' },
     { id: 'settings-dangerzone', labelKey: 'nav.settings.sections.dangerzone' },
   ] as const satisfies ReadonlyArray<{ id: SettingsSectionId; labelKey: string }>;
 
   const SCROLL_MARKER_OFFSET_PX = 48;
   const SCROLL_BOTTOM_TOLERANCE_PX = 8;
 
-  let visibleSectionLinks = $derived(
-    SECTION_LINKS.filter(
-      (link) => link.id !== 'settings-evm-dash-gas' || showEvmDashGas($usernameState),
-    ),
-  );
-
   let activeSectionId: SettingsSectionId = $state(SECTION_LINKS[0].id);
   let settingsMainEl: HTMLElement | undefined;
-
-  $effect(() => {
-    const visible = visibleSectionLinks;
-    if (visible.some((link) => link.id === activeSectionId)) return;
-    activeSectionId = visible[0]?.id ?? SECTION_LINKS[0].id;
-  });
 
   function openSection(sectionId: SettingsSectionId) {
     setSettingsSectionCollapsed(sectionId, false);
@@ -53,16 +38,14 @@
       scrollRoot.scrollTop + scrollRoot.clientHeight >=
       scrollRoot.scrollHeight - SCROLL_BOTTOM_TOLERANCE_PX
     ) {
-      const links = visibleSectionLinks;
-      activeSectionId = links[links.length - 1]?.id ?? SECTION_LINKS[0].id;
+      activeSectionId = SECTION_LINKS[SECTION_LINKS.length - 1].id;
       return;
     }
 
     const markerY = scrollRoot.getBoundingClientRect().top + SCROLL_MARKER_OFFSET_PX;
     let next: SettingsSectionId = SECTION_LINKS[0].id;
-    const links = visibleSectionLinks;
 
-    for (const link of links) {
+    for (const link of SECTION_LINKS) {
       const el = document.getElementById(link.id);
       if (!el) continue;
       if (el.getBoundingClientRect().top <= markerY) {
@@ -113,7 +96,7 @@
   <div class="settings-body">
     <nav class="settings-sidebar" aria-label={$t('nav.settings.sectionsAria')}>
       <ul class="settings-sidebar-list">
-        {#each visibleSectionLinks as link (link.id)}
+        {#each SECTION_LINKS as link (link.id)}
           <li>
             <a
               class="settings-sidebar-link"
@@ -257,23 +240,21 @@
     min-width: 0;
     min-height: 0;
     overflow-y: auto;
-    padding: 24px 32px 64px;
+    padding: 16px 24px 48px;
     box-sizing: border-box;
   }
 
   .settings-sections {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 16px;
     width: 100%;
   }
 
   :global(.settings-section) {
     scroll-margin-top: 24px;
-  }
-
-  :global(.settings-section:not(.settings-section--evm)) {
-    max-width: 720px;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   :global(.settings-section-stub) {
@@ -281,10 +262,5 @@
     color: var(--text-muted);
     font-size: 0.9375rem;
     line-height: 1.5;
-  }
-
-  :global(.settings-section--evm) {
-    max-width: none;
-    width: 100%;
   }
 </style>

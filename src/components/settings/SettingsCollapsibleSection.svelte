@@ -19,7 +19,7 @@
     children: Snippet;
   } = $props();
 
-  let collapsed = $derived($settingsSectionCollapsed[sectionId] ?? true);
+  let collapsed = $derived($settingsSectionCollapsed[sectionId] ?? false);
   let headingId = $derived(`${sectionId}-heading`);
   let panelId = $derived(`${sectionId}-panel`);
 
@@ -74,12 +74,8 @@
     border: 1px solid var(--border-subtle);
     background: var(--bg-page);
     overflow: hidden;
-    padding: 24px 28px 28px;
+    padding: 16px 18px 18px;
     box-sizing: border-box;
-  }
-
-  .settings-section--evm .settings-section-panel {
-    padding: 0;
   }
 
   .settings-section-toggle {

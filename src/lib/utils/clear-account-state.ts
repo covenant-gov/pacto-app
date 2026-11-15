@@ -198,6 +198,8 @@ const SCOPED_KEY_PREFIXES = [
   SETTINGS_CHAIN_CACHE_PREFIX,
   SAFE_STATE_DISK_CACHE_PREFIX,
   'pacto_wallet_ui_enabled_chains_v1',
+  'pacto_profile_wallet_network_filter',
+  'pacto_wallet_bar_network_filter',
   SQUAD_NETWORK_PREFIX,
   SQUAD_RPC_PREFIX,
   'pacto_wallet_preferred_network_v1',

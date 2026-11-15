@@ -92,7 +92,8 @@ export async function getEvmNativeBalance(
  */
 export async function getWalletSummary(
   watchedErc20s: WatchedErc20Wire[],
-  enabledChains: SupportedChainId[]
+  enabledChains: SupportedChainId[],
+  address?: string | null,
 ): Promise<WalletSummaryResult> {
   if (!isTauri()) {
     return { ok: false, message: 'Wallet summary is only available in the desktop app.' };
@@ -101,6 +102,7 @@ export async function getWalletSummary(
     const summary = await invoke<WalletSummary>('get_wallet_summary', {
       watchedErc20s,
       enabledChains,
+      ...(address?.trim() ? { address: address.trim() } : {}),
     });
     return { ok: true, summary };
   } catch (e) {
@@ -182,6 +184,8 @@ export async function walletBuildAndSendTransaction(
   /** When set, send to this `0x` address from Settings. `toNpub` is then ignored by the backend. */
   toAddressEvm?: string | null,
   waitForConfirmation = false,
+  /** Squad-purpose local account that signs this send. Omitted: the active signer. */
+  fromAccountId?: string | null,
 ): Promise<WalletSendResultOutcome> {
   if (!isTauri()) {
     return { ok: false, message: 'Sending is only available in the desktop app.' };
@@ -195,6 +199,7 @@ export async function walletBuildAndSendTransaction(
       erc20Transfer: erc20Transfer ?? null,
       toAddressEvm: toAddressEvm?.trim() ? toAddressEvm.trim() : null,
       waitForConfirmation,
+      fromAccountId: fromAccountId?.trim() ? fromAccountId.trim() : null,
     });
     return { ok: true, result };
   } catch (e) {

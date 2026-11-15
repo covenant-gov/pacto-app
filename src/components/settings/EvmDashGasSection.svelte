@@ -4,7 +4,6 @@
   import { t } from 'svelte-i18n';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import TokenAmountRow from '../ui/TokenAmountRow.svelte';
-  import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import { usernameGlobalSpendablePoolWei } from '../../lib/api/username';
   import { formatAssetAmount } from '../../lib/evm/format-token-amount';
   import {
@@ -25,7 +24,6 @@
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { USERNAME_NETWORK } from '../../stores/username';
-  import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
 
   let rows = $state<GlobalSponsoredFeeUsageDto[]>([]);
   let loading = $state(false);
@@ -34,7 +32,7 @@
   let poolError = $state('');
   let loadSeq = 0;
 
-  const expanded = $derived(!($settingsSectionCollapsed['settings-evm-dash-gas'] ?? true));
+  let expanded = $state(false);
   const cacheKey = $derived(evmDashGasCacheKey(USERNAME_NETWORK));
   const poolNetworkName = $derived(
     getWalletNetworkDisplayName(parseSupportedChainId(USERNAME_NETWORK)),
@@ -115,12 +113,11 @@
   }
 </script>
 
-<SettingsCollapsibleSection
-  sectionId="settings-evm-dash-gas"
-  title={$t('settings.evmDashGas.title')}
-  sectionClass="settings-section--evm-dash-gas"
+<details
+  class="dash-disclosure"
+  bind:open={expanded}
 >
-  <p class="dash-disclaimer muted">{$t('settings.evmDashGas.disclaimer')}</p>
+  <summary class="dash-summary">{$t('settings.evmDashGas.title')}</summary>
 
   <div class="dash-toolbar">
     <div class="dash-pool">
@@ -213,12 +210,29 @@
       </table>
     </div>
   {/if}
-</SettingsCollapsibleSection>
+</details>
 
 <style>
-  .dash-disclaimer {
-    margin: 0 0 12px;
+  .dash-disclosure {
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+    padding: 4px 16px 16px;
   }
+
+  .dash-summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 12px 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .dash-summary::-webkit-details-marker {
+    display: none;
+  }
+
   .dash-toolbar {
     display: flex;
     align-items: flex-start;

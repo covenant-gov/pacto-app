@@ -7,7 +7,8 @@
   import { sendTypingIndicatorsEnabled } from '../../stores/typing-indicators';
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { webPreviewsEnabled } from '../../stores/web-previews';
-  import torIcon from '../../icons/tor.svg';
+  import InfoTip from '../ui/InfoTip.svelte';
+  import SettingsSubheading from './SettingsSubheading.svelte';
 
   let loading = $state(true);
   let saving = $state(false);
@@ -62,7 +63,7 @@
 </script>
 
 <section class="privacy-section" aria-labelledby="privacy-heading">
-  <h3 id="privacy-heading" class="theme-subheading">{$t('settings.privacyTitle')}</h3>
+  <SettingsSubheading id="privacy-heading">{$t('settings.privacyTitle')}</SettingsSubheading>
 
   <label class="privacy-toggle">
     <input
@@ -72,7 +73,6 @@
     />
     <span>{$t('settings.sendTypingIndicatorsLabel')}</span>
   </label>
-  <p class="privacy-toggle-description">{$t('settings.sendTypingIndicatorsDescription')}</p>
 
   <label class="privacy-toggle">
     <input
@@ -82,7 +82,6 @@
     />
     <span>{$t('settings.stripTrackingMarkersLabel')}</span>
   </label>
-  <p class="privacy-toggle-description">{$t('settings.stripTrackingMarkersDescription')}</p>
 
   <label class="privacy-toggle">
     <input
@@ -92,21 +91,26 @@
     />
     <span>{$t('settings.webPreviewsLabel')}</span>
   </label>
-  <p class="privacy-toggle-description">{$t('settings.webPreviewsDescription')}</p>
 
   {#if !$torAvailable}
     <p class="tor-status">{$t('settings.routeTrafficThroughTorUnavailable')}</p>
   {/if}
 
-  <label class="tor-toggle">
-    <input
-      type="checkbox"
-      checked={$torRoutingEnabled}
-      disabled={loading || saving || !$torAvailable}
-      onchange={handleToggle}
+  <div class="tor-toggle-row">
+    <label class="tor-toggle">
+      <input
+        type="checkbox"
+        checked={$torRoutingEnabled}
+        disabled={loading || saving || !$torAvailable}
+        onchange={handleToggle}
+      />
+      <span>{$t('settings.routeTrafficThroughTorLabel')}</span>
+    </label>
+    <InfoTip
+      text={$t('settings.routeTrafficThroughTorDisclaimer')}
+      ariaLabel={$t('settings.routeTrafficThroughTorDisclaimerAria')}
     />
-    <span>{$t('settings.routeTrafficThroughTorLabel')}</span>
-  </label>
+  </div>
 
   {#if saving}
     <p class="tor-status">
@@ -115,12 +119,6 @@
         : $t('settings.routeTrafficThroughTorDisconnecting')}
     </p>
   {/if}
-
-  <p class="tor-description">
-    <img class="tor-logo" src={torIcon} alt="" />
-    {$t('settings.routeTrafficThroughTorDescription')}
-  </p>
-  <p class="tor-disclaimer">{$t('settings.routeTrafficThroughTorDisclaimer')}</p>
 
   {#if $torStartupError}
     <p class="tor-error" role="alert">
@@ -155,17 +153,11 @@
     accent-color: var(--brand);
   }
 
-  .privacy-toggle-description {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-  }
-
-  .theme-subheading {
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 8px 0;
+  .tor-toggle-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
   }
 
   .tor-toggle {
@@ -191,28 +183,6 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-secondary);
-  }
-
-  .tor-description {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-  }
-
-  .tor-logo {
-    width: 16px;
-    height: 16px;
-    margin-top: 1px;
-    flex-shrink: 0;
-  }
-
-  .tor-disclaimer {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.75rem;
   }
 
   .tor-error {

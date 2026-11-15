@@ -31,7 +31,7 @@ Separate from the **username claim** path above. Applies when the roster EOA is 
 
 Zero-ETH onboarding smoke: [OPERATOR_SMOKE.md §11](./OPERATOR_SMOKE.md#11-zero-eth-username-onboarding-global-tophat). Squad pool precedence after deploy: [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). UserOp transport: [SPONSORED_USEROP_7702.md](./SPONSORED_USEROP_7702.md).
 
-**Spend ledger:** successful global UserOps write to `global_sponsored_fee_usage` (`list_global_sponsored_fee_usage`, account-scoped). Squad pool spend stays in `squad_sponsored_fee_usage` — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md#sponsored-fee-ledger). Member-facing list (temporary): Settings → **EVM — gas** (`#settings-evm-dash-gas`) when `recordOf` shows this account holds the NFT — not an operator pool view; see [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md).
+**Spend ledger:** successful global UserOps write to `global_sponsored_fee_usage` (`list_global_sponsored_fee_usage`, account-scoped). Squad pool spend stays in `squad_sponsored_fee_usage` — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md#sponsored-fee-ledger). Member-facing list: Profile → **Sponsored gas** disclosure — not an operator pool view; see [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md). The Profile NFT strip shows the Username NFT from the tracked catalog (`pacto-protocol-addresses.json`); it does not crawl `tokenURI`.
 
 ## Dual attestation (claim)
 
@@ -80,6 +80,10 @@ SQLite cache: `username_claims` (username, npubHash, tokenId, link event id, pol
 ## Verified badge
 
 Requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` with `evmAddress` equal to the active roster EVM. Holder sync fills a missing `linkEventId` from trusted relays that are currently in the pool (kind 31337, `#d` = npub hash) when the author and `evm` / `name` / `npub-hash` tags match `recordOf`. Publish uses the same in-pool set. Failed restore fetches are skipped for 5 minutes (process-local); an explicit refresh on claimed-unverified (missing link) forces a new fetch. Overlapping restores return the live cache row so a skipped UPDATE cannot clobber a restored `linkEventId`. A relay that dropped the event cannot be rebuilt from the chain.
+
+## Profile UX (address rotation)
+
+Claim and verified badge live under Profile → Username. **Bound EVM** display and **address rotation** (`initiate` / `claim` / `cancel`) live on the Profile **Pacto NFT** card (`PactoNftStrip` → `UsernameAddressRotateModal`), not under the username field and not in wallet Send. Mid-rotation accounts also keep compact claim/cancel under Username so pending transfers stay recoverable. See [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md).
 
 ## Operator smoke (Sepolia)
 

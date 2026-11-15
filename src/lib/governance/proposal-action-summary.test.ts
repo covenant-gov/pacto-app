@@ -28,7 +28,16 @@ describe('summarizeTreasuryProposalAction', () => {
       valueWei: parseEther('1.5').toString(),
       isDelegateCall: false,
     });
-    expect(formatNativeEthAmount(summary.valueWei)).toBe('1.500000000000000000');
+    expect(formatNativeEthAmount(summary.valueWei)).toBe('1.500000');
+  });
+
+  it('shows full precision when six decimals would hide a non-zero wei amount', () => {
+    expect(formatNativeEthAmount('1')).toBe('0.000000000000000001');
+    expect(formatNativeEthAmount('0')).toBe('0.000000');
+  });
+
+  it('shows full precision for non-dust amounts with more than six decimals', () => {
+    expect(formatNativeEthAmount(parseEther('1.5000004').toString())).toBe('1.5000004');
   });
 
   it('decodes erc20 transfer', () => {
@@ -91,7 +100,7 @@ describe('summarizeTreasuryProposalAction', () => {
     expect(summary.kind).toBe('erc20_transfer');
     if (summary.kind !== 'erc20_transfer') return;
     expect(summary.valueWei).toBe(valueWei);
-    expect(formatNativeEthAmount(summary.valueWei)).toBe('0.250000000000000000');
+    expect(formatNativeEthAmount(summary.valueWei)).toBe('0.250000');
   });
 
   it('fails closed on unknown calldata with short selector', () => {

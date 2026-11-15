@@ -9,7 +9,7 @@
     selectClass?: string;
   }
 
-  let { id = undefined, value = $bindable(), disabled = false, selectClass = 'input-select' }: Props = $props();
+  let { id = undefined, value = $bindable(), disabled = false, selectClass = 'ui-select' }: Props = $props();
 </script>
 
 <select {id} class={selectClass} bind:value {disabled}>
@@ -17,17 +17,3 @@
     <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
   {/each}
 </select>
-
-<style>
-  .input-select {
-    width: 100%;
-    padding: 10px 12px;
-    font-size: 0.875rem;
-    border: 1px solid var(--border-subtle);
-    border-radius: 6px;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    margin-bottom: 4px;
-    box-sizing: border-box;
-  }
-</style>

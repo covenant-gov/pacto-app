@@ -2,5 +2,9 @@
 	"ui.close": "Close",
 	"ui.edit": "Edit",
 	"ui.refresh": "Refresh",
-	"ui.info": "Info"
+	"ui.info": "Info",
+	"ui.moreActions": "More actions",
+	"ui.copy": "Copy",
+	"ui.copied": "Copied",
+	"ui.couldNotCopy": "Could not copy"
 }

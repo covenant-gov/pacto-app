@@ -79,6 +79,6 @@ export async function getSafeState(
     threshold: Number(threshold),
     nonce,
     balanceWei,
-    balanceFormatted: formatAssetAmount(balanceWei, { symbol: 'ETH' }) ?? '0.000000000000000000',
+    balanceFormatted: formatAssetAmount(balanceWei, { symbol: 'ETH' }) ?? '0.000000',
   };
 }

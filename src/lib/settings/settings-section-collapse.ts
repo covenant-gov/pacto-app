@@ -1,14 +1,12 @@
 import { writable } from 'svelte/store';
 
 export const SETTINGS_SECTION_IDS = [
-  'settings-profile',
   'settings-nostr',
   'settings-evm',
-  'settings-evm-dash-gas',
   'settings-app',
   'settings-notifications',
   'settings-commons',
-  'settings-experimental',
+  'settings-backup',
   'settings-dangerzone',
 ] as const;
 
@@ -17,7 +15,7 @@ export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number];
 const STORAGE_KEY = 'pacto_settings_section_collapsed_v1';
 const STORAGE_VERSION = 1 as const;
 
-/** `true` = collapsed. Missing keys default to collapsed. */
+/** `true` = collapsed. Missing keys default to expanded. */
 export type SettingsSectionCollapseState = Partial<Record<SettingsSectionId, boolean>>;
 
 function isSectionId(value: unknown): value is SettingsSectionId {
@@ -59,7 +57,7 @@ export function isSettingsSectionCollapsed(
   sectionId: SettingsSectionId,
   state: SettingsSectionCollapseState = loadCollapseState(),
 ): boolean {
-  return state[sectionId] ?? true;
+  return state[sectionId] ?? false;
 }
 
 export function setSettingsSectionCollapsed(sectionId: SettingsSectionId, collapsed: boolean): void {

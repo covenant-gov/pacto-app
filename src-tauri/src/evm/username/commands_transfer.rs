@@ -160,7 +160,7 @@ pub async fn username_claim_address_transfer<R: Runtime>(
     // Ownership moved to this signer — republish kind-31337 so the verified badge
     // is not left pointing at an attestation for the previous address.
     let mut link_event_id: Option<String> = None;
-    match load_nostr_keys() {
+    match load_nostr_keys(app.clone()).await {
         Ok(keys) => {
             let used: U256 = eth_call_decode(&provider, nft, &usedNonceCall { npubHash: hash })
                 .await

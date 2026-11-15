@@ -18,6 +18,7 @@
   import UpdateAvailablePanel from '../updater/UpdateAvailablePanel.svelte';
   import WhatsNewModal from '../updater/WhatsNewModal.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
+  import SettingsSubheading from './SettingsSubheading.svelte';
   import PrivacySettingsSection from './PrivacySettingsSection.svelte';
   import { getSessionTimeout, setSessionTimeout } from '../../lib/api/auth';
   import { locale, setLocale, LOCALE_OPTIONS } from '../../stores/locale';
@@ -131,6 +132,19 @@
     }
   }
 
+  function onTimeoutSelectChange(event: Event): void {
+    const minutes = Number((event.currentTarget as HTMLSelectElement).value);
+    void handleTimeoutChange(minutes);
+  }
+
+  function onLocaleSelectChange(event: Event): void {
+    void setLocale((event.currentTarget as HTMLSelectElement).value as (typeof LOCALE_OPTIONS)[number]['value']);
+  }
+
+  function onThemeSelectChange(event: Event): void {
+    setTheme((event.currentTarget as HTMLSelectElement).value as (typeof THEME_OPTIONS)[number]['value']);
+  }
+
   async function handleToggleBiometricUnlock(checked: boolean): Promise<void> {
     const npub = get(currentUser)?.npub;
     if (!npub || biometricBusy) return;
@@ -162,50 +176,39 @@
 
 <SettingsCollapsibleSection sectionId="settings-app" title={$t('settings.appSettingsTitle')}>
   <div class="app-settings">
-    <div class="language-section" aria-labelledby="language-heading">
-      <h3 id="language-heading" class="theme-subheading">{$t('settings.languageTitle')}</h3>
-      <span class="theme-label">{$t('settings.displayLanguageLabel')}</span>
-      <div class="theme-options" role="radiogroup" aria-label={$t('settings.displayLanguageLabel')}>
-        {#each LOCALE_OPTIONS as opt (opt.value)}
-          <label class="theme-option">
-            <input
-              type="radio"
-              name="locale"
-              value={opt.value}
-              checked={$locale === opt.value}
-              onchange={() => setLocale(opt.value)}
-            />
-            <span class="theme-option-label">{opt.label}</span>
-          </label>
-        {/each}
+    <div class="ui-field-row">
+      <div class="ui-field">
+        <label class="ui-field-label" for="settings-language-select">{$t('settings.languageTitle')}</label>
+        <select
+          id="settings-language-select"
+          class="ui-select"
+          value={$locale}
+          onchange={onLocaleSelectChange}
+        >
+          {#each LOCALE_OPTIONS as opt (opt.value)}
+            <option value={opt.value}>{opt.label}</option>
+          {/each}
+        </select>
       </div>
-    </div>
-
-    <hr class="app-settings-divider" />
-
-    <div class="theme-section" aria-labelledby="theme-heading">
-      <h3 id="theme-heading" class="theme-subheading">{$t('settings.appearanceTitle')}</h3>
-      <span class="theme-label">{$t('settings.themeLabel')}</span>
-      <div class="theme-options" role="radiogroup" aria-label={$t('settings.themeLabel')}>
-        {#each THEME_OPTIONS as opt (opt.value)}
-          <label class="theme-option">
-            <input
-              type="radio"
-              name="theme"
-              value={opt.value}
-              checked={$theme === opt.value}
-              onchange={() => setTheme(opt.value)}
-            />
-            <span class="theme-option-label">{$t(opt.labelKey)}</span>
-          </label>
-        {/each}
+      <div class="ui-field">
+        <label class="ui-field-label" for="settings-theme-select">{$t('settings.appearanceTitle')}</label>
+        <select
+          id="settings-theme-select"
+          class="ui-select"
+          value={$theme}
+          onchange={onThemeSelectChange}
+        >
+          {#each THEME_OPTIONS as opt (opt.value)}
+            <option value={opt.value}>{$t(opt.labelKey)}</option>
+          {/each}
+        </select>
       </div>
     </div>
 
     <hr class="app-settings-divider" />
 
     <div class="updates-section" aria-labelledby="updates-heading">
-      <h3 id="updates-heading" class="theme-subheading">{$t('settings.updatesTitle')}</h3>
+      <SettingsSubheading id="updates-heading">{$t('settings.updatesTitle')}</SettingsSubheading>
 
       <p class="update-current-version">
         {$t('settings.currentVersionLabel', { values: { version: versionLabel() } })}
@@ -262,24 +265,22 @@
 
     <hr class="app-settings-divider" />
 
-    <div class="security-section" aria-labelledby="security-heading">
-      <h3 id="security-heading" class="theme-subheading">{$t('settings.securityTitle')}</h3>
-
-      <span class="security-label">{$t('settings.autoLockAfterInactivity')}</span>
-      <div class="timeout-options" role="radiogroup" aria-label={$t('settings.autoLockAfterInactivity')}>
-        {#each TIMEOUT_OPTIONS as opt (opt.minutes)}
-          <label class="timeout-option">
-            <input
-              type="radio"
-              name="session-timeout"
-              value={opt.minutes}
-              checked={selectedTimeout === opt.minutes}
-              disabled={savingTimeout}
-              onchange={() => handleTimeoutChange(opt.minutes)}
-            />
-            <span class="timeout-option-label">{$t(opt.key)}</span>
-          </label>
-        {/each}
+    <div class="security-section" aria-labelledby="settings-timeout-select-label">
+      <div class="ui-field security-timeout-field">
+        <label class="ui-field-label" id="settings-timeout-select-label" for="settings-timeout-select"
+          >{$t('settings.autoLockAfterInactivity')}</label
+        >
+        <select
+          id="settings-timeout-select"
+          class="ui-select"
+          value={selectedTimeout}
+          disabled={savingTimeout}
+          onchange={onTimeoutSelectChange}
+        >
+          {#each TIMEOUT_OPTIONS as opt (opt.minutes)}
+            <option value={opt.minutes}>{$t(opt.key)}</option>
+          {/each}
+        </select>
       </div>
       {#if savedTimeoutMessage}
         <p class="timeout-status" class:timeout-status--error={savedTimeoutMessage === tFn('settings.timeoutFailedToSave')}>{savedTimeoutMessage}</p>
@@ -339,48 +340,7 @@
   .app-settings {
     display: flex;
     flex-direction: column;
-    gap: 24px;
-  }
-
-  .theme-section {
-    margin: 0;
-  }
-
-  .theme-subheading {
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 8px 0;
-  }
-
-  .theme-label {
-    display: block;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-bottom: 8px;
-  }
-
-  .theme-options {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-
-  .theme-option {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-  }
-
-  .theme-option input {
-    accent-color: var(--brand);
-  }
-
-  .theme-option-label {
-    user-select: none;
+    gap: 12px;
   }
 
   .app-settings-divider {
@@ -486,49 +446,18 @@
   .security-section {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-  }
-
-  .security-label {
-    display: block;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-bottom: 8px;
-  }
-
-  .timeout-options {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-
-  .timeout-option {
-    display: flex;
-    align-items: center;
     gap: 8px;
-    cursor: pointer;
-    color: var(--text-primary);
-    font-size: 0.9375rem;
   }
 
-  .timeout-option input {
-    accent-color: var(--brand);
-  }
-
-  .timeout-option input:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .timeout-option-label {
-    user-select: none;
+  .security-timeout-field {
+    flex: 0 0 auto;
+    max-width: 280px;
   }
 
   .timeout-status {
     margin: 0;
     font-size: 0.8125rem;
     color: var(--success, #38a169);
-    min-height: 1.2em;
   }
 
   .timeout-status--error {

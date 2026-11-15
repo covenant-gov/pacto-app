@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
+  import { copyTextToClipboard } from '../../lib/utils/clipboard-copy';
+  import { showToast } from '../../stores/toast';
 
   interface Props {
     open: boolean;
@@ -15,13 +18,13 @@
 
   let copied = $state(false);
   async function copyAddress() {
-    try {
-      await navigator.clipboard.writeText(address.trim());
-      copied = true;
-      setTimeout(() => (copied = false), 2000);
-    } catch {
-      /* ignore */
+    const ok = await copyTextToClipboard(address.trim());
+    if (!ok) {
+      showToast(get(t)('wallet.couldNotCopyHash'));
+      return;
     }
+    copied = true;
+    setTimeout(() => (copied = false), 2000);
   }
 </script>
 

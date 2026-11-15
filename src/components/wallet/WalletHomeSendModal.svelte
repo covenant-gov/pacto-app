@@ -44,6 +44,8 @@
     watchedAssetRows?: WatchedErc20Row[];
     /** Chains enabled in Wallet settings (catalog order subset). */
     enabledChainIds?: SupportedChainId[];
+    /** Viewed squad account. Balances load for this address and it signs the send. */
+    fromAccount?: { id: string; address: string } | null;
   }
 
   let {
@@ -51,6 +53,7 @@
     onClose,
     watchedAssetRows = [],
     enabledChainIds = [...WALLET_ASSETS_CHAIN_IDS],
+    fromAccount = null,
   }: Props = $props();
 
   const titleId = 'wallet-home-send-title';
@@ -126,6 +129,7 @@
   let sendBalanceFetchGen = $state(0);
 
   const watchedWireForBalances = $derived(watchedRowsToWire(watchedAssetRows));
+  const fromAddress = $derived(fromAccount?.address?.trim() || '');
 
   $effect(() => {
     if (!open) {
@@ -135,14 +139,14 @@
       sendBalanceLoading = false;
       return;
     }
-    const key = `${chainId}|${watchedWireFingerprint(watchedWireForBalances)}`;
+    const key = `${chainId}|${fromAddress}|${watchedWireFingerprint(watchedWireForBalances)}`;
     if (key === sendBalanceFetchKey) return;
     sendBalanceFetchKey = key;
     sendBalanceFetchGen += 1;
     const gen = sendBalanceFetchGen;
     sendBalanceLoading = true;
     sendBalanceError = null;
-    getWalletSummary(watchedWireForBalances, [chainId]).then((r) => {
+    getWalletSummary(watchedWireForBalances, [chainId], fromAddress || undefined).then((r) => {
       if (gen !== sendBalanceFetchGen) return;
       sendBalanceLoading = false;
       if (r.ok) {
@@ -277,6 +281,7 @@
         erc20Transfer,
         normalizedTo,
         false,
+        fromAccount?.id,
       );
       if (out.ok) {
         onClose();

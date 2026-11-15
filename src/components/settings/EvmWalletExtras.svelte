@@ -1,11 +1,13 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
-  import { WALLET_ASSETS_CHAIN_IDS, WALLET_CHAIN_GROUPS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
+  import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import {
     DEFAULT_PREFERRED_NETWORK,
+    listPreferredNetworkOptions,
     loadPreferredNetwork,
+    savePreferredNetwork,
     walletPreferredNetworkTick,
     type PreferredNetworkId,
   } from '../../lib/wallet/preferred-network';
@@ -23,6 +25,8 @@
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { showToast } from '../../stores/toast';
   import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
+  import SettingsFormModal from './SettingsFormModal.svelte';
+  import EnabledChainsMenu from './EnabledChainsMenu.svelte';
 
   const tFn = get(t);
 
@@ -61,6 +65,7 @@
   let selectedDefaultRpc = $state('');
   let newRpcUrl = $state('');
   let addRpcError: string | null = $state(null);
+  let addRpcModalOpen = $state(false);
 
   let enabledChainIdsOrdered = $derived(WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id)));
 
@@ -106,7 +111,7 @@
 
   let filteredWatchedRows = $derived(
     tokenNetworkFilter === 'all'
-      ? watchedRows
+      ? watchedRows.filter((row) => enabledSet.has(row.network as SupportedChainId))
       : watchedRows.filter((row) => row.network === tokenNetworkFilter)
   );
 
@@ -139,6 +144,18 @@
     saveDefaultRpc(accountNpub, rpcNetworkFilter, selectedDefaultRpc || null);
   }
 
+  function openAddRpcModal() {
+    newRpcUrl = '';
+    addRpcError = null;
+    addRpcModalOpen = true;
+  }
+
+  function closeAddRpcModal() {
+    addRpcModalOpen = false;
+    addRpcError = null;
+    newRpcUrl = '';
+  }
+
   function submitAddRpc() {
     addRpcError = null;
     if (!accountNpub) return;
@@ -148,6 +165,7 @@
       return;
     }
     newRpcUrl = '';
+    addRpcModalOpen = false;
     showToast(tFn('settings.toast.personalRpcAdded'));
   }
 
@@ -156,53 +174,58 @@
     removePersonalRpc(accountNpub, rpcNetworkFilter, url);
     showToast(tFn('settings.toast.personalRpcRemoved'));
   }
+
+  const preferredNetworkOptions = listPreferredNetworkOptions();
+
+  function onPreferredNetworkChange(event: Event) {
+    if (!accountNpub) return;
+    const next = (event.currentTarget as HTMLSelectElement).value as PreferredNetworkId;
+    savePreferredNetwork(accountNpub, next);
+  }
 </script>
 
-<section class="evm-extras-section evm-extras-section--first" aria-labelledby="wallet-networks-heading">
-  <h2 id="wallet-networks-heading" class="evm-extras-h2">{$t('settings.enabledChainsTitle')}</h2>
-  <p class="evm-extras-hint">
-    {$t('settings.enabledChainsHint')}
-  </p>
-  <div class="evm-extras-chain-groups">
-    {#each WALLET_CHAIN_GROUPS as group (group.id)}
-      <div class="evm-extras-chain-group">
-        <h3 class="evm-extras-chain-group-label">{$t(group.label)}</h3>
-        <ul class="evm-extras-toggle-list">
-          {#each group.chains as chain (chain)}
-            <li>
-              <label class="evm-extras-toggle">
-                <input
-                  type="checkbox"
-                  checked={enabledSet.has(chain)}
-                  disabled={enabledSet.has(chain) && enabledSet.size <= 1}
-                  onchange={() => onToggleChain(chain)}
-                />
-                <span>{getWalletNetworkDisplayName(chain)}</span>
-              </label>
-            </li>
-          {/each}
-        </ul>
-      </div>
-    {/each}
+<section class="evm-extras-section" aria-label={$t('wallet.preferredNetworkLabel')}>
+  <div class="ui-field-row">
+    <div class="ui-field">
+      <label class="ui-field-label" for="wallet-preferred-network-select">{$t('wallet.preferredNetworkLabel')}</label>
+      <select
+        id="wallet-preferred-network-select"
+        class="ui-select"
+        value={preferredNetwork}
+        disabled={!accountNpub}
+        onchange={onPreferredNetworkChange}
+      >
+        {#each preferredNetworkOptions as opt (opt.id)}
+          <option value={opt.id}>{opt.label}</option>
+        {/each}
+      </select>
+    </div>
+    <div class="ui-field">
+      <span class="ui-field-label" id="wallet-networks-heading">{$t('settings.enabledChainsTitle')}</span>
+      <EnabledChainsMenu {enabledSet} labelledBy="wallet-networks-heading" {onToggleChain} />
+    </div>
   </div>
 </section>
 
 <section class="evm-extras-section" aria-labelledby="wallet-tokens-heading">
   <div class="evm-extras-section-head">
     <h2 id="wallet-tokens-heading" class="evm-extras-h2">{$t('settings.tokensToTrackTitle')}</h2>
-    <button type="button" class="evm-extras-btn" onclick={onImportTokens}>{$t('settings.importTokensButton')}</button>
-  </div>
-  <p class="evm-extras-hint">{$t('settings.trackedTokensHint')}</p>
-  <div class="evm-extras-token-filters">
-    <label class="evm-extras-filter-label" for="evm-token-network-select">{$t('wallet.networkLabel')}</label>
-    <select id="evm-token-network-select" class="evm-extras-select" bind:value={tokenNetworkFilter}>
-      <option value="all">{$t('settings.allNetworksOption')}</option>
-      {#each enabledChainIdsOrdered as chainId (chainId)}
-        <option value={chainId}>
-          {getWalletNetworkDisplayName(chainId)}
-        </option>
-      {/each}
-    </select>
+    <div class="evm-extras-section-head-controls">
+      <select
+        id="evm-token-network-select"
+        class="ui-select"
+        aria-label={$t('wallet.networkLabel')}
+        bind:value={tokenNetworkFilter}
+      >
+        <option value="all">{$t('settings.allNetworksOption')}</option>
+        {#each enabledChainIdsOrdered as chainId (chainId)}
+          <option value={chainId}>
+            {getWalletNetworkDisplayName(chainId)}
+          </option>
+        {/each}
+      </select>
+      <button type="button" class="evm-extras-btn" onclick={onImportTokens}>{$t('settings.importTokensButton')}</button>
+    </div>
   </div>
   {#if watchedRows.length === 0}
     <p class="evm-extras-empty">{$t('settings.noExtraTokensYet')}</p>
@@ -227,15 +250,15 @@
   {/if}
 </section>
 
-<section class="evm-extras-section" aria-labelledby="wallet-rpc-heading">
-  <h2 id="wallet-rpc-heading" class="evm-extras-h2">{$t('settings.rpcEndpointsTitle')}</h2>
-  <p class="evm-extras-hint">
-    {$t('settings.rpcEndpointsHint')}
-  </p>
-
-  <div class="evm-extras-token-filters">
-    <label class="evm-extras-filter-label" for="evm-rpc-network-select">{$t('wallet.networkLabel')}</label>
-    <select id="evm-rpc-network-select" class="evm-extras-select" bind:value={rpcNetworkFilter}>
+<section class="evm-extras-section evm-extras-section--last" aria-labelledby="wallet-rpc-heading">
+  <div class="evm-extras-section-head">
+    <h2 id="wallet-rpc-heading" class="evm-extras-h2">{$t('settings.rpcEndpointsTitle')}</h2>
+    <select
+      id="evm-rpc-network-select"
+      class="ui-select evm-extras-select-inline"
+      aria-label={$t('wallet.networkLabel')}
+      bind:value={rpcNetworkFilter}
+    >
       {#each enabledChainIdsOrdered as chainId (chainId)}
         <option value={chainId}>
           {getWalletNetworkDisplayName(chainId)}
@@ -245,15 +268,14 @@
   </div>
 
   <div class="evm-extras-rpc-block">
-    <h3 class="evm-extras-h3">{$t('settings.personalRpcTitle')}</h3>
+    <div class="evm-extras-section-head">
+      <h3 class="evm-extras-h3">{$t('settings.personalRpcTitle')}</h3>
+      <button type="button" class="evm-extras-btn" disabled={!accountNpub} onclick={openAddRpcModal}>
+        {$t('settings.addRpcTitle')}
+      </button>
+    </div>
     {#if personalRpcs.length === 0}
-      <p class="evm-extras-empty evm-extras-rpc-empty">
-        {$t('settings.noPersonalRpcYet')}
-        <button type="button" class="evm-extras-inline-link" onclick={openAlchemySignup}>
-          {$t('settings.getFreeRpcLink')}
-        </button>
-        {$t('settings.addRpcHint')}
-      </p>
+      <p class="evm-extras-empty">{$t('settings.noPersonalRpcYet')}</p>
     {:else}
       <ul class="evm-extras-rpc-list">
         {#each personalRpcs as url (url)}
@@ -269,39 +291,20 @@
   </div>
 
   <div class="evm-extras-rpc-block">
-    <h3 class="evm-extras-h3">{$t('settings.addRpcTitle')}</h3>
-    <div class="evm-extras-rpc-add">
-      <input
-        id="evm-add-rpc-input"
-        class="evm-extras-input"
-        type="url"
-        inputmode="url"
-        autocomplete="off"
-        placeholder="https://…"
-        bind:value={newRpcUrl}
-        onkeydown={(e) => e.key === 'Enter' && submitAddRpc()}
-      />
-      <button type="button" class="evm-extras-btn" onclick={submitAddRpc}>{$t('settings.addRpcButton')}</button>
+    <div class="ui-field">
+      <label class="ui-field-label" for="evm-default-rpc-select">{$t('settings.defaultRpcTitle')}</label>
+      <select
+        id="evm-default-rpc-select"
+        class="ui-select"
+        bind:value={selectedDefaultRpc}
+        onchange={onDefaultRpcChange}
+      >
+        <option value="">{$t('settings.defaultRpcCuratedDefaults')}</option>
+        {#each defaultRpcOptions as opt (opt.value)}
+          <option value={opt.value}>{opt.label}</option>
+        {/each}
+      </select>
     </div>
-    {#if addRpcError}
-      <p class="evm-extras-field-error" role="alert">{addRpcError}</p>
-    {/if}
-  </div>
-
-  <div class="evm-extras-rpc-block">
-    <label class="evm-extras-filter-label" for="evm-default-rpc-select">{$t('settings.defaultRpcTitle')}</label>
-    <select
-      id="evm-default-rpc-select"
-      class="evm-extras-select evm-extras-select--wide"
-      bind:value={selectedDefaultRpc}
-      onchange={onDefaultRpcChange}
-    >
-      <option value="">{$t('settings.defaultRpcCuratedDefaults')}</option>
-      {#each defaultRpcOptions as opt (opt.value)}
-        <option value={opt.value}>{opt.label}</option>
-      {/each}
-    </select>
-    <p class="evm-extras-field-hint">{$t('settings.defaultRpcHint')}</p>
   </div>
 
   <div class="evm-extras-rpc-providers">
@@ -317,35 +320,40 @@
         </button>
       </div>
     </div>
-    <p class="evm-extras-field-hint">
-      {$t('settings.rpcProvidersHint')}
-    </p>
   </div>
 </section>
 
-<section class="evm-extras-section evm-extras-section--last" aria-labelledby="wallet-external-heading">
-  <h2 id="wallet-external-heading" class="evm-extras-h2">{$t('settings.externalWalletTitle')}</h2>
-  <div class="evm-extras-external-copy">
-    <p>
-      {$t('settings.externalWalletParagraph1')}
+{#if addRpcModalOpen}
+  <SettingsFormModal
+    titleId="settings-add-rpc-title"
+    title={$t('settings.addRpcTitle')}
+    primaryLabel={$t('settings.addRpcButton')}
+    error={addRpcError}
+    onClose={closeAddRpcModal}
+    onPrimary={submitAddRpc}
+  >
+    <p class="settings-form-status">
+      {$t('wallet.networkLabel')}: {getWalletNetworkDisplayName(rpcNetworkFilter)}
     </p>
-    <p>
-      <!-- eslint-disable svelte/no-at-html-tags -->
-      {@html $t('settings.externalWalletParagraph2')}
-      <!-- eslint-enable svelte/no-at-html-tags -->
-    </p>
-  </div>
-</section>
+    <input
+      id="evm-add-rpc-input"
+      class="ui-input"
+      type="url"
+      inputmode="url"
+      autocomplete="off"
+      aria-label={$t('settings.addRpcTitle')}
+      placeholder="https://…"
+      bind:value={newRpcUrl}
+      onkeydown={(e) => e.key === 'Enter' && submitAddRpc()}
+    />
+  </SettingsFormModal>
+{/if}
 
 <style>
   .evm-extras-section {
-    margin-bottom: 28px;
-    padding-bottom: 24px;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
     border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .evm-extras-section--first {
-    padding-top: 24px;
   }
 
   .evm-extras-section--last {
@@ -360,61 +368,40 @@
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+  }
+
+  .evm-extras-section-head-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .evm-extras-section-head-controls .ui-select {
+    width: auto;
+    min-width: 160px;
+    max-width: 220px;
+  }
+
+  .evm-extras-select-inline {
+    width: auto;
+    min-width: 160px;
+    max-width: 220px;
+    flex: 0 1 auto;
   }
 
   .evm-extras-h2 {
-    margin: 0 0 8px;
+    margin: 0 0 10px;
     font-size: 1.05rem;
     font-weight: 600;
     color: var(--text-primary);
   }
 
-  .evm-extras-section-head .evm-extras-h2 {
+  .evm-extras-section-head .evm-extras-h2,
+  .evm-extras-section-head .evm-extras-h3 {
     margin-bottom: 0;
-  }
-
-  .evm-extras-hint {
-    margin: 0 0 14px;
-    font-size: 0.8125rem;
-    line-height: 1.5;
-    color: var(--text-muted);
-  }
-
-  .evm-extras-token-filters {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 14px;
-  }
-
-  .evm-extras-filter-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-  }
-
-  .evm-extras-select {
-    min-width: 200px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-family: inherit;
-    cursor: pointer;
-  }
-
-  .evm-extras-select:focus {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-  }
-
-  .evm-extras-select--wide {
-    width: 100%;
-    max-width: 100%;
   }
 
   .evm-extras-h3 {
@@ -425,7 +412,7 @@
   }
 
   .evm-extras-rpc-block {
-    margin-bottom: 18px;
+    margin-bottom: 12px;
   }
 
   .evm-extras-rpc-list {
@@ -454,66 +441,9 @@
     word-break: break-all;
   }
 
-  .evm-extras-rpc-empty {
-    margin: 0;
-  }
-
-  .evm-extras-inline-link {
-    display: inline;
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--brand);
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: underline;
-  }
-
-  .evm-extras-inline-link:hover {
-    color: var(--brand-hover);
-  }
-
-  .evm-extras-rpc-add {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .evm-extras-input {
-    flex: 1;
-    min-width: 220px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-family: inherit;
-  }
-
-  .evm-extras-input:focus {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-  }
-
-  .evm-extras-field-error {
-    margin: 8px 0 0;
-    font-size: 0.8125rem;
-    color: var(--danger);
-  }
-
-  .evm-extras-field-hint {
-    margin: 8px 0 0;
-    font-size: 0.8125rem;
-    line-height: 1.45;
-    color: var(--text-muted);
-  }
-
   .evm-extras-rpc-providers {
-    margin-top: 8px;
-    padding-top: 18px;
+    margin-top: 4px;
+    padding-top: 12px;
     border-top: 1px solid var(--border-subtle);
   }
 
@@ -523,7 +453,6 @@
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 6px;
   }
 
   .evm-extras-provider-buttons {
@@ -538,44 +467,8 @@
     font-size: 0.875rem;
   }
 
-  .evm-extras-chain-groups {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .evm-extras-chain-group-label {
-    margin: 0 0 8px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
-  .evm-extras-toggle-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .evm-extras-toggle {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    font-size: 0.9375rem;
-    color: var(--text-primary);
-  }
-
-  .evm-extras-toggle input {
-    accent-color: var(--brand);
-  }
-
   .evm-extras-btn {
+    min-height: 40px;
     padding: 8px 16px;
     border-radius: 8px;
     border: none;
@@ -607,7 +500,7 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 
   .evm-extras-token-row {
@@ -615,7 +508,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 8px 10px;
     background: var(--bg-panel);
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
@@ -668,23 +561,5 @@
     margin: 0;
     font-size: 0.875rem;
     color: var(--text-muted);
-  }
-
-  .evm-extras-external-copy {
-    padding: 16px 18px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-  }
-
-  .evm-extras-external-copy p {
-    margin: 0 0 12px 0;
-    font-size: 0.875rem;
-    line-height: 1.55;
-    color: var(--text-secondary);
-  }
-
-  .evm-extras-external-copy p:last-child {
-    margin-bottom: 0;
   }
 </style>

@@ -3,18 +3,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createRawSnippet, tick } from 'svelte';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import SettingsPage from './SettingsPage.svelte';
-import { resetUsernameState, usernameState, type UsernameState } from '../../stores/username';
-
-const cachedClaim: NonNullable<UsernameState['cached']> = {
-  npub: 'npub1',
-  username: 'alice',
-  npubHash: '0x' + 'ab'.repeat(32),
-  tokenId: '1',
-  linkEventId: 'evt1',
-  policyVersion: 3,
-  network: 'sepolia',
-  updatedAtMs: 1,
-};
 
 function rect(top: number): DOMRect {
   return {
@@ -33,7 +21,7 @@ function rect(top: number): DOMRect {
 function pageChildren() {
   return createRawSnippet(() => ({
     render: () =>
-      '<div><div id="settings-profile">Profile body</div><div id="settings-evm-dash-gas">Dash body</div></div>',
+      '<div><div id="settings-nostr">Nostr body</div><div id="settings-backup">Backup body</div></div>',
   }));
 }
 
@@ -44,7 +32,6 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  resetUsernameState();
   if (typeof globalThis.ResizeObserver === 'undefined') {
     globalThis.ResizeObserver = class {
       observe() {}
@@ -56,53 +43,21 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  resetUsernameState();
 });
 
-describe('SettingsPage dash link', () => {
-  it('hides the dash link without a cached claim and shows it with one', async () => {
+describe('SettingsPage sidebar', () => {
+  it('lists infra and backup sections without profile or gas', async () => {
     renderPage();
+    expect(screen.getByRole('link', { name: 'Nostr' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'EVM' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Backup' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Dangerzone' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Profile' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'EVM — gas' })).toBeNull();
-
-    usernameState.update((state) => ({ ...state, cached: cachedClaim, status: 'ready' }));
-    await tick();
-    expect(screen.getByRole('link', { name: 'EVM — gas' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Sponsored gas' })).toBeNull();
   });
 
-  it('hides the dash when the chain record is empty even if a cache row exists', async () => {
-    usernameState.update((state) => ({
-      ...state,
-      cached: cachedClaim,
-      record: {
-        name: '',
-        evmAddress: '0x0000000000000000000000000000000000000000',
-        pendingAddress: '0x0000000000000000000000000000000000000000',
-        tokenId: '0',
-      },
-      status: 'ready',
-    }));
-    renderPage();
-    expect(screen.queryByRole('link', { name: 'EVM — gas' })).toBeNull();
-  });
-
-  it('shows the dash from an on-chain holder record without a cache row', async () => {
-    usernameState.update((state) => ({
-      ...state,
-      cached: null,
-      record: {
-        name: 'alice',
-        evmAddress: '0x1111111111111111111111111111111111111111',
-        pendingAddress: '0x0000000000000000000000000000000000000000',
-        tokenId: '7',
-      },
-      status: 'ready',
-    }));
-    renderPage();
-    expect(screen.getByRole('link', { name: 'EVM — gas' })).toBeTruthy();
-  });
-
-  it('moves the current section off the dash link when the cached claim clears', async () => {
-    usernameState.update((state) => ({ ...state, cached: cachedClaim, status: 'ready' }));
+  it('marks Backup as the current section when that block is in view', async () => {
     renderPage();
 
     const main = document.querySelector('.settings-main') as HTMLElement;
@@ -110,18 +65,12 @@ describe('SettingsPage dash link', () => {
     Object.defineProperty(main, 'clientHeight', { configurable: true, value: 400 });
     Object.defineProperty(main, 'scrollTop', { configurable: true, value: 0 });
     main.getBoundingClientRect = () => rect(0);
-    document.getElementById('settings-profile')!.getBoundingClientRect = () => rect(500);
-    document.getElementById('settings-evm-dash-gas')!.getBoundingClientRect = () => rect(10);
+    document.getElementById('settings-nostr')!.getBoundingClientRect = () => rect(500);
+    document.getElementById('settings-backup')!.getBoundingClientRect = () => rect(10);
 
     await fireEvent.scroll(main);
-    expect(screen.getByRole('link', { name: 'EVM — gas' }).getAttribute('aria-current')).toBe(
-      'location',
-    );
-
-    usernameState.update((state) => ({ ...state, cached: null }));
     await tick();
-    expect(screen.queryByRole('link', { name: 'EVM — gas' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Profile' }).getAttribute('aria-current')).toBe(
+    expect(screen.getByRole('link', { name: 'Backup' }).getAttribute('aria-current')).toBe(
       'location',
     );
   });
