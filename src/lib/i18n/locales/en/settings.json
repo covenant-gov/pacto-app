@@ -9,6 +9,7 @@
 	"settings.nostrSettingsTitle": "Nostr settings",
 	"settings.npubLabel": "nPub",
 	"settings.exportKey": "Export key",
+	"settings.npubActionsMenu": "nPub actions",
 	"settings.loginToSeeNpub": "Log in to see your nPub.",
 	"settings.addCustomRelayTitle": "Add custom relay",
 	"settings.relayUrlLabel": "Relay URL",
@@ -163,10 +164,13 @@
 	"settings.rpcOption.public": "{url} (public)",
 	"settings.routeTrafficThroughTorLabel": "Route Traffic Through Tor",
 	"settings.routeTrafficThroughTorDisclaimer": "Tor and the Tor logo are trademarks of The Tor Project; all rights reserved. More information at torproject.org. Pacto is not endorsed or sponsored by, or affiliated with, The Tor Project.",
+	"settings.routeTrafficThroughTorDisclaimerAria": "Tor trademark notice",
 	"settings.routeTrafficThroughTorConnecting": "Connecting via Tor…",
 	"settings.routeTrafficThroughTorDisconnecting": "Disconnecting from Tor…",
 	"settings.routeTrafficThroughTorUnavailable": "Tor routing is not available on this build.",
 	"settings.routeTrafficThroughTorStartupWarning": "Tor could not start automatically:",
 	"settings.routeTrafficThroughTorLoadError": "Could not load the Tor routing setting.",
-	"settings.routeTrafficThroughTorSaveError": "Could not apply the Tor routing setting."
+	"settings.routeTrafficThroughTorSaveError": "Could not apply the Tor routing setting.",
+	"settings.backupActionsMenu": "Backup actions",
+	"settings.backupSecretsLabel": "Secrets"
 }

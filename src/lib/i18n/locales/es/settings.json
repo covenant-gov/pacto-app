@@ -9,6 +9,7 @@
 	"settings.nostrSettingsTitle": "Ajustes de Nostr",
 	"settings.npubLabel": "nPub",
 	"settings.exportKey": "Exportar clave",
+	"settings.npubActionsMenu": "Acciones de nPub",
 	"settings.loginToSeeNpub": "Inicia sesión para ver tu nPub.",
 	"settings.addCustomRelayTitle": "Añadir relay personalizado",
 	"settings.relayUrlLabel": "URL del relay",
@@ -163,10 +164,13 @@
 	"settings.rpcOption.public": "{url} (público)",
 	"settings.routeTrafficThroughTorLabel": "Enrutar el tráfico a través de Tor",
 	"settings.routeTrafficThroughTorDisclaimer": "Tor y el logotipo de Tor son marcas registradas de The Tor Project; todos los derechos reservados. Más información en torproject.org. Pacto no está avalado, patrocinado ni afiliado a The Tor Project.",
+	"settings.routeTrafficThroughTorDisclaimerAria": "Aviso de marca Tor",
 	"settings.routeTrafficThroughTorConnecting": "Conectando a través de Tor…",
 	"settings.routeTrafficThroughTorDisconnecting": "Desconectando de Tor…",
 	"settings.routeTrafficThroughTorUnavailable": "El enrutamiento por Tor no está disponible en esta compilación.",
 	"settings.routeTrafficThroughTorStartupWarning": "Tor no pudo iniciarse automáticamente:",
 	"settings.routeTrafficThroughTorLoadError": "No se pudo cargar el ajuste de enrutamiento por Tor.",
-	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor."
+	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor.",
+	"settings.backupActionsMenu": "Acciones de respaldo",
+	"settings.backupSecretsLabel": "Secretos"
 }

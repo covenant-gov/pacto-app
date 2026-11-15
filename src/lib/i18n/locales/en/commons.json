@@ -101,6 +101,7 @@
 	"commons.visibility.off": "Commons off",
 	"commons.visibility.on": "Commons on",
 	"commons.visibility.hint": "Your squad stays private and encrypted. Commons only posts a public discovery card with 3 tags while you broadcast.",
+	"commons.visibility.hintAria": "Commons visibility tip",
 	"commons.view.title": "Commons",
 	"commons.view.refreshSyncing": "Refreshing feed",
 	"commons.view.refresh": "Refresh feed",

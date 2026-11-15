@@ -26,6 +26,7 @@
     usernameState,
   } from '../../stores/username';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
+  import InfoTip from '../ui/InfoTip.svelte';
 
   let draftName = $state('');
   let availability: 'idle' | 'checking' | 'available' | 'taken' | 'invalid' = $state('idle');
@@ -197,8 +198,14 @@
       </div>
     {/if}
   {:else}
-    <label class="profile-username-field" for="profile-username-input">
-      <span>{$t('profile.username.label')}</span>
+    <div class="profile-username-field">
+      <div class="profile-username-label-row">
+        <label for="profile-username-input">{$t('profile.username.label')}</label>
+        <InfoTip
+          text={$t('profile.username.hint')}
+          ariaLabel={$t('profile.username.hintAria')}
+        />
+      </div>
       <input
         id="profile-username-input"
         type="text"
@@ -209,8 +216,7 @@
         bind:value={draftName}
         disabled={busy}
       />
-    </label>
-    <p class="profile-username-hint">{$t('profile.username.hint')}</p>
+    </div>
     {#if availability === 'invalid'}
       <p class="profile-username-error" role="alert">{$t('profile.username.invalid')}</p>
     {:else if availability === 'checking'}
@@ -291,6 +297,12 @@
     color: var(--text-secondary);
   }
 
+  .profile-username-label-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
   .profile-username-field input {
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
@@ -305,7 +317,6 @@
     outline-offset: 1px;
   }
 
-  .profile-username-hint,
   .profile-username-muted {
     margin: 0;
     font-size: 0.8125rem;

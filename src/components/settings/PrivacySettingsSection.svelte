@@ -7,7 +7,7 @@
   import { sendTypingIndicatorsEnabled } from '../../stores/typing-indicators';
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { webPreviewsEnabled } from '../../stores/web-previews';
-  import torIcon from '../../icons/tor.svg';
+  import InfoTip from '../ui/InfoTip.svelte';
 
   let loading = $state(true);
   let saving = $state(false);
@@ -95,15 +95,21 @@
     <p class="tor-status">{$t('settings.routeTrafficThroughTorUnavailable')}</p>
   {/if}
 
-  <label class="tor-toggle">
-    <input
-      type="checkbox"
-      checked={$torRoutingEnabled}
-      disabled={loading || saving || !$torAvailable}
-      onchange={handleToggle}
+  <div class="tor-toggle-row">
+    <label class="tor-toggle">
+      <input
+        type="checkbox"
+        checked={$torRoutingEnabled}
+        disabled={loading || saving || !$torAvailable}
+        onchange={handleToggle}
+      />
+      <span>{$t('settings.routeTrafficThroughTorLabel')}</span>
+    </label>
+    <InfoTip
+      text={$t('settings.routeTrafficThroughTorDisclaimer')}
+      ariaLabel={$t('settings.routeTrafficThroughTorDisclaimerAria')}
     />
-    <span>{$t('settings.routeTrafficThroughTorLabel')}</span>
-  </label>
+  </div>
 
   {#if saving}
     <p class="tor-status">
@@ -112,11 +118,6 @@
         : $t('settings.routeTrafficThroughTorDisconnecting')}
     </p>
   {/if}
-
-  <p class="tor-disclaimer">
-    <img class="tor-logo" src={torIcon} alt="" />
-    {$t('settings.routeTrafficThroughTorDisclaimer')}
-  </p>
 
   {#if $torStartupError}
     <p class="tor-error" role="alert">
@@ -158,6 +159,13 @@
     margin: 0 0 8px 0;
   }
 
+  .tor-toggle-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+  }
+
   .tor-toggle {
     display: inline-flex;
     align-items: center;
@@ -181,22 +189,6 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-secondary);
-  }
-
-  .tor-logo {
-    width: 16px;
-    height: 16px;
-    margin-top: 1px;
-    flex-shrink: 0;
-  }
-
-  .tor-disclaimer {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.75rem;
   }
 
   .tor-error {

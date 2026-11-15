@@ -34,6 +34,7 @@
   import SettingsFormModal from './SettingsFormModal.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
+  import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
 
   let userNpub = $derived($currentUser?.npub ?? '');
 
@@ -320,10 +321,19 @@
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
         </button>
+        <MoreActionsMenu
+          ariaLabel={$t('settings.npubActionsMenu')}
+          items={[
+            {
+              id: 'export-key',
+              label: $t('settings.exportKey'),
+              onSelect: () => {
+                exportModalOpen = true;
+              },
+            },
+          ]}
+        />
       </div>
-      <button type="button" class="nostr-export-key-btn" onclick={() => (exportModalOpen = true)}>
-        {$t('settings.exportKey')}
-      </button>
     {:else}
       <p class="nostr-settings-muted">{$t('settings.loginToSeeNpub')}</p>
     {/if}
@@ -603,7 +613,7 @@
   .nostr-npub-row {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: center;
     gap: 10px;
     padding: 10px 12px;
     border: 1px solid var(--border-subtle);
@@ -637,25 +647,6 @@
   }
 
   .nostr-npub-copy-btn:hover {
-    border-color: var(--brand);
-    color: var(--text-primary);
-  }
-
-  .nostr-export-key-btn {
-    margin-top: 12px;
-    min-height: 2rem;
-    padding: 0 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    font-size: 0.8125rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-  }
-
-  .nostr-export-key-btn:hover {
     border-color: var(--brand);
     color: var(--text-primary);
   }

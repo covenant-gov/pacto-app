@@ -20,6 +20,7 @@
   import { showToast } from '../../stores/toast';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
+  import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
   import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
 
   interface Props {
@@ -50,7 +51,6 @@
   let bindingsLoading = $state(false);
   let exportAccount: EvmAccountRow | null = $state(null);
   let exportModalOpen = $state(false);
-  let openAccountMenuId: string | null = $state(null);
 
   let squadList = $derived(squadEvmAccounts(evmAccountList));
   let bindingMap = $derived(bindingsByAccountId(bindings));
@@ -62,24 +62,6 @@
     void accountNpub;
     void evmAccountList;
     void loadBindings();
-  });
-
-  $effect(() => {
-    if (!openAccountMenuId) return;
-    function onDocPointer(e: PointerEvent) {
-      const root = document.getElementById(`evm-account-menu-${openAccountMenuId}`);
-      if (root && e.target instanceof Node && root.contains(e.target)) return;
-      openAccountMenuId = null;
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') openAccountMenuId = null;
-    }
-    document.addEventListener('pointerdown', onDocPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDocPointer);
-      document.removeEventListener('keydown', onKey);
-    };
   });
 
   async function loadBindings() {
@@ -130,12 +112,7 @@
     return acc.label?.trim() || shortAddr(acc.address);
   }
 
-  function toggleAccountMenu(id: string) {
-    openAccountMenuId = openAccountMenuId === id ? null : id;
-  }
-
   function openExportModal(acc: EvmAccountRow) {
-    openAccountMenuId = null;
     exportAccount = acc;
     exportModalOpen = true;
   }
@@ -182,7 +159,6 @@
     {#snippet accountRow(acc: EvmAccountRow)}
       {@const linkedSquads = squadBindingsFor(acc)}
       {@const name = accountName(acc)}
-      {@const menuOpen = openAccountMenuId === acc.id}
       <li
         class="wallet-view-account-row evm-account-row"
         class:wallet-view-account-active={!embeddedInSettings && acc.isActive}
@@ -215,47 +191,22 @@
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
             </button>
-            <div id={`evm-account-menu-${acc.id}`} class="evm-account-menu-wrap">
-              <button
-                type="button"
-                class="evm-account-menu-trigger"
-                disabled={accountsLoading}
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                aria-label={$t('wallet.accountActionsMenu')}
-                title={$t('wallet.accountActionsMenu')}
-                onclick={() => toggleAccountMenu(acc.id)}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-                  <circle cx="12" cy="5" r="1.75" />
-                  <circle cx="12" cy="12" r="1.75" />
-                  <circle cx="12" cy="19" r="1.75" />
-                </svg>
-              </button>
-              {#if menuOpen}
-                <div class="evm-account-menu" role="menu">
-                  <button
-                    type="button"
-                    class="evm-account-menu-item"
-                    role="menuitem"
-                    onclick={() => openExportModal(acc)}
-                  >
-                    {$t('wallet.exportKey')}
-                  </button>
-                  <button
-                    type="button"
-                    class="evm-account-menu-item"
-                    role="menuitem"
-                    onclick={() => {
-                      openAccountMenuId = null;
-                      onEditAccount(acc);
-                    }}
-                  >
-                    {$t('wallet.editAccountName')}
-                  </button>
-                </div>
-              {/if}
-            </div>
+            <MoreActionsMenu
+              disabled={accountsLoading}
+              ariaLabel={$t('wallet.accountActionsMenu')}
+              items={[
+                {
+                  id: 'export-key',
+                  label: $t('wallet.exportKey'),
+                  onSelect: () => openExportModal(acc),
+                },
+                {
+                  id: 'edit-name',
+                  label: $t('wallet.editAccountName'),
+                  onSelect: () => onEditAccount(acc),
+                },
+              ]}
+            />
           </div>
 
           <div class="evm-account-squad-block">
@@ -559,72 +510,6 @@
 
   .evm-account-copy-icon {
     flex-shrink: 0;
-  }
-
-  .evm-account-menu-wrap {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  .evm-account-menu-trigger {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-
-  .evm-account-menu-trigger:hover:not(:disabled) {
-    border-color: var(--brand);
-    color: var(--text-primary);
-  }
-
-  .evm-account-menu-trigger:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 1px;
-  }
-
-  .evm-account-menu-trigger:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .evm-account-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 20;
-    min-width: 160px;
-    padding: 4px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--bg-elevated);
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
-  }
-
-  .evm-account-menu-item {
-    display: block;
-    width: 100%;
-    margin: 0;
-    padding: 8px 10px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-primary);
-    font: inherit;
-    font-size: 0.8125rem;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .evm-account-menu-item:hover {
-    background: var(--bg-hover);
   }
 
   .wallet-view-account-addr-btn {

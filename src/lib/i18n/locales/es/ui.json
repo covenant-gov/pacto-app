@@ -2,5 +2,6 @@
 	"ui.close": "Cerrar",
 	"ui.edit": "Editar",
 	"ui.refresh": "Actualizar",
-	"ui.info": "Información"
+	"ui.info": "Información",
+	"ui.moreActions": "Más acciones"
 }

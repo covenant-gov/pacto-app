@@ -36,6 +36,7 @@
 	"profile.username.label": "Nombre de usuario",
 	"profile.username.placeholder": "tunombre…",
 	"profile.username.hint": "Cualquier nombre no vacío de hasta 64 caracteres (distingue mayúsculas).",
+	"profile.username.hintAria": "Consejo sobre el formato de nombre de usuario",
 	"profile.username.invalid": "Introduce un nombre de usuario no vacío (máx. 64 caracteres).",
 	"profile.username.checking": "Comprobando disponibilidad…",
 	"profile.username.available": "Disponible",

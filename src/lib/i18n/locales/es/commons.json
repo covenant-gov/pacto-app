@@ -101,6 +101,7 @@
 	"commons.visibility.off": "Comunes desactivado",
 	"commons.visibility.on": "Comunes activado",
 	"commons.visibility.hint": "Tu escuad permanece privado y cifrado. Comunes solo publica una tarjeta de descubrimiento pública con 3 etiquetas mientras transmites.",
+	"commons.visibility.hintAria": "Consejo sobre visibilidad en Comunes",
 	"commons.view.title": "Comunes",
 	"commons.view.refreshSyncing": "Actualizando transmisiones",
 	"commons.view.refresh": "Actualizar transmisiones",

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import CommonsTagPicker from '../commons/CommonsTagPicker.svelte';
+  import InfoTip from '../ui/InfoTip.svelte';
   import type { SquadVisibility } from '../../stores/squads';
 
   let {
@@ -25,7 +26,13 @@
 </script>
 
 <fieldset class="commons-visibility-fieldset">
-  <legend class="commons-visibility-legend">{$t('commons.visibility.legend')}</legend>
+  <legend class="commons-visibility-legend">
+    <span>{$t('commons.visibility.legend')}</span>
+    <InfoTip
+      text={$t('commons.visibility.hint')}
+      ariaLabel={$t('commons.visibility.hintAria')}
+    />
+  </legend>
   <label class="commons-visibility-option">
     <input type="radio" name={fieldsetName} value="private" bind:group={visibility} {disabled} />
     <span>{$t('commons.visibility.off')}</span>
@@ -34,9 +41,6 @@
     <input type="radio" name={fieldsetName} value="public" bind:group={visibility} {disabled} />
     <span>{$t('commons.visibility.on')}</span>
   </label>
-  <p class="commons-visibility-hint muted">
-    {$t('commons.visibility.hint')}
-  </p>
 </fieldset>
 
 {#if visibility === 'public'}
@@ -55,10 +59,14 @@
   }
 
   .commons-visibility-legend {
-    display: block;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    float: none;
+    width: auto;
     color: var(--text-secondary);
     font-size: 0.875rem;
-    margin-bottom: 8px;
+    margin: 0 0 8px;
     padding: 0;
   }
 
@@ -70,12 +78,6 @@
     color: var(--text-secondary);
     margin-bottom: 6px;
     cursor: pointer;
-  }
-
-  .commons-visibility-hint {
-    margin: 4px 0 0;
-    font-size: 0.8125rem;
-    line-height: 1.4;
   }
 
   .commons-tags-label {
@@ -90,9 +92,5 @@
     color: var(--danger, #e55);
     font-size: 0.8125rem;
     margin: 0 0 12px;
-  }
-
-  .muted {
-    color: var(--text-muted);
   }
 </style>

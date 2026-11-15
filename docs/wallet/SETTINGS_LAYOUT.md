@@ -26,12 +26,12 @@ Enabled chains, watched tokens, and RPC are **read-only** on Profile. Edit them 
 
 | Anchor | Section | Contents |
 |--------|---------|----------|
-| `#settings-nostr` | Nostr | Relay list, add/remove custom relays |
+| `#settings-nostr` | Nostr | nPub (copy + ⋮ export key), relay list, add/remove custom relays |
 | `#settings-evm` | EVM | Preferred network, enabled chains, tokens, RPC |
 | `#settings-app` | App | Theme selector |
 | `#settings-notifications` | Notifications | App notification prefs |
 | `#settings-commons` | Commons | Hidden Commons tags |
-| `#settings-backup` | Backup | Export seed and export all secrets (not on Profile) |
+| `#settings-backup` | Backup | Secrets row with ⋮ menu (export seed / export all; not on Profile) |
 | `#settings-dangerzone` | Dangerzone | Logout |
 
 Sections default to expanded. Unknown persisted collapse keys are ignored.

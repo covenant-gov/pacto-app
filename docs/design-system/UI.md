@@ -105,7 +105,7 @@ Which tool (CSS vs `svelte/motion` vs `svelte/transition`): [MOTION.md](./MOTION
 
 ## Content and accessibility
 
-- SHOULD: Inline help first; tooltips last resort.
+- SHOULD: Prefer self-explanatory labels. Required tips / disclaimers use `InfoTip` (`src/components/ui/InfoTip.svelte`), not always-visible hint paragraphs.
 - MUST: Skeletons mirror final content to limit layout shift.
 - MUST: Document / window title matches current context when the surface owns it.
 - MUST: No dead ends; always offer a next step or recovery.
@@ -121,6 +121,7 @@ Which tool (CSS vs `svelte/motion` vs `svelte/transition`): [MOTION.md](./MOTION
 - MUST: Token amounts on screen go through `formatAssetAmount` (`src/lib/evm/format-token-amount.ts`). ETH is 18 decimals; other tokens use their own decimals. Pad the fraction; do not trim trailing zeros.
 - MUST: Accurate `aria-label`; decorative elements `aria-hidden`.
 - MUST: Icon-only buttons have a descriptive `aria-label` (use shared Refresh/Edit icon buttons for those actions).
+- MUST: Overflow / secondary row actions in Settings and Profile use shared `MoreActionsMenu` (`src/components/ui/MoreActionsMenu.svelte`) — ⋮ kebab — including when there is only one item (e.g. Export key). Do not invent a second kebab or a one-off text Export button under identity rows.
 - MUST: Prefer native semantics (`button`, `a`, `label`, `table`) before ARIA.
 - SHOULD: Non-breaking spaces for glued units (`10 MB`, shortcut chords) in copy that must not wrap badly.
 

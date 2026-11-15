@@ -41,3 +41,7 @@ Both are icon-only controls. Pass meaning via `ariaLabel` (required) and optiona
 ## New work
 
 When adding reload or edit affordances in Svelte UI, default to the shared icon buttons. Do not introduce new text-labeled Refresh/Edit controls or duplicate inline refresh/pencil SVGs unless there is a strong layout reason — then still keep the control icon-only with accessible naming.
+
+## Row overflow actions (Settings / Profile)
+
+Secondary actions on identity or account rows (export key, edit name, backup exports, etc.) use shared **`MoreActionsMenu`** (`src/components/ui/MoreActionsMenu.svelte`) — the ⋮ kebab — even when there is only one menu item. Do not add a standalone text **Export key** button under an npub/address row, and do not copy-paste a second kebab implementation.

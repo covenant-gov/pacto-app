@@ -10,7 +10,7 @@ Ship **self-explanatory** UI. Do **not** add lead paragraphs, hint lines, or “
 ## Do
 
 - Rely on clear **titles**, **labels**, **button text**, and **empty states**.
-- Add short copy only when the human asks, or when the control is **destructive / irreversible / security-critical** and the label alone is unsafe (e.g. logout wipe warning, Tor risk disclaimer).
+- When tip / disclaimer / trademark copy is required (destructive, irreversible, security-critical, or legal), put it in **`InfoTip`** (`src/components/ui/InfoTip.svelte`) next to the control — not a hard-coded paragraph under it.
 - Prefer tightening layout and naming over adding an explainer.
 
 ## Do not
@@ -19,6 +19,7 @@ Ship **self-explanatory** UI. Do **not** add lead paragraphs, hint lines, or “
 - Restate the heading (“Preferred network” + “Default network for…”) or narrate product architecture in the UI.
 - Add per-toggle/per-button description paragraphs that only rephrase the control label.
 - Pad vertical space with explainer blocks “for clarity.”
+- Ship tip copy as always-visible muted paragraphs when an `InfoTip` hover would suffice.
 
 ```svelte
 <!-- ❌ BAD -->
@@ -30,12 +31,13 @@ Ship **self-explanatory** UI. Do **not** add lead paragraphs, hint lines, or “
 ```
 
 ```svelte
-<!-- ❌ BAD — label already says it -->
-<label><input type="checkbox" /> Mute notifications</label>
-<p class="hint">This only silences the sound.</p>
+<!-- ❌ BAD — tip as hard-coded block -->
+<label><input type="checkbox" /> Route Traffic Through Tor</label>
+<p class="hint">Tor and the Tor logo are trademarks…</p>
 
 <!-- ✅ GOOD -->
-<label><input type="checkbox" /> Mute notifications</label>
+<label><input type="checkbox" /> Route Traffic Through Tor</label>
+<InfoTip text={$t('settings.routeTrafficThroughTorDisclaimer')} ariaLabel={…} />
 ```
 
-If something is unclear after shipping, add a targeted explainer later — never as the default for every feature.
+If something is unclear after shipping, add a targeted `InfoTip` later — never as the default for every feature.

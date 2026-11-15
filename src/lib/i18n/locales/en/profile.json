@@ -36,6 +36,7 @@
 	"profile.username.label": "Username",
 	"profile.username.placeholder": "yourname…",
 	"profile.username.hint": "Any non-empty name up to 64 characters (case-sensitive).",
+	"profile.username.hintAria": "Username format tip",
 	"profile.username.invalid": "Enter a non-empty username (max 64 characters).",
 	"profile.username.checking": "Checking availability…",
 	"profile.username.available": "Available",
