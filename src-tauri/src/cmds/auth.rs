@@ -78,6 +78,8 @@ pub(crate) async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair,
         net_transport::apply_persisted_setting(handle).await;
     }
 
+    crate::restore_session_mnemonic_if_unlocked().await;
+
     let (evm_private_key, evm_address) = if let Some(m) = crate::mnemonic_seed_get() {
         evm::derive_eth_bip44_v1_from_mnemonic_phrase(&m, 0)
             .map(|(k, a)| (Some(k), Some(a)))
@@ -156,6 +158,7 @@ pub(crate) async fn login(import_key: String) -> Result<LoginKeyPair, String> {
                     .to_string(),
             );
         }
+        crate::restore_session_mnemonic_if_unlocked().await;
         let (evm_private_key, evm_address) =
             evm::derive_evm_hex_from_nostr_secret(&new_keys.secret_key().to_secret_bytes())
                 .map(|t| (Some(t.0), Some(t.1)))
@@ -510,7 +513,10 @@ pub(crate) async fn unlock_with_biometric_key<R: Runtime>(
     }
 
     match reuse_loaded_client_if_matching(&keys).await {
-        Ok(Some(pair)) => Ok(pair),
+        Ok(Some(pair)) => {
+            crate::restore_session_mnemonic_if_unlocked().await;
+            Ok(pair)
+        }
         Ok(None) => complete_login_from_keys(keys).await,
         Err(e) => {
             session::clear_encryption_key();

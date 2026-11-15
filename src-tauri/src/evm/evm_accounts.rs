@@ -283,12 +283,7 @@ fn count_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<i64, String> {
 pub(crate) async fn get_mnemonic_for_hd<R: Runtime>(
     handle: AppHandle<R>,
 ) -> Result<String, String> {
-    if let Some(m) = crate::mnemonic_seed_get() {
-        return Ok(m);
-    }
-    db::get_seed(handle)
-        .await?
-        .ok_or_else(|| "Recovery phrase not loaded. Unlock the app again.".to_string())
+    crate::ensure_session_mnemonic(handle).await
 }
 
 pub(crate) async fn resolve_private_key_hex_for_account_id<R: Runtime>(

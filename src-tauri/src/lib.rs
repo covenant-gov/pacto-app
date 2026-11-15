@@ -205,7 +205,8 @@ pub use session::{
     check_session, clear_encryption_key, current_encryption_key, heartbeat, session_heartbeat,
     set_encryption_key, set_timeout_ms, SESSION_MANAGER,
 };
-// In-memory recovery phrase until `encrypt` persists it via `set_seed`; cleared on logout; replaced on each successful import/create.
+// Session copy of the recovery phrase. Create and import set it directly.
+// Unlock restores it from the encrypted `settings.seed` row. Logout clears it.
 lazy_static! {
     static ref MNEMONIC_SEED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 }
@@ -223,6 +224,33 @@ pub(crate) fn mnemonic_seed_get() -> Option<String> {
         .lock()
         .expect("mnemonic mutex poisoned")
         .clone()
+}
+
+/// In-memory phrase, or the phrase stored at PIN setup. Caches a successful disk read for the rest of the session.
+pub(crate) async fn ensure_session_mnemonic<R: tauri::Runtime>(
+    handle: AppHandle<R>,
+) -> Result<String, String> {
+    if let Some(phrase) = mnemonic_seed_get() {
+        return Ok(phrase);
+    }
+    let phrase = db::get_seed(handle).await?.ok_or_else(|| {
+        "No recovery phrase is stored for this account".to_string()
+    })?;
+    mnemonic_seed_set(phrase.clone());
+    Ok(phrase)
+}
+
+/// Fill the session phrase after the encryption key is available. A missing row is logged; callers that need the phrase still fail in `ensure_session_mnemonic`.
+pub(crate) async fn restore_session_mnemonic_if_unlocked() {
+    if current_encryption_key().is_none() {
+        return;
+    }
+    let Some(handle) = TAURI_APP.get() else {
+        return;
+    };
+    if let Err(e) = ensure_session_mnemonic(handle.clone()).await {
+        eprintln!("[Login] recovery phrase not restored: {e}");
+    }
 }
 
 // Replaceable Nostr client (cleared on logout so create_account/login can set a new one without restart).

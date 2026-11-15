@@ -178,13 +178,9 @@ pub fn parse_b256(raw: &str) -> Result<B256, String> {
     Ok(B256::from_slice(&bytes))
 }
 
-pub fn load_nostr_keys() -> Result<Keys, String> {
-    let phrase = crate::mnemonic_seed_get().ok_or_else(|| {
-        wallet_err_json(
-            "NO_MNEMONIC",
-            "recovery phrase is not loaded in this session",
-            None,
-        )
+pub async fn load_nostr_keys<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<Keys, String> {
+    let phrase = crate::ensure_session_mnemonic(app).await.map_err(|e| {
+        wallet_err_json("NO_MNEMONIC", e, None)
     })?;
     Keys::from_mnemonic(phrase, None).map_err(|e| {
         wallet_err_json(
