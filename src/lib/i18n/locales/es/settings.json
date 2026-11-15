@@ -170,7 +170,5 @@
 	"settings.routeTrafficThroughTorUnavailable": "El enrutamiento por Tor no está disponible en esta compilación.",
 	"settings.routeTrafficThroughTorStartupWarning": "Tor no pudo iniciarse automáticamente:",
 	"settings.routeTrafficThroughTorLoadError": "No se pudo cargar el ajuste de enrutamiento por Tor.",
-	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor.",
-	"settings.backupActionsMenu": "Acciones de respaldo",
-	"settings.backupSecretsLabel": "Secretos"
+	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor."
 }

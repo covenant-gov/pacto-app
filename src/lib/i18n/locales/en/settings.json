@@ -170,7 +170,5 @@
 	"settings.routeTrafficThroughTorUnavailable": "Tor routing is not available on this build.",
 	"settings.routeTrafficThroughTorStartupWarning": "Tor could not start automatically:",
 	"settings.routeTrafficThroughTorLoadError": "Could not load the Tor routing setting.",
-	"settings.routeTrafficThroughTorSaveError": "Could not apply the Tor routing setting.",
-	"settings.backupActionsMenu": "Backup actions",
-	"settings.backupSecretsLabel": "Secrets"
+	"settings.routeTrafficThroughTorSaveError": "Could not apply the Tor routing setting."
 }

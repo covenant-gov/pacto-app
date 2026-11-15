@@ -5,7 +5,6 @@
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
-  import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
 
   let userNpub = $derived($currentUser?.npub || '');
   let exportSeedModalOpen = $state(false);
@@ -13,29 +12,21 @@
 </script>
 
 <SettingsCollapsibleSection sectionId="settings-backup" title={$t('settings.backupTitle')}>
-  <div class="backup-row">
-    <span class="backup-row-label">{$t('settings.backupSecretsLabel')}</span>
-    <MoreActionsMenu
-      ariaLabel={$t('settings.backupActionsMenu')}
-      items={[
-        {
-          id: 'export-seed',
-          label: $t('profile.exportSeedPhrase'),
-          onSelect: () => {
-            if (requireBackupVerified()) {
-              exportSeedModalOpen = true;
-            }
-          },
-        },
-        {
-          id: 'export-all',
-          label: $t('profile.exportAll'),
-          onSelect: () => {
-            exportAllModalOpen = true;
-          },
-        },
-      ]}
-    />
+  <div class="backup-actions">
+    <button
+      type="button"
+      class="btn-export"
+      onclick={() => {
+        if (requireBackupVerified()) {
+          exportSeedModalOpen = true;
+        }
+      }}
+    >
+      {$t('profile.exportSeedPhrase')}
+    </button>
+    <button type="button" class="btn-export" onclick={() => (exportAllModalOpen = true)}>
+      {$t('profile.exportAll')}
+    </button>
   </div>
 </SettingsCollapsibleSection>
 
@@ -49,21 +40,28 @@
 <ExportAllSecretsModal open={exportAllModalOpen} onClose={() => (exportAllModalOpen = false)} />
 
 <style>
-  .backup-row {
+  .backup-actions {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
     gap: 12px;
-    padding: 10px 12px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--bg-panel);
+    flex-wrap: wrap;
   }
 
-  .backup-row-label {
-    min-width: 0;
-    font-size: 0.9375rem;
-    font-weight: 500;
+  .btn-export {
+    flex: 1;
+    min-width: 140px;
+    min-height: 48px;
+    padding: 0 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-hover);
     color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .btn-export:hover {
+    border-color: var(--brand);
   }
 </style>
