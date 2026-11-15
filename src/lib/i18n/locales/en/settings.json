@@ -19,7 +19,6 @@
 	"settings.relayModeWrite": "Write only",
 	"settings.relayProbeButton": "Test relay",
 	"settings.relayProbing": "Testing…",
-	"settings.relayProbeDisabledReason": "Enter a valid relay URL to test it.",
 	"settings.relayProbeSuccess": "Reachable — responded in {ms} ms",
 	"settings.add": "Add",
 	"settings.adding": "Adding…",

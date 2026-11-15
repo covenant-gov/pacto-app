@@ -9,10 +9,10 @@
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
-  import { portal } from '../../lib/utils/portal';
   import { showToast } from '../../stores/toast';
   import EditIconButton from '../ui/EditIconButton.svelte';
   import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
+  import SettingsFormModal from './SettingsFormModal.svelte';
 
   interface Props {
     accountNpub: string;
@@ -117,46 +117,44 @@
 </section>
 
 {#if editOpen}
-  <div use:portal>
-  <div class="dwc-modal-backdrop" role="presentation" onclick={closeEdit}></div>
-  <div class="dwc-modal" role="dialog" aria-labelledby="wallet-default-evm-edit-title" aria-modal="true">
-    <h2 id="wallet-default-evm-edit-title" class="dwc-title">{$t('wallet.editDefaultEvmAccountTitle')}</h2>
-    <p class="dwc-hint">{$t('wallet.onlyDerivedSquadAccounts')}</p>
-
-    <label class="dwc-label" for="wallet-default-signer">{$t('wallet.signerLabel')}</label>
-    <select
-      id="wallet-default-signer"
-      class="dwc-input"
-      bind:value={editSignerId}
-      disabled={saving || squadAccounts.length === 0}
-    >
-      {#each squadAccounts as acc (acc.id)}
-        <option value={acc.id}>{accountOptionLabel(acc)}</option>
-      {/each}
-    </select>
-
-    <label class="dwc-label" for="wallet-default-receiver">{$t('wallet.receiverLabel')}</label>
-    <select
-      id="wallet-default-receiver"
-      class="dwc-input"
-      bind:value={editReceiverId}
-      disabled={saving || squadAccounts.length === 0}
-    >
-      {#each squadAccounts as acc (acc.id)}
-        <option value={acc.id}>{accountOptionLabel(acc)}</option>
-      {/each}
-    </select>
-
-    <div class="dwc-modal-actions">
-      <button type="button" class="dwc-btn dwc-btn-secondary" disabled={saving} onclick={closeEdit}>
-        {$t('wallet.cancel')}
-      </button>
-      <button type="button" class="dwc-btn" disabled={saving} onclick={saveEdit}>
-        {saving ? $t('wallet.saving') : $t('wallet.save')}
-      </button>
-    </div>
-  </div>
-  </div>
+  <SettingsFormModal
+    titleId="wallet-default-evm-edit-title"
+    title={$t('wallet.editDefaultEvmAccountTitle')}
+    busy={saving}
+    primaryLabel={$t('wallet.save')}
+    primaryBusyLabel={$t('wallet.saving')}
+    cancelLabel={$t('wallet.cancel')}
+    primaryDisabled={squadAccounts.length === 0}
+    onClose={closeEdit}
+    onPrimary={saveEdit}
+  >
+    <label class="settings-form-field" for="wallet-default-signer">
+      <span class="settings-form-label">{$t('wallet.signerLabel')}</span>
+      <select
+        id="wallet-default-signer"
+        class="settings-form-select"
+        bind:value={editSignerId}
+        disabled={saving || squadAccounts.length === 0}
+      >
+        {#each squadAccounts as acc (acc.id)}
+          <option value={acc.id}>{accountOptionLabel(acc)}</option>
+        {/each}
+      </select>
+    </label>
+    <label class="settings-form-field" for="wallet-default-receiver">
+      <span class="settings-form-label">{$t('wallet.receiverLabel')}</span>
+      <select
+        id="wallet-default-receiver"
+        class="settings-form-select"
+        bind:value={editReceiverId}
+        disabled={saving || squadAccounts.length === 0}
+      >
+        {#each squadAccounts as acc (acc.id)}
+          <option value={acc.id}>{accountOptionLabel(acc)}</option>
+        {/each}
+      </select>
+    </label>
+  </SettingsFormModal>
 {/if}
 
 <style>
@@ -245,95 +243,4 @@
     font-size: 0.875rem;
   }
 
-  .dwc-btn {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 8px;
-    background: var(--brand);
-    color: var(--on-brand);
-    font-size: 0.875rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .dwc-btn:hover:not(:disabled) {
-    background: var(--brand-hover);
-  }
-
-  .dwc-btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .dwc-btn-secondary {
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
-  }
-
-  .dwc-btn-secondary:hover:not(:disabled) {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .dwc-label {
-    display: block;
-    margin: 16px 0 6px 0;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-
-  .dwc-input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-    font-family: inherit;
-    outline: none;
-  }
-
-  .dwc-input:focus {
-    border-color: var(--brand);
-  }
-
-  .dwc-modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    z-index: 10000;
-  }
-
-  .dwc-modal {
-    position: fixed;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 10001;
-    width: min(480px, calc(100vw - 32px));
-    max-height: calc(100vh - 48px);
-    overflow-y: auto;
-    padding: 22px 22px 18px;
-    border-radius: 12px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-  }
-
-  .dwc-modal-actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 24px;
-  }
-
-  .dwc-modal-actions .dwc-btn {
-    flex: 1;
-    padding-top: 10px;
-    padding-bottom: 10px;
-  }
 </style>

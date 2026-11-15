@@ -7,7 +7,6 @@
 	"wallet.editDefaultEvmAccount": "Editar cuenta EVM predeterminada",
 	"wallet.addSquadAccountFirst": "Añade una cuenta EVM del escuad abajo antes de editar los valores predeterminados.",
 	"wallet.editDefaultEvmAccountTitle": "Editar cuenta EVM predeterminada",
-	"wallet.onlyDerivedSquadAccounts": "Solo las cuentas derivadas del escuad pueden ser firmante o receptor.",
 	"wallet.cancel": "Cancelar",
 	"wallet.saving": "Guardando…",
 	"wallet.save": "Guardar",

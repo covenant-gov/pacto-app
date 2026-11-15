@@ -7,7 +7,6 @@
 	"wallet.editDefaultEvmAccount": "Edit default EVM account",
 	"wallet.addSquadAccountFirst": "Add a squad EVM account below before editing defaults.",
 	"wallet.editDefaultEvmAccountTitle": "Edit default EVM account",
-	"wallet.onlyDerivedSquadAccounts": "Only derived squad accounts can be signer or receiver.",
 	"wallet.cancel": "Cancel",
 	"wallet.saving": "Saving…",
 	"wallet.save": "Save",

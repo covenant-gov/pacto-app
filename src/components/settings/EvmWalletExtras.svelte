@@ -25,6 +25,7 @@
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { showToast } from '../../stores/toast';
   import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
+  import SettingsFormModal from './SettingsFormModal.svelte';
 
   const tFn = get(t);
 
@@ -63,6 +64,7 @@
   let selectedDefaultRpc = $state('');
   let newRpcUrl = $state('');
   let addRpcError: string | null = $state(null);
+  let addRpcModalOpen = $state(false);
   let enabledChainsMenuOpen = $state(false);
 
   let enabledChainIdsOrdered = $derived(WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id)));
@@ -163,6 +165,18 @@
     saveDefaultRpc(accountNpub, rpcNetworkFilter, selectedDefaultRpc || null);
   }
 
+  function openAddRpcModal() {
+    newRpcUrl = '';
+    addRpcError = null;
+    addRpcModalOpen = true;
+  }
+
+  function closeAddRpcModal() {
+    addRpcModalOpen = false;
+    addRpcError = null;
+    newRpcUrl = '';
+  }
+
   function submitAddRpc() {
     addRpcError = null;
     if (!accountNpub) return;
@@ -172,6 +186,7 @@
       return;
     }
     newRpcUrl = '';
+    addRpcModalOpen = false;
     showToast(tFn('settings.toast.personalRpcAdded'));
   }
 
@@ -327,7 +342,12 @@
   </div>
 
   <div class="evm-extras-rpc-block">
-    <h3 class="evm-extras-h3">{$t('settings.personalRpcTitle')}</h3>
+    <div class="evm-extras-section-head">
+      <h3 class="evm-extras-h3">{$t('settings.personalRpcTitle')}</h3>
+      <button type="button" class="evm-extras-btn" disabled={!accountNpub} onclick={openAddRpcModal}>
+        {$t('settings.addRpcTitle')}
+      </button>
+    </div>
     {#if personalRpcs.length === 0}
       <p class="evm-extras-empty">{$t('settings.noPersonalRpcYet')}</p>
     {:else}
@@ -341,26 +361,6 @@
           </li>
         {/each}
       </ul>
-    {/if}
-  </div>
-
-  <div class="evm-extras-rpc-block">
-    <div class="evm-extras-rpc-add">
-      <input
-        id="evm-add-rpc-input"
-        class="evm-extras-input"
-        type="url"
-        inputmode="url"
-        autocomplete="off"
-        aria-label={$t('settings.addRpcTitle')}
-        placeholder="https://…"
-        bind:value={newRpcUrl}
-        onkeydown={(e) => e.key === 'Enter' && submitAddRpc()}
-      />
-      <button type="button" class="evm-extras-btn" onclick={submitAddRpc}>{$t('settings.addRpcButton')}</button>
-    </div>
-    {#if addRpcError}
-      <p class="evm-extras-field-error" role="alert">{addRpcError}</p>
     {/if}
   </div>
 
@@ -395,6 +395,32 @@
   </div>
 </section>
 
+{#if addRpcModalOpen}
+  <SettingsFormModal
+    titleId="settings-add-rpc-title"
+    title={$t('settings.addRpcTitle')}
+    primaryLabel={$t('settings.addRpcButton')}
+    error={addRpcError}
+    onClose={closeAddRpcModal}
+    onPrimary={submitAddRpc}
+  >
+    <p class="settings-form-status">
+      {$t('wallet.networkLabel')}: {getWalletNetworkDisplayName(rpcNetworkFilter)}
+    </p>
+    <input
+      id="evm-add-rpc-input"
+      class="settings-form-input"
+      type="url"
+      inputmode="url"
+      autocomplete="off"
+      aria-label={$t('settings.addRpcTitle')}
+      placeholder="https://…"
+      bind:value={newRpcUrl}
+      onkeydown={(e) => e.key === 'Enter' && submitAddRpc()}
+    />
+  </SettingsFormModal>
+{/if}
+
 <style>
   .evm-extras-section {
     margin-bottom: 18px;
@@ -424,7 +450,8 @@
     color: var(--text-primary);
   }
 
-  .evm-extras-section-head .evm-extras-h2 {
+  .evm-extras-section-head .evm-extras-h2,
+  .evm-extras-section-head .evm-extras-h3 {
     margin-bottom: 0;
   }
 
@@ -499,36 +526,6 @@
     font-size: 0.8125rem;
     color: var(--text-secondary);
     word-break: break-all;
-  }
-
-  .evm-extras-rpc-add {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .evm-extras-input {
-    flex: 1;
-    min-width: 220px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-family: inherit;
-  }
-
-  .evm-extras-input:focus {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-  }
-
-  .evm-extras-field-error {
-    margin: 8px 0 0;
-    font-size: 0.8125rem;
-    color: var(--danger);
   }
 
   .evm-extras-rpc-providers {
