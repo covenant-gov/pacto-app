@@ -3,7 +3,6 @@
   import { currentUser } from '../../stores/auth-session';
   import { requireBackupVerified } from '../../stores/backup-verification';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
-  import SettingsActionRow from './SettingsActionRow.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
 
@@ -13,7 +12,7 @@
 </script>
 
 <SettingsCollapsibleSection sectionId="settings-backup" title={$t('settings.backupTitle')}>
-  <SettingsActionRow label={$t('settings.backupTitle')}>
+  <div class="backup-actions">
     <button
       type="button"
       class="btn-export"
@@ -28,7 +27,7 @@
     <button type="button" class="btn-export" onclick={() => (exportAllModalOpen = true)}>
       {$t('profile.exportAll')}
     </button>
-  </SettingsActionRow>
+  </div>
 </SettingsCollapsibleSection>
 
 <EvmAccountKeyExportModal
@@ -41,6 +40,13 @@
 <ExportAllSecretsModal open={exportAllModalOpen} onClose={() => (exportAllModalOpen = false)} />
 
 <style>
+  .backup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
   .btn-export {
     min-height: 40px;
     padding: 0 14px;
@@ -56,5 +62,10 @@
 
   .btn-export:hover {
     border-color: var(--brand);
+  }
+
+  .btn-export:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
   }
 </style>
