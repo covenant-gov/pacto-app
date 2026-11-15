@@ -89,7 +89,7 @@ describe('WalletHomeSendModal reset guard', () => {
   });
 });
 
-describe('WalletHomeSendModal signer switch', () => {
+describe('WalletHomeSendModal signing account', () => {
   afterEach(() => {
     vi.mocked(getWalletSummary).mockClear();
     vi.mocked(setActiveEvmAccount).mockClear();
@@ -97,29 +97,26 @@ describe('WalletHomeSendModal signer switch', () => {
     backupVerified.set(null);
   });
 
-  it('loads the viewed address and switches the signer only on confirm', async () => {
+  it('loads the viewed address and sends from that account without switching the active signer', async () => {
     backupVerified.set(true);
     vi.mocked(walletBuildAndSendTransaction).mockResolvedValue({
       ok: true,
       result: { txHash: '0xabc', network: 'sepolia', chainId: 11155111 },
     });
     const onClose = vi.fn();
-    const onSignerActivated = vi.fn(async () => {});
     render(WalletHomeSendModal, {
       props: {
         open: true,
         onClose,
         watchedAssetRows: [],
         enabledChainIds: ['sepolia'],
-        fromAccount: { id: 'acct-2', address: VIEWED, isActive: false },
-        onSignerActivated,
+        fromAccount: { id: 'acct-2', address: VIEWED },
       },
     });
 
     await vi.waitFor(() => {
       expect(getWalletSummary).toHaveBeenCalledWith(expect.anything(), ['sepolia'], VIEWED);
     });
-    expect(setActiveEvmAccount).not.toHaveBeenCalled();
 
     await fireEvent.input(screen.getByLabelText('Recipient EVM address'), {
       target: { value: '0x2222222222222222222222222222222222222222' },
@@ -130,10 +127,7 @@ describe('WalletHomeSendModal signer switch', () => {
     await vi.waitFor(() => {
       expect(walletBuildAndSendTransaction).toHaveBeenCalled();
     });
-    expect(setActiveEvmAccount).toHaveBeenCalledWith('acct-2');
-    expect(vi.mocked(setActiveEvmAccount).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(walletBuildAndSendTransaction).mock.invocationCallOrder[0],
-    );
-    expect(onSignerActivated).toHaveBeenCalled();
+    expect(setActiveEvmAccount).not.toHaveBeenCalled();
+    expect(vi.mocked(walletBuildAndSendTransaction).mock.calls[0][7]).toBe('acct-2');
   });
 });

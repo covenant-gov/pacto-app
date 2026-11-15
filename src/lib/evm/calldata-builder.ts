@@ -10,7 +10,7 @@ import {
   parseEther,
   type Hex,
 } from 'viem';
-import { formatAssetAmount } from './format-token-amount';
+import { formatTokenAmountExact } from './format-token-amount';
 import { parseAbiJson } from './abi-loader';
 import { simulateContractCall } from './read-plane';
 import type { SupportedChainId } from '../wallet/chains';
@@ -39,9 +39,17 @@ export function ethAmountToWeiString(amountEth: string): string {
   return parseEther(trimmed).toString();
 }
 
+/** Wei → decimal ETH string that `parseEther` maps back to the same wei. For send paths. */
+export function weiToEthExactString(wei: bigint | string): string {
+  const exact = formatTokenAmountExact(wei, 18, 0);
+  if (exact === null) throw new Error(`Invalid wei amount: ${String(wei)}`);
+  return exact;
+}
+
+/** Wei → exact ETH for reading (at least six decimals, full precision when needed). */
 export function weiStringToEthDisplay(wei: string): string {
   const trimmed = wei.trim();
-  return formatAssetAmount(trimmed, { symbol: 'ETH' }) ?? trimmed;
+  return formatTokenAmountExact(trimmed, 18) ?? trimmed;
 }
 
 export function encodeFunctionCalldata(params: {

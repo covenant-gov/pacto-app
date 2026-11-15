@@ -209,7 +209,6 @@
 	"wallet.walletActions": "Acciones de billetera",
 	"wallet.receive": "Recibir",
 	"wallet.switchAccountAria": "Cambiar cuenta",
-	"wallet.couldNotSwitchBeforeSend": "No se pudo cambiar a la cuenta seleccionada antes de enviar.",
 	"wallet.unlockWalletHint": "Desbloquea o espera a que tu dirección de billetera cargue para usar Enviar y Recibir.",
 	"wallet.alphaSoftware": "Software alfa. El manejo de billetera y claves no ha sido revisado por una auditoría de seguridad independiente. Usa solo fondos que puedas permitirte perder. Consulta {docsPath} en el repositorio.",
 	"wallet.editAdvancedAccount": "Editar cuenta avanzada",

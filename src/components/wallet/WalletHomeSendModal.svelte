@@ -31,8 +31,6 @@
   } from '../../lib/wallet';
   import { getAddress, isAddress, parseUnits } from 'viem';
   import { formatAssetAmount } from '../../lib/evm/format-token-amount';
-  import { setActiveEvmAccount } from '../../lib/wallet/evm-accounts';
-  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
   import { waitForOnChainConfirmationInBackground } from '../../lib/evm/on-chain-background';
   import { requireBackupVerified } from '../../stores/backup-verification';
@@ -46,9 +44,8 @@
     watchedAssetRows?: WatchedErc20Row[];
     /** Chains enabled in Wallet settings (catalog order subset). */
     enabledChainIds?: SupportedChainId[];
-    /** Viewed squad account. Balances load for this address; the signer switches on confirm. */
-    fromAccount?: { id: string; address: string; isActive: boolean } | null;
-    onSignerActivated?: () => void | Promise<void>;
+    /** Viewed squad account. Balances load for this address and it signs the send. */
+    fromAccount?: { id: string; address: string } | null;
   }
 
   let {
@@ -57,7 +54,6 @@
     watchedAssetRows = [],
     enabledChainIds = [...WALLET_ASSETS_CHAIN_IDS],
     fromAccount = null,
-    onSignerActivated = () => {},
   }: Props = $props();
 
   const titleId = 'wallet-home-send-title';
@@ -277,19 +273,6 @@
     sendError = null;
     sending = true;
     try {
-      if (fromAccount && !fromAccount.isActive) {
-        try {
-          await setActiveEvmAccount(fromAccount.id);
-        } catch (e) {
-          showToast(getInvokeErrorMessage(e, tFn('wallet.couldNotSwitchBeforeSend')));
-          return;
-        }
-        try {
-          await onSignerActivated();
-        } catch {
-          // Signer already switched; row refresh is best-effort.
-        }
-      }
       const out = await walletBuildAndSendTransaction(
         '',
         chainId,
@@ -298,6 +281,7 @@
         erc20Transfer,
         normalizedTo,
         false,
+        fromAccount?.id,
       );
       if (out.ok) {
         onClose();

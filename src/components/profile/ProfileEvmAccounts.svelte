@@ -22,14 +22,12 @@
   interface Props {
     evmAccountList?: EvmAccountRow[];
     accountsLoading?: boolean;
-    accountsEpoch?: number;
     onRefresh?: () => void | Promise<void>;
   }
 
   let {
     evmAccountList = $bindable([]),
     accountsLoading = $bindable(false),
-    accountsEpoch = 0,
     onRefresh = () => {},
   }: Props = $props();
 
@@ -77,7 +75,6 @@
 
   $effect(() => {
     void accountNpub;
-    void accountsEpoch;
     void refreshEvmAddress();
   });
 

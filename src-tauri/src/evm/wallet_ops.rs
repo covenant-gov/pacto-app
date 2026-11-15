@@ -12,7 +12,7 @@ use tauri::{AppHandle, Runtime};
 
 use super::contracts::erc20::IERC20;
 use super::evm_accounts;
-use super::rpc::signer::load_embedded_signer;
+use super::rpc::signer::{load_embedded_signer, load_embedded_signer_for_account_id};
 use super::wallet_chain_config;
 use super::wallet_prices;
 use super::wallet_security;
@@ -264,9 +264,15 @@ pub async fn get_wallet_summary<R: Runtime>(
     enabled_chains: Vec<String>,
     address: Option<String>,
 ) -> Result<WalletSummary, String> {
-    let _ = evm_accounts::ensure_ready(app.clone()).await;
-    let _ = db::repair_evm_address_if_needed(&app).await;
-    let owner = match address.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let requested = address.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    if requested.is_some() {
+        evm_accounts::ensure_ready(app.clone()).await?;
+        db::repair_evm_address_if_needed(&app).await?;
+    } else {
+        let _ = evm_accounts::ensure_ready(app.clone()).await;
+        let _ = db::repair_evm_address_if_needed(&app).await;
+    }
+    let owner = match requested {
         Some(req) => {
             let parsed = parse_address(req)?;
             let purpose = evm_accounts::address_purpose(&app, req)?;
@@ -651,6 +657,7 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
     erc20_transfer: Option<Erc20TransferSpec>,
     to_address_evm: Option<String>,
     wait_for_confirmation: Option<bool>,
+    from_account_id: Option<String>,
 ) -> Result<WalletSendResult, String> {
     crate::session::heartbeat();
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
@@ -696,11 +703,23 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
     }
 
     let _ = evm_accounts::ensure_ready(app.clone()).await;
-    evm_accounts::require_squad_purpose_signer(app.clone())
-        .await
-        .map_err(|e| wallet_err_json("SQUAD_SIGNER_REQUIRED", e, None))?;
-
-    let (_signer, wallet) = load_embedded_signer(app.clone()).await?;
+    let from_account_id = from_account_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let (_signer, wallet) = match from_account_id {
+        Some(id) => {
+            evm_accounts::require_squad_purpose_for_account_id(&app, id)
+                .map_err(|e| wallet_err_json("SQUAD_SIGNER_REQUIRED", e, None))?;
+            load_embedded_signer_for_account_id(app.clone(), id).await?
+        }
+        None => {
+            evm_accounts::require_squad_purpose_signer(app.clone())
+                .await
+                .map_err(|e| wallet_err_json("SQUAD_SIGNER_REQUIRED", e, None))?;
+            load_embedded_signer(app.clone()).await?
+        }
+    };
     let provider = connect_signing_provider(&urls, wallet).await?;
 
     let tx = if asset_up == "ETH" && erc20_transfer.is_none() {

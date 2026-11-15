@@ -209,7 +209,6 @@
 	"wallet.walletActions": "Wallet actions",
 	"wallet.receive": "Receive",
 	"wallet.switchAccountAria": "Switch account",
-	"wallet.couldNotSwitchBeforeSend": "Could not switch to the selected account before sending.",
 	"wallet.unlockWalletHint": "Unlock or wait for your wallet address to load to use Send and Receive.",
 	"wallet.alphaSoftware": "Alpha software. Wallet and key handling have not been reviewed by an independent security audit. Use only funds you can afford to lose. See {docsPath} in the repository.",
 	"wallet.editAdvancedAccount": "Edit advanced account",

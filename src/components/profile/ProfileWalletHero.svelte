@@ -28,10 +28,9 @@
   interface Props {
     accountNpub: string;
     evmAccountList?: EvmAccountRow[];
-    onAccountsChanged?: () => void | Promise<void>;
   }
 
-  let { accountNpub, evmAccountList = [], onAccountsChanged = () => {} }: Props = $props();
+  let { accountNpub, evmAccountList = [] }: Props = $props();
 
   const squadAccounts = $derived(squadEvmAccounts(evmAccountList));
   const defaultAccount = $derived(
@@ -364,10 +363,7 @@
   onClose={() => (homeSendOpen = false)}
   watchedAssetRows={watchedRows}
   enabledChainIds={enabledChainsOrdered}
-  fromAccount={viewedAccount && viewedAddress
-    ? { id: viewedAccount.id, address: viewedAddress, isActive: viewedAccount.isActive }
-    : null}
-  onSignerActivated={onAccountsChanged}
+  fromAccount={viewedAccount && viewedAddress ? { id: viewedAccount.id, address: viewedAddress } : null}
 />
 
 <WalletReceiveModal

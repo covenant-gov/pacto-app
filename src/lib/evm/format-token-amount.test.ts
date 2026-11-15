@@ -3,6 +3,7 @@ import {
   CRYPTO_DISPLAY_DECIMALS,
   formatAssetAmount,
   formatTokenAmount,
+  formatTokenAmountExact,
   formatTokenAmountForDisplay,
 } from './format-token-amount';
 
@@ -32,6 +33,21 @@ describe('formatTokenAmount', () => {
   });
 });
 
+describe('formatTokenAmountExact', () => {
+  it('pads to six decimals and extends to full precision only when needed', () => {
+    expect(formatTokenAmountExact('0', 18)).toBe('0.000000');
+    expect(formatTokenAmountExact('1500000000000000000', 18)).toBe('1.500000');
+    expect(formatTokenAmountExact('1234567500000000000', 18)).toBe('1.2345675');
+    expect(formatTokenAmountExact('1', 18)).toBe('0.000000000000000001');
+    expect(formatTokenAmountExact('-1500000', 6)).toBe('-1.500000');
+  });
+
+  it('rejects junk and bad min decimals', () => {
+    expect(formatTokenAmountExact('x', 18)).toBeNull();
+    expect(formatTokenAmountExact('1', 18, -1)).toBeNull();
+  });
+});
+
 describe('formatTokenAmountForDisplay', () => {
   it('defaults to six fractional digits', () => {
     expect(CRYPTO_DISPLAY_DECIMALS).toBe(6);
@@ -44,6 +60,14 @@ describe('formatTokenAmountForDisplay', () => {
     expect(formatTokenAmountForDisplay('949995365328042385', 18)).toBe('0.949995');
     expect(formatTokenAmountForDisplay('949995500000000000', 18)).toBe('0.949996');
     expect(formatTokenAmountForDisplay('1395633240123456000', 18)).toBe('1.395633');
+  });
+
+  it('shows full precision for a nonzero amount that would round to zero', () => {
+    expect(formatTokenAmountForDisplay('400000000000', 18)).toBe('0.000000400000000000');
+    expect(formatTokenAmountForDisplay('1', 18)).toBe('0.000000000000000001');
+    expect(formatTokenAmountForDisplay('-1', 18)).toBe('-0.000000000000000001');
+    expect(formatTokenAmountForDisplay('499999999999', 18)).toBe('0.000000499999999999');
+    expect(formatTokenAmountForDisplay('500000000000', 18)).toBe('0.000001');
   });
 
   it('pads tokens that already use six or fewer decimals', () => {
@@ -62,7 +86,7 @@ describe('formatTokenAmountForDisplay', () => {
 describe('formatAssetAmount', () => {
   it('displays ETH at six fractional digits', () => {
     expect(formatAssetAmount('1000000000000000000', { symbol: 'ETH' })).toBe('1.000000');
-    expect(formatAssetAmount('1000000', { symbol: 'ETH', decimals: 6 })).toBe('0.000000');
+    expect(formatAssetAmount('1000000', { symbol: 'ETH', decimals: 6 })).toBe('0.000000000001000000');
     expect(formatAssetAmount(0n, { symbol: 'ETH' })).toBe('0.000000');
   });
 

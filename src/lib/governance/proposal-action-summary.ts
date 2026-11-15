@@ -6,7 +6,6 @@
 import { type Abi, type Address, decodeFunctionData, type Hex } from 'viem';
 import erc20Write from '../evm/abis/erc20-write.json';
 import { normalizeCalldataHex, weiStringToEthDisplay } from '../evm/calldata-builder';
-import { formatTokenAmount } from '../evm/format-token-amount';
 import { decodeTreasuryVoteCall } from './crew-vote-mode';
 import type { CrewVoteMode } from './squad-params';
 
@@ -161,23 +160,7 @@ export function summarizeTreasuryProposalAction(input: ProposalActionInput): Pro
   return unknownSummary({ ...input, to, valueWei }, data, isDelegateCall);
 }
 
-const SIX_DECIMAL_ZERO = '0.000000';
-
-function nonZeroWei(valueWei: string): boolean {
-  const trimmed = valueWei.trim();
-  if (!/^\d+$/.test(trimmed)) return false;
-  try {
-    return BigInt(trimmed) > 0n;
-  } catch {
-    return false;
-  }
-}
-
 /** Native ETH amount for display (wei decimal string → ETH string). */
 export function formatNativeEthAmount(valueWei: string): string {
-  const display = weiStringToEthDisplay(valueWei);
-  if (display === SIX_DECIMAL_ZERO && nonZeroWei(valueWei)) {
-    return formatTokenAmount(valueWei.trim(), 18) ?? display;
-  }
-  return display;
+  return weiStringToEthDisplay(valueWei);
 }

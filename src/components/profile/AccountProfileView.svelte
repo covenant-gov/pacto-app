@@ -12,8 +12,6 @@
 
   let userNpub = $derived($currentUser?.npub || '');
   let evmAccountList: EvmAccountRow[] = $state([]);
-  let accountsEpoch = $state(0);
-
   function goBack() {
     $activeView = 'hub';
   }
@@ -33,14 +31,8 @@
       <ProfileSection />
       <PactoNftStrip />
       {#if userNpub}
-        <ProfileWalletHero
-          accountNpub={userNpub}
-          {evmAccountList}
-          onAccountsChanged={async () => {
-            accountsEpoch += 1;
-          }}
-        />
-        <ProfileEvmAccounts bind:evmAccountList {accountsEpoch} />
+        <ProfileWalletHero accountNpub={userNpub} {evmAccountList} />
+        <ProfileEvmAccounts bind:evmAccountList />
         <EvmDashGasSection />
       {/if}
     </div>

@@ -36,6 +36,10 @@ describe('summarizeTreasuryProposalAction', () => {
     expect(formatNativeEthAmount('0')).toBe('0.000000');
   });
 
+  it('shows full precision for non-dust amounts with more than six decimals', () => {
+    expect(formatNativeEthAmount(parseEther('1.5000004').toString())).toBe('1.5000004');
+  });
+
   it('decodes erc20 transfer', () => {
     const dataHex = encodeFunctionData({
       abi: ABI,

@@ -30,8 +30,26 @@ export function formatTokenAmount(raw: bigint | string, decimals: number): strin
 }
 
 /**
+ * Lossless decimal at full token precision: trailing fractional zeros are trimmed down to
+ * `minDecimals` digits. Use where the reader must see the exact amount (for example proposals).
+ */
+export function formatTokenAmountExact(
+  raw: bigint | string,
+  tokenDecimals: number,
+  minDecimals: number = CRYPTO_DISPLAY_DECIMALS,
+): string | null {
+  if (!Number.isInteger(minDecimals) || minDecimals < 0 || minDecimals > 255) return null;
+  const full = formatTokenAmount(raw, tokenDecimals);
+  if (full === null) return null;
+  const [whole, frac = ''] = full.split('.');
+  const trimmed = frac.replace(/0+$/, '').padEnd(minDecimals, '0');
+  return trimmed ? `${whole}.${trimmed}` : whole;
+}
+
+/**
  * Round a raw token amount to a fixed display width (default 6 fractional digits).
  * Uses half-up rounding when the token has more precision than the display width.
+ * A nonzero amount that would round to zero is shown at full precision instead.
  */
 export function formatTokenAmountForDisplay(
   raw: bigint | string,
@@ -63,11 +81,16 @@ export function formatTokenAmountForDisplay(
   const divisor = 10n ** drop;
   const half = divisor / 2n;
   const rounded = (abs + half) / divisor;
+  if (rounded === 0n && abs > 0n) return formatTokenAmount(value, tokenDecimals);
   const scaled = negative ? -rounded : rounded;
   return formatTokenAmount(scaled, displayDecimals);
 }
 
-/** ETH is always 18 token decimals. Other symbols use `decimals` from the token record. */
+/**
+ * Display only: rounded, never feed the result into signing or send. Use `weiToEthExactString`
+ * or the raw amount for value paths. ETH is always 18 token decimals; other symbols use
+ * `decimals` from the token record.
+ */
 export function formatAssetAmount(
   raw: bigint | string,
   asset: { symbol: string; decimals?: number },

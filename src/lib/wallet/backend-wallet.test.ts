@@ -185,6 +185,7 @@ describe('backend-wallet', () => {
         erc20Transfer: null,
         toAddressEvm: null,
         waitForConfirmation: false,
+        fromAccountId: null,
       });
     });
 
@@ -201,6 +202,7 @@ describe('backend-wallet', () => {
         erc20,
         '0xRecipient',
         true,
+        ' acct-2 ',
       );
       expect(result.ok).toBe(true);
       expect(mockedInvoke).toHaveBeenCalledWith('wallet_build_and_send_transaction', {
@@ -211,6 +213,7 @@ describe('backend-wallet', () => {
         erc20Transfer: erc20,
         toAddressEvm: '0xRecipient',
         waitForConfirmation: true,
+        fromAccountId: 'acct-2',
       });
     });
 
