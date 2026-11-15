@@ -63,8 +63,30 @@
   let selectedDefaultRpc = $state('');
   let newRpcUrl = $state('');
   let addRpcError: string | null = $state(null);
+  let enabledChainsMenuOpen = $state(false);
 
   let enabledChainIdsOrdered = $derived(WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id)));
+  let enabledChainsSummary = $derived(
+    enabledChainIdsOrdered.map((id) => getWalletNetworkDisplayName(id)).join(', '),
+  );
+
+  $effect(() => {
+    if (!enabledChainsMenuOpen) return;
+    function onDocPointer(e: PointerEvent) {
+      const root = document.getElementById('evm-enabled-chains-menu');
+      if (root && e.target instanceof Node && root.contains(e.target)) return;
+      enabledChainsMenuOpen = false;
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') enabledChainsMenuOpen = false;
+    }
+    document.addEventListener('pointerdown', onDocPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDocPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  });
 
   $effect(() => {
     void $walletPreferredNetworkTick;
@@ -108,7 +130,7 @@
 
   let filteredWatchedRows = $derived(
     tokenNetworkFilter === 'all'
-      ? watchedRows
+      ? watchedRows.filter((row) => enabledSet.has(row.network as SupportedChainId))
       : watchedRows.filter((row) => row.network === tokenNetworkFilter)
   );
 
@@ -187,30 +209,60 @@
 
 <section class="evm-extras-section" aria-labelledby="wallet-networks-heading">
   <h2 id="wallet-networks-heading" class="evm-extras-h2">{$t('settings.enabledChainsTitle')}</h2>
-  <p class="evm-extras-hint">
-    {$t('settings.enabledChainsHint')}
-  </p>
-  <div class="evm-extras-chain-groups">
-    {#each WALLET_CHAIN_GROUPS as group (group.id)}
-      <div class="evm-extras-chain-group">
-        <h3 class="evm-extras-chain-group-label">{$t(group.label)}</h3>
-        <ul class="evm-extras-toggle-list">
-          {#each group.chains as chain (chain)}
-            <li>
-              <label class="evm-extras-toggle">
-                <input
-                  type="checkbox"
-                  checked={enabledSet.has(chain)}
-                  disabled={enabledSet.has(chain) && enabledSet.size <= 1}
-                  onchange={() => onToggleChain(chain)}
-                />
-                <span>{getWalletNetworkDisplayName(chain)}</span>
-              </label>
-            </li>
-          {/each}
-        </ul>
+  <div id="evm-enabled-chains-menu" class="evm-extras-chains-menu">
+    <button
+      type="button"
+      id="evm-enabled-chains-trigger"
+      class="evm-extras-select evm-extras-chains-trigger"
+      aria-haspopup="listbox"
+      aria-expanded={enabledChainsMenuOpen}
+      aria-label={$t('settings.enabledChainsTitle')}
+      onclick={() => (enabledChainsMenuOpen = !enabledChainsMenuOpen)}
+    >
+      <span class="evm-extras-chains-summary">
+        {enabledChainsSummary || $t('settings.noEnabledChains')}
+      </span>
+      <svg
+        class="evm-extras-chains-chevron"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        fill="none"
+      >
+        <path
+          d="M6 9L12 15L18 9"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
+    {#if enabledChainsMenuOpen}
+      <div class="evm-extras-chains-panel" role="listbox" aria-multiselectable="true">
+        {#each WALLET_CHAIN_GROUPS as group (group.id)}
+          <div class="evm-extras-chain-group">
+            <h3 class="evm-extras-chain-group-label">{$t(group.label)}</h3>
+            <ul class="evm-extras-toggle-list">
+              {#each group.chains as chain (chain)}
+                <li>
+                  <label class="evm-extras-toggle">
+                    <input
+                      type="checkbox"
+                      checked={enabledSet.has(chain)}
+                      disabled={enabledSet.has(chain) && enabledSet.size <= 1}
+                      onchange={() => onToggleChain(chain)}
+                    />
+                    <span>{getWalletNetworkDisplayName(chain)}</span>
+                  </label>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/each}
       </div>
-    {/each}
+    {/if}
   </div>
 </section>
 
@@ -561,10 +613,49 @@
     font-size: 0.875rem;
   }
 
-  .evm-extras-chain-groups {
+  .evm-extras-chains-menu {
+    position: relative;
+    max-width: 420px;
+  }
+
+  .evm-extras-chains-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .evm-extras-chains-summary {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .evm-extras-chains-chevron {
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+
+  .evm-extras-chains-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 20;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
+    max-height: min(360px, 50vh);
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
   }
 
   .evm-extras-chain-group-label {

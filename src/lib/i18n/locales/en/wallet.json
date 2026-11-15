@@ -1,6 +1,5 @@
 {
 	"wallet.defaultEvmAccountTitle": "Default EVM account",
-	"wallet.defaultEvmAccountHint": "Default signing address and published receiving address for DMs, profile, and squad operations.",
 	"wallet.preferredNetworkHint": "Default network for wallet filters.",
 	"wallet.preferredNetworkLabel": "Preferred network",
 	"wallet.signerLabel": "Signer",
@@ -20,7 +19,6 @@
 
 	"wallet.evmAccountsTitle": "EVM accounts",
 	"wallet.squadEvmAccountsTitle": "Squad EVM accounts",
-	"wallet.squadEvmAccountsHint": "Derived squad keys are assigned per squad for squad EVM, treasury, and governance. Set your default signer and receiver in {defaultEvmAccount} above.",
 	"wallet.evmAccountsHint": "Derived squad keys power DM wallet, squad EVM shares, treasury deploy, and governance. Advanced imported keys are for experimental contract calls only.",
 	"wallet.loadingAccounts": "Loading accounts…",
 	"wallet.noSquadEvmAccounts": "No squad EVM accounts yet. Unlock your wallet or add one from your recovery phrase.",
@@ -30,6 +28,7 @@
 	"wallet.addAdvancedAccount": "Add advanced account",
 	"wallet.importPrivateKey": "Import private key",
 	"wallet.exportKey": "Export key",
+	"wallet.accountActionsMenu": "Account actions",
 	"wallet.editAccountName": "Edit account name",
 	"wallet.editDisplayName": "Edit display name",
 	"wallet.copyAddressToClipboard": "Copy address to clipboard",

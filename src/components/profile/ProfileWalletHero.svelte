@@ -26,6 +26,7 @@
     squadEvmAccounts,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
+  import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   const tFn = get(t);
@@ -72,17 +73,32 @@
 
   const viewedAccount = $derived(squadAccounts.find((a) => a.id === selectedAccountId) ?? defaultAccount);
   const viewedAddress = $derived(viewedAccount?.address?.trim() || null);
-  const viewedBadge = $derived.by(() => {
-    if (!viewedAccount) return '';
-    if (viewedAccount.isDefaultShared) return tFn('wallet.receiverBadge');
-    if (viewedAccount.isActive) return tFn('wallet.signerBadge');
-    return viewedAccount.label?.trim() || '';
-  });
+  const viewedAccountName = $derived(accountDisplayName(viewedAccount, viewedAddress));
   const canSwitchAccount = $derived(squadAccounts.length > 1);
+  let addressCopied = $state(false);
+
+  function accountDisplayName(acc: EvmAccountRow | null | undefined, address: string | null): string {
+    const label = acc?.label?.trim();
+    if (label) return label;
+    if (address) return shortEvmAddress(address);
+    return '';
+  }
 
   function selectAccount(id: string) {
     selectedAccountId = id;
     accountMenuOpen = false;
+  }
+
+  async function copyViewedAddress() {
+    if (!viewedAddress) return;
+    const ok = await copyTextToClipboard(viewedAddress);
+    if (!ok) {
+      showToast(tFn('wallet.couldNotCopyHash'));
+      return;
+    }
+    addressCopied = true;
+    showToast(tFn('wallet.copyAddress'));
+    setTimeout(() => (addressCopied = false), 2000);
   }
 
   let enabledSet = $state(new Set<SupportedChainId>());
@@ -197,11 +213,10 @@
   });
 
   function accountLabel(acc: EvmAccountRow): string {
-    const parts = [shortEvmAddress(acc.address)];
-    if (acc.label?.trim()) parts.push(acc.label.trim());
-    if (acc.isDefaultShared) parts.push(tFn('wallet.receiverBadge'));
-    else if (acc.isActive) parts.push(tFn('wallet.signerBadge'));
-    return parts.join(' · ');
+    const name = accountDisplayName(acc, acc.address?.trim() || null);
+    const short = shortEvmAddress(acc.address);
+    if (!name || name === short) return short;
+    return `${name} · ${short}`;
   }
 
   function networkErrorMessage(net: WalletSummaryNetwork): string {
@@ -241,32 +256,29 @@
 
   {#if viewedAddress}
     <div id="profile-wallet-account-picker" class="wallet-hero-account">
-      <p class="wallet-hero-account-selected">
-        <code class="wallet-hero-account-address" title={viewedAddress}>{viewedAddress}</code>
-        {#if viewedBadge}
-          <span class="wallet-hero-account-badge">· {viewedBadge}</span>
-        {/if}
-      </p>
-      {#if canSwitchAccount}
-        <div class="wallet-hero-account-menu-wrap">
+      <div class="wallet-hero-account-name-row">
+        {#if canSwitchAccount}
           <button
             type="button"
-            class="wallet-hero-account-chevron"
+            class="wallet-hero-account-name-btn"
             aria-haspopup="menu"
             aria-expanded={accountMenuOpen}
             aria-label={$t('wallet.switchAccountAria')}
             title={$t('wallet.switchAccountAria')}
             onclick={() => (accountMenuOpen = !accountMenuOpen)}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M6 9L12 15L18 9"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
+            <span class="wallet-hero-account-name">{viewedAccountName}</span>
+            <span class="wallet-hero-account-chevron" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M6 9L12 15L18 9"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </span>
           </button>
           {#if accountMenuOpen}
             <div class="wallet-hero-account-menu" role="menu">
@@ -283,8 +295,35 @@
               {/each}
             </div>
           {/if}
-        </div>
-      {/if}
+        {:else}
+          <span class="wallet-hero-account-name">{viewedAccountName}</span>
+        {/if}
+      </div>
+      <div class="wallet-hero-account-address-pill">
+        <code class="wallet-hero-account-address" title={viewedAddress}>{shortEvmAddress(viewedAddress)}</code>
+        <button
+          type="button"
+          class="wallet-hero-account-copy"
+          aria-label={$t('wallet.copyAddressToClipboard')}
+          title={addressCopied ? $t('wallet.copied') : $t('wallet.copyAddress')}
+          onclick={() => void copyViewedAddress()}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        </button>
+      </div>
     </div>
   {/if}
 
@@ -301,8 +340,6 @@
       {$t('wallet.receive')}
     </button>
   </div>
-  <p class="wallet-hero-hint">{$t('wallet.receiveDesc')}</p>
-
   {#if summaryLoading && !summary}
     <p class="wallet-hero-muted">{$t('wallet.loadingBalances')}</p>
   {:else if summary}
@@ -428,66 +465,105 @@
 
   .wallet-hero-account {
     display: flex;
+    flex-direction: column;
     align-items: flex-start;
-    gap: 6px;
+    gap: 8px;
     margin-top: 12px;
     min-width: 0;
   }
 
-  .wallet-hero-account-selected {
-    margin: 0;
-    flex: 1;
+  .wallet-hero-account-name-row {
+    position: relative;
     min-width: 0;
-    font-size: 0.875rem;
-    line-height: 1.4;
-    color: var(--text-secondary);
+  }
+
+  .wallet-hero-account-name-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .wallet-hero-account-name-btn:hover .wallet-hero-account-name,
+  .wallet-hero-account-name-btn:hover .wallet-hero-account-chevron {
+    color: var(--text-primary);
+  }
+
+  .wallet-hero-account-name-btn:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .wallet-hero-account-name {
+    min-width: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wallet-hero-account-chevron {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+
+  .wallet-hero-account-address-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
   }
 
   .wallet-hero-account-address {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.8125rem;
-    word-break: break-all;
-    color: var(--text-primary);
+    color: var(--text-secondary);
   }
 
-  .wallet-hero-account-badge {
-    color: var(--text-muted);
-    white-space: nowrap;
-  }
-
-  .wallet-hero-account-menu-wrap {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  .wallet-hero-account-chevron {
+  .wallet-hero-account-copy {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
     padding: 0;
     border: none;
-    border-radius: 6px;
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
   }
 
-  .wallet-hero-account-chevron:hover {
-    background: var(--bg-hover);
+  .wallet-hero-account-copy:hover {
     color: var(--text-primary);
   }
 
-  .wallet-hero-account-chevron:focus-visible {
+  .wallet-hero-account-copy:focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 1px;
+    border-radius: 4px;
   }
 
   .wallet-hero-account-menu {
     position: absolute;
     top: calc(100% + 4px);
-    right: 0;
+    left: 0;
     z-index: 20;
     min-width: 220px;
     max-width: min(360px, 80vw);
@@ -553,7 +629,6 @@
     border: 1px solid var(--border);
   }
 
-  .wallet-hero-hint,
   .wallet-hero-muted {
     margin: 10px 0 0;
     font-size: 0.8125rem;

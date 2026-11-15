@@ -4,7 +4,6 @@
 
   const tFn = get(t);
   import {
-    formatHdIndexLabel,
     setActiveEvmAccount,
     setDefaultSharedEvmAccount,
     type EvmAccountRow,
@@ -85,17 +84,12 @@
   function accountOptionLabel(acc: EvmAccountRow): string {
     const parts: string[] = [shortAddr(acc.address)];
     if (acc.label?.trim()) parts.push(acc.label.trim());
-    if (acc.hdIndex != null) parts.push(formatHdIndexLabel(acc.hdIndex));
     return parts.join(' · ');
   }
 </script>
 
 <section class="dwc" aria-labelledby="wallet-default-evm-heading">
   <h2 id="wallet-default-evm-heading" class="dwc-title">{$t('wallet.defaultEvmAccountTitle')}</h2>
-
-  <p class="dwc-hint">
-    {$t('wallet.defaultEvmAccountHint')}
-  </p>
 
   <div class="dwc-summary">
     <dl class="dwc-summary-list">

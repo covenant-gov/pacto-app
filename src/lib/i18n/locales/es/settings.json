@@ -141,7 +141,7 @@
 	"settings.evmDashGas.lane.usernameBootstrap": "Username bootstrap",
 	"settings.evmDashGas.lane.usernameMember": "Username",
 	"settings.enabledChainsTitle": "Cadenas habilitadas",
-	"settings.enabledChainsHint": "Habilita las cadenas que uses. Al menos una debe permanecer activa. Afecta Enviar, saldos y la barra lateral de billetera en mensajes directos.",
+	"settings.noEnabledChains": "Ninguna cadena habilitada",
 	"settings.tokensToTrackTitle": "Tokens a seguir",
 	"settings.importTokensButton": "Importar tokens",
 	"settings.trackedTokensHint": "Los activos seguidos aparecen en Enviar y en la barra lateral de billetera (por red).",

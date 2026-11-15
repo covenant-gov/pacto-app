@@ -12,7 +12,6 @@
   import { squads } from '../../stores/app';
   import type { Squad } from '../../stores/squads';
   import {
-    formatHdIndexLabel,
     isSeedDerivedEvmAccount,
     squadEvmAccounts,
     advancedEvmAccounts,
@@ -64,6 +63,7 @@
   let bindingsLoading = $state(false);
   let exportAccount: EvmAccountRow | null = $state(null);
   let exportModalOpen = $state(false);
+  let openAccountMenuId: string | null = $state(null);
 
   let squadList = $derived(squadEvmAccounts(evmAccountList));
   let advancedList = $derived(advancedEvmAccounts(evmAccountList));
@@ -80,6 +80,23 @@
     void loadBindings();
   });
 
+  $effect(() => {
+    if (!openAccountMenuId) return;
+    function onDocPointer(e: PointerEvent) {
+      const root = document.getElementById(`evm-account-menu-${openAccountMenuId}`);
+      if (root && e.target instanceof Node && root.contains(e.target)) return;
+      openAccountMenuId = null;
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') openAccountMenuId = null;
+    }
+    document.addEventListener('pointerdown', onDocPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDocPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  });
 
   async function loadBindings() {
     if (!accountNpub) {
@@ -129,7 +146,16 @@
     return acc.purpose === 'advanced';
   }
 
+  function accountName(acc: EvmAccountRow): string {
+    return acc.label?.trim() || shortAddr(acc.address);
+  }
+
+  function toggleAccountMenu(id: string) {
+    openAccountMenuId = openAccountMenuId === id ? null : id;
+  }
+
   function openExportModal(acc: EvmAccountRow) {
+    openAccountMenuId = null;
     exportAccount = acc;
     exportModalOpen = true;
   }
@@ -186,13 +212,9 @@
     </div>
   </div>
 
-  <p class="wallet-view-hint">
-    {#if embeddedInSettings}
-      {$t('wallet.squadEvmAccountsHint', { values: { defaultEvmAccount: $t('wallet.defaultEvmAccountTitle') } })}
-    {:else}
-      {$t('wallet.evmAccountsHint')}
-    {/if}
-  </p>
+  {#if !embeddedInSettings}
+    <p class="wallet-view-hint">{$t('wallet.evmAccountsHint')}</p>
+  {/if}
 
   {#if accountsLoading && displayRows.length === 0}
     <p class="wallet-view-empty">{$t('wallet.loadingAccounts')}</p>
@@ -203,73 +225,82 @@
         : $t('wallet.noEvmAccounts')}
     </p>
   {:else}
-    {#snippet accountMeta(acc: EvmAccountRow)}
-      {#if acc.hdIndex != null}
-        <span class="wallet-view-account-idx">{formatHdIndexLabel(acc.hdIndex)}</span>
-      {/if}
-      {#if acc.label?.trim()}
-        <span class="wallet-view-account-name">{acc.label.trim()}</span>
-      {/if}
-    {/snippet}
-
-    {#snippet accountTools(acc: EvmAccountRow)}
-      <button
-        type="button"
-        class="wallet-view-btn-export-key"
-        disabled={accountsLoading}
-        onclick={() => openExportModal(acc)}
-      >
-        {$t('wallet.exportKey')}
-      </button>
-      <EditIconButton
-        disabled={accountsLoading}
-        ariaLabel={$t('wallet.editAccountName')}
-        title={$t('wallet.editDisplayName')}
-        className="evm-account-edit-btn"
-        onclick={() => onEditAccount(acc)}
-      />
-      <button
-        type="button"
-        class="wallet-view-account-copy-icon-btn"
-        disabled={accountsLoading || !acc.address?.trim()}
-        aria-label={$t('wallet.copyAddressToClipboard')}
-        title={$t('wallet.copyAddress')}
-        onclick={(e) => { e.stopPropagation(); copyAddress(acc.address); }}
-      >
-        <svg
-          class="wallet-view-account-copy-svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-        </svg>
-      </button>
-    {/snippet}
-
     {#snippet accountRow(acc: EvmAccountRow)}
       {@const linkedSquads = squadBindingsFor(acc)}
+      {@const name = accountName(acc)}
+      {@const menuOpen = openAccountMenuId === acc.id}
       <li
         class="wallet-view-account-row evm-account-row"
         class:wallet-view-account-active={!embeddedInSettings && (acc.isActive || acc.isActiveAdvanced)}
       >
         {#if embeddedInSettings}
           <div class="evm-account-primary">
-            <code class="wallet-view-account-addr evm-account-addr-full" title={acc.address}>{acc.address}</code>
-            <div class="evm-account-meta-row">
-              <div class="evm-account-badges">
-                {@render accountMeta(acc)}
-              </div>
-              <div class="wallet-view-account-tools evm-account-tools-inline">
-                {@render accountTools(acc)}
-              </div>
+            <p class="evm-account-name">{name}</p>
+            <button
+              type="button"
+              class="evm-account-address-pill"
+              disabled={accountsLoading || !acc.address?.trim()}
+              aria-label={$t('wallet.copyAddressToClipboard')}
+              title={acc.address}
+              onclick={() => void copyAddress(acc.address)}
+            >
+              <code class="evm-account-address-short">{shortAddr(acc.address)}</code>
+              <svg
+                class="evm-account-copy-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+            <div id={`evm-account-menu-${acc.id}`} class="evm-account-menu-wrap">
+              <button
+                type="button"
+                class="evm-account-menu-trigger"
+                disabled={accountsLoading}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-label={$t('wallet.accountActionsMenu')}
+                title={$t('wallet.accountActionsMenu')}
+                onclick={() => toggleAccountMenu(acc.id)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                  <circle cx="12" cy="5" r="1.75" />
+                  <circle cx="12" cy="12" r="1.75" />
+                  <circle cx="12" cy="19" r="1.75" />
+                </svg>
+              </button>
+              {#if menuOpen}
+                <div class="evm-account-menu" role="menu">
+                  <button
+                    type="button"
+                    class="evm-account-menu-item"
+                    role="menuitem"
+                    onclick={() => openExportModal(acc)}
+                  >
+                    {$t('wallet.exportKey')}
+                  </button>
+                  <button
+                    type="button"
+                    class="evm-account-menu-item"
+                    role="menuitem"
+                    onclick={() => {
+                      openAccountMenuId = null;
+                      onEditAccount(acc);
+                    }}
+                  >
+                    {$t('wallet.editAccountName')}
+                  </button>
+                </div>
+              {/if}
             </div>
           </div>
 
@@ -307,11 +338,20 @@
                 isAdvancedRow(acc) ? onSetActiveAdvancedAccount(acc.id) : onSetActiveAccount(acc.id)}
             />
             <span class="wallet-view-account-meta">
-              {@render accountMeta(acc)}
+              <span class="wallet-view-account-name">{name}</span>
             </span>
           </label>
 
-          <code class="wallet-view-account-addr" title={acc.address}>{shortAddr(acc.address)}</code>
+          <button
+            type="button"
+            class="wallet-view-account-addr-btn"
+            disabled={accountsLoading || !acc.address?.trim()}
+            title={acc.address}
+            aria-label={$t('wallet.copyAddressToClipboard')}
+            onclick={(e) => { e.stopPropagation(); void copyAddress(acc.address); }}
+          >
+            <code class="wallet-view-account-addr">{shortAddr(acc.address)}</code>
+          </button>
           <div class="wallet-view-account-tools">
             {#if acc.isActive && !isAdvancedRow(acc)}
               <span class="wallet-view-account-badge">{$t('wallet.signerBadge')}</span>
@@ -329,30 +369,6 @@
               className="evm-account-edit-btn"
               onclick={() => onEditAccount(acc)}
             />
-            <button
-              type="button"
-              class="wallet-view-account-copy-icon-btn"
-              disabled={accountsLoading || !acc.address?.trim()}
-              aria-label={$t('wallet.copyAddressToClipboard')}
-              title={$t('wallet.copyAddress')}
-              onclick={(e) => { e.stopPropagation(); copyAddress(acc.address); }}
-            >
-              <svg
-                class="wallet-view-account-copy-svg"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.75"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-            </button>
           </div>
         {/if}
       </li>
@@ -530,11 +546,6 @@
     margin-top: 0;
   }
 
-  .evm-section :global(.wallet-view-account-idx) {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
   .evm-section :global(.wallet-view-account-meta) {
     display: inline-flex;
     flex-wrap: wrap;
@@ -624,9 +635,147 @@
 
   .evm-account-primary {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .evm-account-name {
+    margin: 0;
+    flex: 0 1 auto;
+    min-width: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .evm-account-address-pill {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: center;
     gap: 8px;
     min-width: 0;
+    margin: 0;
+    margin-right: auto;
+    padding: 6px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .evm-account-address-pill:hover:not(:disabled) {
+    border-color: var(--border);
+    color: var(--text-primary);
+  }
+
+  .evm-account-address-pill:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
+  }
+
+  .evm-account-address-pill:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .evm-account-address-short {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.8125rem;
+  }
+
+  .evm-account-copy-icon {
+    flex-shrink: 0;
+  }
+
+  .evm-account-menu-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .evm-account-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .evm-account-menu-trigger:hover:not(:disabled) {
+    border-color: var(--brand);
+    color: var(--text-primary);
+  }
+
+  .evm-account-menu-trigger:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
+  }
+
+  .evm-account-menu-trigger:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .evm-account-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 20;
+    min-width: 160px;
+    padding: 4px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
+  }
+
+  .evm-account-menu-item {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.8125rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .evm-account-menu-item:hover {
+    background: var(--bg-hover);
+  }
+
+  .wallet-view-account-addr-btn {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .wallet-view-account-addr-btn:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
+    border-radius: 4px;
   }
 
   .evm-account-addr-full {
@@ -635,20 +784,20 @@
     white-space: normal;
   }
 
-  .evm-account-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    min-width: 0;
-  }
-
   .evm-account-meta-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
+  }
+
+  .evm-account-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
   }
 
   .evm-account-tools-inline {

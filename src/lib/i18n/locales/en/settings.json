@@ -144,7 +144,7 @@
 	"settings.evmDashGas.lane.usernameBootstrap": "Username bootstrap",
 	"settings.evmDashGas.lane.usernameMember": "Username",
 	"settings.enabledChainsTitle": "Enabled chains",
-	"settings.enabledChainsHint": "Enable chains you use. At least one must stay on. Affects Send, balances, and the DM wallet sidebar.",
+	"settings.noEnabledChains": "No chains enabled",
 	"settings.tokensToTrackTitle": "Tokens to track",
 	"settings.importTokensButton": "Import tokens",
 	"settings.trackedTokensHint": "Tracked assets appear in Send and in the DM wallet sidebar (per network).",
