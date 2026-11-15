@@ -3,7 +3,6 @@
   import backIcon from '../../icons/chevron-double-left.svg';
   import { currentUser } from '../../stores/auth-session';
   import { activeView } from '../../stores/navigation';
-  import { showEvmDashGas, usernameState } from '../../stores/username';
   import type { EvmAccountRow } from '../../lib/wallet/evm-accounts';
   import ProfileSection from '../settings/ProfileSection.svelte';
   import EvmDashGasSection from '../settings/EvmDashGasSection.svelte';
@@ -12,7 +11,6 @@
   import ProfileEvmAccounts from './ProfileEvmAccounts.svelte';
 
   let userNpub = $derived($currentUser?.npub || '');
-  let dashVisible = $derived(showEvmDashGas($usernameState));
   let evmAccountList: EvmAccountRow[] = $state([]);
   let accountsEpoch = $state(0);
 
@@ -43,9 +41,7 @@
           }}
         />
         <ProfileEvmAccounts bind:evmAccountList {accountsEpoch} />
-        {#if dashVisible}
-          <EvmDashGasSection />
-        {/if}
+        <EvmDashGasSection />
       {/if}
     </div>
   </div>

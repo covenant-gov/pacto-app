@@ -27,7 +27,6 @@
       <SettingsCollapsibleSection
         sectionId="settings-evm"
         title={$t('settings.evmSettingsTitle')}
-        sectionClass="settings-section--evm"
       >
         <SettingsEvmSection />
       </SettingsCollapsibleSection>

@@ -19,7 +19,7 @@
     children: Snippet;
   } = $props();
 
-  let collapsed = $derived($settingsSectionCollapsed[sectionId] ?? true);
+  let collapsed = $derived($settingsSectionCollapsed[sectionId] ?? false);
   let headingId = $derived(`${sectionId}-heading`);
   let panelId = $derived(`${sectionId}-panel`);
 

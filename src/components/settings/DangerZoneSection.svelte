@@ -34,7 +34,6 @@
 <SettingsCollapsibleSection
   sectionId="settings-dangerzone"
   title={$t('settings.dangerZoneTitle')}
-  sectionClass="settings-section--dangerzone"
 >
   <p class="dangerzone-lead">
     {$t('settings.dangerZoneLead')}

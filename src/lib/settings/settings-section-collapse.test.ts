@@ -33,27 +33,27 @@ describe('settings-section-collapse', () => {
     vi.restoreAllMocks();
   });
 
-  it('defaults sections to collapsed', () => {
-    expect(isSettingsSectionCollapsed('settings-nostr')).toBe(true);
-    expect(isSettingsSectionCollapsed('settings-backup')).toBe(true);
-    expect(isSettingsSectionCollapsed('settings-evm', get(settingsSectionCollapsed))).toBe(true);
+  it('defaults sections to expanded', () => {
+    expect(isSettingsSectionCollapsed('settings-nostr')).toBe(false);
+    expect(isSettingsSectionCollapsed('settings-backup')).toBe(false);
+    expect(isSettingsSectionCollapsed('settings-evm', get(settingsSectionCollapsed))).toBe(false);
   });
 
-  it('persists expanded state globally', () => {
-    setSettingsSectionCollapsed('settings-nostr', false);
-    expect(get(settingsSectionCollapsed)['settings-nostr']).toBe(false);
-    expect(isSettingsSectionCollapsed('settings-nostr', get(settingsSectionCollapsed))).toBe(false);
+  it('persists collapsed state globally', () => {
+    setSettingsSectionCollapsed('settings-nostr', true);
+    expect(get(settingsSectionCollapsed)['settings-nostr']).toBe(true);
+    expect(isSettingsSectionCollapsed('settings-nostr', get(settingsSectionCollapsed))).toBe(true);
 
     const raw = store.get('pacto_settings_section_collapsed_v1');
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!) as { v: number; sections: Record<string, boolean> };
     expect(parsed.v).toBe(1);
-    expect(parsed.sections['settings-nostr']).toBe(false);
+    expect(parsed.sections['settings-nostr']).toBe(true);
   });
 
-  it('persists collapsed state after expand', () => {
-    setSettingsSectionCollapsed('settings-app', false);
+  it('persists expanded state after collapse', () => {
     setSettingsSectionCollapsed('settings-app', true);
-    expect(isSettingsSectionCollapsed('settings-app', get(settingsSectionCollapsed))).toBe(true);
+    setSettingsSectionCollapsed('settings-app', false);
+    expect(isSettingsSectionCollapsed('settings-app', get(settingsSectionCollapsed))).toBe(false);
   });
 });

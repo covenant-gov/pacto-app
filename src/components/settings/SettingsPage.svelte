@@ -263,10 +263,8 @@
 
   :global(.settings-section) {
     scroll-margin-top: 24px;
-  }
-
-  :global(.settings-section:not(.settings-section--evm)) {
-    max-width: 720px;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   :global(.settings-section-stub) {
@@ -274,10 +272,5 @@
     color: var(--text-muted);
     font-size: 0.9375rem;
     line-height: 1.5;
-  }
-
-  :global(.settings-section--evm) {
-    max-width: none;
-    width: 100%;
   }
 </style>
