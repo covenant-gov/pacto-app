@@ -118,7 +118,6 @@
   bind:open={expanded}
 >
   <summary class="dash-summary">{$t('settings.evmDashGas.title')}</summary>
-  <p class="dash-disclaimer muted">{$t('settings.evmDashGas.disclaimer')}</p>
 
   <div class="dash-toolbar">
     <div class="dash-pool">
@@ -234,9 +233,6 @@
     display: none;
   }
 
-  .dash-disclaimer {
-    margin: 0 0 12px;
-  }
   .dash-toolbar {
     display: flex;
     align-items: flex-start;

@@ -13,8 +13,6 @@
 
 <SettingsCollapsibleSection sectionId="settings-experimental" title={$t('settings.experimental.title')}>
   <div class="experimental-settings">
-    <p class="experimental-intro">{$t('settings.experimental.intro')}</p>
-
     {#if $featureFlags.length === 0}
       <p class="experimental-empty">{$t('settings.experimental.empty')}</p>
     {:else}
@@ -59,7 +57,6 @@
     gap: 16px;
   }
 
-  .experimental-intro,
   .experimental-empty {
     margin: 0;
     font-size: 0.8125rem;

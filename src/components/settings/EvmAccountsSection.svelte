@@ -212,10 +212,6 @@
     </div>
   </div>
 
-  {#if !embeddedInSettings}
-    <p class="wallet-view-hint">{$t('wallet.evmAccountsHint')}</p>
-  {/if}
-
   {#if accountsLoading && displayRows.length === 0}
     <p class="wallet-view-empty">{$t('wallet.loadingAccounts')}</p>
   {:else if displayRows.length === 0}
@@ -396,9 +392,6 @@
   {#if showAdvancedBlock && ($advancedAccountsEnabled || advancedList.length > 0)}
     <div class="evm-advanced-actions">
       <h3 id="wallet-advanced-evm-heading" class="evm-advanced-actions-title">{$t('wallet.advancedEvmAccountsTitle')}</h3>
-      <p class="wallet-view-hint evm-advanced-actions-hint">
-        {$t('wallet.advancedEvmAccountsHint')}
-      </p>
       {#if $advancedAccountsEnabled}
         <div class="wallet-view-account-actions">
           <button
@@ -476,13 +469,6 @@
     font-size: 1.125rem;
     font-weight: 600;
     color: var(--text-primary);
-  }
-
-  .evm-section :global(.wallet-view-hint) {
-    margin: 0 0 12px 0;
-    font-size: 0.875rem;
-    line-height: 1.45;
-    color: var(--text-muted);
   }
 
   .evm-section :global(.wallet-view-empty) {
@@ -881,10 +867,6 @@
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
-  }
-
-  .evm-advanced-actions-hint {
-    margin-bottom: 12px !important;
   }
 
   .evm-advanced-list {

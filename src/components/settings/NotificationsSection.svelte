@@ -216,7 +216,6 @@
           <input type="checkbox" checked={settings.global_mute} disabled={saving} onchange={handleMuteChange} />
           <span>{$t('notifications.muteLabel')}</span>
         </label>
-        <p class="notifications-hint">{$t('notifications.muteHint')}</p>
       </div>
 
       <hr class="notifications-divider" />
@@ -226,7 +225,6 @@
         <p class="permission-state">
           {$t('notifications.permissionStateLabel', { values: { state: permissionStateLabel(permissionState) } })}
         </p>
-        <p class="notifications-hint">{$t('notifications.permissionHint')}</p>
       </div>
 
       {#if error}
@@ -242,7 +240,7 @@
   .notifications-settings {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 16px;
   }
 
   .notifications-loading {
@@ -321,12 +319,6 @@
     color: var(--text-primary);
     font-size: 0.9375rem;
     font-weight: 600;
-  }
-
-  .notifications-hint {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
   }
 
   .notifications-error {

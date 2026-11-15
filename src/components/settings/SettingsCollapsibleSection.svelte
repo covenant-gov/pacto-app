@@ -74,7 +74,7 @@
     border: 1px solid var(--border-subtle);
     background: var(--bg-page);
     overflow: hidden;
-    padding: 24px 28px 28px;
+    padding: 16px 18px 18px;
     box-sizing: border-box;
   }
 

@@ -274,11 +274,6 @@
 
   <div class="nostr-npub-block" aria-labelledby="nostr-npub-heading">
     <h3 id="nostr-npub-heading" class="nostr-settings-subheading">{$t('settings.npubLabel')}</h3>
-    <p class="nostr-npub-note">
-      {$t('settings.npubNotePrefix')}
-      <strong>{$t('settings.accountId')}</strong>
-      {$t('settings.npubNoteSuffix')}
-    </p>
     {#if userNpub}
       <div class="nostr-npub-row">
         <code class="nostr-npub-value">{userNpub}</code>
@@ -313,10 +308,6 @@
       <p class="nostr-settings-muted">{$t('settings.loginToSeeNpub')}</p>
     {/if}
   </div>
-
-  <p class="nostr-settings-lead">
-    {$t('settings.relaysLead', { values: { wss: 'wss://' } })}
-  </p>
 
   <div class="nostr-add-relay" aria-labelledby="nostr-add-relay-heading">
     <h3 id="nostr-add-relay-heading" class="nostr-settings-subheading">{$t('settings.addCustomRelayTitle')}</h3>
@@ -569,21 +560,9 @@
 
 <style>
   .nostr-npub-block {
-    margin-bottom: 28px;
-    padding-bottom: 24px;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
     border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .nostr-npub-note {
-    margin: 0 0 12px 0;
-    color: var(--text-secondary);
-    font-size: 0.9375rem;
-    line-height: 1.45;
-  }
-
-  .nostr-npub-note strong {
-    color: var(--text-primary);
-    font-weight: 600;
   }
 
   .nostr-npub-row {
@@ -591,7 +570,7 @@
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 10px;
-    padding: 12px 14px;
+    padding: 10px 12px;
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
     background: var(--bg-panel);
@@ -646,13 +625,6 @@
     color: var(--text-primary);
   }
 
-  .nostr-settings-lead {
-    margin: 0 0 24px 0;
-    color: var(--text-secondary);
-    font-size: 0.9375rem;
-    line-height: 1.5;
-  }
-
   .nostr-settings-code {
     font-size: 0.875em;
     padding: 0.1em 0.35em;
@@ -662,7 +634,7 @@
   }
 
   .nostr-settings-subheading {
-    margin: 0 0 12px 0;
+    margin: 0 0 10px 0;
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -681,8 +653,8 @@
   }
 
   .nostr-add-relay {
-    margin-bottom: 32px;
-    padding-bottom: 24px;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
     border-bottom: 1px solid var(--border-subtle);
   }
 

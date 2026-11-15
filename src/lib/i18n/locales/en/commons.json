@@ -129,7 +129,6 @@
 	"commons.card.hideToast": "Broadcast hidden. Manage it in Settings → Commons.",
 	"commons.tagBrowser.hideAria": "Hide {title} category",
 	"commons.tagBrowser.hideToast": "{title} hidden. Manage it in Settings → Commons.",
-	"commons.hiddenSection.description": "Broadcasts and categories you've hidden stay hidden until you unhide them here.",
 	"commons.hiddenSection.broadcastsTitle": "Hidden broadcasts",
 	"commons.hiddenSection.categoriesTitle": "Hidden categories",
 	"commons.hiddenSection.emptyBroadcasts": "No hidden broadcasts.",

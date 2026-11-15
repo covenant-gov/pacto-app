@@ -44,8 +44,6 @@
 
 <SettingsCollapsibleSection sectionId="settings-commons" title={$t('settings.commonsSettingsTitle')}>
   <div class="hidden-commons-settings">
-    <p class="hidden-commons-hint">{$t('commons.hiddenSection.description')}</p>
-
     <div class="hidden-commons-group">
       <h3 class="hidden-commons-subheading">{$t('commons.hiddenSection.categoriesTitle')}</h3>
       {#if hiddenCategories.length === 0}
@@ -101,13 +99,7 @@
   .hidden-commons-settings {
     display: flex;
     flex-direction: column;
-    gap: 20px;
-  }
-
-  .hidden-commons-hint {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
+    gap: 16px;
   }
 
   .hidden-commons-group {

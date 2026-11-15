@@ -251,14 +251,14 @@
     min-width: 0;
     min-height: 0;
     overflow-y: auto;
-    padding: 24px 32px 64px;
+    padding: 16px 24px 48px;
     box-sizing: border-box;
   }
 
   .settings-sections {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 16px;
     width: 100%;
   }
 

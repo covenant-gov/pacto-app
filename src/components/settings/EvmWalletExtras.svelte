@@ -270,10 +270,13 @@
     <h2 id="wallet-tokens-heading" class="evm-extras-h2">{$t('settings.tokensToTrackTitle')}</h2>
     <button type="button" class="evm-extras-btn" onclick={onImportTokens}>{$t('settings.importTokensButton')}</button>
   </div>
-  <p class="evm-extras-hint">{$t('settings.trackedTokensHint')}</p>
   <div class="evm-extras-token-filters">
-    <label class="evm-extras-filter-label" for="evm-token-network-select">{$t('wallet.networkLabel')}</label>
-    <select id="evm-token-network-select" class="evm-extras-select" bind:value={tokenNetworkFilter}>
+    <select
+      id="evm-token-network-select"
+      class="evm-extras-select"
+      aria-label={$t('wallet.networkLabel')}
+      bind:value={tokenNetworkFilter}
+    >
       <option value="all">{$t('settings.allNetworksOption')}</option>
       {#each enabledChainIdsOrdered as chainId (chainId)}
         <option value={chainId}>
@@ -305,15 +308,16 @@
   {/if}
 </section>
 
-<section class="evm-extras-section" aria-labelledby="wallet-rpc-heading">
+<section class="evm-extras-section evm-extras-section--last" aria-labelledby="wallet-rpc-heading">
   <h2 id="wallet-rpc-heading" class="evm-extras-h2">{$t('settings.rpcEndpointsTitle')}</h2>
-  <p class="evm-extras-hint">
-    {$t('settings.rpcEndpointsHint')}
-  </p>
 
   <div class="evm-extras-token-filters">
-    <label class="evm-extras-filter-label" for="evm-rpc-network-select">{$t('wallet.networkLabel')}</label>
-    <select id="evm-rpc-network-select" class="evm-extras-select" bind:value={rpcNetworkFilter}>
+    <select
+      id="evm-rpc-network-select"
+      class="evm-extras-select"
+      aria-label={$t('wallet.networkLabel')}
+      bind:value={rpcNetworkFilter}
+    >
       {#each enabledChainIdsOrdered as chainId (chainId)}
         <option value={chainId}>
           {getWalletNetworkDisplayName(chainId)}
@@ -325,13 +329,7 @@
   <div class="evm-extras-rpc-block">
     <h3 class="evm-extras-h3">{$t('settings.personalRpcTitle')}</h3>
     {#if personalRpcs.length === 0}
-      <p class="evm-extras-empty evm-extras-rpc-empty">
-        {$t('settings.noPersonalRpcYet')}
-        <button type="button" class="evm-extras-inline-link" onclick={openAlchemySignup}>
-          {$t('settings.getFreeRpcLink')}
-        </button>
-        {$t('settings.addRpcHint')}
-      </p>
+      <p class="evm-extras-empty">{$t('settings.noPersonalRpcYet')}</p>
     {:else}
       <ul class="evm-extras-rpc-list">
         {#each personalRpcs as url (url)}
@@ -347,7 +345,6 @@
   </div>
 
   <div class="evm-extras-rpc-block">
-    <h3 class="evm-extras-h3">{$t('settings.addRpcTitle')}</h3>
     <div class="evm-extras-rpc-add">
       <input
         id="evm-add-rpc-input"
@@ -355,6 +352,7 @@
         type="url"
         inputmode="url"
         autocomplete="off"
+        aria-label={$t('settings.addRpcTitle')}
         placeholder="https://…"
         bind:value={newRpcUrl}
         onkeydown={(e) => e.key === 'Enter' && submitAddRpc()}
@@ -379,7 +377,6 @@
         <option value={opt.value}>{opt.label}</option>
       {/each}
     </select>
-    <p class="evm-extras-field-hint">{$t('settings.defaultRpcHint')}</p>
   </div>
 
   <div class="evm-extras-rpc-providers">
@@ -395,30 +392,13 @@
         </button>
       </div>
     </div>
-    <p class="evm-extras-field-hint">
-      {$t('settings.rpcProvidersHint')}
-    </p>
-  </div>
-</section>
-
-<section class="evm-extras-section evm-extras-section--last" aria-labelledby="wallet-external-heading">
-  <h2 id="wallet-external-heading" class="evm-extras-h2">{$t('settings.externalWalletTitle')}</h2>
-  <div class="evm-extras-external-copy">
-    <p>
-      {$t('settings.externalWalletParagraph1')}
-    </p>
-    <p>
-      <!-- eslint-disable svelte/no-at-html-tags -->
-      {@html $t('settings.externalWalletParagraph2')}
-      <!-- eslint-enable svelte/no-at-html-tags -->
-    </p>
   </div>
 </section>
 
 <style>
   .evm-extras-section {
-    margin-bottom: 28px;
-    padding-bottom: 24px;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
     border-bottom: 1px solid var(--border-subtle);
   }
 
@@ -434,11 +414,11 @@
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
   }
 
   .evm-extras-h2 {
-    margin: 0 0 8px;
+    margin: 0 0 10px;
     font-size: 1.05rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -448,19 +428,12 @@
     margin-bottom: 0;
   }
 
-  .evm-extras-hint {
-    margin: 0 0 14px;
-    font-size: 0.8125rem;
-    line-height: 1.5;
-    color: var(--text-muted);
-  }
-
   .evm-extras-token-filters {
     display: flex;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
 
   .evm-extras-filter-label {
@@ -499,7 +472,7 @@
   }
 
   .evm-extras-rpc-block {
-    margin-bottom: 18px;
+    margin-bottom: 12px;
   }
 
   .evm-extras-rpc-list {
@@ -526,26 +499,6 @@
     font-size: 0.8125rem;
     color: var(--text-secondary);
     word-break: break-all;
-  }
-
-  .evm-extras-rpc-empty {
-    margin: 0;
-  }
-
-  .evm-extras-inline-link {
-    display: inline;
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--brand);
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: underline;
-  }
-
-  .evm-extras-inline-link:hover {
-    color: var(--brand-hover);
   }
 
   .evm-extras-rpc-add {
@@ -578,16 +531,9 @@
     color: var(--danger);
   }
 
-  .evm-extras-field-hint {
-    margin: 8px 0 0;
-    font-size: 0.8125rem;
-    line-height: 1.45;
-    color: var(--text-muted);
-  }
-
   .evm-extras-rpc-providers {
-    margin-top: 8px;
-    padding-top: 18px;
+    margin-top: 4px;
+    padding-top: 12px;
     border-top: 1px solid var(--border-subtle);
   }
 
@@ -597,7 +543,6 @@
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 6px;
   }
 
   .evm-extras-provider-buttons {
@@ -720,7 +665,7 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 
   .evm-extras-token-row {
@@ -728,7 +673,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 8px 10px;
     background: var(--bg-panel);
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
@@ -781,23 +726,5 @@
     margin: 0;
     font-size: 0.875rem;
     color: var(--text-muted);
-  }
-
-  .evm-extras-external-copy {
-    padding: 16px 18px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-  }
-
-  .evm-extras-external-copy p {
-    margin: 0 0 12px 0;
-    font-size: 0.875rem;
-    line-height: 1.55;
-    color: var(--text-secondary);
-  }
-
-  .evm-extras-external-copy p:last-child {
-    margin-bottom: 0;
   }
 </style>

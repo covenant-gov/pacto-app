@@ -275,9 +275,6 @@
       </h2>
       {#if accountFormMode === 'add'}
         <p class="wallet-view-hint wallet-view-hint-warn">{$t('wallet.advancedAccountWarning')}</p>
-        <p class="wallet-view-hint">{$t('wallet.advancedAccountCreateHint')}</p>
-      {:else}
-        <p class="wallet-view-hint">{$t('wallet.advancedAccountEditHint')}</p>
       {/if}
       <label class="wallet-view-edit-label" for="settings-account-form-name">{$t('wallet.nameLabel')}</label>
       <input
@@ -319,7 +316,6 @@
     <div class="wallet-view-modal" role="dialog" aria-labelledby="import-pk-title" aria-modal="true">
       <h2 id="import-pk-title" class="wallet-view-h2">{$t('wallet.importAdvancedPrivateKey')}</h2>
       <p class="wallet-view-hint wallet-view-hint-warn">{$t('wallet.importedKeyWarning')}</p>
-      <p class="wallet-view-hint">{$t('wallet.importedKeyHint')}</p>
       <textarea
         class="wallet-view-import-textarea"
         rows="3"

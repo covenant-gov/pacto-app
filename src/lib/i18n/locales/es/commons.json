@@ -129,7 +129,6 @@
 	"commons.card.hideToast": "Transmisión oculta. Gestiónala en Ajustes → Comunes.",
 	"commons.tagBrowser.hideAria": "Ocultar categoría {title}",
 	"commons.tagBrowser.hideToast": "{title} oculta. Gestiónala en Ajustes → Comunes.",
-	"commons.hiddenSection.description": "Las transmisiones y categorías que ocultes permanecen ocultas hasta que las muestres de nuevo aquí.",
 	"commons.hiddenSection.broadcastsTitle": "Transmisiones ocultas",
 	"commons.hiddenSection.categoriesTitle": "Categorías ocultas",
 	"commons.hiddenSection.emptyBroadcasts": "No hay transmisiones ocultas.",

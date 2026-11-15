@@ -72,7 +72,6 @@
     />
     <span>{$t('settings.sendTypingIndicatorsLabel')}</span>
   </label>
-  <p class="privacy-toggle-description">{$t('settings.sendTypingIndicatorsDescription')}</p>
 
   <label class="privacy-toggle">
     <input
@@ -82,7 +81,6 @@
     />
     <span>{$t('settings.stripTrackingMarkersLabel')}</span>
   </label>
-  <p class="privacy-toggle-description">{$t('settings.stripTrackingMarkersDescription')}</p>
 
   <label class="privacy-toggle">
     <input
@@ -92,7 +90,6 @@
     />
     <span>{$t('settings.webPreviewsLabel')}</span>
   </label>
-  <p class="privacy-toggle-description">{$t('settings.webPreviewsDescription')}</p>
 
   {#if !$torAvailable}
     <p class="tor-status">{$t('settings.routeTrafficThroughTorUnavailable')}</p>
@@ -116,11 +113,10 @@
     </p>
   {/if}
 
-  <p class="tor-description">
+  <p class="tor-disclaimer">
     <img class="tor-logo" src={torIcon} alt="" />
-    {$t('settings.routeTrafficThroughTorDescription')}
+    {$t('settings.routeTrafficThroughTorDisclaimer')}
   </p>
-  <p class="tor-disclaimer">{$t('settings.routeTrafficThroughTorDisclaimer')}</p>
 
   {#if $torStartupError}
     <p class="tor-error" role="alert">
@@ -155,12 +151,6 @@
     accent-color: var(--brand);
   }
 
-  .privacy-toggle-description {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-  }
-
   .theme-subheading {
     color: var(--text-primary);
     font-size: 1rem;
@@ -193,15 +183,6 @@
     color: var(--text-secondary);
   }
 
-  .tor-description {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-  }
-
   .tor-logo {
     width: 16px;
     height: 16px;
@@ -210,6 +191,9 @@
   }
 
   .tor-disclaimer {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
     margin: 0;
     color: var(--text-muted);
     font-size: 0.75rem;

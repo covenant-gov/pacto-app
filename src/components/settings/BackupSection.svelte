@@ -12,7 +12,6 @@
 </script>
 
 <SettingsCollapsibleSection sectionId="settings-backup" title={$t('settings.backupTitle')}>
-  <p class="backup-lead">{$t('settings.backupLead')}</p>
   <div class="backup-actions">
     <button
       type="button"
@@ -41,13 +40,6 @@
 <ExportAllSecretsModal open={exportAllModalOpen} onClose={() => (exportAllModalOpen = false)} />
 
 <style>
-  .backup-lead {
-    margin: 0 0 16px;
-    color: var(--text-muted);
-    font-size: 0.9375rem;
-    line-height: 1.5;
-  }
-
   .backup-actions {
     display: flex;
     gap: 12px;
