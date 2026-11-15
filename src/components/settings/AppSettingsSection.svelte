@@ -456,6 +456,7 @@
   }
 
   .security-timeout-field {
+    flex: 0 0 auto;
     max-width: 280px;
   }
 
