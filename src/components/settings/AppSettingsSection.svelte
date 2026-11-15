@@ -164,8 +164,7 @@
   <div class="app-settings">
     <div class="language-section" aria-labelledby="language-heading">
       <h3 id="language-heading" class="theme-subheading">{$t('settings.languageTitle')}</h3>
-      <span class="theme-label">{$t('settings.displayLanguageLabel')}</span>
-      <div class="theme-options" role="radiogroup" aria-label={$t('settings.displayLanguageLabel')}>
+      <div class="theme-options" role="radiogroup" aria-labelledby="language-heading">
         {#each LOCALE_OPTIONS as opt (opt.value)}
           <label class="theme-option">
             <input
@@ -185,8 +184,7 @@
 
     <div class="theme-section" aria-labelledby="theme-heading">
       <h3 id="theme-heading" class="theme-subheading">{$t('settings.appearanceTitle')}</h3>
-      <span class="theme-label">{$t('settings.themeLabel')}</span>
-      <div class="theme-options" role="radiogroup" aria-label={$t('settings.themeLabel')}>
+      <div class="theme-options" role="radiogroup" aria-labelledby="theme-heading">
         {#each THEME_OPTIONS as opt (opt.value)}
           <label class="theme-option">
             <input
@@ -351,13 +349,6 @@
     font-size: 1rem;
     font-weight: 600;
     margin: 0 0 8px 0;
-  }
-
-  .theme-label {
-    display: block;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-bottom: 8px;
   }
 
   .theme-options {

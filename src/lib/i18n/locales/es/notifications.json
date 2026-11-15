@@ -5,7 +5,6 @@
 	"notifications.saveError": "No se pudieron guardar los ajustes de notificaciones.",
 	"notifications.previewError": "No se pudo escuchar ese sonido.",
 	"notifications.soundSectionTitle": "Sonido",
-	"notifications.soundLabel": "Sonido de notificación",
 	"notifications.soundOptionDefault": "Prélude (predeterminado)",
 	"notifications.soundOptionTechno": "Techno ping",
 	"notifications.soundOptionNone": "Silencioso",

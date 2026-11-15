@@ -1,6 +1,5 @@
 {
 	"wallet.defaultEvmAccountTitle": "Cuenta EVM predeterminada",
-	"wallet.preferredNetworkHint": "Red predeterminada para los filtros de la billetera.",
 	"wallet.preferredNetworkLabel": "Red preferida",
 	"wallet.signerLabel": "Firmante",
 	"wallet.receiverLabel": "Receptor",

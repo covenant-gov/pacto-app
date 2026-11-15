@@ -6,7 +6,6 @@
 	"notifications.previewError": "Could not preview that sound.",
 
 	"notifications.soundSectionTitle": "Sound",
-	"notifications.soundLabel": "Notification sound",
 	"notifications.soundOptionDefault": "Prélude (default)",
 	"notifications.soundOptionTechno": "Techno ping",
 	"notifications.soundOptionNone": "Silent",

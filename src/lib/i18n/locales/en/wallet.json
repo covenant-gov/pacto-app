@@ -1,6 +1,5 @@
 {
 	"wallet.defaultEvmAccountTitle": "Default EVM account",
-	"wallet.preferredNetworkHint": "Default network for wallet filters.",
 	"wallet.preferredNetworkLabel": "Preferred network",
 	"wallet.signerLabel": "Signer",
 	"wallet.receiverLabel": "Receiver",

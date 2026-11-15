@@ -192,11 +192,10 @@
 
 <section class="evm-extras-section" aria-labelledby="wallet-preferred-network-heading">
   <h2 id="wallet-preferred-network-heading" class="evm-extras-h2">{$t('wallet.preferredNetworkLabel')}</h2>
-  <p class="evm-extras-hint">{$t('wallet.preferredNetworkHint')}</p>
-  <label class="evm-extras-filter-label" for="wallet-preferred-network-select">{$t('wallet.preferredNetworkLabel')}</label>
   <select
     id="wallet-preferred-network-select"
     class="evm-extras-select"
+    aria-labelledby="wallet-preferred-network-heading"
     value={preferredNetwork}
     disabled={!accountNpub}
     onchange={onPreferredNetworkChange}

@@ -151,8 +151,7 @@
     {:else if settings}
       <div class="sound-section" aria-labelledby="notif-sound-heading">
         <h3 id="notif-sound-heading" class="theme-subheading">{$t('notifications.soundSectionTitle')}</h3>
-        <span class="theme-label">{$t('notifications.soundLabel')}</span>
-        <div class="sound-options" role="radiogroup" aria-label={$t('notifications.soundLabel')}>
+        <div class="sound-options" role="radiogroup" aria-labelledby="notif-sound-heading">
           {#each BUILT_IN_NOTIFICATION_SOUNDS as opt (opt.type)}
             <div class="sound-option-row">
               <label class="theme-option">
@@ -257,13 +256,6 @@
     font-size: 1rem;
     font-weight: 600;
     margin: 0 0 8px 0;
-  }
-
-  .theme-label {
-    display: block;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-bottom: 8px;
   }
 
   .sound-options {

@@ -69,9 +69,7 @@
 
 	"settings.appSettingsTitle": "App settings",
 	"settings.languageTitle": "Language",
-	"settings.displayLanguageLabel": "Display language",
 	"settings.appearanceTitle": "Appearance",
-	"settings.themeLabel": "Theme",
 	"settings.theme.techno": "Techno Light",
 	"settings.theme.darkTechno": "Techno Dark",
 	"settings.theme.union": "Union",
