@@ -6,7 +6,6 @@ use std::sync::Mutex;
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, B256, U256};
 use alloy::providers::Provider;
-use nostr_sdk::nips::nip06::FromMnemonic;
 use nostr_sdk::prelude::Keys;
 use once_cell::sync::Lazy;
 use tauri::{AppHandle, Runtime};
@@ -178,17 +177,26 @@ pub fn parse_b256(raw: &str) -> Result<B256, String> {
     Ok(B256::from_slice(&bytes))
 }
 
+/// Decrypts the stored nsec with the session key for this call only. Fails when the session is locked.
 pub async fn load_nostr_keys<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<Keys, String> {
-    let phrase = crate::ensure_session_mnemonic(app).await.map_err(|e| {
-        wallet_err_json("NO_MNEMONIC", e, None)
-    })?;
-    Keys::from_mnemonic(phrase, None).map_err(|e| {
-        wallet_err_json(
-            "NOSTR_KEYS",
-            format!("could not derive Nostr keys: {e}"),
-            None,
-        )
-    })
+    let key = crate::current_encryption_key()
+        .map(zeroize::Zeroizing::new)
+        .ok_or_else(|| wallet_err_json("SESSION_LOCKED", "session is locked", None))?;
+    let encrypted = db::get_pkey(app)
+        .map_err(|e| wallet_err_json("DB_ERROR", e, None))?
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| {
+            wallet_err_json("NO_NOSTR_KEY", "no stored Nostr key for this account", None)
+        })?;
+    nostr_keys_from_pkey(&encrypted, &key)
+}
+
+fn nostr_keys_from_pkey(encrypted: &str, key: &[u8; 32]) -> Result<Keys, String> {
+    let nsec = crate::crypto::decrypt_with_key(encrypted, key)
+        .map(zeroize::Zeroizing::new)
+        .map_err(|()| wallet_err_json("NOSTR_KEYS", "could not decrypt stored Nostr key", None))?;
+    Keys::parse(nsec.as_str())
+        .map_err(|e| wallet_err_json("NOSTR_KEYS", format!("invalid stored Nostr key: {e}"), None))
 }
 
 pub fn nostr_xonly_pubkey(keys: &Keys) -> Result<B256, String> {
@@ -616,5 +624,58 @@ mod tests {
         ));
         clear_link_restore_failure(hash);
         assert_eq!(link_restore_last_failure(hash), None);
+    }
+
+    fn encrypted_nsec(keys: &Keys, key: &[u8; 32]) -> String {
+        use nostr_sdk::prelude::ToBech32;
+        let nsec = keys.secret_key().to_bech32().unwrap();
+        crate::crypto::encrypt_with_key(&nsec, key)
+    }
+
+    #[test]
+    fn nostr_keys_from_pkey_round_trips() {
+        let keys = Keys::generate();
+        let key = [3u8; 32];
+        let loaded = nostr_keys_from_pkey(&encrypted_nsec(&keys, &key), &key).unwrap();
+        assert_eq!(loaded.public_key(), keys.public_key());
+    }
+
+    #[test]
+    fn nostr_keys_from_pkey_rejects_wrong_key_and_garbage() {
+        let keys = Keys::generate();
+        let encrypted = encrypted_nsec(&keys, &[3u8; 32]);
+        assert!(nostr_keys_from_pkey(&encrypted, &[4u8; 32]).is_err());
+        assert!(nostr_keys_from_pkey("not-hex", &[3u8; 32]).is_err());
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn load_nostr_keys_needs_unlocked_session_and_stores_nothing() {
+        use crate::session::test_support::{
+            close_test_account, open_test_account, GLOBAL_STATE_LOCK,
+        };
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        let npub = "npub1usernamekeysfrompkeytest";
+        let app = open_test_account(npub);
+        let keys = Keys::generate();
+        let session_key = [9u8; 32];
+        let conn = crate::account_manager::get_db_connection(app.handle()).unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('pkey', ?1)",
+            rusqlite::params![encrypted_nsec(&keys, &session_key)],
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+        crate::clear_encryption_key();
+
+        let locked = load_nostr_keys(app.handle().clone()).await.unwrap_err();
+        assert!(locked.contains("SESSION_LOCKED"), "{locked}");
+
+        crate::set_encryption_key(session_key);
+        let loaded = load_nostr_keys(app.handle().clone()).await.unwrap();
+        assert_eq!(loaded.public_key(), keys.public_key());
+        assert_eq!(crate::mnemonic_seed_get(), None);
+
+        close_test_account(&app, npub);
     }
 }

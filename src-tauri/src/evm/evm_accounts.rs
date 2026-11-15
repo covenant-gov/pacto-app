@@ -301,7 +301,7 @@ fn count_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<i64, String> {
 
 pub(crate) async fn get_mnemonic_for_hd<R: Runtime>(
     handle: AppHandle<R>,
-) -> Result<String, String> {
+) -> Result<zeroize::Zeroizing<String>, String> {
     crate::ensure_session_mnemonic(handle).await
 }
 

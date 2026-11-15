@@ -205,96 +205,40 @@ pub use session::{
     check_session, clear_encryption_key, current_encryption_key, heartbeat, session_heartbeat,
     set_encryption_key, set_timeout_ms, SESSION_MANAGER,
 };
-// Session copy of the recovery phrase. Create and import set it directly.
-// Unlock restores it from the encrypted `settings.seed` row. Logout clears it.
-/// Phrase plus an epoch bumped on every set/clear, so an async load can detect a logout or replace.
-#[derive(Default)]
-struct MnemonicSlot {
-    phrase: Option<String>,
-    epoch: u64,
-}
-
-impl MnemonicSlot {
-    fn set(&mut self, phrase: String) {
-        self.phrase = Some(phrase);
-        self.epoch = self.epoch.wrapping_add(1);
-    }
-
-    fn clear(&mut self) {
-        self.phrase = None;
-        self.epoch = self.epoch.wrapping_add(1);
-    }
-
-    /// Stores `phrase` only when the slot is unchanged since `epoch` was read.
-    fn set_if_epoch(&mut self, epoch: u64, phrase: String) -> bool {
-        if self.epoch != epoch {
-            return false;
-        }
-        self.set(phrase);
-        true
-    }
-}
-
+// Recovery phrase set by create/import for this session. Cleared on lock and logout; never restored on unlock.
 lazy_static! {
-    static ref MNEMONIC_SEED: std::sync::Mutex<MnemonicSlot> =
-        std::sync::Mutex::new(MnemonicSlot::default());
+    static ref MNEMONIC_SEED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 }
 
 fn mnemonic_seed_set(phrase: String) {
-    MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned").set(phrase);
+    *MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned") = Some(phrase);
 }
 
-fn mnemonic_seed_clear() {
-    MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned").clear();
+pub(crate) fn mnemonic_seed_clear() {
+    *MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned") = None;
 }
 
 pub(crate) fn mnemonic_seed_get() -> Option<String> {
     MNEMONIC_SEED
         .lock()
         .expect("mnemonic mutex poisoned")
-        .phrase
         .clone()
 }
 
-fn mnemonic_seed_epoch() -> u64 {
-    MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned").epoch
-}
-
-fn mnemonic_seed_set_if_epoch(epoch: u64, phrase: String) -> bool {
-    MNEMONIC_SEED
-        .lock()
-        .expect("mnemonic mutex poisoned")
-        .set_if_epoch(epoch, phrase)
-}
-
-/// In-memory phrase, or the phrase stored at PIN setup. Caches a successful disk read for the rest of the session.
+/// Recovery phrase for this call: the in-session copy, else the encrypted `settings.seed` row. Requires an unlocked session and never caches a disk read.
 pub(crate) async fn ensure_session_mnemonic<R: tauri::Runtime>(
     handle: AppHandle<R>,
-) -> Result<String, String> {
-    if let Some(phrase) = mnemonic_seed_get() {
-        return Ok(phrase);
-    }
-    let epoch = mnemonic_seed_epoch();
-    let phrase = db::get_seed(handle).await?.ok_or_else(|| {
-        "No recovery phrase is stored for this account".to_string()
-    })?;
-    if !mnemonic_seed_set_if_epoch(epoch, phrase.clone()) {
-        return Err("Session changed while loading the recovery phrase".to_string());
-    }
-    Ok(phrase)
-}
-
-/// Fill the session phrase after the encryption key is available. A missing row is logged; callers that need the phrase still fail in `ensure_session_mnemonic`.
-pub(crate) async fn restore_session_mnemonic_if_unlocked() {
+) -> Result<zeroize::Zeroizing<String>, String> {
     if current_encryption_key().is_none() {
-        return;
+        return Err("Session is locked".to_string());
     }
-    let Some(handle) = TAURI_APP.get() else {
-        return;
-    };
-    if let Err(e) = ensure_session_mnemonic(handle.clone()).await {
-        eprintln!("[Login] recovery phrase not restored: {e}");
+    if let Some(phrase) = mnemonic_seed_get() {
+        return Ok(zeroize::Zeroizing::new(phrase));
     }
+    db::get_seed(handle)
+        .await?
+        .map(zeroize::Zeroizing::new)
+        .ok_or_else(|| "No recovery phrase is stored for this account".to_string())
 }
 
 // Replaceable Nostr client (cleared on logout so create_account/login can set a new one without restart).
@@ -1829,41 +1773,64 @@ pub fn run() {
 }
 
 #[cfg(test)]
-mod mnemonic_slot_tests {
-    use super::MnemonicSlot;
+mod session_phrase_tests {
+    use super::{
+        clear_encryption_key, ensure_session_mnemonic, mnemonic_seed_clear, mnemonic_seed_get,
+        mnemonic_seed_set, set_encryption_key,
+    };
+    use crate::session::test_support::{close_test_account, open_test_account, GLOBAL_STATE_LOCK};
 
-    #[test]
-    fn set_if_epoch_stores_when_unchanged() {
-        let mut slot = MnemonicSlot::default();
-        let epoch = slot.epoch;
-        assert!(slot.set_if_epoch(epoch, "phrase".into()));
-        assert_eq!(slot.phrase.as_deref(), Some("phrase"));
+    const PHRASE: &str =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn disk_read_is_not_cached_in_the_session() {
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        let npub = "npub1sessionphrasenocachetest";
+        let app = open_test_account(npub);
+        set_encryption_key([9u8; 32]);
+        mnemonic_seed_clear();
+        crate::db::set_seed(app.handle().clone(), PHRASE.to_string())
+            .await
+            .unwrap();
+
+        let phrase = ensure_session_mnemonic(app.handle().clone()).await.unwrap();
+
+        assert_eq!(phrase.as_str(), PHRASE);
+        assert_eq!(mnemonic_seed_get(), None);
+        close_test_account(&app, npub);
     }
 
-    #[test]
-    fn clear_between_read_and_set_rejects_cache() {
-        let mut slot = MnemonicSlot::default();
-        slot.set("old".into());
-        let epoch = slot.epoch;
-        slot.clear();
-        assert!(!slot.set_if_epoch(epoch, "old".into()));
-        assert_eq!(slot.phrase, None);
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn in_session_phrase_is_returned_while_unlocked() {
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        let npub = "npub1sessionphraseinmemorytest";
+        let app = open_test_account(npub);
+        set_encryption_key([9u8; 32]);
+        mnemonic_seed_set("in session phrase".to_string());
+
+        let phrase = ensure_session_mnemonic(app.handle().clone()).await.unwrap();
+
+        assert_eq!(phrase.as_str(), "in session phrase");
+        close_test_account(&app, npub);
     }
 
-    #[test]
-    fn replace_between_read_and_set_rejects_cache() {
-        let mut slot = MnemonicSlot::default();
-        let epoch = slot.epoch;
-        slot.set("new".into());
-        assert!(!slot.set_if_epoch(epoch, "stale".into()));
-        assert_eq!(slot.phrase.as_deref(), Some("new"));
-    }
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn locked_session_is_rejected_even_with_a_phrase_in_memory() {
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        let npub = "npub1sessionphraselockedtest";
+        let app = open_test_account(npub);
+        clear_encryption_key();
+        mnemonic_seed_set("in session phrase".to_string());
 
-    #[test]
-    fn clear_wipes_phrase() {
-        let mut slot = MnemonicSlot::default();
-        slot.set("p".into());
-        slot.clear();
-        assert_eq!(slot.phrase, None);
+        let err = ensure_session_mnemonic(app.handle().clone())
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("locked"), "{err}");
+        close_test_account(&app, npub);
     }
 }
