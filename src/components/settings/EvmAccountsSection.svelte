@@ -13,6 +13,7 @@
   import type { Squad } from '../../stores/squads';
   import {
     evmAccountSchemeLabel,
+    formatHdIndexLabel,
     squadEvmAccounts,
     advancedEvmAccounts,
     type EvmAccountRow,
@@ -214,7 +215,7 @@
                 <div class="evm-account-badges">
                   <span class="wallet-view-account-scheme">{$t(evmAccountSchemeLabel(acc.scheme))}</span>
                   {#if acc.hdIndex != null}
-                    <span class="wallet-view-account-idx">#{acc.hdIndex}</span>
+                    <span class="wallet-view-account-idx">{formatHdIndexLabel(acc.hdIndex)}</span>
                   {/if}
                   {#if acc.label?.trim()}
                     <span class="wallet-view-account-name">{acc.label.trim()}</span>
@@ -300,7 +301,7 @@
               <span class="wallet-view-account-meta">
                 <span class="wallet-view-account-scheme">{$t(evmAccountSchemeLabel(acc.scheme))}</span>
                 {#if acc.hdIndex != null}
-                  <span class="wallet-view-account-idx">#{acc.hdIndex}</span>
+                  <span class="wallet-view-account-idx">{formatHdIndexLabel(acc.hdIndex)}</span>
                 {/if}
                 {#if acc.label?.trim()}
                   <span class="wallet-view-account-name">· {acc.label.trim()}</span>

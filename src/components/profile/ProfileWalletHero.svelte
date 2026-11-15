@@ -44,14 +44,46 @@
   );
 
   let selectedAccountId = $state('');
+  let accountMenuOpen = $state(false);
+
   $effect(() => {
     const ids = new Set(squadAccounts.map((a) => a.id));
     if (selectedAccountId && ids.has(selectedAccountId)) return;
     selectedAccountId = defaultAccount?.id ?? '';
   });
 
+  $effect(() => {
+    if (!accountMenuOpen) return;
+    function onDocPointer(e: PointerEvent) {
+      const root = document.getElementById('profile-wallet-account-picker');
+      if (root && e.target instanceof Node && root.contains(e.target)) return;
+      accountMenuOpen = false;
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') accountMenuOpen = false;
+    }
+    document.addEventListener('pointerdown', onDocPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDocPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  });
+
   const viewedAccount = $derived(squadAccounts.find((a) => a.id === selectedAccountId) ?? defaultAccount);
   const viewedAddress = $derived(viewedAccount?.address?.trim() || null);
+  const viewedBadge = $derived.by(() => {
+    if (!viewedAccount) return '';
+    if (viewedAccount.isDefaultShared) return tFn('wallet.receiverBadge');
+    if (viewedAccount.isActive) return tFn('wallet.signerBadge');
+    return viewedAccount.label?.trim() || '';
+  });
+  const canSwitchAccount = $derived(squadAccounts.length > 1);
+
+  function selectAccount(id: string) {
+    selectedAccountId = id;
+    accountMenuOpen = false;
+  }
 
   let enabledSet = $state(new Set<SupportedChainId>());
   $effect(() => {
@@ -60,7 +92,45 @@
     enabledSet = new Set(loadWalletEnabledChains(accountNpub));
   });
   const enabledChainsOrdered = $derived(WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id)));
+  const networkDropdownChainIds = $derived(enabledChainsOrdered);
   const watchedRows = $derived(loadWatchedErc20Rows(accountNpub));
+
+  /** `all` = every enabled chain; otherwise one `SupportedChainId`. */
+  let networkFilter: 'all' | SupportedChainId = $state('all');
+
+  function networkFilterStorageKey(npub: string): string {
+    return `pacto_profile_wallet_network_filter_${npub}`;
+  }
+
+  function parseNetworkFilter(raw: string | null): 'all' | SupportedChainId {
+    if (!raw || raw === 'all') return 'all';
+    if (WALLET_ASSETS_CHAIN_IDS.includes(raw as SupportedChainId)) return raw as SupportedChainId;
+    return 'all';
+  }
+
+  function loadNetworkFilter(npub: string) {
+    if (typeof localStorage === 'undefined') return;
+    networkFilter = parseNetworkFilter(localStorage.getItem(networkFilterStorageKey(npub)));
+  }
+
+  function saveNetworkFilter() {
+    if (typeof localStorage === 'undefined' || !accountNpub) return;
+    localStorage.setItem(networkFilterStorageKey(accountNpub), networkFilter);
+  }
+
+  $effect(() => {
+    if (!accountNpub) {
+      networkFilter = 'all';
+      return;
+    }
+    loadNetworkFilter(accountNpub);
+  });
+
+  $effect(() => {
+    if (networkFilter === 'all' || enabledSet.has(networkFilter)) return;
+    networkFilter = 'all';
+    saveNetworkFilter();
+  });
 
   let summary = $state<WalletSummary | null>(null);
   let summaryError = $state<string | null>(null);
@@ -100,13 +170,29 @@
     void refreshSummary();
   });
 
-  const networksForBalance = $derived(
-    (summary?.networks ?? []).filter((n) => enabledSet.has(n.network as SupportedChainId)),
-  );
+  function networksForBalanceList(
+    s: WalletSummary | null,
+    filter: 'all' | SupportedChainId,
+    enabled: Set<SupportedChainId>,
+  ): WalletSummaryNetwork[] {
+    if (!s) return [];
+    const nets = s.networks.filter((n) => enabled.has(n.network as SupportedChainId));
+    return nets.filter((n) => (filter === 'all' ? true : n.network === filter));
+  }
+
+  const networksForBalance = $derived(networksForBalanceList(summary, networkFilter, enabledSet));
   const pricing = $derived.by(() => {
     if (!summary) return { status: 'unavailable' as const, total: null as number | null };
-    const status = pricingStatusForNetworks(networksForBalance) ?? summary.usdPricingStatus;
-    const total = status === 'unavailable' ? null : (sumPricedUsd(networksForBalance) ?? summary.totalUsdApprox);
+    if (networkFilter === 'all') {
+      const status = summary.usdPricingStatus ?? 'unavailable';
+      let total = status === 'unavailable' ? null : summary.totalUsdApprox;
+      if (total == null && status !== 'unavailable') {
+        total = sumPricedUsd(networksForBalance);
+      }
+      return { status, total };
+    }
+    const status = pricingStatusForNetworks(networksForBalance) ?? 'unavailable';
+    const total = status === 'unavailable' ? null : sumPricedUsd(networksForBalance);
     return { status, total };
   });
 
@@ -153,20 +239,53 @@
     />
   </div>
 
-  {#if squadAccounts.length > 0}
-    <label class="wallet-hero-label" for="profile-wallet-account">{$t('wallet.selectAccount')}</label>
-    <select id="profile-wallet-account" class="wallet-hero-select" bind:value={selectedAccountId}>
-      {#each squadAccounts as acc (acc.id)}
-        <option value={acc.id}>{accountLabel(acc)}</option>
-      {/each}
-    </select>
-  {/if}
-
   {#if viewedAddress}
-    <p class="wallet-hero-address">
-      <span>{$t('wallet.viewingAccount')}</span>
-      <code>{viewedAddress}</code>
-    </p>
+    <div id="profile-wallet-account-picker" class="wallet-hero-account">
+      <p class="wallet-hero-account-selected">
+        <code class="wallet-hero-account-address" title={viewedAddress}>{viewedAddress}</code>
+        {#if viewedBadge}
+          <span class="wallet-hero-account-badge">· {viewedBadge}</span>
+        {/if}
+      </p>
+      {#if canSwitchAccount}
+        <div class="wallet-hero-account-menu-wrap">
+          <button
+            type="button"
+            class="wallet-hero-account-chevron"
+            aria-haspopup="menu"
+            aria-expanded={accountMenuOpen}
+            aria-label={$t('wallet.switchAccountAria')}
+            title={$t('wallet.switchAccountAria')}
+            onclick={() => (accountMenuOpen = !accountMenuOpen)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M6 9L12 15L18 9"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          {#if accountMenuOpen}
+            <div class="wallet-hero-account-menu" role="menu">
+              {#each squadAccounts as acc (acc.id)}
+                <button
+                  type="button"
+                  class="wallet-hero-account-menu-item"
+                  class:wallet-hero-account-menu-item--active={acc.id === selectedAccountId}
+                  role="menuitem"
+                  onclick={() => selectAccount(acc.id)}
+                >
+                  {accountLabel(acc)}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
   {/if}
 
   <div class="wallet-hero-actions">
@@ -190,6 +309,22 @@
     {#if summaryError}
       <p class="wallet-hero-stale" role="status">{$t('wallet.couldNotRefreshBalances')} {summaryError}</p>
     {/if}
+    <div class="wallet-hero-filters">
+      <label class="wallet-hero-label wallet-hero-label--flush" for="profile-wallet-network-select"
+        >{$t('wallet.networkLabel')}</label
+      >
+      <select
+        id="profile-wallet-network-select"
+        class="wallet-hero-select"
+        bind:value={networkFilter}
+        onchange={saveNetworkFilter}
+      >
+        <option value="all">{$t('wallet.allEnabledNetworks')}</option>
+        {#each networkDropdownChainIds as chainId (chainId)}
+          <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
+        {/each}
+      </select>
+    </div>
     <p class="wallet-hero-total">
       {#if pricing.status === 'unavailable' || pricing.total == null}
         {$t('wallet.totalUsdUnavailable')}
@@ -208,7 +343,9 @@
       <ul class="wallet-hero-nets">
         {#each networksForBalance as net (net.network)}
           <li class="wallet-hero-net">
-            <span class="wallet-hero-net-name">{getWalletNetworkDisplayName(net.network as SupportedChainId)}</span>
+            {#if networkFilter === 'all'}
+              <span class="wallet-hero-net-name">{getWalletNetworkDisplayName(net.network as SupportedChainId)}</span>
+            {/if}
             {#if net.error}
               <p class="wallet-hero-net-error" title={net.error}>{networkErrorMessage(net)}</p>
             {:else}
@@ -270,6 +407,14 @@
     color: var(--text-secondary);
   }
 
+  .wallet-hero-label--flush {
+    margin-top: 0;
+  }
+
+  .wallet-hero-filters {
+    margin-top: 14px;
+  }
+
   .wallet-hero-select {
     width: 100%;
     max-width: 420px;
@@ -281,17 +426,99 @@
     font: inherit;
   }
 
-  .wallet-hero-address {
-    margin: 10px 0 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
+  .wallet-hero-account {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 12px;
+    min-width: 0;
   }
 
-  .wallet-hero-address code {
-    display: block;
-    margin-top: 4px;
-    word-break: break-all;
+  .wallet-hero-account-selected {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    font-size: 0.875rem;
+    line-height: 1.4;
     color: var(--text-secondary);
+  }
+
+  .wallet-hero-account-address {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.8125rem;
+    word-break: break-all;
+    color: var(--text-primary);
+  }
+
+  .wallet-hero-account-badge {
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .wallet-hero-account-menu-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .wallet-hero-account-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .wallet-hero-account-chevron:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .wallet-hero-account-chevron:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
+  }
+
+  .wallet-hero-account-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 20;
+    min-width: 220px;
+    max-width: min(360px, 80vw);
+    padding: 4px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
+  }
+
+  .wallet-hero-account-menu-item {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.8125rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .wallet-hero-account-menu-item:hover {
+    background: var(--bg-hover);
+  }
+
+  .wallet-hero-account-menu-item--active {
+    color: var(--brand);
   }
 
   .wallet-hero-actions {

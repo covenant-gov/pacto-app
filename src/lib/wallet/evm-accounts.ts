@@ -38,6 +38,16 @@ export function advancedEvmAccounts(rows: EvmAccountRow[] | null | undefined): E
   return rows?.filter(isAdvancedPurposeAccount) ?? [];
 }
 
+/** BIP44 account index is 0-based in storage; UI ordinals start at 1. */
+export function displayHdIndex(hdIndex: number): number {
+  return hdIndex + 1;
+}
+
+/** User-facing `#n` for a derived account (1-based). */
+export function formatHdIndexLabel(hdIndex: number): string {
+  return `#${displayHdIndex(hdIndex)}`;
+}
+
 /** Translation key for the account scheme shown in UI. */
 export function evmAccountSchemeLabel(scheme: string): string {
   if (scheme === 'bip44_v1') return 'wallet.accountScheme.derived';

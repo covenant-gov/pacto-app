@@ -4,6 +4,7 @@
 
   const tFn = get(t);
   import {
+    formatHdIndexLabel,
     setActiveEvmAccount,
     setDefaultSharedEvmAccount,
     type EvmAccountRow,
@@ -84,7 +85,7 @@
   function accountOptionLabel(acc: EvmAccountRow): string {
     const parts: string[] = [shortAddr(acc.address)];
     if (acc.label?.trim()) parts.push(acc.label.trim());
-    if (acc.hdIndex != null) parts.push(`#${acc.hdIndex}`);
+    if (acc.hdIndex != null) parts.push(formatHdIndexLabel(acc.hdIndex));
     return parts.join(' · ');
   }
 </script>
