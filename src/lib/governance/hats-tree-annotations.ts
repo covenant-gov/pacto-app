@@ -7,10 +7,15 @@ import { hatIdToHex, prettyHatId } from './pretty-hat-id';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 
-export function shortEvmAddress(addr: string): string {
-  const a = addr.trim();
+/** Short display for an npub or `0x` address. Copy actions still use the full value. */
+export function shortPublicKey(value: string): string {
+  const a = value.trim();
   if (a.length < 16) return a;
   return `${a.slice(0, 8)}…${a.slice(-6)}`;
+}
+
+export function shortEvmAddress(addr: string): string {
+  return shortPublicKey(addr);
 }
 
 /** Pacto Gov module addresses that may wear role hats (not just squad roster EOAs). */

@@ -4,5 +4,7 @@
 	"ui.refresh": "Actualizar",
 	"ui.info": "Información",
 	"ui.moreActions": "Más acciones",
-	"ui.copy": "Copiar"
+	"ui.copy": "Copiar",
+	"ui.copied": "Copiado",
+	"ui.couldNotCopy": "No se pudo copiar"
 }

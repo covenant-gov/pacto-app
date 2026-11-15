@@ -28,6 +28,9 @@ const LOCAL_SHORT_ADDR_RE = /\bfunction\s+shortAddr\b/g;
 const FORBIDDEN_KEBAB_CLASS_RE =
 	/\b(?:evm-account-menu-trigger|more-menu-trigger|kebab-trigger)\b/g;
 
+/** Public keys use CopyableKeyPill, which owns CopyIconButton. */
+const BARE_COPY_BUTTON_RE = /\bimport\s+CopyIconButton\b/g;
+
 function walk(dir, out) {
 	let entries;
 	try {
@@ -67,6 +70,7 @@ function findHits(filePath) {
 		...collect(content, HINT_CLASS_RE, 'hint class (use InfoTip or *-empty / *-muted)'),
 		...collect(content, LOCAL_SHORT_ADDR_RE, 'local shortAddr (use shortEvmAddress)'),
 		...collect(content, FORBIDDEN_KEBAB_CLASS_RE, 'inline kebab trigger (use MoreActionsMenu)'),
+		...collect(content, BARE_COPY_BUTTON_RE, 'bare CopyIconButton (use CopyableKeyPill)'),
 	];
 }
 

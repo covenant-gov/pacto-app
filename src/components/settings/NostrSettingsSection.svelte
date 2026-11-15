@@ -35,25 +35,13 @@
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
-  import CopyIconButton from '../ui/CopyIconButton.svelte';
+  import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import SettingsSubheading from './SettingsSubheading.svelte';
 
   let userNpub = $derived($currentUser?.npub ?? '');
 
-  let copiedNpub = $state(false);
   let exportModalOpen = $state(false);
   let addRelayModalOpen = $state(false);
-
-  async function copyNpub() {
-    if (!userNpub) return;
-    try {
-      await navigator.clipboard.writeText(userNpub);
-      copiedNpub = true;
-      setTimeout(() => (copiedNpub = false), 2000);
-    } catch (_) {
-      showToast($t('settings.toast.couldNotCopyNpub'));
-    }
-  }
 
   let relays: RelayInfo[] = $state([]);
   let loading = $state(true);
@@ -299,12 +287,7 @@
     <SettingsSubheading id="nostr-npub-heading">{$t('settings.npubLabel')}</SettingsSubheading>
     {#if userNpub}
       <div class="nostr-npub-row">
-        <code class="nostr-npub-value">{userNpub}</code>
-        <CopyIconButton
-          ariaLabel={copiedNpub ? $t('settings.copied') : $t('settings.copyNpub')}
-          title={copiedNpub ? $t('settings.copied') : $t('settings.copy')}
-          onclick={() => void copyNpub()}
-        />
+        <CopyableKeyPill value={userNpub} ariaLabel={$t('settings.copyNpub')} />
         <MoreActionsMenu
           ariaLabel={$t('settings.npubActionsMenu')}
           items={[
@@ -598,20 +581,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--bg-panel);
-  }
-
-  .nostr-npub-value {
-    flex: 1;
-    min-width: 0;
-    font-size: 0.875rem;
-    line-height: 1.45;
-    word-break: break-all;
-    color: var(--text-primary);
+    gap: 8px;
   }
 
   .nostr-settings-code {

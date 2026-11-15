@@ -16,11 +16,9 @@
     squadEvmAccounts,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
-  import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
-  import { showToast } from '../../stores/toast';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
-  import CopyIconButton from '../ui/CopyIconButton.svelte';
+  import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   interface Props {
@@ -82,13 +80,6 @@
     return `${t.slice(0, 10)}…${t.slice(-8)}`;
   }
 
-  async function copyAddress(address: string) {
-    const t = address.trim();
-    if (!t) return;
-    const ok = await copyTextToClipboard(t);
-    showToast(ok ? tFn('wallet.copyAddress') : tFn('wallet.couldNotCopyHash'));
-  }
-
   function squadForParentId(parentId: string): Squad | undefined {
     const pid = parentId.trim();
     return $squads.find(
@@ -147,15 +138,14 @@
       {@const name = accountName(acc)}
       <li class="wallet-view-account-row evm-account-row">
           <div class="evm-account-primary">
-            <p class="evm-account-name">{name}</p>
-            <code class="evm-account-address-short" title={acc.address}>{shortEvmAddress(acc.address)}</code>
-            <CopyIconButton
-              size={28}
-              disabled={accountsLoading || !acc.address?.trim()}
-              ariaLabel={$t('wallet.copyAddressToClipboard')}
-              title={acc.address}
-              onclick={() => void copyAddress(acc.address)}
-            />
+            <div class="evm-account-identity">
+              <p class="evm-account-name">{name}</p>
+              <CopyableKeyPill
+                value={acc.address}
+                disabled={accountsLoading || !acc.address?.trim()}
+                ariaLabel={$t('wallet.copyAddressToClipboard')}
+              />
+            </div>
             <MoreActionsMenu
               disabled={accountsLoading}
               ariaLabel={$t('wallet.accountActionsMenu')}
@@ -375,38 +365,31 @@
 
   .evm-account-primary {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    justify-content: space-between;
     gap: 10px;
+    min-width: 0;
+  }
+
+  .evm-account-identity {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
     min-width: 0;
   }
 
   .evm-account-name {
     margin: 0;
-    flex: 0 1 auto;
     min-width: 0;
-    font-size: 1rem;
+    max-width: 100%;
+    font-size: 1.0625rem;
     font-weight: 600;
     line-height: 1.3;
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .evm-account-address-short {
-    flex: 0 1 auto;
-    min-width: 0;
-    margin-right: auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 6px 10px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 999px;
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.8125rem;
   }
 
   .evm-account-squad-block {

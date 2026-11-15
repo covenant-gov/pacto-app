@@ -9,7 +9,7 @@
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
   import EditIconButton from '../ui/EditIconButton.svelte';
-  import CopyIconButton from '../ui/CopyIconButton.svelte';
+  import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import AvatarPicker from '../ui/AvatarPicker.svelte';
   import ProfileUsernameBlock from './ProfileUsernameBlock.svelte';
 
@@ -32,8 +32,6 @@
   let editAvatarUrl = $state('');
   let saveError: string | null = $state(null);
   let savingProfile = $state(false);
-
-  let copiedNpub = $state(false);
 
   // Load profile whenever the logged-in user's npub changes
   $effect(() => {
@@ -233,22 +231,7 @@
 
             <div class="profile-account-id">
               <span class="profile-account-id-label">{$t('profile.accountIdLabel')}</span>
-              <div class="profile-account-id-row">
-                <code class="profile-account-id-value">{profile.id}</code>
-                <CopyIconButton
-                  ariaLabel={copiedNpub ? $t('profile.copied') : $t('profile.copyAccountId')}
-                  title={copiedNpub ? $t('profile.copied') : $t('profile.copy')}
-                  onclick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(profile?.id ?? '');
-                      copiedNpub = true;
-                      setTimeout(() => (copiedNpub = false), 2000);
-                    } catch (_) {
-                      // clipboard write may fail silently
-                    }
-                  }}
-                />
-              </div>
+              <CopyableKeyPill value={profile.id} ariaLabel={$t('profile.copyAccountId')} />
             </div>
           {/if}
         </div>
@@ -404,36 +387,17 @@
   }
 
   .profile-account-id {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
     margin-top: 20px;
-    padding: 14px 16px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    background: var(--bg-panel);
   }
 
   .profile-account-id-label {
-    display: block;
-    margin-bottom: 8px;
     font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-primary);
-    letter-spacing: 0.02em;
-  }
-
-  .profile-account-id-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .profile-account-id-value {
-    flex: 1;
-    min-width: 0;
-    font-size: 0.875rem;
-    line-height: 1.45;
-    word-break: break-all;
-    color: var(--text-secondary);
   }
 
   .edit-error {

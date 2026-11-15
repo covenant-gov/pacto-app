@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { pactoNftCatalog } from '../../lib/wallet/pacto-nft-catalog';
   import { getWalletNetworkDisplayName } from '../../lib/wallet/assets';
@@ -9,9 +8,8 @@
     hasPendingUsernameTransfer,
     usernameState,
   } from '../../stores/username';
-  import { showToast } from '../../stores/toast';
   import UsernameAddressRotateModal from './UsernameAddressRotateModal.svelte';
-  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
+  import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
 
   const catalog = pactoNftCatalog(USERNAME_NETWORK);
   const usernameEntry = $derived(catalog.find((row) => row.kind === 'username') ?? null);
@@ -22,19 +20,6 @@
   const pending = $derived($hasPendingUsernameTransfer);
 
   let rotateOpen = $state(false);
-  let copied = $state(false);
-
-  async function copyBoundAddress() {
-    if (!boundAddress) return;
-    try {
-      await navigator.clipboard.writeText(boundAddress);
-      copied = true;
-      showToast(get(t)('profile.copied'));
-      setTimeout(() => (copied = false), 2000);
-    } catch {
-      /* ignore */
-    }
-  }
 </script>
 
 <section class="nft-strip" aria-labelledby="profile-nfts-heading">
@@ -51,17 +36,10 @@
             · {getWalletNetworkDisplayName(usernameEntry.network)}
           </p>
           {#if boundAddress}
-            <button
-              type="button"
-              class="nft-card-bound"
-              onclick={() => void copyBoundAddress()}
-              title={boundAddress}
-              aria-label={$t('profile.nfts.copyBoundEvm')}
-            >
+            <div class="nft-card-bound">
               <span class="nft-card-bound-label">{$t('profile.username.boundEvm')}</span>
-              <code>{shortEvmAddress(boundAddress)}</code>
-              <span class="nft-card-bound-status">{copied ? $t('profile.copied') : $t('profile.copy')}</span>
-            </button>
+              <CopyableKeyPill value={boundAddress} ariaLabel={$t('profile.nfts.copyBoundEvm')} />
+            </div>
           {/if}
           {#if pending}
             <p class="nft-card-pending" role="status">{$t('profile.username.pendingTransfer')}</p>
@@ -158,41 +136,14 @@
 
   .nft-card-bound {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 6px;
     margin: 2px 0 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    text-align: left;
-    cursor: pointer;
-    font: inherit;
-    color: var(--text-secondary);
-  }
-
-  .nft-card-bound:hover .nft-card-bound-status {
-    color: var(--text-primary);
-  }
-
-  .nft-card-bound:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-    border-radius: 4px;
   }
 
   .nft-card-bound-label {
     font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .nft-card-bound code {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .nft-card-bound-status {
-    font-size: 0.6875rem;
     color: var(--text-muted);
   }
 

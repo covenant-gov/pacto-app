@@ -73,9 +73,10 @@ Some Profile blocks still live under `src/components/settings/` (`ProfileSection
 | Overflow / secondary row actions | `MoreActionsMenu` (⋮), even for a single item |
 | Tips / disclaimers / trademark | `InfoTip` — never an always-visible hint paragraph under a toggle or heading |
 | Refresh / Edit | `RefreshIconButton` / `EditIconButton` (icon-only) |
-| Copy to clipboard | `CopyIconButton` |
+| Public key (npub or `0x`) | `CopyableKeyPill` — label or account name above; shortened key and copy control inside one pill. Copy writes the full value. Hover `title` is the full key. |
+| Copy icon (inside that pill) | `CopyIconButton` — do not place a second copy control beside a raw key |
 | Crypto amounts | `formatAssetAmount` (`src/lib/evm/format-token-amount.ts`) — 6 display decimals |
-| Short `0x` display | `shortEvmAddress` (`src/lib/governance/hats-tree-annotations.ts`) |
+| Short key text | `shortPublicKey` (`src/lib/governance/hats-tree-annotations.ts`); `shortEvmAddress` is the same cut for `0x` |
 
 ### Modal rule
 

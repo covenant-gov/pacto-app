@@ -2,7 +2,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
-  import CopyIconButton from '../ui/CopyIconButton.svelte';
+  import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import WalletHomeSendModal from '../wallet/WalletHomeSendModal.svelte';
   import WalletReceiveModal from '../wallet/WalletReceiveModal.svelte';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -27,7 +27,6 @@
     squadEvmAccounts,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
-  import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   const tFn = get(t);
@@ -76,8 +75,6 @@
   const viewedAddress = $derived(viewedAccount?.address?.trim() || null);
   const viewedAccountName = $derived(accountDisplayName(viewedAccount, viewedAddress));
   const canSwitchAccount = $derived(squadAccounts.length > 1);
-  let addressCopied = $state(false);
-
   function accountDisplayName(acc: EvmAccountRow | null | undefined, address: string | null): string {
     const label = acc?.label?.trim();
     if (label) return label;
@@ -88,18 +85,6 @@
   function selectAccount(id: string) {
     selectedAccountId = id;
     accountMenuOpen = false;
-  }
-
-  async function copyViewedAddress() {
-    if (!viewedAddress) return;
-    const ok = await copyTextToClipboard(viewedAddress);
-    if (!ok) {
-      showToast(tFn('wallet.couldNotCopyHash'));
-      return;
-    }
-    addressCopied = true;
-    showToast(tFn('wallet.copyAddress'));
-    setTimeout(() => (addressCopied = false), 2000);
   }
 
   let enabledSet = $state(new Set<SupportedChainId>());
@@ -300,15 +285,7 @@
           <span class="wallet-hero-account-name">{viewedAccountName}</span>
         {/if}
       </div>
-      <div class="wallet-hero-account-address-pill">
-        <code class="wallet-hero-account-address" title={viewedAddress}>{shortEvmAddress(viewedAddress)}</code>
-        <CopyIconButton
-          size={28}
-          ariaLabel={$t('wallet.copyAddressToClipboard')}
-          title={addressCopied ? $t('wallet.copied') : $t('wallet.copyAddress')}
-          onclick={() => void copyViewedAddress()}
-        />
-      </div>
+      <CopyableKeyPill value={viewedAddress} ariaLabel={$t('wallet.copyAddressToClipboard')} />
     </div>
   {/if}
 
@@ -484,23 +461,6 @@
     align-items: center;
     justify-content: center;
     color: var(--text-muted);
-  }
-
-  .wallet-hero-account-address-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    max-width: 100%;
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
-  }
-
-  .wallet-hero-account-address {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
   }
 
   .wallet-hero-account-menu {
