@@ -1,7 +1,6 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
-  import { getEvmAddress } from '../../lib/api/auth';
   import { currentUser } from '../../stores/auth-session';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
@@ -17,25 +16,18 @@
   import { appConfig } from '../../stores/app-config';
   import SettingsFormModal from '../settings/SettingsFormModal.svelte';
 
-  const tFn = get(t);
-
   interface Props {
     evmAccountList?: EvmAccountRow[];
-    accountsLoading?: boolean;
-    onRefresh?: () => void | Promise<void>;
   }
 
-  let {
-    evmAccountList = $bindable([]),
-    accountsLoading = $bindable(false),
-    onRefresh = () => {},
-  }: Props = $props();
+  let { evmAccountList = $bindable([]) }: Props = $props();
 
   const accountNpub = $derived($currentUser?.npub ?? null);
   const walletAccountLabelMaxLength = $derived($appConfig.walletAccountLabelMaxLength);
   const squadAccountList = $derived(squadEvmAccounts(evmAccountList));
+  const evmAddress = $derived(squadAccountList.find((a) => a.isActive)?.address?.trim() || null);
 
-  let evmAddress: string | null = $state(null);
+  let accountsLoading = $state(false);
   let accountFormMode: 'add' | 'edit' | null = $state(null);
   let accountFormEditId: string | null = $state(null);
   let accountFormLabel = $state('');
@@ -58,24 +50,9 @@
     }
   }
 
-  async function refreshEvmAddress() {
-    if (!accountNpub) {
-      evmAddress = null;
-      return;
-    }
-    try {
-      const a = await getEvmAddress();
-      evmAddress = a?.trim() || null;
-    } catch {
-      evmAddress = null;
-    }
-    await loadEvmAccountsList();
-    await onRefresh();
-  }
-
   $effect(() => {
     void accountNpub;
-    void refreshEvmAddress();
+    void loadEvmAccountsList();
   });
 
   function resetAccountFormFields() {
@@ -102,6 +79,7 @@
 
   async function submitAccountForm() {
     if (!accountNpub || accountFormBusy || !accountFormMode) return;
+    const tr = get(t);
     const mode = accountFormMode;
     const editId = accountFormEditId;
     if (mode === 'edit' && !editId) return;
@@ -114,7 +92,7 @@
           setDefaultShared: false,
           purpose: 'squad',
         });
-        showToast(get(t)('wallet.accountAdded'));
+        showToast(tr('wallet.accountAdded'));
       } else if (editId) {
         const existing = evmAccountList.find((a) => a.id === editId);
         await updateEvmAccountRow({
@@ -123,14 +101,14 @@
           setActiveSigner: existing?.isActive ?? false,
           setDefaultShared: existing?.isDefaultShared ?? false,
         });
-        showToast(tFn('wallet.accountUpdated'));
+        showToast(tr('wallet.accountUpdated'));
       }
       accountFormMode = null;
       resetAccountFormFields();
-      await refreshEvmAddress();
+      await loadEvmAccountsList();
     } catch (e) {
       showToast(
-        getInvokeErrorMessage(e, mode === 'add' ? tFn('wallet.couldNotAddAccount') : tFn('wallet.couldNotUpdateAccount')),
+        getInvokeErrorMessage(e, mode === 'add' ? tr('wallet.couldNotAddAccount') : tr('wallet.couldNotUpdateAccount')),
       );
     } finally {
       accountFormBusy = false;
@@ -144,7 +122,7 @@
     accountNpub={accountNpub}
     squadAccounts={squadAccountList}
     accountsLoading={accountsLoading}
-    onSaved={refreshEvmAddress}
+    onSaved={loadEvmAccountsList}
   />
 
   <EvmAccountsSection

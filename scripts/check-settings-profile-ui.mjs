@@ -31,6 +31,9 @@ const FORBIDDEN_KEBAB_CLASS_RE =
 /** Public keys use CopyableKeyPill, which owns CopyIconButton. */
 const BARE_COPY_BUTTON_RE = /\bimport\s+CopyIconButton\b/g;
 
+/** Hand-rolled outside-click close. Use DropdownMenu. */
+const OUTSIDE_POINTER_RE = /addEventListener\(\s*['"]pointerdown['"]/g;
+
 function walk(dir, out) {
 	let entries;
 	try {
@@ -71,6 +74,7 @@ function findHits(filePath) {
 		...collect(content, LOCAL_SHORT_ADDR_RE, 'local shortAddr (use shortEvmAddress)'),
 		...collect(content, FORBIDDEN_KEBAB_CLASS_RE, 'inline kebab trigger (use MoreActionsMenu)'),
 		...collect(content, BARE_COPY_BUTTON_RE, 'bare CopyIconButton (use CopyableKeyPill)'),
+		...collect(content, OUTSIDE_POINTER_RE, 'hand-rolled outside-click (use DropdownMenu)'),
 	];
 }
 

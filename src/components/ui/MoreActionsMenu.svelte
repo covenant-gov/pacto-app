@@ -1,4 +1,6 @@
 <script lang="ts">
+  import DropdownMenu from './DropdownMenu.svelte';
+
   export type MoreActionsItem = {
     id: string;
     label: string;
@@ -19,82 +21,49 @@
     items: MoreActionsItem[];
     className?: string;
   } = $props();
-
-  let open = $state(false);
-  let wrapEl: HTMLDivElement | null = $state(null);
-  const menuId = $derived(`more-actions-menu-${ariaLabel.replace(/\s+/g, '-').toLowerCase()}`);
-
-  function toggle() {
-    if (disabled) return;
-    open = !open;
-  }
-
-  function close() {
-    open = false;
-  }
-
-  function selectItem(item: MoreActionsItem) {
-    if (item.disabled) return;
-    close();
-    item.onSelect();
-  }
-
-  $effect(() => {
-    if (!open) return;
-    function onPointer(e: PointerEvent) {
-      if (wrapEl && e.target instanceof Node && wrapEl.contains(e.target)) return;
-      open = false;
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') open = false;
-    }
-    document.addEventListener('pointerdown', onPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  });
 </script>
 
-<div class="more-actions {className}" bind:this={wrapEl}>
-  <button
-    type="button"
-    class="more-actions-trigger"
-    {disabled}
-    aria-haspopup="menu"
-    aria-expanded={open}
-    aria-controls={open ? menuId : undefined}
-    aria-label={ariaLabel}
-    title={title ?? ariaLabel}
-    onclick={toggle}
-  >
-    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-      <circle cx="12" cy="5" r="1.75" />
-      <circle cx="12" cy="12" r="1.75" />
-      <circle cx="12" cy="19" r="1.75" />
-    </svg>
-  </button>
-  {#if open}
-    <div id={menuId} class="more-actions-menu" role="menu">
-      {#each items as item (item.id)}
-        <button
-          type="button"
-          class="more-actions-item"
-          role="menuitem"
-          disabled={item.disabled}
-          onclick={() => selectItem(item)}
-        >
-          {item.label}
-        </button>
-      {/each}
-    </div>
-  {/if}
-</div>
+<DropdownMenu class="more-actions {className}" align="end" panelClass="ui-dropdown-panel--list" {disabled}>
+  {#snippet trigger({ open, toggle, menuId })}
+    <button
+      type="button"
+      class="more-actions-trigger"
+      {disabled}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-controls={open ? menuId : undefined}
+      aria-label={ariaLabel}
+      title={title ?? ariaLabel}
+      onclick={toggle}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+        <circle cx="12" cy="5" r="1.75" />
+        <circle cx="12" cy="12" r="1.75" />
+        <circle cx="12" cy="19" r="1.75" />
+      </svg>
+    </button>
+  {/snippet}
+  {#snippet children({ close })}
+    {#each items as item (item.id)}
+      <button
+        type="button"
+        class="ui-dropdown-item"
+        role="menuitem"
+        disabled={item.disabled}
+        onclick={() => {
+          if (item.disabled) return;
+          close();
+          item.onSelect();
+        }}
+      >
+        {item.label}
+      </button>
+    {/each}
+  {/snippet}
+</DropdownMenu>
 
 <style>
-  .more-actions {
-    position: relative;
+  :global(.more-actions) {
     flex-shrink: 0;
   }
 
@@ -123,43 +92,6 @@
   }
 
   .more-actions-trigger:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .more-actions-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 20;
-    min-width: 160px;
-    padding: 4px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--bg-elevated);
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
-  }
-
-  .more-actions-item {
-    display: block;
-    width: 100%;
-    margin: 0;
-    padding: 8px 10px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-primary);
-    font: inherit;
-    font-size: 0.8125rem;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .more-actions-item:hover:not(:disabled) {
-    background: var(--bg-hover);
-  }
-
-  .more-actions-item:disabled {
     opacity: 0.55;
     cursor: not-allowed;
   }

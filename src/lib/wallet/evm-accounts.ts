@@ -3,6 +3,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { shortEvmAddress } from '../governance/hats-tree-annotations';
 
 export type EvmAccountPurpose = 'squad' | 'advanced';
 
@@ -36,6 +37,18 @@ export function squadEvmAccounts(rows: EvmAccountRow[] | null | undefined): EvmA
 
 export function advancedEvmAccounts(rows: EvmAccountRow[] | null | undefined): EvmAccountRow[] {
   return rows?.filter(isAdvancedPurposeAccount) ?? [];
+}
+
+/** Label when set, else the shortened address. */
+export function evmAccountDisplayName(row: Pick<EvmAccountRow, 'label' | 'address'>): string {
+  return row.label?.trim() || shortEvmAddress(row.address ?? '');
+}
+
+/** `name · 0x12…ab` for pickers; the bare short address when the row has no label. */
+export function evmAccountOptionLabel(row: Pick<EvmAccountRow, 'label' | 'address'>): string {
+  const short = shortEvmAddress(row.address ?? '');
+  const name = evmAccountDisplayName(row);
+  return name === short ? short : `${name} · ${short}`;
 }
 
 /** BIP44 account index is 0-based in storage; UI ordinals start at 1. */

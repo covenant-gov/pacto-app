@@ -12,6 +12,7 @@
   import { squads } from '../../stores/app';
   import type { Squad } from '../../stores/squads';
   import {
+    evmAccountDisplayName,
     isSeedDerivedEvmAccount,
     squadEvmAccounts,
     type EvmAccountRow,
@@ -19,8 +20,6 @@
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
   import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
-  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
-
   interface Props {
     accountNpub?: string | null;
     evmAddress?: string | null;
@@ -95,10 +94,6 @@
     return bindingMap.get(acc.id) ?? [];
   }
 
-  function accountName(acc: EvmAccountRow): string {
-    return acc.label?.trim() || shortEvmAddress(acc.address);
-  }
-
   function openExportModal(acc: EvmAccountRow) {
     exportAccount = acc;
     exportModalOpen = true;
@@ -135,7 +130,7 @@
   {:else}
     {#snippet accountRow(acc: EvmAccountRow)}
       {@const linkedSquads = squadBindingsFor(acc)}
-      {@const name = accountName(acc)}
+      {@const name = evmAccountDisplayName(acc)}
       <li class="wallet-view-account-row evm-account-row">
           <div class="evm-account-primary">
             <div class="evm-account-identity">

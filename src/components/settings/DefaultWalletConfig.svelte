@@ -6,6 +6,7 @@
   import {
     setActiveEvmAccount,
     setDefaultSharedEvmAccount,
+    evmAccountOptionLabel,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -81,11 +82,6 @@
     }
   }
 
-  function accountOptionLabel(acc: EvmAccountRow): string {
-    const parts: string[] = [shortEvmAddress(acc.address)];
-    if (acc.label?.trim()) parts.push(acc.label.trim());
-    return parts.join(' · ');
-  }
 </script>
 
 <section class="dwc" aria-labelledby="wallet-default-evm-heading">
@@ -138,7 +134,7 @@
           disabled={saving || squadAccounts.length === 0}
         >
           {#each squadAccounts as acc (acc.id)}
-            <option value={acc.id}>{accountOptionLabel(acc)}</option>
+            <option value={acc.id}>{evmAccountOptionLabel(acc)}</option>
           {/each}
         </select>
       </label>
@@ -151,7 +147,7 @@
           disabled={saving || squadAccounts.length === 0}
         >
           {#each squadAccounts as acc (acc.id)}
-            <option value={acc.id}>{accountOptionLabel(acc)}</option>
+            <option value={acc.id}>{evmAccountOptionLabel(acc)}</option>
           {/each}
         </select>
       </label>

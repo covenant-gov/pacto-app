@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
-  import { WALLET_ASSETS_CHAIN_IDS, WALLET_CHAIN_GROUPS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
+  import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import {
     DEFAULT_PREFERRED_NETWORK,
@@ -26,6 +26,7 @@
   import { showToast } from '../../stores/toast';
   import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
   import SettingsFormModal from './SettingsFormModal.svelte';
+  import EnabledChainsMenu from './EnabledChainsMenu.svelte';
 
   const tFn = get(t);
 
@@ -65,30 +66,8 @@
   let newRpcUrl = $state('');
   let addRpcError: string | null = $state(null);
   let addRpcModalOpen = $state(false);
-  let enabledChainsMenuOpen = $state(false);
 
   let enabledChainIdsOrdered = $derived(WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id)));
-  let enabledChainsSummary = $derived(
-    enabledChainIdsOrdered.map((id) => getWalletNetworkDisplayName(id)).join(', '),
-  );
-
-  $effect(() => {
-    if (!enabledChainsMenuOpen) return;
-    function onDocPointer(e: PointerEvent) {
-      const root = document.getElementById('evm-enabled-chains-menu');
-      if (root && e.target instanceof Node && root.contains(e.target)) return;
-      enabledChainsMenuOpen = false;
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') enabledChainsMenuOpen = false;
-    }
-    document.addEventListener('pointerdown', onDocPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDocPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  });
 
   $effect(() => {
     void $walletPreferredNetworkTick;
@@ -223,61 +202,7 @@
     </div>
     <div class="ui-field">
       <span class="ui-field-label" id="wallet-networks-heading">{$t('settings.enabledChainsTitle')}</span>
-      <div id="evm-enabled-chains-menu" class="ui-select-menu">
-        <button
-          type="button"
-          id="evm-enabled-chains-trigger"
-          class="ui-select"
-          aria-haspopup="listbox"
-          aria-expanded={enabledChainsMenuOpen}
-          aria-labelledby="wallet-networks-heading"
-          onclick={() => (enabledChainsMenuOpen = !enabledChainsMenuOpen)}
-        >
-          <span class="ui-select-summary">
-            {enabledChainsSummary || $t('settings.noEnabledChains')}
-          </span>
-          <svg
-            class="ui-select-chevron"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            fill="none"
-          >
-            <path
-              d="M6 9L12 15L18 9"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-        {#if enabledChainsMenuOpen}
-          <div class="ui-select-panel" role="listbox" aria-multiselectable="true">
-            {#each WALLET_CHAIN_GROUPS as group (group.id)}
-              <div class="evm-extras-chain-group">
-                <h3 class="evm-extras-chain-group-label">{$t(group.label)}</h3>
-                <ul class="evm-extras-toggle-list">
-                  {#each group.chains as chain (chain)}
-                    <li>
-                      <label class="evm-extras-toggle">
-                        <input
-                          type="checkbox"
-                          checked={enabledSet.has(chain)}
-                          disabled={enabledSet.has(chain) && enabledSet.size <= 1}
-                          onchange={() => onToggleChain(chain)}
-                        />
-                        <span>{getWalletNetworkDisplayName(chain)}</span>
-                      </label>
-                    </li>
-                  {/each}
-                </ul>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
+      <EnabledChainsMenu {enabledSet} labelledBy="wallet-networks-heading" {onToggleChain} />
     </div>
   </div>
 </section>
@@ -540,37 +465,6 @@
   .evm-extras-provider-sep {
     color: var(--text-muted);
     font-size: 0.875rem;
-  }
-
-  .evm-extras-chain-group-label {
-    margin: 0 0 8px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
-  .evm-extras-toggle-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .evm-extras-toggle {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    font-size: 0.9375rem;
-    color: var(--text-primary);
-  }
-
-  .evm-extras-toggle input {
-    accent-color: var(--brand);
   }
 
   .evm-extras-btn {

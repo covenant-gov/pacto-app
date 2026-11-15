@@ -19,7 +19,6 @@
     WALLET_ASSETS_CHAIN_IDS,
     watchedRowsToWire,
     loadWatchedErc20Rows,
-    defaultWatchedErc20Rows,
     type WalletSummary,
     type WalletSummaryNetwork,
     type WalletSummaryAsset,
@@ -27,10 +26,16 @@
     type WatchedErc20Row,
     getMatchingCachedSummary,
     persistWalletSummaryCache,
-    sumPricedUsd,
-    pricingStatusForNetworks,
   } from '../../lib/wallet';
   import { loadWalletEnabledChains, walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
+  import {
+    WALLET_BAR_NETWORK_FILTER_PREFIX,
+    coerceNetworkFilter,
+    loadNetworkFilter,
+    saveNetworkFilter,
+    type NetworkFilter,
+  } from '../../lib/wallet/network-filter';
+  import { networkErrorMessage, networksForBalanceList, summaryPricing } from '../../lib/wallet/wallet-summary-view';
   import { showToast } from '../../stores/toast';
   import {
     walletSendPrefillFromRequest,
@@ -79,26 +84,7 @@
   let summaryError: string | null = $state(null);
   let summary: WalletSummary | null = $state(null);
 
-  const STORAGE_NETWORK = 'pacto_wallet_bar_network_filter';
-
-  /** `all` = every chain; otherwise one `SupportedChainId`. */
-  let networkFilter: 'all' | SupportedChainId = $state('all');
-
-  function parseNetworkFilter(raw: string | null): 'all' | SupportedChainId {
-    if (!raw || raw === 'all') return 'all';
-    if (WALLET_ASSETS_CHAIN_IDS.includes(raw as SupportedChainId)) return raw as SupportedChainId;
-    return 'all';
-  }
-
-  function loadWalletBarPrefs() {
-    if (typeof localStorage === 'undefined') return;
-    networkFilter = parseNetworkFilter(localStorage.getItem(STORAGE_NETWORK));
-  }
-
-  function saveNetworkFilter() {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(STORAGE_NETWORK, networkFilter);
-  }
+  let networkFilter: NetworkFilter = $state('all');
 
   /** Logged-in account: watched ERC-20 list is keyed by this npub. */
   const accountNpub = $derived($currentUser?.npub ?? null);
@@ -173,9 +159,7 @@
   }
 
   function reloadWatchedRows() {
-    watchedErc20Rows = accountNpub
-      ? loadWatchedErc20Rows(accountNpub)
-      : defaultWatchedErc20Rows();
+    watchedErc20Rows = loadWatchedErc20Rows(accountNpub);
   }
 
   $effect(() => {
@@ -185,35 +169,19 @@
 
   const enabledChainSet = $derived.by(() => {
     void $walletUiEnabledChainsTick;
-    return new Set(
-      accountNpub ? loadWalletEnabledChains(accountNpub) : [...WALLET_ASSETS_CHAIN_IDS]
-    );
+    return new Set(loadWalletEnabledChains(accountNpub));
   });
 
   /** If the stored filter points at a chain the user disabled in Wallet view, fall back to "all". */
   $effect(() => {
-    if (networkFilter === 'all' || enabledChainSet.has(networkFilter)) return;
-    networkFilter = 'all';
-    saveNetworkFilter();
+    const next = coerceNetworkFilter(networkFilter, enabledChainSet);
+    if (next === networkFilter) return;
+    networkFilter = next;
+    saveNetworkFilter(WALLET_BAR_NETWORK_FILTER_PREFIX, next);
   });
-
-  function networksForBalanceList(
-    s: WalletSummary | null,
-    filter: 'all' | SupportedChainId,
-    enabled: Set<SupportedChainId>
-  ): WalletSummaryNetwork[] {
-    if (!s) return [];
-    const nets = s.networks.filter((n) => enabled.has(n.network as SupportedChainId));
-    return nets.filter((n) => (filter === 'all' ? true : n.network === filter));
-  }
 
   const networksForBalance = $derived(networksForBalanceList(summary, networkFilter, enabledChainSet));
 
-  /** Friendly per-network read failure copy (raw RPC text stays off the primary line). */
-  function networkErrorMessage(net: WalletSummaryNetwork): string {
-    if (net.network === 'local') return tFn('wallet.anvilNotDetected');
-    return tFn('wallet.couldNotReachNetwork', { values: { network: getWalletNetworkDisplayName(net.network as SupportedChainId) } });
-  }
 
   /**
    * Network dropdown matches Wallet settings toggles (enabled chains), not only chains that appear
@@ -224,19 +192,7 @@
   );
 
   /** Total USD for listed networks only (matches toggles in Wallet view). */
-  const barPricing = $derived.by(() => {
-    if (networkFilter === 'all' && summary) {
-      const status = summary.usdPricingStatus ?? 'unavailable';
-      let total = status === 'unavailable' ? null : summary.totalUsdApprox;
-      if (total == null && status !== 'unavailable') {
-        total = sumPricedUsd(networksForBalance);
-      }
-      return { status, total };
-    }
-    const status = pricingStatusForNetworks(networksForBalance);
-    const total = status === 'unavailable' ? null : sumPricedUsd(networksForBalance);
-    return { status, total };
-  });
+  const barPricing = $derived(summaryPricing(summary, networkFilter, networksForBalance));
   const barPricingStatus = $derived(barPricing.status);
   const barTotalUsdApprox = $derived(barPricing.total);
 
@@ -275,7 +231,7 @@
   }
 
   onMount(() => {
-    loadWalletBarPrefs();
+    networkFilter = loadNetworkFilter(WALLET_BAR_NETWORK_FILTER_PREFIX);
     refreshSummary();
     const unsub = walletSendPrefillFromRequest.subscribe((v: WalletSendPrefillPayload | null) => {
       if (!v || v.targetNpub !== npub) return;
@@ -353,7 +309,7 @@
           id="wallet-bar-network-select"
           class="wallet-bar-select"
           bind:value={networkFilter}
-          onchange={saveNetworkFilter}
+          onchange={() => saveNetworkFilter(WALLET_BAR_NETWORK_FILTER_PREFIX, networkFilter)}
         >
           <option value="all">{$t('wallet.allEnabledNetworks')}</option>
           {#each networkDropdownChainIds as chainId (chainId)}

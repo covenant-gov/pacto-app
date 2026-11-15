@@ -1,29 +1,37 @@
 <script lang="ts">
-  import { get } from 'svelte/store';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import WalletHomeSendModal from '../wallet/WalletHomeSendModal.svelte';
   import WalletReceiveModal from '../wallet/WalletReceiveModal.svelte';
+  import AccountPicker from './AccountPicker.svelte';
   import { formatAssetAmount } from '../../lib/evm/format-token-amount';
   import {
     getWalletSummary,
     getWalletNetworkDisplayName,
     WALLET_ASSETS_CHAIN_IDS,
     watchedRowsToWire,
-    loadWatchedErc20Rows,
     type WalletSummary,
-    type WalletSummaryNetwork,
     type WalletSummaryAsset,
     type SupportedChainId,
-    sumPricedUsd,
-    pricingStatusForNetworks,
   } from '../../lib/wallet';
-  import { loadWalletEnabledChains, walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
+  import { walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
+  import { loadWalletViewPrefs } from '../../lib/wallet/wallet-view-prefs';
   import { squadEvmAccounts, type EvmAccountRow } from '../../lib/wallet/evm-accounts';
-  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
-
-  const tFn = get(t);
+  import {
+    PROFILE_NETWORK_FILTER_PREFIX,
+    coerceNetworkFilter,
+    loadNetworkFilter,
+    saveNetworkFilter,
+    type NetworkFilter,
+  } from '../../lib/wallet/network-filter';
+  import {
+    networkErrorMessage,
+    networksForBalanceList,
+    summaryPricing,
+    walletSummaryFetchKey,
+  } from '../../lib/wallet/wallet-summary-view';
 
   interface Props {
     accountNpub: string;
@@ -38,7 +46,6 @@
   );
 
   let selectedAccountId = $state('');
-  let accountMenuOpen = $state(false);
 
   $effect(() => {
     const ids = new Set(squadAccounts.map((a) => a.id));
@@ -46,85 +53,33 @@
     selectedAccountId = defaultAccount?.id ?? '';
   });
 
-  $effect(() => {
-    if (!accountMenuOpen) return;
-    function onDocPointer(e: PointerEvent) {
-      const root = document.getElementById('profile-wallet-account-picker');
-      if (root && e.target instanceof Node && root.contains(e.target)) return;
-      accountMenuOpen = false;
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') accountMenuOpen = false;
-    }
-    document.addEventListener('pointerdown', onDocPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDocPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  });
-
   const viewedAccount = $derived(squadAccounts.find((a) => a.id === selectedAccountId) ?? defaultAccount);
   const viewedAddress = $derived(viewedAccount?.address?.trim() || null);
-  const viewedAccountName = $derived(accountDisplayName(viewedAccount, viewedAddress));
-  const canSwitchAccount = $derived(squadAccounts.length > 1);
-  function accountDisplayName(acc: EvmAccountRow | null | undefined, address: string | null): string {
-    const label = acc?.label?.trim();
-    if (label) return label;
-    if (address) return shortEvmAddress(address);
-    return '';
-  }
 
   function selectAccount(id: string) {
     selectedAccountId = id;
-    accountMenuOpen = false;
   }
 
-  let enabledSet = $state(new Set<SupportedChainId>());
+  const prefs = $derived.by(() => {
+    void $walletUiEnabledChainsTick;
+    return loadWalletViewPrefs(accountNpub);
+  });
+  const enabledSet = $derived(prefs.enabledSet);
+  const watchedRows = $derived(prefs.watchedRows);
+  const enabledChainsOrdered = $derived(WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id)));
+
+  let networkFilter: NetworkFilter = $state('all');
+
   $effect(() => {
     void accountNpub;
-    void $walletUiEnabledChainsTick;
-    enabledSet = new Set(loadWalletEnabledChains(accountNpub));
-  });
-  const enabledChainsOrdered = $derived(WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledSet.has(id)));
-  const networkDropdownChainIds = $derived(enabledChainsOrdered);
-  const watchedRows = $derived(loadWatchedErc20Rows(accountNpub));
-
-  /** `all` = every enabled chain; otherwise one `SupportedChainId`. */
-  let networkFilter: 'all' | SupportedChainId = $state('all');
-
-  function networkFilterStorageKey(npub: string): string {
-    return `pacto_profile_wallet_network_filter_${npub}`;
-  }
-
-  function parseNetworkFilter(raw: string | null): 'all' | SupportedChainId {
-    if (!raw || raw === 'all') return 'all';
-    if (WALLET_ASSETS_CHAIN_IDS.includes(raw as SupportedChainId)) return raw as SupportedChainId;
-    return 'all';
-  }
-
-  function loadNetworkFilter(npub: string) {
-    if (typeof localStorage === 'undefined') return;
-    networkFilter = parseNetworkFilter(localStorage.getItem(networkFilterStorageKey(npub)));
-  }
-
-  function saveNetworkFilter() {
-    if (typeof localStorage === 'undefined' || !accountNpub) return;
-    localStorage.setItem(networkFilterStorageKey(accountNpub), networkFilter);
-  }
-
-  $effect(() => {
-    if (!accountNpub) {
-      networkFilter = 'all';
-      return;
-    }
-    loadNetworkFilter(accountNpub);
+    networkFilter = loadNetworkFilter(PROFILE_NETWORK_FILTER_PREFIX);
   });
 
   $effect(() => {
-    if (networkFilter === 'all' || enabledSet.has(networkFilter)) return;
-    networkFilter = 'all';
-    saveNetworkFilter();
+    const next = coerceNetworkFilter(networkFilter, enabledSet);
+    if (next === networkFilter) return;
+    networkFilter = next;
+    saveNetworkFilter(PROFILE_NETWORK_FILTER_PREFIX, next);
   });
 
   let summary = $state<WalletSummary | null>(null);
@@ -150,8 +105,7 @@
       summaryError = null;
     }
     summaryLoading = true;
-    const wire = watchedRowsToWire(watchedRows);
-    const r = await getWalletSummary(wire, enabledChainsOrdered, address);
+    const r = await getWalletSummary(watchedRowsToWire(watchedRows), enabledChainsOrdered, address);
     if (seq !== loadSeq) return;
     if (r.ok) {
       summary = r.summary;
@@ -167,52 +121,17 @@
     summaryLoading = false;
   }
 
-  $effect(() => {
-    void viewedAddress;
-    void enabledChainsOrdered.join(',');
-    void watchedRows.length;
-    void refreshSummary();
-  });
+  const summaryKey = $derived(
+    walletSummaryFetchKey(viewedAddress, enabledChainsOrdered, watchedRowsToWire(watchedRows)),
+  );
 
-  function networksForBalanceList(
-    s: WalletSummary | null,
-    filter: 'all' | SupportedChainId,
-    enabled: Set<SupportedChainId>,
-  ): WalletSummaryNetwork[] {
-    if (!s) return [];
-    const nets = s.networks.filter((n) => enabled.has(n.network as SupportedChainId));
-    return nets.filter((n) => (filter === 'all' ? true : n.network === filter));
-  }
+  $effect(() => {
+    void summaryKey;
+    untrack(() => void refreshSummary());
+  });
 
   const networksForBalance = $derived(networksForBalanceList(summary, networkFilter, enabledSet));
-  const pricing = $derived.by(() => {
-    if (!summary) return { status: 'unavailable' as const, total: null as number | null };
-    if (networkFilter === 'all') {
-      const status = summary.usdPricingStatus ?? 'unavailable';
-      let total = status === 'unavailable' ? null : summary.totalUsdApprox;
-      if (total == null && status !== 'unavailable') {
-        total = sumPricedUsd(networksForBalance);
-      }
-      return { status, total };
-    }
-    const status = pricingStatusForNetworks(networksForBalance) ?? 'unavailable';
-    const total = status === 'unavailable' ? null : sumPricedUsd(networksForBalance);
-    return { status, total };
-  });
-
-  function accountLabel(acc: EvmAccountRow): string {
-    const name = accountDisplayName(acc, acc.address?.trim() || null);
-    const short = shortEvmAddress(acc.address);
-    if (!name || name === short) return short;
-    return `${name} · ${short}`;
-  }
-
-  function networkErrorMessage(net: WalletSummaryNetwork): string {
-    if (net.network === 'local') return tFn('wallet.anvilNotDetected');
-    return tFn('wallet.couldNotReachNetwork', {
-      values: { network: getWalletNetworkDisplayName(net.network as SupportedChainId) },
-    });
-  }
+  const pricing = $derived(summaryPricing(summary, networkFilter, networksForBalance));
 
   function openSend() {
     if (!viewedAccount || !viewedAddress) return;
@@ -232,50 +151,8 @@
   </div>
 
   {#if viewedAddress}
-    <div id="profile-wallet-account-picker" class="wallet-hero-account">
-      <div class="wallet-hero-account-name-row">
-        {#if canSwitchAccount}
-          <button
-            type="button"
-            class="wallet-hero-account-name-btn"
-            aria-haspopup="menu"
-            aria-expanded={accountMenuOpen}
-            aria-label={$t('wallet.switchAccountAria')}
-            title={$t('wallet.switchAccountAria')}
-            onclick={() => (accountMenuOpen = !accountMenuOpen)}
-          >
-            <span class="wallet-hero-account-name">{viewedAccountName}</span>
-            <span class="wallet-hero-account-chevron" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M6 9L12 15L18 9"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </span>
-          </button>
-          {#if accountMenuOpen}
-            <div class="wallet-hero-account-menu" role="menu">
-              {#each squadAccounts as acc (acc.id)}
-                <button
-                  type="button"
-                  class="wallet-hero-account-menu-item"
-                  class:wallet-hero-account-menu-item--active={acc.id === selectedAccountId}
-                  role="menuitem"
-                  onclick={() => selectAccount(acc.id)}
-                >
-                  {accountLabel(acc)}
-                </button>
-              {/each}
-            </div>
-          {/if}
-        {:else}
-          <span class="wallet-hero-account-name">{viewedAccountName}</span>
-        {/if}
-      </div>
+    <div class="wallet-hero-account">
+      <AccountPicker accounts={squadAccounts} selectedId={selectedAccountId} onSelect={selectAccount} />
       <CopyableKeyPill value={viewedAddress} ariaLabel={$t('wallet.copyAddressToClipboard')} />
     </div>
   {/if}
@@ -306,10 +183,10 @@
           id="profile-wallet-network-select"
           class="ui-select"
           bind:value={networkFilter}
-          onchange={saveNetworkFilter}
+          onchange={() => saveNetworkFilter(PROFILE_NETWORK_FILTER_PREFIX, networkFilter)}
         >
           <option value="all">{$t('wallet.allEnabledNetworks')}</option>
-          {#each networkDropdownChainIds as chainId (chainId)}
+          {#each enabledChainsOrdered as chainId (chainId)}
             <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
           {/each}
         </select>
@@ -403,93 +280,6 @@
     gap: 8px;
     margin-top: 12px;
     min-width: 0;
-  }
-
-  .wallet-hero-account-name-row {
-    position: relative;
-    min-width: 0;
-  }
-
-  .wallet-hero-account-name-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    max-width: 100%;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .wallet-hero-account-name-btn:hover .wallet-hero-account-name,
-  .wallet-hero-account-name-btn:hover .wallet-hero-account-chevron {
-    color: var(--text-primary);
-  }
-
-  .wallet-hero-account-name-btn:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-
-  .wallet-hero-account-name {
-    min-width: 0;
-    font-size: 1.0625rem;
-    font-weight: 600;
-    line-height: 1.3;
-    color: var(--text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .wallet-hero-account-chevron {
-    display: inline-flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-  }
-
-  .wallet-hero-account-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    z-index: 20;
-    min-width: 220px;
-    max-width: min(360px, 80vw);
-    padding: 4px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--bg-elevated);
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
-  }
-
-  .wallet-hero-account-menu-item {
-    display: block;
-    width: 100%;
-    margin: 0;
-    padding: 8px 10px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-primary);
-    font: inherit;
-    font-size: 0.8125rem;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .wallet-hero-account-menu-item:hover {
-    background: var(--bg-hover);
-  }
-
-  .wallet-hero-account-menu-item--active {
-    color: var(--brand);
   }
 
   .wallet-hero-actions {

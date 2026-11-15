@@ -1,19 +1,14 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { currentUser } from '../../stores/auth-session';
   import {
-    loadWalletEnabledChains,
     saveWalletEnabledChains,
     walletUiEnabledChainsTick,
     defaultWalletEnabledChains,
   } from '../../lib/wallet/wallet-ui-prefs';
   import { DEFAULT_PREFERRED_NETWORK } from '../../lib/wallet/preferred-network';
   import type { SupportedChainId } from '../../lib/wallet/chains';
-  import {
-    loadWatchedErc20Rows,
-    saveWatchedErc20Rows,
-    type WatchedErc20Row,
-  } from '../../lib/wallet/watched-tokens';
+  import { saveWatchedErc20Rows, type WatchedErc20Row } from '../../lib/wallet/watched-tokens';
+  import { loadWalletViewPrefs } from '../../lib/wallet/wallet-view-prefs';
   import WalletImportTokensModal from '../wallet/WalletImportTokensModal.svelte';
   import EvmWalletExtras from './EvmWalletExtras.svelte';
 
@@ -26,8 +21,7 @@
 
   function syncFromDisk() {
     if (!accountNpub) return;
-    watchedRows = loadWatchedErc20Rows(accountNpub);
-    enabledSet = new Set(loadWalletEnabledChains(accountNpub));
+    ({ watchedRows, enabledSet } = loadWalletViewPrefs(accountNpub));
   }
 
   $effect(() => {
@@ -35,8 +29,6 @@
     void $walletUiEnabledChainsTick;
     syncFromDisk();
   });
-
-  onMount(syncFromDisk);
 
   function toggleChain(chain: SupportedChainId) {
     if (!accountNpub) return;

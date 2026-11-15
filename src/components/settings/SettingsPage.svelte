@@ -23,16 +23,8 @@
   const SCROLL_MARKER_OFFSET_PX = 48;
   const SCROLL_BOTTOM_TOLERANCE_PX = 8;
 
-  let visibleSectionLinks = $derived(SECTION_LINKS);
-
   let activeSectionId: SettingsSectionId = $state(SECTION_LINKS[0].id);
   let settingsMainEl: HTMLElement | undefined;
-
-  $effect(() => {
-    const visible = visibleSectionLinks;
-    if (visible.some((link) => link.id === activeSectionId)) return;
-    activeSectionId = visible[0]?.id ?? SECTION_LINKS[0].id;
-  });
 
   function openSection(sectionId: SettingsSectionId) {
     setSettingsSectionCollapsed(sectionId, false);
@@ -46,16 +38,14 @@
       scrollRoot.scrollTop + scrollRoot.clientHeight >=
       scrollRoot.scrollHeight - SCROLL_BOTTOM_TOLERANCE_PX
     ) {
-      const links = visibleSectionLinks;
-      activeSectionId = links[links.length - 1]?.id ?? SECTION_LINKS[0].id;
+      activeSectionId = SECTION_LINKS[SECTION_LINKS.length - 1].id;
       return;
     }
 
     const markerY = scrollRoot.getBoundingClientRect().top + SCROLL_MARKER_OFFSET_PX;
     let next: SettingsSectionId = SECTION_LINKS[0].id;
-    const links = visibleSectionLinks;
 
-    for (const link of links) {
+    for (const link of SECTION_LINKS) {
       const el = document.getElementById(link.id);
       if (!el) continue;
       if (el.getBoundingClientRect().top <= markerY) {
@@ -106,7 +96,7 @@
   <div class="settings-body">
     <nav class="settings-sidebar" aria-label={$t('nav.settings.sectionsAria')}>
       <ul class="settings-sidebar-list">
-        {#each visibleSectionLinks as link (link.id)}
+        {#each SECTION_LINKS as link (link.id)}
           <li>
             <a
               class="settings-sidebar-link"
