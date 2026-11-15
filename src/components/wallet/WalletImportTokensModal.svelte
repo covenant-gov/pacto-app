@@ -212,46 +212,58 @@
           >
         </div>
       {:else}
-        <label class="w-import-label">
-          <span class="w-import-label-text">{$t('wallet.networkLabel')}</span>
-          <select class="w-import-select" bind:value={customNetwork} disabled={networkScope !== 'all'}>
-            {#each WALLET_ASSETS_CHAIN_IDS as cid (cid)}
-              <option value={cid as SupportedChainId}>{getWalletNetworkDisplayName(cid as SupportedChainId)}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="w-import-label">
-          <span class="w-import-label-text">{$t('wallet.tokenContractLabel')}</span>
-          <input
-            class="w-import-input"
-            type="text"
-            placeholder={$t('wallet.tokenContractPlaceholder')}
-            bind:value={customAddress}
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </label>
-        <label class="w-import-label">
-          <span class="w-import-label-text">{$t('wallet.symbolLabel')}</span>
-          <input
-            class="w-import-input"
-            type="text"
-            placeholder={$t('wallet.symbolPlaceholder')}
-            bind:value={customSymbol}
-            maxlength={customTokenSymbolMaxLength}
-            autocomplete="off"
-          />
-        </label>
-        <label class="w-import-label">
-          <span class="w-import-label-text">{$t('wallet.decimalsLabel')}</span>
-          <input
-            class="w-import-input"
-            type="text"
-            inputmode="numeric"
-            bind:value={customDecimalsStr}
-            autocomplete="off"
-          />
-        </label>
+        <div class="ui-field-row w-import-fields">
+          <label class="ui-field" for="w-import-custom-network">
+            <span class="ui-field-label">{$t('wallet.networkLabel')}</span>
+            <select
+              id="w-import-custom-network"
+              class="ui-select"
+              bind:value={customNetwork}
+              disabled={networkScope !== 'all'}
+            >
+              {#each WALLET_ASSETS_CHAIN_IDS as cid (cid)}
+                <option value={cid as SupportedChainId}>{getWalletNetworkDisplayName(cid as SupportedChainId)}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="ui-field" for="w-import-custom-address">
+            <span class="ui-field-label">{$t('wallet.tokenContractLabel')}</span>
+            <input
+              id="w-import-custom-address"
+              class="ui-input"
+              type="text"
+              placeholder={$t('wallet.tokenContractPlaceholder')}
+              bind:value={customAddress}
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+        </div>
+        <div class="ui-field-row w-import-fields">
+          <label class="ui-field" for="w-import-custom-symbol">
+            <span class="ui-field-label">{$t('wallet.symbolLabel')}</span>
+            <input
+              id="w-import-custom-symbol"
+              class="ui-input"
+              type="text"
+              placeholder={$t('wallet.symbolPlaceholder')}
+              bind:value={customSymbol}
+              maxlength={customTokenSymbolMaxLength}
+              autocomplete="off"
+            />
+          </label>
+          <label class="ui-field" for="w-import-custom-decimals">
+            <span class="ui-field-label">{$t('wallet.decimalsLabel')}</span>
+            <input
+              id="w-import-custom-decimals"
+              class="ui-input"
+              type="text"
+              inputmode="numeric"
+              bind:value={customDecimalsStr}
+              autocomplete="off"
+            />
+          </label>
+        </div>
         <p class="w-import-hint">
           {$t('wallet.tokenSecurityHint')}
         </p>
@@ -341,32 +353,8 @@
     border-bottom-color: var(--text-primary);
   }
 
-  .w-import-label {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin: 0 0 12px;
-  }
-
-  .w-import-label-text {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-muted);
-  }
-
-  .w-import-input,
-  .w-import-select {
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-family: inherit;
-    box-sizing: border-box;
-    width: 100%;
+  .w-import-fields {
+    margin-bottom: 12px;
   }
 
   .w-import-list {

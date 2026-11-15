@@ -542,33 +542,35 @@
     onClose={closeAddRelayModal}
     onPrimary={handleAddRelay}
   >
-    <label class="settings-form-field" for="settings-add-relay-url">
-      <span class="settings-form-label">{$t('settings.relayUrlLabel')}</span>
-      <input
-        id="settings-add-relay-url"
-        type="url"
-        class="settings-form-input"
-        placeholder={$t('settings.relayUrlPlaceholder')}
-        bind:value={newRelayUrl}
-        disabled={adding || probing}
-        autocomplete="off"
-        spellcheck="false"
-        onkeydown={(e) => e.key === 'Enter' && void handleAddRelay()}
-      />
-    </label>
-    <label class="settings-form-field" for="settings-add-relay-mode">
-      <span class="settings-form-label">{$t('settings.relayModeLabel')}</span>
-      <select
-        id="settings-add-relay-mode"
-        class="settings-form-select"
-        bind:value={newRelayMode}
-        disabled={adding || probing}
-      >
-        {#each MODE_OPTIONS as opt (opt.value)}
-          <option value={opt.value}>{opt.label}</option>
-        {/each}
-      </select>
-    </label>
+    <div class="ui-field-row">
+      <label class="ui-field" for="settings-add-relay-url">
+        <span class="ui-field-label">{$t('settings.relayUrlLabel')}</span>
+        <input
+          id="settings-add-relay-url"
+          type="url"
+          class="ui-input"
+          placeholder={$t('settings.relayUrlPlaceholder')}
+          bind:value={newRelayUrl}
+          disabled={adding || probing}
+          autocomplete="off"
+          spellcheck="false"
+          onkeydown={(e) => e.key === 'Enter' && void handleAddRelay()}
+        />
+      </label>
+      <label class="ui-field ui-field--flush" for="settings-add-relay-mode">
+        <span class="ui-field-label">{$t('settings.relayModeLabel')}</span>
+        <select
+          id="settings-add-relay-mode"
+          class="ui-select"
+          bind:value={newRelayMode}
+          disabled={adding || probing}
+        >
+          {#each MODE_OPTIONS as opt (opt.value)}
+            <option value={opt.value}>{opt.label}</option>
+          {/each}
+        </select>
+      </label>
+    </div>
     {#if probeResult && probedUrl === newRelayUrl.trim()}
       <p
         class="settings-form-status settings-form-status--{probeResult.outcome === 'reachable' ? 'ok' : 'bad'}"

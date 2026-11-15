@@ -1,0 +1,117 @@
+/* Shared selects / fields for Settings + Profile (and matching form modals). */
+
+.ui-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.ui-field--flush {
+  flex: 0 1 160px;
+}
+
+.ui-field-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.ui-select,
+.ui-input,
+.ui-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: inherit;
+  line-height: 1.25;
+}
+
+.ui-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px 16px;
+  padding-right: 36px;
+}
+
+button.ui-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  background-image: none;
+  padding-right: 12px;
+}
+
+.ui-select:focus,
+.ui-input:focus,
+.ui-textarea:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.ui-select:disabled,
+.ui-input:disabled,
+.ui-textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ui-textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.ui-select-menu {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-select-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-select-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.ui-select-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: min(360px, 50vh);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
+}

@@ -346,21 +346,21 @@
     {#if summaryError}
       <p class="wallet-hero-stale" role="status">{$t('wallet.couldNotRefreshBalances')} {summaryError}</p>
     {/if}
-    <div class="wallet-hero-filters">
-      <label class="wallet-hero-label wallet-hero-label--flush" for="profile-wallet-network-select"
-        >{$t('wallet.networkLabel')}</label
-      >
-      <select
-        id="profile-wallet-network-select"
-        class="wallet-hero-select"
-        bind:value={networkFilter}
-        onchange={saveNetworkFilter}
-      >
-        <option value="all">{$t('wallet.allEnabledNetworks')}</option>
-        {#each networkDropdownChainIds as chainId (chainId)}
-          <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
-        {/each}
-      </select>
+    <div class="wallet-hero-filters ui-field-row">
+      <div class="ui-field">
+        <label class="ui-field-label" for="profile-wallet-network-select">{$t('wallet.networkLabel')}</label>
+        <select
+          id="profile-wallet-network-select"
+          class="ui-select"
+          bind:value={networkFilter}
+          onchange={saveNetworkFilter}
+        >
+          <option value="all">{$t('wallet.allEnabledNetworks')}</option>
+          {#each networkDropdownChainIds as chainId (chainId)}
+            <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
+          {/each}
+        </select>
+      </div>
     </div>
     <p class="wallet-hero-total">
       {#if pricing.status === 'unavailable' || pricing.total == null}
@@ -437,30 +437,9 @@
     color: var(--text-primary);
   }
 
-  .wallet-hero-label {
-    display: block;
-    margin: 14px 0 6px;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-
-  .wallet-hero-label--flush {
-    margin-top: 0;
-  }
-
   .wallet-hero-filters {
     margin-top: 14px;
-  }
-
-  .wallet-hero-select {
-    width: 100%;
-    max-width: 420px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    font: inherit;
+    max-width: 320px;
   }
 
   .wallet-hero-account {

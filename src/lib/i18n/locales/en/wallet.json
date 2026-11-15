@@ -215,8 +215,6 @@
 	"wallet.editAdvancedAccount": "Edit advanced account",
 	"wallet.editSquadAccount": "Edit squad account",
 	"wallet.advancedAccountWarning": "Advanced accounts are not used for squad EVM, governance, treasury deploy, or your profile receiving address.",
-	"wallet.squadAccountCreateHint": "Creates a new squad address from your recovery phrase. Name is optional and only stored on this device.",
-	"wallet.squadAccountEditHintSettings": "Update the display name. Signer and receiver are set in Default EVM account above.",
 	"wallet.squadAccountEditHint": "Update the display name and whether this account is the signer or published receiving address. Name is only stored on this device.",
 	"wallet.nameLabel": "Account Name",
 	"wallet.accountNamePlaceholder": "e.g. Squad Name",

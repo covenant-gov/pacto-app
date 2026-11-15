@@ -280,12 +280,12 @@
     {#if accountFormMode === 'add'}
       <p class="settings-form-warn">{$t('wallet.advancedAccountWarning')}</p>
     {/if}
-    <label class="settings-form-field" for="settings-account-form-name">
-      <span class="settings-form-label">{$t('wallet.nameLabel')}</span>
+    <label class="ui-field" for="settings-account-form-name">
+      <span class="ui-field-label">{$t('wallet.nameLabel')}</span>
       <input
         id="settings-account-form-name"
         type="text"
-        class="settings-form-input"
+        class="ui-input"
         maxlength={walletAccountLabelMaxLength}
         placeholder={$t('wallet.accountNamePlaceholder')}
         bind:value={accountFormLabel}
@@ -314,7 +314,7 @@
     <p class="settings-form-warn">{$t('wallet.importedKeyWarning')}</p>
     <textarea
       id="settings-import-pk-input"
-      class="settings-form-textarea"
+      class="ui-textarea"
       rows="3"
       aria-label={$t('wallet.importAdvancedPrivateKey')}
       placeholder={$t('wallet.privateKeyPlaceholder')}

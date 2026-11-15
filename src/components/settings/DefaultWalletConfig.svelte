@@ -128,32 +128,34 @@
     onClose={closeEdit}
     onPrimary={saveEdit}
   >
-    <label class="settings-form-field" for="wallet-default-signer">
-      <span class="settings-form-label">{$t('wallet.signerLabel')}</span>
-      <select
-        id="wallet-default-signer"
-        class="settings-form-select"
-        bind:value={editSignerId}
-        disabled={saving || squadAccounts.length === 0}
-      >
-        {#each squadAccounts as acc (acc.id)}
-          <option value={acc.id}>{accountOptionLabel(acc)}</option>
-        {/each}
-      </select>
-    </label>
-    <label class="settings-form-field" for="wallet-default-receiver">
-      <span class="settings-form-label">{$t('wallet.receiverLabel')}</span>
-      <select
-        id="wallet-default-receiver"
-        class="settings-form-select"
-        bind:value={editReceiverId}
-        disabled={saving || squadAccounts.length === 0}
-      >
-        {#each squadAccounts as acc (acc.id)}
-          <option value={acc.id}>{accountOptionLabel(acc)}</option>
-        {/each}
-      </select>
-    </label>
+    <div class="ui-field-row">
+      <label class="ui-field" for="wallet-default-signer">
+        <span class="ui-field-label">{$t('wallet.signerLabel')}</span>
+        <select
+          id="wallet-default-signer"
+          class="ui-select"
+          bind:value={editSignerId}
+          disabled={saving || squadAccounts.length === 0}
+        >
+          {#each squadAccounts as acc (acc.id)}
+            <option value={acc.id}>{accountOptionLabel(acc)}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="ui-field" for="wallet-default-receiver">
+        <span class="ui-field-label">{$t('wallet.receiverLabel')}</span>
+        <select
+          id="wallet-default-receiver"
+          class="ui-select"
+          bind:value={editReceiverId}
+          disabled={saving || squadAccounts.length === 0}
+        >
+          {#each squadAccounts as acc (acc.id)}
+            <option value={acc.id}>{accountOptionLabel(acc)}</option>
+          {/each}
+        </select>
+      </label>
+    </div>
   </SettingsFormModal>
 {/if}
 

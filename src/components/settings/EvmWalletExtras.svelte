@@ -205,100 +205,102 @@
   }
 </script>
 
-<section class="evm-extras-section" aria-labelledby="wallet-preferred-network-heading">
-  <h2 id="wallet-preferred-network-heading" class="evm-extras-h2">{$t('wallet.preferredNetworkLabel')}</h2>
-  <select
-    id="wallet-preferred-network-select"
-    class="evm-extras-select"
-    aria-labelledby="wallet-preferred-network-heading"
-    value={preferredNetwork}
-    disabled={!accountNpub}
-    onchange={onPreferredNetworkChange}
-  >
-    {#each preferredNetworkOptions as opt (opt.id)}
-      <option value={opt.id}>{opt.label}</option>
-    {/each}
-  </select>
-</section>
-
-<section class="evm-extras-section" aria-labelledby="wallet-networks-heading">
-  <h2 id="wallet-networks-heading" class="evm-extras-h2">{$t('settings.enabledChainsTitle')}</h2>
-  <div id="evm-enabled-chains-menu" class="evm-extras-chains-menu">
-    <button
-      type="button"
-      id="evm-enabled-chains-trigger"
-      class="evm-extras-select evm-extras-chains-trigger"
-      aria-haspopup="listbox"
-      aria-expanded={enabledChainsMenuOpen}
-      aria-label={$t('settings.enabledChainsTitle')}
-      onclick={() => (enabledChainsMenuOpen = !enabledChainsMenuOpen)}
-    >
-      <span class="evm-extras-chains-summary">
-        {enabledChainsSummary || $t('settings.noEnabledChains')}
-      </span>
-      <svg
-        class="evm-extras-chains-chevron"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        fill="none"
+<section class="evm-extras-section" aria-label={$t('wallet.preferredNetworkLabel')}>
+  <div class="ui-field-row">
+    <div class="ui-field">
+      <label class="ui-field-label" for="wallet-preferred-network-select">{$t('wallet.preferredNetworkLabel')}</label>
+      <select
+        id="wallet-preferred-network-select"
+        class="ui-select"
+        value={preferredNetwork}
+        disabled={!accountNpub}
+        onchange={onPreferredNetworkChange}
       >
-        <path
-          d="M6 9L12 15L18 9"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </button>
-    {#if enabledChainsMenuOpen}
-      <div class="evm-extras-chains-panel" role="listbox" aria-multiselectable="true">
-        {#each WALLET_CHAIN_GROUPS as group (group.id)}
-          <div class="evm-extras-chain-group">
-            <h3 class="evm-extras-chain-group-label">{$t(group.label)}</h3>
-            <ul class="evm-extras-toggle-list">
-              {#each group.chains as chain (chain)}
-                <li>
-                  <label class="evm-extras-toggle">
-                    <input
-                      type="checkbox"
-                      checked={enabledSet.has(chain)}
-                      disabled={enabledSet.has(chain) && enabledSet.size <= 1}
-                      onchange={() => onToggleChain(chain)}
-                    />
-                    <span>{getWalletNetworkDisplayName(chain)}</span>
-                  </label>
-                </li>
-              {/each}
-            </ul>
-          </div>
+        {#each preferredNetworkOptions as opt (opt.id)}
+          <option value={opt.id}>{opt.label}</option>
         {/each}
+      </select>
+    </div>
+    <div class="ui-field">
+      <span class="ui-field-label" id="wallet-networks-heading">{$t('settings.enabledChainsTitle')}</span>
+      <div id="evm-enabled-chains-menu" class="ui-select-menu">
+        <button
+          type="button"
+          id="evm-enabled-chains-trigger"
+          class="ui-select"
+          aria-haspopup="listbox"
+          aria-expanded={enabledChainsMenuOpen}
+          aria-labelledby="wallet-networks-heading"
+          onclick={() => (enabledChainsMenuOpen = !enabledChainsMenuOpen)}
+        >
+          <span class="ui-select-summary">
+            {enabledChainsSummary || $t('settings.noEnabledChains')}
+          </span>
+          <svg
+            class="ui-select-chevron"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="none"
+          >
+            <path
+              d="M6 9L12 15L18 9"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+        {#if enabledChainsMenuOpen}
+          <div class="ui-select-panel" role="listbox" aria-multiselectable="true">
+            {#each WALLET_CHAIN_GROUPS as group (group.id)}
+              <div class="evm-extras-chain-group">
+                <h3 class="evm-extras-chain-group-label">{$t(group.label)}</h3>
+                <ul class="evm-extras-toggle-list">
+                  {#each group.chains as chain (chain)}
+                    <li>
+                      <label class="evm-extras-toggle">
+                        <input
+                          type="checkbox"
+                          checked={enabledSet.has(chain)}
+                          disabled={enabledSet.has(chain) && enabledSet.size <= 1}
+                          onchange={() => onToggleChain(chain)}
+                        />
+                        <span>{getWalletNetworkDisplayName(chain)}</span>
+                      </label>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
-    {/if}
+    </div>
   </div>
 </section>
 
 <section class="evm-extras-section" aria-labelledby="wallet-tokens-heading">
   <div class="evm-extras-section-head">
     <h2 id="wallet-tokens-heading" class="evm-extras-h2">{$t('settings.tokensToTrackTitle')}</h2>
-    <button type="button" class="evm-extras-btn" onclick={onImportTokens}>{$t('settings.importTokensButton')}</button>
-  </div>
-  <div class="evm-extras-token-filters">
-    <select
-      id="evm-token-network-select"
-      class="evm-extras-select"
-      aria-label={$t('wallet.networkLabel')}
-      bind:value={tokenNetworkFilter}
-    >
-      <option value="all">{$t('settings.allNetworksOption')}</option>
-      {#each enabledChainIdsOrdered as chainId (chainId)}
-        <option value={chainId}>
-          {getWalletNetworkDisplayName(chainId)}
-        </option>
-      {/each}
-    </select>
+    <div class="evm-extras-section-head-controls">
+      <select
+        id="evm-token-network-select"
+        class="ui-select"
+        aria-label={$t('wallet.networkLabel')}
+        bind:value={tokenNetworkFilter}
+      >
+        <option value="all">{$t('settings.allNetworksOption')}</option>
+        {#each enabledChainIdsOrdered as chainId (chainId)}
+          <option value={chainId}>
+            {getWalletNetworkDisplayName(chainId)}
+          </option>
+        {/each}
+      </select>
+      <button type="button" class="evm-extras-btn" onclick={onImportTokens}>{$t('settings.importTokensButton')}</button>
+    </div>
   </div>
   {#if watchedRows.length === 0}
     <p class="evm-extras-empty">{$t('settings.noExtraTokensYet')}</p>
@@ -324,12 +326,11 @@
 </section>
 
 <section class="evm-extras-section evm-extras-section--last" aria-labelledby="wallet-rpc-heading">
-  <h2 id="wallet-rpc-heading" class="evm-extras-h2">{$t('settings.rpcEndpointsTitle')}</h2>
-
-  <div class="evm-extras-token-filters">
+  <div class="evm-extras-section-head">
+    <h2 id="wallet-rpc-heading" class="evm-extras-h2">{$t('settings.rpcEndpointsTitle')}</h2>
     <select
       id="evm-rpc-network-select"
-      class="evm-extras-select"
+      class="ui-select evm-extras-select-inline"
       aria-label={$t('wallet.networkLabel')}
       bind:value={rpcNetworkFilter}
     >
@@ -365,18 +366,20 @@
   </div>
 
   <div class="evm-extras-rpc-block">
-    <label class="evm-extras-filter-label" for="evm-default-rpc-select">{$t('settings.defaultRpcTitle')}</label>
-    <select
-      id="evm-default-rpc-select"
-      class="evm-extras-select evm-extras-select--wide"
-      bind:value={selectedDefaultRpc}
-      onchange={onDefaultRpcChange}
-    >
-      <option value="">{$t('settings.defaultRpcCuratedDefaults')}</option>
-      {#each defaultRpcOptions as opt (opt.value)}
-        <option value={opt.value}>{opt.label}</option>
-      {/each}
-    </select>
+    <div class="ui-field">
+      <label class="ui-field-label" for="evm-default-rpc-select">{$t('settings.defaultRpcTitle')}</label>
+      <select
+        id="evm-default-rpc-select"
+        class="ui-select"
+        bind:value={selectedDefaultRpc}
+        onchange={onDefaultRpcChange}
+      >
+        <option value="">{$t('settings.defaultRpcCuratedDefaults')}</option>
+        {#each defaultRpcOptions as opt (opt.value)}
+          <option value={opt.value}>{opt.label}</option>
+        {/each}
+      </select>
+    </div>
   </div>
 
   <div class="evm-extras-rpc-providers">
@@ -409,7 +412,7 @@
     </p>
     <input
       id="evm-add-rpc-input"
-      class="settings-form-input"
+      class="ui-input"
       type="url"
       inputmode="url"
       autocomplete="off"
@@ -443,6 +446,27 @@
     margin-bottom: 10px;
   }
 
+  .evm-extras-section-head-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .evm-extras-section-head-controls .ui-select {
+    width: auto;
+    min-width: 160px;
+    max-width: 220px;
+  }
+
+  .evm-extras-select-inline {
+    width: auto;
+    min-width: 160px;
+    max-width: 220px;
+    flex: 0 1 auto;
+  }
+
   .evm-extras-h2 {
     margin: 0 0 10px;
     font-size: 1.05rem;
@@ -453,42 +477,6 @@
   .evm-extras-section-head .evm-extras-h2,
   .evm-extras-section-head .evm-extras-h3 {
     margin-bottom: 0;
-  }
-
-  .evm-extras-token-filters {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 10px;
-  }
-
-  .evm-extras-filter-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-  }
-
-  .evm-extras-select {
-    min-width: 200px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-family: inherit;
-    cursor: pointer;
-  }
-
-  .evm-extras-select:focus {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-  }
-
-  .evm-extras-select--wide {
-    width: 100%;
-    max-width: 100%;
   }
 
   .evm-extras-h3 {
@@ -554,51 +542,6 @@
     font-size: 0.875rem;
   }
 
-  .evm-extras-chains-menu {
-    position: relative;
-    max-width: 420px;
-  }
-
-  .evm-extras-chains-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    width: 100%;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .evm-extras-chains-summary {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .evm-extras-chains-chevron {
-    flex-shrink: 0;
-    color: var(--text-muted);
-  }
-
-  .evm-extras-chains-panel {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    z-index: 20;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    max-height: min(360px, 50vh);
-    overflow: auto;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-elevated);
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 12%, transparent);
-  }
-
   .evm-extras-chain-group-label {
     margin: 0 0 8px;
     font-size: 0.8125rem;
@@ -631,6 +574,7 @@
   }
 
   .evm-extras-btn {
+    min-height: 40px;
     padding: 8px 16px;
     border-radius: 8px;
     border: none;

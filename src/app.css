@@ -7,6 +7,7 @@
 @import './styles/themes/techno.css';
 @import './styles/themes/union.css';
 @import './styles/modal-buttons.css';
+@import './styles/form-controls.css';
 
 @custom-variant dark (&:is([data-theme="dark-techno"] *, [data-theme="dark-techno"], [data-theme="aztec"] *, [data-theme="aztec"], [data-theme="midnight"] *, [data-theme="midnight"], [data-theme="union"] *, [data-theme="union"]));
 

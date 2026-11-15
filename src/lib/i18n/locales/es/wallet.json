@@ -215,8 +215,6 @@
 	"wallet.editAdvancedAccount": "Editar cuenta avanzada",
 	"wallet.editSquadAccount": "Editar cuenta del escuad",
 	"wallet.advancedAccountWarning": "Las cuentas avanzadas no se usan para EVM del escuad, gobernanza, despliegue de tesorería ni dirección de recepción de tu perfil.",
-	"wallet.squadAccountCreateHint": "Crea una nueva dirección del escuad desde tu frase de recuperación. El nombre es opcional y solo se guarda en este dispositivo.",
-	"wallet.squadAccountEditHintSettings": "Actualiza el nombre visible. El firmante y receptor se configuran en Cuenta EVM predeterminada arriba.",
 	"wallet.squadAccountEditHint": "Actualiza el nombre visible y si esta cuenta es el firmante o la dirección de recepción publicada. El nombre solo se guarda en este dispositivo.",
 	"wallet.nameLabel": "Nombre de cuenta",
 	"wallet.accountNamePlaceholder": "p. ej. Nombre del escuad",

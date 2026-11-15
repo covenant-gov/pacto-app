@@ -140,44 +140,6 @@
     filter: brightness(1.05);
   }
 
-  :global(.settings-form-modal .settings-form-field) {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  :global(.settings-form-modal .settings-form-label) {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-  }
-
-  :global(.settings-form-modal .settings-form-input),
-  :global(.settings-form-modal .settings-form-select),
-  :global(.settings-form-modal .settings-form-textarea) {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-family: inherit;
-  }
-
-  :global(.settings-form-modal .settings-form-input:focus),
-  :global(.settings-form-modal .settings-form-select:focus),
-  :global(.settings-form-modal .settings-form-textarea:focus) {
-    outline: 2px solid var(--brand);
-    outline-offset: 2px;
-  }
-
-  :global(.settings-form-modal .settings-form-textarea) {
-    min-height: 5.5rem;
-    resize: vertical;
-  }
-
   :global(.settings-form-modal .settings-form-warn) {
     margin: 0;
     font-size: 0.875rem;
