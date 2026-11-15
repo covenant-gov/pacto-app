@@ -5,8 +5,6 @@
   import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import WalletHomeSendModal from '../wallet/WalletHomeSendModal.svelte';
   import WalletReceiveModal from '../wallet/WalletReceiveModal.svelte';
-  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
-  import { showToast } from '../../stores/toast';
   import { formatAssetAmount } from '../../lib/evm/format-token-amount';
   import {
     getWalletSummary,
@@ -22,11 +20,7 @@
     pricingStatusForNetworks,
   } from '../../lib/wallet';
   import { loadWalletEnabledChains, walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
-  import {
-    setActiveEvmAccount,
-    squadEvmAccounts,
-    type EvmAccountRow,
-  } from '../../lib/wallet/evm-accounts';
+  import { squadEvmAccounts, type EvmAccountRow } from '../../lib/wallet/evm-accounts';
   import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   const tFn = get(t);
@@ -135,21 +129,26 @@
   });
 
   let summary = $state<WalletSummary | null>(null);
+  let summaryAddress = $state<string | null>(null);
   let summaryError = $state<string | null>(null);
   let summaryLoading = $state(false);
   let loadSeq = 0;
   let homeSendOpen = $state(false);
   let receiveOpen = $state(false);
-  let sendBusy = $state(false);
 
   async function refreshSummary() {
     const seq = ++loadSeq;
     const address = viewedAddress;
     if (!address) {
       summary = null;
+      summaryAddress = null;
       summaryError = null;
       summaryLoading = false;
       return;
+    }
+    if (summaryAddress !== address) {
+      summary = null;
+      summaryError = null;
     }
     summaryLoading = true;
     const wire = watchedRowsToWire(watchedRows);
@@ -157,10 +156,14 @@
     if (seq !== loadSeq) return;
     if (r.ok) {
       summary = r.summary;
+      summaryAddress = address;
       summaryError = null;
     } else {
       summaryError = r.message;
-      if (!summary) summary = null;
+      if (summaryAddress !== address) {
+        summary = null;
+        summaryAddress = null;
+      }
     }
     summaryLoading = false;
   }
@@ -212,20 +215,9 @@
     });
   }
 
-  async function openSend() {
-    if (!viewedAccount || sendBusy) return;
-    sendBusy = true;
-    try {
-      if (!viewedAccount.isActive) {
-        await setActiveEvmAccount(viewedAccount.id);
-        await onAccountsChanged();
-      }
-      homeSendOpen = true;
-    } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('wallet.couldNotSwitchBeforeSend')));
-    } finally {
-      sendBusy = false;
-    }
+  function openSend() {
+    if (!viewedAccount || !viewedAddress) return;
+    homeSendOpen = true;
   }
 </script>
 
@@ -290,7 +282,7 @@
   {/if}
 
   <div class="wallet-hero-actions">
-    <button type="button" class="wallet-hero-btn" disabled={!viewedAddress || sendBusy} onclick={() => void openSend()}>
+    <button type="button" class="wallet-hero-btn" disabled={!viewedAddress} onclick={openSend}>
       {$t('wallet.send')}
     </button>
     <button
@@ -304,7 +296,7 @@
   </div>
   {#if summaryLoading && !summary}
     <p class="wallet-hero-muted">{$t('wallet.loadingBalances')}</p>
-  {:else if summary}
+  {:else if summary && summaryAddress === viewedAddress}
     {#if summaryError}
       <p class="wallet-hero-stale" role="status">{$t('wallet.couldNotRefreshBalances')} {summaryError}</p>
     {/if}
@@ -372,6 +364,10 @@
   onClose={() => (homeSendOpen = false)}
   watchedAssetRows={watchedRows}
   enabledChainIds={enabledChainsOrdered}
+  fromAccount={viewedAccount && viewedAddress
+    ? { id: viewedAccount.id, address: viewedAddress, isActive: viewedAccount.isActive }
+    : null}
+  onSignerActivated={onAccountsChanged}
 />
 
 <WalletReceiveModal

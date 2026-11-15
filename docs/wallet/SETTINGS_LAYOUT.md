@@ -16,7 +16,7 @@ The DM **WalletBar** stays peer-context send. It is not this page.
 | Squad EVM | Default signer/receiver (`DefaultWalletConfig`) and squad account rows (add/edit/label/export key) |
 | Sponsored gas | Disclosure (`EvmDashGasSection`) — personal `global_sponsored_fee_usage` plus Sepolia global pool spendable |
 
-Viewing another squad account in the picker does **not** change the app-wide signer. Send calls `setActiveEvmAccount` first, then `WalletHomeSendModal`. Profile balance fetches pass `getWalletSummary(..., address)` and stay in memory; they do not write the WalletBar summary cache.
+Viewing another squad account in the picker does **not** change the app-wide signer. `WalletHomeSendModal` loads balances for the viewed address and calls `setActiveEvmAccount` on confirm. Closing the modal without confirm leaves the signer unchanged. Profile balance fetches pass `getWalletSummary(..., address)` and stay in memory; they do not write the WalletBar summary cache.
 
 Enabled chains, watched tokens, and RPC are **read-only** on Profile. Edit them in Settings.
 

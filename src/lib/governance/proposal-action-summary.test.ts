@@ -31,6 +31,11 @@ describe('summarizeTreasuryProposalAction', () => {
     expect(formatNativeEthAmount(summary.valueWei)).toBe('1.500000');
   });
 
+  it('shows full precision when six decimals would hide a non-zero wei amount', () => {
+    expect(formatNativeEthAmount('1')).toBe('0.000000000000000001');
+    expect(formatNativeEthAmount('0')).toBe('0.000000');
+  });
+
   it('decodes erc20 transfer', () => {
     const dataHex = encodeFunctionData({
       abi: ABI,
