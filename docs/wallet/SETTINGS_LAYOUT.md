@@ -31,7 +31,6 @@ Enabled chains, watched tokens, and RPC are **read-only** on Profile. Edit them 
 | `#settings-app` | App | Theme selector |
 | `#settings-notifications` | Notifications | App notification prefs |
 | `#settings-commons` | Commons | Hidden Commons tags |
-| `#settings-experimental` | Experimental | Feature flags |
 | `#settings-backup` | Backup | Export seed and export all secrets (not on Profile) |
 | `#settings-dangerzone` | Dangerzone | Logout |
 

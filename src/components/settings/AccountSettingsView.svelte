@@ -7,7 +7,6 @@
   import AppSettingsSection from './AppSettingsSection.svelte';
   import NotificationsSection from './NotificationsSection.svelte';
   import HiddenCommonsSection from './HiddenCommonsSection.svelte';
-  import ExperimentalSection from './ExperimentalSection.svelte';
   import BackupSection from './BackupSection.svelte';
   import DangerZoneSection from './DangerZoneSection.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
@@ -36,7 +35,6 @@
       <AppSettingsSection />
       <NotificationsSection />
       <HiddenCommonsSection />
-      <ExperimentalSection />
       <BackupSection />
     {/if}
 

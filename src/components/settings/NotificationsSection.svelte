@@ -75,6 +75,16 @@
     void persist({ ...settings, sound });
   }
 
+  function onSoundSelectChange(event: Event): void {
+    const type = (event.currentTarget as HTMLSelectElement).value;
+    if (type === 'Custom') {
+      void handleChooseCustomSound();
+      return;
+    }
+    const opt = BUILT_IN_NOTIFICATION_SOUNDS.find((o) => o.type === type);
+    if (opt) handleSoundChange(opt);
+  }
+
   function handleMuteChange(e: Event): void {
     if (!settings) return;
     const checked = (e.currentTarget as HTMLInputElement).checked;
@@ -150,51 +160,32 @@
       <p class="notifications-loading">{$t('notifications.loading')}</p>
     {:else if settings}
       <div class="sound-section" aria-labelledby="notif-sound-heading">
-        <h3 id="notif-sound-heading" class="theme-subheading">{$t('notifications.soundSectionTitle')}</h3>
-        <div class="sound-options" role="radiogroup" aria-labelledby="notif-sound-heading">
-          {#each BUILT_IN_NOTIFICATION_SOUNDS as opt (opt.type)}
-            <div class="sound-option-row">
-              <label class="theme-option">
-                <input
-                  type="radio"
-                  name="notif-sound"
-                  value={opt.type}
-                  checked={settings.sound.type === opt.type}
-                  disabled={saving}
-                  onchange={() => handleSoundChange(opt)}
-                />
-                <span class="theme-option-label">{soundOptionLabel(opt)}</span>
-              </label>
-              {#if opt.type !== 'None'}
-                <button type="button" class="btn-secondary preview-btn" disabled={saving} onclick={() => handlePreview(opt)}>
-                  {$t('notifications.previewButton')}
-                </button>
-              {/if}
-            </div>
-          {/each}
-
-          <div class="sound-option-row">
-            <label class="theme-option">
-              <input
-                type="radio"
-                name="notif-sound"
-                value="Custom"
-                checked={settings.sound.type === 'Custom'}
-                disabled={saving || selectingCustomSound}
-                onchange={handleChooseCustomSound}
-              />
-              <span class="theme-option-label">
+        <div class="sound-controls">
+          <div class="ui-field sound-select-field">
+            <label class="ui-field-label" id="notif-sound-heading" for="settings-notif-sound-select"
+              >{$t('notifications.soundSectionTitle')}</label
+            >
+            <select
+              id="settings-notif-sound-select"
+              class="ui-select"
+              value={settings.sound.type}
+              disabled={saving || selectingCustomSound}
+              onchange={onSoundSelectChange}
+            >
+              {#each BUILT_IN_NOTIFICATION_SOUNDS as opt (opt.type)}
+                <option value={opt.type}>{soundOptionLabel(opt)}</option>
+              {/each}
+              <option value="Custom">
                 {settings.sound.type === 'Custom'
                   ? $t('notifications.soundOptionCustomWithFile', {
                       values: { file: customSoundFileName(settings.sound.path) },
                     })
                   : $t('notifications.soundOptionCustom')}
-              </span>
-            </label>
-            <button type="button" class="btn-secondary" disabled={selectingCustomSound} onclick={handleChooseCustomSound}>
-              {selectingCustomSound ? $t('notifications.choosingFile') : $t('notifications.chooseFileButton')}
-            </button>
-            {#if settings.sound.type === 'Custom'}
+              </option>
+            </select>
+          </div>
+          <div class="sound-actions">
+            {#if settings.sound.type !== 'None'}
               <button
                 type="button"
                 class="btn-secondary preview-btn"
@@ -202,6 +193,11 @@
                 onclick={() => settings && handlePreview(settings.sound)}
               >
                 {$t('notifications.previewButton')}
+              </button>
+            {/if}
+            {#if settings.sound.type === 'Custom'}
+              <button type="button" class="btn-secondary" disabled={selectingCustomSound} onclick={handleChooseCustomSound}>
+                {selectingCustomSound ? $t('notifications.choosingFile') : $t('notifications.chooseFileButton')}
               </button>
             {/if}
           </div>
@@ -256,34 +252,23 @@
     margin: 0 0 8px 0;
   }
 
-  .sound-options {
+  .sound-controls {
     display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .sound-option-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
     flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px 12px;
   }
 
-  .theme-option {
+  .sound-select-field {
+    flex: 1 1 220px;
+    max-width: 360px;
+  }
+
+  .sound-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
-    cursor: pointer;
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-  }
-
-  .theme-option input {
-    accent-color: var(--brand);
-  }
-
-  .theme-option-label {
-    user-select: none;
   }
 
   .notifications-divider {

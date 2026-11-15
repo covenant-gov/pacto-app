@@ -83,7 +83,6 @@
 	"settings.whatsNewInThisVersion": "Novedades de esta versión",
 	"settings.whatsNewNone": "No hay cambios destacados en esta versión.",
 	"settings.devBuildNote": "El actualizador integrado está deshabilitado en builds de desarrollo. Usa una build de release para buscar e instalar actualizaciones publicadas.",
-	"settings.securityTitle": "Seguridad",
 	"settings.autoLockAfterInactivity": "Bloqueo automático por inactividad",
 	"settings.timeoutSaved": "Guardado",
 	"settings.timeoutFailedToSave": "No se pudo guardar",
@@ -169,10 +168,5 @@
 	"settings.routeTrafficThroughTorUnavailable": "El enrutamiento por Tor no está disponible en esta compilación.",
 	"settings.routeTrafficThroughTorStartupWarning": "Tor no pudo iniciarse automáticamente:",
 	"settings.routeTrafficThroughTorLoadError": "No se pudo cargar el ajuste de enrutamiento por Tor.",
-	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor.",
-	"settings.experimental.title": "Funciones experimentales",
-	"settings.experimental.badge": "Experimental",
-	"settings.experimental.empty": "No hay funciones experimentales disponibles en esta versión.",
-	"settings.experimental.flags.advanced_evm_accounts.name": "Cuentas EVM avanzadas",
-	"settings.experimental.flags.advanced_evm_accounts.description": "Crea o importa claves EVM independientes y envía llamadas directas a contratos con ellas. No están vinculadas a escuads ni a tu perfil. Las cuentas avanzadas que ya tienes siguen disponibles en cualquier caso."
+	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor."
 }
