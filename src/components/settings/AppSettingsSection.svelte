@@ -18,6 +18,7 @@
   import UpdateAvailablePanel from '../updater/UpdateAvailablePanel.svelte';
   import WhatsNewModal from '../updater/WhatsNewModal.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
+  import SettingsSubheading from './SettingsSubheading.svelte';
   import PrivacySettingsSection from './PrivacySettingsSection.svelte';
   import { getSessionTimeout, setSessionTimeout } from '../../lib/api/auth';
   import { locale, setLocale, LOCALE_OPTIONS } from '../../stores/locale';
@@ -207,7 +208,7 @@
     <hr class="app-settings-divider" />
 
     <div class="updates-section" aria-labelledby="updates-heading">
-      <h3 id="updates-heading" class="theme-subheading">{$t('settings.updatesTitle')}</h3>
+      <SettingsSubheading id="updates-heading">{$t('settings.updatesTitle')}</SettingsSubheading>
 
       <p class="update-current-version">
         {$t('settings.currentVersionLabel', { values: { version: versionLabel() } })}
@@ -340,13 +341,6 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-  }
-
-  .theme-subheading {
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 6px 0;
   }
 
   .app-settings-divider {

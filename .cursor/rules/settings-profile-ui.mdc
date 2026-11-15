@@ -1,0 +1,13 @@
+# Settings / Profile UI building blocks
+
+Normative detail lives in **docs** (not all contributors use Cursor): [docs/wallet/SETTINGS_LAYOUT.md](../../docs/wallet/SETTINGS_LAYOUT.md) → **Building blocks**.
+
+## Do
+
+- New Settings / Profile UI: import existing primitives (`SettingsCollapsibleSection`, `SettingsFormModal`, `form-controls.css`, `MoreActionsMenu`, `InfoTip`, `RefreshIconButton`, `EditIconButton`, `CopyIconButton`, `SettingsSubheading`, `SettingsActionRow`, `formatAssetAmount`, `shortEvmAddress`).
+- Before finish: `pnpm check:settings-profile-ui` with the other frontend CI gates.
+
+## Do not
+
+- Invent a second kebab, copy-icon SVG, tip paragraph, or settings form modal under `src/components/settings/` or `src/components/profile/`.
+- Put DM WalletBar or squad governance work in Settings/Profile without an explicit ask — those are separate surfaces.

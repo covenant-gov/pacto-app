@@ -35,6 +35,8 @@
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
+  import CopyIconButton from '../ui/CopyIconButton.svelte';
+  import SettingsSubheading from './SettingsSubheading.svelte';
 
   let userNpub = $derived($currentUser?.npub ?? '');
 
@@ -294,33 +296,15 @@
 <SettingsCollapsibleSection sectionId="settings-nostr" title={$t('settings.nostrSettingsTitle')}>
 
   <div class="nostr-npub-block" aria-labelledby="nostr-npub-heading">
-    <h3 id="nostr-npub-heading" class="nostr-settings-subheading">{$t('settings.npubLabel')}</h3>
+    <SettingsSubheading id="nostr-npub-heading">{$t('settings.npubLabel')}</SettingsSubheading>
     {#if userNpub}
       <div class="nostr-npub-row">
         <code class="nostr-npub-value">{userNpub}</code>
-        <button
-          type="button"
-          class="nostr-npub-copy-btn"
-          aria-label={copiedNpub ? $t('settings.copied') : $t('settings.copyNpub')}
+        <CopyIconButton
+          ariaLabel={copiedNpub ? $t('settings.copied') : $t('settings.copyNpub')}
           title={copiedNpub ? $t('settings.copied') : $t('settings.copy')}
-          onclick={copyNpub}
-        >
-          <svg
-            class="nostr-npub-copy-icon"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.75"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-          </svg>
-        </button>
+          onclick={() => void copyNpub()}
+        />
         <MoreActionsMenu
           ariaLabel={$t('settings.npubActionsMenu')}
           items={[
@@ -341,7 +325,7 @@
 
   <div class="nostr-relay-list-wrap" aria-labelledby="nostr-relay-list-heading">
     <div class="nostr-relay-list-head">
-      <h3 id="nostr-relay-list-heading" class="nostr-settings-subheading">{$t('settings.connectedRelaysTitle')}</h3>
+      <SettingsSubheading id="nostr-relay-list-heading">{$t('settings.connectedRelaysTitle')}</SettingsSubheading>
       <div class="nostr-relay-list-actions">
         <button type="button" class="nostr-add-relay-open" onclick={openAddRelayModal}>
           {$t('settings.addCustomRelayTitle')}
@@ -630,40 +614,12 @@
     color: var(--text-primary);
   }
 
-  .nostr-npub-copy-btn {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    padding: 0;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: border-color 0.2s;
-  }
-
-  .nostr-npub-copy-btn:hover {
-    border-color: var(--brand);
-    color: var(--text-primary);
-  }
-
   .nostr-settings-code {
     font-size: 0.875em;
     padding: 0.1em 0.35em;
     border-radius: 4px;
     background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
-  }
-
-  .nostr-settings-subheading {
-    margin: 0 0 10px 0;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
   }
 
   .nostr-settings-muted {

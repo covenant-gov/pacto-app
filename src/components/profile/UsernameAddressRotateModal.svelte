@@ -13,6 +13,7 @@
     usernameState,
   } from '../../stores/username';
   import Modal from '../ui/Modal.svelte';
+  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   interface Props {
     open: boolean;
@@ -35,12 +36,6 @@
 
   const titleId = 'username-address-rotate-title';
   const descId = 'username-address-rotate-desc';
-
-  function shortAddr(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 12) return a;
-    return `${a.slice(0, 6)}…${a.slice(-4)}`;
-  }
 
   function isValidEvmAddress(value: string): boolean {
     return /^0x[0-9a-fA-F]{40}$/.test(value.trim());
@@ -102,7 +97,7 @@
     {#if boundAddress}
       <p class="rotate-meta">
         {$t('profile.username.boundEvm')}:
-        <code>{shortAddr(boundAddress)}</code>
+        <code>{shortEvmAddress(boundAddress)}</code>
       </p>
     {/if}
 
@@ -111,7 +106,7 @@
         <p class="rotate-pending-title">{$t('profile.username.pendingTransfer')}</p>
         {#if pendingAddress}
           <p class="rotate-meta">
-            {$t('profile.username.pendingTo', { values: { address: shortAddr(pendingAddress) } })}
+            {$t('profile.username.pendingTo', { values: { address: shortEvmAddress(pendingAddress) } })}
           </p>
         {/if}
         <div class="rotate-actions">

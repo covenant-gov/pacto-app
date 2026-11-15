@@ -122,7 +122,12 @@ Which tool (CSS vs `svelte/motion` vs `svelte/transition`): [MOTION.md](./MOTION
 - MUST: Accurate `aria-label`; decorative elements `aria-hidden`.
 - MUST: Icon-only buttons have a descriptive `aria-label` (use shared Refresh/Edit icon buttons for those actions).
 - MUST: Overflow / secondary row actions in Settings and Profile use shared `MoreActionsMenu` (`src/components/ui/MoreActionsMenu.svelte`) — ⋮ kebab — including when there is only one item (e.g. Export key). Do not invent a second kebab or a one-off text Export button under identity rows.
+- MUST: Copy-to-clipboard icon controls use `CopyIconButton` (`src/components/ui/CopyIconButton.svelte`) on Settings / Profile identity and address rows.
 - MUST: Prefer native semantics (`button`, `a`, `label`, `table`) before ARIA.
+
+### Account chrome (Settings / Profile)
+
+Normative cookbook (where UI belongs, primitive table, modal exceptions, lint): [docs/wallet/SETTINGS_LAYOUT.md](../wallet/SETTINGS_LAYOUT.md#building-blocks-settings--profile). New Settings or Profile UI must follow that section; do not invent parallel form, tip, or overflow patterns.
 - SHOULD: Non-breaking spaces for glued units (`10 MB`, shortcut chords) in copy that must not wrap badly.
 
 ### Content handling

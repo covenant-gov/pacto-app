@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
+  import SettingsSubheading from './SettingsSubheading.svelte';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import {
     getNotificationSettings,
@@ -207,7 +208,7 @@
       <hr class="notifications-divider" />
 
       <div class="mute-section" aria-labelledby="notif-mute-heading">
-        <h3 id="notif-mute-heading" class="theme-subheading">{$t('notifications.muteSectionTitle')}</h3>
+        <SettingsSubheading id="notif-mute-heading">{$t('notifications.muteSectionTitle')}</SettingsSubheading>
         <label class="mute-toggle">
           <input type="checkbox" checked={settings.global_mute} disabled={saving} onchange={handleMuteChange} />
           <span>{$t('notifications.muteLabel')}</span>
@@ -217,7 +218,7 @@
       <hr class="notifications-divider" />
 
       <div class="permission-section" aria-labelledby="notif-permission-heading">
-        <h3 id="notif-permission-heading" class="theme-subheading">{$t('notifications.permissionSectionTitle')}</h3>
+        <SettingsSubheading id="notif-permission-heading">{$t('notifications.permissionSectionTitle')}</SettingsSubheading>
         <p class="permission-state">
           {$t('notifications.permissionStateLabel', { values: { state: permissionStateLabel(permissionState) } })}
         </p>
@@ -243,13 +244,6 @@
     margin: 0;
     color: var(--text-muted);
     font-size: 0.875rem;
-  }
-
-  .theme-subheading {
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 8px 0;
   }
 
   .sound-controls {

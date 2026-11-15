@@ -9,7 +9,6 @@
     listEvmAccounts,
     addEvmAccountRow,
     updateEvmAccountRow,
-    setActiveEvmAccount,
     squadEvmAccounts,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
@@ -141,14 +140,6 @@
     }
   }
 
-  async function onSetActiveAccount(id: string) {
-    try {
-      await setActiveEvmAccount(id);
-      await refreshEvmAddress();
-    } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('wallet.couldNotSwitchAccount')));
-    }
-  }
 </script>
 
 {#if accountNpub}
@@ -162,11 +153,9 @@
   <EvmAccountsSection
     {accountNpub}
     {evmAddress}
-    embeddedInSettings={true}
     showSquadList={true}
     {evmAccountList}
     {accountsLoading}
-    {onSetActiveAccount}
     onEditAccount={openEditAccountModal}
     onAddSquad={openAddAccountModal}
   />

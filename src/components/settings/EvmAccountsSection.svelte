@@ -19,18 +19,16 @@
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import { showToast } from '../../stores/toast';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
-  import EditIconButton from '../ui/EditIconButton.svelte';
   import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
-  import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
+  import CopyIconButton from '../ui/CopyIconButton.svelte';
+  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   interface Props {
     accountNpub?: string | null;
     evmAddress?: string | null;
-    embeddedInSettings?: boolean;
     showSquadList?: boolean;
     evmAccountList?: EvmAccountRow[];
     accountsLoading?: boolean;
-    onSetActiveAccount?: (id: string) => void;
     onEditAccount?: (acc: EvmAccountRow) => void;
     onAddSquad?: () => void;
   }
@@ -38,11 +36,9 @@
   let {
     accountNpub = null,
     evmAddress = null,
-    embeddedInSettings = false,
     showSquadList = true,
     evmAccountList = [],
     accountsLoading = false,
-    onSetActiveAccount = () => {},
     onEditAccount = () => {},
     onAddSquad = () => {},
   }: Props = $props();
@@ -109,7 +105,7 @@
   }
 
   function accountName(acc: EvmAccountRow): string {
-    return acc.label?.trim() || shortAddr(acc.address);
+    return acc.label?.trim() || shortEvmAddress(acc.address);
   }
 
   function openExportModal(acc: EvmAccountRow) {
@@ -123,17 +119,11 @@
   }
 </script>
 
-<section
-  class="evm-section wallet-view-section"
-  aria-labelledby={embeddedInSettings ? 'wallet-squad-evm-heading' : 'wallet-evm-accounts-heading'}
->
+<section class="evm-section wallet-view-section" aria-labelledby="wallet-squad-evm-heading">
   {#if showSquadList}
   <div class="wallet-view-section-head">
-    <h2
-      id={embeddedInSettings ? 'wallet-squad-evm-heading' : 'wallet-evm-accounts-heading'}
-      class="wallet-view-h2"
-    >
-      {embeddedInSettings ? $t('wallet.squadEvmAccountsTitle') : $t('wallet.evmAccountsTitle')}
+    <h2 id="wallet-squad-evm-heading" class="wallet-view-h2">
+      {$t('wallet.squadEvmAccountsTitle')}
     </h2>
     <div class="wallet-view-account-actions">
       <button
@@ -142,7 +132,7 @@
         disabled={!evmAddress}
         onclick={onAddSquad}
       >
-        {embeddedInSettings ? $t('wallet.addSquadAccount') : $t('wallet.addNewAccount')}
+        {$t('wallet.addSquadAccount')}
       </button>
     </div>
   </div>
@@ -150,47 +140,22 @@
   {#if accountsLoading && displayRows.length === 0}
     <p class="wallet-view-empty">{$t('wallet.loadingAccounts')}</p>
   {:else if displayRows.length === 0}
-    <p class="wallet-view-empty">
-      {embeddedInSettings
-        ? $t('wallet.noSquadEvmAccounts')
-        : $t('wallet.noEvmAccounts')}
-    </p>
+    <p class="wallet-view-empty">{$t('wallet.noSquadEvmAccounts')}</p>
   {:else}
     {#snippet accountRow(acc: EvmAccountRow)}
       {@const linkedSquads = squadBindingsFor(acc)}
       {@const name = accountName(acc)}
-      <li
-        class="wallet-view-account-row evm-account-row"
-        class:wallet-view-account-active={!embeddedInSettings && acc.isActive}
-      >
-        {#if embeddedInSettings}
+      <li class="wallet-view-account-row evm-account-row">
           <div class="evm-account-primary">
             <p class="evm-account-name">{name}</p>
-            <button
-              type="button"
-              class="evm-account-address-pill"
+            <code class="evm-account-address-short" title={acc.address}>{shortEvmAddress(acc.address)}</code>
+            <CopyIconButton
+              size={28}
               disabled={accountsLoading || !acc.address?.trim()}
-              aria-label={$t('wallet.copyAddressToClipboard')}
+              ariaLabel={$t('wallet.copyAddressToClipboard')}
               title={acc.address}
               onclick={() => void copyAddress(acc.address)}
-            >
-              <code class="evm-account-address-short">{shortAddr(acc.address)}</code>
-              <svg
-                class="evm-account-copy-icon"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.75"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-            </button>
+            />
             <MoreActionsMenu
               disabled={accountsLoading}
               ariaLabel={$t('wallet.accountActionsMenu')}
@@ -232,46 +197,6 @@
               </ul>
             {/if}
           </div>
-        {:else}
-          <label class="wallet-view-account-select">
-            <input
-              type="radio"
-              name="active_evm_account"
-              checked={acc.isActive}
-              disabled={accountsLoading}
-              onchange={() => onSetActiveAccount(acc.id)}
-            />
-            <span class="wallet-view-account-meta">
-              <span class="wallet-view-account-name">{name}</span>
-            </span>
-          </label>
-
-          <button
-            type="button"
-            class="wallet-view-account-addr-btn"
-            disabled={accountsLoading || !acc.address?.trim()}
-            title={acc.address}
-            aria-label={$t('wallet.copyAddressToClipboard')}
-            onclick={(e) => { e.stopPropagation(); void copyAddress(acc.address); }}
-          >
-            <code class="wallet-view-account-addr">{shortAddr(acc.address)}</code>
-          </button>
-          <div class="wallet-view-account-tools">
-            {#if acc.isActive}
-              <span class="wallet-view-account-badge">{$t('wallet.signerBadge')}</span>
-            {/if}
-            {#if acc.isDefaultShared}
-              <span class="wallet-view-account-badge">{$t('wallet.receiverBadge')}</span>
-            {/if}
-            <EditIconButton
-              disabled={accountsLoading}
-              ariaLabel={$t('wallet.editAccountName')}
-              title={$t('wallet.editDisplayName')}
-              className="evm-account-edit-btn"
-              onclick={() => onEditAccount(acc)}
-            />
-          </div>
-        {/if}
       </li>
     {/snippet}
 
@@ -468,63 +393,20 @@
     white-space: nowrap;
   }
 
-  .evm-account-address-pill {
-    display: inline-flex;
+  .evm-account-address-short {
     flex: 0 1 auto;
-    align-items: center;
-    gap: 8px;
     min-width: 0;
-    margin: 0;
     margin-right: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 6px 10px;
     border: 1px solid var(--border-subtle);
     border-radius: 999px;
     background: var(--bg-elevated);
     color: var(--text-secondary);
-    cursor: pointer;
-    font: inherit;
-  }
-
-  .evm-account-address-pill:hover:not(:disabled) {
-    border-color: var(--border);
-    color: var(--text-primary);
-  }
-
-  .evm-account-address-pill:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 1px;
-  }
-
-  .evm-account-address-pill:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .evm-account-address-short {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.8125rem;
-  }
-
-  .evm-account-copy-icon {
-    flex-shrink: 0;
-  }
-
-  .wallet-view-account-addr-btn {
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .wallet-view-account-addr-btn:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 1px;
-    border-radius: 4px;
   }
 
   .evm-account-squad-block {

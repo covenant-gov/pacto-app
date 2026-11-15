@@ -34,7 +34,7 @@
   let signerAddress = $derived(activeSigner?.address?.trim() || null);
   let receiverAddress = $derived(activeReceiver?.address?.trim() || signerAddress || null);
 
-  function shortAddr(a: string | null): string {
+  function displayAddr(a: string | null): string {
     if (!a) return tFn('wallet.notSet');
     return shortEvmAddress(a);
   }
@@ -82,7 +82,7 @@
   }
 
   function accountOptionLabel(acc: EvmAccountRow): string {
-    const parts: string[] = [shortAddr(acc.address)];
+    const parts: string[] = [shortEvmAddress(acc.address)];
     if (acc.label?.trim()) parts.push(acc.label.trim());
     return parts.join(' · ');
   }
@@ -95,11 +95,11 @@
     <dl class="dwc-summary-list">
       <div class="dwc-summary-row">
         <dt>{$t('wallet.signerLabel')}</dt>
-        <dd><code>{shortAddr(signerAddress)}</code></dd>
+        <dd><code>{displayAddr(signerAddress)}</code></dd>
       </div>
       <div class="dwc-summary-row">
         <dt>{$t('wallet.receiverLabel')}</dt>
-        <dd><code>{shortAddr(receiverAddress)}</code></dd>
+        <dd><code>{displayAddr(receiverAddress)}</code></dd>
       </div>
     </dl>
     <EditIconButton
@@ -112,7 +112,7 @@
   </div>
 
   {#if squadAccounts.length === 0 && !accountsLoading}
-    <p class="dwc-hint dwc-hint-tight">{$t('wallet.addSquadAccountFirst')}</p>
+    <p class="dwc-empty">{$t('wallet.addSquadAccountFirst')}</p>
   {/if}
 </section>
 
@@ -171,15 +171,11 @@
     color: var(--text-primary);
   }
 
-  .dwc-hint {
-    margin: 0;
+  .dwc-empty {
+    margin: 12px 0 0;
     color: var(--text-muted);
     font-size: 0.875rem;
     line-height: 1.45;
-  }
-
-  .dwc-hint-tight {
-    margin-top: 12px;
   }
 
   .dwc-summary {

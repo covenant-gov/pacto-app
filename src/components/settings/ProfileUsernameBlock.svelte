@@ -27,6 +27,7 @@
   } from '../../stores/username';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import InfoTip from '../ui/InfoTip.svelte';
+  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   let draftName = $state('');
   let availability: 'idle' | 'checking' | 'available' | 'taken' | 'invalid' = $state('idle');
@@ -88,12 +89,6 @@
       clearTimeout(handle);
     };
   });
-
-  function shortAddr(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 12) return a;
-    return `${a.slice(0, 6)}…${a.slice(-4)}`;
-  }
 
   async function onClaim() {
     if (!requireBackupVerified()) return;
@@ -184,7 +179,7 @@
         <p class="profile-username-pending-title">{$t('profile.username.pendingTransfer')}</p>
         {#if pendingAddress}
           <p class="profile-username-meta">
-            {$t('profile.username.pendingTo', { values: { address: shortAddr(pendingAddress) } })}
+            {$t('profile.username.pendingTo', { values: { address: shortEvmAddress(pendingAddress) } })}
           </p>
         {/if}
         <div class="profile-username-actions">

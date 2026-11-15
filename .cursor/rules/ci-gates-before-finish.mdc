@@ -18,6 +18,7 @@ pnpm check
 pnpm lint
 pnpm check:tauri-commands
 pnpm check:i18n-toasts
+pnpm check:settings-profile-ui
 ```
 
 ## Rules of engagement

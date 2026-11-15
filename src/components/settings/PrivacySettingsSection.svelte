@@ -8,6 +8,7 @@
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { webPreviewsEnabled } from '../../stores/web-previews';
   import InfoTip from '../ui/InfoTip.svelte';
+  import SettingsSubheading from './SettingsSubheading.svelte';
 
   let loading = $state(true);
   let saving = $state(false);
@@ -62,7 +63,7 @@
 </script>
 
 <section class="privacy-section" aria-labelledby="privacy-heading">
-  <h3 id="privacy-heading" class="theme-subheading">{$t('settings.privacyTitle')}</h3>
+  <SettingsSubheading id="privacy-heading">{$t('settings.privacyTitle')}</SettingsSubheading>
 
   <label class="privacy-toggle">
     <input
@@ -150,13 +151,6 @@
 
   .privacy-toggle input {
     accent-color: var(--brand);
-  }
-
-  .theme-subheading {
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 8px 0;
   }
 
   .tor-toggle-row {

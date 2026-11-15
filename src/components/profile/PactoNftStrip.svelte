@@ -11,6 +11,7 @@
   } from '../../stores/username';
   import { showToast } from '../../stores/toast';
   import UsernameAddressRotateModal from './UsernameAddressRotateModal.svelte';
+  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
 
   const catalog = pactoNftCatalog(USERNAME_NETWORK);
   const usernameEntry = $derived(catalog.find((row) => row.kind === 'username') ?? null);
@@ -22,12 +23,6 @@
 
   let rotateOpen = $state(false);
   let copied = $state(false);
-
-  function shortAddr(addr: string): string {
-    const a = addr.trim();
-    if (a.length < 12) return a;
-    return `${a.slice(0, 6)}…${a.slice(-4)}`;
-  }
 
   async function copyBoundAddress() {
     if (!boundAddress) return;
@@ -64,8 +59,8 @@
               aria-label={$t('profile.nfts.copyBoundEvm')}
             >
               <span class="nft-card-bound-label">{$t('profile.username.boundEvm')}</span>
-              <code>{shortAddr(boundAddress)}</code>
-              <span class="nft-card-bound-hint">{copied ? $t('profile.copied') : $t('profile.copy')}</span>
+              <code>{shortEvmAddress(boundAddress)}</code>
+              <span class="nft-card-bound-status">{copied ? $t('profile.copied') : $t('profile.copy')}</span>
             </button>
           {/if}
           {#if pending}
@@ -176,7 +171,7 @@
     color: var(--text-secondary);
   }
 
-  .nft-card-bound:hover .nft-card-bound-hint {
+  .nft-card-bound:hover .nft-card-bound-status {
     color: var(--text-primary);
   }
 
@@ -196,7 +191,7 @@
     color: var(--text-secondary);
   }
 
-  .nft-card-bound-hint {
+  .nft-card-bound-status {
     font-size: 0.6875rem;
     color: var(--text-muted);
   }

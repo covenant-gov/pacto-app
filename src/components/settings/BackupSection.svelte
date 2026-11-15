@@ -3,6 +3,7 @@
   import { currentUser } from '../../stores/auth-session';
   import { requireBackupVerified } from '../../stores/backup-verification';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
+  import SettingsActionRow from './SettingsActionRow.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
 
@@ -12,7 +13,7 @@
 </script>
 
 <SettingsCollapsibleSection sectionId="settings-backup" title={$t('settings.backupTitle')}>
-  <div class="backup-actions">
+  <SettingsActionRow label={$t('settings.backupTitle')}>
     <button
       type="button"
       class="btn-export"
@@ -27,7 +28,7 @@
     <button type="button" class="btn-export" onclick={() => (exportAllModalOpen = true)}>
       {$t('profile.exportAll')}
     </button>
-  </div>
+  </SettingsActionRow>
 </SettingsCollapsibleSection>
 
 <EvmAccountKeyExportModal
@@ -40,22 +41,14 @@
 <ExportAllSecretsModal open={exportAllModalOpen} onClose={() => (exportAllModalOpen = false)} />
 
 <style>
-  .backup-actions {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
   .btn-export {
-    flex: 1;
-    min-width: 140px;
-    min-height: 48px;
-    padding: 0 16px;
+    min-height: 40px;
+    padding: 0 14px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--bg-hover);
     color: var(--text-primary);
-    font-size: 1rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;

@@ -2,6 +2,7 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
+  import CopyIconButton from '../ui/CopyIconButton.svelte';
   import WalletHomeSendModal from '../wallet/WalletHomeSendModal.svelte';
   import WalletReceiveModal from '../wallet/WalletReceiveModal.svelte';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -301,28 +302,12 @@
       </div>
       <div class="wallet-hero-account-address-pill">
         <code class="wallet-hero-account-address" title={viewedAddress}>{shortEvmAddress(viewedAddress)}</code>
-        <button
-          type="button"
-          class="wallet-hero-account-copy"
-          aria-label={$t('wallet.copyAddressToClipboard')}
+        <CopyIconButton
+          size={28}
+          ariaLabel={$t('wallet.copyAddressToClipboard')}
           title={addressCopied ? $t('wallet.copied') : $t('wallet.copyAddress')}
           onclick={() => void copyViewedAddress()}
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.75"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-          </svg>
-        </button>
+        />
       </div>
     </div>
   {/if}
@@ -516,27 +501,6 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.8125rem;
     color: var(--text-secondary);
-  }
-
-  .wallet-hero-account-copy {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .wallet-hero-account-copy:hover {
-    color: var(--text-primary);
-  }
-
-  .wallet-hero-account-copy:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: 1px;
-    border-radius: 4px;
   }
 
   .wallet-hero-account-menu {

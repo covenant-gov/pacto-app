@@ -3,5 +3,6 @@
 	"ui.edit": "Edit",
 	"ui.refresh": "Refresh",
 	"ui.info": "Info",
-	"ui.moreActions": "More actions"
+	"ui.moreActions": "More actions",
+	"ui.copy": "Copy"
 }

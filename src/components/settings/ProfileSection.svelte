@@ -9,6 +9,7 @@
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
   import EditIconButton from '../ui/EditIconButton.svelte';
+  import CopyIconButton from '../ui/CopyIconButton.svelte';
   import AvatarPicker from '../ui/AvatarPicker.svelte';
   import ProfileUsernameBlock from './ProfileUsernameBlock.svelte';
 
@@ -234,10 +235,8 @@
               <span class="profile-account-id-label">{$t('profile.accountIdLabel')}</span>
               <div class="profile-account-id-row">
                 <code class="profile-account-id-value">{profile.id}</code>
-                <button
-                  type="button"
-                  class="btn-copy-account-id"
-                  aria-label={copiedNpub ? $t('profile.copied') : $t('profile.copyAccountId')}
+                <CopyIconButton
+                  ariaLabel={copiedNpub ? $t('profile.copied') : $t('profile.copyAccountId')}
                   title={copiedNpub ? $t('profile.copied') : $t('profile.copy')}
                   onclick={async () => {
                     try {
@@ -248,23 +247,7 @@
                       // clipboard write may fail silently
                     }
                   }}
-                >
-                  <svg
-                    class="btn-copy-account-id-icon"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.75"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
-                </button>
+                />
               </div>
             </div>
           {/if}
@@ -451,27 +434,6 @@
     line-height: 1.45;
     word-break: break-all;
     color: var(--text-secondary);
-  }
-
-  .btn-copy-account-id {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    padding: 0;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: border-color 0.2s;
-  }
-
-  .btn-copy-account-id:hover {
-    border-color: var(--brand);
-    color: var(--text-primary);
   }
 
   .edit-error {

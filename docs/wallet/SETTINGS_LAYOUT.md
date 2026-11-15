@@ -47,3 +47,48 @@ Squad keys are managed on Profile.
 ## Wallet summary address
 
 `get_wallet_summary` optional `address` must be a **squad-purpose** key on this account (fail closed). Omit it for DM WalletBar and prefetch (active signer).
+
+## Building blocks (Settings / Profile)
+
+Normative cookbook for account chrome. Interaction taste also lives in [docs/design-system/UI.md](../design-system/UI.md). CI ratchet: `pnpm check:settings-profile-ui` (scoped to `src/components/settings/**` and `src/components/profile/**`).
+
+### Where UI belongs
+
+| Put it on… | When |
+|------------|------|
+| **Profile** | Identity, username NFT, personal/squad wallet viewing, squad EVM account management, sponsored-gas disclosure |
+| **Settings** | Relays, preferred/enabled chains, tracked tokens, personal RPC, app prefs, notifications, backup exports, logout |
+| **Neither** | DM WalletBar send/request (peer chat), squad governance / dashboard — follow-up work outside this doc |
+
+Some Profile blocks still live under `src/components/settings/` (`ProfileSection`, `EvmAccountsSection`, `DefaultWalletConfig`, `EvmDashGasSection`). Prefer importing those shared pieces over inventing a parallel tree; do not re-home them without an explicit migration.
+
+### Required primitives
+
+| Need | Use |
+|------|-----|
+| Settings section shell | `SettingsPage` + `SettingsCollapsibleSection` |
+| Add / edit form modal | `SettingsFormModal` + fields from `src/styles/form-controls.css` (`.ui-field`, `.ui-select`, `.ui-input`, `.ui-textarea`) |
+| Section `h3` | `SettingsSubheading` |
+| Labeled row + trailing actions | `SettingsActionRow` |
+| Overflow / secondary row actions | `MoreActionsMenu` (⋮), even for a single item |
+| Tips / disclaimers / trademark | `InfoTip` — never an always-visible hint paragraph under a toggle or heading |
+| Refresh / Edit | `RefreshIconButton` / `EditIconButton` (icon-only) |
+| Copy to clipboard | `CopyIconButton` |
+| Crypto amounts | `formatAssetAmount` (`src/lib/evm/format-token-amount.ts`) — 6 display decimals |
+| Short `0x` display | `shortEvmAddress` (`src/lib/governance/hats-tree-annotations.ts`) |
+
+### Modal rule
+
+- Settings **add/edit** forms → `SettingsFormModal`.
+- **Destructive confirm** (e.g. logout) and **sensitive-export PIN** flows may use `Modal` or dedicated export modals (`EvmAccountKeyExportModal`, `ExportAllSecretsModal`).
+
+### Pickers vs overflow
+
+Account / network **pickers** (e.g. Profile wallet account switcher) are dedicated controls. Do **not** reuse `MoreActionsMenu` for selection pickers; that component is for secondary actions (export, edit name, backup).
+
+### Adding a Settings section
+
+1. Add a stable `settings-*` id to `SETTINGS_SECTION_IDS` in `src/lib/settings/settings-section-collapse.ts`.
+2. Mount a `SettingsCollapsibleSection` from `AccountSettingsView`.
+3. Add a sidebar entry in `SettingsPage`.
+4. Use the primitives above; run `pnpm check:settings-profile-ui` before finish.
