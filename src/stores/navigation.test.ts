@@ -18,6 +18,8 @@ import {
   TOOLS_CHANNEL_MODE_PREFIX,
   squadSettingsRpcFocusNonce,
   focusSquadSettingsRpcEditor,
+  squadSettingsBundlerFocusNonce,
+  focusSquadSettingsBundlerEditor,
   squadSettingsNetworkFocusNonce,
   squadSettingsNetworkFocusSlot,
   focusSquadSettingsNetworkEditor,
@@ -81,6 +83,7 @@ describe('navigation', () => {
     settingsChannelMode.set('you');
     squadToolsChannelMode.set('polls');
     squadSettingsRpcFocusNonce.set(0);
+    squadSettingsBundlerFocusNonce.set(0);
     squadSettingsNetworkFocusNonce.set(0);
     squadSettingsNetworkFocusSlot.set('primary');
     profileUsernameFocusNonce.set(0);
@@ -257,6 +260,23 @@ describe('navigation', () => {
     expect(get(squadSettingsNetworkFocusNonce)).toBe(1);
     focusSquadSettingsNetworkEditor();
     expect(get(squadSettingsNetworkFocusNonce)).toBe(2);
+  });
+
+  it('focusSquadSettingsBundlerEditor opens #settings → Network and bumps the bundler focus nonce', () => {
+    activeTopNavTab.set('commons');
+    activeView.set('profile');
+    lastOpenedSquadId.set('squad-fallback');
+    settingsChannelMode.set('you');
+    expect(get(squadSettingsBundlerFocusNonce)).toBe(0);
+    focusSquadSettingsBundlerEditor();
+    expect(get(activeTopNavTab)).toBe('squads');
+    expect(get(activeView)).toBe('hub');
+    expect(get(activeSquadId)).toBe('squad-fallback');
+    expect(get(activeChannelId)).toBe('__squad_settings__');
+    expect(get(settingsChannelMode)).toBe('network');
+    expect(get(squadSettingsBundlerFocusNonce)).toBe(1);
+    focusSquadSettingsBundlerEditor();
+    expect(get(squadSettingsBundlerFocusNonce)).toBe(2);
   });
 
   it('bumpGovernanceProcessNonce increments per parent and ignores blank ids', () => {

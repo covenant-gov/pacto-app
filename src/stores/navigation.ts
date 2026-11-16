@@ -107,6 +107,19 @@ export function focusSquadSettingsRpcEditor() {
   squadSettingsRpcFocusNonce.update((n) => n + 1);
 }
 
+/** Bumped to open #settings → Sponsored gas (Pimlico) after a username-claim bundler warning. */
+export const squadSettingsBundlerFocusNonce = writable(0);
+
+export function focusSquadSettingsBundlerEditor() {
+  activeTopNavTab.set('squads');
+  if (!get(activeSquadId)) {
+    const fallback = get(lastOpenedSquadId);
+    if (fallback) activeSquadId.set(fallback);
+  }
+  openSquadSettingsChannel('network');
+  squadSettingsBundlerFocusNonce.update((n) => n + 1);
+}
+
 /** Bumped to open #settings → network editor from the Status checklist CTA. */
 export const squadSettingsNetworkFocusNonce = writable(0);
 export const squadSettingsNetworkFocusSlot = writable<SquadNetworkSlot>('primary');

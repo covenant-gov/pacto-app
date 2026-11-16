@@ -16,7 +16,10 @@
   } from '../../../lib/squad/squad-rpc';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { openExternalUrl } from '../../../lib/utils/open-external';
-  import { squadSettingsRpcFocusNonce } from '../../../stores/navigation';
+  import {
+    squadSettingsBundlerFocusNonce,
+    squadSettingsRpcFocusNonce,
+  } from '../../../stores/navigation';
   import { showToast } from '../../../stores/toast';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
 
@@ -53,6 +56,8 @@
   let bundlerKeyDraft = $state('');
   let bundlerFormError = $state('');
   let bundlerSaving = $state(false);
+  let bundlerInputEl = $state<HTMLInputElement | null>(null);
+  let lastBundlerFocusNonce = $state(0);
 
   const rpcLabelRaw = $derived(formatSquadRpcLabel(squadRpcConfig));
   const rpcLabel = $derived(
@@ -83,6 +88,19 @@
       queueMicrotask(() => {
         document.getElementById('squad-settings-rpc')?.scrollIntoView({ block: 'nearest' });
         rpcInputEl?.focus();
+      });
+    }
+  });
+
+  $effect(() => {
+    const nonce = $squadSettingsBundlerFocusNonce;
+    if (nonce <= lastBundlerFocusNonce) return;
+    lastBundlerFocusNonce = nonce;
+    openBundlerEdit();
+    if (typeof document !== 'undefined') {
+      queueMicrotask(() => {
+        document.getElementById('squad-settings-bundler')?.scrollIntoView({ block: 'nearest' });
+        bundlerInputEl?.focus();
       });
     }
   });
@@ -302,6 +320,7 @@
   </DashboardAssetCard>
 
   <DashboardAssetCard
+    id="squad-settings-bundler"
     headingId="squad-bundler-heading"
     heading={$t('squad.bundler.title')}
     hint={$t(bundlerHintKey)}
@@ -324,6 +343,7 @@
         type="password"
         autocomplete="off"
         bind:value={bundlerKeyDraft}
+        bind:this={bundlerInputEl}
         placeholder={$t('squad.bundler.keyPlaceholder')}
         aria-label={$t('squad.bundler.keyLabel')}
       />
