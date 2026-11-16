@@ -1,0 +1,71 @@
+{
+  "version": "0.8.2",
+  "items": [
+    {
+      "kind": "new",
+      "title": {
+        "en": "Public channels for your squad",
+        "es": "Canales públicos para tu escuad"
+      },
+      "detail": {
+        "en": "Share squad conversations in channels anyone can read.",
+        "es": "Comparte las conversaciones de tu escuad en canales que cualquiera puede leer."
+      }
+    },
+    {
+      "kind": "new",
+      "title": {
+        "en": "Catch up when you join",
+        "es": "Ponte al día al entrar"
+      },
+      "detail": {
+        "en": "See up to 30 days of earlier channel messages when another member shares them with you.",
+        "es": "Consulta hasta 30 días de mensajes anteriores del canal cuando otro miembro te los comparta."
+      }
+    },
+    {
+      "kind": "new",
+      "title": {
+        "en": "Custom crew permissions",
+        "es": "Permisos a medida para el equipo"
+      },
+      "detail": {
+        "en": "Create named roles and choose who can invite members, create channels, publish announcements, or add events and documents.",
+        "es": "Crea roles con nombre y decide quién puede invitar miembros, crear canales, publicar anuncios o añadir eventos y documentos."
+      }
+    },
+    {
+      "kind": "improved",
+      "title": {
+        "en": "A separate home for your profile",
+        "es": "Un espacio propio para tu perfil"
+      },
+      "detail": {
+        "en": "Find your identity and personal wallet in Profile, separate from app settings.",
+        "es": "Tu identidad y tu cartera personal ahora están en Perfil, aparte de los ajustes de la aplicación."
+      }
+    },
+    {
+      "kind": "fixed",
+      "title": {
+        "en": "Clearer invitation status",
+        "es": "Invitaciones con el estado correcto"
+      },
+      "detail": {
+        "en": "Declined invitations leave the pending list, and dismissed invitations stay closed.",
+        "es": "Las invitaciones rechazadas desaparecen de la lista de pendientes y las que cierras ya no vuelven a abrirse."
+      }
+    },
+    {
+      "kind": "fixed",
+      "title": {
+        "en": "Clear attachments in chat",
+        "es": "Adjuntos sin desenfoque en el chat"
+      },
+      "detail": {
+        "en": "Received attachments are no longer blurred, and messages without captions no longer leave empty gaps.",
+        "es": "Los adjuntos recibidos ya no aparecen desenfocados y los mensajes sin texto adjunto ya no dejan huecos vacíos."
+      }
+    }
+  ]
+}
