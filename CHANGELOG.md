@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## v0.8.2
+
+### Bug Fixes
+- Hats refetch and gov failover without a second transaction (#504) by @daopunk, closes #320, #489
+- Attach open-channel sidebar only after mls welcome (#534) by @daopunk, closes #451
+- Sponsor squad-admin writes and crew governance ui (#537) by @daopunk
+- Unblur recipient attachments and drop empty caption gaps (#538) by @daopunk
+- Hydrate the first mls channel opened during sync (#539) by @daopunk
+- Stop restore from rejecting the keypackage a refresh just stored (#541) by @daopunk
+- Refresh live kind-0 metadata without wiping named profiles (#548) by @daopunk
+- Drop previous account EVM — gas cache on logout (#552) by @daopunk, closes #501
+- Keep outbound invite closes sticky and skip decline during admit (#551) by @daopunk, closes #535, #536
+- Make imported MLS history edited, visible, and capped by newest (#553) by @daopunk, closes #542, #543, #544, #545, #546
+
+
+### Features
+- Governance hub tabs, #board merge, and settings four-mode split (#516) by @daopunk
+- Unify invite pending and restack settings about with tools stickers (#521) by @daopunk
+- Crew privileges with packed roles and mls enforcement (#523) by @daopunk, closes #522
+- Gate event and doc create on squad-admin privilege flags (#532) by @daopunk, closes #517
+- Clear about pending invited row on invitee decline (#533) by @daopunk, closes #519
+- Backfill 30-day channel chat after mls welcome (#540) by @daopunk, closes #457, #458, #459, #460, #461, #462, #463, #464
+- Prefer squads in top nav and empty-state commons cta (#549) by @daopunk
+- Add public squad channels with roster-enforced ingest (#555) by @daopunk
+- Split profile from settings and restore username nfts (#556) by @daopunk
+
+
+### Other
+- Refuse bloated cargo targets on make dev entrypoints (#554) by @daopunk, closes #550
+
 ## v0.8.1
 
 ### Bug Fixes
