@@ -4,7 +4,7 @@
   import { loadProfile, profiles, profileLoadingStates } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
   import { publishBoundUsername, updateProfile } from '../../lib/api/nostr';
-  import { getProfileAvatarSrc, getProfileBannerSrc, profileNeedsRelayHydration } from '../../lib/utils/profile';
+  import { getProfileAvatarSrc, getProfileBannerSrc } from '../../lib/utils/profile';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
@@ -20,8 +20,6 @@
   let userNpub = $derived($currentUser?.npub || '');
   let profile = $derived(userNpub ? $profiles[userNpub] : null);
   let loading = $derived(userNpub ? ($profileLoadingStates[userNpub] || false) : false);
-  // Empty local profile while loading means a relay restore (e.g. after seed import).
-  let restoring = $derived(loading && profileNeedsRelayHydration(profile));
 
   // Compute avatar and banner sources with caching priority
   let avatarSrc = $derived(getProfileAvatarSrc(profile));
@@ -66,12 +64,11 @@
   });
 
   function startEditing() {
-    if (!profile) return;
     isEditing = true;
     saveError = null;
-    editName = profile.name || profile.display_name || '';
-    editAbout = profile.about || '';
-    editAvatarUrl = profile.avatar || '';
+    editName = profile?.name || profile?.display_name || '';
+    editAbout = profile?.about || '';
+    editAvatarUrl = profile?.avatar || '';
   }
 
   function cancelEditing() {
@@ -84,22 +81,23 @@
   }
 
   async function handleSaveProfile() {
-    if (!profile || savingProfile) return;
+    if (savingProfile) return;
     saveError = null;
     savingProfile = true;
     try {
       const boundName = heldUsernameFromState(get(usernameState));
+      const banner = profile?.banner ?? '';
       const receipt = boundName
         ? await publishBoundUsername({
             name: boundName,
             avatar: editAvatarUrl,
-            banner: profile.banner ?? '',
+            banner,
             about: editAbout.trim(),
           })
         : await updateProfile({
             name: editName.trim(),
             avatar: editAvatarUrl,
-            banner: profile.banner ?? '',
+            banner,
             about: editAbout.trim(),
           });
       isEditing = false;
@@ -120,20 +118,28 @@
   <h2 id="profile-identity-heading" class="visually-hidden">{$t('profile.title')}</h2>
 
 
-      {#if loading}
-        <div class="loading-state">
-          <div class="spinner"></div>
-          <p>{restoring ? $t('profile.restoring') : $t('profile.loading')}</p>
-        </div>
-      {:else if error}
+      {#if !userNpub}
         <div class="error-state">
-          <p>❌ {error}</p>
+          <p>{error ?? $t('profile.noUserLoggedIn')}</p>
           <p class="error-detail">{$t('profile.errorDetail')}</p>
         </div>
-      {:else if profile}
+      {:else}
         <div class="profile-content">
+        {#if error}
+          <div class="profile-load-error" role="alert">
+            <p>{error}</p>
+            <p class="error-detail">{$t('profile.errorDetail')}</p>
+          </div>
+        {/if}
         {#if !isEditing}
           <div class="profile-top-bar">
+            {#if loading}
+              <span
+                class="profile-restore-spinner"
+                role="status"
+                aria-label={$t('profile.restoring')}
+              ></span>
+            {/if}
             <EditIconButton
               ariaLabel={$t('profile.editProfile')}
               title={$t('profile.editProfile')}
@@ -172,8 +178,8 @@
             chooseTitle={$t('profile.chooseAvatarImage')}
             editAriaLabel={$t('profile.changeAvatar')}
             cropTitle={$t('profile.crop.title')}
-            imageAlt={profile.display_name || profile.name || ''}
-            fallbackText={(profile.display_name || profile.name || $t('profile.avatarFallback')).charAt(0)}
+            imageAlt={profile?.display_name || profile?.name || ''}
+            fallbackText={(profile?.display_name || profile?.name || $t('profile.avatarFallback')).charAt(0)}
             onChange={handleAvatarChange}
           />
         </div>
@@ -217,19 +223,19 @@
             </div>
           {:else}
             <h2><VerifiedName npub={userNpub} /></h2>
-            {#if profile.nickname}
+            {#if profile && profile.nickname}
               <p class="nickname">{$t('profile.aka')} "{profile.nickname}"</p>
             {/if}
 
-            {#if profile.nip05}
+            {#if profile && profile.nip05}
               <p class="nip05">✓ {profile.nip05}</p>
             {/if}
 
-            {#if profile.about}
+            {#if profile && profile.about}
               <p class="about">{profile.about}</p>
             {/if}
 
-            {#if profile.website}
+            {#if profile && profile.website}
               <a
                 href={profile.website}
                 target="_blank"
@@ -242,14 +248,14 @@
             {/if}
 
             <!-- Lightning Address -->
-            {#if profile.lud16 || profile.lud06}
+            {#if profile && (profile.lud16 || profile.lud06)}
               <p class="lightning">⚡ {profile.lud16 || profile.lud06}</p>
             {/if}
 
             <div class="profile-account-id">
               <span class="profile-account-id-label">{$t('profile.accountIdLabel')}</span>
               <div class="profile-account-id-row">
-                <CopyableKeyPill value={profile.id} ariaLabel={$t('profile.copyAccountId')} />
+                <CopyableKeyPill value={userNpub} ariaLabel={$t('profile.copyAccountId')} />
                 <MoreActionsMenu
                   ariaLabel={$t('profile.accountIdActions')}
                   items={[
@@ -267,10 +273,6 @@
           {/if}
         </div>
       </div>
-      {:else}
-        <div class="empty-state">
-          <p>{$t('profile.noProfileLoaded')}</p>
-        </div>
       {/if}
 </section>
 
@@ -300,37 +302,42 @@
     border: 0;
   }
 
-  .loading-state, .error-state, .empty-state {
+  .error-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 32px 16px;
-    color: var(--text-muted);
+    color: var(--danger);
   }
 
-  .spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid var(--border-subtle);
+  .profile-restore-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border-subtle);
     border-top-color: var(--brand);
     border-radius: 50%;
     animation: spin 1s linear infinite;
-    margin-bottom: 16px;
+    flex-shrink: 0;
   }
 
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
 
-  .error-state {
-    color: var(--danger);
-  }
-
   .error-detail {
     color: var(--text-muted);
     font-size: 0.875rem;
     margin-top: 8px;
+  }
+
+  .profile-load-error {
+    margin: 0;
+    color: var(--danger);
+  }
+
+  .profile-load-error p {
+    margin: 0;
   }
 
   .profile-content {
@@ -342,6 +349,8 @@
   .profile-top-bar {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
   }
 
   .profile-top-bar :global(.profile-edit-btn) {
