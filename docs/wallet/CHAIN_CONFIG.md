@@ -25,7 +25,7 @@ Browser-side reads use `getEffectiveRpcUrlsForChain` in `chains.ts` — operator
 
 **Arbitrum** is the product-default preferred network in Settings → EVM. For production-like use, set **`ALCHEMY_RPC_KEY`** in `.env` (one key covers all supported chains). Until then, the app uses public RPC fallbacks or personal RPC URLs from Settings.
 
-**Local Anvil (`local`, chain `31337`)** is a normal opt-in network in every build — it appears in every picker and RPC-settings surface, and the only dev/prod difference is which chains are auto-checked on a fresh account (`defaultWalletEnabledChains()`: dev → `sepolia` + `local`; prod → `arbitrum`). See [PACTO-APP-LOCAL-CHAIN-SETUP.md](./PACTO-APP-LOCAL-CHAIN-SETUP.md).
+**Local Anvil (`local`, chain `31337`)** is a normal opt-in network in every build — it appears in every picker and RPC-settings surface, and starts unchecked. Every build defaults enabled chains to Sepolia and Arbitrum (`defaultWalletEnabledChains()`). See [PACTO-APP-LOCAL-CHAIN-SETUP.md](./PACTO-APP-LOCAL-CHAIN-SETUP.md).
 
 ## Squad deployment network
 

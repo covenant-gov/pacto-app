@@ -151,6 +151,11 @@ describe('listWalletAssetOptionsForChain', () => {
     ).toBe(true);
   });
 
+  it('includes the Ethereum catalog beyond USDC and USDT', () => {
+    const options = listWalletAssetOptionsForChain('mainnet');
+    expect(options.map((o) => o.code)).toEqual(['ETH', 'USDC', 'USDT', 'DAI', 'WETH', 'WBTC', 'LINK']);
+  });
+
   it('includes ETH, USDC, and USDT on Sepolia', () => {
     const options = listWalletAssetOptionsForChain('sepolia');
     expect(options.map((o) => o.code)).toEqual(['ETH', 'USDC', 'USDT']);

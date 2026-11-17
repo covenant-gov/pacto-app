@@ -3,6 +3,7 @@ import {
   loadWalletEnabledChains,
   saveWalletEnabledChains,
   defaultWalletEnabledChains,
+  migrateEnabledChainsV1,
   WALLET_UI_ENABLED_CHAINS_PREFIX,
 } from './wallet-ui-prefs';
 import type { SupportedChainId } from './chains';
@@ -45,13 +46,17 @@ describe('wallet-ui-prefs', () => {
     }
     delete (globalThis as unknown as { localStorage?: Storage }).localStorage;
   });
-  it('defaults to Arbitrum only in non-DEV builds', () => {
-    expect(defaultWalletEnabledChains()).toEqual(['arbitrum']);
+  it('defaults to Sepolia and Arbitrum in every build', () => {
+    expect(defaultWalletEnabledChains()).toEqual(['sepolia', 'arbitrum']);
+    setDev(true);
+    expect(defaultWalletEnabledChains()).toEqual(['sepolia', 'arbitrum']);
   });
 
-  it('defaults to Sepolia + Local Anvil in dev builds', () => {
-    setDev(true);
-    expect(defaultWalletEnabledChains()).toEqual(['sepolia', 'local']);
+  it('replaces the old automatic defaults and strips Anvil', () => {
+    expect(migrateEnabledChainsV1(['sepolia', 'local'])).toEqual(['sepolia', 'arbitrum']);
+    expect(migrateEnabledChainsV1(['arbitrum'])).toEqual(['sepolia', 'arbitrum']);
+    expect(migrateEnabledChainsV1(['mainnet', 'local'])).toEqual(['mainnet']);
+    expect(migrateEnabledChainsV1(['local'])).toEqual(['sepolia', 'arbitrum']);
   });
 
   it('round-trips enabled subset', () => {
@@ -68,15 +73,16 @@ describe('wallet-ui-prefs', () => {
     expect(loadWalletEnabledChains(npub)).toEqual(['sepolia']);
   });
 
-  it('keeps local as a normal chain when loaded in non-DEV builds', () => {
+  it('migrates a version-1 dev default to Sepolia and Arbitrum', () => {
     localStorage.setItem(
       `${WALLET_UI_ENABLED_CHAINS_PREFIX}_${npub}`,
       JSON.stringify({ v: 1, chains: ['sepolia', 'local'] })
     );
-    expect(loadWalletEnabledChains(npub)).toEqual(['sepolia', 'local']);
+    expect(loadWalletEnabledChains(npub)).toEqual(['sepolia', 'arbitrum']);
+    expect(JSON.parse(localStorage.getItem(`${WALLET_UI_ENABLED_CHAINS_PREFIX}_${npub}`) ?? '').v).toBe(2);
   });
 
-  it('keeps local as a normal chain when saved in non-DEV builds', () => {
+  it('keeps Anvil when it was saved on the current version', () => {
     saveWalletEnabledChains(npub, ['sepolia', 'local']);
     expect(loadWalletEnabledChains(npub)).toEqual(['sepolia', 'local']);
   });

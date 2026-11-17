@@ -1,6 +1,6 @@
 # Profile vs Settings
 
-Profile opens from the top bar. Settings opens from the left rail. **Profile** (`activeView === 'profile'`) is identity plus a light personal wallet. **Settings** (`activeView === 'settings'`) is infra: relays, chains, tokens, RPC, backup, and danger.
+Profile opens from the top bar. Settings opens from the left rail. **Profile** (`activeView === 'profile'`) is identity plus a light personal wallet. **Settings** (`activeView === 'settings'`) is infra: relays, chains, RPC, backup, and danger.
 
 The DM **WalletBar** stays peer-context send. It is not this page.
 
@@ -12,13 +12,13 @@ The DM **WalletBar** stays peer-context send. It is not this page.
 |--------|----------|
 | Identity | Kind 0 edit (avatar and bio; name is read-only once a username is held), npub copy and key export, one heading. A check on that heading means this account holds the chain username. The block stays visible during the relay check, including the account ID and Edit, with a corner spinner while that check is in flight |
 | Pacto NFT strip | Known Pacto contracts only (catalog from `pacto-protocol-addresses.json`). v1: Username card when claimed (name, token, bound EVM, pending line). Click opens the username view for claim or address rotation. Empty slot is the claim call to action |
-| Wallet hero | Selected squad `0x` as plain text (chevron menu to switch when multiple accounts; viewing-only), network filter over enabled chains (same options as DM WalletBar: all + each enabled), balances for the viewed `0x`, Send (any `0x`), Receive (share address; no QR). Token send only — not Username NFT address rotation |
+| Wallet hero | Selected squad `0x` as plain text (chevron menu to switch when multiple accounts; viewing-only), total, then the shared balance list (quiet network menu when more than one chain is enabled; add, scan, and remove tokens from that list). Send (any `0x`) and Receive (share address; no QR) sit under the rows. Token send only — not Username NFT address rotation |
 | Squad EVM | Default signer/receiver (`DefaultWalletConfig`) and squad account rows (add/edit/label/export key) |
 | Sponsored gas | Disclosure (`EvmDashGasSection`) — personal `global_sponsored_fee_usage` plus Sepolia global pool spendable |
 
 Viewing another squad account in the picker does **not** change the app-wide signer. `WalletHomeSendModal` loads balances for the viewed address and calls `setActiveEvmAccount` on confirm. Closing the modal without confirm leaves the signer unchanged. Profile balance fetches pass `getWalletSummary(..., address)` and stay in memory; they do not write the WalletBar summary cache.
 
-Enabled chains, watched tokens, and RPC are **read-only** on Profile. Edit them in Settings.
+Enabled chains and RPC stay in Settings. Tokens are added and removed from the balance list on Profile and in the DM wallet.
 
 ## Settings (sidebar)
 
@@ -27,7 +27,7 @@ Enabled chains, watched tokens, and RPC are **read-only** on Profile. Edit them 
 | Anchor | Section | Contents |
 |--------|---------|----------|
 | `#settings-nostr` | Nostr | Relay list, add/remove custom relays |
-| `#settings-evm` | EVM | Preferred network, enabled chains, tokens, RPC |
+| `#settings-evm` | EVM | Preferred network, enabled chains, RPC |
 | `#settings-app` | App | Theme selector |
 | `#settings-notifications` | Notifications | App notification prefs |
 | `#settings-commons` | Commons | Hidden Commons tags |
@@ -57,7 +57,7 @@ Normative cookbook for account chrome. Interaction taste also lives in [docs/des
 | Put it on… | When |
 |------------|------|
 | **Profile** | Identity, username NFT, personal/squad wallet viewing, squad EVM account management, sponsored-gas disclosure |
-| **Settings** | Relays, preferred/enabled chains, tracked tokens, personal RPC, app prefs, notifications, backup exports, logout |
+| **Settings** | Relays, preferred/enabled chains, personal RPC, app prefs, notifications, backup exports, logout |
 | **Neither** | DM WalletBar send/request (peer chat), squad governance / dashboard — follow-up work outside this doc |
 
 Some Profile blocks still live under `src/components/settings/` (`ProfileSection`, `EvmAccountsSection`, `DefaultWalletConfig`, `EvmDashGasSection`). Prefer importing those shared pieces over inventing a parallel tree; do not re-home them without an explicit migration.

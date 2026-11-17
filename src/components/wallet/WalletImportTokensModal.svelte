@@ -1,8 +1,9 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
+  import { getWalletNetworkDisplayName } from '../../lib/wallet/assets';
   import type { SupportedChainId } from '../../lib/wallet/chains';
-  import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
+  import { getEvmErc20Balance } from '../../lib/governance/squad-tracked-tokens';
   import {
     buildCatalogSearchEntries,
     catalogEntryToRow,
@@ -12,54 +13,47 @@
     type CatalogSearchEntry,
     type WatchedErc20Row,
   } from '../../lib/wallet/watched-tokens';
-  import { appConfig } from '../../stores/app-config';
 
   interface Props {
     open?: boolean;
     onClose: () => void;
-    /** Mirrors WalletBar network filter: limits Search results and Custom default chain. */
-    networkScope?: 'all' | SupportedChainId;
     accountNpub?: string | null;
+    ownerAddress?: string | null;
+    enabledChainIds?: SupportedChainId[];
     onSaved: () => void;
   }
 
   let {
     open = false,
     onClose,
-    networkScope = 'all',
     accountNpub = null,
+    ownerAddress = null,
+    enabledChainIds = [],
     onSaved,
   }: Props = $props();
 
   const titleId = 'wallet-import-tokens-title';
-  const descId = 'wallet-import-tokens-desc';
 
-  let tab: 'search' | 'custom' = $state('search');
-  let searchQuery = $state('');
-  let selectedCatalogIds = $state(new Set<string>());
-
-  let customNetwork: SupportedChainId = $state('mainnet');
+  let tracked: WatchedErc20Row[] = $state([]);
+  let customNetwork = $state<SupportedChainId>('arbitrum');
   let customAddress = $state('');
-  let customSymbol = $state('');
-  let customDecimalsStr = $state('18');
-
+  let scanning = $state(false);
+  let reading = $state(false);
+  let status: string | null = $state(null);
   let lastOpened = $state(false);
 
-  const customTokenSymbolMaxLength = $derived($appConfig.customTokenSymbolMaxLength);
-
-  const catalog = buildCatalogSearchEntries();
-
-  const filteredCatalog = $derived(
-    catalog.filter((e) => {
-      if (networkScope !== 'all' && e.network !== networkScope) return false;
-      const q = searchQuery.trim().toLowerCase();
-      if (!q) return true;
-      return e.searchText.includes(q) || e.symbol.toLowerCase().includes(q);
-    }) as CatalogSearchEntry[]
+  const suggestions = $derived(
+    buildCatalogSearchEntries().filter((entry) => enabledChainIds.includes(entry.network)),
   );
 
-  /** Resets the form to a clean state exactly once per open, and re-arms on close so the
-   * next open starts fresh too. */
+  const chainChoices = $derived(
+    enabledChainIds.length > 0 ? enabledChainIds : (['arbitrum'] as SupportedChainId[]),
+  );
+
+  function reload() {
+    tracked = accountNpub ? loadWatchedErc20Rows(accountNpub) : [];
+  }
+
   $effect(() => {
     if (!open) {
       lastOpened = false;
@@ -67,216 +61,206 @@
     }
     if (lastOpened) return;
     lastOpened = true;
-    if (accountNpub) {
-      const rows = loadWatchedErc20Rows(accountNpub);
-      selectedCatalogIds = new Set(rows.filter((r) => r.source === 'catalog').map((r) => r.id));
-    }
-    tab = 'search';
-    searchQuery = '';
-    if (networkScope !== 'all') customNetwork = networkScope;
-  });
-
-  function isHexAddress(s: string): boolean {
-    const t = s.trim();
-    const h = t.startsWith('0x') ? t.slice(2) : t;
-    return h.length === 40 && /^[0-9a-fA-F]+$/.test(h);
-  }
-
-  function toggleCatalog(entry: CatalogSearchEntry) {
-    const next = new Set(selectedCatalogIds);
-    if (next.has(entry.id)) next.delete(entry.id);
-    else next.add(entry.id);
-    selectedCatalogIds = next;
-  }
-
-  function saveCatalogSelection() {
-    if (!accountNpub) return;
-    const rows = loadWatchedErc20Rows(accountNpub);
-    const customs = rows.filter((r) => r.source === 'custom');
-    const picked = catalog
-      .filter((e) => selectedCatalogIds.has(e.id))
-      .map(catalogEntryToRow);
-    saveWatchedErc20Rows(accountNpub, [...customs, ...picked]);
-    onSaved();
-    onClose();
-  }
-
-  function saveCustomToken() {
-    if (!accountNpub) return;
-    const sym = customSymbol.trim().toUpperCase();
-    const dec = Number.parseInt(customDecimalsStr, 10);
-    if (!sym || sym.length > customTokenSymbolMaxLength || !/^[A-Z0-9]+$/.test(sym)) return;
-    if (!isHexAddress(customAddress)) return;
-    if (!Number.isInteger(dec) || dec < 0 || dec > 36) return;
-    const id = customTokenId(customNetwork, customAddress);
-    const row: WatchedErc20Row = {
-      id,
-      network: customNetwork,
-      symbol: sym,
-      address: customAddress.trim(),
-      decimals: dec,
-      source: 'custom',
-    };
-    const rows = loadWatchedErc20Rows(accountNpub);
-    const merged = [...rows.filter((r) => r.id !== id), row];
-    saveWatchedErc20Rows(accountNpub, merged);
+    status = null;
     customAddress = '';
-    customSymbol = '';
-    customDecimalsStr = '18';
-    onSaved();
-    onClose();
-  }
-
-  const customDecimalsValid = $derived.by(() => {
-    const d = Number.parseInt(customDecimalsStr, 10);
-    return Number.isInteger(d) && d >= 0 && d <= 36;
+    customNetwork = chainChoices.includes(customNetwork) ? customNetwork : chainChoices[0];
+    reload();
   });
 
-  const customSymbolValid = $derived(
-    customSymbol.trim().length > 0 &&
-      customSymbol.trim().length <= customTokenSymbolMaxLength &&
-      /^[A-Z0-9]+$/.test(customSymbol.trim().toUpperCase())
-  );
+  function rowKey(network: string, address: string): string {
+    return `${network}:${address.trim().toLowerCase()}`;
+  }
 
-  const canSaveCustom = $derived(
-    accountNpub != null && isHexAddress(customAddress) && customSymbolValid && customDecimalsValid
-  );
+  function alreadyTracked(network: string, address: string): boolean {
+    const key = rowKey(network, address);
+    return tracked.some((row) => rowKey(row.network, row.address) === key);
+  }
+
+  function persist(next: WatchedErc20Row[]) {
+    if (!accountNpub) return;
+    saveWatchedErc20Rows(accountNpub, next);
+    reload();
+    onSaved();
+  }
+
+  function addSuggestion(entry: CatalogSearchEntry) {
+    if (!accountNpub || alreadyTracked(entry.network, entry.address)) return;
+    persist([...tracked, catalogEntryToRow(entry)]);
+  }
+
+  function removeRow(row: WatchedErc20Row) {
+    persist(tracked.filter((item) => item.id !== row.id));
+  }
+
+  function isHexAddress(value: string): boolean {
+    const body = value.trim().startsWith('0x') ? value.trim().slice(2) : value.trim();
+    return body.length === 40 && /^[0-9a-fA-F]+$/.test(body);
+  }
+
+  async function scanHoldings() {
+    if (!accountNpub || !ownerAddress || scanning) return;
+    scanning = true;
+    status = null;
+    let added = 0;
+    try {
+      let next = loadWatchedErc20Rows(accountNpub);
+      for (const entry of suggestions) {
+        if (next.some((row) => rowKey(row.network, row.address) === rowKey(entry.network, entry.address))) {
+          continue;
+        }
+        const result = await getEvmErc20Balance(entry.network, entry.address, ownerAddress);
+        if (!result.ok) continue;
+        let raw = 0n;
+        try {
+          raw = BigInt(result.balance.balanceRaw);
+        } catch {
+          continue;
+        }
+        if (raw <= 0n) continue;
+        next = [...next, catalogEntryToRow(entry)];
+        added += 1;
+      }
+      if (added > 0) {
+        saveWatchedErc20Rows(accountNpub, next);
+        reload();
+        onSaved();
+      }
+      status = added > 0 ? $t('wallet.scanAdded', { values: { count: added } }) : $t('wallet.scanNone');
+    } finally {
+      scanning = false;
+    }
+  }
+
+  async function addByAddress() {
+    if (!accountNpub || !ownerAddress || reading || !isHexAddress(customAddress)) return;
+    reading = true;
+    status = null;
+    try {
+      const result = await getEvmErc20Balance(customNetwork, customAddress.trim(), ownerAddress);
+      if (!result.ok) {
+        status = $t('wallet.couldNotReadToken');
+        return;
+      }
+      const symbol = result.balance.symbol.trim().toUpperCase();
+      const decimals = result.balance.decimals;
+      if (!symbol || !Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+        status = $t('wallet.couldNotReadToken');
+        return;
+      }
+      if (alreadyTracked(customNetwork, customAddress)) {
+        customAddress = '';
+        return;
+      }
+      const row: WatchedErc20Row = {
+        id: customTokenId(customNetwork, customAddress),
+        network: customNetwork,
+        symbol,
+        address: customAddress.trim(),
+        decimals,
+        source: 'custom',
+      };
+      persist([...tracked, row]);
+      customAddress = '';
+    } finally {
+      reading = false;
+    }
+  }
 </script>
 
 {#if open}
-  <Modal {titleId} descriptionId={descId} {onClose} dismissible={true}>
+  <Modal {titleId} {onClose} dismissible={true}>
     <div class="w-import-head">
-      <h2 id={titleId}>{$t('wallet.importTokensTitle')}</h2>
+      <h2 id={titleId}>{$t('wallet.addTokens')}</h2>
       <button type="button" class="w-import-close" aria-label={$t('wallet.close')} onclick={onClose}>×</button>
     </div>
-    <p id={descId} class="w-import-desc">
-      {$t('wallet.importTokensDesc')}
-    </p>
 
     {#if !accountNpub}
-      <p class="w-import-warn" role="status">{$t('wallet.signInToManageTokens')}</p>
+      <p class="w-import-status" role="status">{$t('wallet.signInToManageTokens')}</p>
     {:else}
-      <div class="w-import-tabs" role="tablist" aria-label={$t('wallet.importMode')}>
-        <button
-          type="button"
-          role="tab"
-          class="w-import-tab"
-          aria-selected={tab === 'search'}
-          class:w-import-tab-active={tab === 'search'}
-          onclick={() => (tab = 'search')}>{$t('wallet.searchTab')}</button
-        >
-        <button
-          type="button"
-          role="tab"
-          class="w-import-tab"
-          aria-selected={tab === 'custom'}
-          class:w-import-tab-active={tab === 'custom'}
-          onclick={() => (tab = 'custom')}>{$t('wallet.customTokenTab')}</button
-        >
+      <div class="w-import-block">
+        <div class="w-import-block-head">
+          <h3>{$t('wallet.suggestedTokens')}</h3>
+          <button
+            type="button"
+            class="w-import-btn-secondary"
+            disabled={!ownerAddress || scanning || suggestions.length === 0}
+            onclick={() => void scanHoldings()}
+          >
+            {scanning ? $t('wallet.scanningTokens') : $t('wallet.scanTokenHoldings')}
+          </button>
+        </div>
+        {#if suggestions.length === 0}
+          <p class="w-import-status">{$t('wallet.noSuggestedTokens')}</p>
+        {:else}
+          <ul class="w-import-list">
+            {#each suggestions as entry (entry.id)}
+              <li class="w-import-row">
+                <span class="w-import-sym">{entry.symbol}</span>
+                <span class="w-import-meta">{getWalletNetworkDisplayName(entry.network)}</span>
+                <button
+                  type="button"
+                  class="w-import-btn-secondary"
+                  disabled={alreadyTracked(entry.network, entry.address)}
+                  onclick={() => addSuggestion(entry)}
+                >
+                  {$t('wallet.addToken')}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </div>
 
-      {#if tab === 'search'}
-        <label class="w-import-label">
-          <span class="w-import-label-text">{$t('wallet.searchLabel')}</span>
+      {#if status}
+        <p class="w-import-status" role="status">{status}</p>
+      {/if}
+
+      <div class="w-import-block">
+        <h3>{$t('wallet.tokenAddress')}</h3>
+        <div class="w-import-address">
+          <select class="ui-select" bind:value={customNetwork} aria-label={$t('wallet.networksMenu')}>
+            {#each chainChoices as chainId (chainId)}
+              <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
+            {/each}
+          </select>
           <input
-            class="w-import-input"
-            type="search"
-            placeholder={$t('wallet.searchPlaceholder')}
-            bind:value={searchQuery}
+            class="ui-input"
+            type="text"
+            placeholder={$t('wallet.tokenContractPlaceholder')}
+            bind:value={customAddress}
             autocomplete="off"
+            spellcheck="false"
+            aria-label={$t('wallet.tokenContractLabel')}
           />
-        </label>
-        <ul class="w-import-list" role="listbox" aria-label={$t('wallet.catalogTokens')}>
-          {#each filteredCatalog as entry (entry.id)}
-            <li class="w-import-row">
-              <label class="w-import-check-label">
-                <input
-                  type="checkbox"
-                  checked={selectedCatalogIds.has(entry.id)}
-                  onchange={() => toggleCatalog(entry)}
-                />
-                <span class="w-import-row-main">
-                  <span class="w-import-sym">{entry.symbol}</span>
-                  <span class="w-import-meta">{getWalletNetworkDisplayName(entry.network)}</span>
-                </span>
-              </label>
-            </li>
-          {:else}
-            <li class="w-import-empty">{$t('wallet.noMatchingTokens')}</li>
-          {/each}
-        </ul>
-        <div class="w-import-actions">
-          <button type="button" class="w-import-btn-secondary" onclick={onClose}>{$t('wallet.cancel')}</button>
-          <button type="button" class="w-import-btn-primary" onclick={saveCatalogSelection}
-            >{$t('wallet.save')}</button
-          >
-        </div>
-      {:else}
-        <div class="ui-field-row w-import-fields">
-          <label class="ui-field" for="w-import-custom-network">
-            <span class="ui-field-label">{$t('wallet.networkLabel')}</span>
-            <select
-              id="w-import-custom-network"
-              class="ui-select"
-              bind:value={customNetwork}
-              disabled={networkScope !== 'all'}
-            >
-              {#each WALLET_ASSETS_CHAIN_IDS as cid (cid)}
-                <option value={cid as SupportedChainId}>{getWalletNetworkDisplayName(cid as SupportedChainId)}</option>
-              {/each}
-            </select>
-          </label>
-          <label class="ui-field" for="w-import-custom-address">
-            <span class="ui-field-label">{$t('wallet.tokenContractLabel')}</span>
-            <input
-              id="w-import-custom-address"
-              class="ui-input"
-              type="text"
-              placeholder={$t('wallet.tokenContractPlaceholder')}
-              bind:value={customAddress}
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </label>
-        </div>
-        <div class="ui-field-row w-import-fields">
-          <label class="ui-field" for="w-import-custom-symbol">
-            <span class="ui-field-label">{$t('wallet.symbolLabel')}</span>
-            <input
-              id="w-import-custom-symbol"
-              class="ui-input"
-              type="text"
-              placeholder={$t('wallet.symbolPlaceholder')}
-              bind:value={customSymbol}
-              maxlength={customTokenSymbolMaxLength}
-              autocomplete="off"
-            />
-          </label>
-          <label class="ui-field" for="w-import-custom-decimals">
-            <span class="ui-field-label">{$t('wallet.decimalsLabel')}</span>
-            <input
-              id="w-import-custom-decimals"
-              class="ui-input"
-              type="text"
-              inputmode="numeric"
-              bind:value={customDecimalsStr}
-              autocomplete="off"
-            />
-          </label>
-        </div>
-        <p class="w-import-hint">
-          {$t('wallet.tokenSecurityHint')}
-        </p>
-        <div class="w-import-actions">
-          <button type="button" class="w-import-btn-secondary" onclick={onClose}>{$t('wallet.cancel')}</button>
           <button
             type="button"
             class="w-import-btn-primary"
-            disabled={!canSaveCustom}
-            onclick={saveCustomToken}>{$t('wallet.importToken')}</button
+            disabled={!ownerAddress || reading || !isHexAddress(customAddress)}
+            onclick={() => void addByAddress()}
           >
+            {$t('wallet.addToken')}
+          </button>
         </div>
-      {/if}
+      </div>
+
+      <div class="w-import-block">
+        <h3>{$t('wallet.trackedTokens')}</h3>
+        {#if tracked.length === 0}
+          <p class="w-import-status">{$t('wallet.noMatchingTokens')}</p>
+        {:else}
+          <ul class="w-import-list">
+            {#each tracked as row (row.id)}
+              <li class="w-import-row">
+                <span class="w-import-sym">{row.symbol}</span>
+                <span class="w-import-meta">{getWalletNetworkDisplayName(row.network)}</span>
+                <button type="button" class="w-import-btn-secondary" onclick={() => removeRow(row)}>
+                  {$t('wallet.removeToken')}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
     {/if}
   </Modal>
 {/if}
@@ -287,14 +271,23 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 16px;
+  }
+
+  .w-import-head h2,
+  .w-import-block h3 {
+    margin: 0;
+    color: var(--text-primary);
   }
 
   .w-import-head h2 {
-    margin: 0;
     font-size: 1.25rem;
     font-weight: 600;
-    color: var(--text-primary);
+  }
+
+  .w-import-block h3 {
+    font-size: 0.9375rem;
+    font-weight: 600;
   }
 
   .w-import-close {
@@ -310,145 +303,90 @@
     cursor: pointer;
   }
 
-  .w-import-close:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .w-import-desc {
-    margin: 0 0 16px;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    line-height: 1.45;
-  }
-
-  .w-import-warn {
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  .w-import-tabs {
+  .w-import-block {
     display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 14px;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
   }
 
-  .w-import-tab {
-    flex: 1;
-    padding: 10px 8px;
-    border: none;
-    border-bottom: 2px solid transparent;
-    background: none;
-    color: var(--text-muted);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    font-family: inherit;
-  }
-
-  .w-import-tab-active {
-    color: var(--text-primary);
-    border-bottom-color: var(--text-primary);
-  }
-
-  .w-import-fields {
-    margin-bottom: 12px;
+  .w-import-block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   .w-import-list {
-    margin: 0 0 16px;
-    padding: 0;
     list-style: none;
-    max-height: min(240px, 40vh);
+    margin: 0;
+    padding: 0;
+    max-height: 220px;
     overflow: auto;
-    border: 1px solid var(--border);
-    border-radius: 8px;
   }
 
   .w-import-row {
-    border-bottom: 1px solid var(--border);
-  }
-
-  .w-import-row:last-child {
-    border-bottom: none;
-  }
-
-  .w-import-check-label {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    cursor: pointer;
-    font-size: 0.875rem;
-    color: var(--text-primary);
-  }
-
-  .w-import-check-label:hover {
-    background: var(--bg-hover);
-  }
-
-  .w-import-row-main {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .w-import-sym {
     font-weight: 600;
+    color: var(--text-primary);
   }
 
   .w-import-meta {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .w-import-empty {
-    padding: 16px;
+    flex: 1;
+    min-width: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
-    list-style: none;
   }
 
-  .w-import-hint {
-    margin: 0 0 16px;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    line-height: 1.4;
-  }
-
-  .w-import-actions {
+  .w-import-address {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
-    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .w-import-address .ui-select,
+  .w-import-address .ui-input {
+    flex: 1 1 140px;
+  }
+
+  .w-import-status {
+    margin: 8px 0 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
   }
 
   .w-import-btn-primary,
   .w-import-btn-secondary {
-    padding: 10px 18px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.8125rem;
     font-family: inherit;
-  }
-
-  .w-import-btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    cursor: pointer;
   }
 
   .w-import-btn-primary {
+    border: none;
     background: var(--brand);
     color: var(--on-brand);
+    font-weight: 600;
   }
 
   .w-import-btn-secondary {
-    background: var(--border);
+    border: 1px solid var(--border);
+    background: transparent;
     color: var(--text-primary);
+  }
+
+  .w-import-btn-primary:disabled,
+  .w-import-btn-secondary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

@@ -3,6 +3,7 @@
  */
 
 import type { Address } from 'viem';
+import { writable } from 'svelte/store';
 import type { SupportedChainId } from './chains';
 import { WALLET_ASSETS, WALLET_ASSETS_CHAIN_IDS, ZERO_ADDRESS } from './assets';
 
@@ -15,6 +16,9 @@ export interface WalletAssetOptionRow {
 }
 
 const STORAGE_VERSION = 1 as const;
+
+/** Bump so open wallets re-read the watched list after an add, scan, or remove. */
+export const walletWatchedTokensTick = writable(0);
 const STORAGE_PREFIX = 'pacto_wallet_watched_erc20_v1';
 const LEGACY_TOKEN_FILTER = 'pacto_wallet_bar_token_filter';
 const LEGACY_TOKEN_VISIBILITY = 'pacto_wallet_bar_token_visibility';
@@ -46,25 +50,40 @@ export function customTokenId(network: SupportedChainId, address: string): strin
   return `custom_${network}_${a}`;
 }
 
-/** Default: USDC + USDT on every configured chain (matches prior “all tokens” bar behavior). */
+/** Nothing is watched until the account adds a token. */
 export function defaultWatchedErc20Rows(): WatchedErc20Row[] {
+  return [];
+}
+
+/** Prior automatic watch list: USDC and USDT on every chain, including zero-address placeholders. */
+export function legacyAutomaticWatchedRows(): WatchedErc20Row[] {
   const out: WatchedErc20Row[] = [];
   for (const chainId of WALLET_ASSETS_CHAIN_IDS) {
     const net = WALLET_ASSETS.networks[chainId];
     if (!net) continue;
     for (const sym of ['USDC', 'USDT'] as const) {
-      const t = net.tokens[sym];
+      const token = net.tokens[sym];
+      if (!token) continue;
       out.push({
         id: catalogTokenId(chainId, sym),
         network: chainId,
         symbol: sym,
-        address: t.address,
-        decimals: t.decimals,
+        address: token.address,
+        decimals: token.decimals,
         source: 'catalog',
       });
     }
   }
   return out;
+}
+
+function isLegacyAutomaticSet(rows: readonly WatchedErc20Row[]): boolean {
+  const legacy = dedupeWatchedRows(legacyAutomaticWatchedRows());
+  if (rows.length !== legacy.length) return false;
+  const key = (row: WatchedErc20Row) =>
+    `${row.network}:${row.symbol}:${row.address.trim().toLowerCase()}`;
+  const have = new Set(rows.map(key));
+  return legacy.every((row) => have.has(key(row)));
 }
 
 function isHexAddress(s: string): boolean {
@@ -159,20 +178,21 @@ function legacyModeToRows(): WatchedErc20Row[] | null {
   }
   localStorage.removeItem(LEGACY_TOKEN_FILTER);
   localStorage.removeItem(LEGACY_TOKEN_VISIBILITY);
-  if (mode === 'all_tokens') return defaultWatchedErc20Rows();
+  if (mode === 'all_tokens') return [];
   if (mode === 'native_only') return [];
   const only: 'USDC' | 'USDT' = mode === 'native_usdc' ? 'USDC' : 'USDT';
   const out: WatchedErc20Row[] = [];
   for (const chainId of WALLET_ASSETS_CHAIN_IDS) {
     const net = WALLET_ASSETS.networks[chainId];
     if (!net) continue;
-    const t = net.tokens[only];
+    const token = net.tokens[only];
+    if (!token) continue;
     out.push({
       id: catalogTokenId(chainId, only),
       network: chainId,
       symbol: only,
-      address: t.address,
-      decimals: t.decimals,
+      address: token.address,
+      decimals: token.decimals,
       source: 'catalog',
     });
   }
@@ -192,7 +212,12 @@ export function loadWatchedErc20Rows(accountNpub: string | null | undefined): Wa
     try {
       const o = JSON.parse(raw) as { version?: number; rows?: unknown };
       if (o.version === STORAGE_VERSION && Array.isArray(o.rows)) {
-        return normalizeRows(o.rows);
+        const rows = normalizeRows(o.rows);
+        if (isLegacyAutomaticSet(rows)) {
+          saveWatchedErc20Rows(accountNpub, []);
+          return [];
+        }
+        return rows;
       }
     } catch {
       /* fall through */
@@ -213,6 +238,7 @@ export function saveWatchedErc20Rows(accountNpub: string, rows: WatchedErc20Row[
     storageKey(accountNpub),
     JSON.stringify({ version: STORAGE_VERSION, rows: normalized })
   );
+  walletWatchedTokensTick.update((n) => n + 1);
 }
 
 export function watchedRowsToWire(rows: WatchedErc20Row[]): WatchedErc20Wire[] {
@@ -240,9 +266,9 @@ export function buildCatalogSearchEntries(): CatalogSearchEntry[] {
   for (const chainId of WALLET_ASSETS_CHAIN_IDS) {
     const net = WALLET_ASSETS.networks[chainId];
     if (!net) continue;
-    for (const sym of ['USDC', 'USDT'] as const) {
-      const t = net.tokens[sym];
-      if (!t || typeof t.address !== 'string') continue;
+    for (const [sym, token] of Object.entries(net.tokens)) {
+      if (!token || typeof token.address !== 'string') continue;
+      if (token.address.toLowerCase() === ZERO_ADDRESS) continue;
       const symbol = sym.toUpperCase();
       const id = catalogTokenId(chainId, symbol);
       const searchText = `${symbol} ${net.displayName} ${chainId}`.toLowerCase();
@@ -251,8 +277,8 @@ export function buildCatalogSearchEntries(): CatalogSearchEntry[] {
         network: chainId,
         symbol,
         name: symbol,
-        address: t.address,
-        decimals: t.decimals,
+        address: token.address,
+        decimals: token.decimals,
         searchText,
       });
     }

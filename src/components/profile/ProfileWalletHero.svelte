@@ -5,18 +5,17 @@
   import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import WalletHomeSendModal from '../wallet/WalletHomeSendModal.svelte';
   import WalletReceiveModal from '../wallet/WalletReceiveModal.svelte';
+  import WalletBalanceList from '../wallet/WalletBalanceList.svelte';
+  import WalletImportTokensModal from '../wallet/WalletImportTokensModal.svelte';
   import AccountPicker from './AccountPicker.svelte';
-  import { formatAssetAmount } from '../../lib/evm/format-token-amount';
   import {
     getWalletSummary,
-    getWalletNetworkDisplayName,
     WALLET_ASSETS_CHAIN_IDS,
     watchedRowsToWire,
     type WalletSummary,
-    type WalletSummaryAsset,
-    type SupportedChainId,
   } from '../../lib/wallet';
   import { walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
+  import { walletWatchedTokensTick } from '../../lib/wallet/watched-tokens';
   import { loadWalletViewPrefs } from '../../lib/wallet/wallet-view-prefs';
   import { squadEvmAccounts, type EvmAccountRow } from '../../lib/wallet/evm-accounts';
   import {
@@ -27,7 +26,6 @@
     type NetworkFilter,
   } from '../../lib/wallet/network-filter';
   import {
-    networkErrorMessage,
     networksForBalanceList,
     summaryPricing,
     walletSummaryFetchKey,
@@ -62,6 +60,7 @@
 
   const prefs = $derived.by(() => {
     void $walletUiEnabledChainsTick;
+    void $walletWatchedTokensTick;
     return loadWalletViewPrefs(accountNpub);
   });
   const enabledSet = $derived(prefs.enabledSet);
@@ -89,6 +88,7 @@
   let loadSeq = 0;
   let homeSendOpen = $state(false);
   let receiveOpen = $state(false);
+  let addTokensOpen = $state(false);
 
   async function refreshSummary() {
     const seq = ++loadSeq;
@@ -157,6 +157,38 @@
     </div>
   {/if}
 
+  {#if summaryLoading && !summary}
+    <p class="wallet-hero-muted">{$t('wallet.loadingBalances')}</p>
+  {:else if summary && summaryAddress === viewedAddress}
+    {#if summaryError}
+      <p class="wallet-hero-stale" role="status">{$t('wallet.couldNotRefreshBalances')} {summaryError}</p>
+    {/if}
+    <p class="wallet-hero-total">
+      {#if pricing.status === 'unavailable' || pricing.total == null}
+        {$t('wallet.totalUsdUnavailable')}
+      {:else}
+        {#if pricing.status === 'partial'}
+          {$t('wallet.totalUsdPartial')}
+        {:else}
+          {$t('wallet.totalApprox')}
+        {/if}
+        <strong>${pricing.total.toFixed(2)}</strong>
+      {/if}
+    </p>
+    <WalletBalanceList
+      enabledChainIds={enabledChainsOrdered}
+      {networkFilter}
+      networks={networksForBalance}
+      onNetworkFilter={(next) => {
+        networkFilter = next;
+        saveNetworkFilter(PROFILE_NETWORK_FILTER_PREFIX, next);
+      }}
+      onAddTokens={() => (addTokensOpen = true)}
+    />
+  {:else if summaryError}
+    <p class="wallet-hero-stale" role="alert">{summaryError}</p>
+  {/if}
+
   <div class="wallet-hero-actions">
     <button type="button" class="wallet-hero-btn" disabled={!viewedAddress} onclick={openSend}>
       {$t('wallet.send')}
@@ -170,69 +202,6 @@
       {$t('wallet.receive')}
     </button>
   </div>
-  {#if summaryLoading && !summary}
-    <p class="wallet-hero-muted">{$t('wallet.loadingBalances')}</p>
-  {:else if summary && summaryAddress === viewedAddress}
-    {#if summaryError}
-      <p class="wallet-hero-stale" role="status">{$t('wallet.couldNotRefreshBalances')} {summaryError}</p>
-    {/if}
-    <div class="wallet-hero-filters ui-field-row">
-      <div class="ui-field">
-        <label class="ui-field-label" for="profile-wallet-network-select">{$t('wallet.networkLabel')}</label>
-        <select
-          id="profile-wallet-network-select"
-          class="ui-select"
-          bind:value={networkFilter}
-          onchange={() => saveNetworkFilter(PROFILE_NETWORK_FILTER_PREFIX, networkFilter)}
-        >
-          <option value="all">{$t('wallet.allEnabledNetworks')}</option>
-          {#each enabledChainsOrdered as chainId (chainId)}
-            <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
-          {/each}
-        </select>
-      </div>
-    </div>
-    <p class="wallet-hero-total">
-      {#if pricing.status === 'unavailable' || pricing.total == null}
-        {$t('wallet.totalUsdUnavailable')}
-      {:else}
-        {#if pricing.status === 'partial'}
-          {$t('wallet.totalUsdPartial')}
-        {:else}
-          {$t('wallet.totalApprox')}
-        {/if}
-        <strong>${pricing.total.toFixed(2)}</strong>
-      {/if}
-    </p>
-    {#if networksForBalance.length === 0}
-      <p class="wallet-hero-muted">{$t('wallet.noNetworksMatchFilter')}</p>
-    {:else}
-      <ul class="wallet-hero-nets">
-        {#each networksForBalance as net (net.network)}
-          <li class="wallet-hero-net">
-            {#if networkFilter === 'all'}
-              <span class="wallet-hero-net-name">{getWalletNetworkDisplayName(net.network as SupportedChainId)}</span>
-            {/if}
-            {#if net.error}
-              <p class="wallet-hero-net-error" title={net.error}>{networkErrorMessage(net)}</p>
-            {:else}
-              <ul class="wallet-hero-assets">
-                {#each net.assets as asset, i (`${net.network}-${asset.symbol}-${i}`)}
-                  {@const a = asset as WalletSummaryAsset}
-                  <li>
-                    <span>{a.symbol}</span>
-                    <span>{formatAssetAmount(a.balanceRaw, { symbol: a.symbol, decimals: a.decimals }) ?? '—'}</span>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  {:else if summaryError}
-    <p class="wallet-hero-stale" role="alert">{summaryError}</p>
-  {/if}
 </section>
 
 <WalletHomeSendModal
@@ -247,6 +216,15 @@
   open={receiveOpen && !!viewedAddress}
   address={viewedAddress ?? ''}
   onClose={() => (receiveOpen = false)}
+/>
+
+<WalletImportTokensModal
+  open={addTokensOpen}
+  accountNpub={accountNpub}
+  ownerAddress={viewedAddress}
+  enabledChainIds={enabledChainsOrdered}
+  onClose={() => (addTokensOpen = false)}
+  onSaved={() => {}}
 />
 
 <style>
@@ -266,11 +244,6 @@
     font-size: 1.125rem;
     font-weight: 600;
     color: var(--text-primary);
-  }
-
-  .wallet-hero-filters {
-    margin-top: 14px;
-    max-width: 320px;
   }
 
   .wallet-hero-account {
@@ -333,35 +306,4 @@
     color: var(--text-secondary);
   }
 
-  .wallet-hero-nets,
-  .wallet-hero-assets {
-    list-style: none;
-    margin: 12px 0 0;
-    padding: 0;
-  }
-
-  .wallet-hero-net {
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .wallet-hero-net-name {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .wallet-hero-net-error {
-    margin: 4px 0 0;
-    font-size: 0.8125rem;
-    color: var(--danger);
-  }
-
-  .wallet-hero-assets li {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-  }
 </style>

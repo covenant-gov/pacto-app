@@ -1,5 +1,5 @@
 {
-  "$comment": "Native gas + USDC/USDT on Ethereum, Arbitrum, and Sepolia. Local/Anvil (chain 31337) uses zero-address placeholders for USDC/USDT because the backend expects both tokens to exist; these placeholders are not selectable for transfers. Replace them with deployed mocks when testing transfers.",
+  "$comment": "Suggested ERC-20 catalog. Ethereum and Arbitrum include USDC, USDT, DAI, WETH, WBTC, and LINK. Sepolia keeps USDC and USDT. Local Anvil keeps zero-address USDC/USDT so the backend still finds those keys; those placeholders are not suggested.",
   "version": 1,
   "networks": {
     "mainnet": {
@@ -18,6 +18,22 @@
         "USDT": {
           "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
           "decimals": 6
+        },
+        "DAI": {
+          "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+          "decimals": 18
+        },
+        "WETH": {
+          "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "decimals": 18
+        },
+        "WBTC": {
+          "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+          "decimals": 8
+        },
+        "LINK": {
+          "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+          "decimals": 18
         }
       }
     },
@@ -37,6 +53,22 @@
         "USDT": {
           "address": "0xFd086bC7CD5C481DCC9C0eb917cc8Edfe4422517",
           "decimals": 6
+        },
+        "DAI": {
+          "address": "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
+          "decimals": 18
+        },
+        "WETH": {
+          "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+          "decimals": 18
+        },
+        "WBTC": {
+          "address": "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+          "decimals": 8
+        },
+        "LINK": {
+          "address": "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
+          "decimals": 18
         }
       }
     },
