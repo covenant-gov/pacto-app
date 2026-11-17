@@ -16,27 +16,31 @@ export const peerUsernameClaims = writable<Record<string, PeerUsernameClaim>>({}
 const inflight = new Map<string, Promise<void>>();
 const waiting: string[] = [];
 let active = 0;
+let generation = 0;
 
-function remember(npub: string, name: string | null): void {
+function remember(npub: string, name: string | null, gen: number): void {
+  if (gen !== generation) return;
   peerUsernameClaims.update((rows) => ({ ...rows, [npub]: { name } }));
 }
 
-function finish(npub: string): void {
+function finish(npub: string, gen: number): void {
+  if (gen !== generation) return;
   inflight.delete(npub);
   active = Math.max(0, active - 1);
   pump();
 }
 
 function start(npub: string): void {
+  const gen = generation;
   active += 1;
   const job = usernameRecordForNpub(USERNAME_NETWORK, npub)
     .then((record) => {
-      remember(npub, chainUsernameFromRecord(record.name, record.tokenId));
+      remember(npub, chainUsernameFromRecord(record.name, record.tokenId), gen);
     })
     .catch(() => {
       // Leave the key unloaded so the next ensure retries.
     })
-    .finally(() => finish(npub));
+    .finally(() => finish(npub, gen));
   inflight.set(npub, job);
 }
 
@@ -48,8 +52,9 @@ function pump(): void {
   }
 }
 
-/** Clears the session cache and any queued reads. */
+/** Clears the session cache and any queued reads. In-flight results from before this call are dropped. */
 export function resetPeerUsernames(): void {
+  generation += 1;
   peerUsernameClaims.set({});
   inflight.clear();
   waiting.length = 0;

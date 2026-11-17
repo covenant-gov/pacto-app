@@ -65,7 +65,7 @@ describe('resolveShownName', () => {
     const self = resolveShownName({
       npub,
       profile: profile({ nickname: 'Nick', name: 'kind0' }),
-      chain: { selfNpub: npub, usernameState: { record }, peerClaims: {} },
+      chain: { selfNpub: npub, usernameState: { npub, record }, peerClaims: {} },
     });
     const peer = resolveShownName({
       npub,
@@ -78,6 +78,20 @@ describe('resolveShownName', () => {
     });
     expect(self).toEqual({ name: 'alice', verified: true });
     expect(peer).toEqual(self);
+  });
+
+  it('ignores an own record that belongs to another account', () => {
+    expect(
+      resolveShownName({
+        npub,
+        profile: profile({ nickname: 'Nick', name: 'kind0' }),
+        chain: {
+          selfNpub: npub,
+          usernameState: { npub: 'npub1other', record },
+          peerClaims: {},
+        },
+      }),
+    ).toEqual({ name: 'Nick', verified: false });
   });
 
   it('keeps nickname then kind 0 name then display_name when nothing is minted', () => {

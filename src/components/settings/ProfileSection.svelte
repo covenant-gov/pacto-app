@@ -35,7 +35,7 @@
   let editAvatarUrl = $state('');
   let saveError: string | null = $state(null);
   let savingProfile = $state(false);
-  const mintedName = $derived(mintedUsernameFromState($usernameState));
+  const mintedName = $derived(mintedUsernameFromState($usernameState, userNpub));
   const usernamePending = $derived(
     $usernameState.status === 'idle' || $usernameState.status === 'loading',
   );
@@ -89,7 +89,7 @@
     saveError = null;
     savingProfile = true;
     try {
-      const boundName = mintedUsernameFromState(get(usernameState));
+      const boundName = mintedUsernameFromState(get(usernameState), get(currentUser)?.npub);
       const banner = profile?.banner ?? '';
       const receipt = boundName
         ? await publishBoundUsername({

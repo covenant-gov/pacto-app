@@ -2,10 +2,11 @@
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
+  import { currentUser } from '../../stores/auth-session';
   import { focusProfileUsername } from '../../stores/navigation';
   import {
     claimedUsername,
-    isUsernameVerified,
+    mintedUsernameFromState,
     needsForcedUsernameLinkRestore,
     refreshUsernameState,
     usernameState,
@@ -20,7 +21,7 @@
   );
   const errored = $derived($usernameState.status === 'error');
   const username = $derived($claimedUsername);
-  const verified = $derived($isUsernameVerified);
+  const verified = $derived(mintedUsernameFromState($usernameState, $currentUser?.npub) != null);
   const forceRestore = $derived(needsForcedUsernameLinkRestore($usernameState));
   const restoring = $derived($usernameState.status === 'loading');
 </script>

@@ -35,6 +35,8 @@ export function shownProfileName(
 }
 
 export type ShownNameChainState = {
+  /** Account the own record was read for. A mismatch is not this account's chain name. */
+  npub?: string | null;
   record?: { name?: string | null; tokenId?: string | null } | null;
 };
 
@@ -58,12 +60,13 @@ export function resolveShownName(input: {
 }): { name: string; verified: boolean } {
   const key = input.npub.trim();
   const self = input.chain?.selfNpub?.trim() ?? '';
+  const own = input.chain?.usernameState;
+  const ownNpub = own?.npub?.trim() ?? '';
   const minted =
     key && self && key === self
-      ? chainUsernameFromRecord(
-          input.chain?.usernameState?.record?.name,
-          input.chain?.usernameState?.record?.tokenId,
-        )
+      ? ownNpub === self
+        ? chainUsernameFromRecord(own?.record?.name, own?.record?.tokenId)
+        : null
       : key
         ? (input.chain?.peerClaims?.[key]?.name ?? null)
         : null;

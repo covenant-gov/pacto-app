@@ -17,6 +17,7 @@ import {
   claimUsername,
   publishBoundDisplayName,
   usernameKind0BindError,
+  ensureOwnUsername,
   type UsernameState,
 } from './username';
 import { currentUser } from './auth-session';
@@ -78,24 +79,31 @@ function readyState(overrides: Partial<UsernameState> = {}): UsernameState {
     activeEvm: EVM,
     busy: false,
     error: null,
+    npub: 'npub1test',
     ...overrides,
   };
 }
 
 describe('mintedUsernameFromState', () => {
+  const signedIn = 'npub1test';
+
   it('returns the chain name when the active signer is a different address', () => {
-    expect(mintedUsernameFromState(readyState({ activeEvm: OTHER }))).toBe('alice');
+    expect(mintedUsernameFromState(readyState({ activeEvm: OTHER }), signedIn)).toBe('alice');
   });
 
   it('does not require the relay link or the sqlite cache', () => {
     const state = readyState({ cached: null });
-    expect(mintedUsernameFromState(state)).toBe('alice');
+    expect(mintedUsernameFromState(state, signedIn)).toBe('alice');
   });
 
   it('returns null when the token is not minted', () => {
     const state = readyState();
     state.record = state.record ? { ...state.record, tokenId: '0' } : null;
-    expect(mintedUsernameFromState(state)).toBeNull();
+    expect(mintedUsernameFromState(state, signedIn)).toBeNull();
+  });
+
+  it('returns null when the record belongs to another account', () => {
+    expect(mintedUsernameFromState(readyState({ npub: 'npub1other' }), signedIn)).toBeNull();
   });
 });
 
@@ -227,6 +235,7 @@ describe('claimedUsernameFromState', () => {
       activeEvm: EVM,
       busy: false,
       error: null,
+      npub: 'npub1',
     };
     expect(claimedUsernameFromState(state)).toBe('onchain');
   });
@@ -277,11 +286,25 @@ describe('username derived stores', () => {
   });
 
   it('isUsernameVerified tracks state', () => {
+    currentUser.set({
+      pubkey: 'aa'.repeat(32),
+      npub: 'npub1test',
+    } as never);
     expect(get(isUsernameVerified)).toBe(false);
     usernameState.set(readyState());
     expect(get(isUsernameVerified)).toBe(true);
     expect(get(claimedUsername)).toBe('alice');
     expect(get(hasPendingUsernameTransfer)).toBe(false);
+  });
+
+  it('hides a claimed name that belongs to another account', () => {
+    currentUser.set({
+      pubkey: 'bb'.repeat(32),
+      npub: 'npub1other',
+    } as never);
+    usernameState.set(readyState());
+    expect(get(claimedUsername)).toBeNull();
+    expect(mintedUsernameFromState(get(usernameState))).toBeNull();
   });
 
   it('hasPendingUsernameTransfer from flag or pendingAddress', () => {
@@ -322,6 +345,17 @@ function syncState(overrides: Partial<UsernameAccountState> = {}): UsernameAccou
 }
 
 describe('needsForcedUsernameLinkRestore', () => {
+  beforeEach(() => {
+    currentUser.set({
+      pubkey: 'aa'.repeat(32),
+      npub: 'npub1test',
+    } as never);
+  });
+
+  afterEach(() => {
+    currentUser.set(null);
+  });
+
   it('is true for a holder with a missing linkEventId', () => {
     expect(
       needsForcedUsernameLinkRestore(
@@ -429,6 +463,20 @@ describe('refreshUsernameState', () => {
     expect(get(usernameState).pendingTransfer).toBe(false);
   });
 
+  it('does not keep another account record when the chain read fails', async () => {
+    usernameState.set(readyState({ npub: 'npub1other' }));
+    mockSync.mockResolvedValue(
+      syncState({
+        record: null,
+        chainError: 'rpc down',
+      }),
+    );
+
+    await refreshUsernameState();
+    expect(get(usernameState).npub).toBe('npub1test');
+    expect(get(usernameState).record).toBeNull();
+  });
+
   it('forwards forceLinkRestore to sync', async () => {
     await refreshUsernameState({ forceLinkRestore: true });
     expect(mockSync).toHaveBeenCalledWith('sepolia', undefined, { forceLinkRestore: true });
@@ -491,6 +539,53 @@ describe('refreshUsernameState', () => {
 
     await refreshUsernameState();
     expect(get(usernameState).cached?.linkEventId).toBe('evt1');
+  });
+});
+
+describe('ensureOwnUsername', () => {
+  beforeEach(() => {
+    resetUsernameState();
+    currentUser.set({
+      pubkey: 'aa'.repeat(32),
+      npub: 'npub1test',
+    } as never);
+    mockSync.mockReset();
+    mockActiveEvm.mockReset();
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockSync.mockResolvedValue(
+      syncState({
+        record: {
+          name: 'alice',
+          evmAddress: EVM,
+          pendingAddress: ZERO,
+          tokenId: '1',
+        },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    resetUsernameState();
+    currentUser.set(null);
+  });
+
+  it('reads again after the signed-in account changes', async () => {
+    ensureOwnUsername();
+    await vi.waitFor(() => expect(get(usernameState).record?.name).toBe('alice'));
+    expect(mockSync).toHaveBeenCalledTimes(1);
+
+    currentUser.set({
+      pubkey: 'bb'.repeat(32),
+      npub: 'npub1other',
+    } as never);
+    mockSync.mockResolvedValueOnce(syncState());
+    ensureOwnUsername();
+    await vi.waitFor(() => {
+      expect(mockSync).toHaveBeenCalledTimes(2);
+      expect(get(usernameState).status).toBe('ready');
+    });
+    expect(get(usernameState).npub).toBe('npub1other');
+    expect(get(usernameState).record?.name ?? '').not.toBe('alice');
   });
 });
 

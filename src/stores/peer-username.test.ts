@@ -62,4 +62,33 @@ describe('ensurePeerUsername', () => {
     ensurePeerUsername(NPUB);
     expect(mockRecord).toHaveBeenCalledTimes(1);
   });
+
+  it('does not store a read that finishes after reset', async () => {
+    let resolveRecord: (record: {
+      name: string;
+      evmAddress: string;
+      pendingAddress: string;
+      tokenId: string;
+    }) => void = () => {};
+    const pending = new Promise<{
+      name: string;
+      evmAddress: string;
+      pendingAddress: string;
+      tokenId: string;
+    }>((resolve) => {
+      resolveRecord = resolve;
+    });
+    mockRecord.mockReturnValueOnce(pending);
+    ensurePeerUsername(NPUB);
+    resetPeerUsernames();
+    resolveRecord({
+      name: 'alice',
+      evmAddress: '0x1111111111111111111111111111111111111111',
+      pendingAddress: '0x0000000000000000000000000000000000000000',
+      tokenId: '1',
+    });
+    await pending;
+    await Promise.resolve();
+    expect(get(peerUsernameClaims)).not.toHaveProperty(NPUB);
+  });
 });
