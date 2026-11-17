@@ -142,8 +142,10 @@
 
   .mode-segment {
     padding: 0 22px;
+    min-height: 1.5rem;
     font-size: 0.9375rem;
     font-weight: 500;
+    line-height: 1.5rem;
     color: var(--text-muted);
     background: transparent;
     border: none;
@@ -159,7 +161,6 @@
     justify-content: center;
     gap: 6px;
     padding: 0 12px;
-    min-height: 32px;
   }
 
   .catch-up-icon {
