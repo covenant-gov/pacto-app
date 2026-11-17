@@ -202,8 +202,8 @@ pub(crate) fn get_blossom_media_servers() -> Vec<String> {
 /// Session-management helpers re-exported from `session.rs`. The encryption
 /// key container, idle timer, and heartbeat live in the session manager.
 pub use session::{
-    check_session, clear_encryption_key, current_encryption_key, heartbeat, session_heartbeat,
-    set_encryption_key, set_timeout_ms, SESSION_MANAGER,
+    check_session, clear_encryption_key, current_encryption_key, heartbeat, lock_session,
+    session_heartbeat, set_encryption_key, set_timeout_ms, SESSION_MANAGER,
 };
 // Recovery phrase set by create/import for this session. Cleared on lock and logout; never restored on unlock.
 lazy_static! {
@@ -1727,6 +1727,7 @@ pub fn run() {
             // Session management commands (U4)
             session::check_session,
             session::session_heartbeat,
+            session::lock_session,
             session::get_session_timeout,
             session::set_session_timeout,
             // Biometric unlock commands

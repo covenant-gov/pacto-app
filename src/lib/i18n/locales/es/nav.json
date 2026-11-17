@@ -25,6 +25,7 @@
 	"nav.navbar.dmTabs.search": "Buscar",
 	"nav.navbar.profile": "Perfil",
 	"nav.navbar.settings": "Ajustes",
+	"nav.navbar.lock": "Bloquear",
 	"nav.navbar.addButton.commons": "Iniciar transmisión",
 	"nav.navbar.addButton.dms": "Iniciar mensaje directo",
 	"nav.navbar.addButton.squads": "Organizar escuad",

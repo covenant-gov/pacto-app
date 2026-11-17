@@ -26,7 +26,7 @@ src/stores/app.ts                 thin re-export barrel (navigation, dm, squads,
 
 ## Left rail account views
 
-Bottom of the left rail: **Add** → **Profile** (user-circle) → **Settings**.
+Bottom of the left rail: **Add** → **Settings** → **Lock**. Profile (user-circle) opens from the top bar, to the right of Catch up.
 
 | `activeView` | Page | Hides DM/squad rail |
 |--------------|------|---------------------|
@@ -34,7 +34,7 @@ Bottom of the left rail: **Add** → **Profile** (user-circle) → **Settings**.
 | `settings` | `AccountSettingsView` — Nostr, EVM infra, backup, danger | yes |
 | `hub` | Commons / DMs / Squads as selected by the top tab | no |
 
-Openers: `openAccountProfile()`, `openAccountSettings()`, `focusProfileUsername()` (Profile → username block). See [`docs/wallet/SETTINGS_LAYOUT.md`](../wallet/SETTINGS_LAYOUT.md).
+Openers: `openAccountProfile()` (top bar), `openAccountSettings()`, `lock_session` (rail Lock), `focusProfileUsername()` (Profile → username block). See [`docs/wallet/SETTINGS_LAYOUT.md`](../wallet/SETTINGS_LAYOUT.md).
 
 ---
 

@@ -1,6 +1,6 @@
 # Profile vs Settings
 
-The left rail has two account destinations. **Profile** (`activeView === 'profile'`) is identity plus a light personal wallet. **Settings** (`activeView === 'settings'`) is infra: relays, chains, tokens, RPC, backup, and danger.
+Profile opens from the top bar. Settings opens from the left rail. **Profile** (`activeView === 'profile'`) is identity plus a light personal wallet. **Settings** (`activeView === 'settings'`) is infra: relays, chains, tokens, RPC, backup, and danger.
 
 The DM **WalletBar** stays peer-context send. It is not this page.
 

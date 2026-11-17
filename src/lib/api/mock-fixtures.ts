@@ -47,6 +47,10 @@ export const authFixtures: Record<string, MockCommandHandler> = {
   list_all_accounts: () => (mockState.encryptedKey ? [MOCK_NPUB] : []),
   check_session: () => ({ unlocked: mockState.sessionUnlocked }),
   session_heartbeat: () => undefined,
+  lock_session: () => {
+    mockState.sessionUnlocked = false;
+    return undefined;
+  },
   set_session_timeout: () => undefined,
   get_session_timeout: () => 15,
   logout: () => {

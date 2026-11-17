@@ -15,7 +15,7 @@ export const activeHubChannelName = writable<string | null>(null);
 export type ViewType = 'hub' | 'profile' | 'settings';
 export const activeView = writable<ViewType>('hub');
 
-/** Left-rail account destinations (Profile and Settings) hide the DM/squad list. */
+/** Profile and Settings hide the DM/squad list. */
 export function isAccountChromeView(view: ViewType): boolean {
   return view === 'profile' || view === 'settings';
 }
