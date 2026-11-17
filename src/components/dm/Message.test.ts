@@ -208,7 +208,7 @@ describe('Message reactor tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
-  it('falls back to a truncated npub when no cached profile exists for a reactor', async () => {
+  it('falls back to Unknown when no cached profile exists for a reactor', async () => {
     render(Message, {
       props: {
         id: 'msg-13',
@@ -224,7 +224,7 @@ describe('Message reactor tooltip', () => {
     const chip = screen.getByRole('button', { name: '😂 1' });
     await fireEvent.mouseEnter(chip);
     const tooltip = screen.getByRole('tooltip');
-    expect(tooltip.querySelector('.reactor-tooltip-name')?.textContent).toBe(`${BOB.slice(0, 16)}…`);
+    expect(tooltip.querySelector('.reactor-tooltip-name')?.textContent).toBe('Unknown');
   });
 
   it("resolves the current user's own reaction to the 'You' label instead of a raw id", async () => {

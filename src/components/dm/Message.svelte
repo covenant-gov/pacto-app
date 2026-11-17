@@ -597,7 +597,7 @@
                   aria-label={$t('messaging.message.reactedWith', { values: { emoji: chip.emoji } })}
                 >
                   {#each chip.reactorIds.slice(0, REACTOR_TOOLTIP_LIMIT) as npub (npub)}
-                    {@const reactorProfile = profiles?.[npub]}
+                    {@const reactorProfile = (profiles ?? $profilesStore)[npub]}
                     {@const reactorAvatarSrc = getProfileAvatarSrc(reactorProfile)}
                     {@const reactorIsSelf = npub === currentUserNpub}
                     {@const reactorLabel = reactorIsSelf ? $t('messaging.message.authorYou') : shownPersonName(npub)}
@@ -613,7 +613,7 @@
                         {#if reactorIsSelf}
                           {reactorLabel}
                         {:else}
-                          <VerifiedName {npub} />
+                          <VerifiedName {npub} profile={reactorProfile ?? null} />
                         {/if}
                       </span>
                     </div>

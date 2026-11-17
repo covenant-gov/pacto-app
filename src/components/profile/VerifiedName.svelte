@@ -1,18 +1,27 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import type { NostrProfile } from '../../lib/api/nostr';
   import { resolveShownName } from '../../lib/username/shown-name';
   import { currentUser } from '../../stores/auth-session';
   import { ensureShownName, peerUsernameClaims } from '../../stores/peer-username';
   import { profiles } from '../../stores/profiles';
   import { usernameState } from '../../stores/username';
 
-  let { npub = '' }: { npub?: string } = $props();
+  let {
+    npub = '',
+    profile,
+  }: {
+    npub?: string;
+    /** When passed, overrides the profiles store for kind-0 display data. */
+    profile?: NostrProfile | null;
+  } = $props();
 
   const key = $derived(npub.trim());
   const shown = $derived(
     resolveShownName({
       npub: key,
-      profile: key ? ($profiles[key] ?? null) : null,
+      profile:
+        profile !== undefined ? profile : key ? ($profiles[key] ?? null) : null,
       chain: {
         selfNpub: $currentUser?.npub,
         usernameState: $usernameState,
@@ -26,12 +35,13 @@
   });
 </script>
 
-<span class="verified-name">
-  {shown.name}
-  {#if shown.verified}
-    <span class="verified-name-check" title={$t('profile.username.verified')} aria-label={$t('profile.username.verified')}>✓</span>
-  {/if}
-</span>
+<span class="verified-name"
+  >{shown.name}{#if shown.verified}<span
+    class="verified-name-check"
+    title={$t('profile.username.verified')}
+    aria-label={$t('profile.username.verified')}>✓</span
+  >{/if}</span
+>
 
 <style>
   .verified-name {
