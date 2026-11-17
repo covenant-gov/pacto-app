@@ -4,7 +4,7 @@ This guide explains how to use the `local` Anvil chain (chain ID `31337`) with t
 
 ## Two supported dev workflows
 
-Both are first-class and do **not** conflict. They differ only in how the frontend is built and which chains are **auto-checked** on a fresh account. Everything else — network availability, the pickers, RPC settings, and the DM-wallet UX — is identical.
+Both are first-class and do **not** conflict. They differ only in how the frontend is built. Enabled chains start as Sepolia and Arbitrum in every build. Everything else — network availability, the pickers, RPC settings, and the DM-wallet UX — is identical.
 
 | | A. Live relays + Sepolia | B. Docker stack + Anvil |
 |---|---|---|
@@ -12,10 +12,10 @@ Both are first-class and do **not** conflict. They differ only in how the fronte
 | `import.meta.env.DEV` | `true` | `false` for a production build; `true` under `tauri:dev` |
 | Nostr transport | real/public relays you add | local relay `wss://localhost:7001` (Caddy TLS) |
 | Chain under test | Sepolia (plus mainnet/Arbitrum as needed) | Local Anvil `http://localhost:8545` (chain `31337`) |
-| Fresh-account enabled chains | **dev:** Sepolia + Local Anvil auto-checked | **prod build:** Arbitrum only → enable Local Anvil manually |
+| Fresh-account enabled chains | Sepolia + Arbitrum. Enable Local Anvil in Settings | Sepolia + Arbitrum. Enable Local Anvil in Settings |
 | Needs the `pacto-dev-env` Docker stack | no | yes |
 
-Why they don't collide: **Local Anvil is opt-in in every build and never force-enabled.** If a network's RPC is unreachable, only that row degrades — the DM/Wallet summary shows "Anvil not detected" (or "Couldn't reach {Network}") for it and still loads every other enabled chain. So workflow A can leave Local Anvil auto-checked without a stopped Anvil node breaking Sepolia balances, and workflow B can run Anvil without affecting anyone testing on live relays.
+Why they don't collide: **Local Anvil starts off in every build.** If a network's RPC is unreachable, only that row degrades — the DM/Wallet summary shows "Anvil not detected" (or "Couldn't reach {Network}") for it and still loads every other enabled chain. Turning Anvil on for workflow B does not change Sepolia or live-relay balances.
 
 > Note: the wallet panels only work inside the Tauri shell (the `invoke` calls are gated on `isTauri()`). A browser-only `pnpm dev` still exercises relays/UI but won't show on-chain balances.
 
@@ -25,7 +25,7 @@ In **Vite dev builds** (`import.meta.env.DEV`), the app adds `wss://localhost:70
 
 ## How `local` behaves across builds
 
-`Local Anvil` is a normal network in **both** dev and production builds — it appears in the network picker and RPC settings everywhere, and reaches `http://localhost:8545` by default via the curated RPC catalog (`src/lib/wallet/rpc-catalog.ts`). The only dev/prod difference is the default **Enabled chains** set on a fresh account (`defaultWalletEnabledChains()` in `src/lib/wallet/wallet-ui-prefs.ts`): **dev** auto-checks `sepolia` + `local`; **production** auto-checks `arbitrum` only. Users can toggle any chain on or off afterward in either build. The backend `get_wallet_summary` only queries the chains the user has enabled and returns a per-network error instead of failing the whole summary when one RPC is down.
+`Local Anvil` is a normal network in **both** dev and production builds — it appears in the network picker and RPC settings everywhere, and reaches `http://localhost:8545` by default via the curated RPC catalog (`src/lib/wallet/rpc-catalog.ts`). A fresh account enables Sepolia and Arbitrum (`defaultWalletEnabledChains()` in `src/lib/wallet/wallet-ui-prefs.ts`). Turn Local Anvil on in Settings when you want it. The backend `get_wallet_summary` only queries the chains the user has enabled and returns a per-network error instead of failing the whole summary when one RPC is down.
 
 
 ## 1. Start the local services

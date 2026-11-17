@@ -3,7 +3,12 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { get, writable } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import { shortEvmAddress } from '../governance/hats-tree-annotations';
+
+/** Bump so Profile and the DM wallet reload after the primary account changes. */
+export const primaryEvmAccountTick = writable(0);
 
 export type EvmAccountPurpose = 'squad' | 'advanced';
 
@@ -39,13 +44,22 @@ export function advancedEvmAccounts(rows: EvmAccountRow[] | null | undefined): E
   return rows?.filter(isAdvancedPurposeAccount) ?? [];
 }
 
-/** Label when set, else the shortened address. */
-export function evmAccountDisplayName(row: Pick<EvmAccountRow, 'label' | 'address'>): string {
-  return row.label?.trim() || shortEvmAddress(row.address ?? '');
+/** Label when set; unlabeled first derived account is "Account 1"; else the shortened address. */
+export function evmAccountDisplayName(
+  row: Pick<EvmAccountRow, 'label' | 'address'> & Partial<Pick<EvmAccountRow, 'scheme' | 'hdIndex'>>,
+): string {
+  const label = row.label?.trim();
+  if (label) return label;
+  if (row.scheme === 'bip44_v1' && row.hdIndex === 0) {
+    return get(t)('wallet.defaultFirstAccountName');
+  }
+  return shortEvmAddress(row.address ?? '');
 }
 
 /** `name · 0x12…ab` for pickers; the bare short address when the row has no label. */
-export function evmAccountOptionLabel(row: Pick<EvmAccountRow, 'label' | 'address'>): string {
+export function evmAccountOptionLabel(
+  row: Pick<EvmAccountRow, 'label' | 'address'> & Partial<Pick<EvmAccountRow, 'scheme' | 'hdIndex'>>,
+): string {
   const short = shortEvmAddress(row.address ?? '');
   const name = evmAccountDisplayName(row);
   return name === short ? short : `${name} · ${short}`;
@@ -143,10 +157,7 @@ export async function updateEvmAccountRow(params: {
 
 export async function setActiveEvmAccount(accountId: string): Promise<void> {
   await invoke('set_active_evm_account', { accountId });
-}
-
-export async function setDefaultSharedEvmAccount(accountId: string): Promise<void> {
-  await invoke('set_default_shared_evm_account', { accountId });
+  primaryEvmAccountTick.update((n) => n + 1);
 }
 
 export async function setActiveAdvancedEvmAccount(accountId: string): Promise<void> {

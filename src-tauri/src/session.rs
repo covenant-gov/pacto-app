@@ -145,6 +145,12 @@ impl SessionManager {
         state.reminder_scan.as_ref().map(|scan| scan.unlocked_at_ms)
     }
 
+    /// Manual lock. Same clear as idle auto-lock, then tell the UI.
+    pub fn lock_now(&self) {
+        self.clear();
+        self.emit_locked();
+    }
+
     /// Zeroize the encryption key, drop the in-session recovery phrase, and
     /// cancel the idle timer and reminder scan. The SecretBox zeroizes the
     /// bytes on drop. On Unix desktops, best-effort `munlock` is attempted
@@ -343,6 +349,12 @@ pub fn session_heartbeat() {
     SESSION_MANAGER.heartbeat();
 }
 
+/// Lock now. Same clear and `session_locked` event as idle auto-lock.
+#[tauri::command]
+pub fn lock_session() {
+    SESSION_MANAGER.lock_now();
+}
+
 /// Set the idle auto-lock timeout and persist it in account settings.
 /// A value of `0` disables auto-lock.
 #[tauri::command]
@@ -431,6 +443,21 @@ mod tests {
 
         manager.clear();
 
+        assert_eq!(crate::mnemonic_seed_get(), None);
+    }
+
+    #[test]
+    fn manual_lock_drops_the_recovery_phrase() {
+        let _guard = GLOBAL_STATE_LOCK.lock();
+        let manager = SessionManager::new();
+        manager.set_key([7u8; 32]);
+        crate::mnemonic_seed_set("test phrase".to_string());
+
+        manager.lock_now();
+
+        assert!(!manager.is_unlocked());
+        assert!(manager.current_key().is_none());
+        assert!(manager.locked_at_epoch_ms().is_some());
         assert_eq!(crate::mnemonic_seed_get(), None);
     }
 

@@ -8,7 +8,10 @@
   import { parseSupportedChainId } from '../../lib/wallet/chains';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { profiles } from '../../stores/profiles';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
+  import { currentUser } from '../../stores/auth-session';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import PactoGovInfraList from '../parent/governance/PactoGovInfraList.svelte';
 
   let {
@@ -25,8 +28,22 @@
 
   const tFn = get(t);
 
+  $effect(() => {
+    if (authorNpub) ensureShownName(authorNpub);
+  });
+
   const displayName = $derived(
-    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || tFn('announcements.governanceUpdated.aMember')
+    (authorNpub
+      ? resolveShownName({
+          npub: authorNpub,
+          profile: $profiles[authorNpub] ?? null,
+          chain: {
+            selfNpub: $currentUser?.npub,
+            usernameState: $usernameState,
+            peerClaims: $peerUsernameClaims,
+          },
+        }).name
+      : '') || authorName || tFn('announcements.governanceUpdated.aMember'),
   );
   const networkLabel = $derived(getWalletNetworkDisplayName(parseSupportedChainId(payload.chain)));
 </script>

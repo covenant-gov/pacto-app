@@ -15,6 +15,7 @@
     lastHubChannelNameBySquadId,
     isVirtualHubChannelId,
     catchUpCount,
+    openAccountProfile,
     type TopNavTab,
   } from '../../stores/app';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
@@ -99,6 +100,28 @@
       </button>
     </div>
   </div>
+  <div class="profile-control">
+    <button
+      type="button"
+      class="mode-segment mode-segment-icon"
+      class:active={$activeView === 'profile'}
+      onclick={openAccountProfile}
+      aria-pressed={$activeView === 'profile'}
+      aria-label={$t('nav.navbar.profile')}
+      title={$t('nav.navbar.profile')}
+    >
+      <!-- Inlined user-circle so the stroke follows the button color. -->
+      <svg class="profile-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M5.3163 19.4384C5.92462 18.0052 7.34492 17 9 17H15C16.6551 17 18.0754 18.0052 18.6837 19.4384M16 9.5C16 11.7091 14.2091 13.5 12 13.5C9.79086 13.5 8 11.7091 8 9.5C8 7.29086 9.79086 5.5 12 5.5C14.2091 5.5 16 7.29086 16 9.5ZM22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
+  </div>
   <TorStatusIndicator />
 </div>
 
@@ -126,7 +149,8 @@
   }
 
   .mode-switcher,
-  .catch-up-control {
+  .catch-up-control,
+  .profile-control {
     display: inline-flex;
     align-items: stretch;
     background: var(--bg-panel);
@@ -142,8 +166,10 @@
 
   .mode-segment {
     padding: 0 22px;
+    min-height: 1.5rem;
     font-size: 0.9375rem;
     font-weight: 500;
+    line-height: 1.5rem;
     color: var(--text-muted);
     background: transparent;
     border: none;
@@ -159,7 +185,6 @@
     justify-content: center;
     gap: 6px;
     padding: 0 12px;
-    min-height: 32px;
   }
 
   .catch-up-icon {
@@ -172,6 +197,12 @@
   .catch-up-icon :global(svg) {
     width: 100%;
     height: 100%;
+  }
+
+  .profile-icon {
+    width: 1.125rem;
+    height: 1.125rem;
+    flex-shrink: 0;
   }
 
   .mode-segment-icon .mode-segment-badge {

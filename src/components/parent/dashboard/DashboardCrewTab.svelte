@@ -2,7 +2,11 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   const tFn = get(t);
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
+  import { getProfileAvatarSrc } from '../../../lib/utils/profile';
+  import { resolveShownName } from '../../../lib/username/shown-name';
+  import VerifiedName from '../../profile/VerifiedName.svelte';
+  import { peerUsernameClaims } from '../../../stores/peer-username';
+  import { usernameState } from '../../../stores/username';
   import { profiles } from '../../../stores/profiles';
   import { currentUser } from '../../../stores/auth-session';
   import {
@@ -137,7 +141,15 @@
   function ownerLabel(): string {
     if (!addressOwner) return $t('governance.crew.ownerUnknown');
     if (ownerNpub) {
-      const name = getProfileDisplayName($profiles[ownerNpub]);
+      const name = resolveShownName({
+        npub: ownerNpub,
+        profile: $profiles[ownerNpub] ?? null,
+        chain: {
+          selfNpub: $currentUser?.npub,
+          usernameState: $usernameState,
+          peerClaims: $peerUsernameClaims,
+        },
+      }).name;
       if (name) return `${name} (${shortAddress(addressOwner)})`;
     }
     return shortAddress(addressOwner);
@@ -235,8 +247,7 @@
             {/if}
             <div class="roles-member-meta">
               <span class="roles-member-name"
-                >{getProfileDisplayName($profiles[npub]) ||
-                  (npub.length > 20 ? npub.slice(0, 14) + '…' : npub)}</span
+                ><VerifiedName {npub} /></span
               >
               <code class="roles-member-npub"
                 >{npub.length > 28 ? npub.slice(0, 14) + '…' + npub.slice(-8) : npub}</code

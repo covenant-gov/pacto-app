@@ -4,15 +4,17 @@
   import type { Mention } from '../../lib/messaging/mentions';
   import { resolveDmMessagePresentation } from '../../lib/dm/resolve-dm-message-presentation';
   import DmMessageRouter from './DmMessageRouter.svelte';
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import { getProfileAvatarSrc } from '../../lib/utils/profile';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import {
     parseWalletPeerInfoGrant,
     getFulfilledWalletRequestIdsFromMessages,
     type WalletPeerInfoRequestPayload,
   } from '../../lib/wallet/dm-messages';
   import {
+    dmPeerEvmWritesFromMessages,
     formatReciprocalWalletPeerGrant,
-    shouldPersistInboundWalletPeerGrant,
     shouldSendReciprocalWalletPeerGrant,
   } from '../../lib/wallet/wallet-peer-exchange';
   import { setDmPeerEvmAddress } from '../../lib/api/wallet-peers';
@@ -26,6 +28,8 @@
   import { replyTargetExcerpt } from '../../lib/messaging/reply-quote';
   import { toggleDmBlock } from '../../lib/api/nostr';
   import { profiles } from '../../stores/profiles';
+  import { peerUsernameClaims } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import {
     activeDmTab,
     lastOpenedDmByTab,
@@ -287,14 +291,14 @@
     if (pinnedToBottom) scrollToLatest();
   }
 
-  let appliedWalletGrantIds = new Set<string>();
+  let appliedPeerEvmWriteIds = new Set<string>();
   let appliedWalletGrantsForNpub: string | null = null;
   let reciprocalGrantInFlight = new Set<string>();
 
   $effect(() => {
     if (npub !== appliedWalletGrantsForNpub) {
       appliedWalletGrantsForNpub = npub;
-      appliedWalletGrantIds = new Set();
+      appliedPeerEvmWriteIds = new Set();
       reciprocalGrantInFlight = new Set();
     }
   });
@@ -303,32 +307,32 @@
     const uid = $currentUser?.npub;
     const peerNpub = npub;
     if (!uid || !peerNpub) return;
+    const writes = dmPeerEvmWritesFromMessages({
+      messages,
+      peerNpub,
+      myNpub: uid,
+    });
+    const pendingWrites = writes.filter((w) => !appliedPeerEvmWriteIds.has(w.id));
+    for (const w of pendingWrites) appliedPeerEvmWriteIds.add(w.id);
+    if (pendingWrites.length > 0) {
+      const forPeer = peerNpub;
+      void (async () => {
+        for (const w of pendingWrites) {
+          try {
+            await setDmPeerEvmAddress(forPeer, w.address, w.atMs);
+            if (npub !== forPeer) return;
+            dmWalletPeerExchangeTick.update((t: number) => t + 1);
+          } catch {
+            appliedPeerEvmWriteIds.delete(w.id);
+          }
+        }
+      })();
+    }
+
     for (const msg of messages) {
       if (msg.mine) continue;
       const g = parseWalletPeerInfoGrant(msg.content ?? '');
       if (!g || g.grantor_npub !== peerNpub) continue;
-
-      if (
-        !appliedWalletGrantIds.has(msg.id) &&
-        shouldPersistInboundWalletPeerGrant({
-          grant: g,
-          peerNpub,
-          myNpub: uid,
-          messages,
-        })
-      ) {
-        appliedWalletGrantIds.add(msg.id);
-        const forPeer = peerNpub;
-        void setDmPeerEvmAddress(forPeer, g.evm_address).then(
-          () => {
-            if (npub !== forPeer) return;
-            dmWalletPeerExchangeTick.update((t: number) => t + 1);
-          },
-          () => {
-            appliedWalletGrantIds.delete(msg.id);
-          }
-        );
-      }
 
       if (reciprocalGrantInFlight.has(g.request_id)) continue;
       if (
@@ -432,11 +436,17 @@
   let peerBlockedByMe = $derived(contactProfile?.blocked === true);
   let contactAvatarSrc = $derived(getProfileAvatarSrc(contactProfile));
   let contactDisplayName = $derived(
-    contactProfile
-      ? getProfileDisplayName(contactProfile)
-      : npub
-        ? truncateNpub(npub)
-        : $t('messaging.message.replyUnknown')
+    npub
+      ? resolveShownName({
+          npub,
+          profile: contactProfile,
+          chain: {
+            selfNpub: $currentUser?.npub,
+            usernameState: $usernameState,
+            peerClaims: $peerUsernameClaims,
+          },
+        }).name
+      : $t('messaging.message.replyUnknown'),
   );
 
   let menuOpen = $state(false);
@@ -559,7 +569,13 @@
       {:else}
         <div class="dm-thread-header-title-row">
           <div class="dm-thread-title-left">
-            <h3 class="dm-thread-title">{contactDisplayName}</h3>
+            <h3 class="dm-thread-title">
+              {#if npub}
+                <VerifiedName {npub} />
+              {:else}
+                {contactDisplayName}
+              {/if}
+            </h3>
             <SyncStatusIndicator status={$dmSyncStatusEffective} />
             {#if showOptionsMenu}
               <NotificationLevelIndicator chatId={npub} onOpen={() => (menuOpen = true)} />

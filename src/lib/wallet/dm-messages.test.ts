@@ -202,6 +202,32 @@ describe('parseWalletTxAnnouncement', () => {
     expect(parseWalletTxAnnouncement(bad)).toBeNull();
   });
 
+  it('parses to_evm_address when present and ignores it when absent', () => {
+    const withTo = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}","to_evm_address":"0x2222222222222222222222222222222222222222"}`;
+    expect(parseWalletTxAnnouncement(withTo)?.to_evm_address).toBe(
+      '0x2222222222222222222222222222222222222222',
+    );
+    expect(parseWalletTxAnnouncement(VALID_ANNOUNCE_JSON)?.to_evm_address).toBeUndefined();
+    const formatted = formatWalletTxAnnouncement({
+      network: 'sepolia',
+      asset: 'ETH',
+      amount: '1',
+      tx_hash: '0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+      from_npub: 'npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      to_npub: 'npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      from_evm_address: SAMPLE_FROM_EVM,
+      to_evm_address: '0x2222222222222222222222222222222222222222',
+    });
+    expect(parseWalletTxAnnouncement(formatted)?.to_evm_address).toBe(
+      '0x2222222222222222222222222222222222222222',
+    );
+  });
+
+  it('rejects an invalid to_evm_address', () => {
+    const bad = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}","to_evm_address":"0xshort"}`;
+    expect(parseWalletTxAnnouncement(bad)).toBeNull();
+  });
+
   it('formatWalletTxAnnouncement throws without valid from_evm_address', () => {
     expect(() =>
       formatWalletTxAnnouncement({

@@ -15,8 +15,11 @@ import { npubHashFromPubkey } from '../lib/evm/sponsor/nostr_claim_link';
 import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
 import { ZERO_ADDRESS } from '../lib/wallet/assets';
 import { getInvokeErrorMessage } from '../lib/utils/tauri-errors';
+import { chainUsernameFromRecord } from '../lib/username/shown-name';
 import { usernameClaimErrorMessage } from '../lib/username/username-claim-errors';
+import { publishBoundUsername } from '../lib/api/nostr';
 import { currentUser } from './auth-session';
+import { profiles } from './profiles';
 import type { Hex } from 'viem';
 
 /** Only Sepolia has pinned `globalUsernameSponsor` addresses. */
@@ -25,6 +28,8 @@ export const USERNAME_NETWORK = 'sepolia';
 export type UsernameStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export type UsernameState = {
+  /** Account this snapshot was read for. A mismatch is not a shown name. */
+  npub: string | null;
   status: UsernameStatus;
   cached: UsernameClaimRow | null;
   record: UsernameRecordDto | null;
@@ -35,6 +40,7 @@ export type UsernameState = {
 };
 
 const initialState: UsernameState = {
+  npub: null,
   status: 'idle',
   cached: null,
   record: null,
@@ -45,6 +51,9 @@ const initialState: UsernameState = {
 };
 
 export const usernameState = writable<UsernameState>(initialState);
+
+/** Set when the chain claim succeeded and the kind 0 bind publish did not. */
+export const usernameKind0BindError = writable<string | null>(null);
 
 function normalizeHexAddr(addr: string | null | undefined): string | null {
   const t = addr?.trim().toLowerCase();
@@ -86,6 +95,20 @@ export function computeUsernameVerified(input: {
   return chainEvm === active;
 }
 
+function signedInNpub(npub: string | null | undefined = get(currentUser)?.npub): string {
+  return npub?.trim() ?? '';
+}
+
+/** Minted `recordOf` name for the signed-in account. The active signer is not part of it. */
+export function mintedUsernameFromState(
+  state: UsernameState,
+  signedIn: string | null | undefined = get(currentUser)?.npub,
+): string | null {
+  const npub = signedInNpub(signedIn);
+  if (!state.npub || state.npub !== npub) return null;
+  return chainUsernameFromRecord(state.record?.name, state.record?.tokenId);
+}
+
 export function claimedUsernameFromState(state: UsernameState): string | null {
   const fromRecord = state.record?.name?.trim();
   if (fromRecord && isNonZeroTokenId(state.record?.tokenId)) return fromRecord;
@@ -96,6 +119,8 @@ export function claimedUsernameFromState(state: UsernameState): string | null {
 
 /** Claimed holder, missing link id, this pass read a minted chain record. */
 export function needsForcedUsernameLinkRestore(state: UsernameState): boolean {
+  const npub = signedInNpub();
+  if (!state.npub || state.npub !== npub) return false;
   if (!claimedUsernameFromState(state)) return false;
   if (
     computeUsernameVerified({
@@ -111,7 +136,10 @@ export function needsForcedUsernameLinkRestore(state: UsernameState): boolean {
   return !!rec?.name?.trim() && isNonZeroTokenId(rec.tokenId);
 }
 
-export const claimedUsername = derived(usernameState, ($s) => claimedUsernameFromState($s));
+export const claimedUsername = derived([usernameState, currentUser], ([$s, $user]) => {
+  if (!$s.npub || $s.npub !== signedInNpub($user?.npub)) return null;
+  return claimedUsernameFromState($s);
+});
 
 export const isUsernameVerified = derived(usernameState, ($s) =>
   computeUsernameVerified({
@@ -126,9 +154,30 @@ export const hasPendingUsernameTransfer = derived(usernameState, ($s) => {
   return isPendingAddress($s.record?.pendingAddress);
 });
 
+let ownUsernameRefresh: Promise<void> | null = null;
+let ownUsernameRefreshNpub: string | null = null;
+
 export function resetUsernameState(): void {
   refreshGen += 1;
+  ownUsernameRefresh = null;
+  ownUsernameRefreshNpub = null;
   usernameState.set({ ...initialState });
+  usernameKind0BindError.set(null);
+}
+
+/** Write the chain username into kind 0 `name` and `display_name`. */
+export async function publishBoundDisplayName(name: string): Promise<void> {
+  const trimmed = normalizeUsernameInput(name);
+  if (!trimmed) return;
+  const npub = get(currentUser)?.npub;
+  const profile = npub ? get(profiles)[npub] : undefined;
+  await publishBoundUsername({
+    name: trimmed,
+    avatar: profile?.avatar ?? '',
+    banner: profile?.banner ?? '',
+    about: profile?.about ?? '',
+  });
+  usernameKind0BindError.set(null);
 }
 
 let refreshGen = 0;
@@ -151,22 +200,43 @@ export function normalizeUsernameInput(name: string): string {
   return name.trim();
 }
 
+/** One automatic chain read for the signed-in account. Explicit refreshes stay separate. */
+export function ensureOwnUsername(): void {
+  const npub = signedInNpub();
+  if (!npub) return;
+  if (ownUsernameRefresh && ownUsernameRefreshNpub === npub) return;
+  const state = get(usernameState);
+  if (state.npub && state.npub !== npub) {
+    usernameState.set({ ...initialState, status: 'loading', npub });
+  }
+  ownUsernameRefreshNpub = npub;
+  ownUsernameRefresh = refreshUsernameState();
+}
+
 export async function refreshUsernameState(options?: {
   forceLinkRestore?: boolean;
 }): Promise<void> {
   const user = get(currentUser);
-  if (!user?.pubkey) {
+  const npub = signedInNpub(user?.npub);
+  if (!user?.pubkey || !npub) {
     resetUsernameState();
     return;
   }
 
   const gen = ++refreshGen;
+  const prevAtStart = get(usernameState);
 
-  usernameState.update((s) => ({
-    ...s,
-    status: s.status === 'ready' ? 'ready' : 'loading',
-    error: null,
-  }));
+  usernameState.update((s) => {
+    if (s.npub && s.npub !== npub) {
+      return { ...initialState, status: 'loading', npub };
+    }
+    return {
+      ...s,
+      npub,
+      status: s.status === 'ready' ? 'ready' : 'loading',
+      error: null,
+    };
+  });
 
   try {
     const [synced, activeEvm] = await Promise.all([
@@ -174,17 +244,20 @@ export async function refreshUsernameState(options?: {
       getActiveSquadEvmSignerAddress(),
     ]);
     if (gen !== refreshGen) return;
+    if (!stillSignedIn(npub, prevAtStart)) return;
 
     const prev = get(usernameState);
     const chainUnread = synced.record == null && !!synced.chainError;
+    const keepPrev = chainUnread && prev.npub === npub;
     usernameState.set({
+      npub,
       status: 'ready',
       cached: synced.cached,
-      record: synced.record ?? (chainUnread ? prev.record : null),
+      record: synced.record ?? (keepPrev ? prev.record : null),
       pendingTransfer:
         synced.record != null
           ? synced.pendingTransfer
-          : chainUnread
+          : keepPrev
             ? prev.pendingTransfer
             : false,
       activeEvm,
@@ -193,13 +266,23 @@ export async function refreshUsernameState(options?: {
     });
   } catch (e) {
     if (gen !== refreshGen) return;
+    if (!stillSignedIn(npub, prevAtStart)) return;
     usernameState.update((s) => ({
       ...s,
+      npub,
       status: 'error',
       busy: false,
       error: getInvokeErrorMessage(e),
     }));
   }
+}
+
+/** Drop the write when the account changed. A lock keeps the snapshot from before this read. */
+function stillSignedIn(npub: string, prevAtStart: UsernameState): boolean {
+  const still = signedInNpub();
+  if (still === npub) return true;
+  if (!still && prevAtStart.npub === npub) usernameState.set(prevAtStart);
+  return false;
 }
 
 async function withBusyWrite<T>(fn: () => Promise<T>): Promise<T> {
@@ -218,7 +301,15 @@ async function withBusyWrite<T>(fn: () => Promise<T>): Promise<T> {
 
 export async function claimUsername(name: string): Promise<UsernameClaimResult> {
   const normalized = normalizeUsernameInput(name);
-  return withBusyWrite(() => usernameClaim(USERNAME_NETWORK, normalized));
+  const claimForNpub = signedInNpub();
+  const result = await withBusyWrite(() => usernameClaim(USERNAME_NETWORK, normalized));
+  if (!claimForNpub || signedInNpub() !== claimForNpub) return result;
+  try {
+    await publishBoundDisplayName(normalized);
+  } catch (e) {
+    usernameKind0BindError.set(getInvokeErrorMessage(e));
+  }
+  return result;
 }
 
 function resolveNpubHash(): string {

@@ -7,9 +7,9 @@ import { get, writable } from 'svelte/store';
 import type { WalletSummary } from './backend-wallet';
 import type { WatchedErc20Wire } from './watched-tokens';
 
-export const WALLET_SUMMARY_CACHE_VERSION = 2 as const;
+export const WALLET_SUMMARY_CACHE_VERSION = 3 as const;
 
-const STORAGE_PREFIX = 'pacto_wallet_summary_cache_v2';
+const STORAGE_PREFIX = 'pacto_wallet_summary_cache_v3';
 
 /** Stable fingerprint for the watched ERC-20 list passed to `get_wallet_summary`. */
 export function watchedWireFingerprint(wires: WatchedErc20Wire[]): string {
@@ -24,8 +24,14 @@ export function watchedWireFingerprint(wires: WatchedErc20Wire[]): string {
 export interface WalletSummaryHydrated {
   npub: string;
   watchedFingerprint: string;
+  /** Squad address this snapshot was fetched for. */
+  address: string;
   fetchedAtMs: number;
   summary: WalletSummary;
+}
+
+function normalizeCacheAddress(address: string): string {
+  return address.trim().toLowerCase();
 }
 
 /** In-memory snapshot after disk read (login) or after a successful fetch. */
@@ -42,12 +48,15 @@ export function hydrateWalletSummaryCacheFromDisk(npub: string): void {
     const o = JSON.parse(raw) as {
       version?: number;
       watchedFingerprint?: string;
+      address?: string;
       fetchedAtMs?: number;
       summary?: WalletSummary;
     };
     if (
       o.version !== WALLET_SUMMARY_CACHE_VERSION ||
       typeof o.watchedFingerprint !== 'string' ||
+      typeof o.address !== 'string' ||
+      !normalizeCacheAddress(o.address) ||
       !o.summary ||
       typeof o.summary !== 'object'
     ) {
@@ -57,6 +66,7 @@ export function hydrateWalletSummaryCacheFromDisk(npub: string): void {
     walletSummaryHydrated.set({
       npub,
       watchedFingerprint: o.watchedFingerprint,
+      address: normalizeCacheAddress(o.address),
       fetchedAtMs: typeof o.fetchedAtMs === 'number' ? o.fetchedAtMs : 0,
       summary: o.summary,
     });
@@ -68,14 +78,17 @@ export function hydrateWalletSummaryCacheFromDisk(npub: string): void {
 export function persistWalletSummaryCache(
   npub: string,
   wires: WatchedErc20Wire[],
-  summary: WalletSummary
+  summary: WalletSummary,
+  address: string,
 ): void {
-  if (typeof localStorage === 'undefined' || !npub) return;
+  const normalized = normalizeCacheAddress(address);
+  if (typeof localStorage === 'undefined' || !npub || !normalized) return;
   const watchedFingerprint = watchedWireFingerprint(wires);
   const fetchedAtMs = Date.now();
   const payload = {
     version: WALLET_SUMMARY_CACHE_VERSION,
     watchedFingerprint,
+    address: normalized,
     fetchedAtMs,
     summary,
   };
@@ -87,6 +100,7 @@ export function persistWalletSummaryCache(
   walletSummaryHydrated.set({
     npub,
     watchedFingerprint,
+    address: normalized,
     fetchedAtMs,
     summary,
   });
@@ -99,11 +113,14 @@ export function clearWalletSummaryCacheStore(): void {
 /** Returns cached summary only if it matches this account and watched-token set. */
 export function getMatchingCachedSummary(
   npub: string | null | undefined,
-  wires: WatchedErc20Wire[]
+  wires: WatchedErc20Wire[],
+  address: string,
 ): WalletSummary | null {
-  if (!npub) return null;
+  const normalized = normalizeCacheAddress(address);
+  if (!npub || !normalized) return null;
   const h = get(walletSummaryHydrated);
   if (!h || h.npub !== npub) return null;
+  if (h.address !== normalized) return null;
   if (h.watchedFingerprint !== watchedWireFingerprint(wires)) return null;
   return h.summary;
 }

@@ -29,18 +29,11 @@
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
   import { setRelayEnabledLocally } from '../../stores/dm';
-  import { currentUser } from '../../stores/auth-session';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import SettingsFormModal from './SettingsFormModal.svelte';
-  import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
-  import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
-  import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import SettingsSubheading from './SettingsSubheading.svelte';
 
-  let userNpub = $derived($currentUser?.npub ?? '');
-
-  let exportModalOpen = $state(false);
   let addRelayModalOpen = $state(false);
 
   let relays: RelayInfo[] = $state([]);
@@ -283,29 +276,6 @@
 
 <SettingsCollapsibleSection sectionId="settings-nostr" title={$t('settings.nostrSettingsTitle')}>
 
-  <div class="nostr-npub-block" aria-labelledby="nostr-npub-heading">
-    <SettingsSubheading id="nostr-npub-heading">{$t('settings.npubLabel')}</SettingsSubheading>
-    {#if userNpub}
-      <div class="nostr-npub-row">
-        <CopyableKeyPill value={userNpub} ariaLabel={$t('settings.copyNpub')} />
-        <MoreActionsMenu
-          ariaLabel={$t('settings.npubActionsMenu')}
-          items={[
-            {
-              id: 'export-key',
-              label: $t('settings.exportKey'),
-              onSelect: () => {
-                exportModalOpen = true;
-              },
-            },
-          ]}
-        />
-      </div>
-    {:else}
-      <p class="nostr-settings-muted">{$t('settings.loginToSeeNpub')}</p>
-    {/if}
-  </div>
-
   <div class="nostr-relay-list-wrap" aria-labelledby="nostr-relay-list-heading">
     <div class="nostr-relay-list-head">
       <SettingsSubheading id="nostr-relay-list-heading">{$t('settings.connectedRelaysTitle')}</SettingsSubheading>
@@ -500,13 +470,6 @@
   </div>
 </SettingsCollapsibleSection>
 
-<EvmAccountKeyExportModal
-  variant="nostr"
-  open={exportModalOpen}
-  npub={userNpub}
-  onClose={() => (exportModalOpen = false)}
-/>
-
 {#if addRelayModalOpen}
   <SettingsFormModal
     titleId="settings-add-relay-title"
@@ -571,19 +534,6 @@
 {/if}
 
 <style>
-  .nostr-npub-block {
-    margin-bottom: 18px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .nostr-npub-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
-
   .nostr-settings-code {
     font-size: 0.875em;
     padding: 0.1em 0.35em;

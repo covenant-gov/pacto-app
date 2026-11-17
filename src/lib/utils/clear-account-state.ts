@@ -87,6 +87,8 @@ import { clearDashboardFetchMetaStores } from '../dashboard/dashboard-fetch-meta
 import { clearGovernanceSnapshotCacheStore } from '../dashboard/governance-snapshot-cache';
 import { clearSettingsChainCacheStore, SETTINGS_CHAIN_CACHE_PREFIX } from '../dashboard/settings-chain-cache';
 import { TREASURY_SAFES_CACHE_PREFIX } from '../dashboard/treasury-safes-cache';
+import { resetPeerUsernames } from '../../stores/peer-username';
+import { resetUsernameState } from '../../stores/username';
 import { SQUAD_INFRA_CACHE_PREFIX } from '../dashboard/squad-infra-cache';
 import { SQUAD_MEMBER_EVM_CACHE_PREFIX } from '../dashboard/squad-member-evm-cache';
 import { GOVERNANCE_SNAPSHOT_CACHE_PREFIX } from '../dashboard/governance-snapshot-cache';
@@ -191,6 +193,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_pinned_dm_npubs',
   'pacto_wallet_summary_cache_v1',
   'pacto_wallet_summary_cache_v2',
+  'pacto_wallet_summary_cache_v3',
   TREASURY_SAFES_CACHE_PREFIX,
   SQUAD_INFRA_CACHE_PREFIX,
   SQUAD_MEMBER_EVM_CACHE_PREFIX,
@@ -251,6 +254,8 @@ function clearAccountLocalStorage(npub?: string): void {
  * @param npub - When provided (e.g. on logout), remove this account's npub-scoped localStorage keys.
  */
 export function clearAccountState(npub?: string): void {
+  resetUsernameState();
+  resetPeerUsernames();
   setCurrentNpubForPersistence(null);
   stripTrackingMarkersEnabled.set(true);
   startupCheckEnabled.set(true);

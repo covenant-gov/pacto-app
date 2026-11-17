@@ -202,8 +202,8 @@ pub(crate) fn get_blossom_media_servers() -> Vec<String> {
 /// Session-management helpers re-exported from `session.rs`. The encryption
 /// key container, idle timer, and heartbeat live in the session manager.
 pub use session::{
-    check_session, clear_encryption_key, current_encryption_key, heartbeat, session_heartbeat,
-    set_encryption_key, set_timeout_ms, SESSION_MANAGER,
+    check_session, clear_encryption_key, current_encryption_key, heartbeat, lock_session,
+    session_heartbeat, set_encryption_key, set_timeout_ms, SESSION_MANAGER,
 };
 // Recovery phrase set by create/import for this session. Cleared on lock and logout; never restored on unlock.
 lazy_static! {
@@ -1498,6 +1498,7 @@ pub fn run() {
             net_transport::get_tor_status,
             profile::load_profile,
             profile::update_profile,
+            profile::publish_bound_username,
             profile::update_status,
             profile::upload_avatar,
             chat::mark_as_read,
@@ -1603,7 +1604,6 @@ pub fn run() {
             evm::evm_accounts::import_evm_account,
             evm::evm_accounts::update_evm_account,
             evm::evm_accounts::set_active_evm_account,
-            evm::evm_accounts::set_default_shared_evm_account,
             evm::evm_accounts::set_active_advanced_evm_account,
             evm::advanced_contract_call::evm_send_advanced_contract_call,
             evm::squad_allowlist::evm_send_squad_allowlisted_contract_call,
@@ -1624,6 +1624,7 @@ pub fn run() {
             evm::username::username_can_bootstrap_claim,
             evm::username::username_npub_of,
             evm::username::username_record_of,
+            evm::username::username_record_for_npub,
             evm::username::username_eligible_member,
             evm::username::username_is_pending_transfer,
             evm::username::username_bootstrap_spendable_pool_wei,
@@ -1725,6 +1726,7 @@ pub fn run() {
             // Session management commands (U4)
             session::check_session,
             session::session_heartbeat,
+            session::lock_session,
             session::get_session_timeout,
             session::set_session_timeout,
             // Biometric unlock commands

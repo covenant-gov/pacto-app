@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import {
   computeUsernameVerified,
+  mintedUsernameFromState,
   claimedUsernameFromState,
   needsForcedUsernameLinkRestore,
   resetUsernameState,
@@ -14,10 +15,14 @@ import {
   ensurePubkeyHex,
   normalizeUsernameInput,
   claimUsername,
+  publishBoundDisplayName,
+  usernameKind0BindError,
+  ensureOwnUsername,
   type UsernameState,
 } from './username';
 import { currentUser } from './auth-session';
 import { usernameClaim, usernameSyncAccountState, type UsernameAccountState } from '../lib/api/username';
+import { publishBoundUsername } from '../lib/api/nostr';
 import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
 
 vi.mock('../lib/api/username', () => ({
@@ -33,6 +38,10 @@ vi.mock('../lib/wallet/evm-accounts', () => ({
   getActiveSquadEvmSignerAddress: vi.fn(),
 }));
 
+vi.mock('../lib/api/nostr', () => ({
+  publishBoundUsername: vi.fn(),
+}));
+
 vi.mock('../lib/evm/sponsor/nostr_claim_link', () => ({
   npubHashFromPubkey: vi.fn(() => '0x' + 'ab'.repeat(32)),
 }));
@@ -40,6 +49,7 @@ vi.mock('../lib/evm/sponsor/nostr_claim_link', () => ({
 const mockSync = vi.mocked(usernameSyncAccountState);
 const mockActiveEvm = vi.mocked(getActiveSquadEvmSignerAddress);
 const mockClaim = vi.mocked(usernameClaim);
+const mockPublishBound = vi.mocked(publishBoundUsername);
 
 const ZERO = '0x0000000000000000000000000000000000000000';
 const EVM = '0x1111111111111111111111111111111111111111';
@@ -69,9 +79,33 @@ function readyState(overrides: Partial<UsernameState> = {}): UsernameState {
     activeEvm: EVM,
     busy: false,
     error: null,
+    npub: 'npub1test',
     ...overrides,
   };
 }
+
+describe('mintedUsernameFromState', () => {
+  const signedIn = 'npub1test';
+
+  it('returns the chain name when the active signer is a different address', () => {
+    expect(mintedUsernameFromState(readyState({ activeEvm: OTHER }), signedIn)).toBe('alice');
+  });
+
+  it('does not require the relay link or the sqlite cache', () => {
+    const state = readyState({ cached: null });
+    expect(mintedUsernameFromState(state, signedIn)).toBe('alice');
+  });
+
+  it('returns null when the token is not minted', () => {
+    const state = readyState();
+    state.record = state.record ? { ...state.record, tokenId: '0' } : null;
+    expect(mintedUsernameFromState(state, signedIn)).toBeNull();
+  });
+
+  it('returns null when the record belongs to another account', () => {
+    expect(mintedUsernameFromState(readyState({ npub: 'npub1other' }), signedIn)).toBeNull();
+  });
+});
 
 describe('computeUsernameVerified', () => {
   it('requires linkEventId, non-zero token, name, and matching evm', () => {
@@ -201,6 +235,7 @@ describe('claimedUsernameFromState', () => {
       activeEvm: EVM,
       busy: false,
       error: null,
+      npub: 'npub1',
     };
     expect(claimedUsernameFromState(state)).toBe('onchain');
   });
@@ -251,11 +286,25 @@ describe('username derived stores', () => {
   });
 
   it('isUsernameVerified tracks state', () => {
+    currentUser.set({
+      pubkey: 'aa'.repeat(32),
+      npub: 'npub1test',
+    } as never);
     expect(get(isUsernameVerified)).toBe(false);
     usernameState.set(readyState());
     expect(get(isUsernameVerified)).toBe(true);
     expect(get(claimedUsername)).toBe('alice');
     expect(get(hasPendingUsernameTransfer)).toBe(false);
+  });
+
+  it('hides a claimed name that belongs to another account', () => {
+    currentUser.set({
+      pubkey: 'bb'.repeat(32),
+      npub: 'npub1other',
+    } as never);
+    usernameState.set(readyState());
+    expect(get(claimedUsername)).toBeNull();
+    expect(mintedUsernameFromState(get(usernameState))).toBeNull();
   });
 
   it('hasPendingUsernameTransfer from flag or pendingAddress', () => {
@@ -296,6 +345,17 @@ function syncState(overrides: Partial<UsernameAccountState> = {}): UsernameAccou
 }
 
 describe('needsForcedUsernameLinkRestore', () => {
+  beforeEach(() => {
+    currentUser.set({
+      pubkey: 'aa'.repeat(32),
+      npub: 'npub1test',
+    } as never);
+  });
+
+  afterEach(() => {
+    currentUser.set(null);
+  });
+
   it('is true for a holder with a missing linkEventId', () => {
     expect(
       needsForcedUsernameLinkRestore(
@@ -403,6 +463,20 @@ describe('refreshUsernameState', () => {
     expect(get(usernameState).pendingTransfer).toBe(false);
   });
 
+  it('does not keep another account record when the chain read fails', async () => {
+    usernameState.set(readyState({ npub: 'npub1other' }));
+    mockSync.mockResolvedValue(
+      syncState({
+        record: null,
+        chainError: 'rpc down',
+      }),
+    );
+
+    await refreshUsernameState();
+    expect(get(usernameState).npub).toBe('npub1test');
+    expect(get(usernameState).record).toBeNull();
+  });
+
   it('forwards forceLinkRestore to sync', async () => {
     await refreshUsernameState({ forceLinkRestore: true });
     expect(mockSync).toHaveBeenCalledWith('sepolia', undefined, { forceLinkRestore: true });
@@ -468,6 +542,53 @@ describe('refreshUsernameState', () => {
   });
 });
 
+describe('ensureOwnUsername', () => {
+  beforeEach(() => {
+    resetUsernameState();
+    currentUser.set({
+      pubkey: 'aa'.repeat(32),
+      npub: 'npub1test',
+    } as never);
+    mockSync.mockReset();
+    mockActiveEvm.mockReset();
+    mockActiveEvm.mockResolvedValue(EVM);
+    mockSync.mockResolvedValue(
+      syncState({
+        record: {
+          name: 'alice',
+          evmAddress: EVM,
+          pendingAddress: ZERO,
+          tokenId: '1',
+        },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    resetUsernameState();
+    currentUser.set(null);
+  });
+
+  it('reads again after the signed-in account changes', async () => {
+    ensureOwnUsername();
+    await vi.waitFor(() => expect(get(usernameState).record?.name).toBe('alice'));
+    expect(mockSync).toHaveBeenCalledTimes(1);
+
+    currentUser.set({
+      pubkey: 'bb'.repeat(32),
+      npub: 'npub1other',
+    } as never);
+    mockSync.mockResolvedValueOnce(syncState());
+    ensureOwnUsername();
+    await vi.waitFor(() => {
+      expect(mockSync).toHaveBeenCalledTimes(2);
+      expect(get(usernameState).status).toBe('ready');
+    });
+    expect(get(usernameState).npub).toBe('npub1other');
+    expect(get(usernameState).record?.name ?? '').not.toBe('alice');
+  });
+});
+
 describe('claimUsername', () => {
   beforeEach(() => {
     resetUsernameState();
@@ -480,6 +601,13 @@ describe('claimUsername', () => {
     mockActiveEvm.mockReset();
     mockActiveEvm.mockResolvedValue(EVM);
     mockClaim.mockReset();
+    mockPublishBound.mockReset();
+    mockPublishBound.mockResolvedValue({
+      eventId: 'k0',
+      successCount: 1,
+      verifiedCount: 1,
+      connectedWriteCount: 1,
+    });
   });
 
   afterEach(() => {
@@ -502,5 +630,77 @@ describe('claimUsername', () => {
     });
     await claimUsername('  Dao  ');
     expect(mockClaim).toHaveBeenCalledWith('sepolia', 'Dao');
+    expect(mockPublishBound).toHaveBeenCalledWith({
+      name: 'Dao',
+      avatar: '',
+      banner: '',
+      about: '',
+    });
+    expect(get(usernameKind0BindError)).toBeNull();
+  });
+
+  it('keeps the claim when kind 0 bind fails', async () => {
+    mockClaim.mockResolvedValue({
+      network: 'sepolia',
+      chainId: 11155111,
+      path: 'bootstrap',
+      username: 'Dao',
+      npubHash: NPUB_HASH,
+      tokenId: '1',
+      linkEventId: 'evt',
+      userOpHash: '0x1',
+      evmAddress: EVM,
+      policyVersion: 1,
+    });
+    mockPublishBound.mockRejectedValueOnce(new Error('relay down'));
+    const result = await claimUsername('Dao');
+    expect(result.username).toBe('Dao');
+    expect(get(usernameKind0BindError)).toBe('relay down');
+    usernameKind0BindError.set(null);
+    mockPublishBound.mockResolvedValueOnce({
+      eventId: 'k0',
+      successCount: 1,
+      verifiedCount: 1,
+      connectedWriteCount: 1,
+    });
+    await publishBoundDisplayName('Dao');
+    expect(get(usernameKind0BindError)).toBeNull();
+  });
+
+  it('does not publish kind 0 after the account changes', async () => {
+    const { promise, resolve } = Promise.withResolvers<{
+      network: string;
+      chainId: number;
+      path: string;
+      username: string;
+      npubHash: string;
+      tokenId: string;
+      linkEventId: string;
+      userOpHash: string;
+      evmAddress: string;
+      policyVersion: number;
+    }>();
+    mockClaim.mockReturnValueOnce(promise);
+    const pending = claimUsername('Dao');
+    currentUser.set({
+      pubkey: 'bb'.repeat(32),
+      npub: 'npub1other',
+    } as never);
+    resolve({
+      network: 'sepolia',
+      chainId: 11155111,
+      path: 'bootstrap',
+      username: 'Dao',
+      npubHash: NPUB_HASH,
+      tokenId: '1',
+      linkEventId: 'evt',
+      userOpHash: '0x1',
+      evmAddress: EVM,
+      policyVersion: 1,
+    });
+    const result = await pending;
+    expect(result.username).toBe('Dao');
+    expect(mockPublishBound).not.toHaveBeenCalled();
+    expect(get(usernameKind0BindError)).toBeNull();
   });
 });

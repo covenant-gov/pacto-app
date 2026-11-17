@@ -3,7 +3,9 @@ import {
   catalogTokenId,
   customTokenId,
   defaultWatchedErc20Rows,
+  legacyAutomaticWatchedRows,
   loadWatchedErc20Rows,
+  mergeWatchedRows,
   saveWatchedErc20Rows,
   watchedRowsToWire,
   buildCatalogSearchEntries,
@@ -43,13 +45,32 @@ describe('watched-tokens', () => {
   });
 
   describe('defaultWatchedErc20Rows', () => {
-    it('returns USDC and USDT for every configured chain', () => {
-      const rows = defaultWatchedErc20Rows();
-      expect(rows.length).toBeGreaterThan(0);
-      for (const row of rows) {
-        expect(['USDC', 'USDT']).toContain(row.symbol);
-        expect(row.source).toBe('catalog');
-      }
+    it('watches nothing until a token is added', () => {
+      expect(defaultWatchedErc20Rows()).toEqual([]);
+    });
+  });
+
+  describe('mergeWatchedRows', () => {
+    const usdc: WatchedErc20Row = {
+      id: catalogTokenId('sepolia', 'USDC'),
+      network: 'sepolia',
+      symbol: 'USDC',
+      address: '0x1111111111111111111111111111111111111111',
+      decimals: 6,
+      source: 'catalog',
+    };
+    const usdt: WatchedErc20Row = {
+      id: catalogTokenId('sepolia', 'USDT'),
+      network: 'sepolia',
+      symbol: 'USDT',
+      address: '0x2222222222222222222222222222222222222222',
+      decimals: 6,
+      source: 'catalog',
+    };
+
+    it('keeps intervening removals and appends new discoveries', () => {
+      expect(mergeWatchedRows([usdc], [usdc, usdt])).toEqual([usdc, usdt]);
+      expect(mergeWatchedRows([], [usdt])).toEqual([usdt]);
     });
   });
 
@@ -141,11 +162,15 @@ describe('watched-tokens', () => {
       expect(loaded[0]?.id).toBe(catalogTokenId('sepolia', 'USDC'));
     });
 
-    it('migrates legacy all_tokens mode', () => {
+    it('migrates legacy all_tokens mode to an empty list', () => {
       storage['pacto_wallet_bar_token_filter'] = 'all_tokens';
-      const rows = loadWatchedErc20Rows('npub1');
-      expect(rows).toEqual(defaultWatchedErc20Rows());
+      expect(loadWatchedErc20Rows('npub1')).toEqual([]);
       expect(storage['pacto_wallet_bar_token_filter']).toBeUndefined();
+    });
+
+    it('clears a saved copy of the old automatic USDC and USDT set', () => {
+      saveWatchedErc20Rows('npub1', legacyAutomaticWatchedRows());
+      expect(loadWatchedErc20Rows('npub1')).toEqual([]);
     });
 
     it('migrates legacy native_only mode to an empty list', () => {
@@ -202,14 +227,11 @@ describe('watched-tokens', () => {
   });
 
   describe('buildCatalogSearchEntries', () => {
-    it('includes a search entry for every chain and token pair', () => {
+    it('offers real catalog contracts and skips zero-address placeholders', () => {
       const entries = buildCatalogSearchEntries();
-      expect(entries.length).toBeGreaterThan(0);
-      for (const entry of entries) {
-        expect(entry.symbol).toMatch(/USDC|USDT/);
-        expect(entry.address.startsWith('0x')).toBe(true);
-        expect(entry.searchText).toContain(entry.network.toLowerCase());
-      }
+      expect(entries.some((entry) => entry.network === 'mainnet' && entry.symbol === 'DAI')).toBe(true);
+      expect(entries.some((entry) => entry.network === 'sepolia' && entry.symbol === 'DAI')).toBe(false);
+      expect(entries.some((entry) => entry.address === '0x0000000000000000000000000000000000000000')).toBe(false);
     });
   });
 

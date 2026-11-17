@@ -8,10 +8,11 @@ mod squad;
 pub use accounts::{
     get_all_profiles, get_dm_peer_evm_address, get_dm_peer_evm_stored, get_evm_address,
     get_evm_pkey, get_pkey, get_seed, get_sql_setting, get_theme, get_username_claim,
-    persist_kind0_publish, remove_setting, repair_evm_address_if_needed, set_dm_peer_evm_address,
-    set_evm_address, set_evm_pkey, set_pkey, set_profile, set_seed, set_sql_setting,
-    set_wallet_signing_evm_address, try_restore_username_claim_link, upsert_username_claim,
-    SlimProfile, UsernameClaimRow, UsernameClaimUpsert,
+    persist_kind0_publish, remove_setting, repair_evm_address_if_needed,
+    require_minted_bound_username, set_dm_peer_evm_address, set_evm_address, set_evm_pkey,
+    set_pkey, set_profile, set_seed, set_sql_setting, set_wallet_signing_evm_address,
+    try_restore_username_claim_link, upsert_username_claim, SlimProfile, UsernameClaimRow,
+    UsernameClaimUpsert,
 };
 
 pub(crate) use accounts::read_stored_evm_address;
@@ -138,14 +139,14 @@ pub(crate) use mls::{clear_discarded_giftwraps_conn, persist_legacy_group_admins
 pub use messaging::{
     build_file_hash_index, check_and_vacuum_if_needed, delete_chat,
     dm_created_at_at_or_before_cutoff, edit_is_authorized_before_save, ensure_public_channel_chat,
-    event_exists, get_all_chats,
-    get_chat_last_messages, get_chat_message_count, get_chat_messages_paginated,
-    get_dm_deletion_cutoff, get_dm_sent_received, get_events, get_message_views,
-    get_messages_around_id, get_related_events, load_recent_wrapper_ids, message_exists_in_db,
-    populate_reply_context, record_discarded_giftwrap, repair_legacy_hex_reaction_npubs, save_chat,
-    save_chat_messages, save_event, save_link_preview_metadata, save_message, save_reaction_event,
-    saved_edit_is_authorized, set_attachment_downloaded, update_wrapper_event_id,
-    upsert_dm_deletion_cutoff, vacuum_database, wrapper_event_exists, AttachmentRef, SlimChatDB,
+    event_exists, get_all_chats, get_chat_last_messages, get_chat_message_count,
+    get_chat_messages_paginated, get_dm_deletion_cutoff, get_dm_sent_received, get_events,
+    get_message_views, get_messages_around_id, get_related_events, load_recent_wrapper_ids,
+    message_exists_in_db, populate_reply_context, record_discarded_giftwrap,
+    repair_legacy_hex_reaction_npubs, save_chat, save_chat_messages, save_event,
+    save_link_preview_metadata, save_message, save_reaction_event, saved_edit_is_authorized,
+    set_attachment_downloaded, update_wrapper_event_id, upsert_dm_deletion_cutoff, vacuum_database,
+    wrapper_event_exists, AttachmentRef, SlimChatDB,
 };
 
 #[allow(unused_imports)]

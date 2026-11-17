@@ -25,6 +25,7 @@
 	"nav.navbar.dmTabs.search": "Search",
 	"nav.navbar.profile": "Profile",
 	"nav.navbar.settings": "Settings",
+	"nav.navbar.lock": "Lock",
 	"nav.navbar.addButton.commons": "Start Broadcast",
 	"nav.navbar.addButton.dms": "Start DM",
 	"nav.navbar.addButton.squads": "Organize Squad",

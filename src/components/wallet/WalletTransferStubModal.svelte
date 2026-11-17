@@ -42,6 +42,8 @@
   } from '../../lib/wallet/wallet-dm-transfer';
   import { normalizeLeadingDotDecimalInput } from '../../lib/wallet/amount-input';
   import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
+  import { getDmPeerEvmAddress, setDmPeerEvmAddress } from '../../lib/api/wallet-peers';
+  import { dmWalletPeerExchangeTick } from '../../stores/app';
 
   const tFn = get(t);
 
@@ -85,6 +87,7 @@
 
   let appliedPrefillKey = $state('');
   let linkedRequestId = $state('');
+  let linkedToEvm = $state('');
 
   const prefillKey = $derived(
     mode === 'send' && formPrefill
@@ -99,6 +102,7 @@
     if (!formPrefill) {
       appliedPrefillKey = '';
       linkedRequestId = '';
+      linkedToEvm = '';
       return;
     }
     if (prefillKey === appliedPrefillKey) return;
@@ -107,6 +111,7 @@
     assetCode = formPrefill.asset;
     amountStr = normalizeLeadingDotDecimalInput(formPrefill.amount.trim());
     linkedRequestId = formPrefill.requestId;
+    linkedToEvm = formPrefill.toEvmAddress.trim();
   });
 
   let pricesResult = $state<
@@ -344,16 +349,24 @@
     sendError = null;
     sending = true;
     try {
+      const payTo = linkedToEvm.trim();
       const out = await walletBuildAndSendTransaction(
         npub,
         chainId,
         assetCode,
         amountHuman,
         erc20Transfer,
-        null,
+        payTo || null,
         false,
       );
       if (out.ok) {
+        const savedPeer =
+          payTo || (await getDmPeerEvmAddress(npub))?.trim() || '';
+        if (savedPeer) {
+          void setDmPeerEvmAddress(npub, savedPeer).then(() => {
+            dmWalletPeerExchangeTick.update((n) => n + 1);
+          });
+        }
         toastWalletBroadcastSubmitted(out.result);
         onClose();
         const me = get(currentUser)?.npub;
@@ -367,6 +380,7 @@
             txHash: out.result.txHash,
             fromNpub: me,
             requestId: linkedRequestId !== '' ? linkedRequestId : undefined,
+            toEvm: savedPeer || undefined,
             sendDm: sendPlain,
             onBalanceRefresh,
           });

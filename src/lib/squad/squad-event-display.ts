@@ -3,7 +3,7 @@ import { t } from 'svelte-i18n';
 import type { EventClockFormat } from '../../stores/event-time-format';
 import type { NostrProfile } from '../api/nostr';
 import type { SquadEventRsvpDto, SquadEventRsvpStatus } from '../api/squad-events';
-import { getProfileDisplayName } from '../utils/profile';
+import { resolveShownName, type ShownNameContext } from '../username/shown-name';
 
 export type SquadEventStartFields = { startUnix: number | null; startDate: string | null; startTzid: string };
 export type SquadEventRangeFields = SquadEventStartFields & { endUnix: number | null; endDate: string | null };
@@ -34,15 +34,19 @@ export function rsvpMembersByStatus(rsvps: readonly SquadEventRsvpDto[]): Record
   return out;
 }
 
-/** "You" for the viewer; otherwise the app-wide profile display (nickname, name, then short npub). */
+/** "You" for the viewer; otherwise the shared shown name. */
 export function memberDisplayLabel(
   npub: string,
   profile: NostrProfile | null | undefined,
   selfNpub: string | null | undefined,
   youLabel: string,
+  chain?: ShownNameContext | null,
 ): string {
   if (selfNpub && npub === selfNpub) return youLabel;
-  return profile ? getProfileDisplayName(profile) : npub.slice(0, 16);
+  const shown = resolveShownName({ npub, profile, chain: { ...chain, selfNpub } });
+  if (shown.verified) return shown.name;
+  if (!profile) return npub.slice(0, 16);
+  return shown.name;
 }
 
 export function viewerTimeZone(): string {

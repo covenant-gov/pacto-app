@@ -2,13 +2,14 @@
   import Tab from '../ui/Tab.svelte';
   import Modal from '../ui/Modal.svelte';
   import AvatarPicker from '../ui/AvatarPicker.svelte';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
   import SquadCommonsVisibilityFields from '../squad/SquadCommonsVisibilityFields.svelte';
   import { resolveSquadCommonsOnCreate, validatePublicSquadTags } from '../../lib/squad/squad-commons-fields';
   import type { SquadVisibility } from '../../stores/squads';
   import settingsIcon from '../../icons/settings.svg';
   import plusCircleIcon from '../../icons/plus-circle.svg';
-  import profileIcon from '../../icons/user-circle.svg';
+  import lockIcon from '../../icons/locked.svg';
   import friendsIcon from '../../icons/friends.svg';
   import requestsIcon from '../../icons/requests.svg';
   import pendingIcon from '../../icons/pending.svg';
@@ -24,7 +25,6 @@
     activeHubChannelName,
     activeView,
     isAccountChromeView,
-    openAccountProfile,
     openAccountSettings,
     activeTopNavTab,
     activeDmTab,
@@ -47,13 +47,14 @@
   import { currentUser } from '../../stores/auth-session';
   import { createDefaultParentChannels } from '../../lib/parent-navbar';
   import { activateSquadHub } from '../../lib/squad-hub-nav';
-  import { pendingReadyToast } from '../../stores/toast';
+  import { pendingReadyToast, showToast } from '../../stores/toast';
   import { schedulePublicSquadCreateBroadcast } from '../../lib/commons/squad-create-broadcast';
   import {
     commonsUserHasActiveBroadcast,
     openCommonsBroadcastModal,
     syncCommonsUserActiveBroadcast,
   } from '../../stores/commons-ui';
+  import { lockSession } from '../../lib/api/auth';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { requireBackupVerified } from '../../stores/backup-verification';
   import { persistCreatedSquad } from '../../lib/squad/squad-catalog';
@@ -61,9 +62,7 @@
   import { initJoinInbox } from '../../lib/squad/join-inbox';
   import { applySquadCreateNetwork } from '../../lib/squad/squad-create-network';
   import { sendConsentFirstSquadInvite } from '../../lib/squad/consent-first-invite';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
   import { portal } from '../../lib/utils/portal';
-  import { profiles } from '../../stores/profiles';
   import { appConfig } from '../../stores/app-config';
   import { squadRecreateRequest } from '../../stores/squad-recreate';
   import { showCreateFailureToast } from '../../lib/squad-pair-create';
@@ -264,12 +263,24 @@
     $activeDmId = null;
   }
 
-  function openProfile() {
-    openAccountProfile();
-  }
-
   function openSettings() {
     openAccountSettings();
+  }
+
+  let locking = $state(false);
+
+  async function lockApp() {
+    if (locking) return;
+    locking = true;
+    try {
+      await lockSession();
+    } catch (error: unknown) {
+      showToast(getInvokeErrorMessage(error, get(t)('auth.errorLockFailed')), undefined, undefined, {
+        error: true,
+      });
+    } finally {
+      locking = false;
+    }
   }
 
   const addButtonLabelKeys: Record<TopNavTab, string> = {
@@ -345,10 +356,6 @@
     } else {
       organizeSquadMembers = [...organizeSquadMembers, npub];
     }
-  }
-
-  function organizeMemberDisplayName(npub: string, fallbackName?: string) {
-    return fallbackName?.trim() || getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
   }
 
   function createSquadWithAnnouncements(
@@ -533,8 +540,8 @@
   let requestsTabLabel = $derived($t('nav.navbar.dmTabs.requests'));
   let pendingTabLabel = $derived($t('nav.navbar.dmTabs.pending'));
   let searchTabLabel = $derived($t('nav.navbar.dmTabs.search'));
-  let profileTabLabel = $derived($t('nav.navbar.profile'));
   let settingsTabLabel = $derived($t('nav.navbar.settings'));
+  let lockTabLabel = $derived($t('nav.navbar.lock'));
   let accountChrome = $derived(isAccountChromeView($activeView));
 
   $effect(() => {
@@ -645,20 +652,21 @@
       </div>
     {/if}
     <div
-      onclick={openProfile}
-      onkeydown={(e) => e.key === 'Enter' && openProfile()}
-      role="button"
-      tabindex="0"
-    >
-      <Tab label={profileTabLabel} icon={profileIcon} active={$activeView === 'profile'} />
-    </div>
-    <div
       onclick={openSettings}
       onkeydown={(e) => e.key === 'Enter' && openSettings()}
       role="button"
       tabindex="0"
     >
       <Tab label={settingsTabLabel} icon={settingsIcon} active={$activeView === 'settings'} />
+    </div>
+    <div
+      onclick={lockApp}
+      onkeydown={(e) => e.key === 'Enter' && lockApp()}
+      role="button"
+      tabindex={locking ? -1 : 0}
+      aria-disabled={locking}
+    >
+      <Tab label={lockTabLabel} icon={lockIcon} active={false} />
     </div>
   </div>
 </div>
@@ -726,7 +734,7 @@
               checked={organizeSquadMembers.includes(entry.npub)}
               onchange={() => toggleOrganizeMember(entry.npub)}
             />
-            <span class="organize-member-name">{organizeMemberDisplayName(entry.npub, entry.name)}</span>
+            <span class="organize-member-name"><VerifiedName npub={entry.npub} /></span>
           </label>
         {/each}
       </div>

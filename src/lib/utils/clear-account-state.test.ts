@@ -62,6 +62,8 @@ import { squads, ungroupedChannels, channelMessages, type Channel, type Squad } 
 import { recentEmojisStore, type EmojiEntry } from '../../stores/emojis';
 import { unreadCountsByChat } from '../../stores/unread';
 import { profiles } from '../../stores/profiles';
+import { usernameState } from '../../stores/username';
+import { peerUsernameClaims } from '../../stores/peer-username';
 import { requestLinkPreview } from '../messaging/link-preview';
 import { squadEventRowsForCards } from '../squad/squad-event-card-replica';
 import {
@@ -329,5 +331,29 @@ describe('clearAccountState', () => {
     expect(getCachedEvmDashGas(key)).toBeNull();
     await fetchEvmDashGasCached(key, fetcher);
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the shown username from the previous account', () => {
+    usernameState.set({
+      npub: 'npub1abcdef',
+      status: 'ready',
+      cached: null,
+      record: {
+        name: 'alice',
+        evmAddress: '0x1111111111111111111111111111111111111111',
+        pendingAddress: '0x0000000000000000000000000000000000000000',
+        tokenId: '1',
+      },
+      pendingTransfer: false,
+      activeEvm: null,
+      busy: false,
+      error: null,
+    });
+    peerUsernameClaims.set({ npub1peer: { name: 'bob' } });
+
+    clearAccountState('npub1abcdef');
+
+    expect(get(usernameState)).toMatchObject({ npub: null, record: null, status: 'idle' });
+    expect(get(peerUsernameClaims)).toEqual({});
   });
 });

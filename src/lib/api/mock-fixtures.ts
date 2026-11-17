@@ -47,6 +47,10 @@ export const authFixtures: Record<string, MockCommandHandler> = {
   list_all_accounts: () => (mockState.encryptedKey ? [MOCK_NPUB] : []),
   check_session: () => ({ unlocked: mockState.sessionUnlocked }),
   session_heartbeat: () => undefined,
+  lock_session: () => {
+    mockState.sessionUnlocked = false;
+    return undefined;
+  },
   set_session_timeout: () => undefined,
   get_session_timeout: () => 15,
   logout: () => {
@@ -96,6 +100,7 @@ export const profileFixtures: Record<string, MockCommandHandler> = {
   refresh_profile_now: () => undefined,
   sync_all_profiles: () => undefined,
   update_profile: () => undefined,
+  publish_bound_username: () => undefined,
   set_nickname: () => true,
   toggle_blocked: () => false,
   queue_profile_sync: () => undefined,
@@ -165,6 +170,12 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
   username_name_available: () => true,
   username_can_bootstrap_claim: () => true,
   username_npub_of: () => '0x' + '00'.repeat(32),
+  username_record_for_npub: () => ({
+    name: '',
+    evmAddress: '0x0000000000000000000000000000000000000000',
+    pendingAddress: '0x0000000000000000000000000000000000000000',
+    tokenId: '0',
+  }),
   username_record_of: () => ({
     name: '',
     evmAddress: '0x0000000000000000000000000000000000000000',
@@ -235,7 +246,6 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
   get_active_squad_evm_signer_address: () => null,
   get_active_advanced_evm_signer_address: () => null,
   set_active_evm_account: () => undefined,
-  set_default_shared_evm_account: () => undefined,
   set_active_advanced_evm_account: () => undefined,
   add_evm_account_row: () => ({
     id: 'mock',

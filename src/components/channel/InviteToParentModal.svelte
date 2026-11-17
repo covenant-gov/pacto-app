@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import VerifiedName from '../profile/VerifiedName.svelte';
 
   interface Props {
     open?: boolean;
@@ -16,8 +17,6 @@
     onClose?: () => void;
     onInvite?: () => void;
     onToggleCandidate?: (npub: string) => void;
-    /** Used to display each candidate's name in the list. */
-    getCandidateDisplayName?: (npub: string) => string;
   }
 
   let {
@@ -35,7 +34,6 @@
     onClose = () => {},
     onInvite = () => {},
     onToggleCandidate = () => {},
-    getCandidateDisplayName = (npub) => npub,
   }: Props = $props();
 
   const titleId = 'invite-to-parent-modal-title';
@@ -91,7 +89,7 @@
                 checked={selectedNpubs.includes(npub)}
                 onchange={() => onToggleCandidate(npub)}
               />
-              <span class="invite-to-parent-member-name">{getCandidateDisplayName(npub)}</span>
+              <span class="invite-to-parent-member-name"><VerifiedName {npub} /></span>
             </label>
           {/each}
         </div>

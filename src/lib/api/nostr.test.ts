@@ -11,6 +11,7 @@ import {
   getDmMessages,
   syncAllProfiles,
   updateProfile,
+  publishBoundUsername,
   uploadAvatar,
   getImagePreviewBase64,
   setNickname,
@@ -191,6 +192,24 @@ describe('updateProfile', () => {
       avatar: '',
       banner: '',
       about: '',
+    });
+  });
+});
+
+describe('publishBoundUsername', () => {
+  it('invokes publish_bound_username with stringified fields', async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      eventId: 'abc',
+      successCount: 1,
+      verifiedCount: 1,
+      connectedWriteCount: 1,
+    });
+    await publishBoundUsername({ name: 'Dao', avatar: 'url', banner: '', about: 'hi' });
+    expect(mockedInvoke).toHaveBeenCalledWith('publish_bound_username', {
+      name: 'Dao',
+      avatar: 'url',
+      banner: '',
+      about: 'hi',
     });
   });
 });

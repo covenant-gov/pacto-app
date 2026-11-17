@@ -9,6 +9,8 @@
   import { showToast } from '../../stores/toast';
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
   import { computeBroadcastPresentation } from '../../lib/commons/broadcast-presentation';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { commonsJoinRequestRevision } from '../../lib/commons/commons-join-request';
   import { hideCommonsBroadcast } from '../../lib/commons/commons-hidden';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
@@ -33,6 +35,10 @@
   let messageBusy = $state(false);
   let actionError = $state('');
 
+  $effect(() => {
+    if (broadcast.subject === 'user' && broadcast.authorNpub) ensureShownName(broadcast.authorNpub);
+  });
+
   function formatExpiry(expiresAt: number): string {
     const ms = expiresAt * 1000 - Date.now();
     if (ms <= 0) return tFn('commons.duration.expired');
@@ -55,7 +61,12 @@
       $currentUser?.npub,
       tFn,
       hasExistingDm,
-      authorBlocked
+      authorBlocked,
+      {
+        selfNpub: $currentUser?.npub,
+        usernameState: $usernameState,
+        peerClaims: $peerUsernameClaims,
+      },
     );
   });
   const isSquad = $derived(presentation.isSquad);

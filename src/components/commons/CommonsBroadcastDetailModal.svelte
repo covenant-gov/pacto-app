@@ -10,6 +10,8 @@
   import { showToast } from '../../stores/toast';
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
   import { computeBroadcastPresentation } from '../../lib/commons/broadcast-presentation';
+  import { peerUsernameClaims } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { commonsJoinRequestRevision } from '../../lib/commons/commons-join-request';
   import { hideCommonsBroadcast } from '../../lib/commons/commons-hidden';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
@@ -50,7 +52,12 @@
       $currentUser?.npub,
       tFn,
       hasExistingDm,
-      authorBlocked
+      authorBlocked,
+      {
+        selfNpub: $currentUser?.npub,
+        usernameState: $usernameState,
+        peerClaims: $peerUsernameClaims,
+      },
     );
   });
   const isSquad = $derived(presentation.isSquad);

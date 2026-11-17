@@ -17,7 +17,12 @@
   } from '../../stores/app';
   import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
   import { profiles } from '../../stores/profiles';
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import { getProfileAvatarSrc } from '../../lib/utils/profile';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import VerifiedName from '../profile/VerifiedName.svelte';
+  import { currentUser } from '../../stores/auth-session';
+  import { peerUsernameClaims } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import userPlaceholder from '../../icons/user-placeholder.svg';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -27,9 +32,15 @@
   let title = $derived($t(`messaging.dm.navbar.${$activeDmTab}`));
 
   function displayName(entry: DmEntry): string {
-    const profile = $profiles[entry.npub];
-    if (profile) return getProfileDisplayName(profile);
-    return entry.name?.trim() || truncateNpub(entry.npub);
+    return resolveShownName({
+      npub: entry.npub,
+      profile: $profiles[entry.npub] ?? null,
+      chain: {
+        selfNpub: $currentUser?.npub,
+        usernameState: $usernameState,
+        peerClaims: $peerUsernameClaims,
+      },
+    }).name;
   }
 
   /** Search tab: filter unified list by npub or display name (case-insensitive substring). */
@@ -62,11 +73,6 @@
   function categoryLabel(cat: DmSidebarCategory): string {
     const tFn = get(t);
     return tFn(`messaging.dm.navbar.${cat}`);
-  }
-
-  function truncateNpub(npub: string): string {
-    if (npub.length <= 16) return npub;
-    return npub.slice(0, 8) + '…' + npub.slice(-4);
   }
 
   function selectDm(npub: string) {
@@ -149,7 +155,7 @@
                 {/if}
               </span>
               <span class="dm-name-block">
-                <span class="dm-name">{displayName(row)}</span>
+                <span class="dm-name"><VerifiedName npub={row.npub} /></span>
                 {#if cat}
                   <span class="dm-category">{categoryLabel(cat)}</span>
                 {/if}

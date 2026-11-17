@@ -7,6 +7,7 @@ import {
   threadHasOutboundRequestForId,
   threadHasOutboundGrantForRequest,
   formatReciprocalWalletPeerGrant,
+  dmPeerEvmWritesFromMessages,
   isWalletPeerInfoRequestInFlight,
   resetWalletPeerInfoRequestInFlight,
   sendWalletPeerInfoRequest,
@@ -15,7 +16,11 @@ import {
   markWalletPeerInfoRequestInFlight,
   clearWalletPeerInfoRequestInFlight,
 } from './wallet-peer-exchange';
-import { formatWalletPeerInfoGrant, formatWalletPeerInfoRequest } from './dm-messages';
+import {
+  formatWalletPeerInfoGrant,
+  formatWalletPeerInfoRequest,
+  formatWalletTxAnnouncement,
+} from './dm-messages';
 
 const NPUB_A = 'npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const NPUB_B = 'npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -223,6 +228,39 @@ describe('wallet-peer-exchange', () => {
         messages,
       })
     ).toBe(true);
+  });
+
+  it('orders an older announcement before a newer grant so the grant wins', () => {
+    const txHash = `0x${'ab'.repeat(32)}`;
+    const announcement = formatWalletTxAnnouncement({
+      network: 'sepolia',
+      asset: 'ETH',
+      amount: '1',
+      tx_hash: txHash,
+      from_npub: NPUB_B,
+      to_npub: NPUB_A,
+      from_evm_address: ADDR_A,
+    });
+    const messages = [
+      { id: 'grant', at: 200, mine: false, content: grantFromB },
+      { id: 'ann', at: 100, mine: false, content: announcement },
+      { id: 'req', at: 50, mine: true, content: requestJson },
+    ];
+    const writes = dmPeerEvmWritesFromMessages({
+      messages,
+      peerNpub: NPUB_B,
+      myNpub: NPUB_A,
+    });
+    expect(writes.map((w) => w.address)).toEqual([ADDR_A, ADDR_B]);
+    let at = -Infinity;
+    let addr = '';
+    for (const w of writes) {
+      if (w.atMs >= at) {
+        at = w.atMs;
+        addr = w.address;
+      }
+    }
+    expect(addr).toBe(ADDR_B);
   });
 
   it('does not persist unsolicited inbound grant', () => {

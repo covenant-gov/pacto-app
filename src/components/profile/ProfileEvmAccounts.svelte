@@ -8,10 +8,11 @@
     listEvmAccounts,
     addEvmAccountRow,
     updateEvmAccountRow,
+    evmAccountDisplayName,
     squadEvmAccounts,
+    primaryEvmAccountTick,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
-  import DefaultWalletConfig from '../settings/DefaultWalletConfig.svelte';
   import EvmAccountsSection from '../settings/EvmAccountsSection.svelte';
   import { appConfig } from '../../stores/app-config';
   import SettingsFormModal from '../settings/SettingsFormModal.svelte';
@@ -52,6 +53,7 @@
 
   $effect(() => {
     void accountNpub;
+    void $primaryEvmAccountTick;
     void loadEvmAccountsList();
   });
 
@@ -74,7 +76,7 @@
   function openEditAccountModal(acc: EvmAccountRow) {
     accountFormMode = 'edit';
     accountFormEditId = acc.id;
-    accountFormLabel = acc.label ?? '';
+    accountFormLabel = acc.label?.trim() || evmAccountDisplayName(acc);
   }
 
   async function submitAccountForm() {
@@ -118,13 +120,6 @@
 </script>
 
 {#if accountNpub}
-  <DefaultWalletConfig
-    accountNpub={accountNpub}
-    squadAccounts={squadAccountList}
-    accountsLoading={accountsLoading}
-    onSaved={loadEvmAccountsList}
-  />
-
   <EvmAccountsSection
     {accountNpub}
     {evmAddress}

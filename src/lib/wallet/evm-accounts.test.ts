@@ -6,7 +6,6 @@ import {
   importEvmAccountRow,
   updateEvmAccountRow,
   setActiveEvmAccount,
-  setDefaultSharedEvmAccount,
   setActiveAdvancedEvmAccount,
   advancedEvmAccounts,
   evmAccountPurposeLabel,
@@ -14,6 +13,8 @@ import {
   formatHdIndexLabel,
   isSeedDerivedEvmAccount,
   evmAccountSchemeLabel,
+  evmAccountDisplayName,
+  evmAccountOptionLabel,
   getActiveAdvancedEvmSignerAddress,
   getActiveEvmSignerAddress,
   getActiveSquadEvmSignerAddress,
@@ -97,6 +98,39 @@ describe('evm account label helpers', () => {
   it('detects seed-derived vs imported schemes', () => {
     expect(isSeedDerivedEvmAccount({ scheme: 'bip44_v1' })).toBe(true);
     expect(isSeedDerivedEvmAccount({ scheme: 'imported_private_key' })).toBe(false);
+  });
+
+  it('names the unlabeled first derived account Account 1', () => {
+    const row = {
+      label: '',
+      address: '0x1111111111111111111111111111111111111111',
+      scheme: 'bip44_v1' as const,
+      hdIndex: 0,
+    };
+    expect(evmAccountDisplayName(row)).toBe('Account 1');
+    expect(evmAccountOptionLabel(row)).toBe('Account 1 · 0x111111…111111');
+  });
+
+  it('keeps a custom label on the first derived account', () => {
+    expect(
+      evmAccountDisplayName({
+        label: 'Treasury',
+        address: '0x1111111111111111111111111111111111111111',
+        scheme: 'bip44_v1',
+        hdIndex: 0,
+      }),
+    ).toBe('Treasury');
+  });
+
+  it('falls back to the short address for unlabeled later derived accounts', () => {
+    expect(
+      evmAccountDisplayName({
+        label: '  ',
+        address: '0x1111111111111111111111111111111111111111',
+        scheme: 'bip44_v1',
+        hdIndex: 1,
+      }),
+    ).toBe('0x111111…111111');
   });
 });
 
@@ -283,12 +317,6 @@ describe('evm-accounts command wrappers', () => {
     mockedInvoke.mockResolvedValueOnce(undefined);
     await setActiveEvmAccount('1');
     expect(mockedInvoke).toHaveBeenCalledWith('set_active_evm_account', { accountId: '1' });
-  });
-
-  it('setDefaultSharedEvmAccount sends set_default_shared_evm_account', async () => {
-    mockedInvoke.mockResolvedValueOnce(undefined);
-    await setDefaultSharedEvmAccount('1');
-    expect(mockedInvoke).toHaveBeenCalledWith('set_default_shared_evm_account', { accountId: '1' });
   });
 
   it('setActiveAdvancedEvmAccount sends set_active_advanced_evm_account', async () => {

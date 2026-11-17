@@ -20,7 +20,19 @@ vi.mock('../../lib/wallet/pricing', async (importOriginal) => {
 });
 
 import WalletTransferStubModal from './WalletTransferStubModal.svelte';
+import { walletBuildAndSendTransaction } from '../../lib/wallet';
+import { backupVerified } from '../../stores/backup-verification';
 import type { WalletSendPrefillPayload } from '../../stores/app';
+
+vi.mock('../../lib/api/wallet-peers', () => ({
+  getDmPeerEvmAddress: vi.fn(async () => null),
+  setDmPeerEvmAddress: vi.fn(async () => {}),
+}));
+
+vi.mock('../../lib/wallet/wallet-dm-transfer', () => ({
+  finalizeWalletDmTransferAfterBroadcast: vi.fn(async () => {}),
+  toastWalletBroadcastSubmitted: vi.fn(),
+}));
 
 afterEach(() => {
   cleanup();
@@ -34,6 +46,7 @@ function prefill(overrides: Partial<WalletSendPrefillPayload> = {}): WalletSendP
     amount: '1.5',
     requestId: 'req-1',
     requestMessageId: 'msg-1',
+    toEvmAddress: '0x1111111111111111111111111111111111111111',
     ...overrides,
   };
 }
@@ -109,5 +122,36 @@ describe('WalletTransferStubModal prefill guard', () => {
     });
 
     expect(amountInput.value).toBe('3');
+  });
+
+  it('pays a request at the address on the request, not the saved peer address', async () => {
+    backupVerified.set(true);
+    const to = '0x2222222222222222222222222222222222222222';
+    vi.mocked(walletBuildAndSendTransaction).mockResolvedValue({
+      ok: true,
+      result: { txHash: '0xabc', network: 'mainnet', chainId: 1 },
+    });
+    render(WalletTransferStubModal, {
+      props: {
+        mode: 'send',
+        npub: 'npub1peer',
+        peerDisplayName: 'Peer',
+        onClose: vi.fn(),
+        postDmPlaintext: vi.fn(async () => true),
+        formPrefill: prefill({ toEvmAddress: to }),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(walletBuildAndSendTransaction).toHaveBeenCalledWith(
+      'npub1peer',
+      'mainnet',
+      'ETH',
+      '1.5',
+      undefined,
+      to,
+      false,
+    );
   });
 });

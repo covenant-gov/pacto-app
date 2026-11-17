@@ -76,6 +76,8 @@ export interface WalletTxAnnouncementPayload {
   to_npub: string;
   /** EVM account that signed the transfer (`0x` + 40 hex). Required on the wire for v1. */
   from_evm_address: string;
+  /** Account that received the transfer. Absent on older announcements. */
+  to_evm_address?: string;
   request_id?: string;
   block_number?: string;
 }
@@ -118,6 +120,13 @@ export function formatWalletTxAnnouncement(
     throw new Error('from_evm_address must be a 0x-prefixed 20-byte hex address');
   }
   body.from_evm_address = from;
+  const to = typeof payload.to_evm_address === 'string' ? payload.to_evm_address.trim() : '';
+  if (to) {
+    if (!isWireEvmAddress(to)) {
+      throw new Error('to_evm_address must be a 0x-prefixed 20-byte hex address');
+    }
+    body.to_evm_address = to;
+  }
   return JSON.stringify(body);
 }
 
@@ -198,6 +207,10 @@ export function parseWalletTxAnnouncement(content: string): WalletTxAnnouncement
     to_npub: o.to_npub,
     from_evm_address: (o.from_evm_address as string).trim(),
   };
+  if (o.to_evm_address !== undefined) {
+    if (!isWireEvmAddress(o.to_evm_address)) return null;
+    out.to_evm_address = (o.to_evm_address as string).trim();
+  }
   if (typeof o.request_id === 'string' && o.request_id.length > 0) out.request_id = o.request_id;
   if (typeof o.block_number === 'string') out.block_number = o.block_number;
   return out;

@@ -125,6 +125,11 @@ export async function sessionHeartbeat(): Promise<void> {
   return await invoke('session_heartbeat');
 }
 
+/** Lock the session now. The backend emits `session_locked` on success. */
+export async function lockSession(): Promise<void> {
+  return await invoke('lock_session');
+}
+
 /**
  * Set the idle auto-lock timeout in minutes.
  */

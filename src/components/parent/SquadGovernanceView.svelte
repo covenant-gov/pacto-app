@@ -14,7 +14,9 @@
   import GovernanceStackSwitcher from './GovernanceStackSwitcher.svelte';
 import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
 import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { profiles } from '../../stores/profiles';
   import type { SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto, SquadSponsorExtStatusDto } from '../../lib/governance/api';
   import {
@@ -217,7 +219,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     .map((npub) => {
       const addr = squadMemberEvmByNpub[npub]?.trim();
       if (!addr) return null;
-      const name = getProfileDisplayName($profiles[npub]) || npub.slice(0, 12);
+      const name = resolveShownName({
+        npub,
+        profile: $profiles[npub] ?? null,
+        chain: {
+          selfNpub: $currentUser?.npub,
+          usernameState: $usernameState,
+          peerClaims: $peerUsernameClaims,
+        },
+      }).name;
       return { address: addr, label: name };
     })
     .filter((row): row is { address: string; label: string } => row != null);
@@ -225,8 +235,21 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   $: captainMemberOptions = buildCaptainMemberOptions(
     squadMemberEvmByNpub,
     $currentUser?.npub,
-    (npub) => getProfileDisplayName($profiles[npub]),
+    (npub) =>
+      resolveShownName({
+        npub,
+        profile: $profiles[npub] ?? null,
+        chain: {
+          selfNpub: $currentUser?.npub,
+          usernameState: $usernameState,
+          peerClaims: $peerUsernameClaims,
+        },
+      }).name,
   );
+
+  $: {
+    for (const npub of Object.keys(squadMemberEvmByNpub)) ensureShownName(npub);
+  }
 
   $: structureSummary = resolveDashboardStructureSummary(
     squadInfraRows === undefined ? undefined : pactoGovRow,

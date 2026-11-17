@@ -521,32 +521,50 @@ pub fn get_dm_peer_evm_address<R: Runtime>(
     get_dm_peer_evm_stored(&handle, &peer_npub)
 }
 
-#[command]
-pub fn set_dm_peer_evm_address<R: Runtime>(
-    handle: AppHandle<R>,
-    peer_npub: String,
-    address: String,
+fn set_dm_peer_evm_address_conn(
+    conn: &rusqlite::Connection,
+    my_npub: &str,
+    peer_npub: &str,
+    address: &str,
+    source_at_ms: i64,
 ) -> Result<(), String> {
-    let my_npub = crate::account_manager::get_current_account()?;
     let peer = peer_npub.trim();
     if peer.is_empty() {
         return Err("peer_npub is empty".to_string());
     }
     let norm = crate::evm::normalize_hex_address(address.trim())
         .ok_or_else(|| "Invalid EVM address".to_string())?;
-    let conn = crate::account_manager::get_db_connection(&handle)?;
+    conn.execute(
+        "INSERT INTO dm_peer_evm (my_npub, peer_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(my_npub, peer_npub) DO UPDATE SET
+           evm_address = CASE
+             WHEN excluded.updated_at_ms >= dm_peer_evm.updated_at_ms THEN excluded.evm_address
+             ELSE dm_peer_evm.evm_address
+           END,
+           updated_at_ms = MAX(dm_peer_evm.updated_at_ms, excluded.updated_at_ms)",
+        rusqlite::params![my_npub, peer, norm, source_at_ms],
+    )
+    .map_err(|e| format!("Failed to set dm_peer_evm: {}", e))?;
+    Ok(())
+}
+
+#[command]
+pub fn set_dm_peer_evm_address<R: Runtime>(
+    handle: AppHandle<R>,
+    peer_npub: String,
+    address: String,
+    source_at_ms: Option<i64>,
+) -> Result<(), String> {
+    let my_npub = crate::account_manager::get_current_account()?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    conn.execute(
-        "INSERT INTO dm_peer_evm (my_npub, peer_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(my_npub, peer_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms",
-        rusqlite::params![my_npub.as_str(), peer, norm, now_ms],
-    )
-    .map_err(|e| format!("Failed to set dm_peer_evm: {}", e))?;
+    let at = source_at_ms.filter(|n| *n > 0).unwrap_or(now_ms);
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let result = set_dm_peer_evm_address_conn(&conn, my_npub.as_str(), &peer_npub, &address, at);
     crate::account_manager::return_db_connection(conn);
-    Ok(())
+    result
 }
 
 /// Cached Username NFT claim for the active account.
@@ -703,6 +721,39 @@ pub fn get_username_claim<R: Runtime>(
     let result = get_username_claim_conn(&conn, &npub);
     crate::account_manager::return_db_connection(conn);
     result
+}
+
+fn minted_token_id(token_id: &str) -> bool {
+    let t = token_id.trim();
+    if t.is_empty() || t == "0" || t.eq_ignore_ascii_case("0x0") || t.eq_ignore_ascii_case("0x00") {
+        return false;
+    }
+    if let Ok(n) = t.parse::<u128>() {
+        return n != 0;
+    }
+    let hex = t
+        .strip_prefix("0x")
+        .or_else(|| t.strip_prefix("0X"))
+        .unwrap_or(t);
+    !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit()) && hex.chars().any(|c| c != '0')
+}
+
+/// Bound kind 0 may only publish this account's minted claim name.
+pub fn require_minted_bound_username(
+    claim: Option<&UsernameClaimRow>,
+    name: &str,
+) -> Result<(), String> {
+    let Some(row) = claim else {
+        return Err("No minted username on this account.".to_string());
+    };
+    let cached = row.username.trim();
+    if cached.is_empty() || !minted_token_id(&row.token_id) {
+        return Err("No minted username on this account.".to_string());
+    }
+    if cached != name.trim() {
+        return Err("Kind 0 bound name must match the minted username.".to_string());
+    }
+    Ok(())
 }
 
 /// Set `link_event_id` only when the live row still matches the restore candidate.
@@ -979,6 +1030,82 @@ mod username_claims_cache_tests {
             .expect("get")
             .expect("row");
         assert_eq!(kept.link_event_id.as_deref(), Some("evt-first"));
+    }
+}
+
+#[cfg(test)]
+mod dm_peer_evm_monotonic_tests {
+    use super::set_dm_peer_evm_address_conn;
+
+    fn read(conn: &rusqlite::Connection, peer: &str) -> (String, i64) {
+        conn.query_row(
+            "SELECT evm_address, updated_at_ms FROM dm_peer_evm WHERE my_npub = ?1 AND peer_npub = ?2",
+            rusqlite::params!["npub1me", peer],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .expect("row")
+    }
+
+    #[test]
+    fn older_announcement_does_not_clobber_newer_grant() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        let grant = "0x1111111111111111111111111111111111111111";
+        let old = "0x2222222222222222222222222222222222222222";
+        set_dm_peer_evm_address_conn(&conn, "npub1me", "npub1peer", grant, 200).expect("grant");
+        set_dm_peer_evm_address_conn(&conn, "npub1me", "npub1peer", old, 100).expect("old");
+        let (addr, at) = read(&conn, "npub1peer");
+        assert_eq!(addr.to_lowercase(), grant);
+        assert_eq!(at, 200);
+    }
+
+    #[test]
+    fn equal_timestamp_keeps_the_later_write() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        let first = "0x1111111111111111111111111111111111111111";
+        let second = "0x2222222222222222222222222222222222222222";
+        set_dm_peer_evm_address_conn(&conn, "npub1me", "npub1peer", first, 50).expect("first");
+        set_dm_peer_evm_address_conn(&conn, "npub1me", "npub1peer", second, 50).expect("second");
+        let (addr, at) = read(&conn, "npub1peer");
+        assert_eq!(addr.to_lowercase(), second);
+        assert_eq!(at, 50);
+    }
+}
+
+#[cfg(test)]
+mod bound_username_claim_tests {
+    use super::{require_minted_bound_username, UsernameClaimRow};
+
+    fn row(username: &str, token_id: &str) -> UsernameClaimRow {
+        UsernameClaimRow {
+            npub: "npub1alice".into(),
+            username: username.into(),
+            npub_hash: "0xab".into(),
+            token_id: token_id.into(),
+            link_event_id: None,
+            policy_version: 1,
+            network: "sepolia".into(),
+            updated_at_ms: 1,
+        }
+    }
+
+    #[test]
+    fn minted_matching_name_ok() {
+        require_minted_bound_username(Some(&row("alice", "1")), "alice").expect("match");
+        require_minted_bound_username(Some(&row("alice", "1")), "  alice  ").expect("trim");
+    }
+
+    #[test]
+    fn missing_or_unminted_rejected() {
+        assert!(require_minted_bound_username(None, "alice").is_err());
+        assert!(require_minted_bound_username(Some(&row("alice", "0")), "alice").is_err());
+        assert!(require_minted_bound_username(Some(&row("", "1")), "alice").is_err());
+    }
+
+    #[test]
+    fn mismatched_name_rejected() {
+        assert!(require_minted_bound_username(Some(&row("alice", "1")), "bob").is_err());
     }
 }
 

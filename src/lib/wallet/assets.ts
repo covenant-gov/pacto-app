@@ -14,7 +14,7 @@ import walletAssetsJson from './wallet-assets.json';
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 export type WalletStablecoin = 'USDC' | 'USDT';
 
-export type WalletAssetCode = 'ETH' | WalletStablecoin;
+export type WalletAssetCode = 'ETH' | string;
 
 export interface WalletNativeConfig {
   symbol: 'ETH';
@@ -32,7 +32,7 @@ export interface WalletNetworkAssets {
   displayName: string;
   explorerTxPath: string;
   native: WalletNativeConfig;
-  tokens: Record<WalletStablecoin, WalletErc20Config>;
+  tokens: Record<string, WalletErc20Config>;
 }
 
 export interface WalletAssetsFile {
@@ -114,14 +114,13 @@ export function listWalletAssetOptionsForChain(chainId: SupportedChainId): {
       decimals: net.native.decimals,
     },
   ];
-  for (const sym of ['USDC', 'USDT'] as const) {
-    const t = net.tokens[sym];
-    if ((t.address as string).toLowerCase() === ZERO_ADDRESS) continue;
+  for (const [sym, token] of Object.entries(net.tokens)) {
+    if (token.address.toLowerCase() === ZERO_ADDRESS) continue;
     out.push({
       code: sym,
       kind: 'erc20',
-      address: t.address as Address,
-      decimals: t.decimals,
+      address: token.address,
+      decimals: token.decimals,
     });
   }
   return out;

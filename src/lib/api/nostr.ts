@@ -193,6 +193,24 @@ export async function updateProfile(params: {
   return receipt;
 }
 
+/** Publish kind 0 with `name` and `display_name` both set to the chain username. */
+export async function publishBoundUsername(params: {
+  name: string;
+  avatar: string;
+  banner: string;
+  about: string;
+}): Promise<Kind0PublishReceipt> {
+  dmLog('publish_bound_username', { nameLen: params.name?.length ?? 0 });
+  const receipt = await invoke<Kind0PublishReceipt>('publish_bound_username', {
+    name: params.name ?? '',
+    avatar: params.avatar ?? '',
+    banner: params.banner ?? '',
+    about: params.about ?? '',
+  });
+  dmLog('publish_bound_username result', { ok: true, verifiedCount: receipt?.verifiedCount });
+  return receipt;
+}
+
 /**
  * Upload avatar or banner image to Blossom; returns URL.
  * Use the returned URL in update_profile for avatar or banner.

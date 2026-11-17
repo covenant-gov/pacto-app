@@ -11,7 +11,6 @@
     walletPreferredNetworkTick,
     type PreferredNetworkId,
   } from '../../lib/wallet/preferred-network';
-  import type { WatchedErc20Row } from '../../lib/wallet/watched-tokens';
   import {
     addPersonalRpc,
     formatRpcDisplay,
@@ -24,38 +23,23 @@
   } from '../../lib/wallet/rpc-prefs';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { showToast } from '../../stores/toast';
-  import { shortEvmAddress } from '../../lib/governance/hats-tree-annotations';
   import SettingsFormModal from './SettingsFormModal.svelte';
   import EnabledChainsMenu from './EnabledChainsMenu.svelte';
 
   const tFn = get(t);
 
-  function tokenSourceLabel(source: string): string {
-    return $t(source === 'custom' ? 'settings.tokenSourceCustom' : 'settings.tokenSourceCatalog');
-  }
-
   interface Props {
     accountNpub: string | null;
     enabledSet: Set<SupportedChainId>;
-    watchedRows: WatchedErc20Row[];
-    /** `all` or one enabled chain; defaults to preferred network per account. */
-    tokenNetworkFilter: 'all' | SupportedChainId;
     onToggleChain?: (chain: SupportedChainId) => void;
-    onRemoveWatchedRow?: (row: WatchedErc20Row) => void;
-    onImportTokens?: () => void;
   }
 
   let {
     accountNpub = null,
     enabledSet,
-    watchedRows = [],
-    tokenNetworkFilter = $bindable(DEFAULT_PREFERRED_NETWORK),
     onToggleChain = () => {},
-    onRemoveWatchedRow = () => {},
-    onImportTokens = () => {},
   }: Props = $props();
 
-  let tokenFilterInitializedFor: string | null = $state(null);
   let lastPreferred: PreferredNetworkId = $state(DEFAULT_PREFERRED_NETWORK);
   let preferredNetwork: PreferredNetworkId = $state(DEFAULT_PREFERRED_NETWORK);
   let rpcNetworkFilter: SupportedChainId = $state(DEFAULT_PREFERRED_NETWORK);
@@ -74,22 +58,13 @@
     void $walletRpcPrefsTick;
     preferredNetwork = accountNpub ? loadPreferredNetwork(accountNpub) : DEFAULT_PREFERRED_NETWORK;
 
-    if (accountNpub && accountNpub !== tokenFilterInitializedFor) {
-      tokenFilterInitializedFor = accountNpub;
-      tokenNetworkFilter = preferredNetwork;
-      lastPreferred = preferredNetwork;
-    } else if (preferredNetwork !== lastPreferred) {
-      if (tokenNetworkFilter === lastPreferred) {
-        tokenNetworkFilter = preferredNetwork;
-      }
-      lastPreferred = preferredNetwork;
-    }
-
     if (accountNpub && accountNpub !== rpcFilterInitializedFor) {
       rpcFilterInitializedFor = accountNpub;
       rpcNetworkFilter = preferredNetwork;
+      lastPreferred = preferredNetwork;
     } else if (preferredNetwork !== lastPreferred && rpcNetworkFilter === lastPreferred) {
       rpcNetworkFilter = preferredNetwork;
+      lastPreferred = preferredNetwork;
     }
   });
 
@@ -103,18 +78,6 @@
       rpcNetworkFilter = rpcFilterFallback;
     }
   });
-  $effect(() => {
-    if (tokenNetworkFilter !== 'all' && !enabledSet.has(tokenNetworkFilter)) {
-      tokenNetworkFilter = 'all';
-    }
-  });
-
-  let filteredWatchedRows = $derived(
-    tokenNetworkFilter === 'all'
-      ? watchedRows.filter((row) => enabledSet.has(row.network as SupportedChainId))
-      : watchedRows.filter((row) => row.network === tokenNetworkFilter)
-  );
-
   const ALCHEMY_SIGNUP_URL = 'https://www.alchemy.com/';
   const POCKET_SIGNUP_URL = 'https://pocket.network/';
 
@@ -205,49 +168,6 @@
       <EnabledChainsMenu {enabledSet} labelledBy="wallet-networks-heading" {onToggleChain} />
     </div>
   </div>
-</section>
-
-<section class="evm-extras-section" aria-labelledby="wallet-tokens-heading">
-  <div class="evm-extras-section-head">
-    <h2 id="wallet-tokens-heading" class="evm-extras-h2">{$t('settings.tokensToTrackTitle')}</h2>
-    <div class="evm-extras-section-head-controls">
-      <select
-        id="evm-token-network-select"
-        class="ui-select"
-        aria-label={$t('wallet.networkLabel')}
-        bind:value={tokenNetworkFilter}
-      >
-        <option value="all">{$t('settings.allNetworksOption')}</option>
-        {#each enabledChainIdsOrdered as chainId (chainId)}
-          <option value={chainId}>
-            {getWalletNetworkDisplayName(chainId)}
-          </option>
-        {/each}
-      </select>
-      <button type="button" class="evm-extras-btn" onclick={onImportTokens}>{$t('settings.importTokensButton')}</button>
-    </div>
-  </div>
-  {#if watchedRows.length === 0}
-    <p class="evm-extras-empty">{$t('settings.noExtraTokensYet')}</p>
-  {:else if filteredWatchedRows.length === 0}
-    <p class="evm-extras-empty">
-      {$t('settings.noTokensOnFilter', { values: { network: tokenNetworkFilter === 'all' ? $t('settings.thisFilterFallback') : getWalletNetworkDisplayName(tokenNetworkFilter) } })}
-    </p>
-  {:else}
-    <ul class="evm-extras-token-list">
-      {#each filteredWatchedRows as row (row.id)}
-        <li class="evm-extras-token-row">
-          <div class="evm-extras-token-meta">
-            <span class="evm-extras-token-sym">{row.symbol}</span>
-            <span class="evm-extras-token-net">{getWalletNetworkDisplayName(row.network)}</span>
-            <code class="evm-extras-token-addr">{shortEvmAddress(row.address)}</code>
-            <span class="evm-extras-token-src">{tokenSourceLabel(row.source)}</span>
-          </div>
-          <button type="button" class="evm-extras-btn-text" onclick={() => onRemoveWatchedRow(row)}>{$t('settings.remove')}</button>
-        </li>
-      {/each}
-    </ul>
-  {/if}
 </section>
 
 <section class="evm-extras-section evm-extras-section--last" aria-labelledby="wallet-rpc-heading">
@@ -371,20 +291,6 @@
     margin-bottom: 10px;
   }
 
-  .evm-extras-section-head-controls {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    min-width: 0;
-  }
-
-  .evm-extras-section-head-controls .ui-select {
-    width: auto;
-    min-width: 160px;
-    max-width: 220px;
-  }
-
   .evm-extras-select-inline {
     width: auto;
     min-width: 160px;
@@ -492,55 +398,6 @@
 
   .evm-extras-btn-secondary:hover {
     background: var(--bg-hover);
-  }
-
-  .evm-extras-token-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .evm-extras-token-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 10px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-  }
-
-  .evm-extras-token-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 12px;
-    min-width: 0;
-  }
-
-  .evm-extras-token-sym {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .evm-extras-token-net {
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-
-  .evm-extras-token-addr {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .evm-extras-token-src {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    color: var(--text-muted);
   }
 
   .evm-extras-btn-text {

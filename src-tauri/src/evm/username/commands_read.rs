@@ -1,6 +1,7 @@
 //! Read / cache Tauri commands for username NFT.
 
 use alloy::primitives::{B256, U256};
+use nostr_sdk::FromBech32;
 use tauri::{AppHandle, Runtime};
 
 use super::dto::{UsernameAccountStateDto, UsernameEligibleMemberDto, UsernameRecordDto};
@@ -109,6 +110,39 @@ pub async fn username_record_of(
     let urls = require_rpc_urls(net, rpc_urls)?;
     let addrs = username_addrs(&net.key)?;
     let hash = parse_b256(&npub_hash)?;
+    let provider = connect_read_provider(&urls).await?;
+    let record = eth_call_decode(
+        &provider,
+        addrs.pacto_username_nft,
+        &recordOfCall { npubHash: hash },
+    )
+    .await
+    .map_err(|e| wallet_err_json("USERNAME_READ", e, None))?;
+    Ok(record_to_dto(record))
+}
+
+#[tauri::command]
+pub async fn username_record_for_npub(
+    network: String,
+    npub: String,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<UsernameRecordDto, String> {
+    let net = require_network(&network)?;
+    let urls = require_rpc_urls(net, rpc_urls)?;
+    let addrs = username_addrs(&net.key)?;
+    let pubkey = nostr_sdk::PublicKey::from_bech32(npub.trim())
+        .map_err(|e| wallet_err_json("INVALID_NPUB", e.to_string(), None))?;
+    let hex_pk = pubkey.to_hex();
+    let bytes = hex::decode(&hex_pk)
+        .map_err(|e| wallet_err_json("NOSTR_PUBKEY", format!("invalid pubkey hex: {e}"), None))?;
+    if bytes.len() != 32 {
+        return Err(wallet_err_json(
+            "NOSTR_PUBKEY",
+            "expected 32-byte x-only pubkey",
+            None,
+        ));
+    }
+    let hash = npub_hash_from_pubkey(B256::from_slice(&bytes));
     let provider = connect_read_provider(&urls).await?;
     let record = eth_call_decode(
         &provider,
