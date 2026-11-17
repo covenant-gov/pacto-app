@@ -82,26 +82,31 @@
     margin-top: 12px;
   }
 
-  .wallet-balance-networks {
-    max-width: 220px;
-    padding: 6px 8px;
+  .wallet-balance-networks,
+  .wallet-balance-add {
+    box-sizing: border-box;
+    height: 32px;
+    padding: 0 10px;
     font-size: 0.8125rem;
+    line-height: 1.25;
     border-radius: 6px;
     border: 1px solid var(--border);
-    background: var(--bg-elevated);
     color: var(--text-primary);
     font-family: inherit;
   }
 
+  .wallet-balance-networks {
+    max-width: 220px;
+    padding-right: 28px;
+    background: var(--bg-elevated);
+  }
+
   .wallet-balance-add {
-    padding: 6px 10px;
-    font-size: 0.8125rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-weight: 500;
-    border-radius: 6px;
-    border: 1px solid var(--border);
     background: transparent;
-    color: var(--text-primary);
-    font-family: inherit;
     cursor: pointer;
   }
 
