@@ -24,8 +24,6 @@
   } from '../../stores/navigation';
   import { removeSquadNavId } from '../../lib/squad/squad-nav-order';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
-  import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -439,10 +437,6 @@
     startCreateChannel('closed', selectedNpubs);
   }
 
-  function getMemberDisplayName(npub: string) {
-    return getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
-  }
-
 </script>
 
 <ParentSidebar
@@ -494,7 +488,6 @@
   onChooseClosed={handleChooseClosed}
   onCreateClosed={handleCreateClosedChannel}
   onToggleMember={toggleMember}
-  getMemberDisplayName={getMemberDisplayName}
 />
 
 <PairWithSquadModal

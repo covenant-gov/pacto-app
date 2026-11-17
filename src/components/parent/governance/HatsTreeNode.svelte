@@ -6,10 +6,13 @@
     npubByEvmAddressFromSquadRoster,
   } from '../../../lib/governance/hats-tree-annotations';
   import { prettyHatId } from '../../../lib/governance/pretty-hat-id';
-  import { getProfileDisplayName } from '../../../lib/utils/profile';
+  import { resolveShownName } from '../../../lib/username/shown-name';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import { explorerAddressUrl, type SupportedChainId } from '../../../lib/wallet/chains';
+  import { currentUser } from '../../../stores/auth-session';
+  import { peerUsernameClaims, ensureShownName } from '../../../stores/peer-username';
   import { profiles } from '../../../stores/profiles';
+  import { usernameState } from '../../../stores/username';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { localizeRoleLabel } from '../../../lib/governance/governance-privilege';
@@ -60,6 +63,10 @@
   const treeCommand = $derived(actionsApi?.command ?? null);
   const wearerAddresses = $derived(wearerAddressesByHatId[node.hatId] ?? []);
   const npubByAddress = $derived(npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub));
+
+  $effect(() => {
+    for (const npub of Object.values(npubByAddress)) ensureShownName(npub);
+  });
   const prettyId = $derived(prettyHatId(node.hatId) ?? node.hatId);
   const humanDetails = $derived(humanHatDetails(node.details));
   const wornByViewer = $derived(
@@ -75,7 +82,16 @@
     return formatWearerDisplayLabel(
       address,
       npubByAddress,
-      (npub) => getProfileDisplayName($profiles[npub]),
+      (npub) =>
+        resolveShownName({
+          npub,
+          profile: $profiles[npub] ?? null,
+          chain: {
+            selfNpub: $currentUser?.npub,
+            usernameState: $usernameState,
+            peerClaims: $peerUsernameClaims,
+          },
+        }).name,
       knownWearerLabels,
     );
   }

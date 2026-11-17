@@ -6,6 +6,8 @@
   import WalletPeerExchangeCard from '../wallet/WalletPeerExchangeCard.svelte';
   import type { WalletPeerInfoRequestPayload } from '../../lib/wallet/dm-messages';
   import { profiles } from '../../stores/profiles';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { currentUser } from '../../stores/auth-session';
   import { showToast } from '../../stores/toast';
@@ -89,10 +91,15 @@
   }: Props = $props();
 
   let presentation = $derived(resolveDmMessagePresentation(msg));
+  const shownChain = $derived({
+    selfNpub: $currentUser?.npub,
+    usernameState: $usernameState,
+    peerClaims: $peerUsernameClaims,
+  });
   let inviterNpubForCard = $derived(isInvitePresentation(presentation) ? inviteInviterNpub(msg, npub) : null);
   let inviterDisplay = $derived(
     isInvitePresentation(presentation)
-      ? getInviterDisplayFromNpub(inviterNpubForCard, $profiles)
+      ? getInviterDisplayFromNpub(inviterNpubForCard, $profiles, $t, shownChain)
       : { inviterName: '', inviterAvatarSrc: null }
   );
   let openInviter = $derived(
@@ -100,6 +107,12 @@
       ? () => onOpenInviterChat!(inviterNpubForCard!)
       : undefined
   );
+
+  $effect(() => {
+    for (const id of [msg.npub, npub, inviterNpubForCard, msg.replied_to_npub]) {
+      if (id) ensureShownName(id);
+    }
+  });
 
   async function onReact(messageId: string, emoji: string) {
     try {
@@ -170,7 +183,7 @@
     : $declinedWalletPeerInfoRequestMessageIds.includes(msg.id)
       ? 'declined'
       : 'pending'}
-  {@const wpeerName = getInviterDisplay(msg, npub, $profiles).inviterName}
+    {@const wpeerName = getInviterDisplay(msg, npub, $profiles, shownChain).inviterName}
   <WalletPeerExchangeCard
     variant={msg.mine ? 'request-out' : 'request-in'}
     peerName={wpeerName}
@@ -186,7 +199,7 @@
     myNpub: $currentUser?.npub,
     messages: threadMessages,
   })}
-    {@const wpeerGrantName = getInviterDisplay(msg, npub, $profiles).inviterName}
+    {@const wpeerGrantName = getInviterDisplay(msg, npub, $profiles, shownChain).inviterName}
     <WalletPeerExchangeCard variant="grant-in" peerName={wpeerGrantName} />
   {/if}
 {:else if presentation.kind === 'wallet-peer-info-decline'}
@@ -203,7 +216,7 @@
   <WalletTxRequestCard
     payload={presentation.payload}
     isMine={msg.mine}
-    peerDisplayName={getInviterDisplay(msg, npub, $profiles).inviterName}
+    peerDisplayName={getInviterDisplay(msg, npub, $profiles, shownChain).inviterName}
     status={walletReqStatus}
     accepting={false}
     onAccept={() => {
@@ -245,7 +258,7 @@
   </div>
 {:else if presentation.kind === 'plain'}
   <Message
-    {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub, $stripTrackingMarkersEnabled)}
+    {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub, $stripTrackingMarkersEnabled, $t, shownChain)}
     reactions={msg.reactions}
     attachments={msg.attachments}
     previewMetadata={msg.preview_metadata}

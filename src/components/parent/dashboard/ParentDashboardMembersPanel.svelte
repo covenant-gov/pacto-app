@@ -31,7 +31,7 @@
             {:else}
               <div class="members-panel-avatar members-panel-avatar-placeholder" aria-hidden="true"></div>
             {/if}
-            <span class="members-panel-name"><VerifiedName {npub} fallback={npub.slice(0, 16) + '…'} /></span>
+            <span class="members-panel-name"><VerifiedName {npub} /></span>
           </div>
         {/each}
       {/if}

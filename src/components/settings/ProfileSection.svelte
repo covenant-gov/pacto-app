@@ -14,7 +14,7 @@
   import AvatarPicker from '../ui/AvatarPicker.svelte';
   import VerifiedName from '../profile/VerifiedName.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
-  import { heldUsernameFromState, usernameState } from '../../stores/username';
+  import { ensureOwnUsername, mintedUsernameFromState, usernameState } from '../../stores/username';
   import { get } from 'svelte/store';
 
   let userNpub = $derived($currentUser?.npub || '');
@@ -35,12 +35,16 @@
   let editAvatarUrl = $state('');
   let saveError: string | null = $state(null);
   let savingProfile = $state(false);
-  const heldName = $derived(heldUsernameFromState($usernameState));
+  const mintedName = $derived(mintedUsernameFromState($usernameState));
+  const usernamePending = $derived(
+    $usernameState.status === 'idle' || $usernameState.status === 'loading',
+  );
 
   // Load profile whenever the logged-in user's npub changes
   $effect(() => {
     if (userNpub) {
       loadUserProfile(userNpub);
+      ensureOwnUsername();
     }
   });
 
@@ -85,7 +89,7 @@
     saveError = null;
     savingProfile = true;
     try {
-      const boundName = heldUsernameFromState(get(usernameState));
+      const boundName = mintedUsernameFromState(get(usernameState));
       const banner = profile?.banner ?? '';
       const receipt = boundName
         ? await publishBoundUsername({
@@ -144,6 +148,7 @@
               ariaLabel={$t('profile.editProfile')}
               title={$t('profile.editProfile')}
               className="profile-edit-btn"
+              disabled={usernamePending}
               onclick={startEditing}
             />
           </div>
@@ -191,9 +196,9 @@
             {#if saveError}
               <p class="edit-error" role="alert">{saveError}</p>
             {/if}
-            {#if heldName}
+            {#if mintedName}
               <p class="edit-label">{$t('profile.nameLabel')}</p>
-              <p class="edit-bound-name">{heldName}</p>
+              <p class="edit-bound-name">{mintedName}</p>
             {:else}
               <label class="edit-label" for="edit-name">{$t('profile.nameLabel')}</label>
               <input

@@ -69,7 +69,11 @@
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { persistSquadPatch } from '../../lib/squad/squad-catalog';
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import { getProfileAvatarSrc } from '../../lib/utils/profile';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import VerifiedName from '../profile/VerifiedName.svelte';
+  import { peerUsernameClaims } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { buildMentionEnvelope, parseMessageContent, filterMentionsByRoster } from '../../lib/messaging/mentions';
   import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
   import { replyTargetExcerpt } from '../../lib/messaging/reply-quote';
@@ -264,7 +268,17 @@
     } else {
       const senderProfile = msg.npub ? $profiles[msg.npub] : null;
       base.authorNpub = msg.npub ?? '';
-      base.authorName = getProfileDisplayName(senderProfile);
+      base.authorName = msg.npub
+        ? resolveShownName({
+            npub: msg.npub,
+            profile: senderProfile,
+            chain: {
+              selfNpub: currentUserNpub,
+              usernameState: $usernameState,
+              peerClaims: $peerUsernameClaims,
+            },
+          }).name
+        : '';
       base.avatar = getProfileAvatarSrc(senderProfile) ?? '';
     }
     if (base.replyToId) {
@@ -274,7 +288,15 @@
       base.replyAuthorName = replyIsSelf
           ? tFn('messaging.message.authorYou')
           : replyNpub
-            ? getProfileDisplayName($profiles[replyNpub] ?? null)
+            ? resolveShownName({
+                npub: replyNpub,
+                profile: $profiles[replyNpub] ?? null,
+                chain: {
+                  selfNpub: currentUserNpub,
+                  usernameState: $usernameState,
+                  peerClaims: $peerUsernameClaims,
+                },
+              }).name
             : tFn('messaging.message.replyUnknown');
       base.replyPreview = replyTargetExcerpt(
         msg.replied_to_content,
@@ -534,8 +556,15 @@
     if (!groupId || !selectedInviteNpub) return;
     const memberNpub = selectedInviteNpub;
     const squad = squadChannelInviteContext();
-    const displayName =
-      getProfileDisplayName($profiles[memberNpub]) || memberNpub.slice(0, 16) + '…';
+    const displayName = resolveShownName({
+      npub: memberNpub,
+      profile: $profiles[memberNpub] ?? null,
+      chain: {
+        selfNpub: $currentUser?.npub,
+        usernameState: $usernameState,
+        peerClaims: $peerUsernameClaims,
+      },
+    }).name;
 
     showInviteToChannelModal = false;
     selectedInviteNpub = null;
@@ -1003,7 +1032,7 @@
             {#each inviteToChannelCandidates as npub (npub)}
               <label class="channel-invite-row">
                 <input type="radio" name="inviteToChannel" bind:group={selectedInviteNpub} value={npub} />
-                <span>{getProfileDisplayName($profiles[npub]) || npub.slice(0, 16) + '…'}</span>
+                <span><VerifiedName {npub} /></span>
               </label>
             {/each}
           </div>

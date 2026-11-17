@@ -57,8 +57,15 @@ describe('memberDisplayLabel', () => {
     expect(memberDisplayLabel(ALICE, profile(ALICE, { name: 'Alice', nickname: 'Ali' }), BOB, 'You')).toBe('Ali');
   });
 
-  it('labels the viewer as You', () => {
-    expect(memberDisplayLabel(ALICE, profile(ALICE, { name: 'Alice' }), ALICE, 'You')).toBe('You');
+  it('labels the viewer as You and a minted peer by the chain name', () => {
+    expect(memberDisplayLabel(ALICE, profile(ALICE, { name: 'Alice' }), ALICE, 'You', {
+      selfNpub: ALICE,
+      usernameState: { record: { name: 'chain', tokenId: '1' } },
+    })).toBe('You');
+    expect(memberDisplayLabel(BOB, profile(BOB, { name: 'Bob' }), ALICE, 'You', {
+      selfNpub: ALICE,
+      peerClaims: { [BOB]: { name: 'chainbob' } },
+    })).toBe('chainbob');
   });
 
   it('keeps unnamed members distinguishable with the short npub', () => {

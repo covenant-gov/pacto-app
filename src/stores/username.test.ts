@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import {
   computeUsernameVerified,
-  heldUsernameFromState,
+  mintedUsernameFromState,
   claimedUsernameFromState,
   needsForcedUsernameLinkRestore,
   resetUsernameState,
@@ -82,19 +82,20 @@ function readyState(overrides: Partial<UsernameState> = {}): UsernameState {
   };
 }
 
-describe('heldUsernameFromState', () => {
-  it('returns the chain name when the active roster address still holds it', () => {
-    expect(heldUsernameFromState(readyState())).toBe('alice');
+describe('mintedUsernameFromState', () => {
+  it('returns the chain name when the active signer is a different address', () => {
+    expect(mintedUsernameFromState(readyState({ activeEvm: OTHER }))).toBe('alice');
   });
 
-  it('returns null when the bound address is not the active roster address', () => {
-    expect(heldUsernameFromState(readyState({ activeEvm: OTHER }))).toBeNull();
+  it('does not require the relay link or the sqlite cache', () => {
+    const state = readyState({ cached: null });
+    expect(mintedUsernameFromState(state)).toBe('alice');
   });
 
-  it('does not require the relay link', () => {
+  it('returns null when the token is not minted', () => {
     const state = readyState();
-    state.cached = state.cached ? { ...state.cached, linkEventId: null } : null;
-    expect(heldUsernameFromState(state)).toBe('alice');
+    state.record = state.record ? { ...state.record, tokenId: '0' } : null;
+    expect(mintedUsernameFromState(state)).toBeNull();
   });
 });
 

@@ -8,6 +8,8 @@
   import { hydrateCatchUp } from '../../stores/catch-up';
   import { profiles, loadProfile } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { squads } from '../../stores/squads';
   import { eventChannelName } from '../../lib/squad/squad-event-form';
   import {
@@ -58,6 +60,21 @@
   const zoneStartText = $derived(formatEventZoneStart(event, timeOpts));
   const counts = $derived(rsvpCounts(event.rsvps));
   const membersByStatus = $derived(rsvpMembersByStatus(event.rsvps));
+
+  function memberName(npub: string): string {
+    return memberDisplayLabel(npub, $profiles[npub], selfNpub, youLabel, {
+      selfNpub,
+      usernameState: $usernameState,
+      peerClaims: $peerUsernameClaims,
+    });
+  }
+
+  $effect(() => {
+    for (const status of RSVP_STATUSES) {
+      for (const npub of membersByStatus[status]) ensureShownName(npub);
+    }
+    if (event.updatedByNpub) ensureShownName(event.updatedByNpub);
+  });
   const youLabel = $derived($t('events.detail.you'));
   const selfNpub = $derived($currentUser?.npub);
   const channelName = $derived(
@@ -274,7 +291,7 @@
               <span class="event-detail-attendee-label">{$t(RSVP_LABEL_KEYS[status])} · {counts[status]}</span>
               <ul class="event-detail-attendees" role="list">
                 {#each membersByStatus[status] as npub (npub)}
-                  <li>{memberDisplayLabel(npub, $profiles[npub], selfNpub, youLabel)}</li>
+                  <li>{memberName(npub)}</li>
                 {/each}
               </ul>
             </div>
@@ -350,7 +367,7 @@
     <p class="muted event-detail-small event-detail-changed">
       {$t('events.detail.lastChanged', {
         values: {
-          name: memberDisplayLabel(event.updatedByNpub, $profiles[event.updatedByNpub], selfNpub, youLabel),
+          name: memberName(event.updatedByNpub),
           time: formatEventTimestampMs(event.updatedAtMs, timeOpts),
         },
       })}

@@ -8,7 +8,10 @@
    */
   import { t } from 'svelte-i18n';
   import { profiles } from '../../stores/profiles';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
+  import { currentUser } from '../../stores/auth-session';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { acceptOfferedWelcome, type OfferedWelcome } from '../../lib/invites/pending-welcomes';
   import {
     declineWelcomeForGroup,
@@ -19,10 +22,22 @@
 
   let failedGroupId = $state<string | null>(null);
 
-  function inviterName(npub: string): string {
-    const profile = $profiles[npub];
-    if (profile) return getProfileDisplayName(profile);
-    return npub.length > 16 ? `${npub.slice(0, 8)}…${npub.slice(-4)}` : npub;
+  $effect(() => {
+    for (const welcome of $offeredWelcomeList) {
+      if (welcome.inviterNpub) ensureShownName(welcome.inviterNpub);
+    }
+  });
+
+  function inviterName(personNpub: string): string {
+    return resolveShownName({
+      npub: personNpub,
+      profile: $profiles[personNpub] ?? null,
+      chain: {
+        selfNpub: $currentUser?.npub,
+        usernameState: $usernameState,
+        peerClaims: $peerUsernameClaims,
+      },
+    }).name;
   }
 
   async function accept(welcome: OfferedWelcome): Promise<void> {

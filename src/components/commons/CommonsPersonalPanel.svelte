@@ -5,9 +5,9 @@
   import { openAccountProfile } from '../../stores/navigation';
   import { profiles } from '../../stores/profiles';
   import { getProfileAvatarSrc } from '../../lib/utils/profile';
+  import { resolveShownName } from '../../lib/username/shown-name';
   import VerifiedName from '../profile/VerifiedName.svelte';
-  import { heldUsernameFromState, usernameState } from '../../stores/username';
-  import { shownProfileName } from '../../lib/username/shown-name';
+  import { usernameState } from '../../stores/username';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
   import {
     cancelUserCommonsBroadcast,
@@ -42,7 +42,13 @@
   const profile = $derived(npub ? $profiles[npub] : null);
   const avatarSrc = $derived(getProfileAvatarSrc(profile));
   const displayName = $derived(
-    npub ? shownProfileName(profile, heldUsernameFromState($usernameState)).name : '',
+    npub
+      ? resolveShownName({
+          npub,
+          profile,
+          chain: { selfNpub: npub, usernameState: $usernameState },
+        }).name
+      : '',
   );
 
   const tFn = get(t);
@@ -128,7 +134,7 @@
 
     <div class="commons-personal-block">
       {#if npub}
-        <VerifiedName {npub} fallback={displayName} />
+        <VerifiedName {npub} />
       {/if}
       {#if loading}
         <span class="commons-personal-status muted">{$t('commons.personal.checking')}</span>

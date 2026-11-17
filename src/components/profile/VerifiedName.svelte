@@ -1,38 +1,33 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { shownProfileName } from '../../lib/username/shown-name';
+  import { resolveShownName } from '../../lib/username/shown-name';
   import { currentUser } from '../../stores/auth-session';
-  import { ensurePeerUsername, peerUsernameClaims } from '../../stores/peer-username';
+  import { ensureShownName, peerUsernameClaims } from '../../stores/peer-username';
   import { profiles } from '../../stores/profiles';
-  import { ensureOwnUsername, heldUsernameFromState, usernameState } from '../../stores/username';
+  import { usernameState } from '../../stores/username';
 
-  let { npub = '', fallback = '' }: { npub?: string; fallback?: string } = $props();
+  let { npub = '' }: { npub?: string } = $props();
 
   const key = $derived(npub.trim());
-  const self = $derived(!!key && key === ($currentUser?.npub ?? ''));
-  const chain = $derived.by(() => {
-    if (!key) return null;
-    if (self) return heldUsernameFromState($usernameState);
-    return $peerUsernameClaims[key]?.name ?? null;
-  });
-  const profile = $derived(key ? ($profiles[key] ?? null) : null);
-  const shown = $derived(shownProfileName(profile, chain));
-  const label = $derived.by(() => {
-    if (shown.verified) return shown.name;
-    const unknown = $t('profile.unknownName');
-    if (fallback && (!profile || shown.name === unknown)) return fallback;
-    return shown.name || fallback;
-  });
+  const shown = $derived(
+    resolveShownName({
+      npub: key,
+      profile: key ? ($profiles[key] ?? null) : null,
+      chain: {
+        selfNpub: $currentUser?.npub,
+        usernameState: $usernameState,
+        peerClaims: $peerUsernameClaims,
+      },
+    }),
+  );
 
   $effect(() => {
-    if (!key) return;
-    if (self) ensureOwnUsername();
-    else ensurePeerUsername(key);
+    if (key) ensureShownName(key);
   });
 </script>
 
 <span class="verified-name">
-  {label}
+  {shown.name}
   {#if shown.verified}
     <span class="verified-name-check" title={$t('profile.username.verified')} aria-label={$t('profile.username.verified')}>✓</span>
   {/if}

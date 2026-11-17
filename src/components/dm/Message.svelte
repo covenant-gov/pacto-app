@@ -10,8 +10,13 @@
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { summarizeStructuredMessageContent } from '../../lib/messaging/structured-content-notice';
   import { aggregateReactions, isPendingReaction, pendingReactionSent } from '../../lib/messaging/reactions';
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import { getProfileAvatarSrc } from '../../lib/utils/profile';
+  import { resolveShownName } from '../../lib/username/shown-name';
   import VerifiedName from '../profile/VerifiedName.svelte';
+  import { currentUser } from '../../stores/auth-session';
+  import { peerUsernameClaims } from '../../stores/peer-username';
+  import { profiles as profilesStore } from '../../stores/profiles';
+  import { usernameState } from '../../stores/username';
   import { attachmentKind } from '../../lib/messaging/attachment-display';
   import { getEmojiList, recentEmojisStore, searchEmojis } from '../../stores/emojis';
   import type { Mention } from '../../lib/messaging/mentions';
@@ -100,6 +105,24 @@
     editRequest = null,
     onSaveToDocs = undefined,
   }: Props = $props();
+
+  function shownPersonName(personNpub: string): string {
+    const map = profiles ?? $profilesStore;
+    return resolveShownName({
+      npub: personNpub,
+      profile: map[personNpub] ?? null,
+      chain: {
+        selfNpub: currentUserNpub ?? $currentUser?.npub,
+        usernameState: $usernameState,
+        peerClaims: $peerUsernameClaims,
+      },
+    }).name;
+  }
+
+  const shownAuthorName = $derived(authorNpub ? shownPersonName(authorNpub) : authorName);
+  const shownReplyAuthorName = $derived(
+    replyAuthorNpub ? shownPersonName(replyAuthorNpub) : (replyAuthorName ?? ''),
+  );
 
   let displayContent = $derived(body || content);
   let deliveryLabel = $derived(outboundDeliveryLabel({ pending, failed }, $t));
@@ -431,14 +454,14 @@
   onpointerup={handlePointerUp}
   onpointercancel={handlePointerUp}
   role="listitem"
-  aria-label={$t('messaging.message.fromAuthorAria', { values: { authorName } })}
+  aria-label={$t('messaging.message.fromAuthorAria', { values: { authorName: shownAuthorName } })}
 >
   <div class="avatar" aria-hidden={compact ? 'true' : undefined}>
     {#if !compact}
       {#if avatar}
-        <img src={avatar} alt={authorName} />
+        <img src={avatar} alt={shownAuthorName} />
       {:else}
-        <div class="avatar-placeholder">{authorName.charAt(0).toUpperCase()}</div>
+        <div class="avatar-placeholder">{shownAuthorName.charAt(0).toUpperCase()}</div>
       {/if}
     {/if}
   </div>
@@ -447,7 +470,7 @@
       <div class="message-header">
         <span class="author-name">
           {#if authorNpub}
-            <VerifiedName npub={authorNpub} fallback={authorName} />
+            <VerifiedName npub={authorNpub} />
           {:else}
             {authorName}
           {/if}
@@ -485,7 +508,7 @@
       >{deliveryLabel}</span>
     {/if}
     {#if replyToId && (replyAuthorName != null || replyPreview != null)}
-      <div class="msg-reply" role="region" aria-label={$t('messaging.message.replyTo', { values: { name: replyAuthorName ?? $t('messaging.message.replyToDefault') } })}>
+      <div class="msg-reply" role="region" aria-label={$t('messaging.message.replyTo', { values: { name: shownReplyAuthorName || $t('messaging.message.replyToDefault') } })}>
         <button
           type="button"
           class="msg-reply-inner"
@@ -494,7 +517,7 @@
         >
           <span class="msg-reply-author">
             {#if replyAuthorNpub}
-              <VerifiedName npub={replyAuthorNpub} fallback={replyAuthorName ?? ''} />
+              <VerifiedName npub={replyAuthorNpub} />
             {:else}
               {replyAuthorName ?? $t('messaging.message.replyUnknown')}
             {/if}
@@ -532,7 +555,7 @@
               {attachment}
               {chatId}
               messageId={id}
-              {authorName}
+              authorName={shownAuthorName}
               avatarSrc={avatar}
               {timestamp}
               onShowMessage={jumpToMessage}
@@ -576,20 +599,23 @@
                   {#each chip.reactorIds.slice(0, REACTOR_TOOLTIP_LIMIT) as npub (npub)}
                     {@const reactorProfile = profiles?.[npub]}
                     {@const reactorAvatarSrc = getProfileAvatarSrc(reactorProfile)}
-                    {@const reactorName = npub === currentUserNpub
-                      ? $t('messaging.message.authorYou')
-                      : reactorProfile
-                        ? getProfileDisplayName(reactorProfile)
-                        : npub.slice(0, 16) + '…'}
+                    {@const reactorIsSelf = npub === currentUserNpub}
+                    {@const reactorLabel = reactorIsSelf ? $t('messaging.message.authorYou') : shownPersonName(npub)}
                     <div class="reactor-tooltip-entry">
                       {#if reactorAvatarSrc}
                         <img src={reactorAvatarSrc} alt="" class="reactor-tooltip-avatar" />
                       {:else}
                         <div class="reactor-tooltip-avatar reactor-tooltip-avatar-placeholder" aria-hidden="true">
-                          {reactorName.charAt(0).toUpperCase()}
+                          {reactorLabel.charAt(0).toUpperCase()}
                         </div>
                       {/if}
-                      <span class="reactor-tooltip-name">{reactorName}</span>
+                      <span class="reactor-tooltip-name">
+                        {#if reactorIsSelf}
+                          {reactorLabel}
+                        {:else}
+                          <VerifiedName {npub} />
+                        {/if}
+                      </span>
                     </div>
                   {/each}
                   {#if chip.reactorIds.length > REACTOR_TOOLTIP_LIMIT}

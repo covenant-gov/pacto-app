@@ -2,8 +2,12 @@
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { profiles, loadProfile } from '../../stores/profiles';
+  import { currentUser } from '../../stores/auth-session';
+  import { peerUsernameClaims } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import { showToast } from '../../stores/toast';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
   import type { CommonsJoinRequestDto } from '../../lib/commons/types';
   import {
     clearJoinRequestRespondInFlight,
@@ -222,9 +226,15 @@
 
       removePendingJoinRequest(squad.id, request.eventId);
       if (admitResult.ok) {
-        const name =
-          getProfileDisplayName($profiles[request.requesterNpub]) ||
-          tFn('squad.joinRequests.memberFallback');
+        const name = resolveShownName({
+          npub: request.requesterNpub,
+          profile: $profiles[request.requesterNpub] ?? null,
+          chain: {
+            selfNpub: $currentUser?.npub,
+            usernameState: $usernameState,
+            peerClaims: $peerUsernameClaims,
+          },
+        }).name;
         showToast(tFn('squad.joinRequests.joinToast', { values: { name } }));
       } else {
         showToast(tFn('squad.joinRequests.approvedPendingToast'));
@@ -252,10 +262,6 @@
       next.delete(invite.inviteId);
       revokingInviteIds = next;
     }
-  }
-
-  function personLabel(npub: string): string {
-    return getProfileDisplayName($profiles[npub]) || npub.slice(0, 12) + '…';
   }
 
   function relativeCreated(createdAt: number): string {
@@ -312,7 +318,7 @@
                 <p class="status-pending">{$t('squad.pendingAccess.statusPending')}</p>
               </div>
               <p class="join-request-summary">
-                <span class="join-request-name">{personLabel(entry.memberNpub)}</span>
+                <span class="join-request-name"><VerifiedName npub={entry.memberNpub} /></span>
                 <span class="join-request-sep" aria-hidden="true">·</span>
                 <span class="join-request-meta">{$t('squad.joinRequests.admittingDetail')}</span>
               </p>
@@ -333,7 +339,7 @@
                 <p class="status-pending">{$t('squad.pendingAccess.statusPending')}</p>
               </div>
               <p class="join-request-summary">
-                <span class="join-request-name">{personLabel(request.requesterNpub)}</span>
+                <span class="join-request-name"><VerifiedName npub={request.requesterNpub} /></span>
                 <span class="join-request-sep" aria-hidden="true">·</span>
                 <span class="join-request-meta">
                   {$t('squad.joinRequests.requestedTime', {
@@ -386,7 +392,7 @@
                 <p class="status-pending">{$t('squad.pendingAccess.statusPending')}</p>
               </div>
               <p class="join-request-summary">
-                <span class="join-request-name">{personLabel(invite.inviteeNpub)}</span>
+                <span class="join-request-name"><VerifiedName npub={invite.inviteeNpub} /></span>
                 <span class="join-request-sep" aria-hidden="true">·</span>
                 <span class="join-request-meta">
                   {$t('squad.pendingAccess.invitedTime', {

@@ -23,7 +23,7 @@ export function chainUsernameFromRecord(
 
 /**
  * Chain name wins over nickname and kind 0 so the check sits on the unique string.
- * No chain name: today's display order, with no check.
+ * No chain name: nickname, then kind 0 name, then display_name, with no check.
  */
 export function shownProfileName(
   profile: NostrProfile | null | undefined,
@@ -32,4 +32,40 @@ export function shownProfileName(
   const chain = chainName?.trim() ?? '';
   if (chain) return { name: chain, verified: true };
   return { name: getProfileDisplayName(profile), verified: false };
+}
+
+export type ShownNameChainState = {
+  record?: { name?: string | null; tokenId?: string | null } | null;
+};
+
+export type ShownNamePeerClaims = Record<string, { name: string | null } | undefined>;
+
+/** Store snapshots for one shown-name lookup. Omit to use kind 0 only. */
+export type ShownNameContext = {
+  selfNpub?: string | null;
+  usernameState?: ShownNameChainState | null;
+  peerClaims?: ShownNamePeerClaims | null;
+};
+
+/**
+ * Same minted-record rule for the signed-in account and everyone else.
+ * A peer key that is absent or still loading contributes no chain name.
+ */
+export function resolveShownName(input: {
+  npub: string;
+  profile?: NostrProfile | null;
+  chain?: ShownNameContext | null;
+}): { name: string; verified: boolean } {
+  const key = input.npub.trim();
+  const self = input.chain?.selfNpub?.trim() ?? '';
+  const minted =
+    key && self && key === self
+      ? chainUsernameFromRecord(
+          input.chain?.usernameState?.record?.name,
+          input.chain?.usernameState?.record?.tokenId,
+        )
+      : key
+        ? (input.chain?.peerClaims?.[key]?.name ?? null)
+        : null;
+  return shownProfileName(input.profile, minted);
 }

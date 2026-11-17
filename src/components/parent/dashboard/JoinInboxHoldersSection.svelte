@@ -7,7 +7,10 @@
   import { currentUser } from '../../../stores/auth-session';
   import { profiles } from '../../../stores/profiles';
   import { showToast } from '../../../stores/toast';
-  import { getProfileDisplayName } from '../../../lib/utils/profile';
+  import { resolveShownName } from '../../../lib/username/shown-name';
+  import VerifiedName from '../../profile/VerifiedName.svelte';
+  import { peerUsernameClaims } from '../../../stores/peer-username';
+  import { usernameState } from '../../../stores/username';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { requestSquadStateSync } from '../../../lib/squad/squad-state-sync';
   import {
@@ -116,7 +119,15 @@
   });
 
   function label(npub: string): string {
-    return getProfileDisplayName($profiles[npub]) || npub.slice(0, 12) + '…';
+    return resolveShownName({
+      npub,
+      profile: $profiles[npub] ?? null,
+      chain: {
+        selfNpub: $currentUser?.npub,
+        usernameState: $usernameState,
+        peerClaims: $peerUsernameClaims,
+      },
+    }).name;
   }
 
   async function copyInboxNpub() {
@@ -228,7 +239,7 @@
     <ul class="holder-list">
       {#each inboxState.holders as npub (npub)}
         <li>
-          <span>{label(npub)}</span>
+          <span><VerifiedName {npub} /></span>
           {#if canManage && inboxState.holders.length > 1}
             <button
               type="button"

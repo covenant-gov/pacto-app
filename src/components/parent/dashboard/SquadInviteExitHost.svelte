@@ -8,9 +8,7 @@
     runInviteMembersToParent,
   } from '../../../lib/parent/invite-members-flow';
   import { runExitParent } from '../../../lib/parent/exit-parent-flow';
-  import { getProfileDisplayName } from '../../../lib/utils/profile';
   import { dmList, requestsList, pendingList } from '../../../stores/dm';
-  import { profiles } from '../../../stores/profiles';
   import { currentUser } from '../../../stores/auth-session';
   import { activeChannelId, activeSquadId } from '../../../stores/navigation';
   import { showToast } from '../../../stores/toast';
@@ -125,9 +123,6 @@
     });
   }
 
-  function getCandidateDisplayName(npub: string) {
-    return getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
-  }
 </script>
 
 <InviteToParentModal
@@ -145,7 +140,6 @@
   onClose={closeInviteModal}
   onInvite={handleInvite}
   onToggleCandidate={toggleInviteCandidate}
-  {getCandidateDisplayName}
 />
 
 <ExitParentModal

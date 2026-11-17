@@ -16,7 +16,11 @@
   } from '../../lib/wallet/backend-wallet';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import { getProfileAvatarSrc } from '../../lib/utils/profile';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import VerifiedName from '../profile/VerifiedName.svelte';
+  import { peerUsernameClaims } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
   import { appConfig } from '../../stores/app-config';
   import { listSquadMemberEvmInvokeArgs } from '../../lib/squad/squad-member-evm-share';
@@ -81,10 +85,22 @@
     return `0x${hex.toLowerCase()}`;
   }
 
+  function shownName(npub: string): string {
+    return resolveShownName({
+      npub,
+      profile: $profiles[npub] ?? null,
+      chain: {
+        selfNpub: $currentUser?.npub,
+        usernameState: $usernameState,
+        peerClaims: $peerUsernameClaims,
+      },
+    }).name;
+  }
+
   function sortedMemberNpubs(members: string[]): string[] {
     return [...members].sort((a, b) => {
-      const na = getProfileDisplayName($profiles[a]) || a;
-      const nb = getProfileDisplayName($profiles[b]) || b;
+      const na = shownName(a) || a;
+      const nb = shownName(b) || b;
       return na.localeCompare(nb, undefined, { sensitivity: 'base' });
     });
   }
@@ -292,7 +308,7 @@
             type="checkbox"
             checked={selectedMemberNpubs.includes(npub)}
             disabled={!addr}
-            aria-label={$t('governance.deploySafe.signerAriaLabel', { values: { name: getProfileDisplayName($profiles[npub]) || npub.slice(0, 12) } })}
+            aria-label={$t('governance.deploySafe.signerAriaLabel', { values: { name: shownName(npub) } })}
             onchange={() => toggleMember(npub)}
           />
           {#if getProfileAvatarSrc($profiles[npub])}
@@ -301,10 +317,7 @@
             <div class="deploy-safe-avatar deploy-safe-avatar-ph" aria-hidden="true"></div>
           {/if}
           <div class="deploy-safe-member-meta deploy-safe-member-meta--grow">
-            <span class="deploy-safe-member-name"
-              >{getProfileDisplayName($profiles[npub]) ||
-                (npub.length > 20 ? npub.slice(0, 14) + '…' : npub)}</span
-            >
+            <span class="deploy-safe-member-name"><VerifiedName {npub} /></span>
             <span class="deploy-safe-member-evm muted">{#if addr}{shortAddress(addr)}{/if}</span>
           </div>
         </li>

@@ -15,6 +15,7 @@ import { npubHashFromPubkey } from '../lib/evm/sponsor/nostr_claim_link';
 import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
 import { ZERO_ADDRESS } from '../lib/wallet/assets';
 import { getInvokeErrorMessage } from '../lib/utils/tauri-errors';
+import { chainUsernameFromRecord } from '../lib/username/shown-name';
 import { usernameClaimErrorMessage } from '../lib/username/username-claim-errors';
 import { publishBoundUsername } from '../lib/api/nostr';
 import { currentUser } from './auth-session';
@@ -91,14 +92,9 @@ export function computeUsernameVerified(input: {
   return chainEvm === active;
 }
 
-/** Chain name when this account still controls the NFT. The relay link is not required. */
-export function heldUsernameFromState(state: UsernameState): string | null {
-  const name = state.record?.name?.trim();
-  if (!name || !isNonZeroTokenId(state.record?.tokenId)) return null;
-  const chainEvm = normalizeHexAddr(state.record?.evmAddress);
-  const active = normalizeHexAddr(state.activeEvm);
-  if (!chainEvm || !active || chainEvm !== active) return null;
-  return name;
+/** Minted `recordOf` name. The active signer is not part of the displayed name. */
+export function mintedUsernameFromState(state: UsernameState): string | null {
+  return chainUsernameFromRecord(state.record?.name, state.record?.tokenId);
 }
 
 export function claimedUsernameFromState(state: UsernameState): string | null {

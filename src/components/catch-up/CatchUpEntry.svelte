@@ -11,7 +11,10 @@
   import { formatEventTimestampMs } from '../../lib/squad/squad-event-display';
   import { squads } from '../../stores/squads';
   import { profiles } from '../../stores/profiles';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
+  import { currentUser } from '../../stores/auth-session';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { showToast } from '../../stores/toast';
   import { backendDmMessages, activeDmTab } from '../../stores/dm';
   import { activeTopNavTab, activeView } from '../../stores/navigation';
@@ -46,6 +49,10 @@
     entry.kind === 'welcome' ? (resolvedWelcome?.target ?? null) : resolveCatchUpTarget(entry, $squads)
   );
 
+  $effect(() => {
+    if (target?.kind === 'dm') ensureShownName(target.npub);
+  });
+
   /** Where this entry opens: a squad/channel name, or a DM peer's display name. Event reminders show only the fire time. */
   let locationLabel = $derived.by(() => {
     if (entry.kind === 'welcome') return resolvedWelcome?.locationLabel ?? '';
@@ -55,7 +62,15 @@
     }
     if (!target || target.kind === 'dm-requests') return '';
     if (target.kind === 'dm') {
-      return getProfileDisplayName($profiles[target.npub]);
+      return resolveShownName({
+        npub: target.npub,
+        profile: $profiles[target.npub] ?? null,
+        chain: {
+          selfNpub: $currentUser?.npub,
+          usernameState: $usernameState,
+          peerClaims: $peerUsernameClaims,
+        },
+      }).name;
     }
     const squad = $squads.find((s) => s.id === target.squadId);
     if (target.kind === 'squad-governance') return squad?.name ?? '';

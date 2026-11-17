@@ -27,6 +27,7 @@ import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import { stripTrackingMarkersEnabled } from '../../stores/strip-tracking-markers';
 import { replyTargetExcerpt } from '../messaging/reply-quote';
+import { resolveShownName, type ShownNameContext } from '../username/shown-name';
 import { resolveInviteInviterNpub } from '../pacto-app-inbox';
 import type { DmMessage } from '../../stores/dm';
 
@@ -90,11 +91,12 @@ export function inviteInviterNpub(msg: DmMessage, threadId: string): string | nu
 export function getInviterDisplayFromNpub(
   inviterNpub: string | null | undefined,
   profilesMap: Record<string, NostrProfile | undefined>,
-  tFn: MessageFormatter = get(t)
+  tFn: MessageFormatter = get(t),
+  chain?: ShownNameContext | null,
 ): { inviterName: string; inviterAvatarSrc: string | null } {
   if (!inviterNpub) return { inviterName: tFn('messaging.message.someone'), inviterAvatarSrc: null };
   const profile = profilesMap[inviterNpub];
-  const inviterName = getProfileDisplayName(profile ?? null) || inviterNpub.slice(0, 12) + '…';
+  const inviterName = resolveShownName({ npub: inviterNpub, profile: profile ?? null, chain }).name;
   const inviterAvatarSrc = profile ? getProfileAvatarSrc(profile) : null;
   return { inviterName, inviterAvatarSrc };
 }
@@ -102,10 +104,11 @@ export function getInviterDisplayFromNpub(
 export function getInviterDisplay(
   msg: DmMessage,
   activeDmId: string | null,
-  profilesMap: Record<string, NostrProfile | undefined>
+  profilesMap: Record<string, NostrProfile | undefined>,
+  chain?: ShownNameContext | null,
 ): { inviterName: string; inviterAvatarSrc: string | null } {
   const otherNpub = msg.mine ? activeDmId : msg.npub ?? activeDmId;
-  return getInviterDisplayFromNpub(otherNpub, profilesMap);
+  return getInviterDisplayFromNpub(otherNpub, profilesMap, get(t), chain);
 }
 
 export function isInvitePresentation(p: DmMessagePresentation): boolean {
@@ -118,7 +121,8 @@ export function buildPlainMessageProps(
   profilesMap: Record<string, NostrProfile | undefined>,
   currentUserNpub: string | undefined,
   stripTracking: boolean = get(stripTrackingMarkersEnabled),
-  tFn: MessageFormatter = get(t)
+  tFn: MessageFormatter = get(t),
+  chain?: ShownNameContext | null,
 ) {
   const currentUserProfile = currentUserNpub ? profilesMap[currentUserNpub] : null;
   const base = {
@@ -138,6 +142,12 @@ export function buildPlainMessageProps(
     pending: msg.pending,
     failed: msg.failed,
   };
+  const nameFor = (personNpub: string, profile: NostrProfile | null | undefined) =>
+    resolveShownName({
+      npub: personNpub,
+      profile,
+      chain: { ...chain, selfNpub: currentUserNpub },
+    }).name;
   if (msg.mine) {
     base.authorName = tFn('messaging.message.authorYou');
     base.avatar = getProfileAvatarSrc(currentUserProfile) ?? '';
@@ -145,7 +155,7 @@ export function buildPlainMessageProps(
     const senderNpub = msg.npub ?? threadNpub;
     const senderProfile = senderNpub ? profilesMap[senderNpub] : null;
     base.authorNpub = senderNpub ?? '';
-    base.authorName = getProfileDisplayName(senderProfile);
+    base.authorName = senderNpub ? nameFor(senderNpub, senderProfile) : getProfileDisplayName(senderProfile);
     base.avatar = getProfileAvatarSrc(senderProfile) ?? '';
   }
   if (base.replyToId) {
@@ -155,7 +165,7 @@ export function buildPlainMessageProps(
     base.replyAuthorName = replyIsSelf
       ? tFn('messaging.message.authorYou')
       : replyNpub
-        ? getProfileDisplayName(profilesMap[replyNpub] ?? null)
+        ? nameFor(replyNpub, profilesMap[replyNpub] ?? null)
         : tFn('messaging.message.replyUnknown');
     base.replyPreview = replyTargetExcerpt(
       msg.replied_to_content,

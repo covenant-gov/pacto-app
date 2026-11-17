@@ -62,9 +62,7 @@
   import { initJoinInbox } from '../../lib/squad/join-inbox';
   import { applySquadCreateNetwork } from '../../lib/squad/squad-create-network';
   import { sendConsentFirstSquadInvite } from '../../lib/squad/consent-first-invite';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
   import { portal } from '../../lib/utils/portal';
-  import { profiles } from '../../stores/profiles';
   import { appConfig } from '../../stores/app-config';
   import { squadRecreateRequest } from '../../stores/squad-recreate';
   import { showCreateFailureToast } from '../../lib/squad-pair-create';
@@ -358,10 +356,6 @@
     } else {
       organizeSquadMembers = [...organizeSquadMembers, npub];
     }
-  }
-
-  function organizeMemberDisplayName(npub: string, fallbackName?: string) {
-    return fallbackName?.trim() || getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
   }
 
   function createSquadWithAnnouncements(
@@ -740,7 +734,7 @@
               checked={organizeSquadMembers.includes(entry.npub)}
               onchange={() => toggleOrganizeMember(entry.npub)}
             />
-            <span class="organize-member-name"><VerifiedName npub={entry.npub} fallback={organizeMemberDisplayName(entry.npub, entry.name)} /></span>
+            <span class="organize-member-name"><VerifiedName npub={entry.npub} /></span>
           </label>
         {/each}
       </div>

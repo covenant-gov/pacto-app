@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NostrProfile } from '../api/nostr';
-import { chainUsernameFromRecord, shownProfileName } from './shown-name';
+import { chainUsernameFromRecord, resolveShownName, shownProfileName } from './shown-name';
 
 function profile(partial: Partial<NostrProfile>): NostrProfile {
   return {
@@ -51,5 +51,54 @@ describe('shownProfileName', () => {
     expect(
       shownProfileName(profile({ name: 'kind0', display_name: 'Display' }), ''),
     ).toEqual({ name: 'kind0', verified: false });
+    expect(
+      shownProfileName(profile({ display_name: 'Display' }), null),
+    ).toEqual({ name: 'Display', verified: false });
+  });
+});
+
+describe('resolveShownName', () => {
+  const npub = 'npub1abc';
+  const record = { name: 'alice', tokenId: '1' };
+
+  it('uses the same minted record for the signed-in account and a peer', () => {
+    const self = resolveShownName({
+      npub,
+      profile: profile({ nickname: 'Nick', name: 'kind0' }),
+      chain: { selfNpub: npub, usernameState: { record }, peerClaims: {} },
+    });
+    const peer = resolveShownName({
+      npub,
+      profile: profile({ nickname: 'Nick', name: 'kind0' }),
+      chain: {
+        selfNpub: 'npub1other',
+        usernameState: { record: null },
+        peerClaims: { [npub]: { name: 'alice' } },
+      },
+    });
+    expect(self).toEqual({ name: 'alice', verified: true });
+    expect(peer).toEqual(self);
+  });
+
+  it('keeps nickname then kind 0 name then display_name when nothing is minted', () => {
+    expect(
+      resolveShownName({
+        npub,
+        profile: profile({ nickname: 'Nick', name: 'kind0', display_name: 'Display' }),
+        chain: { selfNpub: 'npub1other', peerClaims: { [npub]: { name: null } } },
+      }),
+    ).toEqual({ name: 'Nick', verified: false });
+    expect(
+      resolveShownName({
+        npub,
+        profile: profile({ name: 'kind0', display_name: 'Display' }),
+      }),
+    ).toEqual({ name: 'kind0', verified: false });
+    expect(
+      resolveShownName({
+        npub,
+        profile: profile({ display_name: 'Display' }),
+      }),
+    ).toEqual({ name: 'Display', verified: false });
   });
 });

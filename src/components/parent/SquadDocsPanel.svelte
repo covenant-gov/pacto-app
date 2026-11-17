@@ -15,6 +15,8 @@
   import { copyTextToClipboard } from '../../lib/utils/clipboard-copy';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { currentUser } from '../../stores/auth-session';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { squadDocReplicaNonceByParentId } from '../../stores/docs-hub-alerts';
   import { docsFocus } from '../../stores/docs-navigation';
   import { squadPrivilegeNonceByParentId } from '../../stores/squad-privilege-refresh';
@@ -152,6 +154,7 @@
   $effect(() => {
     for (const doc of docs) {
       for (const npub of [doc.authorNpub, doc.updatedByNpub]) {
+        if (npub) ensureShownName(npub);
         if (!npub || $profiles[npub] || requestedProfiles.has(npub)) continue;
         requestedProfiles.add(npub);
         void loadProfile(npub).catch(() => {});
@@ -160,7 +163,11 @@
   });
 
   function memberName(npub: string): string {
-    return memberDisplayLabel(npub, $profiles[npub], selfNpub, youLabel);
+    return memberDisplayLabel(npub, $profiles[npub], selfNpub, youLabel, {
+      selfNpub,
+      usernameState: $usernameState,
+      peerClaims: $peerUsernameClaims,
+    });
   }
 
   async function copyLink(doc: SquadDocDto): Promise<void> {

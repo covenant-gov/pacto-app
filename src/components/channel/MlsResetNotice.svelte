@@ -1,9 +1,8 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import { currentUser } from '../../stores/auth-session';
-  import { profiles } from '../../stores/profiles';
   import type { MlsStoreResetGroupState } from '../../lib/api/nostr';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import { requestSquadRecreate } from '../../stores/squad-recreate';
 
   let { state, squadName = '', formerMemberNpubs = [] }: {
@@ -18,10 +17,6 @@
     const memberNpubs = formerMemberNpubs.filter((npub) => npub && npub !== currentUserNpub);
     requestSquadRecreate({ name: squadName, memberNpubs });
   }
-
-  function adminName(npub: string): string {
-    return getProfileDisplayName($profiles[npub]) || $t('messaging.channel.mlsResetUnknownAdmin');
-  }
 </script>
 
 <section class="mls-reset-notice" role="status" aria-live="polite" data-testid="mls-reset-notice">
@@ -31,7 +26,7 @@
     <ul aria-label={$t('messaging.channel.mlsResetAdminListLabel')}>
       {#each state.adminNpubs as npub (npub)}
         <li>
-          <span>{adminName(npub)}</span>
+          <span><VerifiedName {npub} /></span>
           <code>{npub}</code>
         </li>
       {/each}
@@ -47,7 +42,7 @@
     {:else}
       <p>{$t('messaging.channel.mlsResetSingleAdminOther')}</p>
       <div class="single-admin">
-        <span>{adminName(admin)}</span>
+        <span><VerifiedName npub={admin} /></span>
         <code>{admin}</code>
       </div>
     {/if}

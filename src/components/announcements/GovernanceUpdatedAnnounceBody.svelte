@@ -12,7 +12,10 @@
   } from '../../lib/wallet/assets';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { profiles } from '../../stores/profiles';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
+  import { currentUser } from '../../stores/auth-session';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import { shortEvmAddress as shortAddr } from '../../lib/governance/hats-tree-annotations';
 
   let {
@@ -28,6 +31,24 @@
   } = $props();
 
   const tFn = get(t);
+
+  $effect(() => {
+    if (authorNpub) ensureShownName(authorNpub);
+  });
+
+  const displayName = $derived(
+    (authorNpub
+      ? resolveShownName({
+          npub: authorNpub,
+          profile: $profiles[authorNpub] ?? null,
+          chain: {
+            selfNpub: $currentUser?.npub,
+            usernameState: $usernameState,
+            peerClaims: $peerUsernameClaims,
+          },
+        }).name
+      : '') || authorName || tFn('announcements.governanceUpdated.aMember'),
+  );
 
   function txHashFromProviderPayload(raw: string | undefined): string {
     if (!raw?.trim()) return '';
@@ -56,9 +77,6 @@
     }
   }
 
-  const displayName = $derived(
-    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || tFn('announcements.governanceUpdated.aMember')
-  );
   const chainId = $derived(parseSupportedChainId(payload.chain));
   const networkLabel = $derived(getWalletNetworkDisplayName(chainId));
   const contractAddr = $derived(payload.canonical_ref?.trim() ?? '');

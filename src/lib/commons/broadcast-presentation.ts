@@ -1,6 +1,7 @@
 import type { NostrProfile } from '../api/nostr';
 import type { Squad } from '../../stores/squads';
-import { getProfileDisplayName, getProfileAvatarSrc } from '../utils/profile';
+import { getProfileAvatarSrc } from '../utils/profile';
+import { resolveShownName, type ShownNameContext } from '../username/shown-name';
 import { commonsJoinRequestBlockReason, isJoinRequestInFlight, squadIdFromBroadcast } from './commons-join-request';
 import type { CommonsBroadcastDto } from './types';
 
@@ -32,17 +33,24 @@ export function computeBroadcastPresentation(
   currentNpub: string | undefined,
   tFn: (key: string, opts?: Record<string, unknown>) => string,
   hasExistingDm = false,
-  authorBlocked = false
+  authorBlocked = false,
+  chain?: ShownNameContext | null,
 ): BroadcastPresentation {
   const isSquad = broadcast.subject === 'squad';
   const isUser = broadcast.subject === 'user';
   const userProfile = isUser ? profileRecord[broadcast.authorNpub] : null;
-  const userLabel =
-    isUser && userProfile
-      ? getProfileDisplayName(userProfile) || broadcast.authorNpub.slice(0, 16) + '…'
-      : isUser
-        ? broadcast.authorNpub.slice(0, 16) + '…'
-        : '';
+  const shownUser = isUser
+    ? resolveShownName({
+        npub: broadcast.authorNpub,
+        profile: userProfile,
+        chain: { ...chain, selfNpub: currentNpub },
+      })
+    : null;
+  const userLabel = !isUser
+    ? ''
+    : shownUser?.verified || userProfile
+      ? shownUser?.name ?? ''
+      : broadcast.authorNpub.slice(0, 16) + '…';
   const squadLabel = broadcast.squadName ?? tFn('commons.card.squadDefault');
   const title = isSquad ? squadLabel : userLabel;
   const coverImage = getProfileAvatarSrc(userProfile);
@@ -63,7 +71,7 @@ export function computeBroadcastPresentation(
   const canMessage =
     isUser && !!myNpub && broadcast.authorNpub !== myNpub && !authorBlocked;
   const canJoin = isSquad && !joinBlockReason && !!myNpub;
-  const profileName = userProfile ? getProfileDisplayName(userProfile) : '';
+  const profileName = shownUser?.verified || userProfile ? (shownUser?.name ?? '') : '';
   const greetingName = profileName && !profileName.startsWith('npub1') ? profileName : '';
 
   return {

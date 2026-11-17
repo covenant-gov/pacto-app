@@ -25,7 +25,6 @@
     onChooseClosed?: () => void;
     onCreateClosed?: () => void;
     onToggleMember?: (npub: string) => void;
-    getMemberDisplayName?: (npub: string) => string;
   }
 
   let {
@@ -49,7 +48,6 @@
     onChooseClosed = () => {},
     onCreateClosed = () => {},
     onToggleMember = () => {},
-    getMemberDisplayName = (npub) => npub,
   }: Props = $props();
 
   const titleId = 'create-channel-modal-title';
@@ -157,7 +155,7 @@
                   onchange={() => onToggleMember(npub)}
                   disabled={creating}
                 />
-                <span class="create-channel-member-name"><VerifiedName {npub} fallback={getMemberDisplayName(npub)} /></span>
+                <span class="create-channel-member-name"><VerifiedName {npub} /></span>
               </label>
             {/each}
           {/if}

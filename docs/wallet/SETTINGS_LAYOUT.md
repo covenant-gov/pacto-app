@@ -10,7 +10,7 @@ The DM **WalletBar** stays peer-context send. It is not this page.
 
 | Block | Contents |
 |--------|----------|
-| Identity | Kind 0 edit (avatar and bio; name is read-only once a username is held), npub copy and key export, one heading. A check on that heading means this account holds the chain username. The block stays visible during the relay check, including the account ID and Edit, with a corner spinner while that check is in flight |
+| Identity | Kind 0 edit (avatar and bio; name is read-only once a username is minted), npub copy and key export, one heading. A check on that heading means this npub has a minted username. The block stays visible during kind 0 load, including the account ID, with a corner spinner while that load is in flight. Edit stays disabled until the username chain read is ready or has failed |
 | Pacto NFT strip | Known Pacto contracts only (catalog from `pacto-protocol-addresses.json`). v1: Username card when claimed (name, token, bound EVM, pending line). Click opens the username view for claim or address rotation. Empty slot is the claim call to action |
 | Wallet hero | Selected squad `0x` as plain text (chevron menu to switch when multiple accounts; viewing-only), total, then the shared balance list (quiet network menu when more than one chain is enabled; add, scan, and remove tokens from that list). Send (any `0x`) and Receive (share address; no QR) sit under the rows. Token send only — not Username NFT address rotation |
 | Squad EVM | Default signer/receiver (`DefaultWalletConfig`) and squad account rows (add/edit/label/export key) |

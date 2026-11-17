@@ -2,7 +2,7 @@ import { get, writable } from 'svelte/store';
 import { usernameRecordForNpub } from '../lib/api/username';
 import { chainUsernameFromRecord } from '../lib/username/shown-name';
 import { currentUser } from './auth-session';
-import { USERNAME_NETWORK } from './username';
+import { ensureOwnUsername, USERNAME_NETWORK } from './username';
 
 export type PeerUsernameClaim = {
   /** Null when the npub has no minted username. */
@@ -34,7 +34,7 @@ function start(npub: string): void {
       remember(npub, chainUsernameFromRecord(record.name, record.tokenId));
     })
     .catch(() => {
-      remember(npub, null);
+      // Leave the key unloaded so the next ensure retries.
     })
     .finally(() => finish(npub));
   inflight.set(npub, job);
@@ -48,6 +48,14 @@ function pump(): void {
   }
 }
 
+/** Clears the session cache and any queued reads. */
+export function resetPeerUsernames(): void {
+  peerUsernameClaims.set({});
+  inflight.clear();
+  waiting.length = 0;
+  active = 0;
+}
+
 /** Session cache of other accounts' username records. The signed-in account uses usernameState. */
 export function ensurePeerUsername(npub: string): void {
   const key = npub.trim();
@@ -58,4 +66,12 @@ export function ensurePeerUsername(npub: string): void {
   if (inflight.has(key) || waiting.includes(key)) return;
   waiting.push(key);
   pump();
+}
+
+/** One fetch entry for a person name: own record, or another account's record. */
+export function ensureShownName(npub: string): void {
+  const key = npub.trim();
+  if (!key) return;
+  if (get(currentUser)?.npub === key) ensureOwnUsername();
+  else ensurePeerUsername(key);
 }

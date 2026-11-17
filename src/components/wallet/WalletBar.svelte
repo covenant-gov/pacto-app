@@ -12,7 +12,9 @@
   } from '../../lib/wallet/wallet-peer-exchange';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
-  import { getProfileDisplayName } from '../../lib/utils/profile';
+  import { resolveShownName } from '../../lib/username/shown-name';
+  import { peerUsernameClaims, ensureShownName } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import {
     getWalletSummary,
     WALLET_ASSETS_CHAIN_IDS,
@@ -62,19 +64,24 @@
   /** Form prefill when opening Send from Accept on a payment request card. */
   let sendModalPrefill: WalletSendPrefillPayload | null = $state(null);
 
-  function truncateNpub(n: string): string {
-    if (n.length <= 16) return n;
-    return n.slice(0, 8) + '…' + n.slice(-4);
-  }
-
   const contactProfile = $derived(npub ? $profiles[npub] : null);
   const contactDisplayName = $derived(
-    contactProfile
-      ? getProfileDisplayName(contactProfile)
-      : npub
-        ? truncateNpub(npub)
-        : tFn('wallet.anonymous')
+    npub
+      ? resolveShownName({
+          npub,
+          profile: contactProfile,
+          chain: {
+            selfNpub: $currentUser?.npub,
+            usernameState: $usernameState,
+            peerClaims: $peerUsernameClaims,
+          },
+        }).name
+      : tFn('wallet.anonymous'),
   );
+
+  $effect(() => {
+    if (npub) ensureShownName(npub);
+  });
 
   let summaryLoading = $state(true);
   let summaryError: string | null = $state(null);

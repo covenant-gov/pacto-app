@@ -66,7 +66,7 @@ Content = username. Tags (relay/UX only; chain does not parse them):
 
 Typed wrappers: `src/lib/api/username.ts`.
 
-Reads: `username_name_available`, `username_can_bootstrap_claim`, `username_npub_of`, `username_record_of`, `username_eligible_member`, `username_is_pending_transfer`, `username_*_spendable_pool_wei`, `username_used_nonce`, `username_get_cached_claim`, `username_sync_account_state` (one provider: cache row, `recordOf`, `isPendingTransfer`, and `policyVersion` only when the claim row is missing or drifted).
+Reads: `username_name_available`, `username_can_bootstrap_claim`, `username_npub_of`, `username_record_of`, `username_record_for_npub`, `username_eligible_member`, `username_is_pending_transfer`, `username_*_spendable_pool_wei`, `username_used_nonce`, `username_get_cached_claim`, `username_sync_account_state` (one provider: cache row, `recordOf`, `isPendingTransfer`, and `policyVersion` only when the claim row is missing or drifted).
 
 Writes: `username_claim`, `username_initiate_address_transfer`, `username_claim_address_transfer`, `username_cancel_address_transfer`.
 
@@ -76,14 +76,14 @@ SQLite cache: `username_claims` (username, npubHash, tokenId, link event id, pol
 
 - **Claimed username** (on-chain NFT): any non-empty string up to **64 UTF-8 bytes** client-side (chain: unique + not reserved; NIP-01 style — no charset). Trim only; **do not** force lowercase (names are case-sensitive on-chain). The name is immutable after claim.
 - **After a successful claim,** the client publishes kind 0 with both `name` and `display_name` set to that chain username. Profile edit can still change avatar and bio. It cannot write a different name while this account holds the NFT.
-- **One name in the UI.** No claim: kind 0 `display_name`, else `name`, with no check. Claim held by this account (chain record, non-zero token, bound EVM is the active roster address): the chain name, with a check. A missing kind 31337 link does not hide the check.
-- **Other people.** `username_record_for_npub` reads `recordOf` for that npub. A minted record replaces nickname and kind 0 for display and shows the check. Session cache, including misses. The signed-in account uses the local username store.
-- **Profile.** The identity heading is the only name. Claim and address rotation live in the username view opened from the Pacto NFTs card. The empty slot is the claim call to action. What the kind 0 name should become after the NFT leaves the account is undecided.
+- **One name in the UI.** No claim: nickname, then kind 0 `name`, then `display_name`, with no check. A minted chain record (non-empty name, non-zero token) is the name, with a check, for this account and for everyone else. The active roster signer is not part of that check. A missing kind 31337 link does not hide the check.
+- **Other people.** `username_record_for_npub` reads `recordOf` for that npub. A minted record replaces nickname and kind 0. The session cache stores confirmed misses. A failed read is not stored, so the next lookup tries again. The signed-in account uses the same minted-record rule on its local username record, not the peer cache.
+- **Profile.** The identity heading is the only name. The profile stays visible while that chain read is in flight. Edit is disabled until the read is ready or has failed. The name field locks only when a minted record is present. Claim and address rotation live in the username view opened from the Pacto NFTs card. The empty slot is the claim call to action. What the kind 0 name should become after the NFT leaves the account is undecided.
 - **Session pubkey for `npubHash`:** `currentUser.pubkey` must be the 32-byte hex x-only key (`LoginKeyPair.pubkey_hex`), not the bech32 npub. Hash is `sha256(0x02 || pubkey)`.
 
-## Verified badge
+## Link restore
 
-Requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` with `evmAddress` equal to the active roster EVM. Holder sync fills a missing `linkEventId` from trusted relays that are currently in the pool (kind 31337, `#d` = npub hash) when the author and `evm` / `name` / `npub-hash` tags match `recordOf`. Publish uses the same in-pool set. Failed restore fetches are skipped for 5 minutes (process-local); an explicit refresh on claimed-unverified (missing link) forces a new fetch. Overlapping restores return the live cache row so a skipped UPDATE cannot clobber a restored `linkEventId`. A relay that dropped the event cannot be rebuilt from the chain.
+The name check does not use this. Kind 31337 is the sponsorship link. Restore requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` with `evmAddress` equal to the active roster EVM. Holder sync fills a missing `linkEventId` from trusted relays that are currently in the pool (kind 31337, `#d` = npub hash) when the author and `evm` / `name` / `npub-hash` tags match `recordOf`. Publish uses the same in-pool set. Failed restore fetches are skipped for 5 minutes (process-local); an explicit refresh on a minted record with a missing link forces a new fetch. Overlapping restores return the live cache row so a skipped UPDATE cannot clobber a restored `linkEventId`. A relay that dropped the event cannot be rebuilt from the chain.
 
 ## Profile UX (address rotation)
 

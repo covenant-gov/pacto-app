@@ -4,7 +4,8 @@
   import type { Mention } from '../../lib/messaging/mentions';
   import { resolveDmMessagePresentation } from '../../lib/dm/resolve-dm-message-presentation';
   import DmMessageRouter from './DmMessageRouter.svelte';
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import { getProfileAvatarSrc } from '../../lib/utils/profile';
+  import { resolveShownName } from '../../lib/username/shown-name';
   import VerifiedName from '../profile/VerifiedName.svelte';
   import {
     parseWalletPeerInfoGrant,
@@ -27,6 +28,8 @@
   import { replyTargetExcerpt } from '../../lib/messaging/reply-quote';
   import { toggleDmBlock } from '../../lib/api/nostr';
   import { profiles } from '../../stores/profiles';
+  import { peerUsernameClaims } from '../../stores/peer-username';
+  import { usernameState } from '../../stores/username';
   import {
     activeDmTab,
     lastOpenedDmByTab,
@@ -433,11 +436,17 @@
   let peerBlockedByMe = $derived(contactProfile?.blocked === true);
   let contactAvatarSrc = $derived(getProfileAvatarSrc(contactProfile));
   let contactDisplayName = $derived(
-    contactProfile
-      ? getProfileDisplayName(contactProfile)
-      : npub
-        ? truncateNpub(npub)
-        : $t('messaging.message.replyUnknown')
+    npub
+      ? resolveShownName({
+          npub,
+          profile: contactProfile,
+          chain: {
+            selfNpub: $currentUser?.npub,
+            usernameState: $usernameState,
+            peerClaims: $peerUsernameClaims,
+          },
+        }).name
+      : $t('messaging.message.replyUnknown'),
   );
 
   let menuOpen = $state(false);
@@ -562,7 +571,7 @@
           <div class="dm-thread-title-left">
             <h3 class="dm-thread-title">
               {#if npub}
-                <VerifiedName {npub} fallback={contactDisplayName} />
+                <VerifiedName {npub} />
               {:else}
                 {contactDisplayName}
               {/if}
