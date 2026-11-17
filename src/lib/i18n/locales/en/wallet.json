@@ -26,6 +26,7 @@
 	"wallet.exportKey": "Export key",
 	"wallet.accountActionsMenu": "Account actions",
 	"wallet.editAccountName": "Edit account name",
+	"wallet.defaultFirstAccountName": "Account 1",
 	"wallet.editDisplayName": "Edit display name",
 	"wallet.copyAddressToClipboard": "Copy address to clipboard",
 	"wallet.copyAddress": "Copy address",

@@ -8,6 +8,7 @@
     listEvmAccounts,
     addEvmAccountRow,
     updateEvmAccountRow,
+    evmAccountDisplayName,
     squadEvmAccounts,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
@@ -74,7 +75,7 @@
   function openEditAccountModal(acc: EvmAccountRow) {
     accountFormMode = 'edit';
     accountFormEditId = acc.id;
-    accountFormLabel = acc.label ?? '';
+    accountFormLabel = acc.label?.trim() || evmAccountDisplayName(acc);
   }
 
   async function submitAccountForm() {
