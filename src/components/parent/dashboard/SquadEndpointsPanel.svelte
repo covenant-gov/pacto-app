@@ -17,6 +17,7 @@
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import {
+    consumeSquadSettingsBundlerFocus,
     squadSettingsBundlerFocusNonce,
     squadSettingsRpcFocusNonce,
   } from '../../../stores/navigation';
@@ -57,7 +58,6 @@
   let bundlerFormError = $state('');
   let bundlerSaving = $state(false);
   let bundlerInputEl = $state<HTMLInputElement | null>(null);
-  let lastBundlerFocusNonce = $state(0);
 
   const rpcLabelRaw = $derived(formatSquadRpcLabel(squadRpcConfig));
   const rpcLabel = $derived(
@@ -93,9 +93,9 @@
   });
 
   $effect(() => {
-    const nonce = $squadSettingsBundlerFocusNonce;
-    if (nonce <= lastBundlerFocusNonce) return;
-    lastBundlerFocusNonce = nonce;
+    // Subscribe so remounts re-run when the store nonce bumps.
+    void $squadSettingsBundlerFocusNonce;
+    if (!consumeSquadSettingsBundlerFocus()) return;
     openBundlerEdit();
     if (typeof document !== 'undefined') {
       queueMicrotask(() => {

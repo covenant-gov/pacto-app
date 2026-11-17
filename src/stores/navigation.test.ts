@@ -20,6 +20,8 @@ import {
   focusSquadSettingsRpcEditor,
   squadSettingsBundlerFocusNonce,
   focusSquadSettingsBundlerEditor,
+  consumeSquadSettingsBundlerFocus,
+  resetSquadSettingsBundlerFocusConsumption,
   squadSettingsNetworkFocusNonce,
   squadSettingsNetworkFocusSlot,
   focusSquadSettingsNetworkEditor,
@@ -50,6 +52,16 @@ import {
 } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
 import { parseSquadNavOrder } from '../lib/squad/squad-nav-order';
+import { squads, type Squad } from './squads';
+
+const testSquad: Squad = {
+  id: 'squad-fallback',
+  name: 'Fallback',
+  channels: [],
+  kind: 'squad',
+  createdAt: 0,
+  updatedAt: 0,
+};
 
 function mockStorage() {
   const store = new Map<string, string>();
@@ -84,11 +96,13 @@ describe('navigation', () => {
     squadToolsChannelMode.set('polls');
     squadSettingsRpcFocusNonce.set(0);
     squadSettingsBundlerFocusNonce.set(0);
+    resetSquadSettingsBundlerFocusConsumption();
     squadSettingsNetworkFocusNonce.set(0);
     squadSettingsNetworkFocusSlot.set('primary');
     profileUsernameFocusNonce.set(0);
     resetProfileUsernameFocusConsumption();
     showMembersPanel.set(false);
+    squads.set([]);
     lastOpenedSquadId.set(null);
     lastOpenedChannelId.set(null);
     lastChannelBySquadId.set({});
@@ -263,6 +277,7 @@ describe('navigation', () => {
   });
 
   it('focusSquadSettingsBundlerEditor opens #settings → Network and bumps the bundler focus nonce', () => {
+    squads.set([testSquad]);
     activeTopNavTab.set('commons');
     activeView.set('profile');
     lastOpenedSquadId.set('squad-fallback');
@@ -277,6 +292,30 @@ describe('navigation', () => {
     expect(get(squadSettingsBundlerFocusNonce)).toBe(1);
     focusSquadSettingsBundlerEditor();
     expect(get(squadSettingsBundlerFocusNonce)).toBe(2);
+  });
+
+  it('focusSquadSettingsBundlerEditor no-ops when no squad is available', () => {
+    squads.set([]);
+    activeTopNavTab.set('commons');
+    activeView.set('profile');
+    lastOpenedSquadId.set('stale-id');
+    settingsChannelMode.set('you');
+    focusSquadSettingsBundlerEditor();
+    expect(get(activeTopNavTab)).toBe('commons');
+    expect(get(activeView)).toBe('profile');
+    expect(get(activeChannelId)).toBeNull();
+    expect(get(squadSettingsBundlerFocusNonce)).toBe(0);
+  });
+
+  it('consumeSquadSettingsBundlerFocus only returns true once per bump', () => {
+    squads.set([testSquad]);
+    resetSquadSettingsBundlerFocusConsumption();
+    expect(consumeSquadSettingsBundlerFocus()).toBe(false);
+    focusSquadSettingsBundlerEditor();
+    expect(consumeSquadSettingsBundlerFocus()).toBe(true);
+    expect(consumeSquadSettingsBundlerFocus()).toBe(false);
+    focusSquadSettingsBundlerEditor();
+    expect(consumeSquadSettingsBundlerFocus()).toBe(true);
   });
 
   it('bumpGovernanceProcessNonce increments per parent and ignores blank ids', () => {

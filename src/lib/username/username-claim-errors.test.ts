@@ -41,12 +41,20 @@ describe('username claim errors', () => {
     expect(isUsernameBundlerConfigError(err)).toBe(true);
   });
 
-  it('treats raw Pimlico text as a bundler config error', () => {
+  it('treats raw Pimlico text as a bundler config error when no wallet code is present', () => {
     expect(isUsernameBundlerConfigError(new Error('Add a Pimlico API key'))).toBe(true);
   });
 
   it('does not treat unrelated claim errors as bundler config', () => {
     const err = JSON.stringify({ code: 'USERNAME_TAKEN', message: 'taken' });
+    expect(isUsernameBundlerConfigError(err)).toBe(false);
+  });
+
+  it('ignores Pimlico text when another wallet code is present', () => {
+    const err = JSON.stringify({
+      code: 'USERNAME_TAKEN',
+      message: 'taken; also mentions Pimlico',
+    });
     expect(isUsernameBundlerConfigError(err)).toBe(false);
   });
 
@@ -60,6 +68,14 @@ describe('username claim errors', () => {
     runToastRetryAction();
     expect(mocks.focusSquadSettingsBundlerEditor).toHaveBeenCalledTimes(1);
     expect(get(toastMessage)).toBeNull();
+  });
+
+  it('dismiss clears the bundler toast without opening Sponsored gas', () => {
+    showUsernameClaimErrorToast(JSON.stringify({ code: 'BUNDLER_CONFIG', message: 'missing' }));
+    expect(get(toastMessage)?.retryLabel).toBe('profile.username.openSponsoredGas');
+    clearToast();
+    expect(get(toastMessage)).toBeNull();
+    expect(mocks.focusSquadSettingsBundlerEditor).not.toHaveBeenCalled();
   });
 
   it('shows a plain error toast for non-bundler failures without a settings action', () => {

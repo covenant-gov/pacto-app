@@ -28,7 +28,7 @@ const CODE_TO_I18N: Record<string, string> = {
 /** True when claim failed because sponsored gas / Pimlico is not configured. */
 export function isUsernameBundlerConfigError(e: unknown): boolean {
   const code = parseWalletErrorCode(e);
-  if (code === 'BUNDLER_CONFIG') return true;
+  if (code) return code === 'BUNDLER_CONFIG';
   const raw = getInvokeErrorMessage(e, '');
   return raw.includes('BUNDLER_CONFIG') || raw.includes('Pimlico');
 }
