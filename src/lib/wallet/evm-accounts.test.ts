@@ -6,7 +6,6 @@ import {
   importEvmAccountRow,
   updateEvmAccountRow,
   setActiveEvmAccount,
-  setDefaultSharedEvmAccount,
   setActiveAdvancedEvmAccount,
   advancedEvmAccounts,
   evmAccountPurposeLabel,
@@ -318,12 +317,6 @@ describe('evm-accounts command wrappers', () => {
     mockedInvoke.mockResolvedValueOnce(undefined);
     await setActiveEvmAccount('1');
     expect(mockedInvoke).toHaveBeenCalledWith('set_active_evm_account', { accountId: '1' });
-  });
-
-  it('setDefaultSharedEvmAccount sends set_default_shared_evm_account', async () => {
-    mockedInvoke.mockResolvedValueOnce(undefined);
-    await setDefaultSharedEvmAccount('1');
-    expect(mockedInvoke).toHaveBeenCalledWith('set_default_shared_evm_account', { accountId: '1' });
   });
 
   it('setActiveAdvancedEvmAccount sends set_active_advanced_evm_account', async () => {

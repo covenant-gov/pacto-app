@@ -3,9 +3,12 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import { shortEvmAddress } from '../governance/hats-tree-annotations';
+
+/** Bump so Profile and the DM wallet reload after the primary account changes. */
+export const primaryEvmAccountTick = writable(0);
 
 export type EvmAccountPurpose = 'squad' | 'advanced';
 
@@ -154,10 +157,7 @@ export async function updateEvmAccountRow(params: {
 
 export async function setActiveEvmAccount(accountId: string): Promise<void> {
   await invoke('set_active_evm_account', { accountId });
-}
-
-export async function setDefaultSharedEvmAccount(accountId: string): Promise<void> {
-  await invoke('set_default_shared_evm_account', { accountId });
+  primaryEvmAccountTick.update((n) => n + 1);
 }
 
 export async function setActiveAdvancedEvmAccount(accountId: string): Promise<void> {

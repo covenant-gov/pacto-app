@@ -343,7 +343,7 @@
 	"messaging.pendingWelcome.memberCount": "{count, plural, =0 {No members yet} one {1 member} other {{count} members}}",
 	"messaging.pendingWelcome.sectionLabel": "Group invitations awaiting a decision",
 	"messaging.squadRosterKey.ariaLabel": "Squad signer setup",
-	"messaging.squadRosterKey.defaultError": "Could not bind default squad signer. Check Settings → Default wallet config.",
+	"messaging.squadRosterKey.defaultError": "Could not bind the squad signer. Check the primary account on Profile.",
 	"messaging.squadRosterKey.defaultSuccess": "Squad signer set (default account).",
 	"messaging.squadRosterKey.defer": "Defer",
 	"messaging.squadRosterKey.description": "Choose which squad-purpose EVM address members see for this group. This does not change your DM wallet signer unless you pick the default account.",

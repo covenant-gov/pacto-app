@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
@@ -7,7 +8,9 @@
   import WalletReceiveModal from '../wallet/WalletReceiveModal.svelte';
   import WalletBalanceList from '../wallet/WalletBalanceList.svelte';
   import WalletImportTokensModal from '../wallet/WalletImportTokensModal.svelte';
-  import AccountPicker from './AccountPicker.svelte';
+  import AccountPicker from '../wallet/AccountPicker.svelte';
+  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
+  import { showToast } from '../../stores/toast';
   import {
     getWalletSummary,
     WALLET_ASSETS_CHAIN_IDS,
@@ -17,7 +20,7 @@
   import { walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
   import { walletWatchedTokensTick } from '../../lib/wallet/watched-tokens';
   import { loadWalletViewPrefs } from '../../lib/wallet/wallet-view-prefs';
-  import { squadEvmAccounts, type EvmAccountRow } from '../../lib/wallet/evm-accounts';
+  import { setActiveEvmAccount, squadEvmAccounts, type EvmAccountRow } from '../../lib/wallet/evm-accounts';
   import {
     PROFILE_NETWORK_FILTER_PREFIX,
     coerceNetworkFilter,
@@ -39,23 +42,28 @@
   let { accountNpub, evmAccountList = [] }: Props = $props();
 
   const squadAccounts = $derived(squadEvmAccounts(evmAccountList));
-  const defaultAccount = $derived(
-    squadAccounts.find((a) => a.isDefaultShared) ?? squadAccounts.find((a) => a.isActive) ?? squadAccounts[0] ?? null,
+  const primaryAccount = $derived(
+    squadAccounts.find((a) => a.isActive) ?? squadAccounts[0] ?? null,
   );
 
   let selectedAccountId = $state('');
 
   $effect(() => {
-    const ids = new Set(squadAccounts.map((a) => a.id));
-    if (selectedAccountId && ids.has(selectedAccountId)) return;
-    selectedAccountId = defaultAccount?.id ?? '';
+    const id = primaryAccount?.id ?? '';
+    if (id) selectedAccountId = id;
   });
 
-  const viewedAccount = $derived(squadAccounts.find((a) => a.id === selectedAccountId) ?? defaultAccount);
+  const viewedAccount = $derived(squadAccounts.find((a) => a.id === selectedAccountId) ?? primaryAccount);
   const viewedAddress = $derived(viewedAccount?.address?.trim() || null);
 
-  function selectAccount(id: string) {
-    selectedAccountId = id;
+  async function selectAccount(id: string) {
+    if (!id || id === selectedAccountId) return;
+    try {
+      await setActiveEvmAccount(id);
+      showToast(get(t)('wallet.primaryAccountSaved'));
+    } catch (e) {
+      showToast(getInvokeErrorMessage(e, get(t)('wallet.couldNotSetPrimaryAccount')));
+    }
   }
 
   const prefs = $derived.by(() => {

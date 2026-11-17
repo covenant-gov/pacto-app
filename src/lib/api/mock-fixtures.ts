@@ -246,7 +246,6 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
   get_active_squad_evm_signer_address: () => null,
   get_active_advanced_evm_signer_address: () => null,
   set_active_evm_account: () => undefined,
-  set_default_shared_evm_account: () => undefined,
   set_active_advanced_evm_account: () => undefined,
   add_evm_account_row: () => ({
     id: 'mock',

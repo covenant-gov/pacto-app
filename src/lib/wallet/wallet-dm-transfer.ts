@@ -37,6 +37,8 @@ export interface WalletDmTransferAfterBroadcastParams {
   txHash: string;
   fromNpub: string;
   requestId?: string;
+  /** Destination `0x` that was paid. Included on the announcement when set. */
+  toEvm?: string;
   sendDm: (content: string) => Promise<boolean>;
   onBalanceRefresh?: () => void | Promise<void>;
 }
@@ -71,6 +73,7 @@ function announcementContent(params: {
   fromNpub: string;
   peerNpub: string;
   fromEvm: string;
+  toEvm?: string;
   requestId?: string;
   blockNumber?: string;
 }): string {
@@ -82,6 +85,7 @@ function announcementContent(params: {
     from_npub: params.fromNpub,
     to_npub: params.peerNpub,
     from_evm_address: params.fromEvm,
+    ...(params.toEvm ? { to_evm_address: params.toEvm } : {}),
     ...(params.requestId ? { request_id: params.requestId } : {}),
     ...(params.blockNumber ? { block_number: params.blockNumber } : {}),
   });
@@ -118,6 +122,7 @@ function applyConfirmedWalletTx(
     fromNpub: params.fromNpub,
     peerNpub: params.peerNpub,
     fromEvm,
+    toEvm: params.toEvm,
     requestId: params.requestId,
     blockNumber,
   });
@@ -184,6 +189,7 @@ export async function finalizeWalletDmTransferAfterBroadcast(
     fromNpub: params.fromNpub,
     peerNpub: params.peerNpub,
     fromEvm,
+    toEvm: params.toEvm,
     requestId: params.requestId,
   });
   appendPendingOutboundDmMessage(params.peerNpub, optimisticContent);
@@ -247,6 +253,7 @@ export function resumePendingWalletTxConfirmations(
           txHash: ann.tx_hash,
           fromNpub: ctx.fromNpub,
           requestId: ann.request_id,
+          toEvm: ann.to_evm_address,
           sendDm: ctx.sendDm,
           onBalanceRefresh: ctx.onBalanceRefresh,
         };

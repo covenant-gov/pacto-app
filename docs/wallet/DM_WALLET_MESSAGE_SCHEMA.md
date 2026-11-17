@@ -12,22 +12,23 @@ This document defines the **machine-readable `content`** for DM-only wallet mess
 
 They are **not** the same envelope as squad/network **`# announcements`** messages (`parseAnnouncement` in `src/lib/announcements.ts`). Wallet DM payloads live in **1:1 DM threads** and use the same general idea as other structured DMs (`squad_invite`, `channel_in_squad`, …): **one JSON object** in `content`, UTF-8, with a top-level `type` string discriminator.
 
-**Privacy:** Kind 0 profile metadata does **not** publish EVM addresses. DM Send/Request unlock only after both sides have the peer’s address in local **`dm_peer_evm`** (from grants), never from public profile fields.
+**Privacy:** Kind 0 profile metadata does **not** publish EVM addresses. **Request** does not need `dm_peer_evm`. **Send** needs a destination in local `dm_peer_evm` (from a grant or a prior transfer) or the receive address on the request being paid. Addresses never come from public profile fields.
 
 ---
 
 ## Pairwise address exchange (v1)
 
 ```text
-A: wallet_peer_info_request (no address)
+Request is always available (receive address is the requester’s primary account on wallet_tx_request).
+Send without a saved destination posts wallet_peer_info_request once.
 B: accept → wallet_peer_info_grant (B’s 0x)
 A: auto reciprocal wallet_peer_info_grant (A’s 0x)
-→ both dm_peer_evm set → Send/Request unlocked
+→ dm_peer_evm set → later Sends do not ask again
 ```
 
-Decline posts `wallet_peer_info_decline` only; nothing is written to `dm_peer_evm`. Either party may send a new request later.
+A transfer either way also writes `dm_peer_evm`: outbound Send stores the destination; an inbound `wallet_tx_announcement` stores `from_evm_address` for `from_npub`. Changing primary does not push a new address to existing peers.
 
-Addresses persist **only** from inbound grants (`DmThread` + accept path sends the first grant; reciprocal is automatic for the original requester).
+Decline posts `wallet_peer_info_decline` only; nothing is written to `dm_peer_evm`. Either party may send a new request later.
 
 ---
 
@@ -170,6 +171,7 @@ Posted **only** after a **successful** transaction receipt. Carries everything n
 | `from_npub`    | string | yes      | Sender’s npub. |
 | `to_npub`      | string | yes      | Recipient’s npub. |
 | `from_evm_address` | string | yes | EVM account that **signed** the transfer: `0x` + 40 hex (should match on-chain `from`). |
+| `to_evm_address` | string | no | Account that **received** the transfer: `0x` + 40 hex. New posts include it. Older announcements omit it and still render. |
 | `request_id`   | string | no       | If present, ties this transfer to a prior `wallet_tx_request` (e.g. “paid this request”). |
 | `block_number` | string | no       | Decimal string block number from receipt (optional; avoids JS int issues if very large). |
 
@@ -202,7 +204,7 @@ Posted **only** after a **successful** transaction receipt. Carries everything n
 
 - **Accepted / declined:** npub-scoped lists of DM **message ids** (same pattern as channel invites).
 - **Reciprocal grants:** npub-scoped list of **`request_id`** values already reciprocated (`pacto_wallet_peer_info_reciprocated`), plus detection of an outbound grant in-thread, so reciprocal send is idempotent.
-- **Unlock:** WalletBar and `wallet_build_and_send_transaction` require **`dm_peer_evm`** for the peer; profile/Kind 0 addresses are not used.
+- **Send:** WalletBar Send and an unsolicited `wallet_build_and_send_transaction` require `dm_peer_evm` for the peer. Paying a `wallet_tx_request` passes that request’s `from_evm_address` as `to_address_evm`. Profile/Kind 0 addresses are not used.
 
 ---
 

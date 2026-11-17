@@ -9,6 +9,7 @@
   import VerifiedName from '../profile/VerifiedName.svelte';
   import {
     parseWalletPeerInfoGrant,
+    parseWalletTxAnnouncement,
     getFulfilledWalletRequestIdsFromMessages,
     type WalletPeerInfoRequestPayload,
   } from '../../lib/wallet/dm-messages';
@@ -292,6 +293,7 @@
   }
 
   let appliedWalletGrantIds = new Set<string>();
+  let appliedInboundWalletTxIds = new Set<string>();
   let appliedWalletGrantsForNpub: string | null = null;
   let reciprocalGrantInFlight = new Set<string>();
 
@@ -299,6 +301,7 @@
     if (npub !== appliedWalletGrantsForNpub) {
       appliedWalletGrantsForNpub = npub;
       appliedWalletGrantIds = new Set();
+      appliedInboundWalletTxIds = new Set();
       reciprocalGrantInFlight = new Set();
     }
   });
@@ -396,6 +399,22 @@
           reciprocalGrantInFlight.delete(g.request_id);
         }
       })();
+    }
+    for (const msg of messages) {
+      if (msg.mine || appliedInboundWalletTxIds.has(msg.id)) continue;
+      const ann = parseWalletTxAnnouncement(msg.content ?? '');
+      if (!ann || ann.from_npub !== peerNpub) continue;
+      appliedInboundWalletTxIds.add(msg.id);
+      const forPeer = peerNpub;
+      void setDmPeerEvmAddress(forPeer, ann.from_evm_address).then(
+        () => {
+          if (npub !== forPeer) return;
+          dmWalletPeerExchangeTick.update((n: number) => n + 1);
+        },
+        () => {
+          appliedInboundWalletTxIds.delete(msg.id);
+        },
+      );
     }
   });
 

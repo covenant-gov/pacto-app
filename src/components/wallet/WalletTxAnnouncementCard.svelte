@@ -31,6 +31,9 @@
   const iconGlyph = $derived(failed ? '!' : pending ? '…' : '✓');
   const fromAddr = $derived(payload.from_evm_address.trim());
   const fromAddrShort = $derived(shortEvmAddress(fromAddr));
+  const toAddrShort = $derived(
+    payload.to_evm_address ? shortEvmAddress(payload.to_evm_address.trim()) : '',
+  );
   const explorerUrl = $derived(getExplorerTxUrl(payload.network, payload.tx_hash));
   const explorerLabel = $derived(explorerTxLinkLabel(payload.network));
 
@@ -58,7 +61,13 @@
         {viewerIsSender ? $t('wallet.toPeer', { values: { peerName: peerDisplayName } }) : $t('wallet.toYou')}
       </span>
     </div>
-    <p class="wallet-tx-announce-subtitle">{$t('wallet.announcementSubtitle', { values: { networkLabel, fromAddrShort } })}</p>
+    <p class="wallet-tx-announce-subtitle">
+      {#if !viewerIsSender && toAddrShort}
+        {$t('wallet.announcementReceivedAt', { values: { networkLabel, toAddrShort } })}
+      {:else}
+        {$t('wallet.announcementSubtitle', { values: { networkLabel, fromAddrShort } })}
+      {/if}
+    </p>
     <div class="wallet-tx-announce-hash-row">
       <p class="wallet-tx-announce-hash" title={payload.tx_hash}>
         {payload.tx_hash.slice(0, 10)}…{payload.tx_hash.slice(-8)}

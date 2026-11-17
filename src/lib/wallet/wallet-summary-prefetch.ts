@@ -8,6 +8,7 @@ import { currentUser } from '../../stores/auth-session';
 import { getWalletSummary } from './backend-wallet';
 import { loadWatchedErc20Rows, watchedRowsToWire } from './watched-tokens';
 import { loadWalletEnabledChains } from './wallet-ui-prefs';
+import { getActiveSquadEvmSignerAddress } from './evm-accounts';
 import { persistWalletSummaryCache } from './wallet-summary-cache';
 
 const MIN_SUCCESS_INTERVAL_MS = 45_000;
@@ -34,10 +35,12 @@ export function scheduleWalletSummaryBackgroundPrefetch(npub: string | null | un
       const rows = loadWatchedErc20Rows(startedFor);
       const wire = watchedRowsToWire(rows);
       const enabledChains = loadWalletEnabledChains(startedFor);
-      const r = await getWalletSummary(wire, enabledChains);
+      const address = (await getActiveSquadEvmSignerAddress())?.trim() || '';
+      if (!address) return;
+      const r = await getWalletSummary(wire, enabledChains, address);
       if (!r.ok) return;
       if (get(currentUser)?.npub !== startedFor) return;
-      persistWalletSummaryCache(startedFor, wire, r.summary);
+      persistWalletSummaryCache(startedFor, wire, r.summary, address);
       lastSuccessAtMs = Date.now();
       lastSuccessForNpub = startedFor;
     } finally {

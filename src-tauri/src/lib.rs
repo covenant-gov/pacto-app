@@ -1604,7 +1604,6 @@ pub fn run() {
             evm::evm_accounts::import_evm_account,
             evm::evm_accounts::update_evm_account,
             evm::evm_accounts::set_active_evm_account,
-            evm::evm_accounts::set_default_shared_evm_account,
             evm::evm_accounts::set_active_advanced_evm_account,
             evm::advanced_contract_call::evm_send_advanced_contract_call,
             evm::squad_allowlist::evm_send_squad_allowlisted_contract_call,

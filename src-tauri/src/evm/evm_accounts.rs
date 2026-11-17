@@ -198,7 +198,7 @@ pub async fn require_squad_purpose_signer<R: Runtime>(handle: AppHandle<R>) -> R
     require_active_account_purpose(
         &handle,
         PURPOSE_SQUAD,
-        "Active signer must be a squad-purpose account. Switch signer under Settings → Default wallet config.",
+        "Active signer must be a squad-purpose account. Set a primary account on Profile.",
     )
     .await
 }
@@ -242,10 +242,7 @@ fn require_squad_purpose_account_id(
     account_id: &str,
 ) -> Result<(), String> {
     if account_purpose_by_id(conn, account_id)? != PURPOSE_SQUAD {
-        return Err(
-            "Only squad-purpose accounts may be the active signer or default receiving address."
-                .to_string(),
-        );
+        return Err("Only squad-purpose accounts may be the primary account.".to_string());
     }
     Ok(())
 }
@@ -279,6 +276,13 @@ fn sql_set_setting(conn: &rusqlite::Connection, key: &str, value: &str) -> Resul
         rusqlite::params![key, value],
     )
     .map_err(|e| format!("settings write: {}", e))?;
+    Ok(())
+}
+
+/// Primary account is both the DM signer and the receive address.
+fn assign_primary(conn: &rusqlite::Connection, account_id: &str) -> Result<(), String> {
+    sql_set_setting(conn, SETTING_ACTIVE, account_id)?;
+    sql_set_setting(conn, SETTING_DEFAULT_SHARED, account_id)?;
     Ok(())
 }
 
@@ -437,34 +441,11 @@ fn fix_active_if_needed<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String>
             .optional()
             .map_err(|e| format!("evm_accounts: {}", e))?;
         if let Some(id) = pick {
-            sql_set_setting(&conn, SETTING_ACTIVE, &id)?;
+            assign_primary(&conn, &id)?;
         }
-    }
-
-    let default_invalid = match sql_get_setting(&conn, SETTING_DEFAULT_SHARED)? {
-        Some(ref id) => {
-            let n: i64 = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM evm_accounts WHERE id = ?1",
-                    rusqlite::params![id],
-                    |r| r.get(0),
-                )
-                .unwrap_or(0);
-            n == 0
-        }
-        None => true,
-    };
-
-    if default_invalid {
-        let pick: Option<String> = conn
-            .query_row(
-                "SELECT id FROM evm_accounts WHERE purpose = ?1 ORDER BY scheme ASC, (hd_index IS NULL), hd_index ASC, id ASC LIMIT 1",
-                rusqlite::params![PURPOSE_SQUAD],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(|e| format!("evm_accounts: {}", e))?;
-        if let Some(id) = pick {
+    } else if let Some(id) = sql_get_setting(&conn, SETTING_ACTIVE)? {
+        let shared = sql_get_setting(&conn, SETTING_DEFAULT_SHARED)?;
+        if shared.as_deref() != Some(id.as_str()) {
             sql_set_setting(&conn, SETTING_DEFAULT_SHARED, &id)?;
         }
     }
@@ -508,10 +489,7 @@ pub async fn ensure_ready<R: Runtime>(handle: AppHandle<R>) -> Result<(), String
             rusqlite::params![&id, SCHEME_BIP44_V1, 0i64, &addr, DEFAULT_FIRST_ACCOUNT_LABEL, PURPOSE_SQUAD],
         )
         .map_err(|e| format!("evm_accounts insert: {}", e))?;
-        sql_set_setting(&conn, SETTING_ACTIVE, &id)?;
-        if sql_get_setting(&conn, SETTING_DEFAULT_SHARED)?.is_none() {
-            sql_set_setting(&conn, SETTING_DEFAULT_SHARED, &id)?;
-        }
+        assign_primary(&conn, &id)?;
         account_manager::return_db_connection(conn);
         persist_signing_material(&handle, &key_hex, &addr).await?;
         return Ok(());
@@ -530,10 +508,7 @@ pub async fn ensure_ready<R: Runtime>(handle: AppHandle<R>) -> Result<(), String
             rusqlite::params![&id, SCHEME_IMPORTED, &addr, DEFAULT_FIRST_ACCOUNT_LABEL, &enc, PURPOSE_SQUAD],
         )
         .map_err(|e| format!("evm_accounts insert: {}", e))?;
-        sql_set_setting(&conn, SETTING_ACTIVE, &id)?;
-        if sql_get_setting(&conn, SETTING_DEFAULT_SHARED)?.is_none() {
-            sql_set_setting(&conn, SETTING_DEFAULT_SHARED, &id)?;
-        }
+        assign_primary(&conn, &id)?;
         account_manager::return_db_connection(conn);
         sync_signing_material_from_active(handle.clone()).await?;
     }
@@ -567,7 +542,6 @@ pub async fn list_evm_accounts<R: Runtime>(
     ensure_ready(handle.clone()).await?;
     let conn = account_manager::get_db_connection(&handle)?;
     let active = sql_get_setting(&conn, SETTING_ACTIVE)?.unwrap_or_default();
-    let default_sh = sql_get_setting(&conn, SETTING_DEFAULT_SHARED)?.unwrap_or_default();
     let active_adv = sql_get_setting(&conn, SETTING_ACTIVE_ADVANCED)?.unwrap_or_default();
 
     let mut stmt = conn
@@ -595,7 +569,7 @@ pub async fn list_evm_accounts<R: Runtime>(
         .map(
             |(id, scheme, hd_index, address, label, purpose)| EvmAccountRow {
                 is_active: id == active,
-                is_default_shared: id == default_sh,
+                is_default_shared: id == active,
                 is_active_advanced: id == active_adv,
                 hd_index: hd_index.map(|i| i as u32),
                 purpose: normalize_purpose(&purpose).unwrap_or_else(|_| PURPOSE_SQUAD.to_string()),
@@ -636,8 +610,12 @@ pub async fn add_evm_account<R: Runtime>(
 ) -> Result<EvmAccountRow, String> {
     ensure_ready(handle.clone()).await?;
     let purpose_norm = normalize_purpose(purpose.as_deref().unwrap_or(PURPOSE_SQUAD))?;
-    if purpose_norm == PURPOSE_ADVANCED && set_default_shared {
-        return Err("Advanced accounts cannot be the default receiving address.".to_string());
+    if purpose_norm == PURPOSE_ADVANCED && (set_active_signer || set_default_shared) {
+        return Err(if set_active_signer {
+            "Only squad-purpose accounts may be the active WalletBar signer.".to_string()
+        } else {
+            "Advanced accounts cannot be the default receiving address.".to_string()
+        });
     }
     let phrase = get_mnemonic_for_hd(handle.clone()).await?;
     let label_trimmed = label.trim().to_string();
@@ -671,17 +649,8 @@ pub async fn add_evm_account<R: Runtime>(
     )
     .map_err(|e| format!("add account: {}", e))?;
 
-    if set_active_signer {
-        if purpose_norm != PURPOSE_SQUAD {
-            return Err(
-                "Only squad-purpose accounts may be the active WalletBar signer.".to_string(),
-            );
-        }
-        sql_set_setting(&conn, SETTING_ACTIVE, &id)?;
-    }
-    if set_default_shared {
-        require_squad_purpose_account_id(&conn, &id)?;
-        sql_set_setting(&conn, SETTING_DEFAULT_SHARED, &id)?;
+    if set_active_signer || set_default_shared {
+        assign_primary(&conn, &id)?;
     }
     if purpose_norm == PURPOSE_ADVANCED {
         if sql_get_setting(&conn, SETTING_ACTIVE_ADVANCED)?.is_none() {
@@ -690,7 +659,6 @@ pub async fn add_evm_account<R: Runtime>(
     }
 
     let active = sql_get_setting(&conn, SETTING_ACTIVE)?.unwrap_or_default();
-    let default_sh = sql_get_setting(&conn, SETTING_DEFAULT_SHARED)?.unwrap_or_default();
     let active_adv = sql_get_setting(&conn, SETTING_ACTIVE_ADVANCED)?.unwrap_or_default();
     account_manager::return_db_connection(conn);
 
@@ -699,7 +667,7 @@ pub async fn add_evm_account<R: Runtime>(
     }
 
     let is_active = id == active;
-    let is_default_shared = id == default_sh;
+    let is_default_shared = id == active;
     let is_active_advanced = id == active_adv;
     Ok(EvmAccountRow {
         id,
@@ -767,11 +735,10 @@ pub async fn import_evm_account<R: Runtime>(
         sql_set_setting(&conn, SETTING_ACTIVE_ADVANCED, &id)?;
     }
     let active = sql_get_setting(&conn, SETTING_ACTIVE)?.unwrap_or_default();
-    let default_sh = sql_get_setting(&conn, SETTING_DEFAULT_SHARED)?.unwrap_or_default();
     let active_adv = sql_get_setting(&conn, SETTING_ACTIVE_ADVANCED)?.unwrap_or_default();
     account_manager::return_db_connection(conn);
     let is_active = id == active;
-    let is_default_shared = id == default_sh;
+    let is_default_shared = id == active;
     let is_active_advanced = id == active_adv;
     Ok(EvmAccountRow {
         id,
@@ -821,17 +788,15 @@ pub async fn update_evm_account<R: Runtime>(
     )
     .map_err(|e| format!("update account: {}", e))?;
 
-    if set_active_signer {
-        require_squad_purpose_account_id(&conn, &account_id)?;
-        sql_set_setting(&conn, SETTING_ACTIVE, &account_id)?;
-    }
-    if set_default_shared {
-        require_squad_purpose_account_id(&conn, &account_id)?;
-        sql_set_setting(&conn, SETTING_DEFAULT_SHARED, &account_id)?;
+    if set_active_signer || set_default_shared {
+        if let Err(e) = require_squad_purpose_account_id(&conn, &account_id) {
+            account_manager::return_db_connection(conn);
+            return Err(e);
+        }
+        assign_primary(&conn, &account_id)?;
     }
 
     let active = sql_get_setting(&conn, SETTING_ACTIVE)?.unwrap_or_default();
-    let default_sh = sql_get_setting(&conn, SETTING_DEFAULT_SHARED)?.unwrap_or_default();
     let active_adv = sql_get_setting(&conn, SETTING_ACTIVE_ADVANCED)?.unwrap_or_default();
 
     let row: (String, String, Option<i64>, String, String, String) = conn
@@ -858,7 +823,7 @@ pub async fn update_evm_account<R: Runtime>(
     let (id, scheme, hd_idx, address, label_out, purpose_raw) = row;
     let purpose = normalize_purpose(&purpose_raw)?;
     let is_active = id == active;
-    let is_default_shared_row = id == default_sh;
+    let is_default_shared_row = id == active;
     let is_active_advanced = id == active_adv;
     Ok(EvmAccountRow {
         id,
@@ -888,35 +853,16 @@ pub async fn set_active_evm_account<R: Runtime>(
         )
         .unwrap_or(0);
     if n == 0 {
+        account_manager::return_db_connection(conn);
         return Err("Unknown EVM account.".to_string());
     }
-    require_squad_purpose_account_id(&conn, &account_id)?;
-    sql_set_setting(&conn, SETTING_ACTIVE, &account_id)?;
+    if let Err(e) = require_squad_purpose_account_id(&conn, &account_id) {
+        account_manager::return_db_connection(conn);
+        return Err(e);
+    }
+    assign_primary(&conn, &account_id)?;
     account_manager::return_db_connection(conn);
     sync_signing_material_from_active(handle.clone()).await?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn set_default_shared_evm_account<R: Runtime>(
-    handle: AppHandle<R>,
-    account_id: String,
-) -> Result<(), String> {
-    ensure_ready(handle.clone()).await?;
-    let conn = account_manager::get_db_connection(&handle)?;
-    let n: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM evm_accounts WHERE id = ?1",
-            rusqlite::params![&account_id],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-    if n == 0 {
-        return Err("Unknown EVM account.".to_string());
-    }
-    require_squad_purpose_account_id(&conn, &account_id)?;
-    sql_set_setting(&conn, SETTING_DEFAULT_SHARED, &account_id)?;
-    account_manager::return_db_connection(conn);
     Ok(())
 }
 
@@ -950,9 +896,10 @@ pub async fn set_active_advanced_evm_account<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        address_purpose_on_conn, apply_default_first_account_label, normalize_purpose,
-        require_squad_purpose_account_id, DEFAULT_FIRST_ACCOUNT_LABEL, PURPOSE_ADVANCED,
-        PURPOSE_SQUAD, SCHEME_BIP44_V1,
+        address_purpose_on_conn, apply_default_first_account_label, assign_primary,
+        normalize_purpose, require_squad_purpose_account_id, sql_get_setting,
+        DEFAULT_FIRST_ACCOUNT_LABEL, PURPOSE_ADVANCED, PURPOSE_SQUAD, SCHEME_BIP44_V1,
+        SETTING_ACTIVE, SETTING_DEFAULT_SHARED,
     };
 
     const SQUAD_ADDR: &str = "0x1111111111111111111111111111111111111111";
@@ -1080,5 +1027,22 @@ mod tests {
         apply_default_first_account_label(&conn).unwrap();
 
         assert_eq!(label_of(&conn, "a0"), "Custom");
+    }
+
+    #[test]
+    fn assign_primary_writes_signer_and_receiver_together() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        assign_primary(&conn, "acct-2").unwrap();
+        assert_eq!(
+            sql_get_setting(&conn, SETTING_ACTIVE).unwrap().as_deref(),
+            Some("acct-2")
+        );
+        assert_eq!(
+            sql_get_setting(&conn, SETTING_DEFAULT_SHARED)
+                .unwrap()
+                .as_deref(),
+            Some("acct-2")
+        );
     }
 }

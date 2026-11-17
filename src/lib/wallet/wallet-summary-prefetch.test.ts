@@ -22,11 +22,16 @@ vi.mock('./wallet-ui-prefs', () => ({
   loadWalletEnabledChains: vi.fn().mockReturnValue(['sepolia']),
 }));
 
+vi.mock('./evm-accounts', () => ({
+  getActiveSquadEvmSignerAddress: vi.fn(async () => '0xAbC'),
+}));
+
 import { currentUser } from '../../stores/auth-session';
 import { getWalletSummary } from './backend-wallet';
 import { loadWatchedErc20Rows, watchedRowsToWire } from './watched-tokens';
 import { persistWalletSummaryCache } from './wallet-summary-cache';
 import { loadWalletEnabledChains } from './wallet-ui-prefs';
+import { getActiveSquadEvmSignerAddress } from './evm-accounts';
 
 describe('scheduleWalletSummaryBackgroundPrefetch', () => {
   let schedule: (npub: string | null | undefined) => void;
@@ -41,6 +46,7 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
     vi.mocked(watchedRowsToWire).mockReset().mockReturnValue([]);
     vi.mocked(persistWalletSummaryCache).mockReset();
     vi.mocked(loadWalletEnabledChains).mockReset().mockReturnValue(['sepolia']);
+    vi.mocked(getActiveSquadEvmSignerAddress).mockReset().mockResolvedValue('0xAbC');
     const mod = await import('./wallet-summary-prefetch');
     schedule = mod.scheduleWalletSummaryBackgroundPrefetch;
   });
@@ -73,11 +79,13 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
     expect(getWalletSummary).toHaveBeenCalledWith(
       [{ network: 'sepolia', symbol: 'USDC', address: '0xabc', decimals: 6 }],
       ['sepolia'],
+      '0xAbC',
     );
     expect(persistWalletSummaryCache).toHaveBeenCalledWith(
       'npub1',
       [{ network: 'sepolia', symbol: 'USDC', address: '0xabc', decimals: 6 }],
       summary,
+      '0xAbC',
     );
   });
 
@@ -93,11 +101,13 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
       'npub1',
       expect.anything(),
       expect.anything(),
+      expect.anything(),
     );
     expect(persistWalletSummaryCache).toHaveBeenCalledWith(
       'npub2',
       expect.anything(),
       expect.anything(),
+      '0xAbC',
     );
   });
 

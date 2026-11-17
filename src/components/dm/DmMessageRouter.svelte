@@ -228,6 +228,7 @@
         amount: presentation.payload.amount,
         requestId: presentation.payload.request_id,
         requestMessageId: msg.id,
+        toEvmAddress: presentation.payload.from_evm_address,
       });
       walletSidebarOpen.set(true);
     }}

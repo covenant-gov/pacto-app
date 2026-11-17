@@ -71,6 +71,8 @@ export type WalletSendPrefillPayload = {
   amount: string;
   requestId: string;
   requestMessageId: string;
+  /** Receive address from the payment request (`from_evm_address`). */
+  toEvmAddress: string;
 };
 
 export const walletSendPrefillFromRequest = writable<WalletSendPrefillPayload | null>(null);

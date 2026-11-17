@@ -1,10 +1,20 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import { getDmPeerEvmAddress } from '../../lib/api/wallet-peers';
   import { getEvmAddress } from '../../lib/api/auth';
-  import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
+  import {
+    getActiveEvmSignerAddress,
+    listEvmAccounts,
+    primaryEvmAccountTick,
+    setActiveEvmAccount,
+    squadEvmAccounts,
+    type EvmAccountRow,
+  } from '../../lib/wallet/evm-accounts';
+  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
+  import AccountPicker from './AccountPicker.svelte';
+  import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import {
     isWalletPeerInfoRequestInFlight,
     sendWalletPeerInfoRequest,
@@ -34,7 +44,7 @@
     saveNetworkFilter,
     type NetworkFilter,
   } from '../../lib/wallet/network-filter';
-  import { networksForBalanceList, summaryPricing } from '../../lib/wallet/wallet-summary-view';
+  import { networksForBalanceList, summaryPricing, walletSummaryFetchKey } from '../../lib/wallet/wallet-summary-view';
   import WalletBalanceList from './WalletBalanceList.svelte';
   import { showToast } from '../../stores/toast';
   import {
@@ -93,9 +103,31 @@
   const accountNpub = $derived($currentUser?.npub ?? null);
 
   let watchedErc20Rows: WatchedErc20Row[] = $state([]);
+  let evmAccountList = $state<EvmAccountRow[]>([]);
+  let selectedAccountId = $state('');
+
+  const squadAccounts = $derived(squadEvmAccounts(evmAccountList));
+  const primaryAccount = $derived(squadAccounts.find((a) => a.isActive) ?? squadAccounts[0] ?? null);
+
+  $effect(() => {
+    const id = primaryAccount?.id ?? '';
+    if (id) selectedAccountId = id;
+  });
+
+  const viewedAccount = $derived(squadAccounts.find((a) => a.id === selectedAccountId) ?? primaryAccount);
+  const viewedAddress = $derived(viewedAccount?.address?.trim() || null);
+
+  async function selectAccount(id: string) {
+    if (!id || id === selectedAccountId) return;
+    try {
+      await setActiveEvmAccount(id);
+      showToast(tFn('wallet.primaryAccountSaved'));
+    } catch (e) {
+      showToast(getInvokeErrorMessage(e, tFn('wallet.couldNotSetPrimaryAccount')));
+    }
+  }
 
   let peerWalletReady = $state(false);
-  let ownerAddress = $state<string | null>(null);
 
   const peerInfoRequestInFlight = $derived.by(() => {
     void $walletPeerInfoRequestInFlightRevision;
@@ -170,12 +202,25 @@
     void accountNpub;
     void $walletWatchedTokensTick;
     reloadWatchedRows();
+  });
+
+  $effect(() => {
+    void accountNpub;
+    void $primaryEvmAccountTick;
     void (async () => {
       const npubAtStart = accountNpub;
-      const address =
-        (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || null;
-      if (accountNpub !== npubAtStart) return;
-      ownerAddress = address;
+      if (!npubAtStart) {
+        evmAccountList = [];
+        return;
+      }
+      try {
+        const rows = (await listEvmAccounts()) ?? [];
+        if (accountNpub !== npubAtStart) return;
+        evmAccountList = rows;
+      } catch {
+        if (accountNpub !== npubAtStart) return;
+        evmAccountList = [];
+      }
     })();
   });
 
@@ -208,43 +253,65 @@
   const barPricingStatus = $derived(barPricing.status);
   const barTotalUsdApprox = $derived(barPricing.total);
 
-  async function refreshSummary() {
-    const wire = watchedRowsToWire(watchedErc20Rows);
-    const preCached = accountNpub ? getMatchingCachedSummary(accountNpub, wire) : null;
+  let summaryAddress = $state<string | null>(null);
+  let loadSeq = 0;
 
-    if (!accountNpub) {
+  async function refreshSummary() {
+    const seq = ++loadSeq;
+    const address = viewedAddress;
+    const wire = watchedRowsToWire(watchedErc20Rows);
+    const preCached = accountNpub && address ? getMatchingCachedSummary(accountNpub, wire, address) : null;
+
+    if (!accountNpub || !address) {
       summary = null;
+      summaryAddress = null;
       summaryError = null;
       summaryLoading = false;
       return;
     }
 
-    if (preCached) {
+    if (summaryAddress !== address) {
+      summary = preCached;
+      summaryError = null;
+    } else if (preCached) {
       summary = preCached;
       summaryError = null;
     } else {
       summaryError = null;
     }
 
-    const hadDisplay = summary != null;
+    const hadDisplay = summary != null && summaryAddress === address;
     summaryLoading = true;
 
     const enabledChains = loadWalletEnabledChains(accountNpub);
-    const r = await getWalletSummary(wire, enabledChains);
+    const r = await getWalletSummary(wire, enabledChains, address);
+    if (seq !== loadSeq) return;
     if (r.ok) {
       summary = r.summary;
+      summaryAddress = address;
       summaryError = null;
-      persistWalletSummaryCache(accountNpub, wire, r.summary);
+      persistWalletSummaryCache(accountNpub, wire, r.summary, address);
     } else {
       summaryError = r.message;
-      if (!hadDisplay && !preCached) summary = null;
+      if (!hadDisplay && !preCached) {
+        summary = null;
+        summaryAddress = null;
+      }
     }
     summaryLoading = false;
   }
 
+  const summaryKey = $derived(
+    walletSummaryFetchKey(viewedAddress, networkDropdownChainIds, watchedRowsToWire(watchedErc20Rows)),
+  );
+
+  $effect(() => {
+    void summaryKey;
+    untrack(() => void refreshSummary());
+  });
+
   onMount(() => {
     networkFilter = loadNetworkFilter(WALLET_BAR_NETWORK_FILTER_PREFIX);
-    refreshSummary();
     const unsub = walletSendPrefillFromRequest.subscribe((v: WalletSendPrefillPayload | null) => {
       if (!v || v.targetNpub !== npub) return;
       walletSendPrefillFromRequest.set(null);
@@ -271,6 +338,12 @@
   <div class="wallet-bar-header">
     <h2 class="wallet-bar-title">{$t('wallet.walletTitle')}</h2>
   </div>
+  {#if viewedAddress}
+    <div class="wallet-bar-account">
+      <AccountPicker accounts={squadAccounts} selectedId={selectedAccountId} onSelect={(id) => void selectAccount(id)} />
+      <CopyableKeyPill value={viewedAddress} ariaLabel={$t('wallet.copyAddressToClipboard')} />
+    </div>
+  {/if}
 
   <section class="wallet-bar-section" aria-labelledby="wallet-balance-heading">
     <div class="wallet-bar-section-head">
@@ -319,35 +392,29 @@
     {/if}
   </section>
 
-  {#if !peerWalletReady}
-    <div class="wallet-bar-init">
+  <div class="wallet-bar-actions">
+    {#if !peerWalletReady}
       <p class="wallet-bar-init-text">{$t('wallet.exchangeAddressesLine')}</p>
-      <button
-        type="button"
-        class="wallet-bar-btn wallet-bar-btn-primary wallet-bar-btn-full"
-        disabled={peerInfoRequestInFlight || !$currentUser}
-        onclick={sendWalletInfoRequest}
-      >
-        {peerInfoRequestInFlight ? $t('wallet.sending') : $t('wallet.sendExchangeRequest')}
-      </button>
-    </div>
-  {:else}
-    <div class="wallet-bar-actions">
-      <button
-        type="button"
-        class="wallet-bar-btn wallet-bar-btn-primary"
-        onclick={() => {
-          sendModalPrefill = null;
-          sendModalOpen = true;
-        }}
-      >
-        {$t('wallet.send')}
-      </button>
-      <button type="button" class="wallet-bar-btn wallet-bar-btn-secondary" onclick={() => (requestModalOpen = true)}>
-        {$t('wallet.request')}
-      </button>
-    </div>
-  {/if}
+    {/if}
+    <button
+      type="button"
+      class="wallet-bar-btn wallet-bar-btn-primary"
+      disabled={!peerWalletReady && (peerInfoRequestInFlight || !$currentUser)}
+      onclick={() => {
+        if (!peerWalletReady) {
+          void sendWalletInfoRequest();
+          return;
+        }
+        sendModalPrefill = null;
+        sendModalOpen = true;
+      }}
+    >
+      {!peerWalletReady && peerInfoRequestInFlight ? $t('wallet.sending') : $t('wallet.send')}
+    </button>
+    <button type="button" class="wallet-bar-btn wallet-bar-btn-secondary" onclick={() => (requestModalOpen = true)}>
+      {$t('wallet.request')}
+    </button>
+  </div>
 </aside>
 
 {#if sendModalOpen}
@@ -373,7 +440,7 @@
 <WalletImportTokensModal
   open={importTokensModalOpen}
   accountNpub={accountNpub}
-  {ownerAddress}
+  ownerAddress={viewedAddress}
   enabledChainIds={networkDropdownChainIds}
   onClose={() => (importTokensModalOpen = false)}
   onSaved={() => {
@@ -397,9 +464,18 @@
   .wallet-bar-header {
     display: flex;
     align-items: center;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--bg-elevated);
+    padding: 14px 16px 0;
     flex-shrink: 0;
+  }
+
+  .wallet-bar-account {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 16px 14px;
+    border-bottom: 1px solid var(--bg-elevated);
+    min-width: 0;
   }
 
   .wallet-bar-title {
@@ -478,21 +554,11 @@
     line-height: 1.4;
   }
 
-  .wallet-bar-init {
-    padding: 12px 16px 16px;
-    flex-shrink: 0;
-    border-top: 1px solid var(--bg-elevated);
-  }
-
   .wallet-bar-init-text {
     margin: 0 0 12px;
     font-size: 0.8125rem;
     line-height: 1.45;
     color: var(--text-secondary);
-  }
-
-  .wallet-bar-btn-full {
-    width: 100%;
   }
 
   .wallet-bar-actions {
