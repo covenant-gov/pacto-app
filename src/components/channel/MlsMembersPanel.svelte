@@ -2,6 +2,7 @@
   import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import { restoreMlsMemberAccess } from '../../lib/parent/restore-mls-access';
   import { restoreMemberToSquad, squadForAnnouncementsGroup } from '../../lib/parent/restore-squad-access';
   import { showToast } from '../../stores/toast';
@@ -117,7 +118,7 @@
           {:else}
             <div class="members-panel-avatar members-panel-avatar-placeholder" aria-hidden="true"></div>
           {/if}
-          <span class="members-panel-name">{displayName(npub)}</span>
+          <span class="members-panel-name"><VerifiedName {npub} fallback={displayName(npub)} /></span>
           {#if isPending}
             <span class="pending-invite-badge" data-testid="mls-pending-invite-badge">
               {$t('messaging.channel.mlsPendingInviteBadge')}

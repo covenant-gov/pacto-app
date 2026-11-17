@@ -13,6 +13,7 @@
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import {
     getWalletSummary,
     getWalletNetworkDisplayName,
@@ -271,7 +272,13 @@
         {/if}
       </div>
       <div class="wallet-bar-peer-text">
-        <span class="wallet-bar-peer-name">{contactDisplayName}</span>
+        <span class="wallet-bar-peer-name">
+          {#if npub}
+            <VerifiedName {npub} fallback={contactDisplayName} />
+          {:else}
+            {contactDisplayName}
+          {/if}
+        </span>
         <span class="wallet-bar-peer-npub">{truncateNpub(npub)}</span>
       </div>
     </div>

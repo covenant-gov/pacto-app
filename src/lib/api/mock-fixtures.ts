@@ -96,6 +96,7 @@ export const profileFixtures: Record<string, MockCommandHandler> = {
   refresh_profile_now: () => undefined,
   sync_all_profiles: () => undefined,
   update_profile: () => undefined,
+  publish_bound_username: () => undefined,
   set_nickname: () => true,
   toggle_blocked: () => false,
   queue_profile_sync: () => undefined,
@@ -165,6 +166,12 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
   username_name_available: () => true,
   username_can_bootstrap_claim: () => true,
   username_npub_of: () => '0x' + '00'.repeat(32),
+  username_record_for_npub: () => ({
+    name: '',
+    evmAddress: '0x0000000000000000000000000000000000000000',
+    pendingAddress: '0x0000000000000000000000000000000000000000',
+    tokenId: '0',
+  }),
   username_record_of: () => ({
     name: '',
     evmAddress: '0x0000000000000000000000000000000000000000',

@@ -11,6 +11,7 @@
   import { summarizeStructuredMessageContent } from '../../lib/messaging/structured-content-notice';
   import { aggregateReactions, isPendingReaction, pendingReactionSent } from '../../lib/messaging/reactions';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import { attachmentKind } from '../../lib/messaging/attachment-display';
   import { getEmojiList, recentEmojisStore, searchEmojis } from '../../stores/emojis';
   import type { Mention } from '../../lib/messaging/mentions';
@@ -27,6 +28,8 @@
   interface Props {
     id?: string;
     authorName?: string;
+    authorNpub?: string;
+    replyAuthorNpub?: string;
     content?: string;
     body?: string;
     mentions?: Mention[];
@@ -66,6 +69,8 @@
   let {
     id = '',
     authorName = '',
+    authorNpub = '',
+    replyAuthorNpub = '',
     content = '',
     body = '',
     mentions = undefined,
@@ -440,7 +445,13 @@
   <div class="message-content">
     {#if !compact}
       <div class="message-header">
-        <span class="author-name">{authorName}</span>
+        <span class="author-name">
+          {#if authorNpub}
+            <VerifiedName npub={authorNpub} fallback={authorName} />
+          {:else}
+            {authorName}
+          {/if}
+        </span>
         <span class="timestamp"><time datetime={timestamp}>{formatMessageTimestamp(timestamp)}</time></span>
         {#if deliveryLabel}
           <span
@@ -481,7 +492,13 @@
           onclick={jumpToReply}
           aria-label={$t('messaging.message.jumpToReply')}
         >
-          <span class="msg-reply-author">{replyAuthorName ?? $t('messaging.message.replyUnknown')}</span>
+          <span class="msg-reply-author">
+            {#if replyAuthorNpub}
+              <VerifiedName npub={replyAuthorNpub} fallback={replyAuthorName ?? ''} />
+            {:else}
+              {replyAuthorName ?? $t('messaging.message.replyUnknown')}
+            {/if}
+          </span>
           <span class="msg-reply-preview">{#if replyPreview}{replyPreview}{/if}</span>
         </button>
       </div>

@@ -2,6 +2,7 @@
   import Tab from '../ui/Tab.svelte';
   import Modal from '../ui/Modal.svelte';
   import AvatarPicker from '../ui/AvatarPicker.svelte';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import SquadAvatar from '../squad/SquadAvatar.svelte';
   import SquadCommonsVisibilityFields from '../squad/SquadCommonsVisibilityFields.svelte';
   import { resolveSquadCommonsOnCreate, validatePublicSquadTags } from '../../lib/squad/squad-commons-fields';
@@ -726,7 +727,7 @@
               checked={organizeSquadMembers.includes(entry.npub)}
               onchange={() => toggleOrganizeMember(entry.npub)}
             />
-            <span class="organize-member-name">{organizeMemberDisplayName(entry.npub, entry.name)}</span>
+            <span class="organize-member-name"><VerifiedName npub={entry.npub} fallback={organizeMemberDisplayName(entry.npub, entry.name)} /></span>
           </label>
         {/each}
       </div>

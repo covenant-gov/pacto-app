@@ -120,7 +120,7 @@ export function focusSquadSettingsNetworkEditor(slot: SquadNetworkSlot = 'primar
 /** Bumped to open Profile → username block from Commons Early Adopter CTA. */
 export const profileUsernameFocusNonce = writable(0);
 
-/** Survives ProfileUsernameBlock remount so scroll only runs when the nonce advances. */
+/** Survives profile remount so the username view opens once per nonce bump. */
 let lastConsumedProfileUsernameFocusNonce = 0;
 
 /** Returns true once per nonce bump (safe across component remounts). */

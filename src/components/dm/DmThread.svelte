@@ -5,6 +5,7 @@
   import { resolveDmMessagePresentation } from '../../lib/dm/resolve-dm-message-presentation';
   import DmMessageRouter from './DmMessageRouter.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import {
     parseWalletPeerInfoGrant,
     getFulfilledWalletRequestIdsFromMessages,
@@ -559,7 +560,13 @@
       {:else}
         <div class="dm-thread-header-title-row">
           <div class="dm-thread-title-left">
-            <h3 class="dm-thread-title">{contactDisplayName}</h3>
+            <h3 class="dm-thread-title">
+              {#if npub}
+                <VerifiedName {npub} fallback={contactDisplayName} />
+              {:else}
+                {contactDisplayName}
+              {/if}
+            </h3>
             <SyncStatusIndicator status={$dmSyncStatusEffective} />
             {#if showOptionsMenu}
               <NotificationLevelIndicator chatId={npub} onOpen={() => (menuOpen = true)} />

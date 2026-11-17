@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import {
   computeUsernameVerified,
+  heldUsernameFromState,
   claimedUsernameFromState,
   needsForcedUsernameLinkRestore,
   resetUsernameState,
@@ -14,10 +15,13 @@ import {
   ensurePubkeyHex,
   normalizeUsernameInput,
   claimUsername,
+  publishBoundDisplayName,
+  usernameKind0BindError,
   type UsernameState,
 } from './username';
 import { currentUser } from './auth-session';
 import { usernameClaim, usernameSyncAccountState, type UsernameAccountState } from '../lib/api/username';
+import { publishBoundUsername } from '../lib/api/nostr';
 import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
 
 vi.mock('../lib/api/username', () => ({
@@ -33,6 +37,10 @@ vi.mock('../lib/wallet/evm-accounts', () => ({
   getActiveSquadEvmSignerAddress: vi.fn(),
 }));
 
+vi.mock('../lib/api/nostr', () => ({
+  publishBoundUsername: vi.fn(),
+}));
+
 vi.mock('../lib/evm/sponsor/nostr_claim_link', () => ({
   npubHashFromPubkey: vi.fn(() => '0x' + 'ab'.repeat(32)),
 }));
@@ -40,6 +48,7 @@ vi.mock('../lib/evm/sponsor/nostr_claim_link', () => ({
 const mockSync = vi.mocked(usernameSyncAccountState);
 const mockActiveEvm = vi.mocked(getActiveSquadEvmSignerAddress);
 const mockClaim = vi.mocked(usernameClaim);
+const mockPublishBound = vi.mocked(publishBoundUsername);
 
 const ZERO = '0x0000000000000000000000000000000000000000';
 const EVM = '0x1111111111111111111111111111111111111111';
@@ -72,6 +81,22 @@ function readyState(overrides: Partial<UsernameState> = {}): UsernameState {
     ...overrides,
   };
 }
+
+describe('heldUsernameFromState', () => {
+  it('returns the chain name when the active roster address still holds it', () => {
+    expect(heldUsernameFromState(readyState())).toBe('alice');
+  });
+
+  it('returns null when the bound address is not the active roster address', () => {
+    expect(heldUsernameFromState(readyState({ activeEvm: OTHER }))).toBeNull();
+  });
+
+  it('does not require the relay link', () => {
+    const state = readyState();
+    state.cached = state.cached ? { ...state.cached, linkEventId: null } : null;
+    expect(heldUsernameFromState(state)).toBe('alice');
+  });
+});
 
 describe('computeUsernameVerified', () => {
   it('requires linkEventId, non-zero token, name, and matching evm', () => {
@@ -480,6 +505,13 @@ describe('claimUsername', () => {
     mockActiveEvm.mockReset();
     mockActiveEvm.mockResolvedValue(EVM);
     mockClaim.mockReset();
+    mockPublishBound.mockReset();
+    mockPublishBound.mockResolvedValue({
+      eventId: 'k0',
+      successCount: 1,
+      verifiedCount: 1,
+      connectedWriteCount: 1,
+    });
   });
 
   afterEach(() => {
@@ -502,5 +534,40 @@ describe('claimUsername', () => {
     });
     await claimUsername('  Dao  ');
     expect(mockClaim).toHaveBeenCalledWith('sepolia', 'Dao');
+    expect(mockPublishBound).toHaveBeenCalledWith({
+      name: 'Dao',
+      avatar: '',
+      banner: '',
+      about: '',
+    });
+    expect(get(usernameKind0BindError)).toBeNull();
+  });
+
+  it('keeps the claim when kind 0 bind fails', async () => {
+    mockClaim.mockResolvedValue({
+      network: 'sepolia',
+      chainId: 11155111,
+      path: 'bootstrap',
+      username: 'Dao',
+      npubHash: NPUB_HASH,
+      tokenId: '1',
+      linkEventId: 'evt',
+      userOpHash: '0x1',
+      evmAddress: EVM,
+      policyVersion: 1,
+    });
+    mockPublishBound.mockRejectedValueOnce(new Error('relay down'));
+    const result = await claimUsername('Dao');
+    expect(result.username).toBe('Dao');
+    expect(get(usernameKind0BindError)).toBe('relay down');
+    usernameKind0BindError.set(null);
+    mockPublishBound.mockResolvedValueOnce({
+      eventId: 'k0',
+      successCount: 1,
+      verifiedCount: 1,
+      connectedWriteCount: 1,
+    });
+    await publishBoundDisplayName('Dao');
+    expect(get(usernameKind0BindError)).toBeNull();
   });
 });

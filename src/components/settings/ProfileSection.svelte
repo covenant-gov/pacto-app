@@ -3,7 +3,7 @@
   import { t } from 'svelte-i18n';
   import { loadProfile, profiles, profileLoadingStates } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth-session';
-  import { updateProfile } from '../../lib/api/nostr';
+  import { publishBoundUsername, updateProfile } from '../../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc, profileNeedsRelayHydration } from '../../lib/utils/profile';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -11,7 +11,9 @@
   import EditIconButton from '../ui/EditIconButton.svelte';
   import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
   import AvatarPicker from '../ui/AvatarPicker.svelte';
-  import ProfileUsernameBlock from './ProfileUsernameBlock.svelte';
+  import VerifiedName from '../profile/VerifiedName.svelte';
+  import { heldUsernameFromState, usernameState } from '../../stores/username';
+  import { get } from 'svelte/store';
 
   let userNpub = $derived($currentUser?.npub || '');
   let profile = $derived(userNpub ? $profiles[userNpub] : null);
@@ -32,6 +34,7 @@
   let editAvatarUrl = $state('');
   let saveError: string | null = $state(null);
   let savingProfile = $state(false);
+  const heldName = $derived(heldUsernameFromState($usernameState));
 
   // Load profile whenever the logged-in user's npub changes
   $effect(() => {
@@ -82,12 +85,20 @@
     saveError = null;
     savingProfile = true;
     try {
-      const receipt = await updateProfile({
-        name: editName.trim(),
-        avatar: editAvatarUrl,
-        banner: profile.banner ?? '',
-        about: editAbout.trim(),
-      });
+      const boundName = heldUsernameFromState(get(usernameState));
+      const receipt = boundName
+        ? await publishBoundUsername({
+            name: boundName,
+            avatar: editAvatarUrl,
+            banner: profile.banner ?? '',
+            about: editAbout.trim(),
+          })
+        : await updateProfile({
+            name: editName.trim(),
+            avatar: editAvatarUrl,
+            banner: profile.banner ?? '',
+            about: editAbout.trim(),
+          });
       isEditing = false;
       showToast($t('profile.profilePublished', { values: { count: receipt.verifiedCount } }));
     } catch (e: unknown) {
@@ -171,15 +182,20 @@
             {#if saveError}
               <p class="edit-error" role="alert">{saveError}</p>
             {/if}
-            <label class="edit-label" for="edit-name">{$t('profile.nameLabel')}</label>
-            <input
-              id="edit-name"
-              type="text"
-              class="edit-input"
-              bind:value={editName}
-              placeholder={$t('profile.displayNamePlaceholder')}
-              disabled={savingProfile}
-            />
+            {#if heldName}
+              <p class="edit-label">{$t('profile.nameLabel')}</p>
+              <p class="edit-bound-name">{heldName}</p>
+            {:else}
+              <label class="edit-label" for="edit-name">{$t('profile.nameLabel')}</label>
+              <input
+                id="edit-name"
+                type="text"
+                class="edit-input"
+                bind:value={editName}
+                placeholder={$t('profile.displayNamePlaceholder')}
+                disabled={savingProfile}
+              />
+            {/if}
             <label class="edit-label" for="edit-about">{$t('profile.aboutLabel')}</label>
             <textarea
               id="edit-about"
@@ -197,7 +213,7 @@
               </button>
             </div>
           {:else}
-            <h2>{profile.display_name || profile.name || $t('profile.anonymous')}</h2>
+            <h2><VerifiedName npub={userNpub} /></h2>
             {#if profile.nickname}
               <p class="nickname">{$t('profile.aka')} "{profile.nickname}"</p>
             {/if}
@@ -205,8 +221,6 @@
             {#if profile.nip05}
               <p class="nip05">✓ {profile.nip05}</p>
             {/if}
-
-            <ProfileUsernameBlock />
 
             {#if profile.about}
               <p class="about">{profile.about}</p>
@@ -404,6 +418,13 @@
     color: var(--danger);
     font-size: 0.875rem;
     margin: 0 0 12px 0;
+  }
+
+  .edit-bound-name {
+    margin: 0 0 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
   }
 
   .edit-label {

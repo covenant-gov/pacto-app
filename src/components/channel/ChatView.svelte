@@ -235,6 +235,8 @@
     const base = {
       id: msg.id,
       authorName: '',
+      authorNpub: '',
+      replyAuthorNpub: '',
       body: parsed.body,
       content: parsed.body,
       mentions: filteredMentions,
@@ -261,13 +263,15 @@
       base.avatar = getProfileAvatarSrc(currentUserProfile) ?? '';
     } else {
       const senderProfile = msg.npub ? $profiles[msg.npub] : null;
+      base.authorNpub = msg.npub ?? '';
       base.authorName = getProfileDisplayName(senderProfile);
       base.avatar = getProfileAvatarSrc(senderProfile) ?? '';
     }
     if (base.replyToId) {
       const replyNpub = msg.replied_to_npub ?? undefined;
-      base.replyAuthorName =
-        replyNpub && currentUserNpub && replyNpub === currentUserNpub
+      const replyIsSelf = !!(replyNpub && currentUserNpub && replyNpub === currentUserNpub);
+      base.replyAuthorNpub = replyNpub && !replyIsSelf ? replyNpub : '';
+      base.replyAuthorName = replyIsSelf
           ? tFn('messaging.message.authorYou')
           : replyNpub
             ? getProfileDisplayName($profiles[replyNpub] ?? null)

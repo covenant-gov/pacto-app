@@ -16,7 +16,9 @@ import { getActiveSquadEvmSignerAddress } from '../lib/wallet/evm-accounts';
 import { ZERO_ADDRESS } from '../lib/wallet/assets';
 import { getInvokeErrorMessage } from '../lib/utils/tauri-errors';
 import { usernameClaimErrorMessage } from '../lib/username/username-claim-errors';
+import { publishBoundUsername } from '../lib/api/nostr';
 import { currentUser } from './auth-session';
+import { profiles } from './profiles';
 import type { Hex } from 'viem';
 
 /** Only Sepolia has pinned `globalUsernameSponsor` addresses. */
@@ -45,6 +47,9 @@ const initialState: UsernameState = {
 };
 
 export const usernameState = writable<UsernameState>(initialState);
+
+/** Set when the chain claim succeeded and the kind 0 bind publish did not. */
+export const usernameKind0BindError = writable<string | null>(null);
 
 function normalizeHexAddr(addr: string | null | undefined): string | null {
   const t = addr?.trim().toLowerCase();
@@ -84,6 +89,16 @@ export function computeUsernameVerified(input: {
   const active = normalizeHexAddr(input.activeEvm);
   if (!chainEvm || !active) return false;
   return chainEvm === active;
+}
+
+/** Chain name when this account still controls the NFT. The relay link is not required. */
+export function heldUsernameFromState(state: UsernameState): string | null {
+  const name = state.record?.name?.trim();
+  if (!name || !isNonZeroTokenId(state.record?.tokenId)) return null;
+  const chainEvm = normalizeHexAddr(state.record?.evmAddress);
+  const active = normalizeHexAddr(state.activeEvm);
+  if (!chainEvm || !active || chainEvm !== active) return null;
+  return name;
 }
 
 export function claimedUsernameFromState(state: UsernameState): string | null {
@@ -126,9 +141,28 @@ export const hasPendingUsernameTransfer = derived(usernameState, ($s) => {
   return isPendingAddress($s.record?.pendingAddress);
 });
 
+let ownUsernameRefresh: Promise<void> | null = null;
+
 export function resetUsernameState(): void {
   refreshGen += 1;
+  ownUsernameRefresh = null;
   usernameState.set({ ...initialState });
+  usernameKind0BindError.set(null);
+}
+
+/** Write the chain username into kind 0 `name` and `display_name`. */
+export async function publishBoundDisplayName(name: string): Promise<void> {
+  const trimmed = normalizeUsernameInput(name);
+  if (!trimmed) return;
+  const npub = get(currentUser)?.npub;
+  const profile = npub ? get(profiles)[npub] : undefined;
+  await publishBoundUsername({
+    name: trimmed,
+    avatar: profile?.avatar ?? '',
+    banner: profile?.banner ?? '',
+    about: profile?.about ?? '',
+  });
+  usernameKind0BindError.set(null);
 }
 
 let refreshGen = 0;
@@ -149,6 +183,12 @@ export function ensurePubkeyHex(pubkey: string): Hex {
 /** On-chain username: trim only (case and charset are significant; Kind 0 display name is separate). */
 export function normalizeUsernameInput(name: string): string {
   return name.trim();
+}
+
+/** One automatic chain read for the signed-in account. Explicit refreshes stay separate. */
+export function ensureOwnUsername(): void {
+  if (ownUsernameRefresh) return;
+  ownUsernameRefresh = refreshUsernameState();
 }
 
 export async function refreshUsernameState(options?: {
@@ -218,7 +258,13 @@ async function withBusyWrite<T>(fn: () => Promise<T>): Promise<T> {
 
 export async function claimUsername(name: string): Promise<UsernameClaimResult> {
   const normalized = normalizeUsernameInput(name);
-  return withBusyWrite(() => usernameClaim(USERNAME_NETWORK, normalized));
+  const result = await withBusyWrite(() => usernameClaim(USERNAME_NETWORK, normalized));
+  try {
+    await publishBoundDisplayName(normalized);
+  } catch (e) {
+    usernameKind0BindError.set(getInvokeErrorMessage(e));
+  }
+  return result;
 }
 
 function resolveNpubHash(): string {

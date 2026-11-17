@@ -124,6 +124,8 @@ export function buildPlainMessageProps(
   const base = {
     id: msg.id,
     authorName: '',
+    authorNpub: '',
+    replyAuthorNpub: '',
     content: msg.content,
     timestamp: new Date(msg.at).toISOString(),
     avatar: '',
@@ -142,17 +144,19 @@ export function buildPlainMessageProps(
   } else {
     const senderNpub = msg.npub ?? threadNpub;
     const senderProfile = senderNpub ? profilesMap[senderNpub] : null;
+    base.authorNpub = senderNpub ?? '';
     base.authorName = getProfileDisplayName(senderProfile);
     base.avatar = getProfileAvatarSrc(senderProfile) ?? '';
   }
   if (base.replyToId) {
     const replyNpub = msg.replied_to_npub ?? undefined;
-    base.replyAuthorName =
-      replyNpub && currentUserNpub && replyNpub === currentUserNpub
-        ? tFn('messaging.message.authorYou')
-        : replyNpub
-          ? getProfileDisplayName(profilesMap[replyNpub] ?? null)
-          : tFn('messaging.message.replyUnknown');
+    const replyIsSelf = !!(replyNpub && currentUserNpub && replyNpub === currentUserNpub);
+    base.replyAuthorNpub = replyNpub && !replyIsSelf ? replyNpub : '';
+    base.replyAuthorName = replyIsSelf
+      ? tFn('messaging.message.authorYou')
+      : replyNpub
+        ? getProfileDisplayName(profilesMap[replyNpub] ?? null)
+        : tFn('messaging.message.replyUnknown');
     base.replyPreview = replyTargetExcerpt(
       msg.replied_to_content,
       msg.replied_to_has_attachment === true,

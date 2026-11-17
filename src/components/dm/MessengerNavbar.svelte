@@ -18,6 +18,7 @@
   import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
   import { profiles } from '../../stores/profiles';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import userPlaceholder from '../../icons/user-placeholder.svg';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -149,7 +150,7 @@
                 {/if}
               </span>
               <span class="dm-name-block">
-                <span class="dm-name">{displayName(row)}</span>
+                <span class="dm-name"><VerifiedName npub={row.npub} fallback={displayName(row)} /></span>
                 {#if cat}
                   <span class="dm-category">{categoryLabel(cat)}</span>
                 {/if}

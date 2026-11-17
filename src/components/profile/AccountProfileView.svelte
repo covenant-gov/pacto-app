@@ -2,17 +2,34 @@
   import { t } from 'svelte-i18n';
   import backIcon from '../../icons/chevron-double-left.svg';
   import { currentUser } from '../../stores/auth-session';
-  import { activeView } from '../../stores/navigation';
+  import {
+    activeView,
+    consumeProfileUsernameFocus,
+    profileUsernameFocusNonce,
+  } from '../../stores/navigation';
   import type { EvmAccountRow } from '../../lib/wallet/evm-accounts';
   import ProfileSection from '../settings/ProfileSection.svelte';
   import EvmDashGasSection from '../settings/EvmDashGasSection.svelte';
   import PactoNftStrip from './PactoNftStrip.svelte';
+  import UsernameNftView from './UsernameNftView.svelte';
   import ProfileWalletHero from './ProfileWalletHero.svelte';
   import ProfileEvmAccounts from './ProfileEvmAccounts.svelte';
 
   let userNpub = $derived($currentUser?.npub || '');
   let evmAccountList: EvmAccountRow[] = $state([]);
+  let usernameNftOpen = $state(false);
+
+  $effect(() => {
+    void $profileUsernameFocusNonce;
+    if (!consumeProfileUsernameFocus()) return;
+    usernameNftOpen = true;
+  });
+
   function goBack() {
+    if (usernameNftOpen) {
+      usernameNftOpen = false;
+      return;
+    }
     $activeView = 'hub';
   }
 </script>
@@ -28,12 +45,16 @@
 
   <div class="account-profile-main">
     <div class="account-profile-stack">
+      {#if usernameNftOpen}
+        <UsernameNftView />
+      {:else}
       <ProfileSection />
-      <PactoNftStrip />
+      <PactoNftStrip onOpen={() => (usernameNftOpen = true)} />
       {#if userNpub}
         <ProfileWalletHero accountNpub={userNpub} {evmAccountList} />
         <ProfileEvmAccounts bind:evmAccountList />
         <EvmDashGasSection />
+      {/if}
       {/if}
     </div>
   </div>

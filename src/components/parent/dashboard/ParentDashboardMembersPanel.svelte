@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
+  import { getProfileAvatarSrc } from '../../../lib/utils/profile';
+  import VerifiedName from '../../profile/VerifiedName.svelte';
   import { profiles } from '../../../stores/profiles';
 
   interface Props {
@@ -30,7 +31,7 @@
             {:else}
               <div class="members-panel-avatar members-panel-avatar-placeholder" aria-hidden="true"></div>
             {/if}
-            <span class="members-panel-name">{getProfileDisplayName($profiles[npub]) || npub.slice(0, 16) + '…'}</span>
+            <span class="members-panel-name"><VerifiedName {npub} fallback={npub.slice(0, 16) + '…'} /></span>
           </div>
         {/each}
       {/if}

@@ -3,6 +3,7 @@
   import { get } from 'svelte/store';
   const tFn = get(t);
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
+  import VerifiedName from '../../profile/VerifiedName.svelte';
   import { profiles } from '../../../stores/profiles';
   import { currentUser } from '../../../stores/auth-session';
   import {
@@ -235,8 +236,10 @@
             {/if}
             <div class="roles-member-meta">
               <span class="roles-member-name"
-                >{getProfileDisplayName($profiles[npub]) ||
-                  (npub.length > 20 ? npub.slice(0, 14) + '…' : npub)}</span
+                ><VerifiedName
+                  {npub}
+                  fallback={npub.length > 20 ? npub.slice(0, 14) + '…' : npub}
+                /></span
               >
               <code class="roles-member-npub"
                 >{npub.length > 28 ? npub.slice(0, 14) + '…' + npub.slice(-8) : npub}</code

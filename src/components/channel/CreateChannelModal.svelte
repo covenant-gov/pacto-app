@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import VerifiedName from '../profile/VerifiedName.svelte';
   import { appConfig } from '../../stores/app-config';
 
   interface Props {
@@ -156,7 +157,7 @@
                   onchange={() => onToggleMember(npub)}
                   disabled={creating}
                 />
-                <span class="create-channel-member-name">{getMemberDisplayName(npub)}</span>
+                <span class="create-channel-member-name"><VerifiedName {npub} fallback={getMemberDisplayName(npub)} /></span>
               </label>
             {/each}
           {/if}

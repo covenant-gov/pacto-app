@@ -885,12 +885,14 @@ fn build_metadata_from_vector_profile(
     avatar: &str,
     banner: &str,
     about: &str,
+    bind_display_name: bool,
 ) -> Metadata {
-    let mut meta = Metadata::new().name(if name.is_empty() {
+    let published_name = if name.is_empty() {
         profile.name.as_str()
     } else {
         name
-    });
+    };
+    let mut meta = Metadata::new().name(published_name);
 
     let avatar_url_str = if avatar.is_empty() {
         profile.avatar.as_str()
@@ -914,7 +916,9 @@ fn build_metadata_from_vector_profile(
         }
     }
 
-    if !profile.display_name.is_empty() {
+    if bind_display_name && !published_name.is_empty() {
+        meta = meta.display_name(published_name);
+    } else if !profile.display_name.is_empty() {
         meta = meta.display_name(&profile.display_name);
     }
 
@@ -980,7 +984,7 @@ async fn publish_vector_profile_kind0(
     about: String,
 ) -> Result<Kind0PublishReceipt, String> {
     let _guard = KIND0_PUBLISH_LOCK.lock().await;
-    publish_vector_profile_kind0_inner(name, avatar, banner, about).await
+    publish_vector_profile_kind0_inner(name, avatar, banner, about, false).await
 }
 
 async fn publish_vector_profile_kind0_inner(
@@ -988,6 +992,7 @@ async fn publish_vector_profile_kind0_inner(
     avatar: String,
     banner: String,
     about: String,
+    bind_display_name: bool,
 ) -> Result<Kind0PublishReceipt, String> {
     let handle = TAURI_APP
         .get()
@@ -1004,7 +1009,14 @@ async fn publish_vector_profile_kind0_inner(
         let profile = state
             .get_profile(&npub)
             .ok_or_else(|| "Profile not found".to_string())?;
-        build_metadata_from_vector_profile(&profile, &name, &avatar, &banner, &about)
+        build_metadata_from_vector_profile(
+            &profile,
+            &name,
+            &avatar,
+            &banner,
+            &about,
+            bind_display_name,
+        )
     };
 
     let metadata_json = kind0_metadata_json_without_evm(&meta).map_err(|e| e.to_string())?;
@@ -1244,7 +1256,7 @@ pub(crate) async fn maybe_republish_own_kind0(
             }
         }
         Kind0RepairDecision::Publish => {
-            match publish_vector_profile_kind0_inner(name, avatar, banner, about).await {
+            match publish_vector_profile_kind0_inner(name, avatar, banner, about, false).await {
                 Ok(_) => write_repair_timestamp(handle, KIND0_REPAIR_LAST_SUCCESS_KEY),
                 Err(e) => {
                     eprintln!("[kind0] repair publish failed: {e}");
@@ -1263,6 +1275,18 @@ pub async fn update_profile(
     about: String,
 ) -> Result<Kind0PublishReceipt, String> {
     publish_vector_profile_kind0(name, avatar, banner, about).await
+}
+
+/// Kind 0 publish that sets both `name` and `display_name` to the chain username.
+#[tauri::command]
+pub async fn publish_bound_username(
+    name: String,
+    avatar: String,
+    banner: String,
+    about: String,
+) -> Result<Kind0PublishReceipt, String> {
+    let _guard = KIND0_PUBLISH_LOCK.lock().await;
+    publish_vector_profile_kind0_inner(name, avatar, banner, about, true).await
 }
 
 #[tauri::command]
@@ -1483,9 +1507,10 @@ pub async fn get_profile(npub: String) -> Result<Profile, String> {
 #[cfg(test)]
 mod kind0_relay_proof_tests {
     use super::{
-        decide_kind0_repair, kind0_echoes_local, kind0_live_filter, kind0_verified_quorum_met,
-        metadata_has_public_fields, nip01_kind0_winner, required_kind0_acks, same_kind0_authors,
-        Kind0RepairDecision, Kind0ScanHit, Profile,
+        build_metadata_from_vector_profile, decide_kind0_repair, kind0_echoes_local,
+        kind0_live_filter, kind0_verified_quorum_met, metadata_has_public_fields,
+        nip01_kind0_winner, required_kind0_acks, same_kind0_authors, Kind0RepairDecision,
+        Kind0ScanHit, Profile,
     };
     use nostr_sdk::prelude::*;
 
@@ -1560,6 +1585,35 @@ mod kind0_relay_proof_tests {
         let picked = nip01_kind0_winner(&hits).unwrap();
         assert_eq!(picked.metadata.name.as_deref(), Some("High"));
         assert_eq!(picked.event_id, "ff");
+    }
+
+    #[test]
+    fn bound_username_overwrites_display_name() {
+        let mut profile = Profile::new();
+        profile.name = "old".into();
+        profile.display_name = "bravo-test".into();
+        profile.about = "bio".into();
+        let meta = build_metadata_from_vector_profile(
+            &profile,
+            "test-4",
+            "",
+            "",
+            "bio",
+            true,
+        );
+        assert_eq!(meta.name.as_deref(), Some("test-4"));
+        assert_eq!(meta.display_name.as_deref(), Some("test-4"));
+        assert_eq!(meta.about.as_deref(), Some("bio"));
+    }
+
+    #[test]
+    fn unbound_publish_keeps_existing_display_name() {
+        let mut profile = Profile::new();
+        profile.display_name = "bravo-test".into();
+        let meta =
+            build_metadata_from_vector_profile(&profile, "edited", "", "", "", false);
+        assert_eq!(meta.name.as_deref(), Some("edited"));
+        assert_eq!(meta.display_name.as_deref(), Some("bravo-test"));
     }
 
     #[test]

@@ -74,7 +74,11 @@ SQLite cache: `username_claims` (username, npubHash, tokenId, link event id, pol
 
 ## Username vs display name
 
-- **Claimed username** (on-chain NFT): any non-empty string up to **64 UTF-8 bytes** client-side (chain: unique + not reserved; NIP-01 style — no charset). Trim only; **do not** force lowercase (names are case-sensitive on-chain). Kind 0 **display name** stays free-form and is not the on-chain name.
+- **Claimed username** (on-chain NFT): any non-empty string up to **64 UTF-8 bytes** client-side (chain: unique + not reserved; NIP-01 style — no charset). Trim only; **do not** force lowercase (names are case-sensitive on-chain). The name is immutable after claim.
+- **After a successful claim,** the client publishes kind 0 with both `name` and `display_name` set to that chain username. Profile edit can still change avatar and bio. It cannot write a different name while this account holds the NFT.
+- **One name in the UI.** No claim: kind 0 `display_name`, else `name`, with no check. Claim held by this account (chain record, non-zero token, bound EVM is the active roster address): the chain name, with a check. A missing kind 31337 link does not hide the check.
+- **Other people.** `username_record_for_npub` reads `recordOf` for that npub. A minted record replaces nickname and kind 0 for display and shows the check. Session cache, including misses. The signed-in account uses the local username store.
+- **Profile.** The identity heading is the only name. Claim and address rotation live in the username view opened from the Pacto NFTs card. The empty slot is the claim call to action. What the kind 0 name should become after the NFT leaves the account is undecided.
 - **Session pubkey for `npubHash`:** `currentUser.pubkey` must be the 32-byte hex x-only key (`LoginKeyPair.pubkey_hex`), not the bech32 npub. Hash is `sha256(0x02 || pubkey)`.
 
 ## Verified badge
@@ -83,7 +87,7 @@ Requires **both** a cached kind **31337** `linkEventId` and on-chain `recordOf` 
 
 ## Profile UX (address rotation)
 
-Claim and verified badge live under Profile → Username. **Bound EVM** display and **address rotation** (`initiate` / `claim` / `cancel`) live on the Profile **Pacto NFT** card (`PactoNftStrip` → `UsernameAddressRotateModal`), not under the username field and not in wallet Send. Mid-rotation accounts also keep compact claim/cancel under Username so pending transfers stay recoverable. See [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md).
+The profile heading is the only name. Claim, link restore, and address rotation (`initiate` / `claim` / `cancel`) live in the username view opened from the Pacto NFT card (`PactoNftStrip` → `UsernameNftView` → `UsernameAddressRotateModal`), not in wallet Send. The card keeps the bound EVM and a pending-transfer line. See [SETTINGS_LAYOUT.md](./SETTINGS_LAYOUT.md).
 
 ## Operator smoke (Sepolia)
 

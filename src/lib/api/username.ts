@@ -105,6 +105,14 @@ export async function usernameRecordOf(
   return invoke<UsernameRecordDto>('username_record_of', { network, npubHash, rpcUrls });
 }
 
+export async function usernameRecordForNpub(
+  network: string,
+  npub: string,
+  rpcUrls?: string[],
+): Promise<UsernameRecordDto> {
+  return invoke<UsernameRecordDto>('username_record_for_npub', { network, npub, rpcUrls });
+}
+
 export async function usernameEligibleMember(
   network: string,
   member: string,

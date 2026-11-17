@@ -4,7 +4,10 @@
   import { currentUser } from '../../stores/auth-session';
   import { openAccountProfile } from '../../stores/navigation';
   import { profiles } from '../../stores/profiles';
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import { getProfileAvatarSrc } from '../../lib/utils/profile';
+  import VerifiedName from '../profile/VerifiedName.svelte';
+  import { heldUsernameFromState, usernameState } from '../../stores/username';
+  import { shownProfileName } from '../../lib/username/shown-name';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
   import {
     cancelUserCommonsBroadcast,
@@ -38,7 +41,9 @@
   const npub = $derived($currentUser?.npub ?? '');
   const profile = $derived(npub ? $profiles[npub] : null);
   const avatarSrc = $derived(getProfileAvatarSrc(profile));
-  const displayName = $derived(npub ? getProfileDisplayName(profile) : '');
+  const displayName = $derived(
+    npub ? shownProfileName(profile, heldUsernameFromState($usernameState)).name : '',
+  );
 
   const tFn = get(t);
 
@@ -122,6 +127,9 @@
     </button>
 
     <div class="commons-personal-block">
+      {#if npub}
+        <VerifiedName {npub} fallback={displayName} />
+      {/if}
       {#if loading}
         <span class="commons-personal-status muted">{$t('commons.personal.checking')}</span>
       {:else if hasActive && lastBroadcast}
