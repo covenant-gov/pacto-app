@@ -10,8 +10,10 @@
   import { showToast } from '../../stores/toast';
   import EditIconButton from '../ui/EditIconButton.svelte';
   import CopyableKeyPill from '../ui/CopyableKeyPill.svelte';
+  import MoreActionsMenu from '../ui/MoreActionsMenu.svelte';
   import AvatarPicker from '../ui/AvatarPicker.svelte';
   import VerifiedName from '../profile/VerifiedName.svelte';
+  import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import { heldUsernameFromState, usernameState } from '../../stores/username';
   import { get } from 'svelte/store';
 
@@ -26,6 +28,7 @@
   let bannerSrc = $derived(getProfileBannerSrc(profile));
 
   let error: string | null = $state(null);
+  let exportModalOpen = $state(false);
 
   // Edit profile state
   let isEditing = $state(false);
@@ -245,7 +248,21 @@
 
             <div class="profile-account-id">
               <span class="profile-account-id-label">{$t('profile.accountIdLabel')}</span>
-              <CopyableKeyPill value={profile.id} ariaLabel={$t('profile.copyAccountId')} />
+              <div class="profile-account-id-row">
+                <CopyableKeyPill value={profile.id} ariaLabel={$t('profile.copyAccountId')} />
+                <MoreActionsMenu
+                  ariaLabel={$t('profile.accountIdActions')}
+                  items={[
+                    {
+                      id: 'export-key',
+                      label: $t('profile.exportKey'),
+                      onSelect: () => {
+                        exportModalOpen = true;
+                      },
+                    },
+                  ]}
+                />
+              </div>
             </div>
           {/if}
         </div>
@@ -257,6 +274,12 @@
       {/if}
 </section>
 
+<EvmAccountKeyExportModal
+  variant="nostr"
+  open={exportModalOpen}
+  npub={userNpub}
+  onClose={() => (exportModalOpen = false)}
+/>
 
 <style>
   .profile-identity {
@@ -406,6 +429,13 @@
     align-items: flex-start;
     gap: 8px;
     margin-top: 20px;
+  }
+
+  .profile-account-id-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
 
   .profile-account-id-label {

@@ -18,6 +18,8 @@
 	"profile.aka": "aka",
 	"profile.accountIdLabel": "Account ID (nPub):",
 	"profile.copyAccountId": "Copy account ID",
+	"profile.accountIdActions": "Account ID actions",
+	"profile.exportKey": "Export key",
 	"profile.copy": "Copy",
 	"profile.copied": "Copied",
 	"profile.exportSeedPhrase": "Export seed phrase",
