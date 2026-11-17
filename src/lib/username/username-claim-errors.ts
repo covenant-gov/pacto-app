@@ -2,6 +2,8 @@ import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import { parseWalletErrorCode } from '../governance/gov-write-errors';
+import { focusSquadSettingsBundlerEditor } from '../../stores/navigation';
+import { clearToast, showToast } from '../../stores/toast';
 
 const CODE_TO_I18N: Record<string, string> = {
   USERNAME_CLAIM_REVERTED: 'profile.username.errors.claimReverted',
@@ -22,6 +24,14 @@ const CODE_TO_I18N: Record<string, string> = {
   BOOTSTRAP_AFTER_MINT: 'profile.username.errors.bootstrapAfterMint',
   USERNAME_POOL_LOW: 'profile.username.errors.poolLow',
 };
+
+/** True when claim failed because sponsored gas / Pimlico is not configured. */
+export function isUsernameBundlerConfigError(e: unknown): boolean {
+  const code = parseWalletErrorCode(e);
+  if (code) return code === 'BUNDLER_CONFIG';
+  const raw = getInvokeErrorMessage(e, '');
+  return raw.includes('BUNDLER_CONFIG') || raw.includes('Pimlico');
+}
 
 /** Map username claim / sponsor wallet errors to profile i18n. */
 export function usernameClaimErrorMessage(e: unknown, fallback?: string): string {
@@ -48,4 +58,26 @@ export function usernameClaimErrorMessage(e: unknown, fallback?: string): string
     return tFn('profile.username.errors.claimReverted');
   }
   return raw;
+}
+
+/** Error toast for username claim; bundler failures get a Sponsored gas settings action. */
+export function showUsernameClaimErrorToast(e: unknown): void {
+  const message = usernameClaimErrorMessage(e);
+  if (!isUsernameBundlerConfigError(e)) {
+    showToast(message, undefined, undefined, { error: true });
+    return;
+  }
+  const tFn = get(t);
+  showToast(
+    message,
+    undefined,
+    {
+      label: tFn('profile.username.openSponsoredGas'),
+      action: () => {
+        clearToast();
+        focusSquadSettingsBundlerEditor();
+      },
+    },
+    { error: true },
+  );
 }

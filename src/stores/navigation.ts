@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store';
 import { SETTINGS_CHANNEL_ID } from '../lib/squad/hub-channel-names';
 import type { SquadNetworkSlot } from '../lib/squad/squad-network';
 import { persistenceKey } from './persistence-context';
+import { squads } from './squads';
 
 export type TopNavTab = 'commons' | 'dms' | 'squads' | 'catchup';
 export const DEFAULT_TOP_NAV_TAB: TopNavTab = 'squads';
@@ -105,6 +106,45 @@ export const squadSettingsRpcFocusNonce = writable(0);
 export function focusSquadSettingsRpcEditor() {
   openSquadSettingsChannel('network');
   squadSettingsRpcFocusNonce.update((n) => n + 1);
+}
+
+/** Bumped to open #settings → Sponsored gas (Pimlico) after a username-claim bundler warning. */
+export const squadSettingsBundlerFocusNonce = writable(0);
+
+/** Survives SquadEndpointsPanel remount so scroll/edit only runs when the nonce advances. */
+let lastConsumedSquadSettingsBundlerFocusNonce = 0;
+
+/** Returns true once per nonce bump (safe across component remounts). */
+export function consumeSquadSettingsBundlerFocus(): boolean {
+  const nonce = get(squadSettingsBundlerFocusNonce);
+  if (nonce <= lastConsumedSquadSettingsBundlerFocusNonce) return false;
+  lastConsumedSquadSettingsBundlerFocusNonce = nonce;
+  return true;
+}
+
+/** Test helper — reset focus consumption between cases. */
+export function resetSquadSettingsBundlerFocusConsumption(): void {
+  lastConsumedSquadSettingsBundlerFocusNonce = 0;
+}
+
+/**
+ * Open #settings → Network → Sponsored gas when a squad can host that editor.
+ * No-ops (stays on Profile) when no squad is available to select.
+ */
+export function focusSquadSettingsBundlerEditor() {
+  const list = get(squads);
+  if (list.length === 0) return;
+
+  const preferred = get(activeSquadId) ?? get(lastOpenedSquadId);
+  const squad = (preferred ? list.find((s) => s.id === preferred) : null) ?? list[0];
+  if (!squad) return;
+
+  activeTopNavTab.set('squads');
+  activeSquadId.set(squad.id);
+  openSquadSettingsChannel('network');
+  // syncSquadsHubSelection may clear selection when the list is empty mid-flush
+  if (!get(activeSquadId)) return;
+  squadSettingsBundlerFocusNonce.update((n) => n + 1);
 }
 
 /** Bumped to open #settings → network editor from the Status checklist CTA. */
