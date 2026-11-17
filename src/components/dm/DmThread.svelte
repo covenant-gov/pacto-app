@@ -9,13 +9,12 @@
   import VerifiedName from '../profile/VerifiedName.svelte';
   import {
     parseWalletPeerInfoGrant,
-    parseWalletTxAnnouncement,
     getFulfilledWalletRequestIdsFromMessages,
     type WalletPeerInfoRequestPayload,
   } from '../../lib/wallet/dm-messages';
   import {
+    dmPeerEvmWritesFromMessages,
     formatReciprocalWalletPeerGrant,
-    shouldPersistInboundWalletPeerGrant,
     shouldSendReciprocalWalletPeerGrant,
   } from '../../lib/wallet/wallet-peer-exchange';
   import { setDmPeerEvmAddress } from '../../lib/api/wallet-peers';
@@ -292,16 +291,14 @@
     if (pinnedToBottom) scrollToLatest();
   }
 
-  let appliedWalletGrantIds = new Set<string>();
-  let appliedInboundWalletTxIds = new Set<string>();
+  let appliedPeerEvmWriteIds = new Set<string>();
   let appliedWalletGrantsForNpub: string | null = null;
   let reciprocalGrantInFlight = new Set<string>();
 
   $effect(() => {
     if (npub !== appliedWalletGrantsForNpub) {
       appliedWalletGrantsForNpub = npub;
-      appliedWalletGrantIds = new Set();
-      appliedInboundWalletTxIds = new Set();
+      appliedPeerEvmWriteIds = new Set();
       reciprocalGrantInFlight = new Set();
     }
   });
@@ -310,32 +307,32 @@
     const uid = $currentUser?.npub;
     const peerNpub = npub;
     if (!uid || !peerNpub) return;
+    const writes = dmPeerEvmWritesFromMessages({
+      messages,
+      peerNpub,
+      myNpub: uid,
+    });
+    const pendingWrites = writes.filter((w) => !appliedPeerEvmWriteIds.has(w.id));
+    for (const w of pendingWrites) appliedPeerEvmWriteIds.add(w.id);
+    if (pendingWrites.length > 0) {
+      const forPeer = peerNpub;
+      void (async () => {
+        for (const w of pendingWrites) {
+          try {
+            await setDmPeerEvmAddress(forPeer, w.address, w.atMs);
+            if (npub !== forPeer) return;
+            dmWalletPeerExchangeTick.update((t: number) => t + 1);
+          } catch {
+            appliedPeerEvmWriteIds.delete(w.id);
+          }
+        }
+      })();
+    }
+
     for (const msg of messages) {
       if (msg.mine) continue;
       const g = parseWalletPeerInfoGrant(msg.content ?? '');
       if (!g || g.grantor_npub !== peerNpub) continue;
-
-      if (
-        !appliedWalletGrantIds.has(msg.id) &&
-        shouldPersistInboundWalletPeerGrant({
-          grant: g,
-          peerNpub,
-          myNpub: uid,
-          messages,
-        })
-      ) {
-        appliedWalletGrantIds.add(msg.id);
-        const forPeer = peerNpub;
-        void setDmPeerEvmAddress(forPeer, g.evm_address).then(
-          () => {
-            if (npub !== forPeer) return;
-            dmWalletPeerExchangeTick.update((t: number) => t + 1);
-          },
-          () => {
-            appliedWalletGrantIds.delete(msg.id);
-          }
-        );
-      }
 
       if (reciprocalGrantInFlight.has(g.request_id)) continue;
       if (
@@ -399,22 +396,6 @@
           reciprocalGrantInFlight.delete(g.request_id);
         }
       })();
-    }
-    for (const msg of messages) {
-      if (msg.mine || appliedInboundWalletTxIds.has(msg.id)) continue;
-      const ann = parseWalletTxAnnouncement(msg.content ?? '');
-      if (!ann || ann.from_npub !== peerNpub) continue;
-      appliedInboundWalletTxIds.add(msg.id);
-      const forPeer = peerNpub;
-      void setDmPeerEvmAddress(forPeer, ann.from_evm_address).then(
-        () => {
-          if (npub !== forPeer) return;
-          dmWalletPeerExchangeTick.update((n: number) => n + 1);
-        },
-        () => {
-          appliedInboundWalletTxIds.delete(msg.id);
-        },
-      );
     }
   });
 

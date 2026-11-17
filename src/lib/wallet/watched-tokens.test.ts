@@ -5,6 +5,7 @@ import {
   defaultWatchedErc20Rows,
   legacyAutomaticWatchedRows,
   loadWatchedErc20Rows,
+  mergeWatchedRows,
   saveWatchedErc20Rows,
   watchedRowsToWire,
   buildCatalogSearchEntries,
@@ -46,6 +47,30 @@ describe('watched-tokens', () => {
   describe('defaultWatchedErc20Rows', () => {
     it('watches nothing until a token is added', () => {
       expect(defaultWatchedErc20Rows()).toEqual([]);
+    });
+  });
+
+  describe('mergeWatchedRows', () => {
+    const usdc: WatchedErc20Row = {
+      id: catalogTokenId('sepolia', 'USDC'),
+      network: 'sepolia',
+      symbol: 'USDC',
+      address: '0x1111111111111111111111111111111111111111',
+      decimals: 6,
+      source: 'catalog',
+    };
+    const usdt: WatchedErc20Row = {
+      id: catalogTokenId('sepolia', 'USDT'),
+      network: 'sepolia',
+      symbol: 'USDT',
+      address: '0x2222222222222222222222222222222222222222',
+      decimals: 6,
+      source: 'catalog',
+    };
+
+    it('keeps intervening removals and appends new discoveries', () => {
+      expect(mergeWatchedRows([usdc], [usdc, usdt])).toEqual([usdc, usdt]);
+      expect(mergeWatchedRows([], [usdt])).toEqual([usdt]);
     });
   });
 

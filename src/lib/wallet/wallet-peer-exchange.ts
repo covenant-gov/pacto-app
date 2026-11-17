@@ -8,12 +8,21 @@ import {
   formatWalletPeerInfoRequest,
   parseWalletPeerInfoGrant,
   parseWalletPeerInfoRequest,
+  parseWalletTxAnnouncement,
   type WalletPeerInfoGrantPayload,
 } from './dm-messages';
 
 export type WalletPeerExchangeMessage = {
+  id?: string;
+  at?: number;
   mine?: boolean;
   content?: string | null;
+};
+
+export type DmPeerEvmWrite = {
+  id: string;
+  atMs: number;
+  address: string;
 };
 
 /** Peer npubs with a wallet-info request currently posting (survives WalletBar remount). */
@@ -92,7 +101,7 @@ export async function sendWalletPeerInfoRequest(input: {
 
 /** True if this thread already has an outbound grant for `requestId`. */
 export function threadHasOutboundGrantForRequest(
-  messages: WalletPeerExchangeMessage[],
+  messages: readonly WalletPeerExchangeMessage[],
   requestId: string,
   myNpub: string
 ): boolean {
@@ -113,7 +122,7 @@ export function shouldShowWalletPeerGrantCard(params: {
   mine: boolean;
   requestId: string;
   myNpub: string | undefined;
-  messages: WalletPeerExchangeMessage[];
+  messages: readonly WalletPeerExchangeMessage[];
 }): boolean {
   if (params.mine) return false;
   const me = params.myNpub?.trim();
@@ -123,7 +132,7 @@ export function shouldShowWalletPeerGrantCard(params: {
 
 /** True if we sent the original consent request for this id. */
 export function threadHasOutboundRequestForId(
-  messages: WalletPeerExchangeMessage[],
+  messages: readonly WalletPeerExchangeMessage[],
   requestId: string,
   myNpub: string
 ): boolean {
@@ -144,7 +153,7 @@ export function shouldPersistInboundWalletPeerGrant(params: {
   grant: WalletPeerInfoGrantPayload;
   peerNpub: string;
   myNpub: string;
-  messages: WalletPeerExchangeMessage[];
+  messages: readonly WalletPeerExchangeMessage[];
 }): boolean {
   const { grant, peerNpub, myNpub, messages } = params;
   if (grant.grantor_npub !== peerNpub) return false;
@@ -161,7 +170,7 @@ export function shouldSendReciprocalWalletPeerGrant(params: {
   grant: WalletPeerInfoGrantPayload;
   peerNpub: string;
   myNpub: string;
-  messages: WalletPeerExchangeMessage[];
+  messages: readonly WalletPeerExchangeMessage[];
   alreadyReciprocatedRequestIds: readonly string[];
 }): boolean {
   const { grant, peerNpub, myNpub, messages, alreadyReciprocatedRequestIds } = params;
@@ -170,6 +179,36 @@ export function shouldSendReciprocalWalletPeerGrant(params: {
   if (!threadHasOutboundRequestForId(messages, grant.request_id, myNpub)) return false;
   if (threadHasOutboundGrantForRequest(messages, grant.request_id, myNpub)) return false;
   return true;
+}
+
+/** Inbound grants that passed persist rules and inbound transfer announcements, oldest first. */
+export function dmPeerEvmWritesFromMessages(params: {
+  messages: readonly WalletPeerExchangeMessage[];
+  peerNpub: string;
+  myNpub: string;
+}): DmPeerEvmWrite[] {
+  const { messages, peerNpub, myNpub } = params;
+  const writes: Array<DmPeerEvmWrite & { index: number }> = [];
+  messages.forEach((msg, index) => {
+    if (msg.mine) return;
+    const id = msg.id?.trim();
+    if (!id) return;
+    const atMs = typeof msg.at === 'number' && Number.isFinite(msg.at) ? msg.at : 0;
+    const grant = parseWalletPeerInfoGrant(msg.content ?? '');
+    if (
+      grant &&
+      shouldPersistInboundWalletPeerGrant({ grant, peerNpub, myNpub, messages })
+    ) {
+      writes.push({ id, atMs, address: grant.evm_address.trim(), index });
+      return;
+    }
+    const ann = parseWalletTxAnnouncement(msg.content ?? '');
+    if (ann && ann.from_npub === peerNpub) {
+      writes.push({ id, atMs, address: ann.from_evm_address.trim(), index });
+    }
+  });
+  writes.sort((a, b) => a.atMs - b.atMs || a.index - b.index);
+  return writes.map(({ id, atMs, address }) => ({ id, atMs, address }));
 }
 
 export function formatReciprocalWalletPeerGrant(params: {

@@ -24,6 +24,17 @@ describe('wallet-peers command wrappers', () => {
     expect(mockedInvoke).toHaveBeenCalledWith('set_dm_peer_evm_address', {
       peerNpub: 'npub1',
       address: '0xabc',
+      sourceAtMs: null,
+    });
+  });
+
+  it('setDmPeerEvmAddress forwards sourceAtMs', async () => {
+    mockedInvoke.mockResolvedValueOnce(undefined);
+    await setDmPeerEvmAddress('npub1', '0xabc', 42);
+    expect(mockedInvoke).toHaveBeenCalledWith('set_dm_peer_evm_address', {
+      peerNpub: 'npub1',
+      address: '0xabc',
+      sourceAtMs: 42,
     });
   });
 });

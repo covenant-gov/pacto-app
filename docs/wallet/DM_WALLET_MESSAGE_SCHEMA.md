@@ -26,7 +26,7 @@ A: auto reciprocal wallet_peer_info_grant (A’s 0x)
 → dm_peer_evm set → later Sends do not ask again
 ```
 
-A transfer either way also writes `dm_peer_evm`: outbound Send stores the destination; an inbound `wallet_tx_announcement` stores `from_evm_address` for `from_npub`. Changing primary does not push a new address to existing peers.
+A transfer either way also writes `dm_peer_evm`: outbound Send stores the destination; an inbound `wallet_tx_announcement` stores `from_evm_address` for `from_npub`. Peer address updates use the message time; an older announcement does not replace a newer grant. Changing primary does not push a new address to existing peers.
 
 Decline posts `wallet_peer_info_decline` only; nothing is written to `dm_peer_evm`. Either party may send a new request later.
 

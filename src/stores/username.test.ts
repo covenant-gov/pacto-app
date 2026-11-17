@@ -666,4 +666,41 @@ describe('claimUsername', () => {
     await publishBoundDisplayName('Dao');
     expect(get(usernameKind0BindError)).toBeNull();
   });
+
+  it('does not publish kind 0 after the account changes', async () => {
+    const { promise, resolve } = Promise.withResolvers<{
+      network: string;
+      chainId: number;
+      path: string;
+      username: string;
+      npubHash: string;
+      tokenId: string;
+      linkEventId: string;
+      userOpHash: string;
+      evmAddress: string;
+      policyVersion: number;
+    }>();
+    mockClaim.mockReturnValueOnce(promise);
+    const pending = claimUsername('Dao');
+    currentUser.set({
+      pubkey: 'bb'.repeat(32),
+      npub: 'npub1other',
+    } as never);
+    resolve({
+      network: 'sepolia',
+      chainId: 11155111,
+      path: 'bootstrap',
+      username: 'Dao',
+      npubHash: NPUB_HASH,
+      tokenId: '1',
+      linkEventId: 'evt',
+      userOpHash: '0x1',
+      evmAddress: EVM,
+      policyVersion: 1,
+    });
+    const result = await pending;
+    expect(result.username).toBe('Dao');
+    expect(mockPublishBound).not.toHaveBeenCalled();
+    expect(get(usernameKind0BindError)).toBeNull();
+  });
 });

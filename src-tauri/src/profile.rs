@@ -1286,6 +1286,12 @@ pub async fn publish_bound_username(
     about: String,
 ) -> Result<Kind0PublishReceipt, String> {
     let _guard = KIND0_PUBLISH_LOCK.lock().await;
+    let handle = TAURI_APP
+        .get()
+        .cloned()
+        .ok_or_else(|| "App handle not initialized".to_string())?;
+    let claim = db::get_username_claim(&handle)?;
+    db::require_minted_bound_username(claim.as_ref(), &name)?;
     publish_vector_profile_kind0_inner(name, avatar, banner, about, true).await
 }
 
@@ -1593,14 +1599,7 @@ mod kind0_relay_proof_tests {
         profile.name = "old".into();
         profile.display_name = "bravo-test".into();
         profile.about = "bio".into();
-        let meta = build_metadata_from_vector_profile(
-            &profile,
-            "test-4",
-            "",
-            "",
-            "bio",
-            true,
-        );
+        let meta = build_metadata_from_vector_profile(&profile, "test-4", "", "", "bio", true);
         assert_eq!(meta.name.as_deref(), Some("test-4"));
         assert_eq!(meta.display_name.as_deref(), Some("test-4"));
         assert_eq!(meta.about.as_deref(), Some("bio"));
@@ -1610,8 +1609,7 @@ mod kind0_relay_proof_tests {
     fn unbound_publish_keeps_existing_display_name() {
         let mut profile = Profile::new();
         profile.display_name = "bravo-test".into();
-        let meta =
-            build_metadata_from_vector_profile(&profile, "edited", "", "", "", false);
+        let meta = build_metadata_from_vector_profile(&profile, "edited", "", "", "", false);
         assert_eq!(meta.name.as_deref(), Some("edited"));
         assert_eq!(meta.display_name.as_deref(), Some("bravo-test"));
     }

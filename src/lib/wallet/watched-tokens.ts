@@ -146,6 +146,14 @@ function dedupeWatchedRows(rows: WatchedErc20Row[]): WatchedErc20Row[] {
   return out;
 }
 
+/** Keep current rows; append additions that are not already watched. */
+export function mergeWatchedRows(
+  current: readonly WatchedErc20Row[],
+  additions: readonly WatchedErc20Row[],
+): WatchedErc20Row[] {
+  return dedupeWatchedRows([...current, ...additions]);
+}
+
 function storageKey(accountNpub: string): string {
   return `${STORAGE_PREFIX}_${accountNpub}`;
 }

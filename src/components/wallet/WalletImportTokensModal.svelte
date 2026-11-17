@@ -9,6 +9,7 @@
     catalogEntryToRow,
     customTokenId,
     loadWatchedErc20Rows,
+    mergeWatchedRows,
     saveWatchedErc20Rows,
     type CatalogSearchEntry,
     type WatchedErc20Row,
@@ -84,11 +85,12 @@
   }
 
   function addSuggestion(entry: CatalogSearchEntry) {
-    if (!accountNpub || alreadyTracked(entry.network, entry.address)) return;
+    if (!accountNpub || scanning || alreadyTracked(entry.network, entry.address)) return;
     persist([...tracked, catalogEntryToRow(entry)]);
   }
 
   function removeRow(row: WatchedErc20Row) {
+    if (scanning) return;
     persist(tracked.filter((item) => item.id !== row.id));
   }
 
@@ -101,11 +103,14 @@
     if (!accountNpub || !ownerAddress || scanning) return;
     scanning = true;
     status = null;
-    let added = 0;
+    const discovered: WatchedErc20Row[] = [];
     try {
-      let next = loadWatchedErc20Rows(accountNpub);
+      const baseline = loadWatchedErc20Rows(accountNpub);
       for (const entry of suggestions) {
-        if (next.some((row) => rowKey(row.network, row.address) === rowKey(entry.network, entry.address))) {
+        if (baseline.some((row) => rowKey(row.network, row.address) === rowKey(entry.network, entry.address))) {
+          continue;
+        }
+        if (discovered.some((row) => rowKey(row.network, row.address) === rowKey(entry.network, entry.address))) {
           continue;
         }
         const result = await getEvmErc20Balance(entry.network, entry.address, ownerAddress);
@@ -117,26 +122,31 @@
           continue;
         }
         if (raw <= 0n) continue;
-        next = [...next, catalogEntryToRow(entry)];
-        added += 1;
+        discovered.push(catalogEntryToRow(entry));
       }
-      if (added > 0) {
-        saveWatchedErc20Rows(accountNpub, next);
+      if (discovered.length > 0) {
+        const merged = mergeWatchedRows(loadWatchedErc20Rows(accountNpub), discovered);
+        saveWatchedErc20Rows(accountNpub, merged);
         reload();
         onSaved();
       }
-      status = added > 0 ? $t('wallet.scanAdded', { values: { count: added } }) : $t('wallet.scanNone');
+      status =
+        discovered.length > 0
+          ? $t('wallet.scanAdded', { values: { count: discovered.length } })
+          : $t('wallet.scanNone');
     } finally {
       scanning = false;
     }
   }
 
   async function addByAddress() {
-    if (!accountNpub || !ownerAddress || reading || !isHexAddress(customAddress)) return;
+    if (!accountNpub || !ownerAddress || reading || scanning || !isHexAddress(customAddress)) return;
+    const network = customNetwork;
+    const address = customAddress.trim();
     reading = true;
     status = null;
     try {
-      const result = await getEvmErc20Balance(customNetwork, customAddress.trim(), ownerAddress);
+      const result = await getEvmErc20Balance(network, address, ownerAddress);
       if (!result.ok) {
         status = $t('wallet.couldNotReadToken');
         return;
@@ -147,15 +157,15 @@
         status = $t('wallet.couldNotReadToken');
         return;
       }
-      if (alreadyTracked(customNetwork, customAddress)) {
+      if (alreadyTracked(network, address)) {
         customAddress = '';
         return;
       }
       const row: WatchedErc20Row = {
-        id: customTokenId(customNetwork, customAddress),
-        network: customNetwork,
+        id: customTokenId(network, address),
+        network,
         symbol,
-        address: customAddress.trim(),
+        address,
         decimals,
         source: 'custom',
       };
@@ -200,7 +210,7 @@
                 <button
                   type="button"
                   class="w-import-btn-secondary"
-                  disabled={alreadyTracked(entry.network, entry.address)}
+                  disabled={scanning || alreadyTracked(entry.network, entry.address)}
                   onclick={() => addSuggestion(entry)}
                 >
                   {$t('wallet.addToken')}
@@ -218,7 +228,7 @@
       <div class="w-import-block">
         <h3>{$t('wallet.tokenAddress')}</h3>
         <div class="w-import-address">
-          <select class="ui-select" bind:value={customNetwork} aria-label={$t('wallet.networksMenu')}>
+          <select class="ui-select" bind:value={customNetwork} aria-label={$t('wallet.networksMenu')} disabled={reading}>
             {#each chainChoices as chainId (chainId)}
               <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
             {/each}
@@ -230,12 +240,13 @@
             bind:value={customAddress}
             autocomplete="off"
             spellcheck="false"
+            disabled={reading}
             aria-label={$t('wallet.tokenContractLabel')}
           />
           <button
             type="button"
             class="w-import-btn-primary"
-            disabled={!ownerAddress || reading || !isHexAddress(customAddress)}
+            disabled={!ownerAddress || reading || scanning || !isHexAddress(customAddress)}
             onclick={() => void addByAddress()}
           >
             {$t('wallet.addToken')}
@@ -253,7 +264,7 @@
               <li class="w-import-row">
                 <span class="w-import-sym">{row.symbol}</span>
                 <span class="w-import-meta">{getWalletNetworkDisplayName(row.network)}</span>
-                <button type="button" class="w-import-btn-secondary" onclick={() => removeRow(row)}>
+                <button type="button" class="w-import-btn-secondary" disabled={scanning} onclick={() => removeRow(row)}>
                   {$t('wallet.removeToken')}
                 </button>
               </li>

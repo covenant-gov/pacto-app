@@ -301,7 +301,9 @@ async function withBusyWrite<T>(fn: () => Promise<T>): Promise<T> {
 
 export async function claimUsername(name: string): Promise<UsernameClaimResult> {
   const normalized = normalizeUsernameInput(name);
+  const claimForNpub = signedInNpub();
   const result = await withBusyWrite(() => usernameClaim(USERNAME_NETWORK, normalized));
+  if (!claimForNpub || signedInNpub() !== claimForNpub) return result;
   try {
     await publishBoundDisplayName(normalized);
   } catch (e) {
