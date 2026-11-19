@@ -1072,8 +1072,7 @@ pub fn drain_pending(
 /// Announcements card content for an applied op: a single create or a series summary.
 fn card_content(w: &EventWire, applied: &Applied) -> Option<String> {
     match (w.op, applied) {
-        (Op::Create, Applied::Changed { inserted: true } | Applied::Replay)
-            if w.series_id.is_none() =>
+        (Op::Create, Applied::Changed { inserted: true }) if w.series_id.is_none() =>
         {
             let fields = fields_from_wire(w)?;
             Some(created_card_content(
@@ -1893,6 +1892,111 @@ pub async fn send_squad_event_rsvp<R: Runtime>(
     Ok(())
 }
 
+struct RelayRsvp {
+    event_id: String,
+    mls_group_id: String,
+    status: RsvpStatus,
+    updated_at_ms: i64,
+}
+
+fn load_events_for_relay(
+    conn: &Connection,
+    parent_id: &str,
+    npub: &str,
+) -> Result<(Vec<EventRow>, Vec<RelayRsvp>), String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {EVENT_COLUMNS} FROM squad_events WHERE parent_id = ?1 ORDER BY created_at_ms ASC"
+        ))
+        .map_err(|e| e.to_string())?;
+    let events = stmt
+        .query_map(params![parent_id], row_from_sql)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT r.event_id, e.mls_group_id, r.status, r.updated_at_ms
+             FROM squad_event_rsvps r
+             JOIN squad_events e ON e.event_id = r.event_id
+             WHERE e.parent_id = ?1 AND r.member_npub = ?2",
+        )
+        .map_err(|e| e.to_string())?;
+    let rsvps = stmt
+        .query_map(params![parent_id, npub], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut mine = Vec::new();
+    for (event_id, mls_group_id, status, updated_at_ms) in rsvps {
+        let Some(status) = RsvpStatus::parse(&status) else {
+            continue;
+        };
+        mine.push(RelayRsvp {
+            event_id,
+            mls_group_id,
+            status,
+            updated_at_ms,
+        });
+    }
+    Ok((events, mine))
+}
+
+/// Re-send stored events, cancels, and this member's RSVPs. Does not rewrite the local replica.
+pub(crate) async fn relay_stored_events<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<(), String> {
+    let (pk, npub) = signer_identity().await?;
+    let (events, rsvps) = with_conn(handle, |c| load_events_for_relay(c, parent_id, &npub))?;
+    for row in events {
+        if !crate::db::side_effect_parent_matches_chat(&row.mls_group_id, &row.parent_id) {
+            continue;
+        }
+        let announce = row.series_id.is_none() && row.status == EventStatus::Active;
+        let create = event_wire(
+            Op::Create,
+            &row.event_id,
+            &row.parent_id,
+            row.series_id.as_deref(),
+            &row.fields,
+            row.updated_at_ms,
+        );
+        if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &create, announce).await {
+            eprintln!("[tools-sync] event create relay failed: {e}");
+            continue;
+        }
+        if row.status == EventStatus::Cancelled {
+            let cancel = event_wire(
+                Op::Cancel,
+                &row.event_id,
+                &row.parent_id,
+                row.series_id.as_deref(),
+                &row.fields,
+                row.updated_at_ms,
+            );
+            if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &cancel, false).await
+            {
+                eprintln!("[tools-sync] event cancel relay failed: {e}");
+            }
+        }
+    }
+    for rsvp in rsvps {
+        let w = rsvp_wire(&rsvp.event_id, parent_id, rsvp.status, rsvp.updated_at_ms);
+        if let Err(e) = send_wire(&rsvp.mls_group_id, parent_id, pk, &w, false).await {
+            eprintln!("[tools-sync] event rsvp relay failed: {e}");
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2044,10 +2148,10 @@ mod tests {
         assert_eq!(json["payload"]["start_tzid"], NY);
         assert!(json["payload"]["series_id"].is_null());
 
-        // Replay is idempotent and yields the same card (deduped by message id downstream).
+        // Same content again does not announce a second card.
         let (replay, replay_card) = ingest(&conn, &w, "r1", ALICE);
         assert_eq!(replay, Applied::Replay);
-        assert_eq!(replay_card.as_deref(), Some(card.as_str()));
+        assert!(replay_card.is_none());
         assert_eq!(count_rows(&conn, "squad_events"), 1);
     }
 

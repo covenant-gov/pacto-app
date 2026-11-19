@@ -22,6 +22,15 @@ vi.mock('../squad/squad-state-sync', async (importOriginal) => {
   };
 });
 
+const applySquadChannelsCatalog = vi.hoisted(() => vi.fn());
+vi.mock('../squad/squad-channels-catalog', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../squad/squad-channels-catalog')>();
+  return {
+    ...actual,
+    applySquadChannelsCatalog: (...args: unknown[]) => applySquadChannelsCatalog(...args),
+  };
+});
+
 const applySquadIdentityUpdated = vi.hoisted(() => vi.fn());
 vi.mock('../squad/squad-identity-announce', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../squad/squad-identity-announce')>();
@@ -108,6 +117,7 @@ describe('onMlsStructuredMessage', () => {
     });
     respondToSquadStateSyncRequest.mockClear();
     applySquadIdentityUpdated.mockClear();
+    applySquadChannelsCatalog.mockClear();
     currentUser.set({ npub: 'npub1alice' });
     setCurrentNpubForPersistence('npub1alice');
     resetMutinyProcessTxStore();
@@ -127,6 +137,21 @@ describe('onMlsStructuredMessage', () => {
         return store.size;
       },
     } as Storage;
+  });
+
+  it('applies a channel catalog without re-checking createChannel', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    const raw = JSON.stringify({
+      type: 'squad_channels_catalog',
+      payload: { parent_id: 'g1', channels: [] },
+    });
+    onMlsStructuredMessage(raw, 'g1', handlers, 'npub1alice');
+    expect(applySquadChannelsCatalog).toHaveBeenCalledWith(raw, 'g1');
+    expect(decideSquadPrivilege).not.toHaveBeenCalled();
   });
 
   it('refreshes infra and treasury from announce types', () => {

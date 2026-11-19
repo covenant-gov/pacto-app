@@ -852,6 +852,11 @@ export async function sendDashboardPollCreate(params: {
   });
 }
 
+/** Re-send stored polls, events, and docs on the announcements group. */
+export async function republishSquadTools(parentId: string): Promise<void> {
+  await invoke('republish_squad_tools', { parentId });
+}
+
 export async function sendDashboardPollVote(params: {
   /** Same MLS scope as create (`resolvePollsMlsGroupId`). */
   mlsGroupId: string;

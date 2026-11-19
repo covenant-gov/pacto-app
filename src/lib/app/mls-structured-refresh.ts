@@ -142,9 +142,8 @@ export function onMlsStructuredMessage(
     });
   }
   if (parseSquadChannelsCatalog(raw)) {
-    void applyPrivilegedMlsAction(author, gid, 'createChannel', () => {
-      applySquadChannelsCatalog(raw, gid);
-    });
+    // Membership is the MLS group. Publish-time createChannel stays on the sender.
+    applySquadChannelsCatalog(raw, gid);
   }
   if (parseSquadIdentityUpdated(raw)) {
     applySquadIdentityUpdated(raw, gid);
@@ -223,7 +222,7 @@ export function onMlsStructuredMessage(
 async function applyPrivilegedMlsAction(
   authorNpub: string,
   parentId: string,
-  action: 'inviteAccept' | 'createChannel' | 'manageNetwork',
+  action: 'inviteAccept' | 'manageNetwork',
   apply: () => void,
 ): Promise<void> {
   const pid = parentId.trim();

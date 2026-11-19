@@ -647,7 +647,7 @@ pub fn drain_pending(
 /// Announcements card content for an applied add.
 fn card_content(w: &DocWire, applied: &Applied) -> Option<String> {
     match (w.op, applied) {
-        (Op::Add, Applied::Changed { inserted: true } | Applied::Replay) => {
+        (Op::Add, Applied::Changed { inserted: true }) => {
             let fields = fields_from_wire(w)?;
             Some(added_card_content(&w.id, &w.parent_id, &fields))
         }
@@ -1057,6 +1057,76 @@ pub async fn send_squad_doc_remove<R: Runtime>(
     Ok(())
 }
 
+fn load_docs_for_relay(conn: &Connection, parent_id: &str) -> Result<Vec<DocRow>, String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {DOC_COLUMNS} FROM squad_docs WHERE parent_id = ?1 ORDER BY created_at_ms ASC"
+        ))
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![parent_id], row_from_sql)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+/// Re-send stored docs. An add carries the current fields; the author also sends the latest update.
+/// Does not rewrite the local replica.
+pub(crate) async fn relay_stored_docs<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<(), String> {
+    let (pk, npub) = signer_identity().await?;
+    let rows = with_conn(handle, |c| load_docs_for_relay(c, parent_id))?;
+    for row in rows {
+        if !crate::db::side_effect_parent_matches_chat(&row.mls_group_id, &row.parent_id) {
+            continue;
+        }
+        if row.hidden {
+            let w = doc_wire(
+                Op::Remove,
+                &row.doc_id,
+                &row.parent_id,
+                None,
+                None,
+                row.updated_at_ms,
+            );
+            if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &w, false).await {
+                eprintln!("[tools-sync] doc remove relay failed: {e}");
+            }
+            continue;
+        }
+        let add = doc_wire(
+            Op::Add,
+            &row.doc_id,
+            &row.parent_id,
+            Some(&row.fields),
+            Some(&npub),
+            row.updated_at_ms,
+        );
+        if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &add, true).await {
+            eprintln!("[tools-sync] doc add relay failed: {e}");
+            continue;
+        }
+        if row.author_npub == npub {
+            let update = doc_wire(
+                Op::Update,
+                &row.doc_id,
+                &row.parent_id,
+                Some(&row.fields),
+                None,
+                row.updated_at_ms,
+            );
+            if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &update, false).await
+            {
+                eprintln!("[tools-sync] doc update relay failed: {e}");
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1375,7 +1445,7 @@ mod tests {
         // The same add rumor again is a replay.
         let (applied, card) = ingest(&conn, &add("d1", CRYPTPAD, ALICE, 100), "r1", ALICE);
         assert_eq!(applied, Applied::Replay);
-        assert!(card.is_some());
+        assert!(card.is_none());
     }
 
     #[test]

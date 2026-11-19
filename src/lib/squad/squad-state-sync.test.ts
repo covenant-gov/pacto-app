@@ -10,6 +10,7 @@ const {
   currentUser,
   publishSquadChannelsCatalog,
   publishSquadIdentityUpdated,
+  republishSquadTools,
   getMlsGroupMembers,
   inviteMemberToGroup,
   requireMySquadPrivilege,
@@ -45,6 +46,7 @@ const {
     listSquadInfra: vi.fn(),
     publishSquadChannelsCatalog: vi.fn(),
     publishSquadIdentityUpdated: vi.fn(),
+    republishSquadTools: vi.fn(),
     getMlsGroupMembers: vi.fn(),
     inviteMemberToGroup: vi.fn(),
     requireMySquadPrivilege: vi.fn(async (_parentId: string, _action: string) => ({
@@ -79,6 +81,7 @@ vi.mock('../api/nostr', () => ({
   getMlsGroupMembers: (...args: unknown[]) => getMlsGroupMembers(...args),
   inviteMemberToGroup: (...args: unknown[]) => inviteMemberToGroup(...args),
   formatChannelInSquadMessage: () => 'channel-notify',
+  republishSquadTools: (...args: unknown[]) => republishSquadTools(...args),
 }));
 
 vi.mock('./squad-identity-announce', () => ({
@@ -169,6 +172,7 @@ describe('squad-state-sync', () => {
     publishSquadRpcUpdated.mockResolvedValue(true);
     publishSquadChannelsCatalog.mockResolvedValue(true);
     publishSquadIdentityUpdated.mockResolvedValue(true);
+    republishSquadTools.mockResolvedValue(undefined);
     getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [], pending_welcomes: [] });
     inviteMemberToGroup.mockResolvedValue(undefined);
     requireMySquadPrivilege.mockReset();
@@ -216,7 +220,17 @@ describe('squad-state-sync', () => {
       parent_id: 'ann-gid',
       request_id: 'req-1',
       requester_npub: 'npub1joiner',
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica', 'join_inbox'],
+      requested: [
+        'evm',
+        'infra',
+        'network',
+        'rpc',
+        'channels',
+        'identity',
+        'gov_replica',
+        'join_inbox',
+        'tools',
+      ],
     });
   });
 
@@ -442,6 +456,7 @@ describe('squad-state-sync', () => {
     publishSquadRpcUpdated.mockResolvedValue(false);
     publishSquadChannelsCatalog.mockResolvedValue(false);
     publishSquadIdentityUpdated.mockResolvedValue(false);
+    republishSquadTools.mockRejectedValue(new Error('tools'));
     inviteMemberToGroup.mockRejectedValue(new Error('skip'));
     listSquadInfra.mockResolvedValue([]);
     const raw = formatSquadStateSyncRequest({
@@ -475,6 +490,7 @@ describe('squad-state-sync', () => {
     expect(publishSquadEvmRosterSnapshot).not.toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
     expect(publishSquadChannelsCatalog).toHaveBeenCalled();
+    expect(republishSquadTools).not.toHaveBeenCalled();
     expect(publishSquadIdentityUpdated).not.toHaveBeenCalled();
     expect(inviteMemberToGroup).not.toHaveBeenCalled();
   });
@@ -513,6 +529,16 @@ describe('squad-state-sync', () => {
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
     expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub1joiner', false, 'ann-gid');
+  });
+
+  it('republishes tools on a full sync request', async () => {
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-tools',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
+    expect(republishSquadTools).toHaveBeenCalledWith('ann-gid');
   });
 
   it('ignores a sync request whose author is not the requester', async () => {
