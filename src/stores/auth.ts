@@ -479,8 +479,9 @@ export async function unlockWithBiometrics(npub: string): Promise<void> {
 }
 
 /**
- * Logout current user: clear all account-specific frontend state, then call
- * backend logout (deletes current account profile dir and restarts the app).
+ * Logout current user: wipe the current account on disk, then drop frontend
+ * session state. The process does not restart; Login mounts after this returns
+ * and `checkAuthStatus` chooses welcome vs PIN from what is left on disk.
  */
 export async function logout(): Promise<void> {
   authLoading.set(true);
@@ -489,17 +490,15 @@ export async function logout(): Promise<void> {
   const npub = get(currentUser)?.npub;
 
   try {
-    isAuthenticated.set(false);
-    currentUser.set(null);
-    await clearAccountState(npub);
     await invoke("logout");
   } catch (error: unknown) {
     console.error("Logout failed:", error);
     authError.set(error instanceof Error ? error.message : get(t)("auth.errorLogoutFailed"));
-    isAuthenticated.set(false);
-    currentUser.set(null);
     throw error;
   } finally {
+    await clearAccountState(npub);
+    isAuthenticated.set(false);
+    currentUser.set(null);
     authLoading.set(false);
   }
 }

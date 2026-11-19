@@ -598,7 +598,7 @@ pub(crate) async fn is_scanning() -> bool {
 }
 
 #[tauri::command]
-pub(crate) async fn logout<R: Runtime>(handle: AppHandle<R>) {
+pub(crate) async fn logout<R: Runtime>(handle: AppHandle<R>) -> Result<(), String> {
     crate::public_channel::clear_watched();
     // Lock the state while we wipe disk and session so nothing races with stale in-memory chats.
     let mut state = STATE.lock().await;
@@ -608,15 +608,11 @@ pub(crate) async fn logout<R: Runtime>(handle: AppHandle<R>) {
     // This is critical on Windows where open file handles prevent deletion
     account_manager::close_db_connection();
 
-    // Delete the current account's profile directory (SQL database and MLS data)
+    // Delete the current account's profile directory (SQL database and MLS data).
+    // Fail before clearing session secrets if the dir is still on disk.
     if let Ok(npub) = account_manager::get_current_account() {
-        if let Ok(profile_dir) = account_manager::get_profile_directory(&handle, &npub) {
-            if profile_dir.exists() {
-                if let Err(e) = std::fs::remove_dir_all(&profile_dir) {
-                    eprintln!("[Logout] Failed to remove profile directory: {}", e);
-                }
-            }
-        }
+        let profile_dir = account_manager::get_profile_directory(&handle, &npub)?;
+        account_manager::remove_profile_directory(&profile_dir)?;
     }
 
     // Delete the downloads folder (pacto folder in Downloads or Documents on iOS)
@@ -650,7 +646,7 @@ pub(crate) async fn logout<R: Runtime>(handle: AppHandle<R>) {
 
     clear_relay_diagnostics_on_logout();
     relay_cert::clear_certificate_cache();
-    // `state` guard dropped here
+    Ok(())
 }
 
 /// Diagnostics are account-scoped (R15): clear stored failure reasons, plus the relay logs and
