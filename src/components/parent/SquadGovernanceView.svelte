@@ -5,7 +5,6 @@
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
     SQUAD_GOVERNANCE_CHANNEL_NAME,
-    SQUAD_WARGAME_CHANNEL_NAME,
     membershipVersionByGroupId,
     squadGovernanceChannelMode,
     type SquadGovernanceChannelMode,
@@ -773,7 +772,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 </script>
 
 <HubViewShell
-  channelName={warGameStack ? SQUAD_WARGAME_CHANNEL_NAME : SQUAD_GOVERNANCE_CHANNEL_NAME}
+  channelName={warGameStack ? $t('governance.stack.wargameChannelName') : SQUAD_GOVERNANCE_CHANNEL_NAME}
   modes={DASHBOARD_VIEWS}
   active={dashboardView}
   ariaLabel={$t('governance.dashboardSection')}

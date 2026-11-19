@@ -73,6 +73,7 @@ import { getAnnouncementsChannel, loadMembersForParent } from '../parent-navbar'
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
 import { persistSquadPatch } from '../squad/squad-catalog';
 import { publishSquadChannelsCatalog } from '../squad/squad-channels-catalog';
+import { watchKnownPublicChannels } from '../squad/public-channel';
 import { squads, type Squad } from '../../stores/squads';
 import {
   activeChannelId,
@@ -144,6 +145,7 @@ describe('runCreateChannelInParent', () => {
     vi.mocked(formatChannelInSquadMessage).mockReset().mockReturnValue('channel-in-squad-payload');
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
     vi.mocked(publishSquadChannelsCatalog).mockReset().mockResolvedValue(true);
+    vi.mocked(watchKnownPublicChannels).mockClear();
     vi.mocked(getAnnouncementsChannel).mockReset().mockReturnValue({
       name: 'announcements',
       groupId: 'g-announce',
@@ -228,6 +230,7 @@ describe('runCreateChannelInParent', () => {
     expect(sendDmMessage).not.toHaveBeenCalled();
     await vi.waitFor(() => {
       expect(publishSquadChannelsCatalog).toHaveBeenCalled();
+      expect(watchKnownPublicChannels).toHaveBeenCalled();
     });
     const state = get(squads);
     expect(state[0]?.channels.some((c) => c.groupId === 'ab'.repeat(32) && c.access === 'public')).toBe(
@@ -252,6 +255,25 @@ describe('runCreateChannelInParent', () => {
     });
     expect(get(squads)[0]?.channels.some((c) => c.name === 'lobby')).toBe(false);
     expect(publishSquadChannelsCatalog).not.toHaveBeenCalled();
+  });
+
+  it('rolls the public channel back when the catalog is not published', async () => {
+    vi.mocked(publishSquadChannelsCatalog).mockResolvedValueOnce(false);
+    const onErrorBanner = vi.fn();
+    runCreateChannelInParent({
+      parent,
+      squadId: 'parent-1',
+      name: 'lobby',
+      selectedNpubs: [],
+      access: 'public',
+      onErrorBanner,
+    });
+
+    await vi.waitFor(() => {
+      expect(onErrorBanner).toHaveBeenCalled();
+    });
+    expect(get(squads)[0]?.channels.some((c) => c.name === 'lobby')).toBe(false);
+    expect(watchKnownPublicChannels).not.toHaveBeenCalled();
   });
 
   it('does not publish catalog for closed channels', async () => {

@@ -56,6 +56,23 @@ afterEach(() => {
   cleanup();
 });
 
+describe('Login first screen from checkAuthStatus', () => {
+  it('shows create and import when no account exists', async () => {
+    checkAuthStatus.mockResolvedValue('needs-auth');
+    render(Login);
+    expect(await screen.findByRole('button', { name: 'Create Account' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Import with recovery phrase' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Enter your PIN' })).toBeNull();
+  });
+
+  it('shows PIN unlock when an account remains on disk', async () => {
+    checkAuthStatus.mockResolvedValue('needs-pin');
+    render(Login);
+    expect(await screen.findByRole('heading', { name: 'Enter your PIN' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create Account' })).toBeNull();
+  });
+});
+
 describe('Login PIN success orchestration', () => {
   it('keeps the first PIN and stays on retype when confirmation mismatches', async () => {
     render(Login);

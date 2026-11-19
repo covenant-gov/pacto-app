@@ -548,6 +548,55 @@ pub fn close_db_connection() {
     *pool = None;
 }
 
+const PROFILE_DIR_REMOVE_ATTEMPTS: u32 = 3;
+const PROFILE_DIR_REMOVE_RETRY_MS: u64 = 50;
+
+/// Checkpoint WAL (if a DB is present) and delete `profile_dir`.
+/// Missing path is success. Still present after retries is `Err`.
+pub(crate) fn remove_profile_directory(profile_dir: &std::path::Path) -> Result<(), String> {
+    if !profile_dir.exists() {
+        return Ok(());
+    }
+
+    checkpoint_profile_sqlite(profile_dir);
+
+    let mut last_err: Option<String> = None;
+    for attempt in 0..PROFILE_DIR_REMOVE_ATTEMPTS {
+        match std::fs::remove_dir_all(profile_dir) {
+            Ok(()) => {
+                if !profile_dir.exists() {
+                    return Ok(());
+                }
+                last_err = Some("directory still exists after remove".to_string());
+            }
+            Err(e) => last_err = Some(e.to_string()),
+        }
+        if attempt + 1 < PROFILE_DIR_REMOVE_ATTEMPTS && profile_dir.exists() {
+            std::thread::sleep(std::time::Duration::from_millis(PROFILE_DIR_REMOVE_RETRY_MS));
+        }
+    }
+
+    if profile_dir.exists() {
+        Err(format!(
+            "Failed to remove profile directory {}: {}",
+            profile_dir.display(),
+            last_err.unwrap_or_else(|| "directory still exists".to_string())
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn checkpoint_profile_sqlite(profile_dir: &std::path::Path) {
+    let db_path = profile_dir.join(DB_FILENAME);
+    if !db_path.exists() {
+        return;
+    }
+    if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    }
+}
+
 /// List all accounts (Tauri command)
 #[tauri::command]
 pub fn list_all_accounts<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<String>, String> {
@@ -1165,5 +1214,42 @@ mod sqlite_disk_io_retry_tests {
             "SqliteFailure(Error { code: DiskIOFailure }, Some(\"ioerr\"))"
         ));
         assert!(!sqlite_error_message_is_disk_io("database is locked"));
+    }
+}
+
+#[cfg(test)]
+mod remove_profile_directory_tests {
+    use super::*;
+
+    #[test]
+    fn missing_path_is_ok() {
+        let dir = std::env::temp_dir().join("pacto-logout-missing-profile-dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(!dir.exists());
+        remove_profile_directory(&dir).unwrap();
+    }
+
+    #[test]
+    fn deletes_existing_directory() {
+        let dir = std::env::temp_dir().join("pacto-logout-delete-profile-dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(DB_FILENAME), b"stub").unwrap();
+        remove_profile_directory(&dir).unwrap();
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn errors_when_path_is_a_file() {
+        let path = std::env::temp_dir().join("pacto-logout-profile-is-file");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::write(&path, b"not-a-dir").unwrap();
+        let err = remove_profile_directory(&path).unwrap_err();
+        assert!(
+            err.contains("Failed to remove profile directory"),
+            "unexpected error: {err}"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 }

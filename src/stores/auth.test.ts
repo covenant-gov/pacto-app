@@ -558,27 +558,33 @@ describe('auth', () => {
   });
 
   describe('logout', () => {
-    it('clears auth state and invokes the backend logout', async () => {
+    it('wipes on the backend while still authenticated, then drops the session', async () => {
       currentUser.set({ npub, pubkey: 'pk' });
       isAuthenticated.set(true);
-      vi.mocked(invoke).mockResolvedValue(undefined);
+      vi.mocked(invoke).mockImplementation(async () => {
+        expect(get(isAuthenticated)).toBe(true);
+        expect(get(currentUser)).toEqual({ npub, pubkey: 'pk' });
+        expect(clearAccountState).not.toHaveBeenCalled();
+        return undefined;
+      });
 
       await logout();
 
-      expect(get(isAuthenticated)).toBe(false);
-      expect(get(currentUser)).toBeNull();
       expect(invoke).toHaveBeenCalledWith('logout');
       expect(clearAccountState).toHaveBeenCalledWith(npub);
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
     });
 
-    it('sets auth error when logout fails but clears auth state', async () => {
+    it('sets auth error when logout fails and keeps the session', async () => {
       currentUser.set({ npub, pubkey: 'pk' });
       isAuthenticated.set(true);
       vi.mocked(invoke).mockRejectedValue(new Error('logout failed'));
 
       await expect(logout()).rejects.toThrow('logout failed');
-      expect(get(isAuthenticated)).toBe(false);
-      expect(get(currentUser)).toBeNull();
+      expect(get(isAuthenticated)).toBe(true);
+      expect(get(currentUser)).toEqual({ npub, pubkey: 'pk' });
+      expect(clearAccountState).not.toHaveBeenCalled();
       expect(get(authError)).toBe('logout failed');
     });
   });

@@ -28,19 +28,19 @@ How Pacto stores data **per Nostr identity (`npub`)**, what **logout** removes, 
 
 ## 2. Logout (backend) — current behavior
 
-**Command:** `logout` in `src-tauri/src/lib.rs`.
+**Command:** `logout` in `src-tauri/src/cmds/auth.rs`.
 
 Order (simplified):
 
 1. Lock **`STATE`** so no concurrent writes race deletion.
-2. **`close_db_connection()`** — required so files can be deleted (especially Windows).
-3. **`get_current_account()`** → delete that npub’s **profile directory** (`remove_dir_all`).
-4. Delete **downloads** `vector` folder and **legacy** `mls` under app data.
+2. **`close_db_connection()`** — required so files can be deleted (especially Windows). The pool reopens on the next use if deletion fails.
+3. **`get_current_account()`** → WAL checkpoint + delete that npub’s **profile directory**. Retries, then **`Err`** before **`clear_session`** if the directory is still there. Session, client, and secrets stay.
+4. **`clear_session()`**, then delete **downloads** `pacto` folder and **legacy** `mls` under app data.
 5. **`clear_nostr_client()`** and **`clear_current_account()`**.
 
 **Not deleted:** other npubs’ profile directories (multi-account), global **cache** dir.
 
-**Note:** Logout does **not** restart the process; the frontend should transition to logged-out UI and may call **login** / **create_account** again. That interacts with **`ENCRYPTION_KEY`** — see **MESSAGE_ENCRYPTION.md**.
+**Note:** Logout does **not** restart the process. The frontend drops `isAuthenticated` only after `invoke('logout')` resolves, then `Login` mounts and `checkAuthStatus` chooses welcome (no profiles left) or PIN (another npub remains). A failed wipe leaves the session up. See **MESSAGE_ENCRYPTION.md** for **`ENCRYPTION_KEY`**.
 
 ---
 
@@ -80,7 +80,7 @@ When adding persistence:
 | Topic | File |
 |-------|------|
 | Paths, schema init | `src-tauri/src/account_manager.rs` |
-| Logout | `src-tauri/src/lib.rs` — `logout` |
+| Logout | `src-tauri/src/cmds/auth.rs` — `logout` |
 | Clear storage | `src-tauri/src/lib.rs` — `clear_storage` |
 | Frontend clear | `src/lib/utils/clear-account-state.ts` (resets domain stores + invite accept state). **`auth.ts` must `await import()` this module** — never a static import — so cold Login does not pull wallet/`viem` (see [`docs/auth/FIRST_PAINT.md`](../auth/FIRST_PAINT.md)) |
 | Account load | `src/stores/persistence.ts` — `loadAccountState` |

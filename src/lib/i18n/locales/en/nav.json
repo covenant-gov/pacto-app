@@ -69,6 +69,7 @@
 	"nav.parentNavbar.createChannel.noMembers": "Select at least one member",
 	"nav.parentNavbar.createChannel.squadNotFound": "Squad not found",
 	"nav.parentNavbar.createChannel.nameTooLong": "Channel name must be at most {max} characters.",
+	"nav.parentNavbar.createChannel.publishFailed": "Could not share this channel with the squad.",
 	"nav.parentNavbar.invite.title": "Invite to Squad",
 	"nav.parentNavbar.invite.subtitle": "Invite friends to {squadName}.",
 	"nav.parentNavbar.invite.empty": "No one to invite right now. Start a DM with someone first, or they may already be in this Squad.",

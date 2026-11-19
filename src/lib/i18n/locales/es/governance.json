@@ -670,6 +670,7 @@
 	"governance.stack.aria": "Pila de gobernanza",
 	"governance.stack.live": "En vivo",
 	"governance.stack.wargame": "Wargame",
+	"governance.stack.wargameChannelName": "gobernanza de práctica",
 	"governance.stack.wargameHint": "Gobernanza de práctica",
 	"governance.stack.wargameAria": "Wargame, gobernanza de práctica",
 	"governance.warGameHub.statusActive": "Activo",

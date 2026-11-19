@@ -69,6 +69,7 @@
 	"nav.parentNavbar.createChannel.noMembers": "Selecciona al menos un miembro",
 	"nav.parentNavbar.createChannel.squadNotFound": "No se encontró el escuad",
 	"nav.parentNavbar.createChannel.nameTooLong": "El nombre del canal debe tener como máximo {max} caracteres.",
+	"nav.parentNavbar.createChannel.publishFailed": "No se pudo compartir este canal con el escuad.",
 	"nav.parentNavbar.invite.title": "Invitar al escuad",
 	"nav.parentNavbar.invite.subtitle": "Invita amigos a {squadName}.",
 	"nav.parentNavbar.invite.empty": "No hay nadie para invitar ahora. Inicia un mensaje directo con alguien primero, o quizás ya estén en este escuad.",

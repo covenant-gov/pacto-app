@@ -1446,6 +1446,7 @@ pub fn run() {
             dashboard_poll::list_dashboard_polls,
             dashboard_poll::send_dashboard_poll_create,
             dashboard_poll::send_dashboard_poll_vote,
+            dashboard_poll::republish_squad_tools,
             squad_event::list_squad_events,
             squad_event::send_squad_event_create,
             squad_event::send_squad_event_series,
