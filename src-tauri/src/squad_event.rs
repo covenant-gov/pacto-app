@@ -526,6 +526,50 @@ fn event_wire(
     w
 }
 
+struct EventRelayPlan {
+    create: Option<EventWire>,
+    announce: bool,
+    cancel: Option<EventWire>,
+}
+
+/// Create only for the author, with no RSVP. Cancel for the author or the member who cancelled.
+fn event_relay_plan(row: &EventRow, npub: &str) -> EventRelayPlan {
+    let mut plan = EventRelayPlan {
+        create: None,
+        announce: false,
+        cancel: None,
+    };
+    if !crate::db::side_effect_parent_matches_chat(&row.mls_group_id, &row.parent_id) {
+        return plan;
+    }
+    if row.author_npub == npub {
+        let mut create = event_wire(
+            Op::Create,
+            &row.event_id,
+            &row.parent_id,
+            row.series_id.as_deref(),
+            &row.fields,
+            row.updated_at_ms,
+        );
+        create.rsvp = None;
+        plan.announce = row.series_id.is_none() && row.status == EventStatus::Active;
+        plan.create = Some(create);
+    }
+    if row.status == EventStatus::Cancelled
+        && (row.author_npub == npub || row.updated_by_npub == npub)
+    {
+        plan.cancel = Some(event_wire(
+            Op::Cancel,
+            &row.event_id,
+            &row.parent_id,
+            row.series_id.as_deref(),
+            &row.fields,
+            row.updated_at_ms,
+        ));
+    }
+    plan
+}
+
 fn rsvp_wire(event_id: &str, parent_id: &str, status: RsvpStatus, updated_at_ms: i64) -> EventWire {
     let mut w = EventWire::base(Op::Rsvp, parent_id, updated_at_ms);
     w.id = Some(event_id.to_string());
@@ -1072,8 +1116,7 @@ pub fn drain_pending(
 /// Announcements card content for an applied op: a single create or a series summary.
 fn card_content(w: &EventWire, applied: &Applied) -> Option<String> {
     match (w.op, applied) {
-        (Op::Create, Applied::Changed { inserted: true }) if w.series_id.is_none() =>
-        {
+        (Op::Create, Applied::Changed { inserted: true }) if w.series_id.is_none() => {
             let fields = fields_from_wire(w)?;
             Some(created_card_content(
                 w.id.as_deref()?,
@@ -1949,42 +1992,27 @@ fn load_events_for_relay(
     Ok((events, mine))
 }
 
-/// Re-send stored events, cancels, and this member's RSVPs. Does not rewrite the local replica.
+/// Re-send this member's events and RSVPs. Does not rewrite the local replica.
 pub(crate) async fn relay_stored_events<R: Runtime>(
     handle: &AppHandle<R>,
     parent_id: &str,
 ) -> Result<(), String> {
     let (pk, npub) = signer_identity().await?;
     let (events, rsvps) = with_conn(handle, |c| load_events_for_relay(c, parent_id, &npub))?;
+    let mut failed = false;
     for row in events {
-        if !crate::db::side_effect_parent_matches_chat(&row.mls_group_id, &row.parent_id) {
-            continue;
+        let plan = event_relay_plan(&row, &npub);
+        let group_id = row.mls_group_id.as_str();
+        if let Some(create) = plan.create {
+            if let Err(e) = send_wire(group_id, &row.parent_id, pk, &create, plan.announce).await {
+                eprintln!("[tools-sync] event create relay failed: {e}");
+                failed = true;
+            }
         }
-        let announce = row.series_id.is_none() && row.status == EventStatus::Active;
-        let create = event_wire(
-            Op::Create,
-            &row.event_id,
-            &row.parent_id,
-            row.series_id.as_deref(),
-            &row.fields,
-            row.updated_at_ms,
-        );
-        if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &create, announce).await {
-            eprintln!("[tools-sync] event create relay failed: {e}");
-            continue;
-        }
-        if row.status == EventStatus::Cancelled {
-            let cancel = event_wire(
-                Op::Cancel,
-                &row.event_id,
-                &row.parent_id,
-                row.series_id.as_deref(),
-                &row.fields,
-                row.updated_at_ms,
-            );
-            if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &cancel, false).await
-            {
+        if let Some(cancel) = plan.cancel {
+            if let Err(e) = send_wire(group_id, &row.parent_id, pk, &cancel, false).await {
                 eprintln!("[tools-sync] event cancel relay failed: {e}");
+                failed = true;
             }
         }
     }
@@ -1992,9 +2020,14 @@ pub(crate) async fn relay_stored_events<R: Runtime>(
         let w = rsvp_wire(&rsvp.event_id, parent_id, rsvp.status, rsvp.updated_at_ms);
         if let Err(e) = send_wire(&rsvp.mls_group_id, parent_id, pk, &w, false).await {
             eprintln!("[tools-sync] event rsvp relay failed: {e}");
+            failed = true;
         }
     }
-    Ok(())
+    if failed {
+        Err("squad event relay incomplete".into())
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -2153,6 +2186,70 @@ mod tests {
         assert_eq!(replay, Applied::Replay);
         assert!(replay_card.is_none());
         assert_eq!(count_rows(&conn, "squad_events"), 1);
+    }
+
+    fn stored_event(author: &str, status: EventStatus, updated_by: &str) -> EventRow {
+        EventRow {
+            event_id: "ev-1".into(),
+            parent_id: PARENT.into(),
+            mls_group_id: GROUP.into(),
+            series_id: None,
+            fields: fields("2026-01-15T09:00"),
+            status,
+            author_npub: author.into(),
+            created_at_ms: 1_000,
+            updated_at_ms: 5_000,
+            updated_by_npub: updated_by.into(),
+            content_hash: String::new(),
+        }
+    }
+
+    #[test]
+    fn relay_plan_sends_create_only_for_the_author_and_omits_rsvp() {
+        let row = stored_event(ALICE, EventStatus::Active, ALICE);
+        let bob = event_relay_plan(&row, BOB);
+        assert!(bob.create.is_none());
+        assert!(bob.cancel.is_none());
+
+        let alice = event_relay_plan(&row, ALICE);
+        let create = alice.create.expect("author create");
+        assert!(alice.announce);
+        assert!(create.rsvp.is_none());
+        assert!(alice.cancel.is_none());
+    }
+
+    #[test]
+    fn relay_plan_lets_the_canceller_send_cancel_without_a_create() {
+        let row = stored_event(ALICE, EventStatus::Cancelled, ADMIN);
+        let admin = event_relay_plan(&row, ADMIN);
+        assert!(admin.create.is_none());
+        assert!(admin.cancel.is_some());
+
+        let author = event_relay_plan(&row, ALICE);
+        assert!(author.create.is_some());
+        assert!(!author.announce);
+        assert!(author.cancel.is_some());
+        assert!(author.create.unwrap().rsvp.is_none());
+    }
+
+    #[test]
+    fn relay_create_without_rsvp_keeps_an_older_decline() {
+        let conn = conn();
+        let f = fields("2026-01-15T09:00");
+        let mut w = event_wire(Op::Create, "ev-1", PARENT, None, &f, 5_000);
+        w.rsvp = None;
+        let (applied, _) = ingest(&conn, &w, "r1", ALICE);
+        assert_eq!(applied, Applied::Changed { inserted: true });
+        assert_eq!(rsvp_of(&conn, "ev-1", ALICE), None);
+
+        let (applied, _) = ingest(
+            &conn,
+            &rsvp_wire("ev-1", PARENT, RsvpStatus::Declined, 1_000),
+            "r2",
+            ALICE,
+        );
+        assert!(applied.changed());
+        assert_eq!(rsvp_of(&conn, "ev-1", ALICE), Some(RsvpStatus::Declined));
     }
 
     #[test]

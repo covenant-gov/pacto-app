@@ -33,14 +33,14 @@ How Pacto stores data **per Nostr identity (`npub`)**, what **logout** removes, 
 Order (simplified):
 
 1. Lock **`STATE`** so no concurrent writes race deletion.
-2. **`close_db_connection()`** — required so files can be deleted (especially Windows).
-3. **`get_current_account()`** → WAL checkpoint + delete that npub’s **profile directory**. Retries, then **`Err`** if the directory is still there (session secrets stay so PIN unlock still works).
-4. Delete **downloads** `pacto` folder and **legacy** `mls` under app data.
+2. **`close_db_connection()`** — required so files can be deleted (especially Windows). The pool reopens on the next use if deletion fails.
+3. **`get_current_account()`** → WAL checkpoint + delete that npub’s **profile directory**. Retries, then **`Err`** before **`clear_session`** if the directory is still there. Session, client, and secrets stay.
+4. **`clear_session()`**, then delete **downloads** `pacto` folder and **legacy** `mls` under app data.
 5. **`clear_nostr_client()`** and **`clear_current_account()`**.
 
 **Not deleted:** other npubs’ profile directories (multi-account), global **cache** dir.
 
-**Note:** Logout does **not** restart the process. The frontend waits for `invoke('logout')` before dropping `isAuthenticated`, then `Login` mounts and `checkAuthStatus` chooses welcome (no profiles left) or PIN (another npub remains). See **MESSAGE_ENCRYPTION.md** for **`ENCRYPTION_KEY`**.
+**Note:** Logout does **not** restart the process. The frontend drops `isAuthenticated` only after `invoke('logout')` resolves, then `Login` mounts and `checkAuthStatus` chooses welcome (no profiles left) or PIN (another npub remains). A failed wipe leaves the session up. See **MESSAGE_ENCRYPTION.md** for **`ENCRYPTION_KEY`**.
 
 ---
 

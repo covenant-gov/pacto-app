@@ -451,9 +451,11 @@ export async function respondToSquadStateSyncRequest(
     }
   }
 
+  let toolsOk = !wantTools;
   if (wantTools && parent) {
     try {
       await republishSquadTools(parent.id);
+      toolsOk = true;
       anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] tools republish failed', e);
@@ -513,7 +515,7 @@ export async function respondToSquadStateSyncRequest(
     }
   }
 
-  if (anyOk) {
+  if (anyOk && toolsOk) {
     markResponded(respondKey, parentId);
   }
 }

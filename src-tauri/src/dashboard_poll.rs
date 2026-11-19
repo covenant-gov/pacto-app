@@ -507,6 +507,11 @@ struct StoredPoll {
     title: String,
     description: String,
     options: Vec<PollOptionWire>,
+    created_by_npub: String,
+}
+
+fn should_relay_poll_create(created_by: &str, me: &str) -> bool {
+    !created_by.is_empty() && created_by == me
 }
 
 fn load_polls_and_my_votes(
@@ -516,7 +521,7 @@ fn load_polls_and_my_votes(
 ) -> Result<(Vec<StoredPoll>, Vec<(String, String)>), String> {
     let mut stmt = conn
         .prepare(
-            "SELECT poll_id, announcements_group_id, title, description, options_json FROM dashboard_polls WHERE parent_id = ?1 ORDER BY created_at_ms ASC",
+            "SELECT poll_id, announcements_group_id, title, description, options_json, created_by_npub FROM dashboard_polls WHERE parent_id = ?1 ORDER BY created_at_ms ASC",
         )
         .map_err(|e| e.to_string())?;
     let polls = stmt
@@ -527,13 +532,16 @@ fn load_polls_and_my_votes(
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
             ))
         })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     let mut stored = Vec::with_capacity(polls.len());
-    for (poll_id, announcements_group_id, title, description, options_json) in polls {
+    for (poll_id, announcements_group_id, title, description, options_json, created_by_npub) in
+        polls
+    {
         let options = serde_json::from_str(&options_json).map_err(|e| e.to_string())?;
         stored.push(StoredPoll {
             poll_id,
@@ -541,6 +549,7 @@ fn load_polls_and_my_votes(
             title,
             description,
             options,
+            created_by_npub,
         });
     }
     let mut votes = conn
@@ -621,7 +630,7 @@ async fn send_poll_vote_rumor(
     crate::mls::send_mls_message(parent_id, rumor, None).await
 }
 
-/// Re-send stored polls and this member's votes. Does not rewrite the local replica.
+/// Re-send this member's polls and votes. Does not rewrite the local replica.
 pub(crate) async fn relay_stored_polls<R: Runtime>(
     handle: &AppHandle<R>,
     parent_id: &str,
@@ -634,14 +643,19 @@ pub(crate) async fn relay_stored_polls<R: Runtime>(
     let loaded = load_polls_and_my_votes(&conn, parent_id, &me);
     crate::account_manager::return_db_connection(conn);
     let (polls, votes) = loaded?;
+    let mut failed = false;
     let mut live = std::collections::HashSet::new();
     for poll in polls {
         if !crate::db::side_effect_parent_matches_chat(&poll.announcements_group_id, parent_id) {
             continue;
         }
         live.insert(poll.poll_id.clone());
+        if !should_relay_poll_create(&poll.created_by_npub, &me) {
+            continue;
+        }
         if let Err(e) = send_poll_create_rumor(&pk, parent_id, &poll).await {
             eprintln!("[tools-sync] poll create relay failed: {e}");
+            failed = true;
         }
     }
     for (poll_id, option_id) in votes {
@@ -650,9 +664,14 @@ pub(crate) async fn relay_stored_polls<R: Runtime>(
         }
         if let Err(e) = send_poll_vote_rumor(&pk, parent_id, &poll_id, &option_id).await {
             eprintln!("[tools-sync] poll vote relay failed: {e}");
+            failed = true;
         }
     }
-    Ok(())
+    if failed {
+        Err("squad poll relay incomplete".into())
+    } else {
+        Ok(())
+    }
 }
 
 /// Catch-up: republish polls, events, and docs on the announcements group.
@@ -669,4 +688,16 @@ pub async fn republish_squad_tools<R: Runtime>(
     crate::squad_event::relay_stored_events(&handle, &parent_id).await?;
     crate::squad_doc::relay_stored_docs(&handle, &parent_id).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod relay_plan_tests {
+    use super::should_relay_poll_create;
+
+    #[test]
+    fn non_creator_does_not_relay_the_poll_create() {
+        assert!(!should_relay_poll_create("npub1alice", "npub1bob"));
+        assert!(should_relay_poll_create("npub1alice", "npub1alice"));
+        assert!(!should_relay_poll_create("", "npub1alice"));
+    }
 }

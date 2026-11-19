@@ -3551,7 +3551,7 @@ pub async fn send_mls_message(
             };
 
             let send_result = match send_result {
-                Ok(output) => require_trusted_relay_ack(&output),
+                Ok(output) => ack_mls_send(rumor.kind, &output),
                 Err(e) => Err(format!("Failed to send MLS wrapper: {}", e)),
             };
 
@@ -3630,8 +3630,19 @@ pub async fn send_mls_message(
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Kind 444 publish: at least one trusted relay must ACK.
-pub(crate) fn require_trusted_relay_ack(
+/// Kind 444 publish: at least one trusted relay must ACK. Chat sends do not.
+pub(crate) fn ack_mls_send(
+    kind: nostr_sdk::Kind,
+    output: &nostr_sdk::prelude::Output<nostr_sdk::EventId>,
+) -> Result<(), String> {
+    if kind == nostr_sdk::Kind::ApplicationSpecificData {
+        require_trusted_relay_ack(output)
+    } else {
+        Ok(())
+    }
+}
+
+fn require_trusted_relay_ack(
     output: &nostr_sdk::prelude::Output<nostr_sdk::EventId>,
 ) -> Result<(), String> {
     if output.success.is_empty() {
@@ -3673,7 +3684,7 @@ pub fn metadata_to_frontend(meta: &MlsGroupMetadata) -> serde_json::Value {
 
 #[cfg(test)]
 mod relay_ack_tests {
-    use super::require_trusted_relay_ack;
+    use super::{ack_mls_send, require_trusted_relay_ack};
     use crate::nostr_sign;
     use nostr_sdk::prelude::*;
     use std::collections::{HashMap, HashSet};
@@ -3707,6 +3718,16 @@ mod relay_ack_tests {
     #[test]
     fn one_relay_ack_accepts_the_mls_send() {
         assert!(require_trusted_relay_ack(&output(true)).is_ok());
+    }
+
+    #[test]
+    fn empty_success_fails_kind_444_and_allows_a_text_note() {
+        let missed = output(false);
+        assert_eq!(
+            ack_mls_send(Kind::ApplicationSpecificData, &missed).unwrap_err(),
+            "No trusted relay accepted the event"
+        );
+        assert!(ack_mls_send(Kind::TextNote, &missed).is_ok());
     }
 }
 

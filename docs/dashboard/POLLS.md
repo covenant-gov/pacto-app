@@ -1,6 +1,6 @@
 # Dashboard polls — MLS sync
 
-Polls for a squad/network parent are **replicated across members** via the parent’s **`#announcements` MLS group**. Each device reads SQLite through Tauri (`list_dashboard_polls`); `localStorage` only caches the signed-in user’s last selected option per poll. A Kind 444 send fails when no trusted relay accepts the wrapper, so the sender does not keep a replica the rest of the squad never received. A missed rumor is replayed when a member answers `squad_state_sync_request` with `tools`: stored poll creates and that member’s votes are sent again. A repeat of the same poll does not add another announcements card.
+Polls for a squad/network parent are **replicated across members** via the parent’s **`#announcements` MLS group**. Each device reads SQLite through Tauri (`list_dashboard_polls`); `localStorage` only caches the signed-in user’s last selected option per poll. A Kind 444 send fails when no trusted relay accepts the wrapper, so the sender does not keep a replica the rest of the squad never received. A missed rumor is replayed when a member answers `squad_state_sync_request` with `tools`: the creator re-sends the poll, and each member re-sends their own votes. A repeat of the same poll does not add another announcements card.
 
 `#tools` → Polls shows **Create Poll** and vote cards only — no chat timeline or composer.
 

@@ -531,6 +531,19 @@ describe('squad-state-sync', () => {
     expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub1joiner', false, 'ann-gid');
   });
 
+  it('does not mark a sync handled when tools republish fails', async () => {
+    publishSquadChannelsCatalog.mockResolvedValue(true);
+    republishSquadTools.mockRejectedValue(new Error('tools'));
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-tools-fail',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid', 'npub1joiner');
+    expect(republishSquadTools).toHaveBeenCalledTimes(2);
+  });
+
   it('republishes tools on a full sync request', async () => {
     const raw = formatSquadStateSyncRequest({
       parentId: 'ann-gid',

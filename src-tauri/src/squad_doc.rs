@@ -1057,6 +1057,62 @@ pub async fn send_squad_doc_remove<R: Runtime>(
     Ok(())
 }
 
+struct DocRelayPlan {
+    add: Option<DocWire>,
+    update: Option<DocWire>,
+    remove: Option<DocWire>,
+}
+
+/// Add and update only for the author. Remove for the author or the member who hid the row.
+fn doc_relay_plan(row: &DocRow, npub: &str) -> DocRelayPlan {
+    let empty = DocRelayPlan {
+        add: None,
+        update: None,
+        remove: None,
+    };
+    if !crate::db::side_effect_parent_matches_chat(&row.mls_group_id, &row.parent_id) {
+        return empty;
+    }
+    if row.hidden {
+        if row.author_npub == npub || row.updated_by_npub == npub {
+            return DocRelayPlan {
+                remove: Some(doc_wire(
+                    Op::Remove,
+                    &row.doc_id,
+                    &row.parent_id,
+                    None,
+                    None,
+                    row.updated_at_ms,
+                )),
+                ..empty
+            };
+        }
+        return empty;
+    }
+    if row.author_npub != npub {
+        return empty;
+    }
+    DocRelayPlan {
+        add: Some(doc_wire(
+            Op::Add,
+            &row.doc_id,
+            &row.parent_id,
+            Some(&row.fields),
+            Some(npub),
+            row.updated_at_ms,
+        )),
+        update: Some(doc_wire(
+            Op::Update,
+            &row.doc_id,
+            &row.parent_id,
+            Some(&row.fields),
+            None,
+            row.updated_at_ms,
+        )),
+        remove: None,
+    }
+}
+
 fn load_docs_for_relay(conn: &Connection, parent_id: &str) -> Result<Vec<DocRow>, String> {
     let mut stmt = conn
         .prepare(&format!(
@@ -1071,60 +1127,42 @@ fn load_docs_for_relay(conn: &Connection, parent_id: &str) -> Result<Vec<DocRow>
     Ok(rows)
 }
 
-/// Re-send stored docs. An add carries the current fields; the author also sends the latest update.
-/// Does not rewrite the local replica.
+/// Re-send this member's docs. An add carries the current fields. Does not rewrite the local replica.
 pub(crate) async fn relay_stored_docs<R: Runtime>(
     handle: &AppHandle<R>,
     parent_id: &str,
 ) -> Result<(), String> {
     let (pk, npub) = signer_identity().await?;
     let rows = with_conn(handle, |c| load_docs_for_relay(c, parent_id))?;
+    let mut failed = false;
     for row in rows {
-        if !crate::db::side_effect_parent_matches_chat(&row.mls_group_id, &row.parent_id) {
-            continue;
-        }
-        if row.hidden {
-            let w = doc_wire(
-                Op::Remove,
-                &row.doc_id,
-                &row.parent_id,
-                None,
-                None,
-                row.updated_at_ms,
-            );
-            if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &w, false).await {
-                eprintln!("[tools-sync] doc remove relay failed: {e}");
+        let plan = doc_relay_plan(&row, &npub);
+        let group_id = row.mls_group_id.as_str();
+        if let Some(add) = plan.add {
+            if let Err(e) = send_wire(group_id, &row.parent_id, pk, &add, true).await {
+                eprintln!("[tools-sync] doc add relay failed: {e}");
+                failed = true;
+                continue;
             }
-            continue;
         }
-        let add = doc_wire(
-            Op::Add,
-            &row.doc_id,
-            &row.parent_id,
-            Some(&row.fields),
-            Some(&npub),
-            row.updated_at_ms,
-        );
-        if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &add, true).await {
-            eprintln!("[tools-sync] doc add relay failed: {e}");
-            continue;
-        }
-        if row.author_npub == npub {
-            let update = doc_wire(
-                Op::Update,
-                &row.doc_id,
-                &row.parent_id,
-                Some(&row.fields),
-                None,
-                row.updated_at_ms,
-            );
-            if let Err(e) = send_wire(&row.mls_group_id, &row.parent_id, pk, &update, false).await
-            {
+        if let Some(update) = plan.update {
+            if let Err(e) = send_wire(group_id, &row.parent_id, pk, &update, false).await {
                 eprintln!("[tools-sync] doc update relay failed: {e}");
+                failed = true;
+            }
+        }
+        if let Some(remove) = plan.remove {
+            if let Err(e) = send_wire(group_id, &row.parent_id, pk, &remove, false).await {
+                eprintln!("[tools-sync] doc remove relay failed: {e}");
+                failed = true;
             }
         }
     }
-    Ok(())
+    if failed {
+        Err("squad doc relay incomplete".into())
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1446,6 +1484,49 @@ mod tests {
         let (applied, card) = ingest(&conn, &add("d1", CRYPTPAD, ALICE, 100), "r1", ALICE);
         assert_eq!(applied, Applied::Replay);
         assert!(card.is_none());
+    }
+
+    fn stored_doc(author: &str, hidden: bool, updated_by: &str) -> DocRow {
+        DocRow {
+            doc_id: "d1".into(),
+            parent_id: PARENT.into(),
+            mls_group_id: GROUP.into(),
+            fields: fields(CRYPTPAD),
+            author_npub: author.into(),
+            add_rumor_id: "r0".into(),
+            created_at_ms: 100,
+            updated_at_ms: 200,
+            updated_by_npub: updated_by.into(),
+            hidden,
+        }
+    }
+
+    #[test]
+    fn relay_plan_sends_add_only_for_the_author() {
+        let stored = stored_doc(ALICE, false, ALICE);
+        let bob = doc_relay_plan(&stored, BOB);
+        assert!(bob.add.is_none());
+        assert!(bob.update.is_none());
+
+        let alice = doc_relay_plan(&stored, ALICE);
+        let add = alice.add.expect("author add");
+        assert_eq!(add.added_by.as_deref(), Some(ALICE));
+        assert!(alice.update.is_some());
+
+        let conn = conn();
+        let (applied, _) = ingest(&conn, &add, "r-relay", ALICE);
+        assert_eq!(applied, Applied::Changed { inserted: true });
+        assert_eq!(row(&conn, "d1").author_npub, ALICE);
+    }
+
+    #[test]
+    fn relay_plan_lets_the_hider_send_remove_without_an_add() {
+        let row = stored_doc(ALICE, true, ADMIN);
+        let admin = doc_relay_plan(&row, ADMIN);
+        assert!(admin.add.is_none());
+        assert!(admin.remove.is_some());
+        let bob = doc_relay_plan(&row, BOB);
+        assert!(bob.remove.is_none());
     }
 
     #[test]

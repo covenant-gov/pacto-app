@@ -139,7 +139,7 @@ describe('onMlsStructuredMessage', () => {
     } as Storage;
   });
 
-  it('applies a channel catalog without re-checking createChannel', () => {
+  it('applies a channel catalog when createChannel is allowed', async () => {
     const handlers = {
       mergeTreasurySafesForParent: vi.fn(),
       mergeSquadInfraForParent: vi.fn(),
@@ -150,8 +150,43 @@ describe('onMlsStructuredMessage', () => {
       payload: { parent_id: 'g1', channels: [] },
     });
     onMlsStructuredMessage(raw, 'g1', handlers, 'npub1alice');
+    await vi.waitFor(() => {
+      expect(decideSquadPrivilege).toHaveBeenCalledWith({
+        parentId: 'g1',
+        memberNpub: 'npub1alice',
+        action: 'createChannel',
+      });
+    });
     expect(applySquadChannelsCatalog).toHaveBeenCalledWith(raw, 'g1');
-    expect(decideSquadPrivilege).not.toHaveBeenCalled();
+  });
+
+  it('skips a channel catalog when createChannel is denied', async () => {
+    let release: (decision: { ok: false; reason: 'denied'; active: true }) => void = () => {};
+    const pending = new Promise<{ ok: false; reason: 'denied'; active: true }>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(decideSquadPrivilege).mockImplementationOnce(() => pending);
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    const raw = JSON.stringify({
+      type: 'squad_channels_catalog',
+      payload: { parent_id: 'g1', channels: [] },
+    });
+    onMlsStructuredMessage(raw, 'g1', handlers, 'npub1alice');
+    await vi.waitFor(() => {
+      expect(decideSquadPrivilege).toHaveBeenCalledWith({
+        parentId: 'g1',
+        memberNpub: 'npub1alice',
+        action: 'createChannel',
+      });
+    });
+    release({ ok: false, reason: 'denied', active: true });
+    await pending;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(applySquadChannelsCatalog).not.toHaveBeenCalled();
   });
 
   it('refreshes infra and treasury from announce types', () => {
