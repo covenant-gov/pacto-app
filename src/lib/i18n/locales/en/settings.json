@@ -165,5 +165,12 @@
 	"settings.routeTrafficThroughTorUnavailable": "Tor routing is not available on this build.",
 	"settings.routeTrafficThroughTorStartupWarning": "Tor could not start automatically:",
 	"settings.routeTrafficThroughTorLoadError": "Could not load the Tor routing setting.",
-	"settings.routeTrafficThroughTorSaveError": "Could not apply the Tor routing setting."
+	"settings.routeTrafficThroughTorSaveError": "Could not apply the Tor routing setting.",
+	"settings.experimental.title": "Experimental features",
+	"settings.experimental.badge": "Experimental",
+	"settings.experimental.empty": "No experimental features are available in this version.",
+	"settings.experimental.flagInfoAria": "About this experimental feature",
+	"settings.experimental.editTitle": "Edit imported key",
+	"settings.experimental.flags.advanced_evm_accounts.name": "Imported key",
+	"settings.experimental.flags.advanced_evm_accounts.description": "Import a private key that stays off your squad and DM wallet. Keys you already imported stay listed either way."
 }
