@@ -22,26 +22,20 @@
   ] as const satisfies ReadonlyArray<{ id: SettingsSectionId; labelKey: string }>;
 
   const SCROLL_MARKER_OFFSET_PX = 48;
-  const SCROLL_BOTTOM_TOLERANCE_PX = 8;
 
   let activeSectionId: SettingsSectionId = $state(SECTION_LINKS[0].id);
   let settingsMainEl: HTMLElement | undefined;
 
   function openSection(sectionId: SettingsSectionId) {
     setSettingsSectionCollapsed(sectionId, false);
+    activeSectionId = sectionId;
   }
 
   function updateActiveSection() {
     const scrollRoot = settingsMainEl;
     if (!scrollRoot) return;
 
-    if (
-      scrollRoot.scrollTop + scrollRoot.clientHeight >=
-      scrollRoot.scrollHeight - SCROLL_BOTTOM_TOLERANCE_PX
-    ) {
-      activeSectionId = SECTION_LINKS[SECTION_LINKS.length - 1].id;
-      return;
-    }
+    scrollRoot.style.setProperty('--settings-main-height', `${scrollRoot.clientHeight}px`);
 
     const markerY = scrollRoot.getBoundingClientRect().top + SCROLL_MARKER_OFFSET_PX;
     let next: SettingsSectionId = SECTION_LINKS[0].id;
@@ -250,6 +244,8 @@
     flex-direction: column;
     gap: 16px;
     width: 100%;
+    /* Short trailing sections can scroll up to the sidebar marker. */
+    padding-bottom: max(0px, calc(var(--settings-main-height, 0px) - 4rem));
   }
 
   :global(.settings-section) {
