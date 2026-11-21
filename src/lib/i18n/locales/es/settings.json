@@ -165,5 +165,12 @@
 	"settings.routeTrafficThroughTorUnavailable": "El enrutamiento por Tor no está disponible en esta compilación.",
 	"settings.routeTrafficThroughTorStartupWarning": "Tor no pudo iniciarse automáticamente:",
 	"settings.routeTrafficThroughTorLoadError": "No se pudo cargar el ajuste de enrutamiento por Tor.",
-	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor."
+	"settings.routeTrafficThroughTorSaveError": "No se pudo aplicar el ajuste de enrutamiento por Tor.",
+	"settings.experimental.title": "Funciones experimentales",
+	"settings.experimental.badge": "Experimental",
+	"settings.experimental.empty": "No hay funciones experimentales en esta versión.",
+	"settings.experimental.flagInfoAria": "Acerca de esta función experimental",
+	"settings.experimental.editTitle": "Editar clave importada",
+	"settings.experimental.flags.advanced_evm_accounts.name": "Clave importada",
+	"settings.experimental.flags.advanced_evm_accounts.description": "Importa una clave privada que no forma parte de tu billetera de escuad ni de los mensajes directos. Las claves que ya importaste siguen en la lista de cualquier modo."
 }

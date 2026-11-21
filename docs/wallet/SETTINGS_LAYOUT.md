@@ -31,6 +31,7 @@ Enabled chains and RPC stay in Settings. Tokens are added and removed from the b
 | `#settings-app` | App | Theme selector |
 | `#settings-notifications` | Notifications | App notification prefs |
 | `#settings-commons` | Commons | Hidden Commons tags |
+| `#settings-experimental` | Experimental | Imported key opt-in. On: import a private key. Existing imported keys stay listed either way. Not the squad or DM signer |
 | `#settings-backup` | Backup | Export seed and export all secrets (not on Profile) |
 | `#settings-dangerzone` | Dangerzone | Logout |
 
@@ -57,7 +58,7 @@ Normative cookbook for account chrome. Interaction taste also lives in [docs/des
 | Put it on… | When |
 |------------|------|
 | **Profile** | Identity, username NFT, personal/squad wallet viewing, squad EVM account management, sponsored-gas disclosure |
-| **Settings** | Relays, preferred/enabled chains, personal RPC, app prefs, notifications, backup exports, logout |
+| **Settings** | Relays, preferred/enabled chains, personal RPC, app prefs, notifications, backup exports, experimental imported-key opt-in, logout |
 | **Neither** | DM WalletBar send/request (peer chat), squad governance / dashboard — follow-up work outside this doc |
 
 Some Profile blocks still live under `src/components/settings/` (`ProfileSection`, `EvmAccountsSection`, `EvmDashGasSection`). Prefer importing those shared pieces over inventing a parallel tree; do not re-home them without an explicit migration.

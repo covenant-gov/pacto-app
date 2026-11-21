@@ -50,6 +50,7 @@ describe('SettingsPage sidebar', () => {
     renderPage();
     expect(screen.getByRole('link', { name: 'Nostr' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'EVM' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Experimental' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Backup' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Dangerzone' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Profile' })).toBeNull();
@@ -73,5 +74,24 @@ describe('SettingsPage sidebar', () => {
     expect(screen.getByRole('link', { name: 'Backup' }).getAttribute('aria-current')).toBe(
       'location',
     );
+  });
+
+  it('does not mark Dangerzone current just because the list is scrolled to the end', async () => {
+    renderPage();
+
+    const main = document.querySelector('.settings-main') as HTMLElement;
+    Object.defineProperty(main, 'scrollHeight', { configurable: true, value: 800 });
+    Object.defineProperty(main, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(main, 'scrollTop', { configurable: true, value: 400 });
+    main.getBoundingClientRect = () => rect(0);
+    document.getElementById('settings-nostr')!.getBoundingClientRect = () => rect(-400);
+    document.getElementById('settings-backup')!.getBoundingClientRect = () => rect(20);
+
+    await fireEvent.scroll(main);
+    await tick();
+    expect(screen.getByRole('link', { name: 'Backup' }).getAttribute('aria-current')).toBe(
+      'location',
+    );
+    expect(screen.getByRole('link', { name: 'Dangerzone' }).getAttribute('aria-current')).toBeNull();
   });
 });

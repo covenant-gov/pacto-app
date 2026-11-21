@@ -53,7 +53,7 @@ flowchart LR
 
 ## Feature flags
 
-Compile-time flags ride on the same `get_app_config` snapshot as other limits, sourced from `FEATURE_FLAGS` in `app_config.rs`. Each `FeatureFlagDescriptor` is a stable `key` plus `default_enabled`. There is no Settings → Experimental panel; defaults ship in the binary.
+Compile-time flags ride on the same `get_app_config` snapshot as other limits, sourced from `FEATURE_FLAGS` in `app_config.rs`. Each `FeatureFlagDescriptor` is a stable `key` plus `default_enabled`. Settings → Experimental lists every registered flag. Defaults ship in the binary.
 
 - **Resolution:** `src/stores/feature-flags.ts` owns the single rule (`resolveFeatureFlag`): a stored override wins, otherwise the registry default. Keys missing from the registry resolve to off. Gate code with `featureEnabled(key)` or `isFeatureEnabled(key)`.
 - **Persistence:** optional overrides live in npub-scoped `localStorage` (`pacto_feature_flag_overrides_v1_<npub>`), load at login, and clear on logout.
@@ -68,7 +68,7 @@ Compile-time flags ride on the same `get_app_config` snapshot as other limits, s
 
 | Key | Default | Gates |
 |---|---|---|
-| *(none)* | — | `FEATURE_FLAGS` is empty until a gated surface needs a key. |
+| `advanced_evm_accounts` | `false` | Imported key switch in Settings → Experimental. On: private-key import. Existing advanced-purpose accounts stay listed either way. |
 
 ## Non-goals
 
