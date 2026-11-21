@@ -591,12 +591,15 @@ async fn process_dashboard_poll_rumor(
     if context.conversation_type != ConversationType::MlsGroup {
         return Ok(RumorProcessingResult::Ignored);
     }
-    let handle = TAURI_APP
-        .get()
-        .ok_or_else(|| "App handle not initialized".to_string())?;
     let group_id = context.conversation_id.clone();
 
     if let Some(vote) = crate::dashboard_poll::try_parse_vote(&rumor.content) {
+        if !crate::db::side_effect_parent_matches_chat(&group_id, &vote.parent_id) {
+            return Ok(RumorProcessingResult::Ignored);
+        }
+        let handle = TAURI_APP
+            .get()
+            .ok_or_else(|| "App handle not initialized".to_string())?;
         let voter = rumor
             .pubkey
             .to_bech32()
@@ -617,6 +620,12 @@ async fn process_dashboard_poll_rumor(
     }
 
     if let Some(env) = crate::dashboard_poll::try_parse_create_announce(&rumor.content) {
+        if !crate::db::side_effect_parent_matches_chat(&group_id, &env.payload.parent_id) {
+            return Ok(RumorProcessingResult::Ignored);
+        }
+        let handle = TAURI_APP
+            .get()
+            .ok_or_else(|| "App handle not initialized".to_string())?;
         let created_by = rumor
             .pubkey
             .to_bech32()
@@ -630,10 +639,7 @@ async fn process_dashboard_poll_rumor(
             &created_by,
             &env.payload,
         )?;
-        if matches!(
-            upsert,
-            crate::dashboard_poll::PollCreateUpsert::IgnoredConflictingPayload
-        ) {
+        if !matches!(upsert, crate::dashboard_poll::PollCreateUpsert::InsertedNew) {
             return Ok(RumorProcessingResult::Ignored);
         }
         let ms_timestamp = extract_millisecond_timestamp(&rumor);
@@ -693,5 +699,43 @@ mod tests {
         );
         assert_eq!(attachment_caption(&tags_with(Some("   "))), "");
         assert_eq!(attachment_caption(&tags_with(None)), "");
+    }
+
+    fn rumor_from(content: &str) -> (RumorEvent, RumorContext) {
+        let keys = Keys::generate();
+        let event = crate::nostr_sign::sign_with(
+            EventBuilder::new(Kind::ApplicationSpecificData, content)
+                .tag(nostr_tags::d_tag([crate::dashboard_poll::DASHBOARD_POLL_D_TAG])),
+            &keys,
+        )
+        .expect("sign");
+        let rumor = RumorEvent {
+            id: event.id,
+            kind: event.kind,
+            content: event.content,
+            tags: event.tags,
+            created_at: event.created_at,
+            pubkey: event.pubkey,
+        };
+        let context = RumorContext {
+            sender: keys.public_key(),
+            is_mine: false,
+            conversation_id: "announcements-group".to_string(),
+            conversation_type: ConversationType::MlsGroup,
+        };
+        (rumor, context)
+    }
+
+    #[tokio::test]
+    async fn poll_rumor_rejects_parent_that_is_not_the_chat() {
+        let vote = r#"{"schema":"pacto.dashboard_poll.v1","action":"vote","parent_id":"other","poll_id":"p","option_id":"a"}"#;
+        let (rumor, context) = rumor_from(vote);
+        let result = process_dashboard_poll_rumor(rumor, context).await.unwrap();
+        assert!(matches!(result, RumorProcessingResult::Ignored));
+
+        let create = r#"{"type":"dashboard_poll_created","payload":{"parent_id":"other","poll_id":"p","title":"T","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}}"#;
+        let (rumor, context) = rumor_from(create);
+        let result = process_dashboard_poll_rumor(rumor, context).await.unwrap();
+        assert!(matches!(result, RumorProcessingResult::Ignored));
     }
 }

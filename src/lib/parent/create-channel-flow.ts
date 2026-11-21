@@ -62,6 +62,7 @@ export function runCreateChannelInParent(opts: {
   lastHubChannelNameBySquadId.update((m) => ({ ...m, [squadId]: name }));
 
   void (async () => {
+    let createdPublicId: string | null = null;
     try {
       const {
         requireMySquadPrivilege,
@@ -83,6 +84,7 @@ export function runCreateChannelInParent(opts: {
       }
       if (access === 'public') {
         const groupId = await createPublicChannel(name);
+        createdPublicId = groupId;
         await persistSquadPatch(squadId, (s) => ({
           ...s,
           channels: s.channels.map((ch) =>
@@ -94,7 +96,10 @@ export function runCreateChannelInParent(opts: {
           activeHubChannelName.set(name);
         }
         const live = get(squads).find((s) => s.id === squadId);
-        if (live) void publishSquadChannelsCatalog(live);
+        const published = live ? await publishSquadChannelsCatalog(live) : false;
+        if (!published) {
+          throw new Error(get(t)('nav.parentNavbar.createChannel.publishFailed'));
+        }
         void watchKnownPublicChannels();
         return;
       }
@@ -145,9 +150,12 @@ export function runCreateChannelInParent(opts: {
       onErrorBanner(friendlyMessage(getInvokeErrorMessage(e)));
       await persistSquadPatch(squadId, (s) => ({
         ...s,
-        channels: s.channels.filter((ch) => ch.groupId !== placeholderId),
+        channels: s.channels.filter(
+          (ch) => ch.groupId !== placeholderId && ch.groupId !== createdPublicId,
+        ),
       }));
-      if (get(activeChannelId) === placeholderId) {
+      const active = get(activeChannelId);
+      if (active === placeholderId || active === createdPublicId) {
         const still = get(squads).find((s) => s.id === squadId);
         const sorted = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
         const gid = sorted[0]?.groupId ?? null;

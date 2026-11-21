@@ -1,15 +1,16 @@
 /**
  * Late-joiner catch-up: sync request on #announcements; peers silently republish
- * roster EVM, known governance announces, squad network/RPC selection, and open channels.
+ * roster EVM, known governance announces, squad network/RPC selection, open channels, and tools.
  */
 
 import { get, writable } from 'svelte/store';
 import {
+  formatChannelInSquadMessage,
   getMlsGroupMembers,
   inviteMemberToGroup,
+  republishSquadTools,
   sendDmMessage,
   syncMlsGroupsNow,
-  formatChannelInSquadMessage,
 } from '../api/nostr';
 import {
   ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
@@ -114,7 +115,7 @@ export function formatSquadStateSyncRequest(params: {
       parent_id: params.parentId.trim(),
       request_id: params.requestId.trim(),
       requester_npub: params.requesterNpub.trim(),
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica', 'join_inbox'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity', 'gov_replica', 'join_inbox', 'tools'],
     } satisfies SquadStateSyncRequestPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -278,6 +279,7 @@ export async function respondToSquadStateSyncRequest(
   const wantIdentity = !req.requested?.length || req.requested.includes('identity');
   const wantGovReplica = !req.requested?.length || req.requested.includes('gov_replica');
   const wantJoinInbox = !req.requested?.length || req.requested.includes('join_inbox');
+  const wantTools = !req.requested?.length || req.requested.includes('tools');
 
   const parent =
     get(squads).find((s) => s.id === parentId) ??
@@ -449,6 +451,17 @@ export async function respondToSquadStateSyncRequest(
     }
   }
 
+  let toolsOk = !wantTools;
+  if (wantTools && parent) {
+    try {
+      await republishSquadTools(parent.id);
+      toolsOk = true;
+      anyOk = true;
+    } catch (e) {
+      console.warn('[squad-state-sync] tools republish failed', e);
+    }
+  }
+
   if (wantChannels) {
     if (parent) {
       try {
@@ -502,7 +515,7 @@ export async function respondToSquadStateSyncRequest(
     }
   }
 
-  if (anyOk) {
+  if (anyOk && toolsOk) {
     markResponded(respondKey, parentId);
   }
 }

@@ -347,6 +347,9 @@ pub async fn send_dashboard_poll_create<R: Runtime>(
     options: Vec<SendPollOptionInput>,
 ) -> Result<(), String> {
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
+    if !crate::db::side_effect_parent_matches_chat(&mls_group_id, &parent_id) {
+        return Err("squad_records_wrong_group".into());
+    }
     if title.trim().is_empty() {
         return Err("Title required".into());
     }
@@ -456,6 +459,9 @@ pub async fn send_dashboard_poll_vote<R: Runtime>(
     option_id: String,
 ) -> Result<(), String> {
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
+    if !crate::db::side_effect_parent_matches_chat(&mls_group_id, &parent_id) {
+        return Err("squad_records_wrong_group".into());
+    }
     let client = get_nostr_client()?;
     let signer = client.signer().await.map_err(|e| e.to_string())?;
     let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
@@ -493,4 +499,205 @@ pub async fn send_dashboard_poll_vote<R: Runtime>(
     )?;
     emit_poll_replica_updated(&parent_id, Some(&poll_id));
     Ok(())
+}
+
+struct StoredPoll {
+    poll_id: String,
+    announcements_group_id: String,
+    title: String,
+    description: String,
+    options: Vec<PollOptionWire>,
+    created_by_npub: String,
+}
+
+fn should_relay_poll_create(created_by: &str, me: &str) -> bool {
+    !created_by.is_empty() && created_by == me
+}
+
+fn load_polls_and_my_votes(
+    conn: &rusqlite::Connection,
+    parent_id: &str,
+    voter_npub: &str,
+) -> Result<(Vec<StoredPoll>, Vec<(String, String)>), String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT poll_id, announcements_group_id, title, description, options_json, created_by_npub FROM dashboard_polls WHERE parent_id = ?1 ORDER BY created_at_ms ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let polls = stmt
+        .query_map([parent_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut stored = Vec::with_capacity(polls.len());
+    for (poll_id, announcements_group_id, title, description, options_json, created_by_npub) in
+        polls
+    {
+        let options = serde_json::from_str(&options_json).map_err(|e| e.to_string())?;
+        stored.push(StoredPoll {
+            poll_id,
+            announcements_group_id,
+            title,
+            description,
+            options,
+            created_by_npub,
+        });
+    }
+    let mut votes = conn
+        .prepare(
+            "SELECT v.poll_id, v.option_id FROM dashboard_poll_votes v
+             JOIN dashboard_polls p ON p.poll_id = v.poll_id
+             WHERE p.parent_id = ?1 AND v.voter_npub = ?2",
+        )
+        .map_err(|e| e.to_string())?;
+    let mine = votes
+        .query_map([parent_id, voter_npub], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok((stored, mine))
+}
+
+async fn send_poll_create_rumor(
+    pk: &PublicKey,
+    parent_id: &str,
+    poll: &StoredPoll,
+) -> Result<(), String> {
+    let envelope = DashboardPollAnnounceEnvelope {
+        announce_type: "dashboard_poll_created".into(),
+        payload: DashboardPollCreatedPayload {
+            parent_id: parent_id.to_string(),
+            poll_id: poll.poll_id.clone(),
+            title: poll.title.clone(),
+            description: poll.description.clone(),
+            options: poll.options.clone(),
+        },
+    };
+    let content = serde_json::to_string(&envelope).map_err(|e| e.to_string())?;
+    let ms = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        % 1000) as u64;
+    let rumor = EventBuilder::new(Kind::ApplicationSpecificData, &content)
+        .tag(nostr_tags::d_tag([DASHBOARD_POLL_D_TAG]))
+        .tag(nostr_tags::custom_tag("parent", [parent_id]))
+        .tag(nostr_tags::custom_tag("poll", [poll.poll_id.as_str()]))
+        .tag(nostr_tags::custom_tag("pacto_bucket", ["announcements"]))
+        .tag(nostr_tags::custom_tag("ms", [ms.to_string()]))
+        .build(*pk);
+    crate::mls::send_mls_message(parent_id, rumor, None).await
+}
+
+async fn send_poll_vote_rumor(
+    pk: &PublicKey,
+    parent_id: &str,
+    poll_id: &str,
+    option_id: &str,
+) -> Result<(), String> {
+    let wire = DashboardPollVoteWire {
+        schema: "pacto.dashboard_poll.v1".into(),
+        action: "vote".into(),
+        parent_id: parent_id.to_string(),
+        poll_id: poll_id.to_string(),
+        option_id: option_id.to_string(),
+    };
+    let content = serde_json::to_string(&wire).map_err(|e| e.to_string())?;
+    let ms = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        % 1000) as u64;
+    let rumor = EventBuilder::new(Kind::ApplicationSpecificData, &content)
+        .tag(nostr_tags::d_tag([DASHBOARD_POLL_D_TAG]))
+        .tag(nostr_tags::custom_tag("parent", [parent_id]))
+        .tag(nostr_tags::custom_tag("poll", [poll_id]))
+        .tag(nostr_tags::custom_tag("option", [option_id]))
+        .tag(nostr_tags::custom_tag("pacto_bucket", ["polls"]))
+        .tag(nostr_tags::custom_tag("ms", [ms.to_string()]))
+        .build(*pk);
+    crate::mls::send_mls_message(parent_id, rumor, None).await
+}
+
+/// Re-send this member's polls and votes. Does not rewrite the local replica.
+pub(crate) async fn relay_stored_polls<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<(), String> {
+    let client = get_nostr_client()?;
+    let signer = client.signer().await.map_err(|e| e.to_string())?;
+    let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
+    let me = pk.to_bech32().map_err(|e| e.to_string())?;
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let loaded = load_polls_and_my_votes(&conn, parent_id, &me);
+    crate::account_manager::return_db_connection(conn);
+    let (polls, votes) = loaded?;
+    let mut failed = false;
+    let mut live = std::collections::HashSet::new();
+    for poll in polls {
+        if !crate::db::side_effect_parent_matches_chat(&poll.announcements_group_id, parent_id) {
+            continue;
+        }
+        live.insert(poll.poll_id.clone());
+        if !should_relay_poll_create(&poll.created_by_npub, &me) {
+            continue;
+        }
+        if let Err(e) = send_poll_create_rumor(&pk, parent_id, &poll).await {
+            eprintln!("[tools-sync] poll create relay failed: {e}");
+            failed = true;
+        }
+    }
+    for (poll_id, option_id) in votes {
+        if !live.contains(&poll_id) {
+            continue;
+        }
+        if let Err(e) = send_poll_vote_rumor(&pk, parent_id, &poll_id, &option_id).await {
+            eprintln!("[tools-sync] poll vote relay failed: {e}");
+            failed = true;
+        }
+    }
+    if failed {
+        Err("squad poll relay incomplete".into())
+    } else {
+        Ok(())
+    }
+}
+
+/// Catch-up: republish polls, events, and docs on the announcements group.
+#[tauri::command]
+pub async fn republish_squad_tools<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+) -> Result<(), String> {
+    let parent_id = parent_id.trim().to_string();
+    if parent_id.is_empty() {
+        return Err("parent id required".into());
+    }
+    relay_stored_polls(&handle, &parent_id).await?;
+    crate::squad_event::relay_stored_events(&handle, &parent_id).await?;
+    crate::squad_doc::relay_stored_docs(&handle, &parent_id).await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod relay_plan_tests {
+    use super::should_relay_poll_create;
+
+    #[test]
+    fn non_creator_does_not_relay_the_poll_create() {
+        assert!(!should_relay_poll_create("npub1alice", "npub1bob"));
+        assert!(should_relay_poll_create("npub1alice", "npub1alice"));
+        assert!(!should_relay_poll_create("", "npub1alice"));
+    }
 }

@@ -670,6 +670,7 @@
 	"governance.stack.aria": "Governance stack",
 	"governance.stack.live": "Live",
 	"governance.stack.wargame": "Wargame",
+	"governance.stack.wargameChannelName": "governance practice",
 	"governance.stack.wargameHint": "Practice governance",
 	"governance.stack.wargameAria": "Wargame, practice governance",
 	"governance.warGameHub.statusActive": "Active",

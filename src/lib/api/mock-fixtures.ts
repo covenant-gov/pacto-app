@@ -136,6 +136,7 @@ export const chatFixtures: Record<string, MockCommandHandler> = {
   list_dashboard_polls: () => [],
   send_dashboard_poll_create: () => undefined,
   send_dashboard_poll_vote: () => undefined,
+  republish_squad_tools: () => undefined,
   list_squad_events: () => [],
   send_squad_event_create: () => undefined,
   send_squad_event_series: () => undefined,
